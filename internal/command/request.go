@@ -54,6 +54,11 @@ func (req Request) PeekArgs() []string {
 // LastArg returns the final remaining positional arg and consumes
 // every remaining arg (mirrors dodder semantics: LastArg is
 // destructive). Use PeekArgs() if you need a non-destructive view.
+//
+// Diverges from dodder HEAD's implementation, which panics by
+// evaluating PopArgs() (mutating Argi to the end) and then indexing
+// at RemainingArgCount()-1, which is -1. Tracked at dodder#183
+// (https://github.com/amarbel-llc/dodder/issues/183).
 func (req Request) LastArg() (arg string, ok bool) {
 	if req.RemainingArgCount() == 0 {
 		return arg, ok
