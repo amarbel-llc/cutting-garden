@@ -48,3 +48,24 @@ func TestRequest_PeekArgs(t *testing.T) {
 		t.Error("PeekArgs mutated remaining args")
 	}
 }
+
+func TestRequest_LastArg_NonEmpty(t *testing.T) {
+	req := newTestRequest("alpha", "beta")
+	arg, ok := req.LastArg()
+	if !ok || arg != "beta" {
+		t.Errorf("LastArg = (%q, %v), want (beta, true)", arg, ok)
+	}
+}
+
+func TestRequest_LastArg_Empty(t *testing.T) {
+	req := newTestRequest()
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("LastArg on empty args panicked: %v", r)
+		}
+	}()
+	_, ok := req.LastArg()
+	if ok {
+		t.Error("LastArg on empty args returned ok=true")
+	}
+}

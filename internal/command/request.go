@@ -51,12 +51,15 @@ func (req Request) PeekArgs() []string {
 	return slices.Clone(req.input.Args[req.input.Argi:])
 }
 
+// LastArg returns the final remaining positional arg and consumes
+// every remaining arg (mirrors dodder semantics: LastArg is
+// destructive). Use PeekArgs() if you need a non-destructive view.
 func (req Request) LastArg() (arg string, ok bool) {
-	if req.RemainingArgCount() > 0 {
-		ok = true
-		arg = req.PopArgs()[req.RemainingArgCount()-1]
+	if req.RemainingArgCount() == 0 {
+		return arg, ok
 	}
-	return arg, ok
+	rest := req.PopArgs()
+	return rest[len(rest)-1], true
 }
 
 func (req Request) Must(fn func(interfaces.ActiveContext) error) {
