@@ -27,9 +27,10 @@ func handleMainErrors(
 	if err == nil {
 		return 0
 	}
-	fmt.Fprintf(os.Stderr, "%s: %s\n", utilityName, err)
 	if errors.Is400BadRequest(err) {
+		// PrintUsage already wrote to stderr; don't double-render.
 		return 64 // EX_USAGE
 	}
+	fmt.Fprintf(os.Stderr, "%s: %s\n", utilityName, err)
 	return 1
 }
