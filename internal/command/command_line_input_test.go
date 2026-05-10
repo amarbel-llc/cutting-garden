@@ -23,9 +23,11 @@ func TestCommandLineInput_LastArg_Empty(t *testing.T) {
 }
 
 func TestCommandLineInput_LastCompleteArg_StripsInProgress(t *testing.T) {
-	t.Skip("dodder upstream bug — see Task 17 follow-up issue. " +
-		"LastCompleteArg returns the unmodified Last() instead of " +
-		"FlagsOrArgs[argc-1] after the InProgress decrement.")
+	// LastCompleteArg returns the unmodified Last() instead of
+	// FlagsOrArgs[argc-1] after the InProgress decrement. Tracked at
+	// dodder#182 (https://github.com/amarbel-llc/dodder/issues/182)
+	// and #1 (https://github.com/amarbel-llc/cutting-garden/issues/1).
+	t.Skip("upstream bug; see dodder#182 / #1")
 	cli := CommandLineInput{
 		FlagsOrArgs: collections_slice.String{"a", "b", "in-prog"},
 		InProgress:  "in-prog",
