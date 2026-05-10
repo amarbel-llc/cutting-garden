@@ -64,13 +64,3 @@ func (req Request) Must(fn func(interfaces.ActiveContext) error) {
 		errors.ContextCancelWithError(req.Context, err)
 	}
 }
-
-// Utility is forward-declared as a stub here so request.go compiles
-// in isolation. The real type lands in Task 8 (utility.go); when that
-// happens this stub is removed and the real one provides the same
-// `GetName() string` surface that downstream code expects.
-type Utility struct {
-	name string
-}
-
-func (u Utility) GetName() string { return u.name }
