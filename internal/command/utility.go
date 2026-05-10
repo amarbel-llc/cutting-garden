@@ -2,8 +2,13 @@ package command
 
 import (
 	"fmt"
+	"os"
+	"syscall"
 
 	"github.com/amarbel-llc/purse-first/libs/dewey/0/interfaces"
+	"github.com/amarbel-llc/purse-first/libs/dewey/bravo/collections_slice"
+	"github.com/amarbel-llc/purse-first/libs/dewey/bravo/errors"
+	"github.com/amarbel-llc/purse-first/libs/dewey/charlie/flags"
 	"github.com/amarbel-llc/purse-first/libs/dewey/foxtrot/config_cli"
 )
 
@@ -82,4 +87,104 @@ func (utility Utility) MergeUtilityWithPrefix(
 
 func (utility Utility) MergeUtility(otherUtility Utility) Utility {
 	return utility.MergeUtilityWithPrefix(otherUtility, "")
+}
+
+func (utility Utility) PrintUsage(ctx interfaces.ActiveContext, err error) {
+	if err != nil {
+		defer errors.ContextCancelWithError(ctx, err)
+	}
+	fmt.Fprintf(os.Stderr, "Usage for %s:\n", utility.name)
+	for name := range utility.AllCmds() {
+		fmt.Fprintln(os.Stderr, "  "+name)
+	}
+}
+
+func (utility Utility) Run(args []string) {
+	utilityNameWithExtension := extendNameIfNecessary(utility.GetName())
+	ctx := errors.MakeContextDefault()
+	ctx.SetCancelOnSignals(syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP)
+
+	err := ctx.Run(func(ctx errors.Context) {
+		if len(args) <= 1 {
+			utility.PrintUsage(ctx,
+				errors.BadRequestf("No subcommand provided."))
+			return
+		}
+
+		cmd, flagSet, ok := utility.MakeCmdAndFlagSet(ctx, args)
+		if !ok {
+			return
+		}
+
+		req, ok := utility.MakeRequest(ctx, cmd, flagSet)
+		if !ok {
+			return
+		}
+
+		cmd.Run(req)
+	})
+
+	if err != nil {
+		// In tests we don't os.Exit; production main.go can wrap Run if
+		// needed. Phase 1 keeps Run side-effect-light to make it
+		// testable. handleMainErrors still formats the failure to
+		// stderr.
+		_ = handleMainErrors(ctx, utilityNameWithExtension, err)
+	}
+}
+
+func (utility Utility) MakeCmdAndFlagSet(
+	ctx interfaces.ActiveContext,
+	args []string,
+) (cmd Cmd, flagSet *flags.FlagSet, ok bool) {
+	name := args[1]
+
+	if cmd, ok = utility.GetCmd(name); !ok {
+		utility.PrintUsage(ctx, errors.BadRequestf("No subcommand %q", name))
+		return
+	}
+
+	flagSet = flags.NewFlagSet(name, flags.ContinueOnError)
+
+	if w, isWriter := cmd.(interfaces.CommandComponentWriter); isWriter {
+		w.SetFlagDefinitions(flagSet)
+	}
+
+	rest := args[2:]
+
+	if utility.config != nil {
+		utility.config.SetFlagDefinitions(flagSet)
+	}
+
+	if err := flagSet.Parse(rest); err != nil {
+		if errors.Is(err, flags.ErrHelp) {
+			ok = false
+			return
+		}
+		errors.ContextCancelWithError(ctx, err)
+	}
+
+	return cmd, flagSet, true
+}
+
+func (utility Utility) MakeRequest(
+	ctx interfaces.ActiveContext,
+	cmd Cmd,
+	flagSet *flags.FlagSet,
+) (request Request, ok bool) {
+	parsed := flagSet.Args()
+	input := CommandLineInput{
+		FlagsOrArgs: collections_slice.String(parsed),
+		Args:        collections_slice.String(parsed),
+	}
+	if input.Args.Len() > 0 && input.Args.First() == "--" {
+		input.ContainsDoubleHyphen = true
+		input.Args.ShiftInPlace(1)
+	}
+	return Request{
+		Utility: utility,
+		Context: ctx,
+		FlagSet: flagSet,
+		input:   &input,
+	}, true
 }
