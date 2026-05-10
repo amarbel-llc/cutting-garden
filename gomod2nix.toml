@@ -1,0 +1,12 @@
+schema = 3
+
+[mod]
+  [mod.'github.com/amarbel-llc/purse-first/libs/dewey']
+    version = 'v0.1.0'
+    hash = 'sha256-hJsIQ7HraOte83sTUFUQexw4z7vUB/lWEYkR6An+P7Q='
+    goVersion = '1.26'
+
+  [mod.'golang.org/x/xerrors']
+    version = 'v0.0.0-20240903120638-7835f813f4da'
+    hash = 'sha256-bE7CcrnAvryNvM26ieJGXqbAtuLwHaGcmtVMsVnksqo='
+    goVersion = '1.18'
