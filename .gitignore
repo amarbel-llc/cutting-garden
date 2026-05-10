@@ -1,0 +1,15 @@
+# Build artifacts
+result
+result-*
+.direnv/
+
+# Editor noise
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Test artifacts
+*.test
+*.prof
+coverage.out
