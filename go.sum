@@ -1,0 +1,4 @@
+github.com/amarbel-llc/purse-first/libs/dewey v0.1.0 h1:R5XUOpNZtri9mkLWRYI5HW+PN+B10re32zFx0aoqtMw=
+github.com/amarbel-llc/purse-first/libs/dewey v0.1.0/go.mod h1:Z2O4fGt0BRR8wB5c1HpMRd/XG6Ymx4Ch7g4RfQmqnbI=
+golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da h1:noIWHXmPHxILtqtCOPIhSt0ABwskkZKjD3bXGnZGpNY=
+golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da/go.mod h1:NDW/Ps6MPRej6fsCIbMTohpP40sJ/P/vI1MoTEGwX90=
