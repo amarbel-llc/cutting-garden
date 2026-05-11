@@ -20,6 +20,6 @@ import (
 func main() {
 	utility := command.MakeUtility("cutting-garden", nil)
 	command.RegisterComplete(&utility)
-	utility.AddCmd("capture", capture.Capture{})
+	utility.AddCmd("capture", capture.New())
 	utility.Run(os.Args)
 }

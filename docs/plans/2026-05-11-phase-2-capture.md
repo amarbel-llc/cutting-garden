@@ -144,9 +144,12 @@ runs cleanly against `go test ./...` and a hand-fixture
    with the receipt id on stdout. No TAP, no `--format`, no audit log,
    no shadow detection.
 5. **`--format` flag + TAP sink wiring.** Needs `pkgs/output_format`
-   from the umbrella issue; if that isn't merged yet, copy the type
-   into `internal/output_format_local` and delete it once the upstream
-   pkg exists.
+   from the umbrella issue. Madder@6ff15af landed the export
+   (madder#165 closed), but we're pinned at v0.3.15 because v0.3.16
+   introduced a markl-id wire-format change that breaks pre-flip
+   on-disk stores. Vendored as `internal/output_format` with a
+   delete-on-upstream-bump TODO. ✅ Landed via commit (TODO: link
+   after merge).
 6. **Multi-root + multi-group + store-switching.** Port `planCapture`,
    `classifyArg`, `checkRootCollisions`. Needs `pkgs/arg_resolver` or
    we vendor `arg_resolver` locally; same delete-on-upstream policy as

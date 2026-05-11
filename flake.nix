@@ -24,10 +24,11 @@
     # in-flake build. See cutting-garden#2.
     #
     # Held at the v0.3.15 release. v0.3.16 introduced a blech32
-    # encryption-key format flip that current local stores
+    # encryption-key format flip that pre-flip on-disk stores
     # (dodder-v8-take3 etc.) were written before; v0.3.15 still reads
-    # the pre-flip charset. Bump once the migration story for the
-    # in-the-wild stores is sorted.
+    # the pre-flip charset. v0.3.16's revert to "split-HRP" wire form
+    # is NOT actually compatible — tested against 6ff15af. Bump
+    # once the migration story for in-the-wild stores is sorted.
     madder.url = "github:amarbel-llc/madder/eb8dc315515c067a8abfbb1f8361a4d3adec76e8";
   };
 

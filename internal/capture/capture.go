@@ -6,10 +6,10 @@
 // to target a non-default store (e.g. `capture .default <dir>`).
 // Default store resolves exactly the way madder resolves it.
 //
-// This is the Phase 2 MVP step 4 capture surface: at most one
-// store-id + one directory, NDJSON sink to stdout, no --format flag,
-// no audit log, no shadow detection. Multi-root + interleaved
-// store-switches land in step 6.
+// This is the Phase 2 MVP step 5 capture surface: at most one
+// store-id + one directory, `--format=auto|tap|json` flag selecting
+// the sink, no audit log, no shadow detection. Multi-root +
+// interleaved store-switches land in step 6.
 package capture
 
 import (
@@ -21,6 +21,7 @@ import (
 	"github.com/amarbel-llc/cutting-garden/internal/capture_sink"
 	"github.com/amarbel-llc/cutting-garden/internal/command"
 	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
+	"github.com/amarbel-llc/cutting-garden/internal/output_format"
 	"github.com/amarbel-llc/madder/go/pkgs/blob_store_env"
 	"github.com/amarbel-llc/madder/go/pkgs/blob_store_id"
 	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
@@ -28,23 +29,44 @@ import (
 	"github.com/amarbel-llc/madder/go/pkgs/env_local"
 	"github.com/amarbel-llc/madder/go/pkgs/env_ui"
 	"github.com/amarbel-llc/madder/go/pkgs/madder_env"
+	"github.com/amarbel-llc/purse-first/libs/dewey/0/interfaces"
 	"github.com/amarbel-llc/purse-first/libs/dewey/bravo/errors"
 )
 
-// Capture is the value registered for the `capture` subcommand. The
-// MVP carries no per-invocation flags or state, so a zero-field
-// struct with a value receiver suffices.
-type Capture struct{}
+// Capture is the value registered for the `capture` subcommand.
+//
+// Format is bound to the `--format` CLI flag by SetFlagDefinitions.
+// A pointer receiver on Run is required so the parsed flag value
+// reaches the dispatch site.
+type Capture struct {
+	Format output_format.Format
+}
 
-var _ command.Cmd = Capture{}
+var (
+	_ command.Cmd                       = (*Capture)(nil)
+	_ interfaces.CommandComponentWriter = (*Capture)(nil)
+)
 
-func (Capture) GetDescription() command.Description {
+// New constructs a Capture with its flag fields initialized to
+// defaults — matches the madder capture cmd's `Format:
+// output_format.Default` shape.
+func New() *Capture {
+	return &Capture{Format: output_format.Default}
+}
+
+func (*Capture) GetDescription() command.Description {
 	return command.Description{
 		Short: "capture a directory tree into madder's default blob store",
 	}
 }
 
-func (Capture) Run(req command.Request) {
+func (cmd *Capture) SetFlagDefinitions(
+	flagSet interfaces.CLIFlagDefinitions,
+) {
+	flagSet.Var(&cmd.Format, "format", output_format.FlagDescription)
+}
+
+func (cmd *Capture) Run(req command.Request) {
 	ctx := req.Context.(errors.Context)
 
 	storeID, dir, ok := parseArgs(ctx, req)
@@ -72,7 +94,13 @@ func (Capture) Run(req command.Request) {
 		return
 	}
 
-	sink := capture_sink.NewNDJSON(os.Stdout, os.Stderr)
+	var sink capture_sink.Sink
+	switch cmd.Format.Resolve(os.Stdout) {
+	case output_format.FormatTAP:
+		sink = capture_sink.NewTAP(os.Stdout)
+	default:
+		sink = capture_sink.NewNDJSON(os.Stdout, os.Stderr)
+	}
 	defer sink.Finalize()
 
 	result := plugin.CaptureRoot(cutting_garden_plugins.CaptureRootRequest{

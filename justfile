@@ -39,12 +39,12 @@ debug-make-fixture:
     printf 'nested content\n'       > .tmp/cap-fixture/nested/inner.txt
 
 [group('debug')]
-debug-capture-fixture STORE='.default': debug-build-go debug-make-fixture
-    .tmp/cutting-garden capture {{STORE}} .tmp/cap-fixture
+debug-capture-fixture STORE='.default' FORMAT='auto': debug-build-go debug-make-fixture
+    .tmp/cutting-garden capture -format={{FORMAT}} {{STORE}} .tmp/cap-fixture
 
 [group('debug')]
-debug-capture-fixture-nix STORE='.default': build-nix debug-make-fixture
-    ./result/bin/cutting-garden capture {{STORE}} .tmp/cap-fixture
+debug-capture-fixture-nix STORE='.default' FORMAT='auto': build-nix debug-make-fixture
+    ./result/bin/cutting-garden capture -format={{FORMAT}} {{STORE}} .tmp/cap-fixture
 
 [group('debug')]
 debug-madder-init STORE='.test':
