@@ -129,41 +129,61 @@ Each step is a separate commit. Step N+1 does not start until step N
 runs cleanly against `go test ./...` and a hand-fixture
 `nix build && ./result/bin/cutting-garden capture ./fixtures/...`.
 
-1. **Receipt format vendor.** Copy `capture_receipt` + tests verbatim.
-   No CLI surface. This locks the wire-format invariant in one
-   reviewable diff.
-2. **Sink vendor.** Copy `capture_sink` + tests.
-3. **Plugin registry + file plugin vendor.** Copy
-   `cutting_garden_plugins` + `cutting_garden_plugin_file`. At this
-   point we have a `file:` plugin able to walk a tree and emit
-   `EntryV1` values, but no CLI to drive it.
-4. **Minimal `capture` cmd — single root, default store, no plugin
-   args, NDJSON only.** Wire `Capture.Run` to: parse one positional
-   directory arg, build `BlobStoreEnv` via madder's `pkgs/blob_store_env`,
-   walk via the `file:` plugin, write the receipt. Output: one line
-   with the receipt id on stdout. No TAP, no `--format`, no audit log,
-   no shadow detection.
-5. **`--format` flag + TAP sink wiring.** Needs `pkgs/output_format`
-   from the umbrella issue. Madder@6ff15af landed the export
-   (madder#165 closed), but we're pinned at v0.3.15 because v0.3.16
-   introduced a markl-id wire-format change that breaks pre-flip
-   on-disk stores. Vendored as `internal/output_format` with a
-   delete-on-upstream-bump TODO. ✅ Landed via commit (TODO: link
-   after merge).
-6. **Multi-root + multi-group + store-switching.** Port `planCapture`,
+1. ✅ **Receipt format vendor.** ([`3efa300`](https://github.com/amarbel-llc/cutting-garden/commit/3efa300))
+   Copy `capture_receipt` + tests verbatim. No CLI surface. Locked
+   the wire-format invariant in one reviewable diff.
+2. ✅ **Sink vendor.** ([`7707d91`](https://github.com/amarbel-llc/cutting-garden/commit/7707d91))
+   Copy `capture_sink` + tests; also vendored `tap_diagnostics`
+   (madder#165 third ask, not fulfilled upstream).
+3. ✅ **Plugin registry + file plugin vendor.** ([`52330ae`](https://github.com/amarbel-llc/cutting-garden/commit/52330ae))
+   Copy `cutting_garden_plugins` + `cutting_garden_plugin_file`. At
+   this point the `file:` plugin can walk a tree and emit `EntryV1`
+   values, but no CLI drove it.
+4. ✅ **Minimal `capture` cmd.** ([`e7767cc`](https://github.com/amarbel-llc/cutting-garden/commit/e7767cc))
+   `[STORE_ID] DIR` positional surface, NDJSON to stdout, default
+   store resolved exactly the way madder resolves it. Also: added
+   madder as a flake input pinned at v0.3.15, switched nixpkgs to
+   amarbel-llc/nixpkgs (resolves cutting-garden#2), added
+   `pkgs/markl_registrations` blank import. Partial fix for
+   cutting-garden#4 (single-root only).
+5. ✅ **`--format` flag + TAP sink wiring.** ([`fc37f9c`](https://github.com/amarbel-llc/cutting-garden/commit/fc37f9c))
+   `-format={auto,tap,json}` selects between NDJSON and TAP sinks.
+   Madder#165 closed at `6ff15af`, but we're pinned at v0.3.15
+   (the markl-id wire flip in v0.3.16+ breaks pre-flip on-disk
+   stores). `internal/output_format` vendored locally with
+   delete-on-upstream-bump TODO. **NEXT SESSION** picks up at step 6.
+6. ⏳ **Multi-root + multi-group + store-switching.** Port `planCapture`,
    `classifyArg`, `checkRootCollisions`. Needs `pkgs/arg_resolver` or
    we vendor `arg_resolver` locally; same delete-on-upstream policy as
-   step 5.
-7. **Audit log.** Port `capture_log.go` + `appendCaptureLog`. Build
+   step 5. Madder's `pkgs/arg_resolver` exists at `6ff15af` but
+   unreachable while we're pinned at v0.3.15 — plan to vendor.
+   Closes cutting-garden#4 (multi-root half of the double-slash fix
+   lands when the planner cleans every root path).
+7. ⏳ **Audit log.** Port `capture_log.go` + `appendCaptureLog`. Build
    the cutting-garden-scoped `env_dir` directly from `pkgs/env_dir`
    inside `Capture.Run` (the `MakeEnvDirForScope` call-site
    reimplemented here per the decision above).
-8. **Store-hint metadata.** Port `computeStoreHint`. Needs
+8. ⏳ **Store-hint metadata.** Port `computeStoreHint`. Needs
    `pkgs/blob_store_configs.Coder`, already exported.
-9. **Bats coverage.** Port the bats tests from
+9. ⏳ **Bats coverage.** Port the bats tests from
    `madder/zz-tests_bats/` that exercise `cutting-garden capture`.
    This is where the byte-identical-receipt cross-test against
    madder's build lives.
+
+## Pin-blocker: held at madder v0.3.15
+
+Tracked at **cutting-garden#19** (filed when this session paused).
+
+- `go.mod`: `madder/go v0.3.15`
+- `flake.nix`: `madder.url = github:amarbel-llc/madder/eb8dc31...`
+- Local vendor with delete-on-upstream-bump TODO:
+  - `internal/output_format` (would consume `pkgs/output_format` once unpinned)
+  - `internal/tap_diagnostics` (no upstream pkgs/ counterpart yet)
+- Coming up in step 6: `internal/arg_resolver` (same policy)
+
+The pin will hold until either (a) a migration tool re-encodes
+pre-flip on-disk stores to the v0.3.16+ format, or (b) v0.3.16's
+markl-id wire change is reverted/abandoned upstream.
 
 ## Madder umbrella issue
 
