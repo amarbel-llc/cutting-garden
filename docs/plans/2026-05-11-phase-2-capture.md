@@ -44,6 +44,12 @@ decision rule for this phase, per the issue and user direction:
   `DetectShadow`, `FormatShadowWarning`, `FormatStoreSwitchNotice`.
   The detection logic is store-id-aware but otherwise generic; useful
   for any command that mixes path args with store-id args.
+- `internal/charlie/tap_diagnostics` → `pkgs/tap_diagnostics` —
+  `FromError`. Wraps an error into a TAP-shaped diagnostics map; the
+  only domain-specific bits are special-cases for `markl.ErrNotEqual`
+  and `markl.ErrIsNull`, which are already public via `pkgs/markl`.
+  Temporarily vendored as `internal/tap_diagnostics` in this repo
+  with a delete-on-upstream TODO (same policy as steps 5/6).
 **Not** requested: `internal/golf/command_components`. The mixin
 (`EnvBlobStore.MakeEnvBlobStore`, `MakeEnvDirForScope`,
 `BlobStoreIds`) is tightly bound to madder's `futility.Request`
@@ -165,6 +171,10 @@ Asks (mirrored from the issue, for offline reference):
 - Generate `pkgs/arg_resolver` (whole package; or just
   `DetectShadow`, `FormatShadowWarning`, `FormatStoreSwitchNotice` if
   granular).
+- Generate `pkgs/tap_diagnostics` (one function: `FromError`).
+  Added during MVP step 2 — capture_sink uses it for `Failure` TAP
+  diagnostics; vendored locally as `internal/tap_diagnostics` until
+  the export lands.
 
 `command_components` is **explicitly not** in scope — see "Need
 dagnabit export from madder" above for the reasoning.

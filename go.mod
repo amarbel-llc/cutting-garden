@@ -5,11 +5,13 @@ go 1.26
 require (
 	github.com/amarbel-llc/madder/go v0.3.16
 	github.com/amarbel-llc/purse-first/libs/dewey v0.1.0
+	github.com/amarbel-llc/tap/go v0.1.2
 )
 
 require (
 	filippo.io/age v1.3.1 // indirect
 	filippo.io/hpke v0.4.0 // indirect
+	github.com/amarbel-llc/purse-first/libs/go-mcp v0.0.12 // indirect
 	github.com/brandondube/tai v0.1.0 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
 	golang.org/x/crypto v0.50.0 // indirect

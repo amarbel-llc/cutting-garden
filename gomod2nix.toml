@@ -17,6 +17,14 @@ schema = 3
     version = 'v0.1.0'
     hash = 'sha256-hJsIQ7HraOte83sTUFUQexw4z7vUB/lWEYkR6An+P7Q='
 
+  [mod.'github.com/amarbel-llc/purse-first/libs/go-mcp']
+    version = 'v0.0.12'
+    hash = 'sha256-lE+G+cxMITAOVyfMQCxmRtMa97OiLy2T8yfbn/PIt6U='
+
+  [mod.'github.com/amarbel-llc/tap/go']
+    version = 'v0.1.2'
+    hash = 'sha256-yFpzdb1J+SPJpgFId9a/kG3w+ouF7HMocK2QuuL5cGo='
+
   [mod.'github.com/brandondube/tai']
     version = 'v0.1.0'
     hash = 'sha256-o32wvMW6waT/vJJkpjiCGxBNBUsqeAvnARhbsikRk50='
