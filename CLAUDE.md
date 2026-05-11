@@ -129,7 +129,13 @@ matter.
 
 ## Worktree & merge flow
 
-Sweatfile pins `pre-merge = "just"`. There is no top-level `justfile`
-yet, so `spinclass merge-this-session` will fail the pre-merge hook
-until one is added or the hook is changed. Flag this rather than
-working around it.
+Sweatfile pins `pre-merge = "just"`. The justfile follows
+`eng-design_patterns-justfile`(7) — verb-noun leaves under aggregate
+targets (`build`, `test`, `update`), and `default: build test` is
+the gate `spinclass merge-this-session` runs. Inspect with
+`just --list`; aggregates have no body, so add new work as a leaf
+recipe and wire it into the right aggregate.
+
+The `set output-format := "tap"` line from the design pattern is
+intentionally omitted — the system `just` is upstream 1.49, not
+`just-us`, and rejects that setting.
