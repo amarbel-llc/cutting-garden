@@ -26,3 +26,26 @@ update-go: && build-gomod2nix
 
 update-nix:
     nix flake update
+
+[group('debug')]
+debug-build-go:
+    nix develop --command go build -o .tmp/cutting-garden ./cmd/cutting-garden
+
+[group('debug')]
+debug-make-fixture:
+    rm -rf .tmp/cap-fixture
+    mkdir -p .tmp/cap-fixture/nested
+    printf 'hello cutting-garden\n' > .tmp/cap-fixture/hello.txt
+    printf 'nested content\n'       > .tmp/cap-fixture/nested/inner.txt
+
+[group('debug')]
+debug-capture-fixture STORE='.default': debug-build-go debug-make-fixture
+    .tmp/cutting-garden capture {{STORE}} .tmp/cap-fixture
+
+[group('debug')]
+debug-capture-fixture-nix STORE='.default': build-nix debug-make-fixture
+    ./result/bin/cutting-garden capture {{STORE}} .tmp/cap-fixture
+
+[group('debug')]
+debug-madder-init STORE='.test':
+    nix develop --command madder init {{STORE}}
