@@ -169,17 +169,22 @@ Asks (mirrored from the issue, for offline reference):
 `command_components` is **explicitly not** in scope — see "Need
 dagnabit export from madder" above for the reasoning.
 
-Cross-references: this design doc, cutting-garden#3, madder#162
-(potential receipt double-slash fix to land before step 1 so we copy
-the post-fix version).
+Cross-references: this design doc, cutting-garden#3,
+[cutting-garden#4](https://github.com/amarbel-llc/cutting-garden/issues/4)
+(receipt double-slash, transferred from madder#162; fix lands here
+during MVP step 4 where root + entry path are joined).
 
 ## Open questions to resolve before MVP step 1
 
-- [ ] madder#162 (receipt double-slash): fix in madder first, then
-  copy, or copy as-is and accept divergence? The issue text says
-  *"decide during Phase 2 whether to fix in madder first then port
-  forward, or fix only on the new side."* Recommendation: fix in
-  madder first — keeps Phase 6 receipt-identity tractable.
+- [x] ~~madder#162 (receipt double-slash): fix in madder first or
+  here?~~ Resolved: transferred to
+  [cutting-garden#4](https://github.com/amarbel-llc/cutting-garden/issues/4);
+  fix only on the new side. The Phase 6 receipt-identity criterion
+  therefore acquires an explicit exception for this bug — receipts
+  emitted by cutting-garden will be byte-identical to madder's
+  *except* for paths that previously contained `//`. Cross-test
+  fixtures must avoid trailing-slash capture-roots, or compare with
+  `filepath.Clean` normalization on the madder side.
 - [ ] cutting-garden#2 (flake forks alignment): blocks bats lanes per
   the parent issue, so blocks MVP step 9 but not steps 1–8.
 - [ ] Do we keep the `--no-inventory-log` global flag and
