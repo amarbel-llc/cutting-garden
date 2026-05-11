@@ -34,7 +34,7 @@ decision rule for this phase, per the issue and user direction:
 - `pkgs/env_dir`, `pkgs/env_local`, `pkgs/env_ui`, `pkgs/madder_env`
 - `pkgs/plugins`, `pkgs/domain_interfaces`
 
-### Need dagnabit export from madder (file one umbrella issue)
+### Need dagnabit export from madder ([madder#165](https://github.com/amarbel-llc/madder/issues/165))
 
 - `internal/charlie/output_format` → `pkgs/output_format` —
   `Format`, `FormatJSON`, `FormatTAP`, `Default`, `Resolve`,
@@ -156,12 +156,11 @@ runs cleanly against `go test ./...` and a hand-fixture
    This is where the byte-identical-receipt cross-test against
    madder's build lives.
 
-## Madder umbrella-issue contents (to file once this doc lands)
+## Madder umbrella issue
 
-Title: *cutting-garden Phase 2 needs `pkgs/` exports for
-`output_format` and `arg_resolver`*.
+Filed as [madder#165](https://github.com/amarbel-llc/madder/issues/165).
 
-Asks:
+Asks (mirrored from the issue, for offline reference):
 - Generate `pkgs/output_format` (whole package).
 - Generate `pkgs/arg_resolver` (whole package; or just
   `DetectShadow`, `FormatShadowWarning`, `FormatStoreSwitchNotice` if
