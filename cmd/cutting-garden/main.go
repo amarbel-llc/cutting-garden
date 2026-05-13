@@ -21,5 +21,5 @@ func main() {
 	utility := command.MakeUtility("cutting-garden", nil)
 	command.RegisterComplete(&utility)
 	utility.AddCmd("capture", capture.New())
-	utility.Run(os.Args)
+	os.Exit(utility.Run(os.Args))
 }

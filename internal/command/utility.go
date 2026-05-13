@@ -99,7 +99,13 @@ func (utility Utility) PrintUsage(ctx interfaces.ActiveContext, err error) {
 	}
 }
 
-func (utility Utility) Run(args []string) {
+// Run dispatches the command identified by args[1] and returns the
+// process exit code the caller should propagate. Returns 0 on
+// success, 64 (EX_USAGE) when the error is a 400 BadRequest, and 1
+// otherwise. Run never calls os.Exit itself — that's main's job — so
+// tests can drive it without faulting the test runner. Production
+// main: `os.Exit(utility.Run(os.Args))`.
+func (utility Utility) Run(args []string) int {
 	utilityNameWithExtension := extendNameIfNecessary(utility.GetName())
 	ctx := errors.MakeContextDefault()
 	ctx.SetCancelOnSignals(syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP)
@@ -125,12 +131,9 @@ func (utility Utility) Run(args []string) {
 	})
 
 	if err != nil {
-		// In tests we don't os.Exit; production main.go can wrap Run if
-		// needed. Phase 1 keeps Run side-effect-light to make it
-		// testable. handleMainErrors still formats the failure to
-		// stderr.
-		_ = handleMainErrors(ctx, utilityNameWithExtension, err)
+		return handleMainErrors(ctx, utilityNameWithExtension, err)
 	}
+	return 0
 }
 
 func (utility Utility) MakeCmdAndFlagSet(

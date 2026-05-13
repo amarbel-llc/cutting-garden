@@ -30,6 +30,16 @@
     # `encryption: invalid checksum` symptom against
     # ~/.local/share/madder/blob_stores/dodder-v8-take3 after this bump.
     madder.url = "github:amarbel-llc/madder/a2c01c63618e281be69905860b858455266c9096";
+
+    # amarbel-llc/bats — provides `lib.batsLane`, the nix-sandbox bats
+    # test-runner builder. Consumed by the `bats-capture` package
+    # output (Phase 2 step 9). Only the sandbox lane uses bats; the
+    # devshell intentionally does NOT include bats binaries, so local
+    # iteration goes through `nix build .#bats-capture`.
+    bats = {
+      url = "github:amarbel-llc/bats";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -39,6 +49,7 @@
       flake-utils,
       gomod2nix,
       madder,
+      bats,
     }:
     flake-utils.lib.eachDefaultSystem (
       system:
@@ -47,9 +58,8 @@
           inherit system;
           overlays = [ gomod2nix.overlays.default ];
         };
-      in
-      {
-        packages.default = pkgs.buildGoApplication {
+
+        cuttingGarden = pkgs.buildGoApplication {
           pname = "cutting-garden";
           version = "0.0.1";
           src = ./.;
@@ -67,6 +77,33 @@
             description = "Filesystem-tree capture/restore CLI atop madder";
             license = pkgs.lib.licenses.mit;
             mainProgram = "cutting-garden";
+          };
+        };
+      in
+      {
+        packages = {
+          default = cuttingGarden;
+
+          # bats-capture is the hermetic Phase 2 step 9 test lane. It
+          # builds a derivation whose only purpose is to run the bats
+          # suite under zz-tests_bats/ against a pre-built
+          # cutting-garden binary (plus madder, for cross-tests).
+          # Success leaves a stamp file at $out; failure aborts the
+          # nix build with the bats diagnostic.
+          bats-capture = bats.lib.${system}.batsLane {
+            base = cuttingGarden;
+            batsSrc = ./zz-tests_bats;
+            binaries = {
+              CG_BIN = {
+                base = cuttingGarden;
+                name = "cutting-garden";
+              };
+              MADDER_BIN = {
+                base = madder.packages.${system}.madder;
+                name = "madder";
+              };
+            };
+            batsLibPath = [ bats.packages.${system}.bats-libs.batsLibPath ];
           };
         };
 

@@ -11,13 +11,16 @@ build-gomod2nix:
 build-nix:
     nix build --show-trace
 
-test: test-go test-vet
+test: test-go test-vet test-bats
 
 test-go:
     nix develop --command go test ./...
 
 test-vet:
     nix develop --command go vet ./...
+
+test-bats:
+    nix build .#bats-capture --show-trace
 
 update: update-go update-nix
 
