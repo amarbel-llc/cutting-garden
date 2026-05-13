@@ -150,7 +150,23 @@ func (cmd *Capture) Run(req command.Request) {
 			continue
 		}
 
-		receiptID, err := writeReceipt(blobStore, entries)
+		// Resolve the default-store case to its actual on-disk id so
+		// the store-hint records a real id rather than the user's
+		// CLI-level intent — RFC 0003 §Store-Hint Resolution.
+		effectiveStoreId := storeName
+		if effectiveStoreId == "" {
+			effectiveStoreId = envBlobStore.GetDefaultBlobStoreId()
+		}
+
+		hint, hintErr := computeStoreHint(blobStore, effectiveStoreId)
+		if hintErr != nil {
+			sink.Notice(fmt.Sprintf(
+				"notice: omitting store-hint for store=%s: %v",
+				quoteEmpty(storeName), hintErr,
+			))
+		}
+
+		receiptID, err := writeReceipt(blobStore, entries, hint)
 		if err != nil {
 			sink.Failure("(receipt)", err)
 			failCount++
@@ -213,11 +229,13 @@ func makeCgEnvDir(ctx errors.Context) env_dir.Env {
 
 // writeReceipt encodes entries via capture_receipt and writes the
 // resulting blob into blobStore. Returns the blob's content-addressed
-// markl id as a string. Mirrors madder's writeReceiptBlob shape, minus
-// the store-hint metadata (step 8).
+// markl id as a string. When hint is non-nil, the receipt's hyphence
+// metadata block carries an RFC 0003 store-hint line; pass nil for
+// hint to omit. Mirrors madder's writeReceiptBlob shape.
 func writeReceipt(
 	blobStore blob_stores.BlobStoreInitialized,
 	entries []capture_receipt.EntryV1,
+	hint *capture_receipt.StoreHint,
 ) (id string, err error) {
 	wc, err := blobStore.MakeBlobWriter(nil)
 	if err != nil {
@@ -226,7 +244,7 @@ func writeReceipt(
 	}
 	defer errors.DeferredCloser(&err, wc)
 
-	if _, err = capture_receipt.WriteV1(wc, entries); err != nil {
+	if _, err = capture_receipt.WriteV1WithHint(wc, entries, hint); err != nil {
 		err = errors.Wrap(err)
 		return
 	}
