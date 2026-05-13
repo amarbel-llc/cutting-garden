@@ -49,3 +49,14 @@ debug-capture-fixture-nix STORE='.default' FORMAT='auto': build-nix debug-make-f
 [group('debug')]
 debug-madder-init STORE='.test':
     nix develop --command madder init {{STORE}}
+
+[group('debug')]
+debug-make-multiroot-fixture: debug-make-fixture
+    rm -rf .tmp/cap-fixture-2
+    mkdir -p .tmp/cap-fixture-2/sub
+    printf 'second root\n' > .tmp/cap-fixture-2/top.txt
+    printf 'inner two\n'   > .tmp/cap-fixture-2/sub/inner.txt
+
+[group('debug')]
+debug-capture-multiroot STORE='.default' FORMAT='auto': debug-build-go debug-make-multiroot-fixture
+    .tmp/cutting-garden capture -format={{FORMAT}} {{STORE}} .tmp/cap-fixture .tmp/cap-fixture-2

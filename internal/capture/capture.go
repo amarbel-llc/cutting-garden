@@ -1,28 +1,31 @@
-// Package capture wires the `capture` subcommand: walk one directory,
-// write every regular file as a blob, and emit a receipt blob
-// describing the captured tree.
+// Package capture wires the `capture` subcommand: walk one or more
+// directories and write every regular file as a blob, then emit one
+// receipt blob per store group.
 //
-// Accepts an optional positional blob-store-id ahead of the directory
-// to target a non-default store (e.g. `capture .default <dir>`).
-// Default store resolves exactly the way madder resolves it.
+// Positional surface (after step 6):
 //
-// This is the Phase 2 MVP step 5 capture surface: at most one
-// store-id + one directory, `--format=auto|tap|json` flag selecting
-// the sink, no audit log, no shadow detection. Multi-root +
-// interleaved store-switches land in step 6.
+//	capture [STORE_ID | DIR]...
+//
+// Args are classified left-to-right. A DIR arg appends a root to the
+// current group; a STORE_ID arg flushes the current group and starts a
+// new one targeting that store. Zero args captures `.` into the default
+// store; a single STORE_ID arg captures `.` into that store. Roots
+// belonging to the same group share a destination store and fold into a
+// single receipt.
+//
+// The `--format=auto|tap|json` flag selects the per-record event sink
+// (NDJSON or TAP). Audit log (step 7), store-hint metadata (step 8),
+// and bats coverage (step 9) are still pending.
 package capture
 
 import (
-	"net/url"
 	"os"
-	"path/filepath"
 
 	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
 	"github.com/amarbel-llc/cutting-garden/internal/capture_sink"
 	"github.com/amarbel-llc/cutting-garden/internal/command"
 	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
 	"github.com/amarbel-llc/madder/go/pkgs/blob_store_env"
-	"github.com/amarbel-llc/madder/go/pkgs/blob_store_id"
 	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
 	"github.com/amarbel-llc/madder/go/pkgs/env_dir"
 	"github.com/amarbel-llc/madder/go/pkgs/env_local"
@@ -56,7 +59,7 @@ func New() *Capture {
 
 func (*Capture) GetDescription() command.Description {
 	return command.Description{
-		Short: "capture a directory tree into madder's default blob store",
+		Short: "capture one or more directory trees into madder's blob stores",
 	}
 }
 
@@ -69,30 +72,11 @@ func (cmd *Capture) SetFlagDefinitions(
 func (cmd *Capture) Run(req command.Request) {
 	ctx := req.Context.(errors.Context)
 
-	storeID, dir, ok := parseArgs(ctx, req)
-	if !ok {
-		return
-	}
-	// cutting-garden#4: clean the user's arg so a trailing slash doesn't
-	// poison entry.Root and propagate into the receipt or sink output.
-	// In step 4 single-root mode this is partially redundant (Root is
-	// overwritten to "." below) but it also fixes the per-entry sink
-	// records emitted during the walk.
-	dir = filepath.Clean(dir)
-
+	args := req.PopArgs()
 	envBlobStore := makeBlobStoreEnv(ctx)
-	var blobStore blob_stores.BlobStoreInitialized
-	if storeID.IsEmpty() {
-		blobStore = envBlobStore.GetDefaultBlobStore()
-	} else {
-		blobStore = envBlobStore.GetBlobStore(storeID)
-	}
+	shadowCandidates := blobStoreIds(envBlobStore.GetBlobStores())
 
-	plugin, err := cutting_garden_plugins.ResolveCapture("")
-	if err != nil {
-		errors.ContextCancelWithError(ctx, err)
-		return
-	}
+	groups, classifyFails, planErr := planCapture(args, shadowCandidates)
 
 	var sink capture_sink.Sink
 	switch cmd.Format.Resolve(os.Stdout) {
@@ -103,62 +87,78 @@ func (cmd *Capture) Run(req command.Request) {
 	}
 	defer sink.Finalize()
 
-	result := plugin.CaptureRoot(cutting_garden_plugins.CaptureRootRequest{
-		Source:    &url.URL{Path: dir},
-		RawArg:    dir,
-		BlobStore: blobStore,
-		Sink:      sink,
-	})
+	failCount := 0
 
-	// Collapse Root to "." for the single-root MVP, matching madder's
-	// RFC 0003 §Root Encoding for single-root receipts.
-	entries := result.Entries
-	for i := range entries {
-		entries[i].Root = "."
+	for _, cf := range classifyFails {
+		sink.Failure(cf.arg, cf.err)
+		failCount++
 	}
 
-	if len(entries) > 0 {
+	if planErr != nil {
+		sink.Failure("(arguments)", planErr)
+		errors.ContextCancelWithBadRequestf(ctx, "%s", planErr.Error())
+		return
+	}
+
+	for _, group := range groups {
+		if group.switchNotice != "" {
+			sink.Notice(group.switchNotice)
+		}
+
+		var blobStore blob_stores.BlobStoreInitialized
+		var storeName string
+		if group.storeID.IsEmpty() {
+			blobStore = envBlobStore.GetDefaultBlobStore()
+		} else {
+			blobStore = envBlobStore.GetBlobStore(group.storeID)
+			storeName = group.storeID.String()
+		}
+
+		sink.SetStore(storeName)
+
+		var entries []capture_receipt.EntryV1
+
+		for _, root := range group.roots {
+			if root.shadowNotice != "" {
+				sink.Notice(root.shadowNotice)
+			}
+			result := root.plugin.CaptureRoot(cutting_garden_plugins.CaptureRootRequest{
+				Source:    root.sourceURL,
+				RawArg:    root.path,
+				BlobStore: blobStore,
+				Sink:      sink,
+			})
+			entries = append(entries, result.Entries...)
+			failCount += result.FailCount
+		}
+
+		// Collapse Root to "." for single-root groups per RFC 0003
+		// §Root Encoding. Multi-root groups keep distinct Root values.
+		if len(group.roots) == 1 {
+			for i := range entries {
+				entries[i].Root = "."
+			}
+		}
+
+		if len(entries) == 0 {
+			// Empty group — nothing walked successfully. Skip the
+			// receipt write so consumers don't see a zero-entry blob.
+			continue
+		}
+
 		receiptID, err := writeReceipt(blobStore, entries)
 		if err != nil {
 			sink.Failure("(receipt)", err)
-			errors.ContextCancelWithError(ctx, err)
-			return
+			failCount++
+			continue
 		}
 		sink.StoreGroupReceipt(receiptID, len(entries))
 	}
 
-	if result.FailCount > 0 {
+	if failCount > 0 {
 		errors.ContextCancelWithBadRequestf(ctx,
-			"capture failed entries: %d", result.FailCount)
+			"capture failed entries: %d", failCount)
 	}
-}
-
-// parseArgs reads positional args off the request: either `<DIR>` or
-// `<STORE_ID> <DIR>`. Returns ok=false (with the context cancelled
-// to a BadRequest) on a usage error. Step 6 will replace this with
-// the full multi-root + interleaved store-switches planner.
-func parseArgs(
-	ctx errors.Context,
-	req command.Request,
-) (storeID blob_store_id.Id, dir string, ok bool) {
-	args := req.PopArgs()
-	switch len(args) {
-	case 1:
-		dir = args[0]
-		ok = true
-	case 2:
-		if err := storeID.Set(args[0]); err != nil {
-			errors.ContextCancelWithBadRequestf(ctx,
-				"parse blob-store-id %q: %v", args[0], err)
-			return
-		}
-		dir = args[1]
-		ok = true
-	default:
-		errors.ContextCancelWithBadRequestf(ctx,
-			"usage: capture [STORE_ID] DIR (got %d args)", len(args))
-	}
-	return
 }
 
 // makeBlobStoreEnv is the local reimplementation of madder's
@@ -182,7 +182,8 @@ func makeBlobStoreEnv(ctx errors.Context) blob_store_env.BlobStoreEnv {
 
 // writeReceipt encodes entries via capture_receipt and writes the
 // resulting blob into blobStore. Returns the blob's content-addressed
-// markl id as a string. Mirrors madder's writeReceiptBlob shape.
+// markl id as a string. Mirrors madder's writeReceiptBlob shape, minus
+// the store-hint metadata (step 8).
 func writeReceipt(
 	blobStore blob_stores.BlobStoreInitialized,
 	entries []capture_receipt.EntryV1,
