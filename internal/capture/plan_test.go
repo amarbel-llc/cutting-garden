@@ -1,6 +1,7 @@
 package capture
 
 import (
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -374,6 +375,19 @@ func TestCheckRootCollisions(t *testing.T) {
 	t.Run("EmptyRoots", func(t *testing.T) {
 		if err := checkRootCollisions(nil); err != nil {
 			t.Errorf("unexpected err on nil: %v", err)
+		}
+	})
+
+	t.Run("URI_VS_SchemelessAliasCollision", func(t *testing.T) {
+		// file:dir-a and dir-a both resolve to the same filesystem path
+		// via the file plugin. Comparing raw paths would miss this;
+		// canonicalRootKey compares the cleaned sourceURL form.
+		err := checkRootCollisions([]captureRoot{
+			{path: "file:dir-a", sourceURL: &url.URL{Scheme: "file", Opaque: "dir-a"}},
+			{path: "dir-a/", sourceURL: &url.URL{Path: "dir-a"}},
+		})
+		if err == nil {
+			t.Errorf("expected collision error for cross-scheme alias")
 		}
 	})
 }

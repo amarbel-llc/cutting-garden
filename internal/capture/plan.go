@@ -26,7 +26,7 @@ type captureRoot struct {
 	// sourceURL is the parsed URL the plugin walks. For schemeless args
 	// (the file plugin's common case), sourceURL.Path is cleaned via
 	// filepath.Clean during classifyArg so trailing slashes don't end
-	// up in receipt entry.Root values (closes cutting-garden#4).
+	// up in receipt entry.Root values.
 	sourceURL *url.URL
 
 	shadowNotice string
@@ -213,12 +213,10 @@ func planCapture(
 // directory literally named `file:foo` is interpreted as the file plugin
 // pointing at `foo`, not as the local directory.
 //
-// cutting-garden#4 fix: for schemeless directories, the constructed
-// sourceURL.Path is filepath.Clean(arg) — a trailing-slash arg
-// (`./foo/`) is normalized to `./foo` (or just `foo`) so the file
-// plugin's walk-root and the resulting receipt entry.Root are free of
-// doubled slashes. The original arg is preserved on captureRoot.path
-// for sink labels and shadow detection.
+// Schemeless directory args have their sourceURL.Path normalized via
+// filepath.Clean so trailing slashes do not propagate into receipt
+// entry.Root. The original arg is preserved on captureRoot.path for
+// sink labels and shadow detection.
 func classifyArg(arg string) classifiedArg {
 	if u, err := url.Parse(arg); err == nil && u.Scheme != "" {
 		if plugin, perr := cutting_garden_plugins.ResolveCapture(u.Scheme); perr == nil {
@@ -275,7 +273,7 @@ func checkRootCollisions(roots []captureRoot) error {
 	seen := make(map[string]string, len(roots))
 
 	for _, r := range roots {
-		clean := filepath.Clean(r.path)
+		clean := canonicalRootKey(r)
 		if first, ok := seen[clean]; ok {
 			return errors.ErrorWithStackf(
 				"roots %q and %q both resolve to %q after Clean\nhint: pass each directory only once per store-group",
@@ -286,6 +284,21 @@ func checkRootCollisions(roots []captureRoot) error {
 	}
 
 	return nil
+}
+
+// canonicalRootKey returns the filesystem-path key used for collision
+// dedup. Comparing on captureRoot.path alone misses cross-scheme aliases
+// (e.g. `file:dir-a` vs `dir-a/` both resolve to `dir-a` but differ as
+// raw strings); comparing on sourceURL handles URI args by preferring
+// Path, falling back to Opaque for opaque URLs like `file:dir-a`.
+func canonicalRootKey(r captureRoot) string {
+	if r.sourceURL == nil {
+		return filepath.Clean(r.path)
+	}
+	if p := r.sourceURL.Path; p != "" {
+		return filepath.Clean(p)
+	}
+	return filepath.Clean(r.sourceURL.Opaque)
 }
 
 // shadowNoticeFor returns a human-readable warning when arg shadows a
