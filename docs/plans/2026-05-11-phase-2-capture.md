@@ -156,11 +156,19 @@ runs cleanly against `go test ./...` and a hand-fixture
    Originally landed with `internal/output_format` vendored locally
    while pinned at v0.3.15; the local copy was deleted 2026-05-13
    after the v0.3.17 bump made `pkgs/output_format` reachable.
-6. ⏳ **Multi-root + multi-group + store-switching.** Port `planCapture`,
-   `classifyArg`, `checkRootCollisions` against upstream
-   `pkgs/arg_resolver` (reachable as of v0.3.17). Closes
-   cutting-garden#4 (multi-root half of the double-slash fix lands
-   when the planner cleans every root path).
+6. ✅ **Multi-root + multi-group + store-switching.** ([`71ac5e4`](https://github.com/amarbel-llc/cutting-garden/commit/71ac5e4))
+   Ported `planCapture`, `classifyArg`, `checkRootCollisions` to
+   `internal/capture/plan.go`, consuming upstream `pkgs/arg_resolver`
+   (`DetectShadow`, `FormatShadowWarning`,
+   `FormatStoreSwitchNotice`) directly. `Capture.Run` rewritten as a
+   group-loop / root-loop. `classifyArg` cleans `sourceURL.Path` via
+   `filepath.Clean` to close cutting-garden#4 (multi-root half of
+   the double-slash bug); original arg preserved verbatim on
+   `captureRoot.path` for sink labels, shadow detection, and
+   collision diagnostics. Table-driven tests in `plan_test.go` cover
+   classify/plan/collision paths and the trailing-slash regression.
+   End-to-end multi-root coverage deferred to step 9 (bats); tracked
+   at cutting-garden#20.
 7. ⏳ **Audit log.** Port `capture_log.go` + `appendCaptureLog`. Build
    the cutting-garden-scoped `env_dir` directly from `pkgs/env_dir`
    inside `Capture.Run` (the `MakeEnvDirForScope` call-site
