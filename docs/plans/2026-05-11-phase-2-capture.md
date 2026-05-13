@@ -39,17 +39,22 @@ decision rule for this phase, per the issue and user direction:
 - `internal/charlie/output_format` → `pkgs/output_format` —
   `Format`, `FormatJSON`, `FormatTAP`, `Default`, `Resolve`,
   `FlagDescription`. Pure I/O-format flag value; no cutting-garden
-  semantics.
+  semantics. **Status:** exported in madder@6ff15af; consumed
+  directly since the v0.3.17 bump (cutting-garden#19 closed). Local
+  vendor `internal/output_format` deleted 2026-05-13.
 - `internal/charlie/arg_resolver` → `pkgs/arg_resolver` —
   `DetectShadow`, `FormatShadowWarning`, `FormatStoreSwitchNotice`.
   The detection logic is store-id-aware but otherwise generic; useful
   for any command that mixes path args with store-id args.
+  **Status:** exported in madder@6ff15af; reachable as of v0.3.17.
+  Step 6 consumes it directly (no local vendor).
 - `internal/charlie/tap_diagnostics` → `pkgs/tap_diagnostics` —
   `FromError`. Wraps an error into a TAP-shaped diagnostics map; the
   only domain-specific bits are special-cases for `markl.ErrNotEqual`
   and `markl.ErrIsNull`, which are already public via `pkgs/markl`.
-  Temporarily vendored as `internal/tap_diagnostics` in this repo
-  with a delete-on-upstream TODO (same policy as steps 5/6).
+  **Status:** NOT exported (madder#165's third ask not fulfilled);
+  still vendored as `internal/tap_diagnostics` with a
+  delete-on-upstream TODO. Pin bump doesn't change this.
 **Not** requested: `internal/golf/command_components`. The mixin
 (`EnvBlobStore.MakeEnvBlobStore`, `MakeEnvDirForScope`,
 `BlobStoreIds`) is tightly bound to madder's `futility.Request`
@@ -148,17 +153,14 @@ runs cleanly against `go test ./...` and a hand-fixture
    cutting-garden#4 (single-root only).
 5. ✅ **`--format` flag + TAP sink wiring.** ([`fc37f9c`](https://github.com/amarbel-llc/cutting-garden/commit/fc37f9c))
    `-format={auto,tap,json}` selects between NDJSON and TAP sinks.
-   Madder#165 closed at `6ff15af`, but we're pinned at v0.3.15
-   (the markl-id wire flip in v0.3.16+ breaks pre-flip on-disk
-   stores). `internal/output_format` vendored locally with
-   delete-on-upstream-bump TODO. **NEXT SESSION** picks up at step 6.
+   Originally landed with `internal/output_format` vendored locally
+   while pinned at v0.3.15; the local copy was deleted 2026-05-13
+   after the v0.3.17 bump made `pkgs/output_format` reachable.
 6. ⏳ **Multi-root + multi-group + store-switching.** Port `planCapture`,
-   `classifyArg`, `checkRootCollisions`. Needs `pkgs/arg_resolver` or
-   we vendor `arg_resolver` locally; same delete-on-upstream policy as
-   step 5. Madder's `pkgs/arg_resolver` exists at `6ff15af` but
-   unreachable while we're pinned at v0.3.15 — plan to vendor.
-   Closes cutting-garden#4 (multi-root half of the double-slash fix
-   lands when the planner cleans every root path).
+   `classifyArg`, `checkRootCollisions` against upstream
+   `pkgs/arg_resolver` (reachable as of v0.3.17). Closes
+   cutting-garden#4 (multi-root half of the double-slash fix lands
+   when the planner cleans every root path).
 7. ⏳ **Audit log.** Port `capture_log.go` + `appendCaptureLog`. Build
    the cutting-garden-scoped `env_dir` directly from `pkgs/env_dir`
    inside `Capture.Run` (the `MakeEnvDirForScope` call-site
@@ -170,20 +172,25 @@ runs cleanly against `go test ./...` and a hand-fixture
    This is where the byte-identical-receipt cross-test against
    madder's build lives.
 
-## Pin-blocker: held at madder v0.3.15
+## Pin status: resolved at madder v0.3.17 (2026-05-13)
 
-Tracked at **cutting-garden#19** (filed when this session paused).
+Tracked at **cutting-garden#19** (closed 2026-05-13).
 
-- `go.mod`: `madder/go v0.3.15`
-- `flake.nix`: `madder.url = github:amarbel-llc/madder/eb8dc31...`
-- Local vendor with delete-on-upstream-bump TODO:
-  - `internal/output_format` (would consume `pkgs/output_format` once unpinned)
-  - `internal/tap_diagnostics` (no upstream pkgs/ counterpart yet)
-- Coming up in step 6: `internal/arg_resolver` (same policy)
-
-The pin will hold until either (a) a migration tool re-encodes
-pre-flip on-disk stores to the v0.3.16+ format, or (b) v0.3.16's
-markl-id wire change is reverted/abandoned upstream.
+- `go.mod`: `madder/go v0.3.17`
+- `flake.nix`: `madder.url = github:amarbel-llc/madder/a2c01c6...`
+- Empirical verification: capture against the original repro store
+  (`dodder-v8-take3`) succeeds without the `encryption: invalid
+  checksum` error from #19; receipt round-trip confirmed via
+  `madder has --no-inventory-log dodder-v8-take3 <id>` (scoped, no
+  fallback) and `madder cat <id>`.
+- Local vendor cleanup after the bump:
+  - `internal/output_format` — deleted 2026-05-13; callsites in
+    `internal/capture/capture.go` now import
+    `madder/go/pkgs/output_format`.
+  - `internal/tap_diagnostics` — **still vendored**; no upstream
+    counterpart (madder#165's third ask not fulfilled).
+- Step 6 (next) does NOT introduce a new local vendor — consumes
+  `pkgs/arg_resolver` directly.
 
 ## Madder umbrella issue
 
