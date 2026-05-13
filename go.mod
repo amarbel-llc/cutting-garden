@@ -3,9 +3,10 @@ module github.com/amarbel-llc/cutting-garden
 go 1.26
 
 require (
-	github.com/amarbel-llc/madder/go v0.3.15
+	github.com/amarbel-llc/madder/go v0.3.17
 	github.com/amarbel-llc/purse-first/libs/dewey v0.1.0
 	github.com/amarbel-llc/tap/go v0.1.2
+	github.com/mattn/go-isatty v0.0.20
 )
 
 require (
@@ -37,7 +38,6 @@ require (
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/kr/fs v0.1.0 // indirect
 	github.com/lucasb-eyer/go-colorful v1.3.0 // indirect
-	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-localereader v0.0.1 // indirect
 	github.com/mattn/go-runewidth v0.0.19 // indirect
 	github.com/mitchellh/hashstructure/v2 v2.0.2 // indirect

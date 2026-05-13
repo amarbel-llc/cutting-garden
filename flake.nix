@@ -23,13 +23,13 @@
     # exposed; redirecting it to upstream NixOS/nixpkgs breaks the
     # in-flake build. See cutting-garden#2.
     #
-    # Held at the v0.3.15 release. v0.3.16 introduced a blech32
-    # encryption-key format flip that pre-flip on-disk stores
-    # (dodder-v8-take3 etc.) were written before; v0.3.15 still reads
-    # the pre-flip charset. v0.3.16's revert to "split-HRP" wire form
-    # is NOT actually compatible — tested against 6ff15af. Bump
-    # once the migration story for in-the-wild stores is sorted.
-    madder.url = "github:amarbel-llc/madder/eb8dc315515c067a8abfbb1f8361a4d3adec76e8";
+    # Pinned at madder v0.3.17 (tag `go/v0.3.17`). Bumped from v0.3.15
+    # as an empirical check on cutting-garden#19 — the v0.3.17 release
+    # notes do not explicitly mention a wire-format revert or a
+    # pre-flip-store migration tool, so re-verify the
+    # `encryption: invalid checksum` symptom against
+    # ~/.local/share/madder/blob_stores/dodder-v8-take3 after this bump.
+    madder.url = "github:amarbel-llc/madder/a2c01c63618e281be69905860b858455266c9096";
   };
 
   outputs =

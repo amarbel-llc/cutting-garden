@@ -553,17 +553,17 @@
         "utils": "utils_4"
       },
       "locked": {
-        "lastModified": 1778375824,
-        "narHash": "sha256-fDuSBKXZc04u2LuPwvT3vC6mbkR59Mkbn+rahuBw9RE=",
+        "lastModified": 1778527720,
+        "narHash": "sha256-fybDYnHSro71qelIo4i6V+qUp9dgotAsdobrFWVxWq8=",
         "owner": "amarbel-llc",
         "repo": "madder",
-        "rev": "eb8dc315515c067a8abfbb1f8361a4d3adec76e8",
+        "rev": "a2c01c63618e281be69905860b858455266c9096",
         "type": "github"
       },
       "original": {
         "owner": "amarbel-llc",
         "repo": "madder",
-        "rev": "eb8dc315515c067a8abfbb1f8361a4d3adec76e8",
+        "rev": "a2c01c63618e281be69905860b858455266c9096",
         "type": "github"
       }
     },
