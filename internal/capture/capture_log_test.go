@@ -122,18 +122,6 @@ func TestAppendCaptureLog_AppendsAcrossCalls(t *testing.T) {
 	}
 }
 
-func TestAppendCaptureLog_TimestampStubbable(t *testing.T) {
-	// Save and restore the package-level var so other tests aren't
-	// affected by the override.
-	orig := captureLogTimestamp
-	t.Cleanup(func() { captureLogTimestamp = orig })
-
-	captureLogTimestamp = func() string { return "2026-05-13T00:00:00Z" }
-	if got := captureLogTimestamp(); got != "2026-05-13T00:00:00Z" {
-		t.Errorf("stub returned %q", got)
-	}
-}
-
 func TestCaptureLogTimestamp_ParsesAsRFC3339UTC(t *testing.T) {
 	ts := captureLogTimestamp()
 	parsed, err := time.Parse(time.RFC3339, ts)

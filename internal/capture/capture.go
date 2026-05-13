@@ -75,7 +75,6 @@ func (cmd *Capture) Run(req command.Request) {
 
 	args := req.PopArgs()
 	envBlobStore := makeBlobStoreEnv(ctx)
-	cgEnvDir := makeCgEnvDir(ctx)
 	shadowCandidates := blobStoreIds(envBlobStore.GetBlobStores())
 
 	groups, classifyFails, planErr := planCapture(args, shadowCandidates)
@@ -167,12 +166,27 @@ func (cmd *Capture) Run(req command.Request) {
 		})
 	}
 
-	appendCaptureLog(cgEnvDir, sink, captureLogEntries)
+	if len(captureLogEntries) > 0 {
+		appendCaptureLog(makeCgEnvDir(ctx), sink, captureLogEntries)
+	}
 
 	if failCount > 0 {
 		errors.ContextCancelWithBadRequestf(ctx,
 			"capture failed entries: %d", failCount)
 	}
+}
+
+// makeEnvDir builds a madder-family env_dir at the given xdgScope.
+// Local reimplementation of madder's
+// command_components.MakeEnvDirForScope; honors madder's env-var
+// contract via madder_env.DefaultEnvVarNames so MADDER_* overrides
+// reach both scopes uniformly.
+func makeEnvDir(ctx errors.Context, xdgScope string) env_dir.Env {
+	return env_dir.MakeDefault(
+		ctx,
+		env_dir.Config{EnvVarNames: madder_env.DefaultEnvVarNames},
+		xdgScope,
+	)
 }
 
 // makeBlobStoreEnv is the local reimplementation of madder's
@@ -184,13 +198,7 @@ func (cmd *Capture) Run(req command.Request) {
 // the blob-write path is intentionally omitted (madder's inventory
 // log is a different observability mechanism from cg's captures.log).
 func makeBlobStoreEnv(ctx errors.Context) blob_store_env.BlobStoreEnv {
-	dir := env_dir.MakeDefault(
-		ctx,
-		env_dir.Config{
-			EnvVarNames: madder_env.DefaultEnvVarNames,
-		},
-		"madder",
-	)
+	dir := makeEnvDir(ctx, "madder")
 	ui := env_ui.MakeDefault(ctx)
 	return blob_store_env.MakeBlobStoreEnv(env_local.Make(ui, dir))
 }
@@ -198,16 +206,9 @@ func makeBlobStoreEnv(ctx errors.Context) blob_store_env.BlobStoreEnv {
 // makeCgEnvDir builds the cutting-garden-scoped env_dir for cg's own
 // per-utility state (captures.log etc.). Distinct from
 // makeBlobStoreEnv's madder-scoped env_dir — the two address disjoint
-// XDG paths by construction. Local reimplementation of madder's
-// command_components.MakeEnvDirForScope.
+// XDG paths by construction.
 func makeCgEnvDir(ctx errors.Context) env_dir.Env {
-	return env_dir.MakeDefault(
-		ctx,
-		env_dir.Config{
-			EnvVarNames: madder_env.DefaultEnvVarNames,
-		},
-		"cutting-garden",
-	)
+	return makeEnvDir(ctx, "cutting-garden")
 }
 
 // writeReceipt encodes entries via capture_receipt and writes the
