@@ -169,10 +169,21 @@ runs cleanly against `go test ./...` and a hand-fixture
    classify/plan/collision paths and the trailing-slash regression.
    End-to-end multi-root coverage deferred to step 9 (bats); tracked
    at cutting-garden#20.
-7. ⏳ **Audit log.** Port `capture_log.go` + `appendCaptureLog`. Build
-   the cutting-garden-scoped `env_dir` directly from `pkgs/env_dir`
-   inside `Capture.Run` (the `MakeEnvDirForScope` call-site
-   reimplemented here per the decision above).
+7. ✅ **Audit log.** ([`cdd23fe`](https://github.com/amarbel-llc/cutting-garden/commit/cdd23fe))
+   Ported `capture_log.go` + `appendCaptureLog` from madder to
+   `internal/capture/capture_log.go`. `Capture.Run` builds a
+   cg-scoped `env_dir` via the new `makeCgEnvDir` helper (local
+   reimpl of `command_components.MakeEnvDirForScope`), accumulates
+   `captureLogEntries` per receipt, and calls `appendCaptureLog`
+   after the group loop but before the deferred `sink.Finalize` so
+   append errors still reach the user. Best-effort: write errors
+   surface as sink notices, never fatal. Path is
+   `$XDG_STATE_HOME/cutting-garden/captures.log` — shared with
+   madder's existing cg-scope file, so prior entries accumulate
+   into the same log. Also brought over madder's empty-group
+   `quoteEmpty` notice for parity. Unit tests cover NDJSON shape,
+   append-across-calls, RFC3339 UTC timestamps, clock stubbing,
+   `rootPaths` ordering, and `quoteEmpty`.
 8. ⏳ **Store-hint metadata.** Port `computeStoreHint`. Needs
    `pkgs/blob_store_configs.Coder`, already exported.
 9. ⏳ **Bats coverage.** Port the bats tests from
