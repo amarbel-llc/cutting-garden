@@ -66,17 +66,19 @@ export MADDER_CEILING_DIRECTORIES="$BATS_TEST_TMPDIR"
 require_bin CG_BIN cutting-garden
 require_bin MADDER_BIN madder
 
-# run_madder and run_cg wrap their binaries in a 2s timeout so a hung
+# run_madder and run_cg wrap their binaries in a 5s timeout so a hung
 # subprocess fails the test cleanly rather than running out the bats
-# suite-level timeout.
+# suite-level timeout. 5s leaves headroom for cold-cache sandbox
+# builds where 2s flirted with flakiness on the slowest tests
+# (capture_per_entry_failure_continues_walk).
 run_madder() {
   local bin="${MADDER_BIN:-madder}"
-  run timeout --preserve-status 2s "$bin" "$@"
+  run timeout --preserve-status 5s "$bin" "$@"
 }
 
 run_cg() {
   local bin="${CG_BIN:-cutting-garden}"
-  run timeout --preserve-status 2s "$bin" "$@"
+  run timeout --preserve-status 5s "$bin" "$@"
 }
 
 # init_store creates a blob store at $1 (defaults to .default) with

@@ -100,11 +100,10 @@ func (utility Utility) PrintUsage(ctx interfaces.ActiveContext, err error) {
 }
 
 // Run dispatches the command identified by args[1] and returns the
-// process exit code the caller should propagate. Returns 0 on
-// success, 64 (EX_USAGE) when the error is a 400 BadRequest, and 1
-// otherwise. Run never calls os.Exit itself — that's main's job — so
-// tests can drive it without faulting the test runner. Production
-// main: `os.Exit(utility.Run(os.Args))`.
+// process exit code main should propagate. Run never calls os.Exit
+// itself so tests can drive it without faulting the test runner.
+// Exit semantics: 0 on success, 64 (EX_USAGE) for 400/BadRequest,
+// 1 otherwise.
 func (utility Utility) Run(args []string) int {
 	utilityNameWithExtension := extendNameIfNecessary(utility.GetName())
 	ctx := errors.MakeContextDefault()

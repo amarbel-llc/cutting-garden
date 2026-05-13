@@ -21,30 +21,39 @@ func TestUtility_Run_DispatchesToRegisteredCmd(t *testing.T) {
 	u := MakeUtility("test", nil)
 	c := &capturingCmd{}
 	u.AddCmd("greet", c)
-	u.Run([]string{"test", "greet", "alice", "bob"})
+	code := u.Run([]string{"test", "greet", "alice", "bob"})
+	if code != 0 {
+		t.Errorf("expected exit code 0 on success, got %d", code)
+	}
 	if len(c.receivedArgs) != 2 || c.receivedArgs[0] != "alice" {
 		t.Errorf("dispatch did not deliver args: got %v", c.receivedArgs)
 	}
 }
 
-func TestUtility_Run_NoArgs_DoesNotPanic(t *testing.T) {
+func TestUtility_Run_NoArgs_ReturnsEXUSAGE(t *testing.T) {
 	defer func() {
 		if r := recover(); r != nil {
 			t.Errorf("Run with no args panicked: %v", r)
 		}
 	}()
 	u := MakeUtility("test", nil)
-	u.Run([]string{"test"})
+	code := u.Run([]string{"test"})
+	if code != 64 {
+		t.Errorf("expected EX_USAGE (64) for no-args, got %d", code)
+	}
 }
 
-func TestUtility_Run_UnknownSubcommand_DoesNotPanic(t *testing.T) {
+func TestUtility_Run_UnknownSubcommand_ReturnsEXUSAGE(t *testing.T) {
 	defer func() {
 		if r := recover(); r != nil {
 			t.Errorf("Run with unknown subcommand panicked: %v", r)
 		}
 	}()
 	u := MakeUtility("test", nil)
-	u.Run([]string{"test", "does-not-exist"})
+	code := u.Run([]string{"test", "does-not-exist"})
+	if code != 64 {
+		t.Errorf("expected EX_USAGE (64) for unknown subcommand, got %d", code)
+	}
 }
 
 func captureStderr(fn func()) string {
