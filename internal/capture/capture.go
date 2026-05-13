@@ -19,6 +19,7 @@
 package capture
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
@@ -74,6 +75,7 @@ func (cmd *Capture) Run(req command.Request) {
 
 	args := req.PopArgs()
 	envBlobStore := makeBlobStoreEnv(ctx)
+	cgEnvDir := makeCgEnvDir(ctx)
 	shadowCandidates := blobStoreIds(envBlobStore.GetBlobStores())
 
 	groups, classifyFails, planErr := planCapture(args, shadowCandidates)
@@ -88,6 +90,7 @@ func (cmd *Capture) Run(req command.Request) {
 	defer sink.Finalize()
 
 	failCount := 0
+	var captureLogEntries []captureLogEntry
 
 	for _, cf := range classifyFails {
 		sink.Failure(cf.arg, cf.err)
@@ -141,8 +144,10 @@ func (cmd *Capture) Run(req command.Request) {
 		}
 
 		if len(entries) == 0 {
-			// Empty group — nothing walked successfully. Skip the
-			// receipt write so consumers don't see a zero-entry blob.
+			sink.Notice(fmt.Sprintf(
+				"notice: no entries captured for store=%s; receipt skipped",
+				quoteEmpty(storeName),
+			))
 			continue
 		}
 
@@ -153,7 +158,16 @@ func (cmd *Capture) Run(req command.Request) {
 			continue
 		}
 		sink.StoreGroupReceipt(receiptID, len(entries))
+
+		captureLogEntries = append(captureLogEntries, captureLogEntry{
+			Ts:        captureLogTimestamp(),
+			ReceiptID: receiptID,
+			StoreID:   storeName,
+			Roots:     rootPaths(group.roots),
+		})
 	}
+
+	appendCaptureLog(cgEnvDir, sink, captureLogEntries)
 
 	if failCount > 0 {
 		errors.ContextCancelWithBadRequestf(ctx,
@@ -166,8 +180,9 @@ func (cmd *Capture) Run(req command.Request) {
 // dewey-context-backed env_local from env_dir + env_ui, then hand it
 // to pkgs/blob_store_env.MakeBlobStoreEnv. The xdgScope is hardcoded
 // to "madder" — cutting-garden is a sibling of madder that operates
-// on madder's stores. The audit-log wiring (SetBlobWriteObserver) is
-// intentionally omitted; it lands in step 7.
+// on madder's stores. The audit-log wiring (SetBlobWriteObserver) on
+// the blob-write path is intentionally omitted (madder's inventory
+// log is a different observability mechanism from cg's captures.log).
 func makeBlobStoreEnv(ctx errors.Context) blob_store_env.BlobStoreEnv {
 	dir := env_dir.MakeDefault(
 		ctx,
@@ -178,6 +193,21 @@ func makeBlobStoreEnv(ctx errors.Context) blob_store_env.BlobStoreEnv {
 	)
 	ui := env_ui.MakeDefault(ctx)
 	return blob_store_env.MakeBlobStoreEnv(env_local.Make(ui, dir))
+}
+
+// makeCgEnvDir builds the cutting-garden-scoped env_dir for cg's own
+// per-utility state (captures.log etc.). Distinct from
+// makeBlobStoreEnv's madder-scoped env_dir — the two address disjoint
+// XDG paths by construction. Local reimplementation of madder's
+// command_components.MakeEnvDirForScope.
+func makeCgEnvDir(ctx errors.Context) env_dir.Env {
+	return env_dir.MakeDefault(
+		ctx,
+		env_dir.Config{
+			EnvVarNames: madder_env.DefaultEnvVarNames,
+		},
+		"cutting-garden",
+	)
 }
 
 // writeReceipt encodes entries via capture_receipt and writes the
