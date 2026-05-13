@@ -10,19 +10,15 @@ import (
 )
 
 // computeStoreHint builds the RFC 0003 store-hint metadata for a
-// receipt. storeIdString is the resolved id of the destination store
-// (the default-store case is resolved to its actual id by the caller,
-// not bypassed here). An empty string is the "still couldn't determine
-// an id" sentinel — returns (nil, nil), the MAY-omit path RFC 0003
-// §Producer Rules §Receipt Metadata: Store Hint permits.
+// receipt. Empty storeIdString returns (nil, nil), the MAY-omit path
+// §Producer Rules §Receipt Metadata: Store Hint permits when the
+// caller can't resolve a real id. A non-nil error is a soft failure
+// — callers SHOULD surface it (sink notice) and write the receipt
+// without the hint.
 //
-// Returns a non-nil error when the hint should have been computable
-// but failed; callers MAY treat that as a soft failure (sink notice).
-//
-// The hint pairs storeIdString with the markl-id of the store's
-// blob_store-config blob, computed in the store's default hash family
-// so consumers can validate it under the same hash the store publishes
-// blobs under.
+// The hint's ConfigMarklId is computed in the store's default hash
+// family so consumers can validate it under the same hash the store
+// publishes blobs under.
 func computeStoreHint(
 	blobStore blob_stores.BlobStoreInitialized,
 	storeIdString string,
@@ -41,8 +37,11 @@ func computeStoreHint(
 		return nil, nil
 	}
 
-	hash, _ := hashFormat.GetHash() //repool:owned
-	digester := markl_io.MakeWriter(hash, nil)
+	hash, repoolHash := hashFormat.GetHash()
+	defer repoolHash()
+
+	digester, repoolDigester := markl_io.MakeWriterWithRepool(hash, nil)
+	defer repoolDigester()
 
 	typedCfg := &hyphence.TypedBlob[blob_store_configs.Config]{
 		Type: blob_store_configs.TypeStructForConfig(cfg),

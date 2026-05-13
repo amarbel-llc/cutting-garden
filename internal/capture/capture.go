@@ -150,9 +150,8 @@ func (cmd *Capture) Run(req command.Request) {
 			continue
 		}
 
-		// Resolve the default-store case to its actual on-disk id so
-		// the store-hint records a real id rather than the user's
-		// CLI-level intent — RFC 0003 §Store-Hint Resolution.
+		// Empty storeName (default store) → resolve to its actual id
+		// per RFC 0003 §Store-Hint Resolution.
 		effectiveStoreId := storeName
 		if effectiveStoreId == "" {
 			effectiveStoreId = envBlobStore.GetDefaultBlobStoreId()
