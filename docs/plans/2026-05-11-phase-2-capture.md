@@ -184,8 +184,18 @@ runs cleanly against `go test ./...` and a hand-fixture
    `quoteEmpty` notice for parity. Unit tests cover NDJSON shape,
    append-across-calls, RFC3339 UTC timestamps, clock stubbing,
    `rootPaths` ordering, and `quoteEmpty`.
-8. ⏳ **Store-hint metadata.** Port `computeStoreHint`. Needs
-   `pkgs/blob_store_configs.Coder`, already exported.
+8. ✅ **Store-hint metadata.** ([`626efdd`](https://github.com/amarbel-llc/cutting-garden/commit/626efdd))
+   Ported `computeStoreHint` to `internal/capture/store_hint.go`,
+   consuming `pkgs/blob_store_configs.Coder`, `pkgs/hyphence.TypedBlob`,
+   and `pkgs/markl_io.MakeWriter` from upstream. `Capture.Run` now
+   resolves the effective store-id (storeName or
+   `envBlobStore.GetDefaultBlobStoreId()` per RFC 0003 §Store-Hint
+   Resolution), threads the hint through `writeReceipt` →
+   `capture_receipt.WriteV1WithHint`. Compute errors surface as sink
+   notices. Empirically verified: `madder cat <receipt>` shows the
+   `- store/<id> < <config-markl-id>` line in the hyphence header.
+   Test coverage limited to the empty-store-id sentinel for now;
+   full-path coverage deferred with cutting-garden#20.
 9. ⏳ **Bats coverage.** Port the bats tests from
    `madder/zz-tests_bats/` that exercise `cutting-garden capture`.
    This is where the byte-identical-receipt cross-test against
