@@ -196,10 +196,21 @@ runs cleanly against `go test ./...` and a hand-fixture
    `- store/<id> < <config-markl-id>` line in the hyphence header.
    Test coverage limited to the empty-store-id sentinel for now;
    full-path coverage deferred with cutting-garden#20.
-9. ⏳ **Bats coverage.** Port the bats tests from
-   `madder/zz-tests_bats/` that exercise `cutting-garden capture`.
-   This is where the byte-identical-receipt cross-test against
-   madder's build lives.
+9. ✅ **Bats coverage.** ([`39ce840`](https://github.com/amarbel-llc/cutting-garden/commit/39ce840))
+   Ported 18 capture tests from `madder/zz-tests_bats/capture.bats`
+   into `zz-tests_bats/capture.bats`. Lane runs inside the nix build
+   sandbox via `amarbel-llc/bats`'s exported `batsLane` builder; the
+   `bats-capture` package output is wired into the `test-bats`
+   justfile leaf and the `test` aggregate (so spinclass's
+   `default: build test` gate covers it). Helper file
+   `lib/common.bash` is a minimal portable subset — no
+   `bats-island`/`bats-emo` dependency. The exit-code propagation
+   fix in `Utility.Run` + `cmd/cutting-garden/main.go` was uncovered
+   by the per-entry-failure test and shipped in the same commit.
+   The receipt-identity cross-test was dropped from v1: madder's
+   flake exposes no standalone `cutting-garden` package; tracked
+   at cutting-garden#22. Multi-root/store-switch cross-test
+   extension tracked at cutting-garden#21.
 
 ## Pin status: resolved at madder v0.3.17 (2026-05-13)
 
