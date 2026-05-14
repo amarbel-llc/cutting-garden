@@ -1,0 +1,58 @@
+// Package cgenv builds the dewey-context-backed envs cutting-garden
+// commands need to talk to madder's pkgs/. Mirrors madder's
+// `command_components` mixin (`MakeEnvBlobStore`, `MakeEnvDirForScope`)
+// without dragging in madder's futility.Request shape.
+//
+// Two XDG scopes apply:
+//
+//   - "madder"  — where cutting-garden reads/writes blob_store config
+//     and blobs. cutting-garden is a sibling of madder that operates on
+//     madder's stores.
+//   - "cutting-garden" — where cutting-garden writes its own per-utility
+//     state (captures.log etc.). Distinct from the madder scope by
+//     construction (see env_dir.TestMakeDefault_DistinctScopesAreIndependent
+//     upstream).
+package cgenv
+
+import (
+	"github.com/amarbel-llc/madder/go/pkgs/blob_store_env"
+	"github.com/amarbel-llc/madder/go/pkgs/env_dir"
+	"github.com/amarbel-llc/madder/go/pkgs/env_local"
+	"github.com/amarbel-llc/madder/go/pkgs/env_ui"
+	"github.com/amarbel-llc/madder/go/pkgs/madder_env"
+	"github.com/amarbel-llc/purse-first/libs/dewey/bravo/errors"
+)
+
+// MakeEnvDir builds a madder-family env_dir at the given xdgScope.
+// Local reimplementation of madder's
+// command_components.MakeEnvDirForScope; honors madder's env-var
+// contract via madder_env.DefaultEnvVarNames so MADDER_* overrides
+// reach every scope uniformly.
+func MakeEnvDir(ctx errors.Context, xdgScope string) env_dir.Env {
+	return env_dir.MakeDefault(
+		ctx,
+		env_dir.Config{EnvVarNames: madder_env.DefaultEnvVarNames},
+		xdgScope,
+	)
+}
+
+// MakeBlobStoreEnv is the local reimplementation of madder's
+// command_components.EnvBlobStore.MakeEnvBlobStore mixin: build a
+// dewey-context-backed env_local from env_dir + env_ui, then hand it
+// to pkgs/blob_store_env.MakeBlobStoreEnv. The xdgScope is hardcoded
+// to "madder" — cutting-garden is a sibling of madder that operates
+// on madder's stores. The audit-log wiring (SetBlobWriteObserver) on
+// the blob-write path is intentionally omitted (madder's inventory
+// log is a different observability mechanism from cg's captures.log).
+func MakeBlobStoreEnv(ctx errors.Context) blob_store_env.BlobStoreEnv {
+	dir := MakeEnvDir(ctx, "madder")
+	ui := env_ui.MakeDefault(ctx)
+	return blob_store_env.MakeBlobStoreEnv(env_local.Make(ui, dir))
+}
+
+// MakeCgEnvDir builds the cutting-garden-scoped env_dir for cg's own
+// per-utility state. Distinct from MakeBlobStoreEnv's madder-scoped
+// env_dir — the two address disjoint XDG paths by construction.
+func MakeCgEnvDir(ctx errors.Context) env_dir.Env {
+	return MakeEnvDir(ctx, "cutting-garden")
+}
