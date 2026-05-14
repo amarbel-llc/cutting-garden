@@ -23,13 +23,14 @@
     # exposed; redirecting it to upstream NixOS/nixpkgs breaks the
     # in-flake build. See cutting-garden#2.
     #
-    # Pinned at madder v0.3.17 (tag `go/v0.3.17`). Bumped from v0.3.15
-    # as an empirical check on cutting-garden#19 — the v0.3.17 release
-    # notes do not explicitly mention a wire-format revert or a
-    # pre-flip-store migration tool, so re-verify the
-    # `encryption: invalid checksum` symptom against
-    # ~/.local/share/madder/blob_stores/dodder-v8-take3 after this bump.
-    madder.url = "github:amarbel-llc/madder/a2c01c63618e281be69905860b858455266c9096";
+    # Pinned at madder 907fed7 (post-v0.3.17, untagged) — picks up
+    # madder#176 which exposes `packages.<system>.cutting-garden`,
+    # required by cutting-garden#22 (receipt-identity cross-test).
+    # Bumped from v0.3.17 (a2c01c6); re-verify the `encryption:
+    # invalid checksum` symptom against
+    # ~/.local/share/madder/blob_stores/dodder-v8-take3 after this bump
+    # (cutting-garden#19).
+    madder.url = "github:amarbel-llc/madder/907fed760032f0754ee176db63c9bc67f09b9f88";
 
     # amarbel-llc/bats — provides `lib.batsLane`, the nix-sandbox bats
     # test-runner builder. Consumed by the `bats-capture` package
@@ -101,6 +102,14 @@
               MADDER_BIN = {
                 base = madder.packages.${system}.madder;
                 name = "madder";
+              };
+              # madder-built cutting-garden binary; the
+              # receipt_identity.bats cross-test invokes both this and
+              # CG_BIN against the same fixture and asserts byte-
+              # identical receipts (cutting-garden#22, madder#176).
+              MADDER_CG_BIN = {
+                base = madder.packages.${system}.cutting-garden;
+                name = "cutting-garden";
               };
             };
             batsLibPath = [ bats.packages.${system}.bats-libs.batsLibPath ];

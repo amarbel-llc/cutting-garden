@@ -81,6 +81,20 @@ run_cg() {
   run timeout --preserve-status 5s "$bin" "$@"
 }
 
+# run_madder_cg invokes the madder-bundled cutting-garden binary
+# (MADDER_CG_BIN, set by the sandbox lane from
+# madder.packages.${system}.cutting-garden). Used by the
+# receipt-identity cross-test (cutting-garden#22). Distinct from
+# run_cg so a failing cross-test surfaces which side diverged.
+run_madder_cg() {
+  local bin="${MADDER_CG_BIN:-}"
+  if [[ -z $bin ]]; then
+    echo "run_madder_cg: \$MADDER_CG_BIN not set" >&2
+    return 1
+  fi
+  run timeout --preserve-status 5s "$bin" "$@"
+}
+
 # init_store creates a blob store at $1 (defaults to .default) with
 # encryption disabled — keeps the bats tmpdir-only test footprint
 # free of key material.
