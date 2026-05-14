@@ -5,12 +5,19 @@ import (
 	"testing"
 
 	"github.com/amarbel-llc/cutting-garden/internal/command"
+	// Blank-import the file plugin so its init() registers under the
+	// "" and "file" restore schemes. Tests past the arg-parse stage
+	// (TestRestore_TwoArgs_*) walk the resolve-plugin path; without
+	// this the registry is empty and resolve fails before we exercise
+	// what the test actually targets.
+	_ "github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugin_file"
 	"github.com/amarbel-llc/cutting-garden/internal/restore"
 )
 
 // makeUtility wires a fresh Utility with the restore cmd registered.
-// Mirrors what cmd/cutting-garden/main.go does, minus capture and the
-// blank-imports (which Phase 3 step 2 does not exercise).
+// Mirrors what cmd/cutting-garden/main.go does, minus capture (which
+// these tests don't exercise) and the markl_registrations blank-import
+// (only needed when an encrypted store config is actually loaded).
 func makeUtility() command.Utility {
 	u := command.MakeUtility("cutting-garden", nil)
 	u.AddCmd("restore", restore.New())
@@ -44,20 +51,20 @@ func TestRestore_ThreeArgs_TooManyArgs(t *testing.T) {
 	}
 }
 
-func TestRestore_TwoArgs_DispatchesButNotImplemented(t *testing.T) {
-	// Phase 3 step 2 only exercises arg parsing; the dispatch path
-	// cancels with a not-yet-implemented BadRequest. EX_USAGE is the
-	// expected exit code until step 3 wires the receipt fetch.
+func TestRestore_TwoArgs_BogusReceiptIdRejected(t *testing.T) {
+	// Step 3 dispatches: dest "out" → file plugin resolved →
+	// ValidateDest accepts a non-existent path → receiptID.Set fails
+	// because "blake2b256-deadbeef" is not a valid markl id (the
+	// short string fails the blech32 checksum). The dispatch path is
+	// exercised; only the inner receipt-id parse rejects. Exit code
+	// is 1 (non-BadRequest error), distinct from 64 (EX_USAGE).
 	u := makeUtility()
 	code := u.Run([]string{
 		"cutting-garden", "restore",
 		"blake2b256-deadbeef", "out",
 	})
-	if code != 64 {
-		t.Errorf(
-			"expected EX_USAGE (64) for unimplemented dispatch, got %d",
-			code,
-		)
+	if code == 0 {
+		t.Errorf("expected nonzero exit for bogus receipt-id, got 0")
 	}
 }
 
