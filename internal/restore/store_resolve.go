@@ -5,11 +5,23 @@ import (
 	"io"
 
 	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
-	"github.com/amarbel-llc/madder/go/pkgs/blob_store_env"
 	"github.com/amarbel-llc/madder/go/pkgs/blob_store_id"
 	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
 	"github.com/amarbel-llc/purse-first/libs/dewey/bravo/errors"
 )
+
+// materializationEnv is the narrow surface
+// resolveMaterializationStore (and resolveStoreByID) consume from
+// blob_store_env.BlobStoreEnv. Declared here so unit tests can supply
+// a fake: the concrete BlobStoreEnv panics in GetDefaultBlobStore
+// when no stores are initialized, which blocks byte-exact diagnostic
+// assertions for the no-store-needed FDR branches. The concrete
+// BlobStoreEnv satisfies this interface structurally — type-alias
+// chains inherit every method.
+type materializationEnv interface {
+	GetDefaultBlobStore() blob_stores.BlobStoreInitialized
+	GetBlobStores() map[string]blob_stores.BlobStoreInitialized
+}
 
 // resolveMaterializationStore implements FDR §Store-Hint Resolution.
 // Returns the store entry blobs are read against, plus any diagnostic
@@ -36,7 +48,7 @@ import (
 // malformed hint store-id. Madder treats it as branch-4-style
 // fallback; this implementation matches.
 func resolveMaterializationStore(
-	env blob_store_env.BlobStoreEnv,
+	env materializationEnv,
 	hint *capture_receipt.StoreHint,
 	storeOverride string,
 	diagnostics io.Writer,

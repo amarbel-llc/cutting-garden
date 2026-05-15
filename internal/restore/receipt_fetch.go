@@ -76,8 +76,12 @@ func readReceiptBlob(
 // resolveStoreByID parses idStr as a blob-store-id and looks up the
 // corresponding configured store. Returns an error if idStr is
 // malformed or the store is not configured locally.
+//
+// Takes the materializationEnv interface (defined in store_resolve.go)
+// rather than blob_store_env.BlobStoreEnv directly so tests can pass
+// fakes — the concrete type satisfies the interface structurally.
 func resolveStoreByID(
-	envBlobStore blob_store_env.BlobStoreEnv,
+	env materializationEnv,
 	idStr string,
 ) (blob_stores.BlobStoreInitialized, error) {
 	var id blob_store_id.Id
@@ -85,7 +89,7 @@ func resolveStoreByID(
 		return blob_stores.BlobStoreInitialized{}, errors.Wrapf(
 			err, "parse -store value %q", idStr)
 	}
-	stores := envBlobStore.GetBlobStores()
+	stores := env.GetBlobStores()
 	store, ok := stores[id.String()]
 	if !ok {
 		return blob_stores.BlobStoreInitialized{}, errors.ErrorWithStackf(
