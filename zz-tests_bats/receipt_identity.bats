@@ -160,3 +160,74 @@ function receipt_identity_store_switch { # @test
   [[ $rid_cg_2 == "$rid_m_2" ]] ||
     fail "group 2 receipt-id mismatch: CG=$rid_cg_2, MADDER=$rid_m_2"
 }
+
+function restore_round_trip_identity_single_root { # @test
+  # Round-trip identity: capture → restore → re-capture MUST yield
+  # the same receipt-id. This is Phase 6's second invariant (the
+  # first being capture byte-identity, proven in receipt_identity_*).
+  #
+  # If restore preserves every byte the receipt described and
+  # re-capture produces a deterministic receipt, the receipt-ids
+  # must match round-trip. A regression here means either restore
+  # dropped metadata (perms, symlink target) or re-capture's
+  # determinism slipped.
+  #
+  # Single-root, no trailing slashes, no symlinks (deferred to a
+  # follow-up since symlinks survive but their mode-stripping in
+  # the file plugin would need separate verification).
+  init_store
+
+  mkdir -p tree/sub
+  echo "alpha" >tree/a.txt
+  echo "beta" >tree/b.txt
+  echo "gamma" >tree/sub/c.txt
+
+  local rid_first
+  rid_first="$(capture_receipt_id tree)"
+  [[ -n $rid_first ]] || fail "first capture: no receipt id"
+
+  run_cg restore -store .default "$rid_first" restored
+  assert_success
+
+  local rid_second
+  rid_second="$(capture_receipt_id restored)"
+  [[ -n $rid_second ]] || fail "second capture: no receipt id"
+
+  [[ $rid_first == "$rid_second" ]] ||
+    fail "round-trip receipt-id mismatch: first=$rid_first, second=$rid_second"
+}
+
+function restore_round_trip_identity_cross_binary { # @test
+  # Cross-binary round-trip: every permutation of (CG_BIN,
+  # MADDER_CG_BIN) across {capture, restore, re-capture} MUST yield
+  # the same receipt-id. Pins both byte-identity (capture side, also
+  # tested in receipt_identity_single_root) AND restore fidelity
+  # (madder vs cg materialization must produce the same on-disk
+  # bytes that re-capture sees) in one test.
+  #
+  # Split: cg-capture / madder-restore / cg-recapture. The other
+  # permutations are not enumerated here because cg/madder symmetry
+  # for capture is already pinned upstream.
+  require_bin MADDER_CG_BIN cutting-garden
+
+  init_store
+
+  mkdir -p tree/sub
+  echo "alpha" >tree/a.txt
+  echo "beta" >tree/b.txt
+  echo "gamma" >tree/sub/c.txt
+
+  local rid_first
+  rid_first="$(capture_receipt_id tree)"
+  [[ -n $rid_first ]] || fail "cg capture: no receipt id"
+
+  run_madder_cg restore -store .default "$rid_first" restored
+  assert_success
+
+  local rid_second
+  rid_second="$(capture_receipt_id restored)"
+  [[ -n $rid_second ]] || fail "cg recapture: no receipt id"
+
+  [[ $rid_first == "$rid_second" ]] ||
+    fail "cross-binary round-trip mismatch: cg-capture=$rid_first, cg-recapture-after-madder-restore=$rid_second"
+}

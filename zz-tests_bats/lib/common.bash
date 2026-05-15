@@ -127,3 +127,38 @@ receipt_store_of_group() {
     sed -n "${idx}p" |
     sed -E 's/.*"store":"([^"]*)".*/\1/'
 }
+
+# capture_receipt_id captures DIR into the active store and echoes the
+# receipt blob-id. One-shot variant of run_cg + receipt_id_of_group.
+capture_receipt_id() {
+  local dir="$1"
+  run_cg capture -format json "$dir"
+  assert_success
+  echo "$output" | grep -F '"type":"store_group_receipt"' |
+    sed -E 's/.*"receipt_id":"([^"]+)".*/\1/' | head -n 1
+}
+
+# write_blob_id stores a file as a blob in the active store (or in
+# STORE if passed as the first arg) and echoes the resulting blob-id.
+# Used by restore tests to inject hand-crafted receipt blobs without
+# going through the capture path. Mirrors madder's helper of the same
+# name; output is parsed from `madder write -format tap`.
+write_blob_id() {
+  local store path
+  if [[ $# -eq 1 ]]; then
+    path="$1"
+    run_madder write -format tap "$path"
+  else
+    store="$1"
+    path="$2"
+    run_madder write -format tap "$store" "$path"
+  fi
+  assert_success
+  echo "$output" | grep '^ok ' | awk '{print $4}' | head -n 1
+}
+
+# file_mode echoes the octal permission bits of PATH (e.g. '644').
+# Uses GNU stat; cutting-garden's nix devshell pins coreutils.
+file_mode() {
+  stat -c '%a' "$1"
+}
