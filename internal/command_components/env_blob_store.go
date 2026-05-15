@@ -1,18 +1,25 @@
-// Package cgenv builds the dewey-context-backed envs cutting-garden
-// commands need to talk to madder's pkgs/. Mirrors madder's
-// `command_components` mixin (`MakeEnvBlobStore`, `MakeEnvDirForScope`)
-// without dragging in madder's futility.Request shape.
+// Package command_components is cutting-garden's CLI-flavored
+// composition layer: cross-command glue that wires the framework into
+// madder's pkgs/ substrate (env_dir, env_local, env_ui,
+// blob_store_env) and resolves capture receipts to the stores their
+// blobs live in.
 //
-// Two XDG scopes apply:
+// Mirrors madder's `internal/golf/command_components/` and dodder's
+// `internal/echo/command_components/` patterns: one flat package, one
+// file per composition concern. Per-command logic (capture's planner,
+// restore's runRestore, diff's compareEntries) lives in each
+// command's own package; command_components is the seam they share.
+//
+// Two XDG scopes apply throughout:
 //
 //   - "madder"  — where cutting-garden reads/writes blob_store config
-//     and blobs. cutting-garden is a sibling of madder that operates on
-//     madder's stores.
-//   - "cutting-garden" — where cutting-garden writes its own per-utility
-//     state (captures.log etc.). Distinct from the madder scope by
-//     construction (see env_dir.TestMakeDefault_DistinctScopesAreIndependent
-//     upstream).
-package cgenv
+//     and blobs. cutting-garden is a sibling of madder that operates
+//     on madder's stores.
+//   - "cutting-garden" — where cutting-garden writes its own per-
+//     utility state (captures.log etc.). Distinct from the madder
+//     scope by construction (see env_dir.TestMakeDefault_
+//     DistinctScopesAreIndependent upstream).
+package command_components
 
 import (
 	"github.com/amarbel-llc/madder/go/pkgs/blob_store_env"

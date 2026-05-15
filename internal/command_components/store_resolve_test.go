@@ -1,4 +1,4 @@
-package restore
+package command_components
 
 import (
 	"bytes"
@@ -9,9 +9,9 @@ import (
 	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
 )
 
-// fakeEnv is the test-only materializationEnv. The default-store
+// fakeEnv is the test-only MaterializationEnv. The default-store
 // sentinel is a zero BlobStoreInitialized — branches 4/5 return it
-// from resolveMaterializationStore but never invoke methods on it,
+// from ResolveMaterializationStore but never invoke methods on it,
 // so the zero value is safe.
 type fakeEnv struct {
 	stores map[string]blob_stores.BlobStoreInitialized
@@ -34,7 +34,7 @@ func TestResolveMaterializationStore_NoHint_EmitsFallbackNotices(t *testing.T) {
 	// default store.
 	var buf bytes.Buffer
 
-	_, err := resolveMaterializationStore(fakeEnv{}, nil, "", &buf)
+	_, err := ResolveMaterializationStore(fakeEnv{}, nil, "", &buf)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -56,7 +56,7 @@ func TestResolveMaterializationStore_HintStoreMissing_EmitsFallbackNotices(t *te
 	}
 	var buf bytes.Buffer
 
-	_, err := resolveMaterializationStore(fakeEnv{}, hint, "", &buf)
+	_, err := ResolveMaterializationStore(fakeEnv{}, hint, "", &buf)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -70,11 +70,11 @@ func TestResolveMaterializationStore_HintStoreMissing_EmitsFallbackNotices(t *te
 
 func TestResolveMaterializationStore_StoreOverrideMissing_ReturnsErr(t *testing.T) {
 	// Branch 1: -store wins. With an unconfigured override id, the
-	// resolveStoreByID error propagates (not a notice). No
+	// ResolveStoreByID error propagates (not a notice). No
 	// diagnostic on stderr — the error is the visible artifact.
 	var buf bytes.Buffer
 
-	_, err := resolveMaterializationStore(fakeEnv{}, nil, ".not-configured", &buf)
+	_, err := ResolveMaterializationStore(fakeEnv{}, nil, ".not-configured", &buf)
 	if err == nil {
 		t.Fatal("expected error for unconfigured -store override, got nil")
 	}
@@ -92,6 +92,6 @@ func TestResolveMaterializationStore_StoreOverrideMissing_ReturnsErr(t *testing.
 // covered end-to-end in:
 //
 //   - branch 2: zz-tests_bats/restore.bats →
-//     restore_uses_hint_store_implicitly (must produce no stderr).
+//     restore_uses_hint_store_when_default_store_emits_hint.
 //   - branches 3 + 4a: zz-tests_bats/restore.bats FDR conformance
-//     matrix (step 7).
+//     matrix.

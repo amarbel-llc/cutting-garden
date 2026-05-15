@@ -24,7 +24,7 @@ import (
 
 	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
 	"github.com/amarbel-llc/cutting-garden/internal/capture_sink"
-	"github.com/amarbel-llc/cutting-garden/internal/cgenv"
+	"github.com/amarbel-llc/cutting-garden/internal/command_components"
 	"github.com/amarbel-llc/cutting-garden/internal/command"
 	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
 	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
@@ -70,7 +70,7 @@ func (cmd *Capture) Run(req command.Request) {
 	ctx := req.Context.(errors.Context)
 
 	args := req.PopArgs()
-	envBlobStore := cgenv.MakeBlobStoreEnv(ctx)
+	envBlobStore := command_components.MakeBlobStoreEnv(ctx)
 	shadowCandidates := blobStoreIds(envBlobStore.GetBlobStores())
 
 	groups, classifyFails, planErr := planCapture(args, shadowCandidates)
@@ -178,7 +178,7 @@ func (cmd *Capture) Run(req command.Request) {
 	}
 
 	if len(captureLogEntries) > 0 {
-		appendCaptureLog(cgenv.MakeCgEnvDir(ctx), sink, captureLogEntries)
+		appendCaptureLog(command_components.MakeCgEnvDir(ctx), sink, captureLogEntries)
 	}
 
 	if failCount > 0 {

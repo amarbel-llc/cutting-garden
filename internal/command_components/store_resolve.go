@@ -1,4 +1,4 @@
-package restore
+package command_components
 
 import (
 	"fmt"
@@ -10,20 +10,45 @@ import (
 	"github.com/amarbel-llc/purse-first/libs/dewey/bravo/errors"
 )
 
-// materializationEnv is the narrow surface
-// resolveMaterializationStore (and resolveStoreByID) consume from
+// MaterializationEnv is the narrow surface
+// ResolveMaterializationStore (and ResolveStoreByID) consume from
 // blob_store_env.BlobStoreEnv. Declared here so unit tests can supply
 // a fake: the concrete BlobStoreEnv panics in GetDefaultBlobStore
 // when no stores are initialized, which blocks byte-exact diagnostic
 // assertions for the no-store-needed FDR branches. The concrete
 // BlobStoreEnv satisfies this interface structurally — type-alias
 // chains inherit every method.
-type materializationEnv interface {
+type MaterializationEnv interface {
 	GetDefaultBlobStore() blob_stores.BlobStoreInitialized
 	GetBlobStores() map[string]blob_stores.BlobStoreInitialized
 }
 
-// resolveMaterializationStore implements FDR §Store-Hint Resolution.
+// ResolveStoreByID parses idStr as a blob-store-id and looks up the
+// corresponding configured store. Returns an error if idStr is
+// malformed or the store is not configured locally.
+//
+// Takes the MaterializationEnv interface rather than
+// blob_store_env.BlobStoreEnv directly so tests can pass fakes — the
+// concrete type satisfies the interface structurally.
+func ResolveStoreByID(
+	env MaterializationEnv,
+	idStr string,
+) (blob_stores.BlobStoreInitialized, error) {
+	var id blob_store_id.Id
+	if err := id.Set(idStr); err != nil {
+		return blob_stores.BlobStoreInitialized{}, errors.Wrapf(
+			err, "parse -store value %q", idStr)
+	}
+	stores := env.GetBlobStores()
+	store, ok := stores[id.String()]
+	if !ok {
+		return blob_stores.BlobStoreInitialized{}, errors.ErrorWithStackf(
+			"-store %q is not a configured blob store", idStr)
+	}
+	return store, nil
+}
+
+// ResolveMaterializationStore implements FDR §Store-Hint Resolution.
 // Returns the store entry blobs are read against, plus any diagnostic
 // writes to `diagnostics`. Five branches:
 //
@@ -47,14 +72,19 @@ type materializationEnv interface {
 // FDR §Store-hint resolution does NOT specify behavior for a
 // malformed hint store-id. Madder treats it as branch-4-style
 // fallback; this implementation matches.
-func resolveMaterializationStore(
-	env materializationEnv,
+//
+// Consumed by both `restore` (Phase 3) and `diff` (Phase 4). Diff
+// uses only the resolved store's GetDefaultHashType() for its
+// discard-blob-store hash family; restore reads entry blobs through
+// it.
+func ResolveMaterializationStore(
+	env MaterializationEnv,
 	hint *capture_receipt.StoreHint,
 	storeOverride string,
 	diagnostics io.Writer,
 ) (blob_stores.BlobStoreInitialized, error) {
 	if storeOverride != "" {
-		return resolveStoreByID(env, storeOverride)
+		return ResolveStoreByID(env, storeOverride)
 	}
 
 	if hint == nil {

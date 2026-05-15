@@ -7,24 +7,20 @@
 //	restore [-store STORE_ID] RECEIPT_ID DEST
 //
 // Semantics are normative per FDR 0001 (docs/features/0001-restore.md
-// upstream) and RFC 0003 §Consumer Rules.
-//
-// Phase 3 status: steps 3-5 wire the happy path through plugin.Restore
-// with full FDR §Store-Hint Resolution (drift checks, fallback notices,
-// -store override) plus the cross-scheme type-tag guard. Rich
-// sanitization diagnostic shapes lock down in step 6.
+// upstream) and RFC 0003 §Consumer Rules. Cross-command glue
+// (receipt fetch, store-hint resolution, type-tag guard, env wiring)
+// lives in internal/command_components; this package holds only
+// restore-specific dispatch.
 package restore
 
 import (
 	"io"
-	"net/url"
 	"os"
 
 	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
-	"github.com/amarbel-llc/cutting-garden/internal/cgenv"
 	"github.com/amarbel-llc/cutting-garden/internal/command"
+	"github.com/amarbel-llc/cutting-garden/internal/command_components"
 	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
-	"github.com/amarbel-llc/madder/go/pkgs/ids"
 	"github.com/amarbel-llc/madder/go/pkgs/markl"
 	"github.com/amarbel-llc/purse-first/libs/dewey/0/interfaces"
 	"github.com/amarbel-llc/purse-first/libs/dewey/bravo/errors"
@@ -106,7 +102,7 @@ func (cmd *Restore) runRestore(
 	ctx errors.Context,
 	receiptIDStr, destStr string,
 ) error {
-	destURL, plugin, err := resolveRestorePlugin(destStr)
+	destURL, plugin, err := command_components.ResolveRestorePlugin(destStr)
 	if err != nil {
 		return err
 	}
@@ -120,14 +116,18 @@ func (cmd *Restore) runRestore(
 		return errors.Wrapf(err, "parse receipt-id %q", receiptIDStr)
 	}
 
-	envBlobStore := cgenv.MakeBlobStoreEnv(ctx)
+	envBlobStore := command_components.MakeBlobStoreEnv(ctx)
 
-	blob, typeTag, err := readReceiptBlob(envBlobStore, &receiptID, cmd.Store)
+	blob, typeTag, err := command_components.ReadReceiptBlob(
+		envBlobStore, &receiptID, cmd.Store,
+	)
 	if err != nil {
 		return err
 	}
 
-	if err := checkReceiptTypeTag(&receiptID, typeTag, plugin, destURL); err != nil {
+	if err := command_components.CheckReceiptTypeTag(
+		&receiptID, typeTag, plugin, destURL, "restore",
+	); err != nil {
 		return err
 	}
 
@@ -138,7 +138,7 @@ func (cmd *Restore) runRestore(
 			&receiptID, blob)
 	}
 
-	materializationStore, err := resolveMaterializationStore(
+	materializationStore, err := command_components.ResolveMaterializationStore(
 		envBlobStore, v1.Hint, cmd.Store, cmd.diagnostics,
 	)
 	if err != nil {
@@ -151,32 +151,4 @@ func (cmd *Restore) runRestore(
 		Dest:      destURL,
 		RawDest:   destStr,
 	})
-}
-
-// checkReceiptTypeTag refuses a receipt whose wire-format type-tag
-// does not match the dest plugin's TypeTag(). The file plugin
-// accepts only `cutting_garden-capture_receipt-fs-v1`; an s3 or
-// sftp plugin would accept its own segment.
-//
-// Cross-scheme restore (e.g. fs receipt → s3 dest) is a real future
-// case (mirror a captured tree without local materialization), but
-// the v1 strict guard is the safe default until the policy lands.
-// Decision tracked at cutting-garden#18 — when it resolves, this
-// function becomes the dispatch point for whatever policy is chosen
-// (-allow-cross-scheme flag, per-plugin AcceptsReceiptTag, or
-// relax-entirely).
-func checkReceiptTypeTag(
-	receiptID *markl.Id,
-	typeTag ids.TypeStruct,
-	plugin cutting_garden_plugins.RestorePlugin,
-	destURL *url.URL,
-) error {
-	if typeTag.StringSansOp() == plugin.TypeTag() {
-		return nil
-	}
-	return errors.ErrorWithStackf(
-		"receipt %s: type-tag %q cannot be restored to scheme %q "+
-			"(plugin tag %q); cross-scheme restore is not supported "+
-			"(cutting-garden#18)",
-		receiptID, typeTag.StringSansOp(), destURL.Scheme, plugin.TypeTag())
 }

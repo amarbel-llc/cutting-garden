@@ -1,4 +1,4 @@
-package restore
+package command_components
 
 import (
 	"net/url"
@@ -6,17 +6,15 @@ import (
 	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
 	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
 	"github.com/amarbel-llc/madder/go/pkgs/blob_store_env"
-	"github.com/amarbel-llc/madder/go/pkgs/blob_store_id"
-	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
 	"github.com/amarbel-llc/madder/go/pkgs/ids"
 	"github.com/amarbel-llc/madder/go/pkgs/markl"
 	"github.com/amarbel-llc/purse-first/libs/dewey/bravo/errors"
 )
 
-// resolveRestorePlugin parses destStr as a URL and looks up the
+// ResolveRestorePlugin parses destStr as a URL and looks up the
 // restore plugin registered for its scheme. Schemeless dests resolve
 // to the file plugin's `""` registration.
-func resolveRestorePlugin(
+func ResolveRestorePlugin(
 	destStr string,
 ) (*url.URL, cutting_garden_plugins.RestorePlugin, error) {
 	u, err := url.Parse(destStr)
@@ -30,7 +28,7 @@ func resolveRestorePlugin(
 	return u, plugin, nil
 }
 
-// readReceiptBlob fetches and parses the receipt blob.
+// ReadReceiptBlob fetches and parses the receipt blob.
 //
 // With storeOverride non-empty: resolve that store, read directly.
 // With storeOverride empty: walk GetBlobStoresSorted in deterministic
@@ -38,16 +36,16 @@ func resolveRestorePlugin(
 // The deterministic order ensures two stores holding receipts with
 // colliding ids resolve the same way every time.
 //
-// Phase 3 step 3 uses this shape for the receipt blob ITSELF. Step 5
-// adds the FDR §Store-Hint Resolution decision tree for selecting the
-// materialization store (the per-entry blob source).
-func readReceiptBlob(
+// Used by both `restore` (Phase 3) and `diff` (Phase 4) for the
+// receipt blob itself. ResolveMaterializationStore handles the
+// downstream FDR §Store-Hint Resolution decision tree.
+func ReadReceiptBlob(
 	envBlobStore blob_store_env.BlobStoreEnv,
 	receiptID *markl.Id,
 	storeOverride string,
 ) (capture_receipt.Blob, ids.TypeStruct, error) {
 	if storeOverride != "" {
-		store, err := resolveStoreByID(envBlobStore, storeOverride)
+		store, err := ResolveStoreByID(envBlobStore, storeOverride)
 		if err != nil {
 			return nil, ids.TypeStruct{}, err
 		}
@@ -73,27 +71,38 @@ func readReceiptBlob(
 		"receipt %s not found in any configured store", receiptID)
 }
 
-// resolveStoreByID parses idStr as a blob-store-id and looks up the
-// corresponding configured store. Returns an error if idStr is
-// malformed or the store is not configured locally.
+// CheckReceiptTypeTag refuses a receipt whose wire-format type-tag
+// does not match the dest/dir plugin's TypeTag(). The file plugin
+// accepts only `cutting_garden-capture_receipt-fs-v1`; an s3 or
+// sftp plugin would accept its own segment.
 //
-// Takes the materializationEnv interface (defined in store_resolve.go)
-// rather than blob_store_env.BlobStoreEnv directly so tests can pass
-// fakes — the concrete type satisfies the interface structurally.
-func resolveStoreByID(
-	env materializationEnv,
-	idStr string,
-) (blob_stores.BlobStoreInitialized, error) {
-	var id blob_store_id.Id
-	if err := id.Set(idStr); err != nil {
-		return blob_stores.BlobStoreInitialized{}, errors.Wrapf(
-			err, "parse -store value %q", idStr)
+// `operation` names the action being attempted ("restore", "diff") so
+// the diagnostic reads naturally; `plugin` is widened to the parent
+// Plugin interface so both RestorePlugin and DiffPlugin call sites
+// satisfy it without conversion.
+//
+// Cross-scheme operation (e.g. fs receipt → s3 dest) is a real
+// future case (mirror a captured tree without local materialization),
+// but the v1 strict guard is the safe default until the policy
+// lands. Decision tracked at cutting-garden#18 — when it resolves,
+// this function becomes the single dispatch point for whatever
+// policy is chosen (-allow-cross-scheme flag, per-plugin
+// AcceptsReceiptTag, or relax-entirely). Both restore and diff
+// pick up the new behavior through this helper.
+func CheckReceiptTypeTag(
+	receiptID *markl.Id,
+	receiptTypeTag ids.TypeStruct,
+	plugin cutting_garden_plugins.Plugin,
+	destURL *url.URL,
+	operation string,
+) error {
+	if receiptTypeTag.StringSansOp() == plugin.TypeTag() {
+		return nil
 	}
-	stores := env.GetBlobStores()
-	store, ok := stores[id.String()]
-	if !ok {
-		return blob_stores.BlobStoreInitialized{}, errors.ErrorWithStackf(
-			"-store %q is not a configured blob store", idStr)
-	}
-	return store, nil
+	return errors.ErrorWithStackf(
+		"receipt %s: type-tag %q does not match plugin tag %q "+
+			"for scheme %q; cross-scheme %s is not supported "+
+			"(cutting-garden#18)",
+		receiptID, receiptTypeTag.StringSansOp(),
+		plugin.TypeTag(), destURL.Scheme, operation)
 }
