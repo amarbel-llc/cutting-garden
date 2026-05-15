@@ -58,13 +58,12 @@ func TestDiff_InvalidColorValue_Rejected(t *testing.T) {
 }
 
 func TestDiff_ValidColorValues_Accepted(t *testing.T) {
-	// Each valid color value should pass validation; the dispatch
-	// itself still cancels with "not yet implemented" until step 3,
-	// so EX_USAGE is the expected exit code, but the diagnostic is
-	// the not-implemented message rather than the color-validation
-	// error. The two are distinguishable by the EX_USAGE-vs-other
-	// exit code... but framework maps both BadRequest paths to 64.
-	// Step 6 adds byte-exact assertion on stderr to distinguish.
+	// Each valid color value should pass color validation. With a
+	// nonexistent <dir>, ValidateDiffDir errors (FDR §Destination
+	// Preconditions: dir MUST exist), so the dispatch exits nonzero
+	// — but NOT via the color-validation BadRequest path. The test
+	// pins that color "auto"/"always"/"never" pass validation; step
+	// 6 will add byte-exact stderr assertions to distinguish.
 	for _, c := range []string{"auto", "always", "never"} {
 		t.Run(c, func(t *testing.T) {
 			u := makeUtility()
@@ -72,25 +71,25 @@ func TestDiff_ValidColorValues_Accepted(t *testing.T) {
 				"cutting-garden", "diff", "-color", c,
 				"blake2b256-deadbeef", "src",
 			})
-			if code != 64 {
-				t.Errorf("expected EX_USAGE (64), got %d", code)
+			if code == 0 {
+				t.Errorf("expected nonzero exit on bogus dir/receipt, got 0")
 			}
 		})
 	}
 }
 
-func TestDiff_TwoArgs_BogusReceiptIdReachesDispatch(t *testing.T) {
-	// Step 2 cancels with not-implemented after arg parsing; the
-	// inner receipt-id parse never fires (step 3 adds it). Exit code
-	// is EX_USAGE either way; this test just pins that two-positional
-	// args don't trip the count guard.
+func TestDiff_TwoArgs_BogusInputsReachDispatch(t *testing.T) {
+	// Two positional args should NOT trip the count guard. The
+	// dispatch proceeds into runDiff and errors out further down
+	// (here: ValidateDiffDir refuses a nonexistent "src/"). The
+	// test just pins that arg parsing doesn't gate on content.
 	u := makeUtility()
 	code := u.Run([]string{
 		"cutting-garden", "diff",
 		"blake2b256-deadbeef", "src",
 	})
-	if code != 64 {
-		t.Errorf("expected EX_USAGE (64), got %d", code)
+	if code == 0 {
+		t.Errorf("expected nonzero exit on bogus inputs, got 0")
 	}
 }
 

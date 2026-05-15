@@ -13,17 +13,20 @@
 // internal/command_components; this package holds only diff-specific
 // dispatch + the per-entry comparator (steps 4+).
 //
-// Phase 4 status: step 2 ships the cmd skeleton only — arg + flag
-// parsing, color-value validation, registration. Receipt fetch lands
-// in step 3, comparison in step 4, -verify-blobs-exist in step 5,
-// color output in step 6, bats coverage in step 7.
+// Phase 4 status: steps 2-3 ship arg/flag parsing, plugin/dir
+// validation, receipt fetch, type-tag guard, and store-hint
+// resolution. Comparison lands in step 4, -verify-blobs-exist in
+// step 5, color output in step 6, bats coverage in step 7.
 package diff
 
 import (
 	"io"
 	"os"
 
+	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
 	"github.com/amarbel-llc/cutting-garden/internal/command"
+	"github.com/amarbel-llc/cutting-garden/internal/command_components"
+	"github.com/amarbel-llc/madder/go/pkgs/markl"
 	"github.com/amarbel-llc/purse-first/libs/dewey/0/interfaces"
 	"github.com/amarbel-llc/purse-first/libs/dewey/bravo/errors"
 )
@@ -134,16 +137,79 @@ func (cmd *Diff) Run(req command.Request) {
 		return
 	}
 
-	// Step 3 wires receipt fetch + dir validation here. Step 4 adds
-	// the walk + comparison. Step 5 adds -verify-blobs-exist. Step 6
-	// adds color rendering. The args are consumed so the framework
-	// records them in the request's audit trail.
-	_ = receiptIDStr
-	_ = dir
+	if err := cmd.runDiff(ctx, receiptIDStr, dir); err != nil {
+		errors.ContextCancelWithError(ctx, err)
+	}
+}
 
-	errors.ContextCancelWithBadRequestf(ctx,
-		"diff: not yet implemented (Phase 4 step 2 skeleton; "+
-			"receipt fetch lands in step 3, comparison in step 4)")
+// runDiff implements the cmd in five phases: resolve the dir plugin
+// and validate the directory exists, fetch and parse the receipt
+// blob (including type-tag and store-hint resolution), walk <dir>
+// against the receipt's entries through a discard blob store, and
+// (optionally) probe the source store for missing blobs.
+//
+// Phase 4 step 3 ships the first half: validate, fetch, resolve.
+// Steps 4-5 wire the walk + comparison + probe.
+func (cmd *Diff) runDiff(
+	ctx errors.Context,
+	receiptIDStr, dirStr string,
+) error {
+	dirURL, plugin, err := command_components.ResolveDiffPlugin(dirStr)
+	if err != nil {
+		return err
+	}
+
+	if err := plugin.ValidateDiffDir(dirURL, dirStr); err != nil {
+		return err
+	}
+
+	var receiptID markl.Id
+	if err := receiptID.Set(receiptIDStr); err != nil {
+		return errors.Wrapf(err, "parse receipt-id %q", receiptIDStr)
+	}
+
+	envBlobStore := command_components.MakeBlobStoreEnv(ctx)
+
+	blob, typeTag, err := command_components.ReadReceiptBlob(
+		envBlobStore, &receiptID, cmd.Store,
+	)
+	if err != nil {
+		return err
+	}
+
+	if err := command_components.CheckReceiptTypeTag(
+		&receiptID, typeTag, plugin, dirURL, "diff",
+	); err != nil {
+		return err
+	}
+
+	v1, ok := blob.(*capture_receipt.V1)
+	if !ok {
+		return errors.ErrorWithStackf(
+			"receipt %s: unexpected blob shape %T (expected *V1)",
+			&receiptID, blob)
+	}
+
+	sourceStore, err := command_components.ResolveMaterializationStore(
+		envBlobStore, v1.Hint, cmd.Store, cmd.diagnostics,
+	)
+	if err != nil {
+		return err
+	}
+
+	// Step 4 wires the walk + comparison here:
+	//   - plugin.ScanForDiff(req) for the disk-side walk.
+	//   - compareEntries(v1.Entries, disk, missingBlobs) for the diff.
+	//   - blob_stores.NewDiscardBlobStore(sourceStore.GetDefaultHashType())
+	//     to recompute file blob-ids without persisting.
+	// Step 5 wires the probe gated by cmd.VerifyBlobsExist.
+	// Step 6 renders diff lines through lipgloss-keyed color.
+	_ = v1
+	_ = sourceStore
+
+	return errors.ErrorWithStackf(
+		"diff: comparison not yet implemented (Phase 4 step 3; " +
+			"walk + compare land in step 4)")
 }
 
 // validateColor enforces the FDR §Flags constraint on -color values.

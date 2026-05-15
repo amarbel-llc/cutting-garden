@@ -28,6 +28,23 @@ func ResolveRestorePlugin(
 	return u, plugin, nil
 }
 
+// ResolveDiffPlugin parses dirStr as a URL and looks up the diff
+// plugin registered for its scheme. Schemeless dirs resolve to the
+// file plugin's `""` registration. Sibling to ResolveRestorePlugin.
+func ResolveDiffPlugin(
+	dirStr string,
+) (*url.URL, cutting_garden_plugins.DiffPlugin, error) {
+	u, err := url.Parse(dirStr)
+	if err != nil {
+		return nil, nil, errors.Wrapf(err, "parse dir %q", dirStr)
+	}
+	plugin, err := cutting_garden_plugins.ResolveDiff(u.Scheme)
+	if err != nil {
+		return nil, nil, err
+	}
+	return u, plugin, nil
+}
+
 // ReadReceiptBlob fetches and parses the receipt blob.
 //
 // With storeOverride non-empty: resolve that store, read directly.
