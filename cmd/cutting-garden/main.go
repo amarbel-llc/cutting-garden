@@ -5,6 +5,7 @@ import (
 
 	"github.com/amarbel-llc/cutting-garden/internal/capture"
 	"github.com/amarbel-llc/cutting-garden/internal/command"
+	"github.com/amarbel-llc/cutting-garden/internal/diff"
 	"github.com/amarbel-llc/cutting-garden/internal/restore"
 	// Blank-import the file plugin so its init() registers under
 	// the "" and "file" capture/restore/diff schemes before any
@@ -23,5 +24,6 @@ func main() {
 	command.RegisterComplete(&utility)
 	utility.AddCmd("capture", capture.New())
 	utility.AddCmd("restore", restore.New())
+	utility.AddCmd("diff", diff.New())
 	os.Exit(utility.Run(os.Args))
 }
