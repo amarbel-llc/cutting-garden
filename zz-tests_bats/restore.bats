@@ -5,8 +5,10 @@ setup() {
 
 # bats file_tags=restore
 
-# Phase 3 step 3 ships the happy-path single-root round-trip. Full FDR
-# 0001 conformance matrix lands in step 7.
+# Phase 3 step 3 shipped the -store happy-path single-root round-trip.
+# Step 5 added FDR §Store-Hint Resolution; the implicit-hint branch is
+# tested here. Drift (branch 3), hint-store-missing (branch 4), and
+# no-hint (branch 5) tests are in the step 7 FDR conformance matrix.
 
 function restore_round_trip_single_root { # @test
   # Capture a 3-file/2-dir fixture, restore via -store, assert the
@@ -35,6 +37,32 @@ function restore_round_trip_single_root { # @test
   [[ -f out/sub/c.txt ]] || fail "out/sub/c.txt missing"
 
   diff -r src out
+}
+
+function restore_uses_hint_store_implicitly { # @test
+  # FDR §Store-Hint Resolution branch 2: hint present, store
+  # configured, config-hash matches → use the hinted store with no
+  # diagnostic. Captured receipts emit a hint for the default store
+  # via Phase 2 step 8, so `restore` without `-store` must resolve
+  # through the hint and proceed silently.
+  init_store
+
+  mkdir -p src
+  echo "x" >src/x.txt
+  run_cg capture -format json src
+  assert_success
+  local rid
+  rid="$(receipt_id_of_group "$output")"
+  [[ -n $rid ]] || fail "no receipt id: $output"
+
+  run_cg restore "$rid" out
+  assert_success
+
+  [[ -f out/x.txt ]] || fail "out/x.txt missing"
+
+  # Branch 2 is silent — no notice/warning/error on stderr.
+  refute_output --partial "notice:"
+  refute_output --partial "warning:"
 }
 
 function restore_refuses_existing_destination { # @test

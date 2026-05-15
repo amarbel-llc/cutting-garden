@@ -1,7 +1,6 @@
-package capture
+package capture_receipt
 
 import (
-	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
 	"github.com/amarbel-llc/madder/go/pkgs/blob_store_configs"
 	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
 	"github.com/amarbel-llc/madder/go/pkgs/hyphence"
@@ -9,20 +8,25 @@ import (
 	"github.com/amarbel-llc/purse-first/libs/dewey/bravo/errors"
 )
 
-// computeStoreHint builds the RFC 0003 store-hint metadata for a
+// ComputeStoreHint builds the RFC 0003 store-hint metadata for a
 // receipt. Empty storeIdString returns (nil, nil), the MAY-omit path
 // §Producer Rules §Receipt Metadata: Store Hint permits when the
 // caller can't resolve a real id. A non-nil error is a soft failure
-// — callers SHOULD surface it (sink notice) and write the receipt
-// without the hint.
+// — callers SHOULD surface it (sink notice on the capture side,
+// FDR §Store-Hint Resolution §Hash-family fallback on the restore
+// side) and treat the hint as absent.
 //
 // The hint's ConfigMarklId is computed in the store's default hash
 // family so consumers can validate it under the same hash the store
 // publishes blobs under.
-func computeStoreHint(
+//
+// Phase 3 step 5 moved this here from internal/capture/store_hint.go
+// so cutting-garden's restore cmd can run drift checks against the
+// same compute path that capture wrote the hint with.
+func ComputeStoreHint(
 	blobStore blob_stores.BlobStoreInitialized,
 	storeIdString string,
-) (*capture_receipt.StoreHint, error) {
+) (*StoreHint, error) {
 	if storeIdString == "" {
 		return nil, nil
 	}
@@ -52,7 +56,7 @@ func computeStoreHint(
 		return nil, errors.Wrap(err)
 	}
 
-	return &capture_receipt.StoreHint{
+	return &StoreHint{
 		StoreId:       storeIdString,
 		ConfigMarklId: digester.GetMarklId().String(),
 	}, nil

@@ -1,4 +1,4 @@
-package capture
+package capture_receipt
 
 import (
 	"testing"
@@ -11,7 +11,7 @@ func TestComputeStoreHint_EmptyStoreIdReturnsNil(t *testing.T) {
 	// sentinel; per RFC 0003 producers MAY omit the hint. The
 	// function returns (nil, nil) without touching the blobStore —
 	// so the zero-value blobStore here never has its methods called.
-	hint, err := computeStoreHint(blob_stores.BlobStoreInitialized{}, "")
+	hint, err := ComputeStoreHint(blob_stores.BlobStoreInitialized{}, "")
 	if err != nil {
 		t.Fatalf("unexpected err: %v", err)
 	}

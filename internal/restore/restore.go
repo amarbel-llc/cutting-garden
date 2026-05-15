@@ -9,22 +9,21 @@
 // Semantics are normative per FDR 0001 (docs/features/0001-restore.md
 // upstream) and RFC 0003 §Consumer Rules.
 //
-// Phase 3 status: steps 3-4 wire the happy path through plugin.Restore
-// using -store-or-default for materialization plus the cross-scheme
-// type-tag guard. The FDR §Store-Hint Resolution decision tree (drift
-// checks, fallback notices) lands in step 5; rich sanitization
-// diagnostics land in step 6.
+// Phase 3 status: steps 3-5 wire the happy path through plugin.Restore
+// with full FDR §Store-Hint Resolution (drift checks, fallback notices,
+// -store override) plus the cross-scheme type-tag guard. Rich
+// sanitization diagnostic shapes lock down in step 6.
 package restore
 
 import (
+	"io"
 	"net/url"
+	"os"
 
 	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
 	"github.com/amarbel-llc/cutting-garden/internal/cgenv"
 	"github.com/amarbel-llc/cutting-garden/internal/command"
 	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
-	"github.com/amarbel-llc/madder/go/pkgs/blob_store_env"
-	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
 	"github.com/amarbel-llc/madder/go/pkgs/ids"
 	"github.com/amarbel-llc/madder/go/pkgs/markl"
 	"github.com/amarbel-llc/purse-first/libs/dewey/0/interfaces"
@@ -36,8 +35,13 @@ import (
 // Store is bound to the `-store` flag by SetFlagDefinitions; when
 // non-empty it overrides the receipt's store-hint resolution per FDR
 // §Store-Hint Resolution branch 1.
+//
+// diagnostics is the writer FDR §Store-Hint Resolution and
+// §Sanitization diagnostic lines route to. Defaults to os.Stderr in
+// New(); tests use newWithDiagnostics to inject a bytes.Buffer.
 type Restore struct {
-	Store string
+	Store       string
+	diagnostics io.Writer
 }
 
 var (
@@ -45,9 +49,16 @@ var (
 	_ interfaces.CommandComponentWriter = (*Restore)(nil)
 )
 
-// New constructs a Restore with default flag values.
+// New constructs a Restore with default flag values; diagnostics
+// route to os.Stderr.
 func New() *Restore {
-	return &Restore{}
+	return &Restore{diagnostics: os.Stderr}
+}
+
+// newWithDiagnostics is the test-only constructor that routes
+// diagnostic output to the supplied writer.
+func newWithDiagnostics(diagnostics io.Writer) *Restore {
+	return &Restore{diagnostics: diagnostics}
 }
 
 func (*Restore) GetDescription() command.Description {
@@ -88,11 +99,9 @@ func (cmd *Restore) Run(req command.Request) {
 
 // runRestore implements the cmd in three phases: resolve the dest
 // plugin and validate the destination preconditions, fetch and parse
-// the receipt blob, then dispatch to plugin.Restore (which handles
-// sanitization and per-type materialization).
-//
-// Step 3 uses -store-or-default for materialization; the FDR
-// §Store-Hint Resolution decision tree is wired in step 5.
+// the receipt blob (including type-tag and store-hint resolution),
+// then dispatch to plugin.Restore (which handles sanitization and
+// per-type materialization).
 func (cmd *Restore) runRestore(
 	ctx errors.Context,
 	receiptIDStr, destStr string,
@@ -129,7 +138,9 @@ func (cmd *Restore) runRestore(
 			&receiptID, blob)
 	}
 
-	materializationStore, err := selectMaterializationStore(envBlobStore, cmd.Store)
+	materializationStore, err := resolveMaterializationStore(
+		envBlobStore, v1.Hint, cmd.Store, cmd.diagnostics,
+	)
 	if err != nil {
 		return err
 	}
@@ -140,25 +151,6 @@ func (cmd *Restore) runRestore(
 		Dest:      destURL,
 		RawDest:   destStr,
 	})
-}
-
-// selectMaterializationStore picks the store entry blobs are read
-// against. Step 3 implements the two trivial branches:
-//
-//   - storeOverride non-empty → resolve that store directly.
-//   - storeOverride empty     → use the active default store.
-//
-// Step 5 replaces this with the full FDR §Store-Hint Resolution
-// decision tree (hint matches → use hinted; drift → refuse; hint
-// missing → fall back with notice; no hint → fall back with notice).
-func selectMaterializationStore(
-	envBlobStore blob_store_env.BlobStoreEnv,
-	storeOverride string,
-) (blob_stores.BlobStoreInitialized, error) {
-	if storeOverride != "" {
-		return resolveStoreByID(envBlobStore, storeOverride)
-	}
-	return envBlobStore.GetDefaultBlobStore(), nil
 }
 
 // checkReceiptTypeTag refuses a receipt whose wire-format type-tag

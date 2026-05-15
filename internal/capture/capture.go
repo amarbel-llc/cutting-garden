@@ -153,7 +153,7 @@ func (cmd *Capture) Run(req command.Request) {
 			effectiveStoreId = envBlobStore.GetDefaultBlobStoreId()
 		}
 
-		hint, hintErr := computeStoreHint(blobStore, effectiveStoreId)
+		hint, hintErr := capture_receipt.ComputeStoreHint(blobStore, effectiveStoreId)
 		if hintErr != nil {
 			sink.Notice(fmt.Sprintf(
 				"notice: omitting store-hint for store=%s: %v",
