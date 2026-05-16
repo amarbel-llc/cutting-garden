@@ -229,10 +229,12 @@ func (cmd *Diff) runDiff(
 
 	differences := compareEntries(v1.Entries, diskEntries, missingBlobs)
 
-	// Step 6 wraps each line in a lipgloss-keyed SGR escape. For now
-	// emit raw lines to stdout.
+	renderer, err := newDiffRenderer(cmd.Color, os.Stdout)
+	if err != nil {
+		return err
+	}
 	for _, line := range differences {
-		fmt.Fprintln(os.Stdout, line)
+		fmt.Fprintln(os.Stdout, renderDiffLine(renderer, line))
 	}
 
 	if len(differences) > 0 {
