@@ -66,13 +66,22 @@
           src = ./.;
           pwd = ./.;
           modules = ./gomod2nix.toml;
-          subPackages = [ "cmd/cutting-garden" ];
+          subPackages = [
+            "cmd/cutting-garden"
+            "cmd/cutting-garden-gen"
+          ];
           go = pkgs.go_1_26;
           GOTOOLCHAIN = "local";
 
-          # TODO(Phase 2): run manpage and completion stub generators
-          # here once a generator-binary entrypoint exists.
-          postInstall = "";
+          # Phase 5: generate manpages + shell completion stubs, then
+          # delete the gen binary so release artifacts don't ship it.
+          # The gen binary calls into the same Utility-registration
+          # code paths as `cutting-garden` itself (see
+          # cmd/cutting-garden-gen/main.go).
+          postInstall = ''
+            $out/bin/cutting-garden-gen $out
+            rm $out/bin/cutting-garden-gen
+          '';
 
           meta = {
             description = "Filesystem-tree capture/restore CLI atop madder";
