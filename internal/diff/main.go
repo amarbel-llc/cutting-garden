@@ -20,12 +20,15 @@
 package diff
 
 import (
+	"fmt"
 	"io"
 	"os"
 
 	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
 	"github.com/amarbel-llc/cutting-garden/internal/command"
 	"github.com/amarbel-llc/cutting-garden/internal/command_components"
+	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
+	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
 	"github.com/amarbel-llc/madder/go/pkgs/markl"
 	"github.com/amarbel-llc/purse-first/libs/dewey/0/interfaces"
 	"github.com/amarbel-llc/purse-first/libs/dewey/bravo/errors"
@@ -197,19 +200,55 @@ func (cmd *Diff) runDiff(
 		return err
 	}
 
-	// Step 4 wires the walk + comparison here:
-	//   - plugin.ScanForDiff(req) for the disk-side walk.
-	//   - compareEntries(v1.Entries, disk, missingBlobs) for the diff.
-	//   - blob_stores.NewDiscardBlobStore(sourceStore.GetDefaultHashType())
-	//     to recompute file blob-ids without persisting.
-	// Step 5 wires the probe gated by cmd.VerifyBlobsExist.
-	// Step 6 renders diff lines through lipgloss-keyed color.
-	_ = v1
-	_ = sourceStore
+	// Recompute file content blob-ids in the source store's hash
+	// family WITHOUT persisting (FDR §Behavior phase 5). The
+	// discard store's MakeBlobWriter digests every byte but writes
+	// it nowhere.
+	discardStore := blob_stores.NewDiscardBlobStore(
+		sourceStore.GetDefaultHashType(),
+	)
 
-	return errors.ErrorWithStackf(
-		"diff: comparison not yet implemented (Phase 4 step 3; " +
-			"walk + compare land in step 4)")
+	diskEntries, scanErr := plugin.ScanForDiff(
+		cutting_garden_plugins.DiffScanRequest{
+			Dir:            dirURL,
+			RawDir:         dirStr,
+			BlobStore:      discardStore,
+			ReceiptEntries: v1.Entries,
+		})
+	if scanErr != nil {
+		return scanErr
+	}
+
+	// Step 5 wires the probe gated by cmd.VerifyBlobsExist; for now
+	// missingBlobs is nil so compareEntries emits no `B` lines.
+	differences := compareEntries(v1.Entries, diskEntries, nil)
+
+	// Step 6 wraps each line in a lipgloss-keyed SGR escape. For now
+	// emit raw lines to stdout.
+	for _, line := range differences {
+		fmt.Fprintln(os.Stdout, line)
+	}
+
+	if len(differences) > 0 {
+		fmt.Fprintf(cmd.diagnostics, "diff: %d %s\n",
+			len(differences), pluralize("difference", "differences", len(differences)))
+		return errors.ErrorWithStackf(
+			"tree differs from receipt: %d %s",
+			len(differences),
+			pluralize("entry", "entries", len(differences)))
+	}
+
+	return nil
+}
+
+// pluralize returns singular when n == 1, plural otherwise. Used in
+// the "diff: N differences" tally and the "tree differs from receipt:
+// N entries" error.
+func pluralize(singular, plural string, n int) string {
+	if n == 1 {
+		return singular
+	}
+	return plural
 }
 
 // validateColor enforces the FDR §Flags constraint on -color values.
