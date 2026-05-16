@@ -72,6 +72,31 @@ function install_emits_zsh_completion { # @test
     fail "missing zsh completion at $prefix/share/zsh/site-functions/_cutting-garden"
 }
 
+function install_emits_cg_alias { # @test
+  # The cg alias produces its own binary, its own per-shell
+  # completion stubs (each baked with `cg` so `complete -F _cg cg`
+  # registers correctly), and a manpage symlink at cg.1 → cutting-
+  # garden.1. nixpkgs follows the symlink during compress and may
+  # emit either form on disk; assert with `-e` to accept both.
+  local prefix
+  prefix="$(install_prefix)"
+
+  [[ -x "$prefix/bin/cg" ]] ||
+    fail "missing cg binary at $prefix/bin/cg"
+
+  [[ -e "$prefix/share/man/man1/cg.1.gz" ]] ||
+    fail "missing cg manpage at $prefix/share/man/man1/cg.1.gz"
+
+  [[ -f "$prefix/share/bash-completion/completions/cg" ]] ||
+    fail "missing cg bash completion at $prefix/share/bash-completion/completions/cg"
+
+  [[ -f "$prefix/share/fish/vendor_completions.d/cg.fish" ]] ||
+    fail "missing cg fish completion at $prefix/share/fish/vendor_completions.d/cg.fish"
+
+  [[ -f "$prefix/share/zsh/site-functions/_cg" ]] ||
+    fail "missing cg zsh completion at $prefix/share/zsh/site-functions/_cg"
+}
+
 function install_omits_gen_binary { # @test
   # The gen binary was used to produce the artifacts then deleted
   # in postInstall. Release artifacts must not ship it — it has no

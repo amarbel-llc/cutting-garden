@@ -76,6 +76,7 @@
           modules = ./gomod2nix.toml;
           subPackages = [
             "cmd/cutting-garden"
+            "cmd/cg"
             "cmd/cutting-garden-gen"
           ];
           go = pkgs.go_1_26;

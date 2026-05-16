@@ -132,6 +132,66 @@ func TestGenerateUtilityManpage_BareCmdGetsPlaceholder(t *testing.T) {
 	}
 }
 
+func TestGenerateUtilityManpage_AliasesInNameAndSymlinked(t *testing.T) {
+	// Aliases declared via AddAlias appear in the NAME line
+	// comma-separated after the canonical name, and produce
+	// `<alias>.1` symlinks pointing at the canonical `<utility>.1`
+	// in the same directory. `man <alias>` follows the symlink.
+	dir := t.TempDir()
+	u := MakeUtility("demo", nil)
+	u.AddAlias("dm")
+	u.AddAlias("dem")
+	u.AddCmd("alpha", describedCmd{short: "a"})
+
+	if err := u.GenerateUtilityManpage(dir); err != nil {
+		t.Fatalf("GenerateUtilityManpage: %v", err)
+	}
+	body, err := os.ReadFile(filepath.Join(
+		dir, "share", "man", "man1", "demo.1"))
+	if err != nil {
+		t.Fatalf("missing canonical manpage: %v", err)
+	}
+	if !strings.Contains(string(body), ".SH NAME\ndemo, dm, dem") {
+		t.Errorf("expected NAME line to list aliases; got:\n%s", body)
+	}
+
+	for _, alias := range []string{"dm", "dem"} {
+		linkPath := filepath.Join(
+			dir, "share", "man", "man1", alias+".1")
+		target, err := os.Readlink(linkPath)
+		if err != nil {
+			t.Errorf("expected %s.1 to be a symlink: %v", alias, err)
+			continue
+		}
+		if target != "demo.1" {
+			t.Errorf("%s.1 → %q, want demo.1", alias, target)
+		}
+	}
+}
+
+func TestGenerateUtilityManpage_AliasSymlinkIsIdempotent(t *testing.T) {
+	// Re-running the generator replaces the existing symlink rather
+	// than failing — dev iteration runs the gen binary repeatedly.
+	dir := t.TempDir()
+	u := MakeUtility("demo", nil)
+	u.AddAlias("dm")
+	u.AddCmd("alpha", describedCmd{short: "a"})
+
+	for i := 0; i < 2; i++ {
+		if err := u.GenerateUtilityManpage(dir); err != nil {
+			t.Fatalf("run %d: GenerateUtilityManpage: %v", i, err)
+		}
+	}
+	target, err := os.Readlink(filepath.Join(
+		dir, "share", "man", "man1", "dm.1"))
+	if err != nil {
+		t.Fatalf("symlink missing after second run: %v", err)
+	}
+	if target != "demo.1" {
+		t.Errorf("symlink target after re-run: got %q, want demo.1", target)
+	}
+}
+
 func TestGenerateUtilityManpage_NoSubcommands_OmitsSections(t *testing.T) {
 	// A utility with no user-facing subcommands (e.g. only the
 	// hidden complete) should not emit SUBCOMMANDS or SEE ALSO

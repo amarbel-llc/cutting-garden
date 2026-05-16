@@ -63,3 +63,63 @@ func TestGenerateCompletions_ZshStub(t *testing.T) {
 		t.Errorf("zsh stub does not delegate to complete subcommand: %q", got)
 	}
 }
+
+func TestGenerateCompletions_AliasesGetTheirOwnStubs(t *testing.T) {
+	// Aliases must produce per-shell stubs with their own binary
+	// name baked in — bash's `complete -F _<name> <name>` must
+	// reference the alias, otherwise `<alias> <TAB>` won't trigger.
+	// The stubs CANNOT be symlinks: the contents differ per name.
+	dir := t.TempDir()
+	u := MakeUtility("demo", nil)
+	u.AddAlias("dm")
+
+	if err := u.GenerateCompletions(dir); err != nil {
+		t.Fatalf("GenerateCompletions: %v", err)
+	}
+
+	// Canonical stubs exist and reference the canonical binary name.
+	canonicalBash, err := os.ReadFile(filepath.Join(
+		dir, "share", "bash-completion", "completions", "demo"))
+	if err != nil {
+		t.Fatalf("canonical bash stub missing: %v", err)
+	}
+	if !strings.Contains(string(canonicalBash), "complete -F _demo demo") {
+		t.Errorf("canonical bash stub doesn't reference demo: %s", canonicalBash)
+	}
+
+	// Alias stubs exist for all three shells and reference the alias
+	// name, NOT the canonical name.
+	aliasBash, err := os.ReadFile(filepath.Join(
+		dir, "share", "bash-completion", "completions", "dm"))
+	if err != nil {
+		t.Fatalf("alias bash stub missing: %v", err)
+	}
+	got := string(aliasBash)
+	if !strings.Contains(got, "complete -F _dm dm") {
+		t.Errorf("alias bash stub doesn't register `dm` completion: %s", got)
+	}
+	if !strings.Contains(got, "dm complete --bash-style") {
+		t.Errorf("alias bash stub doesn't call `dm` binary: %s", got)
+	}
+	if strings.Contains(got, "demo complete") {
+		t.Errorf("alias bash stub leaks canonical name `demo`: %s", got)
+	}
+
+	aliasFish, err := os.ReadFile(filepath.Join(
+		dir, "share", "fish", "vendor_completions.d", "dm.fish"))
+	if err != nil {
+		t.Fatalf("alias fish stub missing: %v", err)
+	}
+	if !strings.Contains(string(aliasFish), "dm complete --bash-style") {
+		t.Errorf("alias fish stub doesn't call `dm`: %s", aliasFish)
+	}
+
+	aliasZsh, err := os.ReadFile(filepath.Join(
+		dir, "share", "zsh", "site-functions", "_dm"))
+	if err != nil {
+		t.Fatalf("alias zsh stub missing: %v", err)
+	}
+	if !strings.Contains(string(aliasZsh), "#compdef dm") {
+		t.Errorf("alias zsh stub doesn't declare `dm` compdef: %s", aliasZsh)
+	}
+}

@@ -16,12 +16,18 @@ const completeSubcommandName = "complete"
 
 // GenerateUtilityManpage writes the toplevel <utility>.1 manpage to
 // <outDir>/share/man/man1/<utility>.1. The page surfaces the utility
-// name, its global synopsis, the user-facing subcommand list (sorted
-// alphabetically, with `complete` filtered out), and a SEE ALSO list
-// of the per-subcommand manpages.
+// name plus any registered aliases, its global synopsis, the
+// user-facing subcommand list (sorted alphabetically, with `complete`
+// filtered out), and a SEE ALSO list of the per-subcommand manpages.
 //
 // Per-subcommand pages are written separately by GenerateManpages;
 // the generator binary calls both in sequence.
+//
+// Each registered alias gets a `<alias>.1` symlink pointing at
+// `<utility>.1` in the same directory, so `man <alias>` follows the
+// symlink and renders the canonical page. Per-subcommand pages
+// (`<utility>-<sub>.1`) are NOT mirrored per alias; the SEE ALSO
+// list points at the canonical names.
 func (utility Utility) GenerateUtilityManpage(outDir string) error {
 	manDir := filepath.Join(outDir, "share", "man", "man1")
 	if err := os.MkdirAll(manDir, 0o755); err != nil {
@@ -29,8 +35,22 @@ func (utility Utility) GenerateUtilityManpage(outDir string) error {
 	}
 
 	body := utility.renderUtilityManpage()
-	path := filepath.Join(manDir, utility.GetName()+".1")
-	return os.WriteFile(path, []byte(body), 0o644)
+	canonical := utility.GetName() + ".1"
+	canonicalPath := filepath.Join(manDir, canonical)
+	if err := os.WriteFile(canonicalPath, []byte(body), 0o644); err != nil {
+		return err
+	}
+
+	for _, alias := range utility.GetAliases() {
+		linkPath := filepath.Join(manDir, alias+".1")
+		// Replace any existing entry so reruns are idempotent — the
+		// gen binary may run multiple times during dev.
+		_ = os.Remove(linkPath)
+		if err := os.Symlink(canonical, linkPath); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (utility Utility) renderUtilityManpage() string {
@@ -38,7 +58,13 @@ func (utility Utility) renderUtilityManpage() string {
 
 	name := utility.GetName()
 	fmt.Fprintf(&b, ".TH %s 1\n", strings.ToUpper(name))
-	fmt.Fprintf(&b, ".SH NAME\n%s\n", name)
+
+	// NAME lists every registered name (canonical first, then
+	// aliases) comma-separated, mirroring the convention of pages
+	// like `ls(1)` / `cp(1)` that document multiple invocations.
+	allNames := append([]string{name}, utility.GetAliases()...)
+	fmt.Fprintf(&b, ".SH NAME\n%s\n", strings.Join(allNames, ", "))
+
 	fmt.Fprintf(&b, ".SH SYNOPSIS\n.B %s\n[\\fIflags\\fR]\n"+
 		"\\fIsubcommand\\fR\n[\\fIargs\\fR]\n", name)
 

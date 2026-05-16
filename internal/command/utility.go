@@ -3,6 +3,7 @@ package command
 import (
 	"fmt"
 	"os"
+	"strings"
 	"syscall"
 
 	"github.com/amarbel-llc/purse-first/libs/dewey/0/interfaces"
@@ -23,10 +24,18 @@ type Config interface {
 // Utility owns the registered command set and the global Config for
 // a binary. Phase 1 keeps this small: registration and lookup only.
 // Run-dispatch logic lands in utility_run.go in the next commit.
+//
+// Aliases declare alternative binary names that ship alongside the
+// canonical one. The canonical name is what PrintUsage and the
+// manpage NAME line lead with; aliases surface as "(cg, …)" hints
+// and produce per-alias shell-completion stubs. The utility's
+// behavior under any binary name is identical — aliases are
+// cosmetic + completion-routing only.
 type Utility struct {
-	name   string
-	config Config
-	cmds   map[string]Cmd
+	name    string
+	aliases []string
+	config  Config
+	cmds    map[string]Cmd
 }
 
 func MakeUtility(name string, defaultConfig Config) Utility {
@@ -38,6 +47,26 @@ func MakeUtility(name string, defaultConfig Config) Utility {
 }
 
 func (utility Utility) GetName() string { return utility.name }
+
+// GetAliases returns a copy of the registered alias list (alphabetical
+// insertion order). Nil when no aliases are registered.
+func (utility Utility) GetAliases() []string {
+	if len(utility.aliases) == 0 {
+		return nil
+	}
+	out := make([]string, len(utility.aliases))
+	copy(out, utility.aliases)
+	return out
+}
+
+// AddAlias declares an alternative binary name for this utility.
+// Aliases surface in PrintUsage's banner, the utility manpage's NAME
+// section, and produce per-alias completion stubs from
+// GenerateCompletions. Pointer receiver — aliases is a slice and
+// would not propagate through a value-receiver mutation.
+func (utility *Utility) AddAlias(alias string) {
+	utility.aliases = append(utility.aliases, alias)
+}
 
 func (utility Utility) GetConfig() config_cli.Config {
 	if utility.config == nil {
@@ -93,7 +122,11 @@ func (utility Utility) PrintUsage(ctx interfaces.ActiveContext, err error) {
 	if err != nil {
 		defer errors.ContextCancelWithError(ctx, err)
 	}
-	fmt.Fprintf(os.Stderr, "Usage for %s:\n", utility.name)
+	banner := utility.name
+	if aliases := utility.GetAliases(); len(aliases) > 0 {
+		banner = fmt.Sprintf("%s (%s)", utility.name, strings.Join(aliases, ", "))
+	}
+	fmt.Fprintf(os.Stderr, "Usage for %s:\n", banner)
 	for _, sub := range utility.userFacingSubcommands() {
 		fmt.Fprintf(os.Stderr, "  %-12s %s\n", sub.name, sub.short)
 	}

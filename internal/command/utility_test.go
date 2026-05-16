@@ -69,3 +69,32 @@ func TestUtility_MergeWithPrefix(t *testing.T) {
 		t.Error("MergeUtilityWithPrefix did not prefix the cmd name")
 	}
 }
+
+func TestUtility_AliasesEmptyByDefault(t *testing.T) {
+	u := MakeUtility("test", nil)
+	if got := u.GetAliases(); got != nil {
+		t.Errorf("GetAliases on fresh utility = %v, want nil", got)
+	}
+}
+
+func TestUtility_AddAliasAccumulatesInOrder(t *testing.T) {
+	u := MakeUtility("test", nil)
+	u.AddAlias("first")
+	u.AddAlias("second")
+	got := u.GetAliases()
+	if len(got) != 2 || got[0] != "first" || got[1] != "second" {
+		t.Errorf("GetAliases = %v, want [first second]", got)
+	}
+}
+
+func TestUtility_GetAliasesReturnsCopy(t *testing.T) {
+	// Mutating the returned slice must not mutate the utility's
+	// internal state — callers shouldn't be able to leak aliases.
+	u := MakeUtility("test", nil)
+	u.AddAlias("a")
+	got := u.GetAliases()
+	got[0] = "MUTATED"
+	if u.GetAliases()[0] != "a" {
+		t.Errorf("GetAliases() returned the internal slice; expected a copy")
+	}
+}
