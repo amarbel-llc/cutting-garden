@@ -60,9 +60,17 @@
           overlays = [ gomod2nix.overlays.default ];
         };
 
+        # version.txt at repo root is the single source of truth for
+        # the release version (eng-versioning(7) §SINGLE VERSION SOURCE
+        # OF TRUTH; `just release` sed-rewrites it). Trailing newline
+        # stripped so the nix derivation's `version` attr is a clean
+        # semver string.
+        cgVersion =
+          pkgs.lib.removeSuffix "\n" (builtins.readFile ./version.txt);
+
         cuttingGarden = pkgs.buildGoApplication {
           pname = "cutting-garden";
-          version = "0.0.1";
+          version = cgVersion;
           src = ./.;
           pwd = ./.;
           modules = ./gomod2nix.toml;
@@ -129,6 +137,11 @@
           packages = [
             pkgs.go_1_26
             pkgs.gopls
+            # gum (charmbracelet) backs the `just tag` / `just release`
+            # recipes' pretty logging per eng-versioning(7) §JUSTFILE
+            # RELEASE RECIPES. Devshell-only — release machinery is
+            # not in the package closure.
+            pkgs.gum
             gomod2nix.packages.${system}.default
             madder.packages.${system}.madder
           ];

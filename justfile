@@ -30,6 +30,89 @@ update-go: && build-gomod2nix
 update-nix:
     nix flake update
 
+# Sed-rewrite version.txt to the given semver. Single source of truth
+# per eng-versioning(7) §SINGLE VERSION SOURCE OF TRUTH; flake.nix
+# reads it via builtins.readFile. No-op if already at target.
+# Usage: just bump-version 0.1.0
+[group('maint')]
+bump-version new_version:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    current="$(cat version.txt 2>/dev/null | tr -d '\n' || true)"
+    if [[ "$current" == "{{new_version}}" ]]; then
+      gum log --level info "already at {{new_version}}"
+      exit 0
+    fi
+    echo "{{new_version}}" > version.txt
+    gum log --level info "bumped version: ${current:-(none)} → {{new_version}}"
+
+# Tag a release. Pass the bare semver; the "v" prefix is added for you.
+# Creates a signed annotated tag, pushes it to origin, verifies the
+# signature. Standalone callers (without bumping version.txt) use this
+# directly; `just release` calls it under the hood.
+# Usage: just tag 0.1.0 "feat: phase-5 polish + release"
+[group('maint')]
+tag version message:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    tag="v{{version}}"
+    prev=$(git tag --sort=-v:refname -l "v*" | head -1)
+    if [[ -n "$prev" ]]; then
+      gum log --level info "Previous: $prev"
+      git log --oneline "$prev"..HEAD
+    fi
+    git tag -s -m "{{message}}" "$tag"
+    gum log --level info "Created tag: $tag"
+    git push origin "$tag"
+    gum log --level info "Pushed $tag"
+    git tag -v "$tag"
+
+# Cut a release: must be run on master. Bumps version.txt, commits the
+# bump with a changelog-style message built from commits since the last
+# v* tag, pushes master, then signs and pushes the v{{version}} tag.
+# Usage: just release 0.1.0
+#
+# Inlines the tag-step here because passing a multi-line message
+# across `just` recipe boundaries was unreliable in madder's history
+# (see madder release-v0.3.0 incident).
+[group('maint')]
+release version:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    current_branch=$(git rev-parse --abbrev-ref HEAD)
+    if [[ "$current_branch" != "master" ]]; then
+      gum log --level error "just release must be run on master (currently on $current_branch)"
+      exit 1
+    fi
+    prev=$(git tag --sort=-v:refname -l "v*" | head -1)
+    header="release v{{version}}"
+    if [[ -n "$prev" ]]; then
+      summary=$(git log --format='- %s' "$prev"..HEAD)
+      if [[ -n "$summary" ]]; then
+        msg="$header"$'\n\n'"$summary"
+      else
+        msg="$header"
+      fi
+    else
+      msg="$header"
+    fi
+    just bump-version "{{version}}"
+    if ! git diff --quiet version.txt; then
+      git add version.txt
+      git commit -m "chore: release v{{version}}"
+      git push origin master
+      gum log --level info "pushed version.txt bump to master"
+    fi
+    tag="v{{version}}"
+    if [[ -n "$prev" ]]; then
+      gum log --level info "Previous: $prev"
+      git log --oneline "$prev"..HEAD || true
+    fi
+    git tag -s -m "$msg" "$tag"
+    gum log --level info "Created tag: $tag"
+    git push origin "$tag"
+    gum log --level info "Pushed $tag"
+
 [group('debug')]
 debug-build-go:
     nix develop --command go build -o .tmp/cutting-garden ./cmd/cutting-garden
