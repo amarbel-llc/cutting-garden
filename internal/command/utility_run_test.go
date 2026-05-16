@@ -96,6 +96,37 @@ func TestUtility_Run_UnknownSubcommand_NoDoubleErrorLine(t *testing.T) {
 	}
 }
 
+func TestUtility_PrintUsage_DescribedSortedFilterComplete(t *testing.T) {
+	// PrintUsage shares the userFacingSubcommands helper with
+	// GenerateUtilityManpage: sorted alphabetically, `complete`
+	// filtered, short description appended when the cmd implements
+	// CommandWithDescription. Pins the shape so users don't see the
+	// pre-polish "list of bare names" output.
+	out := captureStderr(func() {
+		u := MakeUtility("test", nil)
+		RegisterComplete(&u)
+		u.AddCmd("zulu", describedCmd{short: "do zulu things"})
+		u.AddCmd("alpha", describedCmd{short: "do alpha things"})
+		u.Run([]string{"test"})
+	})
+
+	if !strings.Contains(out, "Usage for test") {
+		t.Errorf("expected usage banner, got %q", out)
+	}
+	if !strings.Contains(out, "do alpha things") ||
+		!strings.Contains(out, "do zulu things") {
+		t.Errorf("short descriptions missing, got %q", out)
+	}
+	if strings.Contains(out, "complete") {
+		t.Errorf("complete subcommand leaked into usage, got %q", out)
+	}
+	alphaIdx := strings.Index(out, "alpha")
+	zuluIdx := strings.Index(out, "zulu")
+	if alphaIdx < 0 || zuluIdx < 0 || alphaIdx > zuluIdx {
+		t.Errorf("subcommands not sorted alphabetically, got %q", out)
+	}
+}
+
 func TestExtendNameIfNecessary(t *testing.T) {
 	got := extendNameIfNecessary("foo")
 	if got == "" {

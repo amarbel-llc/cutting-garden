@@ -94,8 +94,8 @@ func (utility Utility) PrintUsage(ctx interfaces.ActiveContext, err error) {
 		defer errors.ContextCancelWithError(ctx, err)
 	}
 	fmt.Fprintf(os.Stderr, "Usage for %s:\n", utility.name)
-	for name := range utility.AllCmds() {
-		fmt.Fprintln(os.Stderr, "  "+name)
+	for _, sub := range utility.userFacingSubcommands() {
+		fmt.Fprintf(os.Stderr, "  %-12s %s\n", sub.name, sub.short)
 	}
 }
 
