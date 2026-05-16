@@ -231,3 +231,36 @@ function restore_round_trip_identity_cross_binary { # @test
   [[ $rid_first == "$rid_second" ]] ||
     fail "cross-binary round-trip mismatch: cg-capture=$rid_first, cg-recapture-after-madder-restore=$rid_second"
 }
+
+function diff_round_trip_identity_cross_binary { # @test
+  # Cross-binary diff round-trip: CG_BIN captures a tree,
+  # MADDER_CG_BIN restores it, CG_BIN diffs the receipt against
+  # the materialized tree. Clean exit (0 differences) is the
+  # acceptance: pins that madder's restore preserves every byte
+  # the receipt described AND that cg's diff sees the same tree
+  # madder produced.
+  #
+  # Single-root, no symlinks (the file plugin's symlink target
+  # is captured but the bats sandbox can't easily round-trip
+  # arbitrary symlink targets — already covered in
+  # restore_round_trips_symlink).
+  require_bin MADDER_CG_BIN cutting-garden
+
+  init_store
+
+  mkdir -p tree/sub
+  echo "alpha" >tree/a.txt
+  echo "beta" >tree/b.txt
+  echo "gamma" >tree/sub/c.txt
+
+  local rid
+  rid="$(capture_receipt_id tree)"
+  [[ -n $rid ]] || fail "cg capture: no receipt id"
+
+  run_madder_cg restore -store .default "$rid" restored
+  assert_success
+
+  run_cg diff -color never "$rid" restored
+  assert_success
+  [[ -z $output ]] || fail "expected clean diff, got: $output"
+}
