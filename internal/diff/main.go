@@ -219,9 +219,15 @@ func (cmd *Diff) runDiff(
 		return scanErr
 	}
 
-	// Step 5 wires the probe gated by cmd.VerifyBlobsExist; for now
-	// missingBlobs is nil so compareEntries emits no `B` lines.
-	differences := compareEntries(v1.Entries, diskEntries, nil)
+	var missingBlobs map[string]string
+	if cmd.VerifyBlobsExist {
+		missingBlobs, err = probeMissingBlobs(sourceStore, v1.Entries)
+		if err != nil {
+			return err
+		}
+	}
+
+	differences := compareEntries(v1.Entries, diskEntries, missingBlobs)
 
 	// Step 6 wraps each line in a lipgloss-keyed SGR escape. For now
 	// emit raw lines to stdout.
