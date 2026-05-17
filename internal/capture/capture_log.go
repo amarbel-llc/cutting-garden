@@ -81,7 +81,13 @@ func appendCaptureLog(
 		))
 		return
 	}
-	defer file.Close() //nolint:errcheck // best-effort log; close error is non-fatal
+	defer func() {
+		if cerr := file.Close(); cerr != nil {
+			sink.Notice(fmt.Sprintf(
+				"notice: captures.log close error at %q: %v", path, cerr,
+			))
+		}
+	}()
 
 	encoder := json.NewEncoder(file)
 	for _, entry := range entries {

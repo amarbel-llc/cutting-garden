@@ -36,7 +36,7 @@ func makeBenchEntries(n int) []EntryV1 {
 	for i := 0; i < n; i++ {
 		h, hRepool := markl.FormatHashSha256.Get()
 		_, _ = h.Write([]byte(fmt.Sprintf("blob-content-%d", i)))
-		id, _ := h.GetMarklId()
+		id, _ := h.GetMarklId() //repool:owned // Entry retains id for its lifetime; see func doc
 		blobId := id.String()
 		hRepool()
 
