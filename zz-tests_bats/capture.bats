@@ -219,7 +219,7 @@ function capture_file_arg_is_failure { # @test
 }
 
 function capture_refuses_parent_escape_root { # @test
-  # RFC 0003 §Producer Rules §Root Scoping: capture-roots MUST be PWD
+  # RFC 0001 §Producer Rules §Root Scoping: capture-roots MUST be PWD
   # or descendants thereof. A `..` from a non-CWD PWD escapes by
   # construction, regardless of what lives above.
   init_store
@@ -236,7 +236,7 @@ function capture_refuses_parent_escape_root { # @test
 }
 
 function capture_refuses_absolute_root { # @test
-  # RFC 0003 §Producer Rules §Root Scoping: an absolute path that
+  # RFC 0001 §Producer Rules §Root Scoping: an absolute path that
   # resolves outside PWD MUST be refused. Use a sibling of PWD inside
   # BATS_RUN_TMPDIR so the path exists but is not a descendant of PWD.
   init_store
@@ -251,7 +251,7 @@ function capture_refuses_absolute_root { # @test
 }
 
 function capture_refuses_collision_after_clean { # @test
-  # RFC 0003 §Producer Rules §Root Collision Detection: two roots
+  # RFC 0001 §Producer Rules §Root Collision Detection: two roots
   # within the same store-group that resolve to the same path under
   # filepath.Clean MUST be refused.
   init_store
@@ -269,7 +269,7 @@ function capture_refuses_collision_after_clean { # @test
 }
 
 function capture_emits_store_hint_when_known { # @test
-  # Per RFC 0003 §Producer Rules §Receipt Metadata: Store Hint, a
+  # Per RFC 0001 §Producer Rules §Receipt Metadata: Store Hint, a
   # capture receipt SHOULD carry a `- store/<id> < <markl-id>`
   # line naming the destination store and locking the lookup to that
   # store's blob_store-config blob.
@@ -294,7 +294,7 @@ function capture_emits_store_hint_when_known { # @test
 
 function capture_default_store_emits_hint { # @test
   # Default-store captures emit a hint pointing at the resolved
-  # default-store id (e.g. ".default"). Per RFC 0003 §Store-Hint
+  # default-store id (e.g. ".default"). Per RFC 0001 §Store-Hint
   # Resolution.
   init_store
 

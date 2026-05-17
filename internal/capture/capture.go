@@ -130,7 +130,7 @@ func (cmd *Capture) Run(req command.Request) {
 			failCount += result.FailCount
 		}
 
-		// Collapse Root to "." for single-root groups per RFC 0003
+		// Collapse Root to "." for single-root groups per RFC 0001
 		// §Root Encoding. Multi-root groups keep distinct Root values.
 		if len(group.roots) == 1 {
 			for i := range entries {
@@ -147,7 +147,7 @@ func (cmd *Capture) Run(req command.Request) {
 		}
 
 		// Empty storeName (default store) → resolve to its actual id
-		// per RFC 0003 §Store-Hint Resolution.
+		// per RFC 0001 §Store-Hint Resolution.
 		effectiveStoreId := storeName
 		if effectiveStoreId == "" {
 			effectiveStoreId = envBlobStore.GetDefaultBlobStoreId()
@@ -190,7 +190,7 @@ func (cmd *Capture) Run(req command.Request) {
 // writeReceipt encodes entries via capture_receipt and writes the
 // resulting blob into blobStore. Returns the blob's content-addressed
 // markl id as a string. When hint is non-nil, the receipt's hyphence
-// metadata block carries an RFC 0003 store-hint line; pass nil for
+// metadata block carries an RFC 0001 store-hint line; pass nil for
 // hint to omit. Mirrors madder's writeReceiptBlob shape.
 func writeReceipt(
 	blobStore blob_stores.BlobStoreInitialized,

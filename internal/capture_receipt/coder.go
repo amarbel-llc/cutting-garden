@@ -7,7 +7,7 @@
 // coder based on that Type during the body pass. No buffering — the
 // body decoder streams from the bufio.Reader hyphence hands it.
 //
-// The store-hint metadata line (RFC 0003 §Producer Rules §Receipt
+// The store-hint metadata line (RFC 0001 §Producer Rules §Receipt
 // Metadata: Store Hint) is also consumed by the metadata coder. It
 // pre-allocates a *V1 with the captured Hint set on it, so the body
 // coder for TypeTagV1 can stream NDJSON entries directly into the
@@ -68,7 +68,7 @@ func Read(
 }
 
 // receiptMetadataCoder is the hyphence metadata coder for receipts.
-// Reads the `! type` and (RFC 0003) `- store/<id> < <markl-id>`
+// Reads the `! type` and (RFC 0001) `- store/<id> < <markl-id>`
 // lines, populating typedBlob.Type and pre-allocating typedBlob.Blob
 // so the version-specific body coder can attach the hint to its
 // output.

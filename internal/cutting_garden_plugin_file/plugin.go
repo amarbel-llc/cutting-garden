@@ -39,7 +39,7 @@ func (Plugin) Schemes() []string { return []string{"", "file"} }
 // accepted by restore. Locked per madder#16.
 func (Plugin) TypeTag() string { return capture_receipt.TypeTagV1 }
 
-// ValidateSource enforces RFC 0003 §Producer Rules §Root Scoping:
+// ValidateSource enforces RFC 0001 §Producer Rules §Root Scoping:
 // capture roots MUST resolve under PWD. raw is preserved for the
 // diagnostic; u is what the planner parsed.
 func (Plugin) ValidateSource(u *url.URL, raw string) error {
@@ -76,8 +76,8 @@ func (Plugin) CaptureRoot(
 	}
 }
 
-// ValidateDest enforces FDR 0001 §Preconditions: <dest> MUST NOT
-// exist at invocation time.
+// ValidateDest enforces FDR 0001 §Destination Preconditions: <dest>
+// MUST NOT exist at invocation time.
 func (Plugin) ValidateDest(dest *url.URL, raw string) error {
 	path, err := pathFromURL(dest)
 	if err != nil {
@@ -89,7 +89,7 @@ func (Plugin) ValidateDest(dest *url.URL, raw string) error {
 // Restore validates path sanitization across every entry, then
 // materializes per-type. Mirrors the previous in-command behavior
 // exactly. See FDR 0001 (`docs/features/0001-restore.md`) and
-// RFC 0003 §Consumer Rules.
+// RFC 0001 §Consumer Rules.
 func (Plugin) Restore(
 	req cutting_garden_plugins.RestoreRequest,
 ) error {
@@ -291,7 +291,7 @@ func assertDestinationDoesNotExist(dest string) error {
 	return nil
 }
 
-// ValidateEntries runs the RFC 0003 §Consumer Rules §Path
+// ValidateEntries runs the RFC 0001 §Consumer Rules §Path
 // Sanitization checks across every entry. First failure is the
 // refusal — atomic per FDR 0001. Exported because the `diff`
 // command (also filesystem-anchored) reuses the same checks.

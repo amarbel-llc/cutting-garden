@@ -267,7 +267,7 @@ func classifyArg(arg string) classifiedArg {
 }
 
 // checkRootCollisions refuses two roots within a single store-group that
-// resolve to the same path under filepath.Clean per RFC 0003 §Producer
+// resolve to the same path under filepath.Clean per RFC 0001 §Producer
 // Rules §Root Collision Detection.
 func checkRootCollisions(roots []captureRoot) error {
 	seen := make(map[string]string, len(roots))

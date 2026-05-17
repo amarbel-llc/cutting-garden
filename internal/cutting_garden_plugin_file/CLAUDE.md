@@ -15,10 +15,10 @@ rather than the URI scheme name "file".
 - `materializeEntries` / `materializeFile` — restore-side write loop.
 - `walkForDiff` / `hashFileViaStore` — diff-side filesystem walk
   (read-only analogue of `walkRoot` over a discard-store).
-- `checkRootScope` — RFC 0003 §Producer Rules §Root Scoping.
-- `assertDestinationDoesNotExist` — FDR 0001 §Preconditions.
+- `checkRootScope` — RFC 0001 §Producer Rules §Root Scoping.
+- `assertDestinationDoesNotExist` — FDR 0001 §Destination Preconditions.
 - `assertDirectoryExists` — diff-side precondition.
-- `ValidateEntries` / `pathConfinedTo` — RFC 0003 §Consumer Rules
+- `ValidateEntries` / `pathConfinedTo` — RFC 0001 §Consumer Rules
   §Path Sanitization.
 - `pathFromURL` — URL → filesystem path coercion (`url.go`).
 - `joinDiffFailures` — error-aggregation helper used by

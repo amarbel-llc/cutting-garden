@@ -30,7 +30,7 @@ func WriteV1(w io.Writer, entries []EntryV1) (int64, error) {
 
 // WriteV1WithHint serializes entries as a hyphence-wrapped v1 receipt
 // to w via the package's Coder, optionally prefixing a store-hint
-// metadata line per RFC 0003 §Producer Rules §Receipt Metadata: Store
+// metadata line per RFC 0001 §Producer Rules §Receipt Metadata: Store
 // Hint.
 func WriteV1WithHint(w io.Writer, entries []EntryV1, hint *StoreHint) (int64, error) {
 	tb := &hyphence.TypedBlob[Blob]{

@@ -5,7 +5,7 @@ setup() {
 
 # bats file_tags=restore
 
-# Phase 3 step 7 ships the FDR 0001 conformance matrix (RFC 0003
+# Phase 3 step 7 ships the FDR 0001 conformance matrix (RFC 0001
 # §Consumer Rules) minus the two FDR-deferred scenarios:
 #
 #   - `restore_skips_type_other_with_notice` (FDR §Limitations: hard
@@ -174,6 +174,37 @@ function restore_round_trips_dir { # @test
   local mode
   mode="$(file_mode out/inner)"
   [[ $mode == '750' ]] || fail "expected mode 750 on restored dir; got $mode"
+}
+
+function restore_skips_type_other_with_notice { # @test
+  # RFC 0001 §Consumer Rules §Per-Type Materialization: entries of
+  # type "other" (devices, fifos, sockets) are skipped with a
+  # notice. Hand-crafted receipt so the test doesn't depend on
+  # capture's ability to record non-regular files in the test env.
+  # Closes cutting-garden#24.
+  init_store
+
+  local receipt_path
+  receipt_path="$BATS_TEST_TMPDIR/other-receipt"
+  cat >"$receipt_path" <<-'RECEIPT'
+	---
+	! cutting_garden-capture_receipt-fs-v1
+	---
+
+	{"path":".","root":"src","type":"dir","mode":"0755"}
+	{"path":"fifo","root":"src","type":"other","mode":"0600"}
+RECEIPT
+
+  local rid
+  rid="$(write_blob_id "$receipt_path")"
+  [[ -n $rid ]] || fail "write returned empty hash"
+
+  run_cg restore -store .default "$rid" out
+  assert_success
+  assert_output --partial 'skipping entry of type "other"'
+
+  [[ -d out/src ]] || fail "expected out/src dir to be created"
+  [[ ! -e out/src/fifo ]] || fail "expected out/src/fifo NOT to exist"
 }
 
 function restore_round_trips_symlink { # @test

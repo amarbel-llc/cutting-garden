@@ -37,7 +37,7 @@ const (
 )
 
 // StoreHint is the optional `- store/<id> < <markl-id>` metadata line
-// per RFC 0003 §Producer Rules §Receipt Metadata: Store Hint.
+// per RFC 0001 §Producer Rules §Receipt Metadata: Store Hint.
 // Consumers (restore) use it to auto-resolve the source store.
 //
 // The hint is wire-shape-shared across receipt versions: a v2 receipt

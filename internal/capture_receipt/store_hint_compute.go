@@ -8,7 +8,7 @@ import (
 	"github.com/amarbel-llc/purse-first/libs/dewey/bravo/errors"
 )
 
-// ComputeStoreHint builds the RFC 0003 store-hint metadata for a
+// ComputeStoreHint builds the RFC 0001 store-hint metadata for a
 // receipt. Empty storeIdString returns (nil, nil), the MAY-omit path
 // §Producer Rules §Receipt Metadata: Store Hint permits when the
 // caller can't resolve a real id. A non-nil error is a soft failure

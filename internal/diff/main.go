@@ -7,16 +7,11 @@
 //
 //	diff [-store STORE_ID] [-verify-blobs-exist] [-color auto|always|never] RECEIPT_ID DIR
 //
-// Semantics are normative per FDR 0006 (docs/features/0006-diff.md
-// upstream). Cross-command glue (receipt fetch, store-hint
-// resolution, type-tag guard, env wiring) lives in
-// internal/command_components; this package holds only diff-specific
-// dispatch + the per-entry comparator (steps 4+).
-//
-// Phase 4 status: steps 2-3 ship arg/flag parsing, plugin/dir
-// validation, receipt fetch, type-tag guard, and store-hint
-// resolution. Comparison lands in step 4, -verify-blobs-exist in
-// step 5, color output in step 6, bats coverage in step 7.
+// Semantics are normative per FDR 0002 (docs/features/0002-diff.md).
+// Cross-command glue (receipt fetch, store-hint resolution, type-tag
+// guard, env wiring) lives in internal/command_components; this
+// package holds only diff-specific dispatch + the per-entry
+// comparator.
 package diff
 
 import (

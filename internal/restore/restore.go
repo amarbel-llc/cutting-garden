@@ -6,8 +6,8 @@
 //
 //	restore [-store STORE_ID] RECEIPT_ID DEST
 //
-// Semantics are normative per FDR 0001 (docs/features/0001-restore.md
-// upstream) and RFC 0003 §Consumer Rules. Cross-command glue
+// Semantics are normative per FDR 0001 (docs/features/0001-restore.md)
+// and RFC 0001 §Consumer Rules. Cross-command glue
 // (receipt fetch, store-hint resolution, type-tag guard, env wiring)
 // lives in internal/command_components; this package holds only
 // restore-specific dispatch.
