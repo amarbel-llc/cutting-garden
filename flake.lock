@@ -964,11 +964,11 @@
         "nixpkgs": "nixpkgs_8"
       },
       "locked": {
-        "lastModified": 1778504183,
-        "narHash": "sha256-y4jFK6cu21DrksrDQmcdPBitpU6oQ5ygjNlygc1SbYY=",
+        "lastModified": 1778844381,
+        "narHash": "sha256-ropB+88lTMclHm+C+JmFdU9+hzpup9zSLMC0+eAWT98=",
         "owner": "amarbel-llc",
         "repo": "nixpkgs",
-        "rev": "0ef7d0f19c5864e432104050d8f5ffcaa9e0cbd3",
+        "rev": "91650001e111e96c860ed9fe0f87a490e8e0bf10",
         "type": "github"
       },
       "original": {
