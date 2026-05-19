@@ -2,7 +2,6 @@ package capture
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -63,10 +62,10 @@ func appendCaptureLog(
 	path := cgEnvDir.GetXDG().State.MakePath(captureLogFileName).String()
 
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		sink.Notice(fmt.Sprintf(
+		sink.Notice(
 			"notice: cannot create captures.log directory %q: %v",
 			filepath.Dir(path), err,
-		))
+		)
 		return
 	}
 
@@ -76,25 +75,25 @@ func appendCaptureLog(
 		0o644,
 	)
 	if err != nil {
-		sink.Notice(fmt.Sprintf(
+		sink.Notice(
 			"notice: cannot open captures.log %q: %v", path, err,
-		))
+		)
 		return
 	}
 	defer func() {
 		if cerr := file.Close(); cerr != nil {
-			sink.Notice(fmt.Sprintf(
+			sink.Notice(
 				"notice: captures.log close error at %q: %v", path, cerr,
-			))
+			)
 		}
 	}()
 
 	encoder := json.NewEncoder(file)
 	for _, entry := range entries {
 		if err := encoder.Encode(entry); err != nil {
-			sink.Notice(fmt.Sprintf(
+			sink.Notice(
 				"notice: captures.log write error at %q: %v", path, err,
-			))
+			)
 			return
 		}
 	}

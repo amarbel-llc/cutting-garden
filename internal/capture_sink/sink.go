@@ -46,7 +46,9 @@ type Sink interface {
 
 	// Notice reports informational events (store switches, shadow
 	// warnings). TAP renders as a comment; NDJSON routes to stderr.
-	Notice(msg string)
+	// Signature mirrors fmt.Printf — callers that already hold a
+	// pre-formatted message should pass "%s" as the first arg.
+	Notice(format string, args ...any)
 
 	// Failure reports a per-source error (capture-root missing, file
 	// open failure, copy failure, etc.).
@@ -93,8 +95,8 @@ func (s *tapSink) StoreGroupReceipt(receiptID string, count int) {
 	))
 }
 
-func (s *tapSink) Notice(msg string) {
-	s.tw.Comment(msg)
+func (s *tapSink) Notice(format string, args ...any) {
+	s.tw.Comment(fmt.Sprintf(format, args...))
 }
 
 func (s *tapSink) Failure(source string, err error) {
@@ -199,8 +201,8 @@ func (s *jsonSink) StoreGroupReceipt(receiptID string, count int) {
 	})
 }
 
-func (s *jsonSink) Notice(msg string) {
-	fmt.Fprintln(s.errOut, msg)
+func (s *jsonSink) Notice(format string, args ...any) {
+	fmt.Fprintln(s.errOut, fmt.Sprintf(format, args...))
 }
 
 func (s *jsonSink) Failure(source string, err error) {

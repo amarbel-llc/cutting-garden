@@ -19,7 +19,6 @@
 package capture
 
 import (
-	"fmt"
 	"os"
 
 	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
@@ -100,7 +99,7 @@ func (cmd *Capture) Run(req command.Request) {
 
 	for _, group := range groups {
 		if group.switchNotice != "" {
-			sink.Notice(group.switchNotice)
+			sink.Notice("%s", group.switchNotice)
 		}
 
 		var blobStore blob_stores.BlobStoreInitialized
@@ -118,7 +117,7 @@ func (cmd *Capture) Run(req command.Request) {
 
 		for _, root := range group.roots {
 			if root.shadowNotice != "" {
-				sink.Notice(root.shadowNotice)
+				sink.Notice("%s", root.shadowNotice)
 			}
 			result := root.plugin.CaptureRoot(cutting_garden_plugins.CaptureRootRequest{
 				Source:    root.sourceURL,
@@ -139,10 +138,10 @@ func (cmd *Capture) Run(req command.Request) {
 		}
 
 		if len(entries) == 0 {
-			sink.Notice(fmt.Sprintf(
+			sink.Notice(
 				"notice: no entries captured for store=%s; receipt skipped",
 				quoteEmpty(storeName),
-			))
+			)
 			continue
 		}
 
@@ -155,10 +154,10 @@ func (cmd *Capture) Run(req command.Request) {
 
 		hint, hintErr := capture_receipt.ComputeStoreHint(blobStore, effectiveStoreId)
 		if hintErr != nil {
-			sink.Notice(fmt.Sprintf(
+			sink.Notice(
 				"notice: omitting store-hint for store=%s: %v",
 				quoteEmpty(storeName), hintErr,
-			))
+			)
 		}
 
 		receiptID, err := writeReceipt(blobStore, entries, hint)
