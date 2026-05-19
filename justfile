@@ -11,13 +11,28 @@ build-gomod2nix:
 build-nix:
     nix build --show-trace
 
-test: test-go test-vet test-bats
+test: test-go test-vet test-vet-analyzers test-bats
 
 test-go:
     nix develop --command go test ./...
 
 test-vet:
     nix develop --command go vet ./...
+
+# Run one dewey analyzer (defererr, repool, seqerror) as a go vet -vettool.
+# Built ad-hoc into .tmp/analyzers/<name> from the module cache. See #30.
+[group('test')]
+test-vet-analyzer name:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    bin="{{justfile_directory()}}/.tmp/analyzers/{{name}}"
+    mkdir -p "$(dirname "$bin")"
+    nix develop --command go build -o "$bin" github.com/amarbel-llc/purse-first/libs/dewey/cmd/{{name}}
+    nix develop --command go vet -vettool="$bin" ./...
+
+# Run all three dewey analyzers in sequence.
+[group('test')]
+test-vet-analyzers: (test-vet-analyzer "seqerror") (test-vet-analyzer "repool") (test-vet-analyzer "defererr")
 
 test-bats:
     nix build .#bats-capture --show-trace
