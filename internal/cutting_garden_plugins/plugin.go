@@ -12,6 +12,7 @@
 package cutting_garden_plugins
 
 import (
+	"context"
 	"net/url"
 
 	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
@@ -34,8 +35,11 @@ type Plugin interface {
 
 // CaptureRootRequest is what a CapturePlugin needs to walk one
 // capture root: the source URL (already parsed; may be schemeless),
-// the destination blob store, and a live event sink.
+// the destination blob store, and a live event sink. Context is the
+// command's cancelable context; plugins MUST observe it on long-running
+// I/O (large file copies, etc.) so SIGINT/SIGTERM unwinds promptly.
 type CaptureRootRequest struct {
+	Context   context.Context
 	Source    *url.URL
 	RawArg    string
 	BlobStore blob_stores.BlobStoreInitialized
@@ -69,8 +73,9 @@ type CapturePlugin interface {
 // RestoreRequest is what a RestorePlugin needs to materialize a
 // previously-captured tree: the receipt's parsed entries, the source
 // blob store, and the destination URL (already parsed; may be
-// schemeless).
+// schemeless). Context is the command's cancelable context.
 type RestoreRequest struct {
+	Context   context.Context
 	Entries   []capture_receipt.EntryV1
 	BlobStore blob_stores.BlobStoreInitialized
 	Dest      *url.URL
@@ -98,6 +103,7 @@ type RestorePlugin interface {
 // (path sanitization etc.) before any I/O — diff is read-only and
 // atomic.
 type DiffScanRequest struct {
+	Context        context.Context
 	Dir            *url.URL
 	RawDir         string
 	BlobStore      blob_stores.BlobStoreInitialized

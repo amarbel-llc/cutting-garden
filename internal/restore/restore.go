@@ -146,6 +146,7 @@ func (cmd *Restore) runRestore(
 	}
 
 	return plugin.Restore(cutting_garden_plugins.RestoreRequest{
+		Context:   ctx,
 		Entries:   v1.Entries,
 		BlobStore: materializationStore,
 		Dest:      destURL,

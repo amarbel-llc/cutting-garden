@@ -205,6 +205,7 @@ func (cmd *Diff) runDiff(
 
 	diskEntries, scanErr := plugin.ScanForDiff(
 		cutting_garden_plugins.DiffScanRequest{
+			Context:        ctx,
 			Dir:            dirURL,
 			RawDir:         dirStr,
 			BlobStore:      discardStore,

@@ -120,6 +120,7 @@ func (cmd *Capture) Run(req command.Request) {
 				sink.Notice("%s", root.shadowNotice)
 			}
 			result := root.plugin.CaptureRoot(cutting_garden_plugins.CaptureRootRequest{
+				Context:   ctx,
 				Source:    root.sourceURL,
 				RawArg:    root.path,
 				BlobStore: blobStore,

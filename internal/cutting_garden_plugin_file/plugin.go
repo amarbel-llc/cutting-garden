@@ -5,6 +5,7 @@
 package cutting_garden_plugin_file
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"io/fs"
@@ -69,7 +70,7 @@ func (Plugin) CaptureRoot(
 	// sink labels via the caller) but is not embedded in the wire
 	// format.
 	var entries []capture_receipt.EntryV1
-	fails := walkRoot(req.BlobStore, path, &entries, req.Sink)
+	fails := walkRoot(req.Context, req.BlobStore, path, &entries, req.Sink)
 	return cutting_garden_plugins.CaptureRootResult{
 		Entries:   entries,
 		FailCount: fails,
@@ -102,7 +103,7 @@ func (Plugin) Restore(
 		return err
 	}
 
-	return materializeEntries(req.BlobStore, req.Entries, path)
+	return materializeEntries(req.Context, req.BlobStore, req.Entries, path)
 }
 
 // ValidateDiffDir enforces that the diff dir resolves to an existing
@@ -129,13 +130,14 @@ func (Plugin) ScanForDiff(
 	if err := ValidateEntries(req.ReceiptEntries, path); err != nil {
 		return nil, err
 	}
-	return walkForDiff(req.BlobStore, path)
+	return walkForDiff(req.Context, req.BlobStore, path)
 }
 
 // walkRoot, writeFileBlob: previously inline in
 // madder's `india/commands_cutting_garden/capture.go`. The walk is
 // unchanged; only the home moved.
 func walkRoot(
+	ctx context.Context,
 	store blob_stores.BlobStoreInitialized,
 	walkPath string,
 	accum *[]capture_receipt.EntryV1,
@@ -194,7 +196,7 @@ func walkRoot(
 			entry.Type = capture_receipt.TypeDir
 
 		case mode.IsRegular():
-			id, size, err := writeFileBlob(store, p)
+			id, size, err := writeFileBlob(ctx, store, p)
 			if err != nil {
 				sink.Failure(p, errors.Wrap(err))
 				failCount++
@@ -222,6 +224,7 @@ func walkRoot(
 }
 
 func writeFileBlob(
+	ctx context.Context,
 	blobStore blob_stores.BlobStoreInitialized,
 	srcPath string,
 ) (id domain_interfaces.MarklId, size int64, err error) {
@@ -239,7 +242,7 @@ func writeFileBlob(
 	}
 	defer errors.DeferredCloser(&err, wc)
 
-	if size, err = io.Copy(wc, src); err != nil {
+	if size, err = io.Copy(wc, newCtxReader(ctx, src)); err != nil {
 		err = errors.Wrap(err)
 		return
 	}
@@ -347,6 +350,7 @@ func pathConfinedTo(materialized, dest string) bool {
 }
 
 func materializeEntries(
+	ctx context.Context,
 	blobStore blob_stores.BlobStoreInitialized,
 	entries []capture_receipt.EntryV1,
 	dest string,
@@ -363,7 +367,7 @@ func materializeEntries(
 
 		switch e.Type {
 		case capture_receipt.TypeFile:
-			if err := materializeFile(blobStore, e, materialized); err != nil {
+			if err := materializeFile(ctx, blobStore, e, materialized); err != nil {
 				return err
 			}
 
@@ -428,6 +432,7 @@ func assertDirectoryExists(dir string) error {
 // single error (no streaming sink) and blobs are computed via the
 // caller's discard-store wrapper rather than written for real.
 func walkForDiff(
+	ctx context.Context,
 	store blob_stores.BlobStoreInitialized,
 	dir string,
 ) (entries []capture_receipt.EntryV1, err error) {
@@ -483,7 +488,7 @@ func walkForDiff(
 			entry.Type = capture_receipt.TypeDir
 
 		case mode.IsRegular():
-			id, size, err := hashFileViaStore(store, p)
+			id, size, err := hashFileViaStore(ctx, store, p)
 			if err != nil {
 				perEntryFailures = append(perEntryFailures,
 					fmt.Sprintf("%s: %v", p, err))
@@ -520,6 +525,7 @@ func walkForDiff(
 // sends bytes to io.Discard. Only the digester half of the chain
 // matters for diff.
 func hashFileViaStore(
+	ctx context.Context,
 	store blob_stores.BlobStoreInitialized,
 	srcPath string,
 ) (id domain_interfaces.MarklId, size int64, err error) {
@@ -537,7 +543,7 @@ func hashFileViaStore(
 	}
 	defer errors.DeferredCloser(&err, wc)
 
-	if size, err = io.Copy(wc, src); err != nil {
+	if size, err = io.Copy(wc, newCtxReader(ctx, src)); err != nil {
 		err = errors.Wrap(err)
 		return
 	}
@@ -558,6 +564,7 @@ func joinDiffFailures(lines []string) string {
 }
 
 func materializeFile(
+	ctx context.Context,
 	blobStore blob_stores.BlobStoreInitialized,
 	e capture_receipt.EntryV1,
 	materialized string,
@@ -583,7 +590,7 @@ func materializeFile(
 	}
 	defer errors.DeferredCloser(&err, file)
 
-	if _, err = io.Copy(file, reader); err != nil {
+	if _, err = io.Copy(file, newCtxReader(ctx, reader)); err != nil {
 		return errors.Wrapf(err,
 			"%s: blob read failed\n  blob_id: %s",
 			materialized, &blobId)
