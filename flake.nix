@@ -56,6 +56,7 @@
       gomod2nix,
       madder,
       bats,
+      ...
     }:
     flake-utils.lib.eachDefaultSystem (
       system:
