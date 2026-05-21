@@ -40,6 +40,8 @@
     bats = {
       url = "github:amarbel-llc/bats";
       inputs.nixpkgs.follows = "nixpkgs";
+      inputs.nixpkgs-master.follows = "nixpkgs-master";
+      inputs.utils.follows = "flake-utils";
     };
   };
 

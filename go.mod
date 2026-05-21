@@ -3,8 +3,8 @@ module github.com/amarbel-llc/cutting-garden
 go 1.26
 
 require (
-	github.com/amarbel-llc/madder/go v0.3.17
-	github.com/amarbel-llc/purse-first/libs/dewey v0.1.0
+	github.com/amarbel-llc/madder/go v0.3.23
+	github.com/amarbel-llc/purse-first/libs/dewey v0.1.1-0.20260516125550-eac862321b10
 	github.com/amarbel-llc/tap/go v0.1.2
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/muesli/termenv v0.16.0
@@ -47,14 +47,14 @@ require (
 	github.com/pkg/sftp v1.13.10 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
-	golang.org/x/crypto v0.50.0 // indirect
+	golang.org/x/crypto v0.51.0 // indirect
 	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f // indirect
-	golang.org/x/mod v0.35.0 // indirect
+	golang.org/x/mod v0.36.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
-	golang.org/x/sys v0.43.0 // indirect
-	golang.org/x/term v0.42.0 // indirect
-	golang.org/x/text v0.36.0 // indirect
-	golang.org/x/tools v0.44.0 // indirect
+	golang.org/x/sys v0.44.0 // indirect
+	golang.org/x/term v0.43.0 // indirect
+	golang.org/x/text v0.37.0 // indirect
+	golang.org/x/tools v0.45.0 // indirect
 	golang.org/x/xerrors v0.0.0-20240903120638-7835f813f4da // indirect
 )
 
