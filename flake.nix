@@ -23,11 +23,6 @@
     # dep, so the `madder` binary in the devshell speaks the same wire
     # format that our compiled-in pkgs/ imports do. Bump both together.
     #
-    # No `nixpkgs.follows` here — madder's flake uses the
-    # amarbel-llc/nixpkgs fork which is where buildGoApplication is
-    # exposed; redirecting it to upstream NixOS/nixpkgs breaks the
-    # in-flake build. See cutting-garden#2.
-    #
     # Pinned at madder 907fed7 (post-v0.3.17, untagged) — picks up
     # madder#176 which exposes `packages.<system>.cutting-garden`,
     # required by cutting-garden#22 (receipt-identity cross-test).
@@ -35,7 +30,12 @@
     # invalid checksum` symptom against
     # ~/.local/share/madder/blob_stores/dodder-v8-take3 after this bump
     # (cutting-garden#19).
-    madder.url = "github:amarbel-llc/madder/907fed760032f0754ee176db63c9bc67f09b9f88";
+    madder = {
+      url = "github:amarbel-llc/madder/907fed760032f0754ee176db63c9bc67f09b9f88";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.nixpkgs-master.follows = "nixpkgs-master";
+      inputs.utils.follows = "flake-utils";
+    };
 
     # amarbel-llc/bats — provides `lib.batsLane`, the nix-sandbox bats
     # test-runner builder. Consumed by the `bats-capture` package
