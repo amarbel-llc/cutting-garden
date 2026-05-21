@@ -19,19 +19,14 @@
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.flake-utils.follows = "flake-utils";
     };
-    # Pinned at the same revision as the cutting-garden -> madder go.mod
-    # dep, so the `madder` binary in the devshell speaks the same wire
-    # format that our compiled-in pkgs/ imports do. Bump both together.
-    #
-    # Pinned at madder 907fed7 (post-v0.3.17, untagged) — picks up
-    # madder#176 which exposes `packages.<system>.cutting-garden`,
-    # required by cutting-garden#22 (receipt-identity cross-test).
-    # Bumped from v0.3.17 (a2c01c6); re-verify the `encryption:
-    # invalid checksum` symptom against
-    # ~/.local/share/madder/blob_stores/dodder-v8-take3 after this bump
-    # (cutting-garden#19).
+    # Tracks the latest madder. The `madder` binary in the devshell
+    # and the cutting-garden -> madder go.mod dep need to speak the
+    # same wire format, so if you see receipt/blob mismatches, bump
+    # the go.mod dep to align with whatever rev nix flake lock has
+    # pinned. The lock is the source of truth for which madder rev is
+    # in play.
     madder = {
-      url = "github:amarbel-llc/madder/907fed760032f0754ee176db63c9bc67f09b9f88";
+      url = "github:amarbel-llc/madder";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.nixpkgs-master.follows = "nixpkgs-master";
       inputs.utils.follows = "flake-utils";
