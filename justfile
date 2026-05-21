@@ -1,28 +1,35 @@
 default: build test
 
+[group('build')]
 build: build-gomod2nix build-go build-nix
 
+[group('build')]
 build-go: build-gomod2nix
     nix develop --command go build ./...
 
+[group('build')]
 build-gomod2nix:
     nix develop --command gomod2nix
 
+[group('build')]
 build-nix:
     nix build --show-trace
 
-test: test-go test-vet test-vet-analyzers test-bats
+[group('post-build')]
+test: test-go lint-go lint-go-analyzers test-bats
 
+[group('post-build')]
 test-go:
     nix develop --command go test ./...
 
-test-vet:
+[group('pre-build')]
+lint-go:
     nix develop --command go vet ./...
 
 # Run one dewey analyzer (defererr, repool, seqerror) as a go vet -vettool.
 # Built ad-hoc into .tmp/analyzers/<name> from the module cache. See #30.
-[group('test')]
-test-vet-analyzer name:
+[group('pre-build')]
+lint-go-analyzer name:
     #!/usr/bin/env bash
     set -euo pipefail
     bin="{{justfile_directory()}}/.tmp/analyzers/{{name}}"
@@ -31,17 +38,21 @@ test-vet-analyzer name:
     nix develop --command go vet -vettool="$bin" ./...
 
 # Run all three dewey analyzers in sequence.
-[group('test')]
-test-vet-analyzers: (test-vet-analyzer "seqerror") (test-vet-analyzer "repool") (test-vet-analyzer "defererr")
+[group('pre-build')]
+lint-go-analyzers: (lint-go-analyzer "seqerror") (lint-go-analyzer "repool") (lint-go-analyzer "defererr")
 
+[group('post-build')]
 test-bats:
     nix build .#bats-capture --show-trace
 
+[group('maintenance')]
 update: update-go update-nix
 
+[group('maintenance')]
 update-go: && build-gomod2nix
     nix develop --command go mod tidy
 
+[group('maintenance')]
 update-nix:
     nix flake update
 
@@ -49,7 +60,7 @@ update-nix:
 # per eng-versioning(7) §SINGLE VERSION SOURCE OF TRUTH; flake.nix
 # reads it via builtins.readFile. No-op if already at target.
 # Usage: just bump-version 0.1.0
-[group('maint')]
+[group('maintenance')]
 bump-version new_version:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -66,7 +77,7 @@ bump-version new_version:
 # signature. Standalone callers (without bumping version.txt) use this
 # directly; `just release` calls it under the hood.
 # Usage: just tag 0.1.0 "feat: phase-5 polish + release"
-[group('maint')]
+[group('maintenance')]
 tag version message:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -90,7 +101,7 @@ tag version message:
 # Inlines the tag-step here because passing a multi-line message
 # across `just` recipe boundaries was unreliable in madder's history
 # (see madder release-v0.3.0 incident).
-[group('maint')]
+[group('maintenance')]
 release version:
     #!/usr/bin/env bash
     set -euo pipefail
