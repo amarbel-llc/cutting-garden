@@ -11,10 +11,11 @@ rather than the URI scheme name "file".
 
 ## What lives here
 
-- `walkRoot` / `writeFileBlob` — capture-side filesystem walk.
+- `walkRoot` — capture-side filesystem walk.
 - `materializeEntries` / `materializeFile` — restore-side write loop.
-- `walkForDiff` / `hashFileViaStore` — diff-side filesystem walk
-  (read-only analogue of `walkRoot` over a discard-store).
+- `walkForDiff` — diff-side filesystem walk (read-only analogue of
+  `walkRoot` that hands the caller's discard-store to the shared
+  `plugin_blob_io.WriteFileBlob` so only hashes flow through).
 - `checkRootScope` — RFC 0001 §Producer Rules §Root Scoping.
 - `assertDestinationDoesNotExist` — FDR 0001 §Destination Preconditions.
 - `assertDirectoryExists` — diff-side precondition.
@@ -23,6 +24,10 @@ rather than the URI scheme name "file".
 - `pathFromURL` — URL → filesystem path coercion (`url.go`).
 - `joinDiffFailures` — error-aggregation helper used by
   `walkForDiff`.
+
+Blob streaming (`WriteFileBlob`) and ctx-cancellation wrapping
+(`CtxReader`) are delegated to `internal/plugin_blob_io/`, shared
+with the yt-dlp plugin.
 
 Vendored from `madder@7d295b9` (tag `go/v0.3.16`),
 `go/internal/hotel/cutting_garden_plugin_file/`. The receipt-blob

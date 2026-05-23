@@ -85,6 +85,13 @@
           go = pkgs.go_1_26;
           GOTOOLCHAIN = "local";
 
+          # makeWrapper wraps the installed binaries so `yt-dlp` (used
+          # by internal/cutting_garden_plugin_ytdlp via exec.LookPath)
+          # is on PATH at install time. Without this, nix-built users
+          # get a clear-but-late error from runYtdlp; the wrap puts
+          # the dependency in the closure where it belongs.
+          nativeBuildInputs = [ pkgs.makeWrapper ];
+
           # Phase 5: generate manpages + shell completion stubs, then
           # delete the gen binary so release artifacts don't ship it.
           # The gen binary calls into the same Utility-registration
@@ -93,6 +100,10 @@
           postInstall = ''
             $out/bin/cutting-garden-gen $out
             rm $out/bin/cutting-garden-gen
+            for bin in cutting-garden cg; do
+              wrapProgram $out/bin/$bin \
+                --prefix PATH : ${pkgs.yt-dlp}/bin
+            done
           '';
 
           meta = {
@@ -148,6 +159,10 @@
             pkgs.gum
             gomod2nix.packages.${system}.default
             madder.packages.${system}.madder
+            # yt-dlp matches the wrap in the installed binary so
+            # `go run ./cmd/cutting-garden capture ytdlp:…` from inside
+            # the devshell behaves the same as a nix-built invocation.
+            pkgs.yt-dlp
           ];
 
           GOTOOLCHAIN = "local";
