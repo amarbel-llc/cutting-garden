@@ -174,3 +174,17 @@ debug-make-multiroot-fixture: debug-make-fixture
 [group('debug')]
 debug-capture-multiroot STORE='.default' FORMAT='auto': debug-build-go debug-make-multiroot-fixture
     .tmp/cutting-garden capture -format={{FORMAT}} {{STORE}} .tmp/cap-fixture .tmp/cap-fixture-2
+
+# Probe whether yt-dlp can enumerate a channel's videos via
+# --flat-playlist. Used to validate the assumption before any plugin-
+# side work to support channel-level capture. Defaults to the
+# @YouTube channel so the recipe runs without arguments; pass any
+# /@channel, /channel/UC…, or /playlist?list=… URL.
+# Usage: just debug-ytdlp-channel-list 'https://www.youtube.com/@channel/videos'
+[group('debug')]
+debug-ytdlp-channel-list URL='https://www.youtube.com/@YouTube/videos' LIMIT='10':
+    nix develop --command yt-dlp \
+      --flat-playlist \
+      --playlist-end {{LIMIT}} \
+      --print '%(id)s\t%(title)s' \
+      -- {{URL}}
