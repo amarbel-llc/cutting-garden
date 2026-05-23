@@ -25,6 +25,7 @@ test-go:
 [group('pre-build')]
 lint-go:
     nix develop --command go vet ./...
+    gum log --level info "lint-go: ok"
 
 # Run one dewey analyzer (defererr, repool, seqerror) as a go vet -vettool.
 # Built ad-hoc into .tmp/analyzers/<name> from the module cache. See #30.
@@ -36,6 +37,7 @@ lint-go-analyzer name:
     mkdir -p "$(dirname "$bin")"
     nix develop --command go build -o "$bin" github.com/amarbel-llc/purse-first/libs/dewey/cmd/{{name}}
     nix develop --command go vet -vettool="$bin" ./...
+    gum log --level info "lint-go-analyzer {{name}}: ok"
 
 # Run all three dewey analyzers in sequence.
 [group('pre-build')]
