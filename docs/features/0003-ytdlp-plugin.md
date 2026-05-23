@@ -170,6 +170,50 @@ Outside Nix the binary is the user's responsibility; a clear error
 is produced on `exec.LookPath` failure with a hint to enter the
 devshell.
 
+## Future host-routing layer for `https`
+
+This plugin claims the `https` scheme outright. Registry registration
+panics on duplicate scheme claims
+(`cutting_garden_plugins.MustRegisterCapture`), so no other plugin can
+also claim `https` while ytdlp is linked into the binary. The YouTube
+host allowlist in `sourceURLFromArg` is the single point that decides
+which `https://` URLs are accepted; anything outside the allowlist is
+refused with a hint to use the explicit `ytdlp:` prefix.
+
+This is sufficient for Phase 2 — yt-dlp is the only non-fs source
+we plan to ship — but a second `https`-capable plugin (e.g. a generic
+HTTP-archive backend, a Bandcamp-specific scraper, a podcast feed
+ingester) would collide at init-time. Resolving that without
+sacrificing the strict registry contract requires a layer above the
+scheme-keyed plugin map.
+
+The shape we expect to grow into when a second `https` consumer
+appears:
+
+1. **Host-router plugin.** A dedicated plugin claims `https` and
+   maintains an ordered list of `(host-matcher, downstream-plugin)`
+   rules. `Schemes()` returns `["https"]`; `ValidateSource` /
+   `CaptureRoot` / `ScanForDiff` dispatch to the matched downstream
+   plugin or refuse with a routing error.
+2. **Sub-registration interface.** Downstream plugins (yt-dlp, the
+   future generic-https, etc.) register their host matchers with
+   the host-router instead of claiming `https` directly. The yt-dlp
+   plugin's `init()` becomes
+   `host_routing.MustRegisterHTTPS(youtubeHostMatcher, p)` rather
+   than `cutting_garden_plugins.MustRegisterCapture(p)` for the
+   https scheme; the ytdlp-scheme registration stays.
+3. **Match-order policy.** Most specific match wins; ties refuse
+   with a config error. A trailing wildcard "generic" plugin is
+   allowed but logged on startup so it's visible.
+
+Until then the ordering question doesn't exist — there's exactly
+one `https` plugin — and the allowlist is a static map. When the
+router lands, the YouTube allowlist becomes that plugin's host
+matcher and the migration is mechanical.
+
+The host-routing layer is a future FDR; this section is the
+placeholder until that lands.
+
 ## Open Questions
 
 - **Allowlist drift.** YouTube's host surface is small and stable

@@ -30,9 +30,10 @@ Deferral.
   non-zero exit. Resolves the binary via `exec.LookPath`; the Nix
   flake wraps cutting-garden binaries so yt-dlp is on PATH at
   install time.
-- `writeFileBlob` (`blob.go`) — local twin of the file plugin's
-  helper of the same name, duplicated because the two plugins share
-  no private package today.
+- Blob streaming is delegated to
+  `internal/plugin_blob_io/`'s `WriteFileBlob`, shared with the
+  filesystem plugin. The package also owns `CtxReader`, the
+  ctx-cancellation wrapper used by both plugins' copy loops.
 
 ## TypeTag reuse
 
@@ -51,8 +52,11 @@ change required.
 ## https scheme footprint
 
 This plugin claims `https` exclusively (panic on duplicate
-registration per `cutting_garden_plugins.MustRegisterCapture`). If a
-future generic-https plugin is proposed, the natural next step is a
-separate host-routing layer; until then, the YouTube host allowlist
-in `sourceURLFromArg` is the single source of truth for which https
-URLs the plugin accepts.
+registration per `cutting_garden_plugins.MustRegisterCapture`). The
+YouTube host allowlist in `sourceURLFromArg` is the single source of
+truth for which https URLs the plugin accepts.
+
+A second `https` consumer would collide at init time. The migration
+to a host-routing layer above the scheme map is sketched in
+[FDR 0003 §Future host-routing layer for
+https](../../docs/features/0003-ytdlp-plugin.md#future-host-routing-layer-for-https).

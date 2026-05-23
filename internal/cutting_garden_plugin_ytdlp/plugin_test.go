@@ -61,9 +61,16 @@ fi
 // subtests see the original environment.
 func withFakeYtdlp(t *testing.T) {
 	t.Helper()
+	installFakeYtdlp(t, fakeYtdlpScript)
+}
+
+// installFakeYtdlp writes script as the yt-dlp binary on PATH for the
+// duration of t. Different shims back the failure-path tests.
+func installFakeYtdlp(t *testing.T, script string) {
+	t.Helper()
 	dir := t.TempDir()
 	bin := filepath.Join(dir, "yt-dlp")
-	if err := os.WriteFile(bin, []byte(fakeYtdlpScript), 0o755); err != nil {
+	if err := os.WriteFile(bin, []byte(script), 0o755); err != nil {
 		t.Fatalf("write fake yt-dlp: %v", err)
 	}
 	prev := os.Getenv("PATH")
@@ -342,4 +349,72 @@ func entryPaths(es []capture_receipt.EntryV1) []string {
 		out[i] = e.Path
 	}
 	return out
+}
+
+// failingYtdlpScript writes a recognizable line to stderr and exits
+// non-zero so tests can assert the stderr-tail propagation path.
+const failingYtdlpScript = `#!/bin/sh
+echo "fake-yt-dlp: simulated geo-block" >&2
+exit 1
+`
+
+// silentYtdlpScript exits 0 without writing anything, simulating the
+// "yt-dlp refused the URL silently" case the diff probe defends
+// against (no info.json produced).
+const silentYtdlpScript = `#!/bin/sh
+exit 0
+`
+
+func TestPlugin_CaptureRoot_NonZeroExit_SurfacesStderrTail(t *testing.T) {
+	installFakeYtdlp(t, failingYtdlpScript)
+
+	source := mustParseURL(t, "ytdlp:https://youtu.be/abc")
+	sink := &recordingSink{}
+	result := Plugin{}.CaptureRoot(cutting_garden_plugins.CaptureRootRequest{
+		Context:   context.Background(),
+		Source:    source,
+		RawArg:    "ytdlp:https://youtu.be/abc",
+		BlobStore: newDiscardStore(),
+		Sink:      sink,
+	})
+
+	if result.FailCount != 1 {
+		t.Fatalf("FailCount = %d, want 1", result.FailCount)
+	}
+	if len(sink.failures) != 1 {
+		t.Fatalf("sink failures = %d, want 1", len(sink.failures))
+	}
+	got := sink.failures[0].err.Error()
+	if !strings.Contains(got, "stderr-tail:") {
+		t.Errorf("error %q missing 'stderr-tail:' marker", got)
+	}
+	if !strings.Contains(got, "simulated geo-block") {
+		t.Errorf("error %q missing stderr line from fake shim", got)
+	}
+}
+
+func TestPlugin_ScanForDiff_ProbeMissingInfoJSON_ReportsError(t *testing.T) {
+	installFakeYtdlp(t, silentYtdlpScript)
+
+	source := mustParseURL(t, "ytdlp:https://youtu.be/abc")
+	receipt := []capture_receipt.EntryV1{
+		{
+			Path: "abc.info.json", Root: "https://youtu.be/abc",
+			Type: capture_receipt.TypeFile, BlobId: "sha256-stale",
+		},
+	}
+
+	_, err := Plugin{}.ScanForDiff(cutting_garden_plugins.DiffScanRequest{
+		Context:        context.Background(),
+		Dir:            source,
+		RawDir:         "ytdlp:https://youtu.be/abc",
+		BlobStore:      newDiscardStore(),
+		ReceiptEntries: receipt,
+	})
+	if err == nil {
+		t.Fatalf("ScanForDiff returned nil error; expected missing info.json")
+	}
+	if !strings.Contains(err.Error(), "probe info.json missing") {
+		t.Errorf("error %q missing 'probe info.json missing' marker", err.Error())
+	}
 }

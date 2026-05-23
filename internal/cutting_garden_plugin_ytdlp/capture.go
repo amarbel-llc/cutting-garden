@@ -9,6 +9,7 @@ import (
 	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
 	"github.com/amarbel-llc/cutting-garden/internal/capture_sink"
 	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
+	"github.com/amarbel-llc/cutting-garden/internal/plugin_blob_io"
 	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
 	"github.com/amarbel-llc/purse-first/libs/dewey/bravo/errors"
 )
@@ -54,7 +55,15 @@ func (Plugin) CaptureRoot(
 		req.Sink.Failure(req.RawArg, errors.Wrap(err))
 		return cutting_garden_plugins.CaptureRootResult{FailCount: 1}
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		// Tempdir cleanup is best-effort: the capture has already
+		// streamed every artifact into the blob store, so a leftover
+		// directory only costs the user disk space. Surface it as a
+		// notice so it's visible without inflating FailCount.
+		if rmErr := os.RemoveAll(tempDir); rmErr != nil {
+			req.Sink.Notice("ytdlp plugin: tempdir cleanup failed: %v", rmErr)
+		}
+	}()
 
 	if err := runYtdlp(req.Context, tempDir, captureDefaultArgs(tempDir, source)); err != nil {
 		req.Sink.Failure(req.RawArg, err)
@@ -114,7 +123,7 @@ func walkArtifacts(
 		}
 		rel = filepath.ToSlash(rel)
 
-		id, size, err := writeFileBlob(ctx, store, p)
+		id, size, err := plugin_blob_io.WriteFileBlob(ctx, store, p)
 		if err != nil {
 			sink.Failure(p, errors.Wrap(err))
 			failCount++

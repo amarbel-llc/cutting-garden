@@ -17,8 +17,8 @@ import (
 	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
 	"github.com/amarbel-llc/cutting-garden/internal/capture_sink"
 	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
+	"github.com/amarbel-llc/cutting-garden/internal/plugin_blob_io"
 	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
-	"github.com/amarbel-llc/madder/go/pkgs/domain_interfaces"
 	"github.com/amarbel-llc/madder/go/pkgs/markl"
 	"github.com/amarbel-llc/purse-first/libs/dewey/bravo/errors"
 )
@@ -196,7 +196,7 @@ func walkRoot(
 			entry.Type = capture_receipt.TypeDir
 
 		case mode.IsRegular():
-			id, size, err := writeFileBlob(ctx, store, p)
+			id, size, err := plugin_blob_io.WriteFileBlob(ctx, store, p)
 			if err != nil {
 				sink.Failure(p, errors.Wrap(err))
 				failCount++
@@ -221,34 +221,6 @@ func walkRoot(
 	}
 
 	return failCount
-}
-
-func writeFileBlob(
-	ctx context.Context,
-	blobStore blob_stores.BlobStoreInitialized,
-	srcPath string,
-) (id domain_interfaces.MarklId, size int64, err error) {
-	src, err := os.Open(srcPath)
-	if err != nil {
-		err = errors.Wrap(err)
-		return
-	}
-	defer errors.DeferredCloser(&err, src)
-
-	wc, err := blobStore.MakeBlobWriter(nil)
-	if err != nil {
-		err = errors.Wrap(err)
-		return
-	}
-	defer errors.DeferredCloser(&err, wc)
-
-	if size, err = io.Copy(wc, newCtxReader(ctx, src)); err != nil {
-		err = errors.Wrap(err)
-		return
-	}
-
-	id = wc.GetMarklId()
-	return
 }
 
 // checkRootScope refuses dir args that resolve outside PWD per RFC
@@ -488,7 +460,7 @@ func walkForDiff(
 			entry.Type = capture_receipt.TypeDir
 
 		case mode.IsRegular():
-			id, size, err := hashFileViaStore(ctx, store, p)
+			id, size, err := plugin_blob_io.WriteFileBlob(ctx, store, p)
 			if err != nil {
 				perEntryFailures = append(perEntryFailures,
 					fmt.Sprintf("%s: %v", p, err))
@@ -518,38 +490,6 @@ func walkForDiff(
 	}
 
 	return entries, nil
-}
-
-// hashFileViaStore is the discard-store analogue of writeFileBlob —
-// same shape, same MakeBlobWriter call, but the underlying store
-// sends bytes to io.Discard. Only the digester half of the chain
-// matters for diff.
-func hashFileViaStore(
-	ctx context.Context,
-	store blob_stores.BlobStoreInitialized,
-	srcPath string,
-) (id domain_interfaces.MarklId, size int64, err error) {
-	src, err := os.Open(srcPath)
-	if err != nil {
-		err = errors.Wrap(err)
-		return
-	}
-	defer errors.DeferredCloser(&err, src)
-
-	wc, err := store.MakeBlobWriter(nil)
-	if err != nil {
-		err = errors.Wrap(err)
-		return
-	}
-	defer errors.DeferredCloser(&err, wc)
-
-	if size, err = io.Copy(wc, newCtxReader(ctx, src)); err != nil {
-		err = errors.Wrap(err)
-		return
-	}
-
-	id = wc.GetMarklId()
-	return
 }
 
 func joinDiffFailures(lines []string) string {
@@ -590,7 +530,7 @@ func materializeFile(
 	}
 	defer errors.DeferredCloser(&err, file)
 
-	if _, err = io.Copy(file, newCtxReader(ctx, reader)); err != nil {
+	if _, err = io.Copy(file, plugin_blob_io.NewCtxReader(ctx, reader)); err != nil {
 		return errors.Wrapf(err,
 			"%s: blob read failed\n  blob_id: %s",
 			materialized, &blobId)

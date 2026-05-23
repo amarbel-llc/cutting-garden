@@ -8,12 +8,20 @@ import (
 
 	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
 	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
+	"github.com/amarbel-llc/cutting-garden/internal/plugin_blob_io"
 	"github.com/amarbel-llc/purse-first/libs/dewey/bravo/errors"
 )
 
 // infoJSONSuffix is the trailing extension yt-dlp gives the metadata
 // sidecar (`<id>.info.json`).
 const infoJSONSuffix = ".info.json"
+
+// probeStem is the fixed `-o` stem used for the freshness probe.
+// Decoupling from `%(id)s` lets us locate the info.json by exact path
+// (`<probeDir>/probe.info.json`) instead of walking the tempdir and
+// matching suffixes — robust to yt-dlp adding future `*.info.json`
+// sidecars (e.g. live-chat) under the id-based template.
+const probeStem = "probe"
 
 // ScanForDiff implements the lightweight freshness probe documented in
 // FDR 0003: fetch only the info.json (`--skip-download
@@ -26,7 +34,7 @@ const infoJSONSuffix = ".info.json"
 // to the receipt's; miss → fresh.
 func (Plugin) ScanForDiff(
 	req cutting_garden_plugins.DiffScanRequest,
-) ([]capture_receipt.EntryV1, error) {
+) (entries []capture_receipt.EntryV1, err error) {
 	source, err := sourceURLFromArg(req.Dir)
 	if err != nil {
 		return nil, err
@@ -41,22 +49,26 @@ func (Plugin) ScanForDiff(
 		)
 	}
 
-	tempDir, err := os.MkdirTemp("", "cg-ytdlp-diff-*")
+	probeDir, err := os.MkdirTemp("", "cg-ytdlp-probe-*")
 	if err != nil {
 		return nil, errors.Wrap(err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer errors.Deferred(&err, func() error { return os.RemoveAll(probeDir) })
 
-	if err := runYtdlp(req.Context, tempDir, probeArgs(tempDir, source)); err != nil {
+	if err = runYtdlp(req.Context, probeDir, probeArgs(probeDir, source)); err != nil {
 		return nil, err
 	}
 
-	freshInfoPath, err := findInfoJSON(tempDir)
-	if err != nil {
-		return nil, err
+	freshInfoPath := filepath.Join(probeDir, probeStem+infoJSONSuffix)
+	if _, statErr := os.Stat(freshInfoPath); statErr != nil {
+		return nil, errors.ErrorWithStackf(
+			"ytdlp plugin: probe info.json missing at %q (%v)\n"+
+				"hint: yt-dlp may have refused the URL silently",
+			freshInfoPath, statErr,
+		)
 	}
 
-	freshID, _, err := writeFileBlob(req.Context, req.BlobStore, freshInfoPath)
+	freshID, _, err := plugin_blob_io.WriteFileBlob(req.Context, req.BlobStore, freshInfoPath)
 	if err != nil {
 		return nil, err
 	}
@@ -72,19 +84,22 @@ func (Plugin) ScanForDiff(
 	// Stale — either info.json content changed or the receipt didn't
 	// carry an info.json sidecar. Re-download in full so every
 	// artifact gets a fresh blob-id and compareEntries can localize
-	// the difference.
-	return rescan(req, tempDir, source)
+	// the difference. Rescan uses its own tempdir so a partial
+	// failure can't mix probe leftovers into the returned entries.
+	return rescan(req, source)
 }
 
 // probeArgs builds the `yt-dlp --skip-download --write-info-json`
-// invocation used by the diff freshness probe.
+// invocation used by the diff freshness probe. The fixed `probeStem`
+// (not `%(id)s`) makes the resulting filename deterministic without
+// knowing the video id upfront.
 func probeArgs(outDir, source string) []string {
 	return []string{
 		"--no-progress",
 		"--no-warnings",
 		"--skip-download",
 		"--write-info-json",
-		"-o", filepath.Join(outDir, outputTemplate),
+		"-o", filepath.Join(outDir, probeStem+".%(ext)s"),
 		"--",
 		source,
 	}
@@ -138,55 +153,28 @@ func infoJSONBlobID(group []capture_receipt.EntryV1) (id string, ok bool) {
 	return "", false
 }
 
-// findInfoJSON returns the path to the single *.info.json under
-// dir. yt-dlp writes exactly one with the default template; an
-// unexpected count is reported as an error so silent surprises don't
-// pollute diff output.
-func findInfoJSON(dir string) (string, error) {
-	var matches []string
-	walkErr := filepath.WalkDir(dir, func(p string, d fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if d.IsDir() {
-			return nil
-		}
-		if strings.HasSuffix(p, infoJSONSuffix) {
-			matches = append(matches, p)
-		}
-		return nil
-	})
-	if walkErr != nil {
-		return "", errors.Wrap(walkErr)
-	}
-	if len(matches) != 1 {
-		return "", errors.ErrorWithStackf(
-			"ytdlp plugin: expected exactly one .info.json under %q, found %d",
-			dir, len(matches),
-		)
-	}
-	return matches[0], nil
-}
-
-// rescan runs a full media+sidecar yt-dlp invocation and returns
-// freshly-hashed EntryV1s, used when the info.json freshness probe
-// reports a miss.
+// rescan runs a full media+sidecar yt-dlp invocation into a fresh
+// tempdir and returns freshly-hashed EntryV1s. Used when the
+// info.json freshness probe reports a miss. The dedicated tempdir
+// guarantees that probe leftovers (or a partial probe failure) can't
+// surface as ghost entries in the returned set.
 func rescan(
 	req cutting_garden_plugins.DiffScanRequest,
-	tempDir string,
 	source string,
-) ([]capture_receipt.EntryV1, error) {
-	// Reuse tempDir; the probe's info.json already lives there but
-	// yt-dlp will overwrite it identically (same -o template, same
-	// blob-id) and the new artifacts are additive.
-	if err := runYtdlp(req.Context, tempDir, captureDefaultArgs(tempDir, source)); err != nil {
+) (entries []capture_receipt.EntryV1, err error) {
+	rescanDir, err := os.MkdirTemp("", "cg-ytdlp-rescan-*")
+	if err != nil {
+		return nil, errors.Wrap(err)
+	}
+	defer errors.Deferred(&err, func() error { return os.RemoveAll(rescanDir) })
+
+	if err = runYtdlp(req.Context, rescanDir, captureDefaultArgs(rescanDir, source)); err != nil {
 		return nil, err
 	}
 
-	var entries []capture_receipt.EntryV1
 	var perEntryFailures []string
 
-	walkErr := filepath.WalkDir(tempDir, func(p string, d fs.DirEntry, walkErr error) error {
+	walkErr := filepath.WalkDir(rescanDir, func(p string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			perEntryFailures = append(perEntryFailures, walkErr.Error())
 			return nil
@@ -194,23 +182,23 @@ func rescan(
 		if d.IsDir() {
 			return nil
 		}
-		info, err := d.Info()
-		if err != nil {
-			perEntryFailures = append(perEntryFailures, err.Error())
+		info, walkInfoErr := d.Info()
+		if walkInfoErr != nil {
+			perEntryFailures = append(perEntryFailures, walkInfoErr.Error())
 			return nil
 		}
 		if !info.Mode().IsRegular() {
 			return nil
 		}
-		rel, err := filepath.Rel(tempDir, p)
-		if err != nil {
-			perEntryFailures = append(perEntryFailures, err.Error())
+		rel, relErr := filepath.Rel(rescanDir, p)
+		if relErr != nil {
+			perEntryFailures = append(perEntryFailures, relErr.Error())
 			return nil
 		}
 		rel = filepath.ToSlash(rel)
-		id, size, err := writeFileBlob(req.Context, req.BlobStore, p)
-		if err != nil {
-			perEntryFailures = append(perEntryFailures, err.Error())
+		id, size, blobErr := plugin_blob_io.WriteFileBlob(req.Context, req.BlobStore, p)
+		if blobErr != nil {
+			perEntryFailures = append(perEntryFailures, blobErr.Error())
 			return nil
 		}
 		entries = append(entries, capture_receipt.EntryV1{
