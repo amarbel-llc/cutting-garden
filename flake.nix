@@ -11,7 +11,12 @@
     # nixpkgs-master is the SHA-pinned upstream anchor that eng's
     # update-nix-repos recipe cascades. Without this input the cascade
     # falls through to `nix flake update` on the floating `nixpkgs`
-    # ref and churns flake.lock every run.
+    # ref and churns flake.lock every run. The SHA is resolved from
+    # nixos-unstable by eng's _fetch-nixpkgs-master-sha recipe, so the
+    # pin is always Hydra-blessed and fully covered by cache.nixos.org
+    # — we import it as `pkgsUpstream` below to source upstream
+    # packages (yt-dlp) without the amarbel-llc/nixpkgs gomod2nix
+    # overlay, so their closures hit cache instead of rebuilding.
     nixpkgs-master.url = "github:NixOS/nixpkgs/d233902339c02a9c334e7e593de68855ad26c4cb";
     flake-utils.url = "github:numtide/flake-utils";
     gomod2nix = {
@@ -49,6 +54,7 @@
     {
       self,
       nixpkgs,
+      nixpkgs-master,
       flake-utils,
       gomod2nix,
       madder,
@@ -61,6 +67,15 @@
         pkgs = import nixpkgs {
           inherit system;
           overlays = [ gomod2nix.overlays.default ];
+        };
+
+        # pkgsUpstream is the bare Hydra-blessed nixpkgs (no overlays)
+        # used to source upstream packages whose closures we want
+        # served from cache.nixos.org rather than rebuilt locally
+        # through the amarbel-llc/nixpkgs fork. See the input
+        # `nixpkgs-master` comment for why this SHA is always cached.
+        pkgsUpstream = import nixpkgs-master {
+          inherit system;
         };
 
         # version.txt at repo root is the single source of truth for
@@ -102,7 +117,7 @@
             rm $out/bin/cutting-garden-gen
             for bin in cutting-garden cg; do
               wrapProgram $out/bin/$bin \
-                --prefix PATH : ${pkgs.yt-dlp}/bin
+                --prefix PATH : ${pkgsUpstream.yt-dlp}/bin
             done
           '';
 
@@ -162,7 +177,7 @@
             # yt-dlp matches the wrap in the installed binary so
             # `go run ./cmd/cutting-garden capture ytdlp:…` from inside
             # the devshell behaves the same as a nix-built invocation.
-            pkgs.yt-dlp
+            pkgsUpstream.yt-dlp
           ];
 
           GOTOOLCHAIN = "local";
