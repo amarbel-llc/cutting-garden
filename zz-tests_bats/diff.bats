@@ -49,7 +49,7 @@ function diff_content_drift { # @test
   echo "tampered" >out/note.txt
 
   run_cg diff -color never "$rid" out
-  assert_failure
+  assert_failure 1
   assert_output --partial 'M  note.txt'
   assert_output --partial 'blob '
   assert_output --partial 'diff: 1 difference'
@@ -70,7 +70,7 @@ function diff_added_entry { # @test
   echo "new" >out/extra.txt
 
   run_cg diff -color never "$rid" out
-  assert_failure
+  assert_failure 1
   assert_output --partial 'A  extra.txt	file'
   assert_output --partial 'diff: 1 difference'
 }
@@ -91,7 +91,7 @@ function diff_deleted_entry { # @test
   rm out/y.txt
 
   run_cg diff -color never "$rid" out
-  assert_failure
+  assert_failure 1
   assert_output --partial 'D  y.txt	file'
   assert_output --partial 'diff: 1 difference'
 }
@@ -113,7 +113,7 @@ function diff_type_change { # @test
   ln -s elsewhere out/path
 
   run_cg diff -color never "$rid" out
-  assert_failure
+  assert_failure 1
   assert_output --partial 'T  path	file -> symlink'
   assert_output --partial 'diff: 1 difference'
 }
@@ -134,7 +134,7 @@ function diff_mode_change { # @test
   chmod 0755 out/x.txt
 
   run_cg diff -color never "$rid" out
-  assert_failure
+  assert_failure 1
   assert_output --partial 'M  x.txt'
   assert_output --partial 'mode '
   assert_output --partial 'diff: 1 difference'
@@ -178,7 +178,7 @@ RECEIPT
   [[ -n $rid ]] || fail "write returned empty receipt id"
 
   run_cg diff -color never -verify-blobs-exist "$rid" src
-  assert_failure
+  assert_failure 1
   assert_output --partial 'B  x.txt	blob '
   assert_output --partial 'missing in source store'
 }
@@ -217,7 +217,7 @@ function diff_refuses_nonexistent_dir { # @test
   [[ -n $rid ]] || fail "no receipt id"
 
   run_cg diff -color never "$rid" no-such-dir
-  assert_failure
+  assert_failure 2
   assert_output --partial 'directory does not exist'
 }
 
@@ -234,7 +234,7 @@ function diff_refuses_dir_arg_that_is_a_file { # @test
   echo "data" >regular-file.txt
 
   run_cg diff -color never "$rid" regular-file.txt
-  assert_failure
+  assert_failure 2
   assert_output --partial 'not a directory'
 }
 
@@ -246,7 +246,7 @@ function diff_refuses_unparseable_receipt_id { # @test
 
   mkdir dir
   run_cg diff -color never "garbage-not-a-markl-id" dir
-  assert_failure
+  assert_failure 2
   assert_output --partial 'separator'
 }
 
@@ -273,7 +273,7 @@ RECEIPT
 
   mkdir target
   run_cg diff -color never "$rid" target
-  assert_failure
+  assert_failure 2
   assert_output --partial 'entry escapes destination'
 }
 
@@ -321,7 +321,7 @@ function diff_detects_symlink_target_change { # @test
   ln -s b.txt out/link
 
   run_cg diff -color never "$rid" out
-  assert_failure
+  assert_failure 1
   assert_line --regexp '^M  link.*target.*a\.txt.*->.*b\.txt'
 }
 
@@ -375,7 +375,7 @@ RECEIPT
   mkdir target
 
   run_cg diff -color never "$rid" target
-  assert_failure
+  assert_failure 1
   refute_line --regexp '^B  '
   assert_line --regexp '^D  src/file\.txt'
 }
@@ -401,7 +401,7 @@ function diff_reports_multiple_differences_sorted_by_path { # @test
   echo "extra" >out/extra.txt      # A  extra.txt
 
   run_cg diff -color never "$rid" out
-  assert_failure
+  assert_failure 1
   assert_line --regexp '^M  a\.txt.*blob '
   assert_line --regexp '^D  b\.txt'
   assert_line --regexp '^A  extra\.txt'
@@ -429,7 +429,7 @@ function diff_color_always_emits_sgr { # @test
   echo "extra" >out/extra.txt
 
   run_cg diff -color=always "$rid" out
-  assert_failure
+  assert_failure 1
   # ESC[32m = green foreground (the A marker color). bats `run`
   # preserves escape bytes literally.
   assert_line --partial $'\e[32m'
@@ -451,7 +451,7 @@ function diff_color_never_suppresses_sgr { # @test
   echo "extra" >out/extra.txt
 
   run_cg diff -color=never "$rid" out
-  assert_failure
+  assert_failure 1
   refute_output --partial $'\e['
   assert_line --regexp '^A  extra\.txt'
 }
@@ -469,7 +469,7 @@ function diff_color_invalid_value_errors { # @test
   assert_success
 
   run_cg diff -color=rainbow "$rid" out
-  assert_failure
+  assert_failure 64
   assert_output --partial 'invalid -color value'
 }
 

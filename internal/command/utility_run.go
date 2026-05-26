@@ -39,8 +39,16 @@ func userFacingErrorMessage(err error) string {
 }
 
 // handleMainErrors formats a fatal error for the user and returns
-// the appropriate exit code. Phase 1 callers ignore the return value
-// (Utility.Run does not os.Exit, to keep the framework testable).
+// the appropriate exit code. cmd/cutting-garden/main.go propagates
+// the returned code via os.Exit; Utility.Run itself never does so
+// (kept side-effect-light for tests).
+//
+// Exit codes mirror diff(1) / git --exit-code:
+//
+//	0   success (handled by Utility.Run, not here)
+//	1   clean mismatch — *command.MismatchError in the chain
+//	2   trouble — any other error
+//	64  EX_USAGE — errors.Is400BadRequest
 func handleMainErrors(
 	ctx interfaces.ActiveContext,
 	utilityName string,
@@ -53,5 +61,9 @@ func handleMainErrors(
 	if errors.Is400BadRequest(err) {
 		return 64 // EX_USAGE
 	}
-	return 1
+	var mismatch *MismatchError
+	if errors.As(err, &mismatch) {
+		return 1
+	}
+	return 2
 }

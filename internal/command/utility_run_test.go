@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/amarbel-llc/purse-first/libs/dewey/bravo/errors"
 )
 
 type capturingCmd struct {
@@ -93,6 +95,45 @@ func TestUtility_Run_UnknownSubcommand_NoDoubleErrorLine(t *testing.T) {
 	})
 	if strings.Contains(out, "errors.HTTP") || strings.Contains(out, "400 Bad Request") {
 		t.Errorf("usage banner should NOT be followed by an error line, got %q", out)
+	}
+}
+
+// Pins for #15: diff(1)-style exit-code distinction. The framework
+// distinguishes "clean mismatch" (exit 1, *MismatchError in the
+// chain) from "trouble" (exit 2, any other error) on top of the
+// preexisting BadRequest → 64 path.
+
+type mismatchCmd struct{}
+
+func (mismatchCmd) Run(req Request) {
+	errors.ContextCancelWithError(req.Context, Mismatchf("intentional mismatch"))
+}
+
+type troubleCmd struct{}
+
+func (troubleCmd) Run(req Request) {
+	errors.ContextCancelWithError(req.Context, troubleErr{})
+}
+
+type troubleErr struct{}
+
+func (troubleErr) Error() string { return "intentional trouble" }
+
+func TestUtility_Run_MismatchError_ExitsOne(t *testing.T) {
+	u := MakeUtility("test", nil)
+	u.AddCmd("mismatch", mismatchCmd{})
+	code := u.Run([]string{"test", "mismatch"})
+	if code != 1 {
+		t.Errorf("expected exit 1 for MismatchError, got %d", code)
+	}
+}
+
+func TestUtility_Run_NonMismatchError_ExitsTwo(t *testing.T) {
+	u := MakeUtility("test", nil)
+	u.AddCmd("trouble", troubleCmd{})
+	code := u.Run([]string{"test", "trouble"})
+	if code != 2 {
+		t.Errorf("expected exit 2 for non-mismatch error, got %d", code)
 	}
 }
 

@@ -60,10 +60,9 @@ func TestDiff_InvalidColorValue_Rejected(t *testing.T) {
 func TestDiff_ValidColorValues_Accepted(t *testing.T) {
 	// Each valid color value should pass color validation. With a
 	// nonexistent <dir>, ValidateDiffDir errors (FDR §Destination
-	// Preconditions: dir MUST exist), so the dispatch exits nonzero
-	// — but NOT via the color-validation BadRequest path. The test
-	// pins that color "auto"/"always"/"never" pass validation; step
-	// 6 will add byte-exact stderr assertions to distinguish.
+	// Preconditions: dir MUST exist), so the dispatch exits with the
+	// "trouble" code (2) — NOT via the color-validation BadRequest
+	// path (64) and NOT via the MismatchError path (1).
 	for _, c := range []string{"auto", "always", "never"} {
 		t.Run(c, func(t *testing.T) {
 			u := makeUtility()
@@ -71,8 +70,8 @@ func TestDiff_ValidColorValues_Accepted(t *testing.T) {
 				"cutting-garden", "diff", "-color", c,
 				"blake2b256-deadbeef", "src",
 			})
-			if code == 0 {
-				t.Errorf("expected nonzero exit on bogus dir/receipt, got 0")
+			if code != 2 {
+				t.Errorf("expected exit 2 (trouble) on bogus dir/receipt, got %d", code)
 			}
 		})
 	}
@@ -82,14 +81,16 @@ func TestDiff_TwoArgs_BogusInputsReachDispatch(t *testing.T) {
 	// Two positional args should NOT trip the count guard. The
 	// dispatch proceeds into runDiff and errors out further down
 	// (here: ValidateDiffDir refuses a nonexistent "src/"). The
-	// test just pins that arg parsing doesn't gate on content.
+	// test pins that arg parsing doesn't gate on content and that
+	// the "directory does not exist" error maps to exit 2 (trouble),
+	// not 1 (clean mismatch).
 	u := makeUtility()
 	code := u.Run([]string{
 		"cutting-garden", "diff",
 		"blake2b256-deadbeef", "src",
 	})
-	if code == 0 {
-		t.Errorf("expected nonzero exit on bogus inputs, got 0")
+	if code != 2 {
+		t.Errorf("expected exit 2 (trouble) on bogus inputs, got %d", code)
 	}
 }
 

@@ -57,14 +57,14 @@ func TestRestore_TwoArgs_BogusReceiptIdRejected(t *testing.T) {
 	// because "blake2b256-deadbeef" is not a valid markl id (the
 	// short string fails the blech32 checksum). The dispatch path is
 	// exercised; only the inner receipt-id parse rejects. Exit code
-	// is 1 (non-BadRequest error), distinct from 64 (EX_USAGE).
+	// is 2 (trouble), distinct from 64 (EX_USAGE) and 1 (mismatch).
 	u := makeUtility()
 	code := u.Run([]string{
 		"cutting-garden", "restore",
 		"blake2b256-deadbeef", "out",
 	})
-	if code == 0 {
-		t.Errorf("expected nonzero exit for bogus receipt-id, got 0")
+	if code != 2 {
+		t.Errorf("expected exit 2 (trouble) for bogus receipt-id, got %d", code)
 	}
 }
 

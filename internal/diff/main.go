@@ -236,7 +236,7 @@ func (cmd *Diff) runDiff(
 	if len(differences) > 0 {
 		fmt.Fprintf(cmd.diagnostics, "diff: %d %s\n",
 			len(differences), pluralize("difference", "differences", len(differences)))
-		return errors.ErrorWithStackf(
+		return command.Mismatchf(
 			"tree differs from receipt: %d %s",
 			len(differences),
 			pluralize("entry", "entries", len(differences)))

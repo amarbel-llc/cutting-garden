@@ -59,10 +59,18 @@ main → MakeUtility(name, config) → RegisterComplete(&u) → u.Run(os.Args)
 4. `cmd.Run(req)` dispatches to user code.
 
 `Run` deliberately **does not call `os.Exit`** — keeping it side-effect-light
-for tests. `handleMainErrors` formats the failure to stderr and *would*
-return an exit code (64 EX_USAGE for `errors.Is400BadRequest`, else 1) but
-the return value is currently ignored. If you wire a production exit-code
-path, do it in `main.go`, not by mutating `Run`.
+for tests. `cmd/cutting-garden/main.go` does `os.Exit(utility.Run(os.Args))`
+to propagate the code. Exit semantics mirror `diff(1)` / `git --exit-code`:
+
+- `0` — success
+- `1` — clean mismatch (a `*command.MismatchError` is in the error chain;
+  e.g. `diff` found drift)
+- `2` — trouble (any other error — the command did not run to completion)
+- `64` — EX_USAGE (`errors.Is400BadRequest`)
+
+Commands that want the mismatch / trouble distinction return
+`command.Mismatchf(...)` instead of a plain error. Otherwise anything
+nonzero from `cmd.Run` becomes `2`.
 
 ### Opt-in command interfaces
 
