@@ -6,17 +6,10 @@ setup() {
 # bats file_tags=restore
 
 # Phase 3 step 7 ships the FDR 0001 conformance matrix (RFC 0001
-# §Consumer Rules) minus the two FDR-deferred scenarios:
-#
-#   - `restore_skips_type_other_with_notice` (FDR §Limitations: hard
-#     to inject `type:"other"` on macOS sandcastle; the Go-level
-#     switch arm is implemented).
-#   - `restore_round_trips_unusual_filenames` (FDR §Limitations:
-#     newlines and unusual UTF-8 in e.path / e.root are permitted at
-#     the Go level by construction).
-#
-# Both carried forward at cutting-garden#24 (type=other) and
-# cutting-garden#25 (unusual filenames).
+# §Consumer Rules). The two scenarios originally deferred at FDR
+# v1 — `restore_skips_type_other_with_notice` (cutting-garden#24)
+# and `restore_round_trips_unusual_filenames` (cutting-garden#25)
+# — are now both in-tree.
 
 # ---------------------------------------------------------------------
 # Phase A: precondition + sanitization
@@ -233,6 +226,55 @@ function restore_round_trips_symlink { # @test
   # The link resolves through the restored target.
   diff src/target.txt out/link ||
     fail "symlink-resolved content differs from captured target"
+}
+
+function restore_round_trips_unusual_filenames { # @test
+  # FDR 0001 §Sanitization permits valid-UTF-8 and control characters
+  # (tab, newline) in e.path / e.root. The Go-level sanitizer in
+  # plugin_file only refuses NUL, empty root, and parent-escape; every
+  # other byte sequence MUST round-trip through capture+restore byte-
+  # identical (RFC 0001 §Consumer Rules: don't reject on unusual-but-
+  # legal names). Closes #25.
+  init_store
+
+  mkdir src
+
+  # Multi-byte UTF-8: emoji + CJK ideographs.
+  echo "tree" >$'src/\xf0\x9f\x8c\xb3-emoji.txt'    # 🌳
+  echo "test" >$'src/\xe6\xb8\xac\xe8\xa9\xa6-cjk.txt'  # 測試
+
+  # Control chars in basename: tab, newline.
+  echo "tabbed"   >$'src/has\ttab.txt'
+  echo "newlined" >$'src/has\nnewline.txt'
+
+  local rid
+  rid="$(capture_receipt_id src)"
+  [[ -n $rid ]] || fail "no receipt id"
+
+  run_cg restore -store .default "$rid" out
+  assert_success
+
+  # Each path must materialize byte-identical.
+  [[ -f $'out/\xf0\x9f\x8c\xb3-emoji.txt' ]] ||
+    fail "missing emoji-name file"
+  [[ -f $'out/\xe6\xb8\xac\xe8\xa9\xa6-cjk.txt' ]] ||
+    fail "missing CJK-name file"
+  [[ -f $'out/has\ttab.txt' ]] ||
+    fail "missing tab-name file"
+  [[ -f $'out/has\nnewline.txt' ]] ||
+    fail "missing newline-name file"
+
+  # Content must also round-trip.
+  diff $'src/\xf0\x9f\x8c\xb3-emoji.txt' \
+       $'out/\xf0\x9f\x8c\xb3-emoji.txt' ||
+    fail "emoji-name file content differs"
+  diff $'src/\xe6\xb8\xac\xe8\xa9\xa6-cjk.txt' \
+       $'out/\xe6\xb8\xac\xe8\xa9\xa6-cjk.txt' ||
+    fail "CJK-name file content differs"
+  diff $'src/has\ttab.txt' $'out/has\ttab.txt' ||
+    fail "tab-name file content differs"
+  diff $'src/has\nnewline.txt' $'out/has\nnewline.txt' ||
+    fail "newline-name file content differs"
 }
 
 # ---------------------------------------------------------------------
