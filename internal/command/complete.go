@@ -129,8 +129,8 @@ func (c *completeCmd) completeSubcommandFlags(
 ) (handled bool) {
 	if strings.HasPrefix(lastArg, "-") && commandLine.InProgress != "" {
 		handled = true
-	} else if commandLine.InProgress != "" && len(commandLine.FlagsOrArgs) > 1 {
-		lastArg = commandLine.FlagsOrArgs[len(commandLine.FlagsOrArgs)-2]
+	} else if lastComplete, ok := commandLine.LastCompleteArg(); ok && commandLine.InProgress != "" {
+		lastArg = lastComplete
 		commandLine.InProgress = ""
 		handled = strings.HasPrefix(lastArg, "-")
 	}

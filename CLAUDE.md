@@ -103,10 +103,14 @@ non-destructive look. This deliberately diverges from dodder HEAD, which
 panics here (tracked at dodder#183 — see the comment on
 `Request.LastArg`).
 
-`CommandLineInput.LastCompleteArg` carries an upstream bug forward
-verbatim (the `Last()` call should be `FlagsOrArgs[argc-1]` after the
-decrement). Don't "fix" without coordinating — it's pinned to
-dodder-parity behavior on purpose.
+`CommandLineInput.CompleteArgs()` returns the fully-typed args
+(FlagsOrArgs with the trailing in-progress token dropped when
+`InProgress != ""`). `LastCompleteArg()` is its single-element
+convenience wrapper. This **diverges from dodder/madder**, both of
+which still carry a buggy `LastCompleteArg` returning the unmodified
+`Last()` after decrementing for `InProgress`. Both upstreams open-code
+the correct logic in their `complete.go`; we reformulated instead of
+parity-fixing. See dodder#182 and the cg #1 resolution.
 
 ## External dependencies
 

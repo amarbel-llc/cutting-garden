@@ -38,17 +38,33 @@ func (commandLine CommandLineInput) LastArg() (arg string, ok bool) {
 	return arg, ok
 }
 
+// CompleteArgs returns the fully-typed arguments — every element of
+// FlagsOrArgs except the trailing in-progress token (when one is set).
+// Shell completion stubs pass the partial token both as the last
+// element of FlagsOrArgs and as the InProgress flag; completers that
+// want only the context of what the user has *finished* typing should
+// start here.
+//
+// When InProgress is empty, this is FlagsOrArgs unchanged. When it is
+// set, the last element of FlagsOrArgs is dropped.
+func (commandLine CommandLineInput) CompleteArgs() collections_slice.String {
+	if commandLine.InProgress == "" {
+		return commandLine.FlagsOrArgs
+	}
+	n := commandLine.FlagsOrArgs.Len()
+	if n == 0 {
+		return commandLine.FlagsOrArgs
+	}
+	return commandLine.FlagsOrArgs[:n-1]
+}
+
+// LastCompleteArg returns the last fully-typed argument — the element
+// before any in-progress token. Convenience wrapper over CompleteArgs
+// for the common case of "what did the user just finish typing?".
 func (commandLine CommandLineInput) LastCompleteArg() (arg string, ok bool) {
-	argc := commandLine.FlagsOrArgs.Len()
-	if commandLine.InProgress != "" {
-		argc -= 1
+	complete := commandLine.CompleteArgs()
+	if complete.Len() == 0 {
+		return "", false
 	}
-	if argc > 0 {
-		ok = true
-		// TODO(upstream-bug): should be FlagsOrArgs[argc-1] after the
-		// decrement above. Carrying the dodder behaviour forward
-		// verbatim per the port plan; tracked via Task 17.
-		arg = commandLine.FlagsOrArgs.Last()
-	}
-	return arg, ok
+	return complete.Last(), true
 }
