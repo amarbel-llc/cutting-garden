@@ -14,20 +14,16 @@ schema = 3
     hash = 'sha256-GlSZOyix7Ct7tOKmSKpGckDjMhTtiYPBTpoWdwGLx5M='
 
   [mod.'github.com/amarbel-llc/madder/go']
-    version = 'v0.3.23'
-    hash = 'sha256-3WD8j7WwgU0CYDfjX4zg1s6qt1T0CF758uhhFxPsr9E='
+    version = 'v0.3.30-0.20260526123337-14f07017cda3'
+    hash = 'sha256-93KP816wYaazeOtKY+Cs7kzY7aryaDkle4TCi4yjQ+E='
 
   [mod.'github.com/amarbel-llc/purse-first/libs/dewey']
-    version = 'v0.1.1-0.20260516125550-eac862321b10'
-    hash = 'sha256-8XZvqRDWhLr4xDkUuLznX9k2kd7Kat2804mYQ4JGQP0='
-
-  [mod.'github.com/amarbel-llc/purse-first/libs/go-mcp']
-    version = 'v0.0.12'
-    hash = 'sha256-lE+G+cxMITAOVyfMQCxmRtMa97OiLy2T8yfbn/PIt6U='
+    version = 'v0.1.8'
+    hash = 'sha256-dNrByOns78mIRKUK9003JKK0p3L3UmYeZjRYt3J/huM='
 
   [mod.'github.com/amarbel-llc/tap/go']
-    version = 'v0.1.2'
-    hash = 'sha256-yFpzdb1J+SPJpgFId9a/kG3w+ouF7HMocK2QuuL5cGo='
+    version = 'v0.1.8'
+    hash = 'sha256-ZvId+dizMgnVOXBkg/SdZiK4kRwvula9oB/E4pX9oC8='
 
   [mod.'github.com/amarbel-llc/tommy']
     version = 'v0.0.0-20260405143331-87255e87bf37'

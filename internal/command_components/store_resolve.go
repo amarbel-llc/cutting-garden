@@ -7,7 +7,7 @@ import (
 	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
 	"github.com/amarbel-llc/madder/go/pkgs/blob_store_id"
 	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
-	"github.com/amarbel-llc/purse-first/libs/dewey/bravo/errors"
+	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 )
 
 // MaterializationEnv is the narrow surface

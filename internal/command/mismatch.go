@@ -1,6 +1,6 @@
 package command
 
-import "github.com/amarbel-llc/purse-first/libs/dewey/bravo/errors"
+import "github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 
 // MismatchError signals a clean command-level mismatch — the command
 // ran to completion and reported a non-empty difference, not a fault

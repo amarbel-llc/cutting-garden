@@ -150,14 +150,6 @@
                 base = madder.packages.${system}.madder;
                 name = "madder";
               };
-              # madder-built cutting-garden binary; the
-              # receipt_identity.bats cross-test invokes both this and
-              # CG_BIN against the same fixture and asserts byte-
-              # identical receipts (cutting-garden#22, madder#176).
-              MADDER_CG_BIN = {
-                base = madder.packages.${system}.cutting-garden;
-                name = "cutting-garden";
-              };
             };
             batsLibPath = [ bats.packages.${system}.bats-libs.batsLibPath ];
           };

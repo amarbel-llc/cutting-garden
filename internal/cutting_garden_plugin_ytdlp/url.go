@@ -4,7 +4,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/amarbel-llc/purse-first/libs/dewey/bravo/errors"
+	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 )
 
 // youtubeHosts is the closed allowlist for the bare-https acceptance

@@ -3,9 +3,9 @@ module github.com/amarbel-llc/cutting-garden
 go 1.26
 
 require (
-	github.com/amarbel-llc/madder/go v0.3.23
-	github.com/amarbel-llc/purse-first/libs/dewey v0.1.1-0.20260516125550-eac862321b10
-	github.com/amarbel-llc/tap/go v0.1.2
+	github.com/amarbel-llc/madder/go v0.3.30-0.20260526123337-14f07017cda3
+	github.com/amarbel-llc/purse-first/libs/dewey v0.1.8
+	github.com/amarbel-llc/tap/go v0.1.8
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/muesli/termenv v0.16.0
 )
@@ -14,7 +14,6 @@ require (
 	filippo.io/age v1.3.1 // indirect
 	filippo.io/hpke v0.4.0 // indirect
 	github.com/DataDog/zstd v1.5.7 // indirect
-	github.com/amarbel-llc/purse-first/libs/go-mcp v0.0.12 // indirect
 	github.com/amarbel-llc/tommy v0.0.0-20260405143331-87255e87bf37 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.41.7 // indirect

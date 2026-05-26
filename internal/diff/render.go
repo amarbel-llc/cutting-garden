@@ -3,7 +3,7 @@ package diff
 import (
 	"os"
 
-	"github.com/amarbel-llc/purse-first/libs/dewey/bravo/errors"
+	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/muesli/termenv"
 )

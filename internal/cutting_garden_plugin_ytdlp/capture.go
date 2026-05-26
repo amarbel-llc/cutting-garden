@@ -11,7 +11,7 @@ import (
 	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
 	"github.com/amarbel-llc/cutting-garden/internal/plugin_blob_io"
 	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
-	"github.com/amarbel-llc/purse-first/libs/dewey/bravo/errors"
+	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 )
 
 // outputTemplate is the yt-dlp -o template used for every invocation.

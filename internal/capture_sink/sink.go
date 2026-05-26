@@ -17,8 +17,8 @@ import (
 	"io"
 
 	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
-	"github.com/amarbel-llc/cutting-garden/internal/tap_diagnostics"
-	tap "github.com/amarbel-llc/tap/go"
+	"github.com/amarbel-llc/madder/go/pkgs/tap_diagnostics"
+	tap "github.com/amarbel-llc/tap/go/pkgs/writer"
 )
 
 // summaryRecordType is the wire `type` value the NDJSON sink writes on
@@ -96,7 +96,7 @@ func (s *tapSink) StoreGroupReceipt(receiptID string, count int) {
 }
 
 func (s *tapSink) Notice(format string, args ...any) {
-	s.tw.Comment(fmt.Sprintf(format, args...))
+	s.tw.Comment(format, args...)
 }
 
 func (s *tapSink) Failure(source string, err error) {

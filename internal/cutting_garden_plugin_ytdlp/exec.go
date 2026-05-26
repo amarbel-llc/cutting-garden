@@ -6,7 +6,7 @@ import (
 	"io"
 	"os/exec"
 
-	"github.com/amarbel-llc/purse-first/libs/dewey/bravo/errors"
+	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 )
 
 // stderrTailBytes caps how much yt-dlp stderr is buffered for the

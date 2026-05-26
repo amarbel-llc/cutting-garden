@@ -12,7 +12,7 @@ import (
 	"github.com/amarbel-llc/cutting-garden/internal/capture_sink"
 	"github.com/amarbel-llc/madder/go/pkgs/env_dir"
 	"github.com/amarbel-llc/madder/go/pkgs/madder_env"
-	"github.com/amarbel-llc/purse-first/libs/dewey/bravo/errors"
+	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 )
 
 // setupCgEnvDir builds a cutting-garden-scoped env_dir rooted at a

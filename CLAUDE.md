@@ -53,7 +53,7 @@ main → MakeUtility(name, config) → RegisterComplete(&u) → u.Run(os.Args)
 `Utility.Run` →
 1. Builds a cancelable `errors.Context` (SIGTERM/SIGINT/SIGHUP).
 2. `MakeCmdAndFlagSet` looks up `args[1]`, parses flags via
-   `dewey/charlie/flags`. Subcommands implement
+   `dewey/pkgs/flags`. Subcommands implement
    `interfaces.CommandComponentWriter.SetFlagDefinitions` to bind flags.
 3. `MakeRequest` wraps parsed positional args into `Request{ input *CommandLineInput }`.
 4. `cmd.Run(req)` dispatches to user code.
@@ -123,17 +123,22 @@ parity-fixing. See dodder#182 and the cg #1 resolution.
 ## External dependencies
 
 The framework leans heavily on
-`github.com/amarbel-llc/purse-first/libs/dewey`:
+`github.com/amarbel-llc/purse-first/libs/dewey`. All exported
+surface is under `pkgs/` (dagnabit-generated facades over `internal/`):
 
-- `bravo/errors` — context-based error propagation
+- `pkgs/errors` — context-based error propagation
   (`ContextCancelWithError`, `BadRequestf`, `Is400BadRequest`,
   `MakeContextDefault`).
-- `charlie/flags` — flag parsing (drop-in for `flag.FlagSet` with
+- `pkgs/flags` — flag parsing (drop-in for `flag.FlagSet` with
   `interfaces.CLIFlagDefinitions` shape).
-- `foxtrot/config_cli` — `Config` interface plumbing.
-- `bravo/collections_slice` — slice wrappers used by `CommandLineInput`.
-- `0/interfaces` — `ActiveContext`, `CommandComponentWriter`, `FlagValue`,
-  `Seq2`, etc.
+- `pkgs/config_cli` — `Config` interface plumbing.
+- `pkgs/collections_slice` — slice wrappers used by `CommandLineInput`.
+- `pkgs/interfaces` — `ActiveContext`, `CommandComponentWriter`,
+  `FlagValue`, `Seq2`, etc.
+
+(Older code in this repo and its parents used `dewey/0/`, `dewey/bravo/`,
+`dewey/charlie/`, etc. paths; those were collapsed into `pkgs/` upstream
+and rewritten here as part of the Phase 6 cutover.)
 
 When in doubt about a dewey symbol, read the source under the module
 cache rather than guessing — interfaces are small but their semantics

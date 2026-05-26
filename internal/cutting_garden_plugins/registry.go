@@ -3,7 +3,7 @@ package cutting_garden_plugins
 import (
 	"sync"
 
-	"github.com/amarbel-llc/purse-first/libs/dewey/bravo/errors"
+	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 )
 
 // captureRegistry / restoreRegistry are the in-process indexes,

@@ -27,7 +27,7 @@ import (
 	"github.com/amarbel-llc/madder/go/pkgs/env_local"
 	"github.com/amarbel-llc/madder/go/pkgs/env_ui"
 	"github.com/amarbel-llc/madder/go/pkgs/madder_env"
-	"github.com/amarbel-llc/purse-first/libs/dewey/bravo/errors"
+	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 )
 
 // MakeEnvDir builds a madder-family env_dir at the given xdgScope.

@@ -10,8 +10,8 @@ import (
 	"strconv"
 
 	"github.com/amarbel-llc/madder/go/pkgs/hyphence"
-	"github.com/amarbel-llc/purse-first/libs/dewey/0/interfaces"
-	"github.com/amarbel-llc/purse-first/libs/dewey/bravo/errors"
+	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/interfaces"
+	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 )
 
 // HeaderV1 is the literal byte sequence that precedes the NDJSON body
