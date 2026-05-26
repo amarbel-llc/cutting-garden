@@ -96,6 +96,31 @@ func TestUtility_Run_UnknownSubcommand_NoDoubleErrorLine(t *testing.T) {
 	}
 }
 
+// Regression for #35: handleMainErrors must surface the user-facing
+// BadRequest message on stderr, not just exit silently with code 64.
+// The message is wrapped behind dewey's HTTP error / errWithoutStack
+// hidden-unwrap layers; userFacingErrorMessage must walk past them.
+
+func TestUtility_Run_NoArgs_PrintsErrorMessage(t *testing.T) {
+	out := captureStderr(func() {
+		u := MakeUtility("test", nil)
+		u.Run([]string{"test"})
+	})
+	if !strings.Contains(out, "No subcommand provided") {
+		t.Errorf("expected stderr to contain BadRequest message, got %q", out)
+	}
+}
+
+func TestUtility_Run_UnknownSubcommand_PrintsErrorMessage(t *testing.T) {
+	out := captureStderr(func() {
+		u := MakeUtility("test", nil)
+		u.Run([]string{"test", "no-such-subcmd"})
+	})
+	if !strings.Contains(out, `No subcommand "no-such-subcmd"`) {
+		t.Errorf("expected stderr to name the missing subcommand, got %q", out)
+	}
+}
+
 func TestUtility_PrintUsage_DescribedSortedFilterComplete(t *testing.T) {
 	// PrintUsage shares the userFacingSubcommands helper with
 	// GenerateUtilityManpage: sorted alphabetically, `complete`

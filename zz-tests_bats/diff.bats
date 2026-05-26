@@ -457,13 +457,6 @@ function diff_color_never_suppresses_sgr { # @test
 }
 
 function diff_color_invalid_value_errors { # @test
-  # cg's framework swallows BadRequest error messages (handleMainErrors
-  # exits 64 silently, assuming the framework's PrintUsage already
-  # wrote them — but the per-command Run path does not invoke
-  # PrintUsage). Asserting on the message would test the framework
-  # gap rather than the validator; assert exit-code only for now.
-  # Tracked as a follow-up: handleMainErrors should print the
-  # BadRequest error text on stderr like the non-BadRequest branch.
   init_store
 
   mkdir src
@@ -477,6 +470,7 @@ function diff_color_invalid_value_errors { # @test
 
   run_cg diff -color=rainbow "$rid" out
   assert_failure
+  assert_output --partial 'invalid -color value'
 }
 
 # ---------------------------------------------------------------------
