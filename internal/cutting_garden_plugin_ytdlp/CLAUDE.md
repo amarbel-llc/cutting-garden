@@ -4,7 +4,8 @@ The yt-dlp capture/diff backend for cutting-garden. Peer leaf of
 `cutting_garden_plugins/` — not a nested subpackage. Registered in
 `init()` under the `"ytdlp"` URI scheme (both opaque
 `ytdlp:<source-url>` and hierarchical `ytdlp://<host>/<path>` forms)
-and under `"https"` for a closed YouTube host allowlist.
+and under `"https"` for a closed host allowlist (`httpsAllowlist` in
+`url.go`; YouTube + Instagram today).
 
 **Restore is intentionally not implemented.** Captured artifacts are
 regular files; the filesystem plugin materializes them. See
@@ -53,8 +54,9 @@ change required.
 
 This plugin claims `https` exclusively (panic on duplicate
 registration per `cutting_garden_plugins.MustRegisterCapture`). The
-YouTube host allowlist in `sourceURLFromArg` is the single source of
-truth for which https URLs the plugin accepts.
+`httpsAllowlist` in `url.go` is the single source of truth for which
+https URLs the plugin accepts; adding a host requires confirming
+yt-dlp ships a working extractor for it (see the comment on the map).
 
 A second `https` consumer would collide at init time. The migration
 to a host-routing layer above the scheme map is sketched in

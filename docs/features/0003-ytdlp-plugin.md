@@ -43,16 +43,17 @@ The plugin claims two URI schemes and accepts three argument shapes:
    verbatim including any `?query` / `#fragment`. Preferred form.
 2. `ytdlp://<host>/<path>` — hierarchical form. Reconstructed as
    `https://<host>/<path>` before being handed to yt-dlp.
-3. `https://<youtube-host>/...` — direct pass-through. The host
-   MUST be one of:
-     - `youtu.be`
-     - `youtube.com`
-     - `www.youtube.com`
-     - `m.youtube.com`
-     - `music.youtube.com`
+3. `https://<allowlisted-host>/...` — direct pass-through. The host
+   MUST be in `httpsAllowlist` (in `url.go`):
+     - YouTube: `youtu.be`, `youtube.com`, `www.youtube.com`,
+       `m.youtube.com`, `music.youtube.com`
+     - Instagram: `instagram.com`, `www.instagram.com` (#44)
 
    Any other `https` host is refused with a hint pointing at the
-   `ytdlp:` prefix form for non-YouTube yt-dlp-supported sites.
+   `ytdlp:` prefix form for non-allowlisted yt-dlp-supported sites.
+   Auth-gated URLs (Instagram stories, private accounts, etc.) reach
+   yt-dlp and fail with yt-dlp's diagnostic — cutting-garden does not
+   plumb cookies or login state itself.
 
 ### Capture
 
@@ -208,7 +209,7 @@ appears:
 
 Until then the ordering question doesn't exist — there's exactly
 one `https` plugin — and the allowlist is a static map. When the
-router lands, the YouTube allowlist becomes that plugin's host
+router lands, `httpsAllowlist` becomes that plugin's host
 matcher and the migration is mechanical.
 
 The host-routing layer is a future FDR; this section is the
@@ -216,10 +217,15 @@ placeholder until that lands.
 
 ## Open Questions
 
-- **Allowlist drift.** YouTube's host surface is small and stable
-  today, but if Shorts/Live/etc. spawn new hostnames the
-  allowlist needs an update. Should the allowlist be config-driven
-  rather than compiled in? Deferred until we hit one.
+- **Allowlist drift.** YouTube's and Instagram's host surfaces are
+  small and stable today, but new hostnames (Shorts, Live, regional
+  variants) would need a code change. Should the allowlist be
+  config-driven rather than compiled in? Deferred until we hit one.
+- **Auth plumbing for Instagram (and other auth-gated sites).** cg
+  passes URLs through verbatim; yt-dlp handles its own cookies via
+  the user's yt-dlp config. cg does not yet surface a `--cookies`
+  pass-through or document Instagram's login requirements. Worth a
+  separate FDR if the friction matters.
 - **Sidecar opt-out.** Some users will want only the media file
   (e.g. archive-only, no thumbnails). A `--ytdlp-no-sidecars` flag
   on `capture` would cover that but is out of scope here; the

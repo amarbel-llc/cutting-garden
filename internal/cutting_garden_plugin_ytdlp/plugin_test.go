@@ -171,8 +171,8 @@ func TestPlugin_CaptureRoot_RejectsOffAllowlistHTTPS(t *testing.T) {
 	if len(sink.failures) != 1 {
 		t.Fatalf("sink failures = %d, want 1", len(sink.failures))
 	}
-	if !strings.Contains(sink.failures[0].err.Error(), "YouTube allowlist") {
-		t.Errorf("error %q missing 'YouTube allowlist'", sink.failures[0].err.Error())
+	if !strings.Contains(sink.failures[0].err.Error(), "bare-https allowlist") {
+		t.Errorf("error %q missing 'bare-https allowlist'", sink.failures[0].err.Error())
 	}
 }
 

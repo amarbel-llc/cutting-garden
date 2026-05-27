@@ -1,8 +1,9 @@
 // Package cutting_garden_plugin_ytdlp is the yt-dlp capture/diff
 // backend for cutting-garden. Registered for the `ytdlp` scheme
 // (both opaque `ytdlp:<url>` and hierarchical `ytdlp://host/path`
-// forms) and for the `https` scheme under a closed YouTube host
-// allowlist (`youtu.be`, `youtube.com`, etc.).
+// forms) and for the `https` scheme under a closed host allowlist
+// (YouTube, Instagram, …); see `httpsAllowlist` in url.go for the
+// full set.
 //
 // Restore is intentionally not implemented; captured artifacts are
 // regular files that the filesystem plugin can materialize. See
@@ -25,7 +26,7 @@ var (
 )
 
 // Schemes returns the URI schemes this plugin claims. `https` is
-// claimed exclusively for the YouTube host allowlist enforced in
+// claimed exclusively for the host allowlist enforced in
 // ValidateSource; any other plugin that wants the https scheme would
 // need to coordinate via a host-routing layer.
 func (Plugin) Schemes() []string { return []string{"ytdlp", "https"} }

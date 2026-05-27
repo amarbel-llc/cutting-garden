@@ -79,7 +79,22 @@ func TestSourceURLFromArg(t *testing.T) {
 			name:     "https off-allowlist host",
 			arg:      "https://vimeo.com/123456",
 			wantErr:  true,
-			errSnips: []string{"YouTube allowlist", "ytdlp:"},
+			errSnips: []string{"bare-https allowlist", "ytdlp:"},
+		},
+		{
+			name: "https instagram.com post",
+			arg:  "https://instagram.com/p/Cabc123XyZ/",
+			want: "https://instagram.com/p/Cabc123XyZ/",
+		},
+		{
+			name: "https www.instagram.com reel",
+			arg:  "https://www.instagram.com/reel/Cabc123XyZ/",
+			want: "https://www.instagram.com/reel/Cabc123XyZ/",
+		},
+		{
+			name: "https www.instagram.com profile",
+			arg:  "https://www.instagram.com/some_user/",
+			want: "https://www.instagram.com/some_user/",
 		},
 		{
 			name:     "http unsupported",
