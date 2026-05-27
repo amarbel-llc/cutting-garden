@@ -8,24 +8,29 @@
 # Phase 6 cutover landing exposed as friction).
 #
 # Modules NOT listed here continue to resolve through gomod2nix.toml.
-# Add an entry when its upstream flake exposes `go-pkgs`; dewey is on
-# the followup list but purse-first does not publish go-pkgs yet, so
-# it stays organic for now.
+# Add an entry when its upstream flake exposes `go-pkgs`.
 {
   madder,
   tap,
+  purse-first,
   system,
 }:
 {
   # madder.go-pkgs is already scoped to madder's `go/` subdir
   # (its producer slices upstream), so no subPath here. tap.go-pkgs
   # is full-repo-filtered (polyglot), so we still slice into its
-  # `go/` subdir.
+  # `go/` subdir. purse-first's go-pkgs is the whole workspace (the
+  # repo root carries multiple go modules + non-Go assets), so we
+  # slice into `libs/dewey`.
   "github.com/amarbel-llc/madder/go" = {
     src = madder.packages.${system}.go-pkgs;
   };
   "github.com/amarbel-llc/tap/go" = {
     src = tap.packages.${system}.go-pkgs;
     subPath = "go";
+  };
+  "github.com/amarbel-llc/purse-first/libs/dewey" = {
+    src = purse-first.packages.${system}.go-pkgs;
+    subPath = "libs/dewey";
   };
 }

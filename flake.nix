@@ -49,6 +49,17 @@
       inputs.bats.follows = "bats";
     };
 
+    # Sourced via gomod.nix's `goFlakeInputs` to bridge dewey
+    # (libs/dewey within the purse-first workspace) the same way
+    # madder + tap are bridged. purse-first's go-pkgs is the whole
+    # workspace, so we slice with subPath = "libs/dewey".
+    purse-first = {
+      url = "github:amarbel-llc/purse-first";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.nixpkgs-master.follows = "nixpkgs-master";
+      inputs.utils.follows = "flake-utils";
+    };
+
     # amarbel-llc/bats — provides `lib.batsLane`, the nix-sandbox bats
     # test-runner builder. Consumed by the `bats-capture` package
     # output (Phase 2 step 9). Only the sandbox lane uses bats; the
@@ -71,6 +82,7 @@
       gomod2nix,
       madder,
       tap,
+      purse-first,
       bats,
       ...
     }:
@@ -88,7 +100,7 @@
         # specific deps from sibling flake outputs instead of the
         # organic gomod2nix.toml hash (RFC 0001 §Consumer interface).
         goFlakeInputs = import ./gomod.nix {
-          inherit madder tap system;
+          inherit madder tap purse-first system;
         };
 
         # pkgsUpstream is the bare Hydra-blessed nixpkgs (no overlays)

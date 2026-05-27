@@ -19,10 +19,11 @@ divergences from dodder are intentional carry-forwards.
 
 - `nix build` — produces `result/bin/cutting-garden`. Module sources come
   from two places:
-    - **Flake-input bridge** (`gomod.nix`): `github.com/amarbel-llc/madder/go`
-      and `github.com/amarbel-llc/tap/go` are sourced from sibling flakes
-      via `goFlakeInputs` (RFC 0001). Bumping either is a `flake.lock`-only
-      edit; no `go get` + `gomod2nix generate` lockstep.
+    - **Flake-input bridge** (`gomod.nix`): madder, tap, and dewey
+      (`libs/dewey` within the purse-first workspace) are sourced from
+      sibling flakes via `goFlakeInputs` (RFC 0001). Bumping any of them
+      is a `flake.lock`-only edit; no `go get` + `gomod2nix generate`
+      lockstep.
     - **Organic gomod2nix** (`gomod2nix.toml`): everything else. Read from
       `gomod2nix.toml`, **not** `go.sum`.
 - `go test ./...` — runs the test suite (no external deps).

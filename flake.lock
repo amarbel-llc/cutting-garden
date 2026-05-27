@@ -123,6 +123,21 @@
         "type": "github"
       }
     },
+    "crane_3": {
+      "locked": {
+        "lastModified": 1779130139,
+        "narHash": "sha256-BLrtr42azquO7MdGFU5a7KiMl3YpFlTeIXqy1fT5GlQ=",
+        "owner": "ipetkov",
+        "repo": "crane",
+        "rev": "edb38893982a3338972bb4a2ec7ce7c29ba10fd9",
+        "type": "github"
+      },
+      "original": {
+        "owner": "ipetkov",
+        "repo": "crane",
+        "type": "github"
+      }
+    },
     "doppelgang": {
       "inputs": {
         "nixpkgs": [
@@ -264,6 +279,31 @@
       }
     },
     "gomod2nix_3": {
+      "inputs": {
+        "flake-utils": [
+          "purse-first",
+          "utils"
+        ],
+        "nixpkgs-master": [
+          "purse-first",
+          "nixpkgs-master"
+        ]
+      },
+      "locked": {
+        "lastModified": 1779583462,
+        "narHash": "sha256-E32c2DtK6w8oJ00RplIgXqY2c4UVobZVTxaLRIbXhEE=",
+        "owner": "amarbel-llc",
+        "repo": "gomod2nix",
+        "rev": "2ae99ee109b3214305f098a4ebccd91b323a86b2",
+        "type": "github"
+      },
+      "original": {
+        "owner": "amarbel-llc",
+        "repo": "gomod2nix",
+        "type": "github"
+      }
+    },
+    "gomod2nix_4": {
       "inputs": {
         "flake-utils": "flake-utils_2",
         "nixpkgs-master": "nixpkgs-master_3"
@@ -420,6 +460,36 @@
         "type": "github"
       }
     },
+    "purse-first_2": {
+      "inputs": {
+        "crane": "crane_2",
+        "gomod2nix": "gomod2nix_3",
+        "nixpkgs": [
+          "nixpkgs"
+        ],
+        "nixpkgs-master": [
+          "nixpkgs-master"
+        ],
+        "rust-overlay": "rust-overlay_2",
+        "treefmt-nix": "treefmt-nix_4",
+        "utils": [
+          "flake-utils"
+        ]
+      },
+      "locked": {
+        "lastModified": 1779875292,
+        "narHash": "sha256-vk76xvWw847QRUVr+SUyT/peWlV5zPt7/h+BsP9lsAk=",
+        "owner": "amarbel-llc",
+        "repo": "purse-first",
+        "rev": "f9b9b60436fb535d409b15dc8f11983dafa75da7",
+        "type": "github"
+      },
+      "original": {
+        "owner": "amarbel-llc",
+        "repo": "purse-first",
+        "type": "github"
+      }
+    },
     "root": {
       "inputs": {
         "bats": "bats",
@@ -428,6 +498,7 @@
         "madder": "madder",
         "nixpkgs": "nixpkgs",
         "nixpkgs-master": "nixpkgs-master_2",
+        "purse-first": "purse-first_2",
         "tap": "tap_2"
       }
     },
@@ -454,6 +525,27 @@
       }
     },
     "rust-overlay_2": {
+      "inputs": {
+        "nixpkgs": [
+          "purse-first",
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1779851998,
+        "narHash": "sha256-UkkMh3bX9QW4Luqkm98nUaOqKWrU6i65mUnph3WeSSw=",
+        "owner": "oxalica",
+        "repo": "rust-overlay",
+        "rev": "6cddd512fa2bf7231f098d3a2f92f6e4cff71e0a",
+        "type": "github"
+      },
+      "original": {
+        "owner": "oxalica",
+        "repo": "rust-overlay",
+        "type": "github"
+      }
+    },
+    "rust-overlay_3": {
       "inputs": {
         "nixpkgs": [
           "tap",
@@ -576,16 +668,16 @@
         "bats": [
           "bats"
         ],
-        "crane": "crane_2",
-        "gomod2nix": "gomod2nix_3",
+        "crane": "crane_3",
+        "gomod2nix": "gomod2nix_4",
         "nixpkgs": [
           "nixpkgs"
         ],
         "nixpkgs-master": [
           "nixpkgs-master"
         ],
-        "rust-overlay": "rust-overlay_2",
-        "treefmt-nix": "treefmt-nix_4",
+        "rust-overlay": "rust-overlay_3",
+        "treefmt-nix": "treefmt-nix_5",
         "utils": [
           "flake-utils"
         ]
@@ -705,6 +797,27 @@
       }
     },
     "treefmt-nix_4": {
+      "inputs": {
+        "nixpkgs": [
+          "purse-first",
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1775636079,
+        "narHash": "sha256-pc20NRoMdiar8oPQceQT47UUZMBTiMdUuWrYu2obUP0=",
+        "owner": "numtide",
+        "repo": "treefmt-nix",
+        "rev": "790751ff7fd3801feeaf96d7dc416a8d581265ba",
+        "type": "github"
+      },
+      "original": {
+        "owner": "numtide",
+        "repo": "treefmt-nix",
+        "type": "github"
+      }
+    },
+    "treefmt-nix_5": {
       "inputs": {
         "nixpkgs": [
           "tap",
