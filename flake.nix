@@ -26,15 +26,27 @@
     };
     # Tracks the latest madder. The `madder` binary in the devshell
     # and the cutting-garden -> madder go.mod dep need to speak the
-    # same wire format, so if you see receipt/blob mismatches, bump
-    # the go.mod dep to align with whatever rev nix flake lock has
-    # pinned. The lock is the source of truth for which madder rev is
-    # in play.
+    # same wire format. flake.lock is the source of truth: the same
+    # `madder` flake-input rev backs both the devshell binary AND the
+    # bridged Go source via gomod.nix (`goFlakeInputs`). Bumping
+    # madder is therefore a flake.lock-only edit; no `go get` +
+    # `gomod2nix generate` lockstep required.
     madder = {
       url = "github:amarbel-llc/madder";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.nixpkgs-master.follows = "nixpkgs-master";
       inputs.utils.follows = "flake-utils";
+    };
+
+    # Sourced via gomod.nix's `goFlakeInputs` so a tap bump only
+    # touches flake.lock — no go.mod / gomod2nix.toml lockstep edits
+    # (RFC 0001 §Consumer interface).
+    tap = {
+      url = "github:amarbel-llc/tap";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.nixpkgs-master.follows = "nixpkgs-master";
+      inputs.utils.follows = "flake-utils";
+      inputs.bats.follows = "bats";
     };
 
     # amarbel-llc/bats — provides `lib.batsLane`, the nix-sandbox bats
@@ -58,15 +70,25 @@
       flake-utils,
       gomod2nix,
       madder,
+      tap,
       bats,
       ...
     }:
     flake-utils.lib.eachDefaultSystem (
       system:
       let
-        pkgs = import nixpkgs {
-          inherit system;
-          overlays = [ gomod2nix.overlays.default ];
+        # The amarbel-llc/nixpkgs fork auto-applies the gomod2nix
+        # overlay (which carries goFlakeInputs support per
+        # nixpkgs RFC 0001). Applying the upstream nix-community
+        # gomod2nix.overlays.default here would shadow it with a
+        # buildGoApplication that doesn't know about goFlakeInputs.
+        pkgs = import nixpkgs { inherit system; };
+
+        # Pure-consumer goFlakeInputs map. Sources Go module trees for
+        # specific deps from sibling flake outputs instead of the
+        # organic gomod2nix.toml hash (RFC 0001 §Consumer interface).
+        goFlakeInputs = import ./gomod.nix {
+          inherit madder tap system;
         };
 
         # pkgsUpstream is the bare Hydra-blessed nixpkgs (no overlays)
@@ -92,6 +114,7 @@
           src = ./.;
           pwd = ./.;
           modules = ./gomod2nix.toml;
+          inherit goFlakeInputs;
           subPackages = [
             "cmd/cutting-garden"
             "cmd/cg"

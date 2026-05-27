@@ -17,9 +17,15 @@ divergences from dodder are intentional carry-forwards.
 
 ## Build & test
 
-- `nix build` — produces `result/bin/cutting-garden`. Uses gomod2nix; reads
-  module hashes from `gomod2nix.toml`, **not** `go.sum`.
-- `go test ./...` — runs the framework test suite (no external deps).
+- `nix build` — produces `result/bin/cutting-garden`. Module sources come
+  from two places:
+    - **Flake-input bridge** (`gomod.nix`): `github.com/amarbel-llc/madder/go`
+      and `github.com/amarbel-llc/tap/go` are sourced from sibling flakes
+      via `goFlakeInputs` (RFC 0001). Bumping either is a `flake.lock`-only
+      edit; no `go get` + `gomod2nix generate` lockstep.
+    - **Organic gomod2nix** (`gomod2nix.toml`): everything else. Read from
+      `gomod2nix.toml`, **not** `go.sum`.
+- `go test ./...` — runs the test suite (no external deps).
 - `go test ./internal/command -run TestUtility_Run_DispatchesToRegisteredCmd`
   — single-test pattern.
 - `go build ./...` — compile check inside the devshell.
@@ -30,15 +36,26 @@ never let go fetch a different toolchain.
 
 ### When dependencies change
 
-After `go get` or editing `go.mod`, regenerate the nix lock:
+Two cases:
 
-```sh
-gomod2nix generate
-```
+1. **A bridged dep (madder, tap)** — bump the flake input:
+   ```sh
+   nix flake update madder   # or tap
+   ```
+   `flake.lock` is the source of truth; `go.mod` keeps its real `require`
+   line (the bridge merges over it at eval time). No `gomod2nix generate`
+   needed for the bridged module, though `go.mod`'s require line still
+   needs a real version so `nix develop --command go build` (which hits
+   GOMODCACHE, not the bridge) finds the dep.
 
-Both `gomod2nix.toml` and any newly tracked source files must be
-`git add`'d before `nix build` will see them — `nix build` against a dirty
-tree includes only git-tracked files.
+2. **A non-bridged dep** — `go get` it, then regenerate the nix lock:
+   ```sh
+   gomod2nix generate
+   ```
+
+Either way, `gomod2nix.toml` and any newly tracked source files must be
+`git add`'d before `nix build` sees them — `nix build` against a dirty
+tree only includes git-tracked files.
 
 ## Architecture
 
