@@ -7,7 +7,7 @@
     # the base pkgs set, so downstream flake consumers don't need to
     # apply the overlay themselves. Aligning here means our build
     # environment and madder's are the same closure (cutting-garden#2).
-    nixpkgs.url = "github:amarbel-llc/nixpkgs";
+    nixpkgs.url = "github:amarbel-llc/igloo";
     # nixpkgs-master is the SHA-pinned upstream anchor that eng's
     # update-nix-repos recipe cascades. Without this input the cascade
     # falls through to `nix flake update` on the floating `nixpkgs`
