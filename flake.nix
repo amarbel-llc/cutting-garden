@@ -7,7 +7,7 @@
     # the base pkgs set, so downstream flake consumers don't need to
     # apply the overlay themselves. Aligning here means our build
     # environment and madder's are the same closure (cutting-garden#2).
-    nixpkgs.url = "github:amarbel-llc/igloo";
+    igloo.url = "github:amarbel-llc/igloo";
     # nixpkgs-master is the SHA-pinned upstream anchor that eng's
     # update-nix-repos recipe cascades. Without this input the cascade
     # falls through to `nix flake update` on the floating `nixpkgs`
@@ -21,7 +21,7 @@
     flake-utils.url = "github:numtide/flake-utils";
     gomod2nix = {
       url = "github:nix-community/gomod2nix";
-      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.nixpkgs.follows = "igloo";
       inputs.flake-utils.follows = "flake-utils";
     };
     # Tracks the latest madder. The `madder` binary in the devshell
@@ -33,7 +33,7 @@
     # `gomod2nix generate` lockstep required.
     madder = {
       url = "github:amarbel-llc/madder";
-      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.igloo.follows = "igloo";
       inputs.nixpkgs-master.follows = "nixpkgs-master";
       inputs.utils.follows = "flake-utils";
     };
@@ -43,7 +43,7 @@
     # (RFC 0001 §Consumer interface).
     tap = {
       url = "github:amarbel-llc/tap";
-      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.igloo.follows = "igloo";
       inputs.nixpkgs-master.follows = "nixpkgs-master";
       inputs.utils.follows = "flake-utils";
       inputs.bats.follows = "bats";
@@ -55,7 +55,7 @@
     # workspace, so we slice with subPath = "libs/dewey".
     purse-first = {
       url = "github:amarbel-llc/purse-first";
-      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.igloo.follows = "igloo";
       inputs.nixpkgs-master.follows = "nixpkgs-master";
       inputs.utils.follows = "flake-utils";
     };
@@ -67,7 +67,7 @@
     # iteration goes through `nix build .#bats-capture`.
     bats = {
       url = "github:amarbel-llc/bats";
-      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.igloo.follows = "igloo";
       inputs.nixpkgs-master.follows = "nixpkgs-master";
       inputs.utils.follows = "flake-utils";
     };
@@ -76,7 +76,7 @@
   outputs =
     {
       self,
-      nixpkgs,
+      igloo,
       nixpkgs-master,
       flake-utils,
       gomod2nix,
@@ -94,7 +94,7 @@
         # nixpkgs RFC 0001). Applying the upstream nix-community
         # gomod2nix.overlays.default here would shadow it with a
         # buildGoApplication that doesn't know about goFlakeInputs.
-        pkgs = import nixpkgs { inherit system; };
+        pkgs = import igloo { inherit system; };
 
         # Pure-consumer goFlakeInputs map. Sources Go module trees for
         # specific deps from sibling flake outputs instead of the
