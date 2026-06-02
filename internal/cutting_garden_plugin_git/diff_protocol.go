@@ -9,8 +9,6 @@ import (
 	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
 	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
-	git "github.com/go-git/go-git/v5"
-	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/revlist"
 )
@@ -88,17 +86,8 @@ func objectGraphDiff(
 		return nil, err
 	}
 
-	rem := git.NewRemote(seeded, &config.RemoteConfig{
-		Name: "origin",
-		URLs: []string{remote},
-	})
-	refspec := config.RefSpec(fmt.Sprintf(
-		"+refs/heads/%s:refs/remotes/origin/%s", resolvedBranch, resolvedBranch))
-	if ferr := rem.FetchContext(ctx, &git.FetchOptions{
-		RefSpecs: []config.RefSpec{refspec},
-		Tags:     git.NoTags,
-	}); ferr != nil && ferr != git.NoErrAlreadyUpToDate {
-		return nil, errors.Wrapf(ferr, "git plugin: fetch %s from %s", resolvedBranch, remote)
+	if err := fetchBranchInto(ctx, seeded, remote, resolvedBranch); err != nil {
+		return nil, err
 	}
 
 	liveHashes, err := revlist.Objects(seeded, []plumbing.Hash{plumbing.NewHash(liveTip)}, nil)

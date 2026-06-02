@@ -2,11 +2,13 @@ package cutting_garden_plugin_git
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 	git "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/storage"
 	"github.com/go-git/go-git/v5/storage/memory"
 )
 
@@ -65,4 +67,25 @@ func listRemoteTip(
 	}
 	return "", "", errors.ErrorWithStackf(
 		"git plugin: cannot resolve default branch (HEAD) on %s", remote)
+}
+
+// fetchBranchInto fetches branch from remote into st over go-git's
+// transport. go-git advertises whatever objects st already holds (via its
+// references) as `have`s, so when st is seeded from a prior snapshot only
+// the delta crosses the wire. An already-satisfied fetch
+// (NoErrAlreadyUpToDate) is treated as success.
+func fetchBranchInto(ctx context.Context, st storage.Storer, remote, branch string) error {
+	rem := git.NewRemote(st, &config.RemoteConfig{
+		Name: "origin",
+		URLs: []string{remote},
+	})
+	refspec := config.RefSpec(fmt.Sprintf(
+		"+refs/heads/%s:refs/remotes/origin/%s", branch, branch))
+	if err := rem.FetchContext(ctx, &git.FetchOptions{
+		RefSpecs: []config.RefSpec{refspec},
+		Tags:     git.NoTags,
+	}); err != nil && err != git.NoErrAlreadyUpToDate {
+		return errors.Wrapf(err, "git plugin: fetch %s from %s", branch, remote)
+	}
+	return nil
 }

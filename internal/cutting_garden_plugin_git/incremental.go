@@ -2,109 +2,28 @@ package cutting_garden_plugin_git
 
 import (
 	"context"
-	"os"
-	"sort"
-	"strings"
 
 	"github.com/amarbel-llc/cutting-garden/internal/capture_plugin"
 	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
-	"github.com/amarbel-llc/cutting-garden/internal/gitwire"
 	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/go-git/go-git/v5/plumbing/revlist"
+	"github.com/go-git/go-git/v5/plumbing/storer"
 )
 
-// deltaFetch is the result of a gitwire negotiation: a scratch repo
-// holding only the objects reachable from the live tip but not from the
-// captured tip, the oid→git-type map of those objects, and whether the
-// change is a fast-forward of the captured tip.
-type deltaFetch struct {
-	scratchDir  string
-	objects     map[string]string
-	fastForward bool
-}
-
-// negotiateDelta fetches the delta between capturedTip and liveTip into a
-// fresh scratch repo via gitwire (transferring only the differing
-// objects), and determines whether liveTip fast-forwards capturedTip
-// (i.e. capturedTip is a parent of one of the fetched commits, which —
-// since the delta is closure(liveTip) − closure(capturedTip) — holds iff
-// capturedTip is an ancestor of liveTip).
+// tryIncrementalCapture rebuilds a receipt for the live tip from a prior
+// receipt plus only the objects that changed since it, fetching just the
+// delta over the wire (the prior tip is advertised as a `have`). Returns
+// ok=false (no error) to mean "fall back to a full capture": the prior
+// receipt is unreadable, the fetch failed, or the change is not a
+// fast-forward (so the prior object set is not wholly preserved).
 //
-// A nil df signals "fall back to a full clone": the transport is
-// unsupported or the negotiation failed. cleanup must always be called.
-func negotiateDelta(
-	ctx context.Context,
-	remote, capturedTip, liveTip string,
-) (df *deltaFetch, cleanup func(), err error) {
-	scratch, err := os.MkdirTemp("", "cg-git-delta-*")
-	if err != nil {
-		return nil, func() {}, errors.Wrap(err)
-	}
-	cleanup = func() { _ = os.RemoveAll(scratch) }
-
-	if err := runGit(ctx, "", "init", "-q", scratch); err != nil {
-		cleanup()
-		return nil, func() {}, err
-	}
-
-	if ferr := gitwire.FetchDelta(ctx, remote, liveTip, []string{capturedTip}, scratch); ferr != nil {
-		// Unsupported transport or any negotiation failure → fall back to
-		// the full-clone path; not a hard error.
-		cleanup()
-		return nil, func() {}, nil
-	}
-
-	objs, oerr := listObjectTypes(ctx, scratch)
-	if oerr != nil {
-		cleanup()
-		return nil, func() {}, nil
-	}
-
-	ff, ferr := capturedTipIsDeltaParent(ctx, scratch, capturedTip, objs)
-	if ferr != nil {
-		cleanup()
-		return nil, func() {}, nil
-	}
-
-	return &deltaFetch{scratchDir: scratch, objects: objs, fastForward: ff}, cleanup, nil
-}
-
-// capturedTipIsDeltaParent reports whether capturedTip appears as a
-// parent of any commit in the delta. Because the delta is exactly
-// closure(liveTip) − closure(capturedTip), this is true iff capturedTip
-// is an ancestor of liveTip — the fast-forward condition under which the
-// captured object set is wholly preserved (no removals).
-func capturedTipIsDeltaParent(
-	ctx context.Context,
-	scratchDir, capturedTip string,
-	objects map[string]string,
-) (bool, error) {
-	for oid, typ := range objects {
-		if typ != "commit" {
-			continue
-		}
-		out, err := gitOutput(ctx, scratchDir, "cat-file", "commit", oid)
-		if err != nil {
-			return false, err
-		}
-		for _, line := range strings.Split(out, "\n") {
-			if line == "" {
-				break // end of commit header
-			}
-			if strings.HasPrefix(line, "parent ") &&
-				strings.TrimSpace(strings.TrimPrefix(line, "parent ")) == capturedTip {
-				return true, nil
-			}
-		}
-	}
-	return false, nil
-}
-
-// tryIncrementalCapture rebuilds a receipt for liveTip from a prior
-// receipt plus only the objects that changed since it. Returns ok=false
-// (no error) to mean "fall back to a full capture": the prior receipt is
-// unreadable, the transport is unsupported, or the change is not a
-// fast-forward (so the captured object set is not wholly preserved).
+// On a fast-forward the new object set is exactly the prior set plus the
+// fetched delta; references are sorted by oid in writeGitReceipt, so an
+// incremental capture and a full capture of the same state produce a
+// byte-identical payload node.
 func tryIncrementalCapture(
 	ctx context.Context,
 	store blob_stores.BlobStoreInitialized,
@@ -113,10 +32,11 @@ func tryIncrementalCapture(
 ) (cutting_garden_plugins.ProtocolCaptureResult, bool, error) {
 	priorPayload, priorMeta, err := loadReceiptPayload(store, priorReceiptDigest)
 	if err != nil {
+		// Unreadable prior receipt → fall back to a full capture.
 		return cutting_garden_plugins.ProtocolCaptureResult{}, false, nil
 	}
 
-	resolvedBranch, liveTip, err := resolveTip(ctx, remote, branch)
+	resolvedBranch, liveTip, err := listRemoteTip(ctx, remote, branch)
 	if err != nil {
 		return cutting_garden_plugins.ProtocolCaptureResult{}, false, errors.Wrap(err)
 	}
@@ -131,22 +51,30 @@ func tryIncrementalCapture(
 		return res, true, nil
 	}
 
-	df, cleanup, derr := negotiateDelta(ctx, remote, priorMeta.Tip, liveTip)
-	if derr != nil {
-		return cutting_garden_plugins.ProtocolCaptureResult{}, false, derr
+	// Seed the prior snapshot and fetch the live tip; only the delta
+	// crosses the wire. A fetch failure is a soft miss → full capture.
+	seeded, err := seedStorer(store, priorPayload.Refs, priorMeta.Tip)
+	if err != nil {
+		return cutting_garden_plugins.ProtocolCaptureResult{}, false, err
 	}
-	defer cleanup()
-	if df == nil || !df.fastForward {
+	if ferr := fetchBranchInto(ctx, seeded, remote, resolvedBranch); ferr != nil {
 		return cutting_garden_plugins.ProtocolCaptureResult{}, false, nil
 	}
 
-	deltaRefs, serr := storeDeltaObjects(ctx, w, df)
-	if serr != nil {
-		return cutting_garden_plugins.ProtocolCaptureResult{}, false, serr
+	// Incremental validity requires a fast-forward (the prior tip is an
+	// ancestor of the live tip), so every prior object stays reachable.
+	ff, err := isFastForward(seeded, priorMeta.Tip, liveTip)
+	if err != nil || !ff {
+		return cutting_garden_plugins.ProtocolCaptureResult{}, false, nil
 	}
 
-	// Fast-forward ⇒ closure(captured) ⊆ closure(live), so the new object
-	// set is the prior set plus the delta.
+	deltaRefs, err := storeDeltaObjects(ctx, w, seeded, priorMeta.Tip, liveTip)
+	if err != nil {
+		return cutting_garden_plugins.ProtocolCaptureResult{}, false, err
+	}
+
+	// Fast-forward ⇒ closure(prior) ⊆ closure(live), so the new object set
+	// is the prior set plus the delta.
 	allRefs := unionRefs(priorPayload.Refs, deltaRefs)
 	res, werr := writeGitReceipt(ctx, w, remote, resolvedBranch, liveTip, allRefs)
 	if werr != nil {
@@ -155,34 +83,50 @@ func tryIncrementalCapture(
 	return res, true, nil
 }
 
-// storeDeltaObjects writes every fetched delta object into the blob
-// store and returns one locked reference per object. The bytes come from
-// `git cat-file <type> <oid>` (the raw object payload), identical to what
-// the full-clone path streams, so an object's markl id is the same
-// whichever path stored it.
+// isFastForward reports whether priorTip is an ancestor of liveTip — the
+// condition under which the prior object closure is wholly contained in
+// the live closure (no removals). Both commits must be present in st.
+func isFastForward(st storer.EncodedObjectStorer, priorTip, liveTip string) (bool, error) {
+	prior, err := object.GetCommit(st, plumbing.NewHash(priorTip))
+	if err != nil {
+		return false, errors.Wrapf(err, "git plugin: load prior commit %s", priorTip)
+	}
+	live, err := object.GetCommit(st, plumbing.NewHash(liveTip))
+	if err != nil {
+		return false, errors.Wrapf(err, "git plugin: load live commit %s", liveTip)
+	}
+	return prior.IsAncestor(live)
+}
+
+// storeDeltaObjects writes every object reachable from liveTip but not
+// from priorTip — the fetched delta — into the blob store, returning one
+// locked reference per object. The bytes are the raw object payloads a
+// full capture stores, so an object's markl id is identical whichever
+// path stored it.
 func storeDeltaObjects(
 	ctx context.Context,
 	w capture_plugin.Writer,
-	df *deltaFetch,
+	st storer.EncodedObjectStorer,
+	priorTip, liveTip string,
 ) ([]capture_plugin.Ref, error) {
-	oids := make([]string, 0, len(df.objects))
-	for oid := range df.objects {
-		oids = append(oids, oid)
+	deltaHashes, err := revlist.Objects(st,
+		[]plumbing.Hash{plumbing.NewHash(liveTip)},
+		[]plumbing.Hash{plumbing.NewHash(priorTip)})
+	if err != nil {
+		return nil, errors.Wrapf(err, "git plugin: enumerate delta objects")
 	}
-	sort.Strings(oids)
 
-	refs := make([]capture_plugin.Ref, 0, len(oids))
-	for _, oid := range oids {
-		typ := df.objects[oid]
-		payload, err := gitOutput(ctx, df.scratchDir, "cat-file", typ, oid)
-		if err != nil {
-			return nil, err
+	refs := make([]capture_plugin.Ref, 0, len(deltaHashes))
+	for _, h := range deltaHashes {
+		obj, oerr := st.EncodedObject(plumbing.AnyObject, h)
+		if oerr != nil {
+			return nil, errors.Wrapf(oerr, "git plugin: resolve delta object %s", h)
 		}
-		digest, _, werr := w.WriteBlob(ctx, strings.NewReader(payload))
+		ref, werr := writeEncodedObject(ctx, w, obj)
 		if werr != nil {
-			return nil, errors.Wrap(werr)
+			return nil, werr
 		}
-		refs = append(refs, capture_plugin.LockedRef(oid, digest, objectTypeString(typ)))
+		refs = append(refs, ref)
 	}
 	return refs, nil
 }

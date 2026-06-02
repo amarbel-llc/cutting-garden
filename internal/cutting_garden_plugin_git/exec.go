@@ -30,11 +30,13 @@ func lookGit() (string, error) {
 }
 
 // runGit shells out to git with args, honoring ctx for cancellation.
-// dir, when non-empty, becomes the child's working directory (used to
-// run commands inside the bare clone). stdout is discarded — the
-// callers that need output use gitOutput instead. The last
-// stderrTailBytes of stderr are wrapped into the returned error on
-// non-zero exit.
+// dir, when non-empty, becomes the child's working directory. stdout is
+// discarded. The last stderrTailBytes of stderr are wrapped into the
+// returned error on non-zero exit.
+//
+// This is the last `git`-binary dependency in the plugin, retained only by
+// the local restore path (restore.go); capture, diff, and incremental are
+// pure-Go via go-git. Restore migrates to go-git next.
 func runGit(ctx context.Context, dir string, args ...string) error {
 	binPath, err := lookGit()
 	if err != nil {
@@ -56,35 +58,6 @@ func runGit(ctx context.Context, dir string, args ...string) error {
 	}
 
 	return nil
-}
-
-// gitOutput is runGit's read-the-output sibling: it returns the child's
-// stdout on success (used by `ls-remote`). stderr is tailed into the
-// error on non-zero exit exactly as runGit does.
-func gitOutput(ctx context.Context, dir string, args ...string) (string, error) {
-	binPath, err := lookGit()
-	if err != nil {
-		return "", err
-	}
-
-	cmd := exec.CommandContext(ctx, binPath, args...)
-	cmd.Dir = dir
-
-	var (
-		stdout     bytes.Buffer
-		stderrTail bytes.Buffer
-	)
-	cmd.Stdout = &stdout
-	cmd.Stderr = newTailWriter(&stderrTail, stderrTailBytes)
-
-	if runErr := cmd.Run(); runErr != nil {
-		return "", errors.ErrorWithStackf(
-			"git plugin: git %s failed (%v)\nstderr-tail: %s",
-			argSummary(args), runErr, stderrTail.String(),
-		)
-	}
-
-	return stdout.String(), nil
 }
 
 // gitInput runs git with args, feeding stdin to the child and returning
