@@ -163,6 +163,25 @@
             mainProgram = "cutting-garden";
           };
         };
+
+        # cutting-garden-test-git-sshd is a test-only git-over-ssh server
+        # (internal/gittestssh as a standalone binary) that backs the bats
+        # ssh lane (zz-tests_bats/ssh.bats via lib/git_ssh.bash). Built as
+        # its own derivation and NOT shipped — mirrors madder's
+        # madder-test-sftp-server. It runs git's pack helpers, so the bats
+        # lane carries `git` on PATH (below).
+        cuttingGardenTestGitSshd = pkgs.buildGoApplication {
+          pname = "cutting-garden-test-git-sshd";
+          version = cgVersion;
+          src = ./.;
+          pwd = ./.;
+          modules = ./gomod2nix.toml;
+          inherit goFlakeInputs;
+          subPackages = [ "cmd/cutting-garden-test-git-sshd" ];
+          go = pkgs.go_1_26;
+          GOTOOLCHAIN = "local";
+          meta.mainProgram = "cutting-garden-test-git-sshd";
+        };
       in
       {
         packages = {
@@ -194,8 +213,21 @@
                 base = pkgs.git;
                 name = "git";
               };
+              # The test git-over-ssh server backing zz-tests_bats/ssh.bats.
+              CG_TEST_GIT_SSHD = {
+                base = cuttingGardenTestGitSshd;
+                name = "cutting-garden-test-git-sshd";
+              };
             };
             batsLibPath = [ bats.packages.${system}.bats-libs.batsLibPath ];
+            # openssh: ssh.bats's lib/git_ssh.bash runs ssh-agent /
+            # ssh-keygen / ssh-add (the plugin authenticates ssh via the
+            # agent). git: the test ssh server execs git's pack helpers
+            # (git-upload-pack / git-receive-pack) by name on PATH.
+            nativeBuildInputs = [
+              pkgs.openssh
+              pkgs.git
+            ];
           };
         };
 
