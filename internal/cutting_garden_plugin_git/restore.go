@@ -1,15 +1,12 @@
 package cutting_garden_plugin_git
 
 import (
-	"context"
 	"os"
-	"strings"
 
-	"github.com/amarbel-llc/cutting-garden/internal/capture_plugin"
 	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
-	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
-	"github.com/amarbel-llc/madder/go/pkgs/markl"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
+	git "github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
 )
 
 var _ cutting_garden_plugins.ProtocolRestorePlugin = (*Plugin)(nil)
@@ -18,11 +15,12 @@ var _ cutting_garden_plugins.ProtocolRestorePlugin = (*Plugin)(nil)
 func (Plugin) ProtocolKind() string { return captureKind }
 
 // RestoreProtocol rebuilds a working git clone from a git receipt merkle
-// tree, checked out to the preserved branch. It reads every object leaf
-// referenced by the payload node back into a fresh repository's object
-// database (verifying each recreated oid matches the captured one), then
-// creates the branch at the recorded tip and checks out the working
-// tree.
+// tree, checked out to the preserved branch — entirely in-process via
+// go-git (no `git` binary). Every captured object is written back into a
+// fresh repository's object database (loadEncodedObject verifies each
+// recreated oid against the captured one, an integrity check), the
+// preserved branch is pointed at the recorded tip, and the working tree is
+// materialized from it.
 func (Plugin) RestoreProtocol(req cutting_garden_plugins.ProtocolRestoreRequest) error {
 	dest := req.RawDest
 	if dest == "" && req.Dest != nil {
@@ -45,78 +43,45 @@ func (Plugin) RestoreProtocol(req cutting_garden_plugins.ProtocolRestoreRequest)
 		branch = "main"
 	}
 
-	if err := runGit(req.Context, "", "init", "-q", "-b", branch, "--", dest); err != nil {
-		return err
+	if err := os.MkdirAll(dest, 0o755); err != nil {
+		return errors.Wrapf(err, "git plugin: create restore destination %s", dest)
+	}
+	repo, err := git.PlainInit(dest, false)
+	if err != nil {
+		return errors.Wrapf(err, "git plugin: init repository at %s", dest)
 	}
 
-	if err := writeObjects(req.Context, req.BlobStore, dest, payload.Refs); err != nil {
-		return err
-	}
-
-	// Create the preserved branch at the recorded tip, then check out
-	// the working tree from it.
-	if err := runGit(req.Context, dest, "update-ref", "refs/heads/"+branch, meta.Tip); err != nil {
-		return err
-	}
-	if err := runGit(req.Context, dest, "reset", "--hard"); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// writeObjects reads each git object leaf from store and writes it back
-// into the repository at dest via `git hash-object -w`, verifying the
-// recreated oid equals the captured oid (the reference alias).
-func writeObjects(
-	ctx context.Context,
-	store blob_stores.BlobStoreInitialized,
-	dest string,
-	refs []capture_plugin.Ref,
-) error {
-	for _, ref := range refs {
-		gitType := gitTypeFromObjectType(ref.TypeString)
-		if gitType == "" {
-			return errors.ErrorWithStackf(
-				"git plugin: payload reference %q has non-object type %q",
-				ref.Alias, ref.TypeString)
+	// Write every captured object back into the object database. The bridge
+	// re-verifies each object's git oid, so a corrupted blob is rejected
+	// here rather than silently restored.
+	for _, ref := range payload.Refs {
+		obj, lerr := loadEncodedObject(req.BlobStore, ref)
+		if lerr != nil {
+			return lerr
 		}
-
-		if err := writeOneObject(ctx, store, dest, ref, gitType); err != nil {
-			return err
+		if _, serr := repo.Storer.SetEncodedObject(obj); serr != nil {
+			return errors.Wrapf(serr, "git plugin: write object %s", ref.Alias)
 		}
 	}
-	return nil
-}
 
-func writeOneObject(
-	ctx context.Context,
-	store blob_stores.BlobStoreInitialized,
-	dest string,
-	ref capture_plugin.Ref,
-	gitType string,
-) (err error) {
-	var id markl.Id
-	if err = id.Set(ref.Digest); err != nil {
-		return errors.Wrapf(err, "parse object blob id %q", ref.Digest)
+	// Point the preserved branch at the recorded tip and aim HEAD at it,
+	// then materialize the working tree from the tip commit.
+	branchRef := plumbing.NewBranchReferenceName(branch)
+	tip := plumbing.NewHash(meta.Tip)
+	if err := repo.Storer.SetReference(plumbing.NewHashReference(branchRef, tip)); err != nil {
+		return errors.Wrapf(err, "git plugin: set branch %s to %s", branch, meta.Tip)
 	}
-	reader, err := store.MakeBlobReader(&id)
+	if err := repo.Storer.SetReference(
+		plumbing.NewSymbolicReference(plumbing.HEAD, branchRef)); err != nil {
+		return errors.Wrapf(err, "git plugin: point HEAD at %s", branch)
+	}
+
+	wt, err := repo.Worktree()
 	if err != nil {
-		return errors.Wrapf(err, "open object blob %s", ref.Digest)
+		return errors.Wrap(err)
 	}
-	defer errors.DeferredCloser(&err, reader)
-
-	out, err := gitInput(ctx, dest, reader,
-		"hash-object", "-t", gitType, "-w", "--stdin")
-	if err != nil {
-		return err
-	}
-
-	got := strings.TrimSpace(out)
-	if got != ref.Alias {
-		return errors.ErrorWithStackf(
-			"git plugin: object integrity mismatch: captured oid %q, "+
-				"recreated oid %q (type %s)", ref.Alias, got, gitType)
+	if err := wt.Reset(&git.ResetOptions{Commit: tip, Mode: git.HardReset}); err != nil {
+		return errors.Wrapf(err, "git plugin: check out %s", meta.Tip)
 	}
 	return nil
 }
