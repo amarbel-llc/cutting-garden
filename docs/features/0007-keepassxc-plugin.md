@@ -327,9 +327,12 @@ and *richer* on the diff side.
 ## Open Questions
 
 - **At-rest enforcement.** How does the plugin *refuse* a non-encrypted
-  blob store (§Security posture)? The `blob_stores` interface may not
-  expose an "encrypted at rest" predicate today; this may need a capability
-  query or an explicit `--allow-plaintext-secrets` opt-in gate.
+  blob store (§Security posture)? Scoped in
+  [FDR 0008](./0008-capture-store-requirements.md): the plugin declares
+  `StoreEncryptedAtRest` via the `StoreRequiringPlugin` interface and the
+  capture orchestrator fails-closed (with an `--allow-plaintext-secrets`
+  override) against stores that can't prove it. The load-bearing
+  dependency — whether madder exposes the fact — is tracked there.
 - **Entry History.** Capture the full per-entry History array (faithful,
   and content-addressing dedups unchanged historical versions for free)
   or only current state (smaller, loses the vault's own audit trail)?
