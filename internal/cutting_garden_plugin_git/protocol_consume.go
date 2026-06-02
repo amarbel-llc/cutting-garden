@@ -63,10 +63,21 @@ func loadReceiptPayload(
 		return capture_plugin.Node{}, payloadMeta{}, errors.ErrorWithStackf(
 			"git plugin: receipt %s has no payload reference", receiptDigest)
 	}
+	// Honor the FDR-0001 type lock: a signed reference whose signature
+	// disagrees with this binary's type definition is rejected.
+	if err := capture_plugin.VerifyRef(payloadRef); err != nil {
+		return capture_plugin.Node{}, payloadMeta{}, err
+	}
 
 	payload, err := readNode(store, payloadRef.Digest)
 	if err != nil {
 		return capture_plugin.Node{}, payloadMeta{}, err
+	}
+
+	for _, objRef := range payload.Refs {
+		if err := capture_plugin.VerifyRef(objRef); err != nil {
+			return capture_plugin.Node{}, payloadMeta{}, err
+		}
 	}
 
 	var meta payloadMeta

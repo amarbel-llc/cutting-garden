@@ -7,9 +7,8 @@ import (
 )
 
 // Ref is one FDR-0001 typed blob reference: a named slot pointing at a
-// previously-written node by its markl digest and type-string. Sig is
-// intentionally omitted — RFC 0002 permits sig-less references and the
-// type-string alone identifies the type.
+// previously-written node by its markl digest and type-string, with an
+// optional type-signature lock.
 type Ref struct {
 	// Alias names the slot (e.g. "identity", "host", "payload"), or —
 	// for the git payload's per-object refs — the git oid.
@@ -19,6 +18,20 @@ type Ref struct {
 	// TypeString is the referenced node's type-string (the `!`-line
 	// value), without a leading `!`.
 	TypeString string
+	// Sig is the optional type-signature (`@<sig>`) pinning the type
+	// interpretation (RFC 0002 §Type Signatures). Empty = unlocked.
+	Sig string
+}
+
+// LockedRef builds a reference with its type-signature filled from the
+// build-time registry, locking the reference to the type's current
+// definition. Unregistered types yield a sig-less (unlocked) reference.
+func LockedRef(alias, digest, typeString string) Ref {
+	r := Ref{Alias: alias, Digest: digest, TypeString: typeString}
+	if sig, ok := SignatureFor(typeString); ok {
+		r.Sig = sig
+	}
+	return r
 }
 
 // BuildNode is the exported entry point bindings use to materialize a
@@ -57,6 +70,10 @@ func encodeNode(typeString string, refs []Ref, body []byte) []byte {
 		b.WriteString(r.Digest)
 		b.WriteString(" !")
 		b.WriteString(r.TypeString)
+		if r.Sig != "" {
+			b.WriteByte('@')
+			b.WriteString(r.Sig)
+		}
 		b.WriteByte('\n')
 	}
 

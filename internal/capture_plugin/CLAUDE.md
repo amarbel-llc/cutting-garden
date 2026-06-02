@@ -31,9 +31,12 @@ carries a real digest. The caller writes its **payload** subtree first
 
 - `Writer` / `NewBlobStoreWriter` (`writer.go`) — the node sink. The
   blob-store adapter reuses `plugin_blob_io.WriteReaderBlob`.
-- `BuildNode` / `Ref` (`node.go`) — hyphence node serialization with
-  FDR-0001 typed blob references (`- <alias> < @<digest> !<type>`).
-  Exported so bindings build their own payload nodes in the same framing.
+- `BuildNode` / `Ref` / `LockedRef` (`node.go`) — hyphence node
+  serialization with FDR-0001 typed blob references
+  (`- <alias> < @<digest> !<type>@<sig>`). Exported so bindings build
+  their own payload nodes in the same framing.
+- `RegisterType` / `SignatureFor` / `VerifyRef` (`typeregistry.go`) —
+  the build-time type-signature registry (see above).
 - `JCS` (`jcs.go`) — JCS-canonical JSON for node bodies (see the
   constraint note below).
 - `GatherHost` / `HostInfo` / `BinaryInfo` (`environment.go`) — the
@@ -42,12 +45,31 @@ carries a real digest. The caller writes its **payload** subtree first
   (`receipt.go`) — the request shape and the post-order driver.
 - `types.go` — protocol type-strings + `ReceiptType(kind)`.
 
+## Type signatures (the build-time registry)
+
+Reference lines carry FDR-0001 type locks (`< @<digest> !<type>@<sig>`).
+The `<sig>` is resolved through a **build-time embedded registry** — RFC
+0002 §Type Signatures mechanism (1) — in `typeregistry.go`:
+
+- Each type registers a `TypeDef` (its `iana_media_type`, and
+  `payload_cardinality` for payload types) at `init()`. The protocol
+  types register here; bindings register their own
+  receipt/payload/leaf types (the git binding in `types_register.go`).
+- The signature is the markl id of the type's **canonical type-blob** —
+  its interface keys serialized as deterministic TOML
+  (`canonicalTypeBlob`), hashed via a discard-store digester. Changing a
+  type's interface keys changes its signature: that *is* the
+  version-pinning the lock provides.
+- `LockedRef(alias, digest, type)` fills `Ref.Sig` from the registry;
+  `BuildNode` emits `@<sig>` whenever `Ref.Sig` is set (raw `Ref`s
+  without a sig stay sig-less, so the framing tests can assert exact
+  bytes). `SignatureFor` / `MediaTypeFor` expose the registry;
+  `VerifyRef` enforces a lock on the consume side (sig-less = unlocked
+  and always valid; a signed ref to a known type must match — a
+  mismatch is a type-version-drift error).
+
 ## Deliberate simplifications (vs. the full RFC)
 
-- **Sig-less references.** Reference lines omit the optional `@<sig>`
-  type-lock (`< @<digest> !<type-string>`). RFC 0002 §Type Signatures
-  permits this; the type-string alone identifies the type. Adding a
-  signed type-blob registry is future work.
 - **JCS via encoding/json.** `JCS` uses `json.Marshal` with HTML
   escaping disabled. That is JCS-equivalent only for the value shapes
   the protocol uses — ASCII object keys, strings, booleans, small

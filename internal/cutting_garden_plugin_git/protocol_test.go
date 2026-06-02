@@ -58,9 +58,12 @@ func nodeRefs(node string) map[string]string {
 			continue
 		}
 		digest, typ, _ := strings.Cut(after, " !")
-		// Encode both digest and type in the value for assertions:
+		// Drop the optional `@<sig>` type lock so assertions compare the
+		// bare type-string.
+		if t, _, ok := strings.Cut(typ, "@"); ok {
+			typ = t
+		}
 		out[alias] = digest + "|" + typ
-		_ = typ
 	}
 	return out
 }

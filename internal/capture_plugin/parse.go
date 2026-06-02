@@ -94,11 +94,13 @@ func parseRefLine(line string) (Ref, bool) {
 	if !ok {
 		return Ref{}, false
 	}
-	// Drop an optional `@<sig>` suffix on the type lock.
-	if at := strings.IndexByte(typ, '@'); at >= 0 {
-		typ = typ[:at]
+	// Split an optional `@<sig>` type lock off the type-string.
+	var sig string
+	if typeString, lock, hasLock := strings.Cut(typ, "@"); hasLock {
+		typ = typeString
+		sig = lock
 	}
-	return Ref{Alias: alias, Digest: digest, TypeString: typ}, true
+	return Ref{Alias: alias, Digest: digest, TypeString: typ, Sig: sig}, true
 }
 
 const (

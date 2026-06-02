@@ -24,3 +24,34 @@ const (
 func ReceiptType(kind string) string {
 	return "cutting_garden-capture-receipt-" + kind + "-v1"
 }
+
+// init registers the protocol-defined node types into the build-time
+// type-signature registry (RFC 0002 §Type Signatures). Bindings register
+// their own receipt/payload/leaf types. Media types follow the
+// application/vnd.cutting-garden.<thing>+<body-format> convention.
+func init() {
+	RegisterType(TypeDef{
+		TypeString:    TypeIdentity,
+		IANAMediaType: "application/vnd.cutting-garden.capture-identity+hyphence",
+	})
+	RegisterType(TypeDef{
+		TypeString:    TypeInvocation,
+		IANAMediaType: "application/vnd.cutting-garden.capture-invocation+jcs",
+	})
+	RegisterType(TypeDef{
+		TypeString:    TypeEnvironment,
+		IANAMediaType: "application/vnd.cutting-garden.capture-environment+hyphence",
+	})
+	RegisterType(TypeDef{
+		TypeString:    TypeHost,
+		IANAMediaType: "application/vnd.cutting-garden.capture-environment-host+jcs",
+	})
+	RegisterType(TypeDef{
+		TypeString:    TypeBinary,
+		IANAMediaType: "application/vnd.cutting-garden.capture-environment-binary+jcs",
+	})
+	RegisterType(TypeDef{
+		TypeString:    TypeOutcome,
+		IANAMediaType: "application/vnd.cutting-garden.capture-outcome+jcs",
+	})
+}

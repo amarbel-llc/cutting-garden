@@ -90,7 +90,7 @@ References: one per stored git object, in `git cat-file
 object's oid; the reference type is the object's git-kind leaf type:
 
 ```
-- <oid> < @<digest> !git-capture-object-<git-type>-v1
+- <oid> < @<digest> !git-capture-object-<git-type>-v1@<sig>
 ```
 
 ## Object leaves
@@ -107,11 +107,22 @@ writing each leaf back with `git hash-object -t <git-type> -w` (or
 assembling a pack) and recreating the branch ref from the payload body's
 `tip`.
 
-The object leaves carry no `iana_media_type` interface yet; that and the
-`payload_cardinality` declaration (this binding uses a single payload
-node, so the receipt's payload slot is `single`) are documented here
-pending the FDR-0010 graduation noted in RFC 0002 §IANA Media Type
-Interface.
+Each git binding type is registered in the build-time type-signature
+registry (RFC 0002 §Type Signatures mechanism (1), implemented in
+`internal/capture_plugin/typeregistry.go`), so every reference to a git
+node — the receipt's `payload` ref and the payload node's per-object
+refs — carries an `@<sig>` type lock, and consumers verify it. The
+registered interface keys are:
+
+| Type | `iana_media_type` | `payload_cardinality` |
+|---|---|---|
+| `cutting_garden-capture-receipt-git-v1` | `application/vnd.cutting-garden.capture-receipt-git+hyphence` | — |
+| `jcs-git-capture-payload-v1` | `application/vnd.cutting-garden.git-capture-payload+jcs` | `single` |
+| `jcs-git-capture-environment-v1` | `application/vnd.cutting-garden.git-capture-environment+jcs` | — |
+| `git-capture-object-<git-type>-v1` | `application/vnd.cutting-garden.git-object-<git-type>` | — |
+
+These interim media-type/cardinality keys are documented here pending
+the FDR-0010 graduation noted in RFC 0002 §IANA Media Type Interface.
 
 ## Stability
 

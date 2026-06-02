@@ -113,9 +113,9 @@ func WriteReceipt(
 	}
 
 	envRefs := []Ref{
-		{Alias: "host", Digest: hostDigest, TypeString: TypeHost},
-		{Alias: "binary", Digest: binDigest, TypeString: TypeBinary},
-		{Alias: "plugin", Digest: pluginDigest, TypeString: p.PluginEnv.TypeString},
+		LockedRef("host", hostDigest, TypeHost),
+		LockedRef("binary", binDigest, TypeBinary),
+		LockedRef("plugin", pluginDigest, p.PluginEnv.TypeString),
 	}
 	envDigest, _, err := WriteNode(ctx, w, encodeNode(TypeEnvironment, envRefs, nil))
 	if err != nil {
@@ -142,8 +142,8 @@ func WriteReceipt(
 	}
 
 	idRefs := []Ref{
-		{Alias: "invocation", Digest: invDigest, TypeString: TypeInvocation},
-		{Alias: "environment", Digest: envDigest, TypeString: TypeEnvironment},
+		LockedRef("invocation", invDigest, TypeInvocation),
+		LockedRef("environment", envDigest, TypeEnvironment),
 	}
 	idDigest, _, err := WriteNode(ctx, w, encodeNode(TypeIdentity, idRefs, nil))
 	if err != nil {
@@ -152,8 +152,8 @@ func WriteReceipt(
 
 	receiptRefs := make([]Ref, 0, 2+len(p.PayloadRefs))
 	receiptRefs = append(receiptRefs,
-		Ref{Alias: "identity", Digest: idDigest, TypeString: TypeIdentity},
-		Ref{Alias: "outcome", Digest: outDigest, TypeString: TypeOutcome},
+		LockedRef("identity", idDigest, TypeIdentity),
+		LockedRef("outcome", outDigest, TypeOutcome),
 	)
 	receiptRefs = append(receiptRefs, p.PayloadRefs...)
 

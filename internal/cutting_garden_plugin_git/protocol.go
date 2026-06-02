@@ -72,11 +72,8 @@ func captureProtocol(
 			if werr != nil {
 				return errors.Wrap(werr)
 			}
-			objectRefs = append(objectRefs, capture_plugin.Ref{
-				Alias:      oid,
-				Digest:     digest,
-				TypeString: objectTypeString(typ),
-			})
+			objectRefs = append(objectRefs,
+				capture_plugin.LockedRef(oid, digest, objectTypeString(typ)))
 			return nil
 		})
 	})
@@ -125,7 +122,7 @@ func captureProtocol(
 			Body:       pluginEnvBody,
 		},
 		PayloadRefs: []capture_plugin.Ref{
-			{Alias: "payload", Digest: payloadDigest, TypeString: payloadType},
+			capture_plugin.LockedRef("payload", payloadDigest, payloadType),
 		},
 	})
 	if err != nil {
