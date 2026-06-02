@@ -11,6 +11,32 @@ promotion-criteria: |
 
 # git plugin
 
+## Implementation status (go-git)
+
+The plugin is implemented **entirely on go-git**
+(`github.com/go-git/go-git/v5`); no path shells out to the `git` binary.
+Where this document describes a mechanism in terms of `git` subcommands
+(`git clone`, `git cat-file`, `git ls-remote`, `git hash-object`, …), read
+it as the go-git in-process equivalent:
+
+- **capture** clones the single branch into an in-memory go-git object
+  store and iterates it;
+- **diff** resolves the live tip via a go-git ref advertisement, then —
+  on a move — seeds an in-memory storer from the captured snapshot,
+  fetches the live tip (delta only), and computes the exact symmetric
+  difference in-memory. There is **no full-clone fallback**;
+- **incremental capture** seeds the prior snapshot and fetches the delta;
+- **restore** writes the objects into a fresh repo and checks out the
+  branch, all in-process.
+
+The earlier `git`-exec + hand-rolled fetch-pack (`internal/gitwire`)
+implementation has been removed. The "git wire protocol" section below is
+retained for design rationale; the negotiation it describes is now go-git's
+`have`/`want` fetch against a seeded in-memory storer rather than a custom
+client. The two vestigial EntryV1 entry points (`CaptureRoot`,
+`ScanForDiff`) are stubs kept only so the `git` scheme resolves
+(amarbel-llc/cutting-garden#48).
+
 ## Problem Statement
 
 Cutting-garden captures filesystem trees and — since FDR 0003 —
@@ -137,15 +163,16 @@ exact symmetric difference (`A` and `D <git-type> <oid>` lines).
 
 ## git wire protocol (incremental sync)
 
-Both incremental capture and object-level diff share one primitive:
-`internal/gitwire`, a hand-rolled client for git's `want`/`have`
-fetch-pack negotiation. It lets cutting-garden transfer **only the
-objects that differ** between a remote branch and a tip it already
-captured — advertising the captured tip as a `have` by oid alone (no
-local seeding), and, by declining the `thin-pack` capability, receiving
-a self-contained pack that `git unpack-objects` explodes directly. See
-`internal/gitwire/CLAUDE.md`. Local and smart-HTTP transports are
-implemented; other transports fall back to a full clone.
+Both incremental capture and object-level diff share one primitive: a
+go-git `have`/`want` fetch against an **in-memory storer seeded from a
+prior snapshot**. cutting-garden loads the snapshot's objects out of
+madder into a `go-git` memory store, sets a reference at the captured tip,
+and fetches the live tip; go-git advertises the seeded tip as a `have`, so
+the server sends **only the objects that differ**. That the transfer is
+exactly the delta (not the full closure) is pinned by a test
+(`TestSeededStorer_FetchTransfersOnlyDelta`). All go-git transports
+(http/https, ssh, `git://`, local) negotiate this way; there is no custom
+wire client and no full-clone fallback.
 
 ### Restore
 
@@ -169,11 +196,22 @@ registry) regardless of the local destination path.
 
 ## git runtime dependency
 
-The plugin shells out to `git` resolved via `exec.LookPath`, mirroring
-the yt-dlp plugin's `yt-dlp` dependency. The Nix flake wraps the
-cutting-garden binaries with `makeWrapper` so `git` is on PATH at
-install time; devshells get it the same way. A missing binary surfaces
-as a capture/diff failure with a hint, not a panic.
+None. Unlike the yt-dlp plugin, the git plugin has **no runtime `git`
+dependency** — capture, diff, restore, and incremental capture all run
+in-process on go-git, so the Nix flake no longer wraps `git` into the
+installed binaries' PATH.
+
+Network transports (http/https, ssh, `git://`) are pure-Go in go-git.
+Local paths need one extra step: go-git's stock file transport spawns
+`git-upload-pack`, so the plugin installs an **in-process** file transport
+(`localtransport.go`, a `server.NewClient` over a loader that handles bare
+and non-bare repos) so a local `git:/path` is served directly from its
+object database — no subprocess. The in-process server still negotiates
+`have`/`want`, so local delta fetches remain minimal.
+
+`git` remains in the devshell and the bats lane purely as **test
+scaffolding**: the integration tests build fixture repos with the `git` CLI
+(and skip when it is absent).
 
 ## TypeTag reuse
 

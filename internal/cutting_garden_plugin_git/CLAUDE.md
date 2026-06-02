@@ -1,6 +1,6 @@
 # cutting_garden_plugin_git
 
-The git capture/diff backend for cutting-garden. Peer leaf of
+The git capture/diff/restore backend for cutting-garden. Peer leaf of
 `cutting_garden_plugins/` — not a nested subpackage. Registered in
 `init()` under the single `"git"` URI scheme, in two argument forms:
 
@@ -9,153 +9,136 @@ The git capture/diff backend for cutting-garden. Peer leaf of
 - hierarchical `git://<host>/<path>[#<branch>]` — native git protocol.
 
 The `#fragment` names the branch. When omitted, the plugin resolves the
-remote's default branch (HEAD) at capture time. Unlike the yt-dlp
+remote's default branch (HEAD) at capture/diff time. Unlike the yt-dlp
 plugin it claims **no** bare transport scheme, so there is no host
 allowlist — a git capture is always opt-in via the `git:` prefix.
 
-## Two capture representations
+## Pure Go — no `git` binary
 
-This plugin captures git's object graph two ways over the same
-extraction. The `cutting-garden capture` orchestrator uses the **RFC
-0002 protocol** path; the EntryV1 path remains for diff and as the
-registered `CapturePlugin` fallback.
+The plugin is implemented entirely on top of **go-git**
+(`github.com/go-git/go-git/v5`); nothing in production code shells out to
+the `git` binary. Capture, diff, restore, and incremental capture all run
+in-process. (The integration tests still build fixture repos with the real
+`git` CLI as scaffolding, and skip when it is absent — but that is test
+code, not the plugin.)
 
-1. **RFC 0002 protocol tree** (`protocol.go`, `CaptureProtocol`) — the
-   primary path the binary takes. Stores each git object as a
-   content-addressed leaf blob, references them all from a single
-   `jcs-git-capture-payload-v1` payload node, and wraps that in the
-   protocol receipt → identity → environment/outcome tree via
-   `internal/capture_plugin`. Returns the root receipt's markl id. The
-   node schemas are pinned in
-   [RFC 0004](../../docs/rfcs/0004-git-archive-binding.md).
-2. **EntryV1 object graph** (`capture.go`, `CaptureRoot`) — the same
-   object-graph extraction expressed as the legacy `[]EntryV1` shape
-   (one `<type>/<oid>` file entry per object + `ref.txt`). The
-   orchestrator only falls back to this if the protocol interface is
-   absent; the diff rescan path reuses `extractBranch`.
+This is a deliberate divergence from the yt-dlp plugin's exec-a-tool
+template: the goal is a git-native backend with the lightest possible
+outbound/runtime footprint. The migration from an earlier `git`-exec +
+hand-rolled fetch-pack (`internal/gitwire`, now deleted) implementation is
+recorded in the FDR/RFC below.
 
-The orchestrator prefers `CaptureProtocol` whenever a plugin satisfies
-`cutting_garden_plugins.ProtocolCapturePlugin` (this one does), so a real
-`capture git:…` produces an RFC 0002 git receipt, not an fs receipt.
+Network transports (http/https, ssh, `git://`) are pure-Go in go-git out
+of the box. Local paths are the one catch: go-git's stock file transport
+spawns `git-upload-pack`, so `localtransport.go` installs an **in-process**
+file transport (`server.NewClient` over a custom loader that handles bare
+and non-bare repos) at `init()`, keeping local capture/diff git-free too.
+The in-process server still negotiates `have`/`want`, so local delta
+fetches stay minimal.
 
-## What gets captured — git's object graph as a merkle tree
+## The madder ↔ go-git bridge (`gitobj.go`)
 
-Both paths mirror git's own merkle DAG into madder rather than bundling
-the repo into one opaque blob: a bare single-branch clone's object
-database is streamed with `git cat-file --batch-all-objects --batch`,
-and every reachable object is stored **individually** as its own
-content-addressed blob. Dedup falls out for free — an unchanged git
-object keeps its oid, its payload is byte-identical, and madder stores it
-once across captures.
+The single seam where git objects cross into madder's blob store and back.
+go-git's `plumbing.EncodedObject` maps 1:1 to a madder blob holding the
+object's **raw payload** (the bytes after git's `<type> <size>\0`
+loose-object header — exactly what `git cat-file` emitted before), so an
+object's git oid and its bytes are preserved, and dedup falls out for free.
 
-In the EntryV1 path each object is one entry named `<type>/<oid>`:
+- `writeEncodedObject` — store a go-git object's payload as a
+  content-addressed blob; returns a locked `capture_plugin.Ref` keyed by
+  the git oid (alias), the madder digest, and the git-kind leaf type.
+- `loadEncodedObject` — the inverse: madder blob → `plumbing.MemoryObject`,
+  re-verifying the recreated oid against the reference alias (the
+  integrity check restore leans on).
 
-- `commit/<oid>` — each commit object's payload.
-- `tree/<oid>`   — each tree object's payload.
-- `blob/<oid>`   — each file blob's payload.
-- `tag/<oid>`    — annotated tags, if any.
-- `ref.txt`      — the tip commit oid (the merkle root pointer and the
-  diff freshness key).
+## The negotiation primitive (seeded fetch)
 
-The stored bytes are the raw `git cat-file` payloads (no
-`<type> <size>\0` loose-object header). Encoding the git type in the
-path keeps the receipt self-describing — a consumer reconstituting the
-repo (`git hash-object -t <type>` / `git unpack-objects`) knows each
-blob's type without a side table. Dedup falls out for free: an
-unchanged git object keeps its oid, its payload is byte-identical, and
-madder stores it once across captures.
+Incremental capture and object-level diff share one trick: fetch **only
+the objects that differ** between a remote branch and a snapshot already
+held. go-git negotiates `have`s from the references its storer holds, so:
 
-**Restore and diff are implemented for the RFC 0002 git receipts**,
-routed by receipt *kind* (the `restore`/`diff` commands peek the
-receipt's `! type` line and dispatch git receipts through the kind-keyed
-`ProtocolRestorePlugin` / `ProtocolDiffPlugin` registries). Restore
-rebuilds a working clone checked out to the preserved branch; diff
-compares the live source's branch tip to the receipt's. See
-[FDR 0006](../../docs/features/0006-git-plugin.md) §Restore / §Diff.
+- `seedStorer` / `populateNegotiationStorer` (`gitobj.go`) — build an
+  in-memory storer seeded with a prior snapshot's objects **and** a ref at
+  its tip, so go-git advertises that tip as a `have`.
+- `fetchBranchInto` (`remote.go`) — fetch a branch into that storer; only
+  the delta crosses the wire.
+- `listRemoteTip` (`remote.go`) — resolve a branch (or HEAD) tip over the
+  wire with **no** object transfer — the go-git `ls-remote` equivalent and
+  the cheap freshness probe behind diff.
+
+(That go-git transfers exactly the delta and not the full closure is
+pinned by `TestSeededStorer_FetchTransfersOnlyDelta`.)
 
 ## What lives here
 
 - `Plugin.CaptureProtocol` (`protocol.go`) — the RFC 0002 capture entry
-  point: tries an incremental delta capture when the orchestrator
-  supplied a prior receipt (`PriorReceiptDigest`), else the full path.
-  `captureProtocol` is the full-clone core (stream every object → payload
-  node → `capture_plugin.WriteReceipt`); `writeGitReceipt` is the shared
-  payload+receipt builder (sorts refs by oid for byte-stable output).
-  Both are Writer-parameterized so tests drive an in-memory writer.
-- `Plugin.RestoreProtocol` (`restore.go`) — rebuild a working clone:
-  `git init -b <branch>`, write each object leaf back via
-  `git hash-object -w` (verifying recreated oids), set the branch to the
-  recorded tip, `git reset --hard`. Reads the receipt → payload via
-  `protocol_consume.go`.
-- `Plugin.DiffProtocol` (`diff_protocol.go`) — two-stage: `git ls-remote`
-  the source tip and compare to the receipt payload's tip (clean → no
-  transfer); on a move, negotiate the delta (`diffObjectsIncremental` →
-  `negotiateDelta`) and emit `A` lines for the added objects under the
-  leading `M` tip line. Non-fast-forward / unsupported transport falls
-  back to `diffObjectSets` (full clone, exact `A`/`D`).
-- `negotiateDelta` / `tryIncrementalCapture` (`incremental.go`) — the
-  shared incremental-sync layer over `internal/gitwire`: fetch only the
-  objects that differ between a captured tip and the live tip, detect
-  fast-forward (`capturedTipIsDeltaParent`), and either build a diff or
-  an incremental receipt (prior object set ∪ delta). Always falls back
-  to the full path when the fast path doesn't apply.
-- `internal/gitwire` (sibling package) — the hand-rolled
-  `want`/`have` fetch-pack client the above is built on.
-- `loadReceiptPayload` / `readNode` (`protocol_consume.go`) — the
-  consume side: read and parse the receipt and payload nodes via
+  point. Tries an incremental delta capture when the orchestrator supplied
+  a prior receipt (`PriorReceiptDigest`), else the full path.
+  `captureProtocol` clones the single branch into an in-memory go-git
+  storer (`cloneBranchToMemory`, a bare clone — full history, no tags, no
+  working tree), streams every object through the bridge
+  (`storeAllObjects`), and builds the payload + receipt via
+  `writeGitReceipt` (which sorts refs by oid for byte-stable output). All
+  Writer-parameterized so tests drive an in-memory writer.
+- `Plugin.DiffProtocol` (`diff_protocol.go`) — two-stage: `listRemoteTip`
+  the source and compare to the receipt payload's tip (clean → no
+  transfer); on a move, `objectGraphDiff` seeds + fetches the live tip and
+  reports the exact symmetric difference between the captured object set
+  and `revlist.Objects(liveTip)` as `A`/`D` lines under a leading `M`.
+  Fast-forwards yield additions only; rewrites/force-pushes also yield
+  deletions. **There is no full-clone fallback** — the in-memory
+  computation is exact for every case and every go-git transport.
+- `Plugin.RestoreProtocol` (`restore.go`) — `PlainInit` a repo, write every
+  object leaf back via the bridge (oid-verified), point the preserved
+  branch at the recorded tip, aim HEAD at it, and `Worktree.Reset` (hard)
+  to materialize the working tree.
+- `tryIncrementalCapture` / `isFastForward` / `storeDeltaObjects`
+  (`incremental.go`) — re-use a prior receipt as the negotiation `have`:
+  fetch the delta, confirm a fast-forward via go-git ancestry, store just
+  the new objects, and union them with the prior set. Object refs are
+  sorted by oid, so an incremental capture and a full capture of the same
+  state produce a **byte-identical** payload node. Non-fast-forward or a
+  fetch failure falls back to a full capture.
+- `loadReceiptPayload` / `readNode` (`protocol_consume.go`) — the consume
+  side: read and parse the receipt and payload nodes via
   `capture_plugin.ParseNode`.
-- `Plugin.CaptureRoot` / `extractBranch` (`capture.go`) — the EntryV1
-  path: bare single-branch clone (`withBareClone`), store `ref.txt`,
-  then store every object via the shared streaming walk. `withBareClone`
-  and `streamAllObjects` are shared with the protocol path; `extractBranch`
-  also backs the diff rescan.
-- `streamAllObjects` (`objects.go`) — runs one
-  `git cat-file --batch-all-objects --batch` process and hands each
-  object's payload to a visitor as a bounded `io.LimitReader`, so large
-  blobs never buffer in memory and the whole odb streams through a
-  single child process.
-- `Plugin.ScanForDiff` (`diff.go`) — freshness probe: `git ls-remote`
-  the branch tip (no object transfer), hash the `<tip>\n` bytes, and
-  compare to the receipt's `ref.txt` blob-id. Match → re-emit receipt
-  entries verbatim (no re-clone). Miss → `rescan` re-clones and
-  re-extracts the whole graph for fresh blob-ids.
-- `resolveTip` (`ref.go`) — `git ls-remote` wrapper used by the diff
-  probe (`--symref HEAD` for the default-branch case).
 - `remoteAndBranchFromArg` / `canonicalSource` (`url.go`) — argument
   coercion and the network-free Root identity (`<remote>#<branch>`,
-  npm/pip convention) that `entriesForRoot` keys on.
-- `runGit` / `gitOutput` (`exec.go`) — `os/exec` wrappers honoring
-  ctx-cancellation and surfacing the last 4 KiB of stderr on non-zero
-  exit. Resolve the binary via `exec.LookPath`; the Nix flake wraps
-  cutting-garden binaries so git is on PATH at install time.
-- Blob streaming is delegated to `internal/plugin_blob_io`'s
-  `WriteReaderBlob` (added for this plugin's pipe-streaming need) and
-  `WriteFileBlob`, shared with the filesystem and yt-dlp plugins.
+  npm/pip convention).
+
+## Vestigial EntryV1 stubs
+
+`CaptureRoot` (`capture.go`) and `ScanForDiff` (`diff.go`) are stubs that
+return an error. Git capture/diff is always the RFC 0002 protocol path,
+but the capture orchestrator resolves a source's plugin through the
+EntryV1 `CapturePlugin` registry and *then* type-asserts
+`ProtocolCapturePlugin` (`internal/capture/plan.go` →
+`internal/capture/capture.go`), so the plugin must stay registered as an
+EntryV1 `CapturePlugin`/`DiffPlugin` for the `git` scheme to resolve at
+all. Removing the stubs depends on teaching the orchestrator to resolve
+protocol-only plugins — tracked in
+[amarbel-llc/cutting-garden#48](https://github.com/amarbel-llc/cutting-garden/issues/48).
 
 ## TypeTag reuse
 
 `Plugin.TypeTag()` returns `capture_receipt.TypeTagV1`
-(`cutting_garden-capture_receipt-fs-v1`) rather than a `…-git-v1`
-variant — same rationale as the yt-dlp plugin. Git objects are captured
-as regular file entries (byte-identical `EntryV1` shape to fs
-captures), and `capture.go`'s orchestrator folds all roots into one
-receipt per store group, so a mixed fs+git group must share one
-type-tag. The git origin is recoverable from `EntryV1.Root`; the git
-object type is recoverable from the `<type>/<oid>` path.
+(`cutting_garden-capture_receipt-fs-v1`) rather than a `…-git-v1` variant.
+The capture orchestrator folds all EntryV1 roots into one receipt per store
+group, so a mixed fs+git group must share one type-tag; the RFC 0002
+protocol receipt the git plugin actually emits carries its own
+`…-receipt-git-v1` kind. Same rationale as the yt-dlp plugin.
 
 ## Argument-injection guarding
 
-`remoteAndBranchFromArg` refuses a remote or branch that begins with
-`-`, so a crafted argument can't smuggle a flag into the `git` child.
-The clone also passes `--` before the remote
-(`git clone … -- <remote> <dir>`) and a fully-qualified
-`refs/heads/<branch>` to `rev-parse`.
+`remoteAndBranchFromArg` refuses a remote or branch that begins with `-`.
+With go-git there is no child process to smuggle a flag into, so this is
+now belt-and-suspenders rather than load-bearing, but it keeps malformed
+arguments from being interpreted as anything other than a remote/branch.
 
-## Freshness-key design
+## References
 
-The diff probe compares the cheap `ref.txt` (the bare tip oid) rather
-than re-extracting and diffing objects: an unchanged tip means the
-entire reachable object set is unchanged, so a tip match safely
-re-emits the receipt entries verbatim. This is both correct (git's
-merkle property: same tip oid ⇒ same reachable objects) and cheap (one
-`ls-remote`, no clone).
+- [FDR 0006: git plugin](../../docs/features/0006-git-plugin.md) — behavior.
+- [RFC 0004: Git-Archive Binding](../../docs/rfcs/0004-git-archive-binding.md)
+  — the node schemas this emits.
+- [RFC 0002: Capture Plugin Protocol](../../docs/rfcs/0002-capture-plugin-protocol.md)
+  — the merkle-tree capture model.

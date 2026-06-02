@@ -136,11 +136,11 @@
           GOTOOLCHAIN = "local";
 
           # makeWrapper wraps the installed binaries so the external
-          # tools the plugins shell out to via exec.LookPath are on PATH
-          # at install time: `yt-dlp` (internal/cutting_garden_plugin_ytdlp)
-          # and `git` (internal/cutting_garden_plugin_git). Without this,
-          # nix-built users get a clear-but-late error from the plugin;
-          # the wrap puts the dependency in the closure where it belongs.
+          # tools a plugin shells out to via exec.LookPath are on PATH at
+          # install time. Today that is just `yt-dlp`
+          # (internal/cutting_garden_plugin_ytdlp). The git plugin is pure
+          # Go (go-git) and has no runtime `git` dependency, so git is no
+          # longer wrapped into the closure.
           nativeBuildInputs = [ pkgs.makeWrapper ];
 
           # Phase 5: generate manpages + shell completion stubs, then
@@ -153,8 +153,7 @@
             rm $out/bin/cutting-garden-gen
             for bin in cutting-garden cg; do
               wrapProgram $out/bin/$bin \
-                --prefix PATH : ${pkgsUpstream.yt-dlp}/bin \
-                --prefix PATH : ${pkgs.git}/bin
+                --prefix PATH : ${pkgsUpstream.yt-dlp}/bin
             done
           '';
 
@@ -187,9 +186,10 @@
                 base = madder.packages.${system}.madder;
                 name = "madder";
               };
-              # git backs the git-plugin E2E (zz-tests_bats/capture.bats):
-              # the test builds a local repo with $GIT_BIN, and the
-              # wrapped cutting-garden finds git on PATH via wrapProgram.
+              # git is test scaffolding for the git-plugin E2E
+              # (zz-tests_bats/capture.bats): the test builds a local fixture
+              # repo with $GIT_BIN. cutting-garden then captures it purely
+              # via go-git — it needs no `git` binary of its own.
               GIT_BIN = {
                 base = pkgs.git;
                 name = "git";
@@ -214,9 +214,12 @@
             # `go run ./cmd/cutting-garden capture ytdlp:…` from inside
             # the devshell behaves the same as a nix-built invocation.
             pkgsUpstream.yt-dlp
-            # git backs internal/cutting_garden_plugin_git's exec.LookPath,
-            # matching the wrap in the installed binary so
-            # `go run ./cmd/cutting-garden capture git:…` behaves the same.
+            # The git plugin itself is pure Go (go-git) and needs no `git`
+            # binary at runtime. git is kept here only as test scaffolding:
+            # internal/cutting_garden_plugin_git's integration tests build
+            # real-git fixture repos with the `git` CLI (and skip when it is
+            # absent), so `just test-go` exercises the real-git cross-checks
+            # in the devshell rather than skipping them.
             pkgs.git
           ];
 

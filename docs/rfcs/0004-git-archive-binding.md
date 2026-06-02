@@ -5,6 +5,17 @@ date: 2026-06-02
 
 # Git-Archive Binding
 
+## Implementation status (go-git)
+
+The git binding is implemented entirely on go-git
+(`github.com/go-git/go-git/v5`); no path shells out to the `git` binary.
+The node schemas below are unchanged, with one identity-affecting note: the
+plugin-defined environment node records the **go-git library version**, not
+`git version` output (see §Plugin-defined environment). Where the Restore
+and Diff procedures below name `git` subcommands, read them as the go-git
+in-process equivalents (the `git`-exec + `internal/gitwire` implementation
+has been removed).
+
 ## Abstract
 
 This document is a **binding** of the [Capture Plugin Protocol
@@ -55,11 +66,15 @@ Type: `!jcs-git-capture-environment-v1`. Body (JCS):
 
 | Field         | Required | Description                                              |
 |---------------|----------|----------------------------------------------------------|
-| `git_version` | yes      | `git version` output of the binary the plugin shelled out to. `"unknown"` if git could not be run. |
+| `git_version` | yes      | The go-git library version backing the capture, e.g. `"go-git v5.19.1"` (read from build info). `"go-git (unknown)"` when build info is absent (e.g. `go run`). The field name is retained for schema stability. |
 
-This is identity-affecting: captures made with different git versions
+This is identity-affecting: captures made with different go-git versions
 produce different environment markl-ids (git's object serialization is
-stable across versions, but recording the tool keeps identity honest).
+stable, but recording the tool keeps identity honest). Note this is a
+deliberate change from the original `git version` string — a capture made
+by the earlier `git`-exec implementation carries a different environment
+node, and therefore a different identity subtree, than a go-git capture of
+the same object graph.
 
 ## Payload
 
