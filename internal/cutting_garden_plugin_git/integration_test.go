@@ -229,8 +229,31 @@ func TestDiffProtocol_RealGit_DetectsTipDrift(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DiffProtocol (drifted): %v", err)
 	}
-	if len(drifted.Differences) != 1 || !strings.Contains(drifted.Differences[0], "tip") {
-		t.Errorf("expected one tip-drift line, got %v", drifted.Differences)
+
+	// Leads with the tip move.
+	if len(drifted.Differences) == 0 ||
+		!strings.HasPrefix(drifted.Differences[0], "M ") ||
+		!strings.Contains(drifted.Differences[0], "tip") {
+		t.Fatalf("expected leading M tip line, got %v", drifted.Differences)
+	}
+
+	// Object-level: the second commit added exactly a commit, the new
+	// root tree, and the another.txt blob; history keeps every captured
+	// object reachable, so nothing is deleted.
+	var added, deleted int
+	for _, d := range drifted.Differences[1:] {
+		switch {
+		case strings.HasPrefix(d, "A "):
+			added++
+		case strings.HasPrefix(d, "D "):
+			deleted++
+		}
+	}
+	if added != 3 {
+		t.Errorf("expected 3 added objects, got %d: %v", added, drifted.Differences)
+	}
+	if deleted != 0 {
+		t.Errorf("expected 0 deleted objects, got %d: %v", deleted, drifted.Differences)
 	}
 }
 

@@ -85,9 +85,11 @@ compares the live source's branch tip to the receipt's. See
   `git hash-object -w` (verifying recreated oids), set the branch to the
   recorded tip, `git reset --hard`. Reads the receipt → payload via
   `protocol_consume.go`.
-- `Plugin.DiffProtocol` (`diff_protocol.go`) — `git ls-remote` the
-  source tip and compare to the receipt payload's tip; report a drift
-  line on a move.
+- `Plugin.DiffProtocol` (`diff_protocol.go`) — two-stage: `git ls-remote`
+  the source tip and compare to the receipt payload's tip (clean → no
+  clone); on a move, clone and enumerate live objects
+  (`listObjectTypes`) and emit the symmetric difference against the
+  captured object set as `A`/`D` lines under the leading `M` tip line.
 - `loadReceiptPayload` / `readNode` (`protocol_consume.go`) — the
   consume side: read and parse the receipt and payload nodes via
   `capture_plugin.ParseNode`.

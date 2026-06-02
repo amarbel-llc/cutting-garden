@@ -159,10 +159,17 @@ the local destination path's scheme.
 
 ## Diff
 
-Diff compares a git receipt against a live `git:` source by branch tip:
-`git ls-remote` resolves the source's current tip and compares it to the
-payload body's `tip`. Equal ⇒ no drift; moved ⇒ one difference line.
-Object-level enumeration is a follow-up.
+Diff compares a git receipt against a live `git:` source in two stages.
+First a tip probe: `git ls-remote` resolves the source's current tip and
+compares it to the payload body's `tip`. Equal ⇒ no drift, no clone.
+
+A moved tip ⇒ diff clones the source, enumerates its objects
+(`git cat-file --batch-all-objects --batch-check`), and reports the
+symmetric difference against the payload node's object references: a
+leading `M … tip <old> -> <new>` line, then `A <git-type> <oid>` for
+objects reachable now but not at capture and `D <git-type> <oid>` for
+objects captured but no longer reachable. Because objects are
+content-addressed, this is exact — a changed file is a new blob (`A`).
 
 ## References
 

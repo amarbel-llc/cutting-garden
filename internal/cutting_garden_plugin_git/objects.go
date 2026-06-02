@@ -20,6 +20,30 @@ import (
 // stays framed regardless. A non-nil return aborts the walk.
 type objectVisitor func(oid, typ string, size int64, payload io.Reader) error
 
+// listObjectTypes runs `git cat-file --batch-all-objects --batch-check`
+// in gitDir (a bare clone) and returns a map of every object's oid to
+// its git type. Unlike streamAllObjects it requests only the check line
+// (oid + type), transferring no object contents — the cheap enumeration
+// the object-level diff needs once a tip move is already established.
+func listObjectTypes(ctx context.Context, gitDir string) (map[string]string, error) {
+	out, err := gitOutput(ctx, gitDir,
+		"cat-file", "--batch-all-objects",
+		"--batch-check=%(objectname) %(objecttype)")
+	if err != nil {
+		return nil, err
+	}
+
+	objs := map[string]string{}
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+		objs[fields[0]] = fields[1]
+	}
+	return objs, nil
+}
+
 // streamAllObjects runs `git cat-file --batch-all-objects --batch` in
 // gitDir (a bare clone) and invokes fn once per object in the object
 // database — every commit, tree, blob, and tag reachable in the

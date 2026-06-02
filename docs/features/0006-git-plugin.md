@@ -95,15 +95,26 @@ in memory.
 cutting-garden diff <git-receipt> git:https://github.com/amarbel-llc/cutting-garden#main
 ```
 
-A lightweight tip-drift probe: `git ls-remote` the source's current tip
-(no object transfer) and compare it to the tip recorded in the receipt's
-payload node. Equal → no drift (exit 0). Moved → one difference line
-(`M <source> tip <old> -> <new>`) and a mismatch exit (1).
+Two-stage. First a lightweight tip probe: `git ls-remote` the source's
+current tip (no object transfer) and compare it to the tip recorded in
+the receipt's payload node. Equal → no drift (exit 0), and — by git's
+merkle property — the entire reachable object set is unchanged, so no
+clone happens.
 
-The tip oid is a sound drift signal precisely because of git's merkle
-property: an unchanged tip oid means the entire set of reachable objects
-is unchanged. Object-level enumeration (which objects were
-added/removed) would require cloning the source and is a follow-up.
+A moved tip means the object set changed, so diff then clones the source
+(the unavoidable cost of object-level detail), lists every live object
+with `git cat-file --batch-all-objects --batch-check` (oid + type, no
+contents), and diffs that set against the objects the receipt captured:
+
+```
+M git:…#main tip <old> -> <new>
+A <git-type> <oid>     # reachable now, not at capture
+D <git-type> <oid>     # captured, no longer reachable
+```
+
+A mismatch exit (1) follows. Content-addressing makes this exact: an
+object is identified by its oid, so a changed file surfaces as a new
+blob (`A`) and, if its old version became unreachable, a `D`.
 
 ### Restore
 

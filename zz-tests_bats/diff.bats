@@ -531,4 +531,6 @@ function diff_git_receipt_detects_tip_drift { # @test
   run_cg diff -color never "$rid" "git:$repo#main"
   assert_failure
   assert_output --partial "tip"
+  # Object-level drift: the new commit's objects show as additions.
+  assert_output --regexp 'A (commit|tree|blob) [0-9a-f]{40}'
 }
