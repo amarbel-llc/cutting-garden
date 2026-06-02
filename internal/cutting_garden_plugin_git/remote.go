@@ -24,11 +24,15 @@ func listRemoteTip(
 	ctx context.Context,
 	remote, branch string,
 ) (resolvedBranch, tip string, err error) {
+	auth, err := authMethod(remote)
+	if err != nil {
+		return "", "", err
+	}
 	rem := git.NewRemote(memory.NewStorage(), &config.RemoteConfig{
 		Name: "origin",
 		URLs: []string{remote},
 	})
-	refs, err := rem.ListContext(ctx, &git.ListOptions{})
+	refs, err := rem.ListContext(ctx, &git.ListOptions{Auth: auth})
 	if err != nil {
 		return "", "", errors.Wrapf(err, "git plugin: list-remote %s", remote)
 	}
@@ -75,6 +79,10 @@ func listRemoteTip(
 // the delta crosses the wire. An already-satisfied fetch
 // (NoErrAlreadyUpToDate) is treated as success.
 func fetchBranchInto(ctx context.Context, st storage.Storer, remote, branch string) error {
+	auth, err := authMethod(remote)
+	if err != nil {
+		return err
+	}
 	rem := git.NewRemote(st, &config.RemoteConfig{
 		Name: "origin",
 		URLs: []string{remote},
@@ -84,6 +92,7 @@ func fetchBranchInto(ctx context.Context, st storage.Storer, remote, branch stri
 	if err := rem.FetchContext(ctx, &git.FetchOptions{
 		RefSpecs: []config.RefSpec{refspec},
 		Tags:     git.NoTags,
+		Auth:     auth,
 	}); err != nil && err != git.NoErrAlreadyUpToDate {
 		return errors.Wrapf(err, "git plugin: fetch %s from %s", branch, remote)
 	}

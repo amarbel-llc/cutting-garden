@@ -104,10 +104,15 @@ func cloneBranchToMemory(
 	ctx context.Context,
 	remote, branch string,
 ) (repo *git.Repository, tip, resolvedBranch string, err error) {
+	auth, err := authMethod(remote)
+	if err != nil {
+		return nil, "", "", err
+	}
 	opts := &git.CloneOptions{
 		URL:          remote,
 		SingleBranch: true,
 		Tags:         git.NoTags,
+		Auth:         auth,
 	}
 	if branch != "" {
 		opts.ReferenceName = plumbing.NewBranchReferenceName(branch)

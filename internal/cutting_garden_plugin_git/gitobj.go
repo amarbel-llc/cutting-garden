@@ -9,6 +9,7 @@ import (
 	"github.com/amarbel-llc/madder/go/pkgs/markl"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/storer"
 	"github.com/go-git/go-git/v5/storage"
 	"github.com/go-git/go-git/v5/storage/memory"
 )
@@ -113,20 +114,34 @@ func populateNegotiationStorer(
 	refs []capture_plugin.Ref,
 	tip string,
 ) error {
-	for _, ref := range refs {
-		obj, err := loadEncodedObject(store, ref)
-		if err != nil {
-			return err
-		}
-		if _, err := dst.SetEncodedObject(obj); err != nil {
-			return errors.Wrapf(err, "git plugin: seed object %s", ref.Alias)
-		}
+	if err := writeObjectsToStorer(dst, store, refs); err != nil {
+		return err
 	}
 
 	tipRef := plumbing.NewHashReference(
 		plumbing.ReferenceName(priorTipRef), plumbing.NewHash(tip))
 	if err := dst.SetReference(tipRef); err != nil {
 		return errors.Wrapf(err, "git plugin: seed tip ref %s", tip)
+	}
+	return nil
+}
+
+// writeObjectsToStorer loads every referenced object out of madder (via the
+// bridge, oid-verified) and writes it into dst. Shared by the negotiation
+// seed (incremental/diff) and remote restore (push).
+func writeObjectsToStorer(
+	dst storer.EncodedObjectStorer,
+	store blob_stores.BlobStoreInitialized,
+	refs []capture_plugin.Ref,
+) error {
+	for _, ref := range refs {
+		obj, err := loadEncodedObject(store, ref)
+		if err != nil {
+			return err
+		}
+		if _, err := dst.SetEncodedObject(obj); err != nil {
+			return errors.Wrapf(err, "git plugin: write object %s", ref.Alias)
+		}
 	}
 	return nil
 }
