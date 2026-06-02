@@ -65,9 +65,13 @@ blob's type without a side table. Dedup falls out for free: an
 unchanged git object keeps its oid, its payload is byte-identical, and
 madder stores it once across captures.
 
-**Restore is intentionally not implemented** — reconstituting a
-working repo from loose objects is a follow-up. See
-[FDR 0006](../../docs/features/0006-git-plugin.md) §Restore Deferral.
+**Restore and diff are implemented for the RFC 0002 git receipts**,
+routed by receipt *kind* (the `restore`/`diff` commands peek the
+receipt's `! type` line and dispatch git receipts through the kind-keyed
+`ProtocolRestorePlugin` / `ProtocolDiffPlugin` registries). Restore
+rebuilds a working clone checked out to the preserved branch; diff
+compares the live source's branch tip to the receipt's. See
+[FDR 0006](../../docs/features/0006-git-plugin.md) §Restore / §Diff.
 
 ## What lives here
 
@@ -76,6 +80,17 @@ working repo from loose objects is a follow-up. See
   node referencing them, then drive `capture_plugin.WriteReceipt`.
   `captureProtocol` is Writer-parameterized so tests run it against an
   in-memory content-addressed writer.
+- `Plugin.RestoreProtocol` (`restore.go`) — rebuild a working clone:
+  `git init -b <branch>`, write each object leaf back via
+  `git hash-object -w` (verifying recreated oids), set the branch to the
+  recorded tip, `git reset --hard`. Reads the receipt → payload via
+  `protocol_consume.go`.
+- `Plugin.DiffProtocol` (`diff_protocol.go`) — `git ls-remote` the
+  source tip and compare to the receipt payload's tip; report a drift
+  line on a move.
+- `loadReceiptPayload` / `readNode` (`protocol_consume.go`) — the
+  consume side: read and parse the receipt and payload nodes via
+  `capture_plugin.ParseNode`.
 - `Plugin.CaptureRoot` / `extractBranch` (`capture.go`) — the EntryV1
   path: bare single-branch clone (`withBareClone`), store `ref.txt`,
   then store every object via the shared streaming walk. `withBareClone`

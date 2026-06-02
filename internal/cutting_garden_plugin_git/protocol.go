@@ -59,12 +59,14 @@ func captureProtocol(
 	source := canonicalSource(remote, branch)
 
 	var (
-		objectRefs []capture_plugin.Ref
-		tip        string
+		objectRefs     []capture_plugin.Ref
+		tip            string
+		resolvedBranch string
 	)
 
-	err := withBareClone(ctx, remote, branch, func(cloneDir, _, t string) error {
+	err := withBareClone(ctx, remote, branch, func(cloneDir, rb, t string) error {
 		tip = t
+		resolvedBranch = rb
 		return streamAllObjects(ctx, cloneDir, func(oid, typ string, _ int64, payload io.Reader) error {
 			digest, _, werr := w.WriteBlob(ctx, payload)
 			if werr != nil {
@@ -85,9 +87,12 @@ func captureProtocol(
 	// Payload node: a JCS body of capture metadata plus one reference
 	// per stored git object. The receipt references this single node, so
 	// the receipt stays small while the object list lives one level down.
+	// Record the *resolved* branch (never empty, even when the arg left
+	// the branch to HEAD) so restore can recreate and check out the
+	// preserved branch by name.
 	payloadBody, err := capture_plugin.JCS(map[string]any{
 		"remote":       remote,
-		"branch":       branch,
+		"branch":       resolvedBranch,
 		"tip":          tip,
 		"object_count": len(objectRefs),
 	})

@@ -496,3 +496,39 @@ function diff_is_clean_when_run_from_captured_dir_with_dot { # @test
   assert_success
   [[ -z $output ]] || refute_line --regexp '^[MADT]  '
 }
+
+function diff_git_receipt_detects_tip_drift { # @test
+  # RFC 0002 git receipt diff: clean against the unchanged source,
+  # mismatch (exit 1) once the branch tip moves.
+  require_bin GIT_BIN git || skip "git not available in this lane"
+
+  init_store
+
+  local repo="$BATS_TEST_TMPDIR/srcrepo"
+  mkdir -p "$repo"
+  "$GIT_BIN" -C "$repo" init -q -b main
+  "$GIT_BIN" -C "$repo" config user.email test@example.com
+  "$GIT_BIN" -C "$repo" config user.name Test
+  echo "hello" >"$repo/README.md"
+  "$GIT_BIN" -C "$repo" add -A
+  "$GIT_BIN" -C "$repo" commit -q -m initial
+
+  run_cg capture -format json "git:$repo#main"
+  assert_success
+  local rid
+  rid="$(receipt_id_of_group "$output")"
+  [[ -n $rid ]] || fail "no receipt id: $output"
+
+  # Unchanged source → no drift, exit 0.
+  run_cg diff -color never "$rid" "git:$repo#main"
+  assert_success
+
+  # Move the branch tip.
+  echo "more" >"$repo/another.txt"
+  "$GIT_BIN" -C "$repo" add -A
+  "$GIT_BIN" -C "$repo" commit -q -m second
+
+  run_cg diff -color never "$rid" "git:$repo#main"
+  assert_failure
+  assert_output --partial "tip"
+}

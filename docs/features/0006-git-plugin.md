@@ -92,32 +92,38 @@ in memory.
 ### Diff
 
 ```
-cutting-garden diff <receipt> git:https://github.com/amarbel-llc/cutting-garden#main
+cutting-garden diff <git-receipt> git:https://github.com/amarbel-llc/cutting-garden#main
 ```
 
-A lightweight freshness probe: `git ls-remote` the tip (no object
-transfer), hash the `<tip>\n` bytes, and compare to the receipt's
-`ref.txt` blob-id. Match → re-emit the receipt's entries verbatim, so
-the comparator reports zero drift without re-cloning. Miss → a full
-re-clone + object-graph re-extraction so every object gets a fresh
-blob-id and the comparator can localize the difference.
+A lightweight tip-drift probe: `git ls-remote` the source's current tip
+(no object transfer) and compare it to the tip recorded in the receipt's
+payload node. Equal → no drift (exit 0). Moved → one difference line
+(`M <source> tip <old> -> <new>`) and a mismatch exit (1).
 
-The tip oid is a sound freshness key precisely because of git's merkle
-property: an unchanged tip oid means the entire set of reachable
-objects is unchanged. There is no nondeterminism to defend against (oid
-extraction is exact), unlike a `git bundle` whose bytes can vary across
-git versions.
+The tip oid is a sound drift signal precisely because of git's merkle
+property: an unchanged tip oid means the entire set of reachable objects
+is unchanged. Object-level enumeration (which objects were
+added/removed) would require cloning the source and is a follow-up.
 
-## Restore Deferral
+### Restore
 
-Restore is intentionally not registered. The stored objects are raw git
-object payloads keyed by `<type>/<oid>`; reconstituting a working repo
-means writing them back into an object database (`git hash-object -t
-<type> -w` per object, or assembling a pack for `git unpack-objects`)
-and recreating the branch ref from `ref.txt`. That reconstitution
-helper is a follow-up; the wire format needs no change to support it —
-`EntryV1.Root` carries the remote+branch and the entry paths carry the
-object types.
+```
+cutting-garden restore <git-receipt> ./dest
+```
+
+Restore rebuilds a working clone checked out to the preserved branch:
+`git init -b <branch>` a fresh repo at `./dest`, write every object leaf
+back into its object database with `git hash-object -t <type> -w`
+(verifying each recreated oid matches the captured oid — an integrity
+check), point `refs/heads/<branch>` at the recorded tip, and
+`git reset --hard` to populate the working tree. The destination must
+not already exist.
+
+Routing is by **receipt kind**, not destination scheme: the `restore`
+command peeks the receipt's `! type` line, and a
+`cutting_garden-capture-receipt-git-v1` receipt dispatches to the git
+binding's `RestoreProtocol` (resolved from the kind-keyed protocol
+registry) regardless of the local destination path.
 
 ## git runtime dependency
 
@@ -155,13 +161,16 @@ records into a shared store-group receipt. The git object graph is the
 payload subtree; each object is a content-addressed leaf, so RFC 0002's
 automatic merkle dedup applies at git-object granularity.
 
+`diff` and `restore` against these git receipts are implemented: both
+commands peek the receipt's type-tag and route protocol receipts by
+**kind** through the kind-keyed `ProtocolDiffPlugin` /
+`ProtocolRestorePlugin` registries (the git binding registers for
+`"git"`), while fs-v1 receipts still take the EntryV1 path. See the
+Diff and Restore sections above.
+
 The plugin also still implements the `[]EntryV1` `CaptureRoot` (the same
-object-graph extraction in the legacy shape) — it backs the diff rescan
-and serves as the registered `CapturePlugin` fallback. **diff and
-restore against RFC 0002 git receipts are not yet implemented**: the
-`diff` command parses fs-v1 receipts, so diffing a git receipt is a
-follow-up (a protocol-aware receipt traversal). The cheap ls-remote tip
-probe described below is the diff mechanism once that traversal lands.
+object-graph extraction in the legacy shape) — it backs the EntryV1 diff
+rescan and serves as the registered `CapturePlugin` fallback.
 
 ## Open Questions
 

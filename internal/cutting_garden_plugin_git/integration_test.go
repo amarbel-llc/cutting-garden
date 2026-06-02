@@ -8,8 +8,16 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/amarbel-llc/cutting-garden/internal/capture_plugin"
 	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
+	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
 )
+
+// capturePluginWriter adapts a blob store to the capture_plugin.Writer
+// the protocol capture drives.
+func capturePluginWriter(store blob_stores.BlobStoreInitialized) capture_plugin.Writer {
+	return capture_plugin.NewBlobStoreWriter(store)
+}
 
 // TestPlugin_CaptureRoot_RealGit_StoresEveryObject drives the plugin
 // against a real `git` binary and a real local repository, asserting
@@ -121,6 +129,108 @@ func TestCaptureProtocol_RealGit_TreeReferencesEveryObject(t *testing.T) {
 		if _, ok := w.byDigest[objDigest]; !ok {
 			t.Errorf("object %s blob not stored", o.oid)
 		}
+	}
+}
+
+// TestRestoreProtocol_RealGit_RebuildsCheckedOutClone captures a local
+// repo into a retaining in-memory store, restores it to a fresh
+// directory, and asserts the result is a working clone checked out to
+// the preserved branch with the original file contents and history tip.
+func TestRestoreProtocol_RealGit_RebuildsCheckedOutClone(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not on PATH")
+	}
+
+	repo := newLocalRepo(t)
+	srcTip := strings.TrimSpace(git(t, repo, "rev-parse", "refs/heads/main"))
+
+	store := newMemStore(t)
+	res, err := captureProtocol(context.Background(), capturePluginWriter(store), repo, "main")
+	if err != nil {
+		t.Fatalf("captureProtocol: %v", err)
+	}
+
+	dest := filepath.Join(t.TempDir(), "restored")
+	if err := (Plugin{}).RestoreProtocol(cutting_garden_plugins.ProtocolRestoreRequest{
+		Context:       context.Background(),
+		BlobStore:     store,
+		ReceiptDigest: res.ReceiptDigest,
+		RawDest:       dest,
+	}); err != nil {
+		t.Fatalf("RestoreProtocol: %v", err)
+	}
+
+	// Checked out to the preserved branch at the captured tip.
+	if got := strings.TrimSpace(git(t, dest, "symbolic-ref", "--short", "HEAD")); got != "main" {
+		t.Errorf("HEAD branch = %q, want main", got)
+	}
+	if got := strings.TrimSpace(git(t, dest, "rev-parse", "HEAD")); got != srcTip {
+		t.Errorf("restored tip = %q, want %q", got, srcTip)
+	}
+
+	// Working tree materialized with original contents.
+	readme, err := os.ReadFile(filepath.Join(dest, "README.md"))
+	if err != nil {
+		t.Fatalf("read restored README: %v", err)
+	}
+	if string(readme) != "hello\n" {
+		t.Errorf("README.md = %q, want %q", readme, "hello\n")
+	}
+	if _, err := os.Stat(filepath.Join(dest, "sub", "nested.txt")); err != nil {
+		t.Errorf("nested file missing: %v", err)
+	}
+
+	// A clean checkout (no diff between index/worktree and HEAD).
+	if status := strings.TrimSpace(git(t, dest, "status", "--porcelain")); status != "" {
+		t.Errorf("restored worktree not clean:\n%s", status)
+	}
+}
+
+// TestDiffProtocol_RealGit_DetectsTipDrift captures a repo, confirms a
+// diff against the unchanged source reports no drift, then adds a commit
+// and confirms the diff reports a tip move.
+func TestDiffProtocol_RealGit_DetectsTipDrift(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not on PATH")
+	}
+
+	repo := newLocalRepo(t)
+	store := newMemStore(t)
+	res, err := captureProtocol(context.Background(), capturePluginWriter(store), repo, "main")
+	if err != nil {
+		t.Fatalf("captureProtocol: %v", err)
+	}
+
+	arg := "git:" + repo + "#main"
+	req := cutting_garden_plugins.ProtocolDiffRequest{
+		Context:       context.Background(),
+		BlobStore:     store,
+		ReceiptDigest: res.ReceiptDigest,
+		Source:        mustParseURL(t, arg),
+		RawSource:     arg,
+	}
+
+	clean, err := (Plugin{}).DiffProtocol(req)
+	if err != nil {
+		t.Fatalf("DiffProtocol (clean): %v", err)
+	}
+	if len(clean.Differences) != 0 {
+		t.Errorf("expected no drift, got %v", clean.Differences)
+	}
+
+	// Move the branch tip with a new commit.
+	if err := os.WriteFile(filepath.Join(repo, "another.txt"), []byte("more\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git(t, repo, "add", "-A")
+	git(t, repo, "commit", "-q", "-m", "second")
+
+	drifted, err := (Plugin{}).DiffProtocol(req)
+	if err != nil {
+		t.Fatalf("DiffProtocol (drifted): %v", err)
+	}
+	if len(drifted.Differences) != 1 || !strings.Contains(drifted.Differences[0], "tip") {
+		t.Errorf("expected one tip-drift line, got %v", drifted.Differences)
 	}
 }
 

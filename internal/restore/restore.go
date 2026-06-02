@@ -15,15 +15,17 @@ package restore
 
 import (
 	"io"
+	"net/url"
 	"os"
 
+	"github.com/amarbel-llc/cutting-garden/internal/capture_plugin"
 	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
 	"github.com/amarbel-llc/cutting-garden/internal/command"
 	"github.com/amarbel-llc/cutting-garden/internal/command_components"
 	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
 	"github.com/amarbel-llc/madder/go/pkgs/markl"
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/interfaces"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
+	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/interfaces"
 )
 
 // Restore is the value registered for the `restore` subcommand.
@@ -102,6 +104,46 @@ func (cmd *Restore) runRestore(
 	ctx errors.Context,
 	receiptIDStr, destStr string,
 ) error {
+	var receiptID markl.Id
+	if err := receiptID.Set(receiptIDStr); err != nil {
+		return errors.Wrapf(err, "parse receipt-id %q", receiptIDStr)
+	}
+
+	envBlobStore := command_components.MakeBlobStoreEnv(ctx)
+
+	store, err := command_components.LocateReceiptStore(
+		envBlobStore, &receiptID, cmd.Store,
+	)
+	if err != nil {
+		return err
+	}
+
+	typeStr, err := command_components.PeekReceiptType(store, &receiptID)
+	if err != nil {
+		return err
+	}
+
+	// RFC 0002 protocol receipts route by capture kind — the receipt,
+	// not the destination, decides how the capture is rebuilt. fs-v1
+	// receipts fall through to the EntryV1 path below.
+	if kind, ok := capture_plugin.KindFromReceiptType(typeStr); ok {
+		pp, err := cutting_garden_plugins.ResolveProtocolRestore(kind)
+		if err != nil {
+			return err
+		}
+		destURL, err := url.Parse(destStr)
+		if err != nil {
+			return errors.Wrapf(err, "parse dest %q", destStr)
+		}
+		return pp.RestoreProtocol(cutting_garden_plugins.ProtocolRestoreRequest{
+			Context:       ctx,
+			BlobStore:     store,
+			ReceiptDigest: receiptIDStr,
+			Dest:          destURL,
+			RawDest:       destStr,
+		})
+	}
+
 	destURL, plugin, err := command_components.ResolveRestorePlugin(destStr)
 	if err != nil {
 		return err
@@ -111,18 +153,9 @@ func (cmd *Restore) runRestore(
 		return err
 	}
 
-	var receiptID markl.Id
-	if err := receiptID.Set(receiptIDStr); err != nil {
-		return errors.Wrapf(err, "parse receipt-id %q", receiptIDStr)
-	}
-
-	envBlobStore := command_components.MakeBlobStoreEnv(ctx)
-
-	blob, typeTag, err := command_components.ReadReceiptBlob(
-		envBlobStore, &receiptID, cmd.Store,
-	)
+	blob, typeTag, err := capture_receipt.Read(store, &receiptID)
 	if err != nil {
-		return err
+		return errors.Wrapf(err, "read receipt %s", &receiptID)
 	}
 
 	if err := command_components.CheckReceiptTypeTag(

@@ -1,11 +1,16 @@
 package command_components
 
 import (
+	"bufio"
+	"io"
 	"net/url"
+	"strings"
 
 	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
 	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
 	"github.com/amarbel-llc/madder/go/pkgs/blob_store_env"
+	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
+	"github.com/amarbel-llc/madder/go/pkgs/hyphence"
 	"github.com/amarbel-llc/madder/go/pkgs/ids"
 	"github.com/amarbel-llc/madder/go/pkgs/markl"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
@@ -86,6 +91,70 @@ func ReadReceiptBlob(
 
 	return nil, ids.TypeStruct{}, errors.ErrorWithStackf(
 		"receipt %s not found in any configured store", receiptID)
+}
+
+// LocateReceiptStore finds the configured store that holds the receipt
+// blob. With storeOverride non-empty it resolves that store directly;
+// otherwise it walks GetBlobStoresSorted probing HasBlob (the same
+// deterministic order ReadReceiptBlob uses). Returns an error if the
+// receipt is not found.
+//
+// Sibling to ReadReceiptBlob, but format-agnostic: it returns the store
+// rather than parsing the blob, so callers can peek the receipt's
+// type-tag (PeekReceiptType) and route fs-v1 vs RFC 0002 protocol
+// receipts before committing to a parser.
+func LocateReceiptStore(
+	envBlobStore blob_store_env.BlobStoreEnv,
+	receiptID *markl.Id,
+	storeOverride string,
+) (blob_stores.BlobStoreInitialized, error) {
+	if storeOverride != "" {
+		return ResolveStoreByID(envBlobStore, storeOverride)
+	}
+	for _, store := range envBlobStore.GetBlobStoresSorted() {
+		if store.HasBlob(receiptID) {
+			return store, nil
+		}
+	}
+	return blob_stores.BlobStoreInitialized{}, errors.ErrorWithStackf(
+		"receipt %s not found in any configured store", receiptID)
+}
+
+// PeekReceiptType reads only the `! type` line from a receipt blob's
+// hyphence metadata section, without parsing the body. Both the fs-v1
+// receipt and the RFC 0002 protocol receipts are hyphence documents, so
+// this works for either; the returned type-string discriminates them
+// (capture_plugin.KindFromReceiptType matches only protocol receipts).
+func PeekReceiptType(
+	store blob_stores.BlobStoreInitialized,
+	receiptID *markl.Id,
+) (typeString string, err error) {
+	reader, err := store.MakeBlobReader(receiptID)
+	if err != nil {
+		return "", errors.Wrapf(err, "open receipt %s", receiptID)
+	}
+	defer errors.DeferredCloser(&err, reader)
+
+	br := bufio.NewReader(reader)
+	// Skip the opening boundary line.
+	if _, err = br.ReadString('\n'); err != nil && err != io.EOF {
+		return "", errors.Wrap(err)
+	}
+	for {
+		line, rerr := br.ReadString('\n')
+		trimmed := strings.TrimRight(line, "\n")
+		if strings.HasPrefix(trimmed, "! ") {
+			return strings.TrimPrefix(trimmed, "! "), nil
+		}
+		if trimmed == hyphence.Boundary {
+			break
+		}
+		if rerr != nil {
+			break
+		}
+	}
+	return "", errors.ErrorWithStackf(
+		"receipt %s: no `! type` line in metadata", receiptID)
 }
 
 // CheckReceiptTypeTag refuses a receipt whose wire-format type-tag

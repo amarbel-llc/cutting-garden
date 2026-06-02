@@ -129,9 +129,29 @@ re-clone.
 
 ## Restore
 
-Not specified here. The object leaves plus the payload body's `tip` are
-sufficient to reconstitute the branch; the reconstitution procedure is a
-follow-up (FDR 0006 §Restore Deferral).
+Restore reconstitutes a working clone checked out to the preserved
+branch. The procedure:
+
+1. `git init -b <branch>` a fresh repository at the destination (the
+   branch name comes from the payload body).
+2. For each object leaf, write its bytes back with
+   `git hash-object -t <git-type> -w --stdin`, and verify the resulting
+   oid equals the reference alias (an integrity check on the recreated
+   object).
+3. Point `refs/heads/<branch>` at the payload body's `tip` and
+   `git reset --hard` to materialize the working tree.
+
+Routing is by receipt kind: the `restore` command peeks the receipt
+type-tag and dispatches a `cutting_garden-capture-receipt-git-v1`
+receipt to the git binding's protocol-restore handler, independent of
+the local destination path's scheme.
+
+## Diff
+
+Diff compares a git receipt against a live `git:` source by branch tip:
+`git ls-remote` resolves the source's current tip and compares it to the
+payload body's `tip`. Equal ⇒ no drift; moved ⇒ one difference line.
+Object-level enumeration is a follow-up.
 
 ## References
 

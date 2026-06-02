@@ -453,3 +453,48 @@ RECEIPT
 
   [[ -f out/src/y.txt ]] || fail "expected restored file via -store override"
 }
+
+function restore_git_receipt_creates_checked_out_clone { # @test
+  # RFC 0002 git receipt → restore rebuilds a working clone checked out
+  # to the preserved branch at the captured tip.
+  require_bin GIT_BIN git || skip "git not available in this lane"
+
+  init_store
+
+  local repo="$BATS_TEST_TMPDIR/srcrepo"
+  mkdir -p "$repo"
+  "$GIT_BIN" -C "$repo" init -q -b main
+  "$GIT_BIN" -C "$repo" config user.email test@example.com
+  "$GIT_BIN" -C "$repo" config user.name Test
+  echo "hello" >"$repo/README.md"
+  "$GIT_BIN" -C "$repo" add -A
+  "$GIT_BIN" -C "$repo" commit -q -m initial
+  local tip
+  tip="$("$GIT_BIN" -C "$repo" rev-parse refs/heads/main)"
+
+  run_cg capture -format json "git:$repo#main"
+  assert_success
+  local rid
+  rid="$(receipt_id_of_group "$output")"
+  [[ -n $rid ]] || fail "no receipt id: $output"
+
+  run_cg restore "$rid" out
+  assert_success
+
+  run "$GIT_BIN" -C out symbolic-ref --short HEAD
+  assert_success
+  assert_output "main"
+
+  run "$GIT_BIN" -C out rev-parse HEAD
+  assert_success
+  assert_output "$tip"
+
+  [[ -f out/README.md ]] || fail "restored worktree missing README.md"
+  run cat out/README.md
+  assert_output "hello"
+
+  # Clean checkout — index/worktree match HEAD.
+  run "$GIT_BIN" -C out status --porcelain
+  assert_success
+  assert_output ""
+}

@@ -17,16 +17,18 @@ package diff
 import (
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 
+	"github.com/amarbel-llc/cutting-garden/internal/capture_plugin"
 	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
 	"github.com/amarbel-llc/cutting-garden/internal/command"
 	"github.com/amarbel-llc/cutting-garden/internal/command_components"
 	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
 	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
 	"github.com/amarbel-llc/madder/go/pkgs/markl"
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/interfaces"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
+	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/interfaces"
 )
 
 // Color flag values per FDR §Flags.
@@ -152,6 +154,31 @@ func (cmd *Diff) runDiff(
 	ctx errors.Context,
 	receiptIDStr, dirStr string,
 ) error {
+	var receiptID markl.Id
+	if err := receiptID.Set(receiptIDStr); err != nil {
+		return errors.Wrapf(err, "parse receipt-id %q", receiptIDStr)
+	}
+
+	envBlobStore := command_components.MakeBlobStoreEnv(ctx)
+
+	store, err := command_components.LocateReceiptStore(
+		envBlobStore, &receiptID, cmd.Store,
+	)
+	if err != nil {
+		return err
+	}
+
+	typeStr, err := command_components.PeekReceiptType(store, &receiptID)
+	if err != nil {
+		return err
+	}
+
+	// RFC 0002 protocol receipts route by capture kind. fs-v1 receipts
+	// fall through to the EntryV1 tree-vs-receipt walk below.
+	if kind, ok := capture_plugin.KindFromReceiptType(typeStr); ok {
+		return cmd.runProtocolDiff(ctx, kind, store, receiptIDStr, dirStr)
+	}
+
 	dirURL, plugin, err := command_components.ResolveDiffPlugin(dirStr)
 	if err != nil {
 		return err
@@ -161,18 +188,9 @@ func (cmd *Diff) runDiff(
 		return err
 	}
 
-	var receiptID markl.Id
-	if err := receiptID.Set(receiptIDStr); err != nil {
-		return errors.Wrapf(err, "parse receipt-id %q", receiptIDStr)
-	}
-
-	envBlobStore := command_components.MakeBlobStoreEnv(ctx)
-
-	blob, typeTag, err := command_components.ReadReceiptBlob(
-		envBlobStore, &receiptID, cmd.Store,
-	)
+	blob, typeTag, err := capture_receipt.Read(store, &receiptID)
 	if err != nil {
-		return err
+		return errors.Wrapf(err, "read receipt %s", &receiptID)
 	}
 
 	if err := command_components.CheckReceiptTypeTag(
@@ -240,6 +258,54 @@ func (cmd *Diff) runDiff(
 			"tree differs from receipt: %d %s",
 			len(differences),
 			pluralize("entry", "entries", len(differences)))
+	}
+
+	return nil
+}
+
+// runProtocolDiff compares an RFC 0002 receipt against a live source by
+// dispatching to the protocol-diff plugin registered for the receipt's
+// kind. Difference lines are printed to stdout; a non-empty set yields a
+// MismatchError (exit 1), matching the EntryV1 diff's exit semantics.
+func (cmd *Diff) runProtocolDiff(
+	ctx errors.Context,
+	kind string,
+	store blob_stores.BlobStoreInitialized,
+	receiptIDStr, dirStr string,
+) error {
+	pp, err := cutting_garden_plugins.ResolveProtocolDiff(kind)
+	if err != nil {
+		return err
+	}
+
+	sourceURL, err := url.Parse(dirStr)
+	if err != nil {
+		return errors.Wrapf(err, "parse source %q", dirStr)
+	}
+
+	res, err := pp.DiffProtocol(cutting_garden_plugins.ProtocolDiffRequest{
+		Context:       ctx,
+		BlobStore:     store,
+		ReceiptDigest: receiptIDStr,
+		Source:        sourceURL,
+		RawSource:     dirStr,
+	})
+	if err != nil {
+		return err
+	}
+
+	for _, line := range res.Differences {
+		fmt.Fprintln(os.Stdout, line)
+	}
+
+	if len(res.Differences) > 0 {
+		fmt.Fprintf(cmd.diagnostics, "diff: %d %s\n",
+			len(res.Differences),
+			pluralize("difference", "differences", len(res.Differences)))
+		return command.Mismatchf(
+			"source differs from receipt: %d %s",
+			len(res.Differences),
+			pluralize("difference", "differences", len(res.Differences)))
 	}
 
 	return nil

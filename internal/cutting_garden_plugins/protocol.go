@@ -40,3 +40,46 @@ type ProtocolCapturePlugin interface {
 
 	CaptureProtocol(req ProtocolCaptureRequest) (ProtocolCaptureResult, error)
 }
+
+// ProtocolRestoreRequest is what a ProtocolRestorePlugin needs to
+// rebuild a capture from its RFC 0002 receipt: the store holding the
+// receipt (and its referenced blobs), the receipt's markl id, and the
+// parsed destination. Routing is by receipt *kind*, not dest scheme —
+// the receipt knows how it was captured.
+type ProtocolRestoreRequest struct {
+	Context       context.Context
+	BlobStore     blob_stores.BlobStoreInitialized
+	ReceiptDigest string
+	Dest          *url.URL
+	RawDest       string
+}
+
+// ProtocolRestorePlugin reconstructs a capture from its receipt merkle
+// tree. ProtocolKind returns the receipt kind it handles (e.g. "git").
+type ProtocolRestorePlugin interface {
+	ProtocolKind() string
+	RestoreProtocol(req ProtocolRestoreRequest) error
+}
+
+// ProtocolDiffRequest is what a ProtocolDiffPlugin needs to compare a
+// captured receipt against a live source: the store holding the
+// receipt, the receipt id, and the parsed comparison source.
+type ProtocolDiffRequest struct {
+	Context       context.Context
+	BlobStore     blob_stores.BlobStoreInitialized
+	ReceiptDigest string
+	Source        *url.URL
+	RawSource     string
+}
+
+// ProtocolDiffResult carries the human-readable difference lines (empty
+// when the receipt and source agree).
+type ProtocolDiffResult struct {
+	Differences []string
+}
+
+// ProtocolDiffPlugin compares an RFC 0002 receipt against a live source.
+type ProtocolDiffPlugin interface {
+	ProtocolKind() string
+	DiffProtocol(req ProtocolDiffRequest) (ProtocolDiffResult, error)
+}

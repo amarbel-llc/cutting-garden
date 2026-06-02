@@ -87,6 +87,37 @@ func gitOutput(ctx context.Context, dir string, args ...string) (string, error) 
 	return stdout.String(), nil
 }
 
+// gitInput runs git with args, feeding stdin to the child and returning
+// its stdout (used by restore's `hash-object --stdin`, which reads an
+// object's bytes and prints the resulting oid). stderr is tailed into
+// the error on non-zero exit.
+func gitInput(ctx context.Context, dir string, stdin io.Reader, args ...string) (string, error) {
+	binPath, err := lookGit()
+	if err != nil {
+		return "", err
+	}
+
+	cmd := exec.CommandContext(ctx, binPath, args...)
+	cmd.Dir = dir
+	cmd.Stdin = stdin
+
+	var (
+		stdout     bytes.Buffer
+		stderrTail bytes.Buffer
+	)
+	cmd.Stdout = &stdout
+	cmd.Stderr = newTailWriter(&stderrTail, stderrTailBytes)
+
+	if runErr := cmd.Run(); runErr != nil {
+		return "", errors.ErrorWithStackf(
+			"git plugin: git %s failed (%v)\nstderr-tail: %s",
+			argSummary(args), runErr, stderrTail.String(),
+		)
+	}
+
+	return stdout.String(), nil
+}
+
 // argSummary returns the leading git subcommand for diagnostics without
 // echoing a (potentially long) remote URL or local tempdir path.
 func argSummary(args []string) string {
