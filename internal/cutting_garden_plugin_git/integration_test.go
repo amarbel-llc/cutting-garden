@@ -143,7 +143,7 @@ func TestRestoreProtocol_RealGit_RebuildsCheckedOutClone(t *testing.T) {
 	}
 
 	repo := newLocalRepo(t)
-	srcTip := strings.TrimSpace(git(t, repo, "rev-parse", "refs/heads/main"))
+	srcTip := strings.TrimSpace(gitCLI(t, repo, "rev-parse", "refs/heads/main"))
 
 	store := newMemStore(t)
 	res, err := captureProtocol(context.Background(), capturePluginWriter(store), repo, "main")
@@ -162,10 +162,10 @@ func TestRestoreProtocol_RealGit_RebuildsCheckedOutClone(t *testing.T) {
 	}
 
 	// Checked out to the preserved branch at the captured tip.
-	if got := strings.TrimSpace(git(t, dest, "symbolic-ref", "--short", "HEAD")); got != "main" {
+	if got := strings.TrimSpace(gitCLI(t, dest, "symbolic-ref", "--short", "HEAD")); got != "main" {
 		t.Errorf("HEAD branch = %q, want main", got)
 	}
-	if got := strings.TrimSpace(git(t, dest, "rev-parse", "HEAD")); got != srcTip {
+	if got := strings.TrimSpace(gitCLI(t, dest, "rev-parse", "HEAD")); got != srcTip {
 		t.Errorf("restored tip = %q, want %q", got, srcTip)
 	}
 
@@ -182,7 +182,7 @@ func TestRestoreProtocol_RealGit_RebuildsCheckedOutClone(t *testing.T) {
 	}
 
 	// A clean checkout (no diff between index/worktree and HEAD).
-	if status := strings.TrimSpace(git(t, dest, "status", "--porcelain")); status != "" {
+	if status := strings.TrimSpace(gitCLI(t, dest, "status", "--porcelain")); status != "" {
 		t.Errorf("restored worktree not clean:\n%s", status)
 	}
 }
@@ -223,8 +223,8 @@ func TestDiffProtocol_RealGit_DetectsTipDrift(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repo, "another.txt"), []byte("more\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	git(t, repo, "add", "-A")
-	git(t, repo, "commit", "-q", "-m", "second")
+	gitCLI(t, repo, "add", "-A")
+	gitCLI(t, repo, "commit", "-q", "-m", "second")
 
 	drifted, err := (Plugin{}).DiffProtocol(req)
 	if err != nil {
@@ -291,9 +291,9 @@ func TestIncrementalCapture_RealGit_MatchesFullCapture(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repo, "another.txt"), []byte("more\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	git(t, repo, "add", "-A")
-	git(t, repo, "commit", "-q", "-m", "second")
-	newTip := strings.TrimSpace(git(t, repo, "rev-parse", "refs/heads/main"))
+	gitCLI(t, repo, "add", "-A")
+	gitCLI(t, repo, "commit", "-q", "-m", "second")
+	newTip := strings.TrimSpace(gitCLI(t, repo, "rev-parse", "refs/heads/main"))
 
 	// Incremental capture from the prior receipt (delta fetch).
 	resInc, ok, err := tryIncrementalCapture(
@@ -331,7 +331,7 @@ func TestIncrementalCapture_RealGit_MatchesFullCapture(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("restore incremental receipt: %v", err)
 	}
-	if got := strings.TrimSpace(git(t, dest, "rev-parse", "HEAD")); got != newTip {
+	if got := strings.TrimSpace(gitCLI(t, dest, "rev-parse", "HEAD")); got != newTip {
 		t.Errorf("restored tip = %q, want %q", got, newTip)
 	}
 	if _, err := os.Stat(filepath.Join(dest, "another.txt")); err != nil {
@@ -387,7 +387,7 @@ type repoObject struct {
 // `git cat-file --batch-all-objects --batch-check`.
 func realRepoObjects(t *testing.T, repo string) []repoObject {
 	t.Helper()
-	out := git(t, repo, "cat-file", "--batch-all-objects",
+	out := gitCLI(t, repo, "cat-file", "--batch-all-objects",
 		"--batch-check=%(objectname) %(objecttype)")
 	var objs []repoObject
 	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
@@ -407,9 +407,9 @@ func newLocalRepo(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 
-	git(t, dir, "init", "-q", "-b", "main")
-	git(t, dir, "config", "user.email", "test@example.com")
-	git(t, dir, "config", "user.name", "Test")
+	gitCLI(t, dir, "init", "-q", "-b", "main")
+	gitCLI(t, dir, "config", "user.email", "test@example.com")
+	gitCLI(t, dir, "config", "user.name", "Test")
 
 	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("hello\n"), 0o644); err != nil {
 		t.Fatalf("write README: %v", err)
@@ -421,15 +421,16 @@ func newLocalRepo(t *testing.T) string {
 		t.Fatalf("write nested: %v", err)
 	}
 
-	git(t, dir, "add", "-A")
-	git(t, dir, "commit", "-q", "-m", "initial")
+	gitCLI(t, dir, "add", "-A")
+	gitCLI(t, dir, "commit", "-q", "-m", "initial")
 
 	return dir
 }
 
-// git runs a real git command in dir and returns trimmed stdout,
-// failing the test on error.
-func git(t *testing.T, dir string, args ...string) string {
+// gitCLI runs a real git command in dir and returns trimmed stdout,
+// failing the test on error. Used only by the real-git cross-check tests;
+// the plugin itself no longer shells out to git.
+func gitCLI(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir

@@ -69,13 +69,13 @@ func nodeRefs(node string) map[string]string {
 }
 
 func TestCaptureProtocol_EmitsReceiptTreeOverObjectGraph(t *testing.T) {
-	withFakeGit(t)
+	// A single commit with one file: exactly three reachable objects —
+	// one commit, one tree, one blob.
+	dir, branch, tips := buildRepo(t, map[string]string{"hello.txt": "hello!"})
+	tip := tips[0]
 
 	w := newMemWriter()
-	res, err := captureProtocol(
-		context.Background(), w,
-		"https://github.com/amarbel-llc/cutting-garden", "main",
-	)
+	res, err := captureProtocol(context.Background(), w, dir, branch)
 	if err != nil {
 		t.Fatalf("captureProtocol: %v", err)
 	}
@@ -102,48 +102,50 @@ func TestCaptureProtocol_EmitsReceiptTreeOverObjectGraph(t *testing.T) {
 		t.Fatalf("payload node type = %q", got)
 	}
 
-	// Payload node references the three git objects by oid, typed by git
-	// object kind, and its body records the tip + object_count.
+	// Payload node references one object of each git kind by oid; the body
+	// records the real tip + object_count. Object oids are real git sha1s,
+	// so assert by the distribution of leaf types and that every referenced
+	// blob was stored.
 	prefs := nodeRefs(payload)
-	wantObjs := map[string]string{
-		"commit_oid_1": "git-capture-object-commit-v1",
-		"tree_oid_1":   "git-capture-object-tree-v1",
-		"blob_oid_1":   "git-capture-object-blob-v1",
-	}
-	for oid, wantType := range wantObjs {
-		ref, ok := prefs[oid]
-		if !ok {
-			t.Errorf("payload missing object ref %q", oid)
-			continue
-		}
+	typeCounts := map[string]int{}
+	for oid, ref := range prefs {
 		objDigest, objType, _ := strings.Cut(ref, "|")
-		if objType != wantType {
-			t.Errorf("object %q ref type = %q, want %q", oid, objType, wantType)
-		}
+		typeCounts[objType]++
 		if _, ok := w.byDigest[objDigest]; !ok {
 			t.Errorf("object %q blob %q not stored", oid, objDigest)
+		}
+	}
+	for _, want := range []string{
+		"git-capture-object-commit-v1",
+		"git-capture-object-tree-v1",
+		"git-capture-object-blob-v1",
+	} {
+		if typeCounts[want] != 1 {
+			t.Errorf("payload has %d refs of type %q, want 1", typeCounts[want], want)
 		}
 	}
 
 	if !strings.Contains(payload, `"object_count":3`) {
 		t.Errorf("payload body missing object_count:3:\n%s", payload)
 	}
-	if !strings.Contains(payload, `"tip":"commit_oid_1"`) {
-		t.Errorf("payload body missing tip:\n%s", payload)
+	if !strings.Contains(payload, `"tip":"`+tip+`"`) {
+		t.Errorf("payload body missing tip %q:\n%s", tip, payload)
 	}
 
-	// The three raw git object blobs are stored verbatim (no hyphence
-	// framing).
-	wantBytes := map[string]string{
-		"commit_oid_1": "commit-byte!",
-		"tree_oid_1":   "tree-byte!",
-		"blob_oid_1":   "hello!",
-	}
-	for oid, want := range wantBytes {
-		ref := prefs[oid]
-		objDigest, _, _ := strings.Cut(ref, "|")
-		if got := string(w.byDigest[objDigest]); got != want {
-			t.Errorf("object %q bytes = %q, want %q", oid, got, want)
+	// The blob object's stored bytes are the raw file content verbatim (no
+	// loose-object header, no hyphence framing).
+	var blobBytesSeen bool
+	for _, ref := range prefs {
+		objDigest, objType, _ := strings.Cut(ref, "|")
+		if objType != "git-capture-object-blob-v1" {
+			continue
 		}
+		blobBytesSeen = true
+		if got := string(w.byDigest[objDigest]); got != "hello!" {
+			t.Errorf("blob bytes = %q, want %q", got, "hello!")
+		}
+	}
+	if !blobBytesSeen {
+		t.Error("no blob object referenced in payload")
 	}
 }

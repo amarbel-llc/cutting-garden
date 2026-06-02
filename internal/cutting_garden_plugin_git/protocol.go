@@ -10,6 +10,10 @@ import (
 	"github.com/amarbel-llc/cutting-garden/internal/capture_plugin"
 	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
+	git "github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/storer"
+	"github.com/go-git/go-git/v5/storage/memory"
 )
 
 // Git-binding node type-strings under the RFC 0002 type convention.
@@ -69,36 +73,86 @@ func (Plugin) CaptureProtocol(
 
 // captureProtocol is the full (clone-everything) Writer-parameterized
 // core of CaptureProtocol, split out so tests can drive it with an
-// in-memory Writer.
+// in-memory Writer. It mirrors git's object graph into madder by cloning
+// the single branch into an in-memory go-git storer (no `git` binary, no
+// working tree) and streaming every reachable object through the bridge.
 func captureProtocol(
 	ctx context.Context,
 	w capture_plugin.Writer,
 	remote, branch string,
 ) (cutting_garden_plugins.ProtocolCaptureResult, error) {
-	var (
-		objectRefs     []capture_plugin.Ref
-		tip            string
-		resolvedBranch string
-	)
+	repo, tip, resolvedBranch, err := cloneBranchToMemory(ctx, remote, branch)
+	if err != nil {
+		return cutting_garden_plugins.ProtocolCaptureResult{}, err
+	}
 
-	err := withBareClone(ctx, remote, branch, func(cloneDir, rb, t string) error {
-		tip = t
-		resolvedBranch = rb
-		return streamAllObjects(ctx, cloneDir, func(oid, typ string, _ int64, payload io.Reader) error {
-			digest, _, werr := w.WriteBlob(ctx, payload)
-			if werr != nil {
-				return errors.Wrap(werr)
-			}
-			objectRefs = append(objectRefs,
-				capture_plugin.LockedRef(oid, digest, objectTypeString(typ)))
-			return nil
-		})
-	})
+	objectRefs, err := storeAllObjects(ctx, w, repo.Storer)
 	if err != nil {
 		return cutting_garden_plugins.ProtocolCaptureResult{}, err
 	}
 
 	return writeGitReceipt(ctx, w, remote, resolvedBranch, tip, objectRefs)
+}
+
+// cloneBranchToMemory bare-clones a single branch of remote into an
+// in-memory object store (full history, no tags, no working tree) and
+// returns the repository plus the resolved tip oid and branch name. A
+// nil worktree makes go-git perform a bare clone; the object database
+// holds exactly the objects reachable from the branch tip. When branch is
+// empty the remote's default branch (HEAD) is used.
+func cloneBranchToMemory(
+	ctx context.Context,
+	remote, branch string,
+) (repo *git.Repository, tip, resolvedBranch string, err error) {
+	opts := &git.CloneOptions{
+		URL:          remote,
+		SingleBranch: true,
+		Tags:         git.NoTags,
+	}
+	if branch != "" {
+		opts.ReferenceName = plumbing.NewBranchReferenceName(branch)
+	}
+
+	repo, err = git.CloneContext(ctx, memory.NewStorage(), nil, opts)
+	if err != nil {
+		return nil, "", "", errors.Wrapf(err, "git plugin: clone %s", remote)
+	}
+
+	head, err := repo.Head()
+	if err != nil {
+		return nil, "", "", errors.Wrapf(err, "git plugin: resolve HEAD of %s", remote)
+	}
+	return repo, head.Hash().String(), head.Name().Short(), nil
+}
+
+// storeAllObjects writes every object in the storer to madder via the
+// bridge and returns one locked payload reference per object. This is the
+// go-git equivalent of the old `git cat-file --batch-all-objects` stream:
+// after a single-branch clone the storer holds exactly the branch's
+// reachable closure.
+func storeAllObjects(
+	ctx context.Context,
+	w capture_plugin.Writer,
+	store storer.EncodedObjectStorer,
+) ([]capture_plugin.Ref, error) {
+	iter, err := store.IterEncodedObjects(plumbing.AnyObject)
+	if err != nil {
+		return nil, errors.Wrap(err)
+	}
+	defer iter.Close()
+
+	var objectRefs []capture_plugin.Ref
+	if err := iter.ForEach(func(obj plumbing.EncodedObject) error {
+		ref, werr := writeEncodedObject(ctx, w, obj)
+		if werr != nil {
+			return werr
+		}
+		objectRefs = append(objectRefs, ref)
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	return objectRefs, nil
 }
 
 // writeGitReceipt assembles the git payload node (a JCS metadata body
@@ -153,7 +207,7 @@ func writeGitReceipt(
 		},
 		PluginEnv: capture_plugin.PluginEnv{
 			TypeString: pluginEnvType,
-			Body:       map[string]any{"git_version": gitVersion(ctx)},
+			Body:       map[string]any{"git_version": goGitVersion()},
 		},
 		PayloadRefs: []capture_plugin.Ref{
 			capture_plugin.LockedRef("payload", payloadDigest, payloadType),
@@ -172,14 +226,24 @@ func writeGitReceipt(
 // readerOf wraps node bytes in an io.Reader for the Writer.
 func readerOf(b []byte) io.Reader { return strings.NewReader(string(b)) }
 
-// gitVersion returns `git version` output (trimmed) for the plugin-env
-// identity node, or "unknown" if git can't be run.
-func gitVersion(ctx context.Context) string {
-	out, err := gitOutput(ctx, "", "version")
-	if err != nil {
-		return "unknown"
+// goGitModulePath is the module whose version is recorded as the git
+// plugin's tool identity now that capture runs in-process via go-git.
+const goGitModulePath = "github.com/go-git/go-git/v5"
+
+// goGitVersion reports the go-git library version backing this plugin for
+// the identity-affecting plugin-env node. The git capture is performed
+// in-process via go-git rather than by shelling out to the `git` binary,
+// so the recorded tool identity is the go-git module version. Falls back
+// to "go-git (unknown)" when build info is absent (e.g. `go run`).
+func goGitVersion() string {
+	if info, ok := debug.ReadBuildInfo(); ok {
+		for _, dep := range info.Deps {
+			if dep.Path == goGitModulePath {
+				return "go-git " + dep.Version
+			}
+		}
 	}
-	return strings.TrimSpace(out)
+	return "go-git (unknown)"
 }
 
 // cgVersion returns the cutting-garden binary version for the identity
