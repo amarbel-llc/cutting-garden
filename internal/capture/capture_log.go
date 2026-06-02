@@ -8,6 +8,7 @@ import (
 
 	"github.com/amarbel-llc/cutting-garden/internal/capture_sink"
 	"github.com/amarbel-llc/madder/go/pkgs/env_dir"
+	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/files"
 )
 
 // captureLogEntry is one NDJSON line in
@@ -97,6 +98,39 @@ func appendCaptureLog(
 			return
 		}
 	}
+}
+
+// findPriorReceipt scans captures.log for the most recent entry whose
+// store-id and roots match storeID and rootPath, returning its receipt
+// id ("" if none). It seeds incremental protocol captures: the prior
+// receipt's object set becomes the "haves" for a delta fetch.
+// Best-effort — any open/parse error yields "" and a full capture.
+func findPriorReceipt(cgEnvDir env_dir.Env, storeID, rootPath string) string {
+	path := cgEnvDir.GetXDG().State.MakePath(captureLogFileName).String()
+	file, err := os.Open(path)
+	if err != nil {
+		return ""
+	}
+	defer files.CloseReadOnly(file)
+
+	var latest string
+	decoder := json.NewDecoder(file)
+	for {
+		var entry captureLogEntry
+		if derr := decoder.Decode(&entry); derr != nil {
+			break
+		}
+		if entry.StoreID != storeID {
+			continue
+		}
+		for _, r := range entry.Roots {
+			if r == rootPath {
+				latest = entry.ReceiptID
+				break
+			}
+		}
+	}
+	return latest
 }
 
 // rootPaths extracts the .path field from each captureRoot in order.

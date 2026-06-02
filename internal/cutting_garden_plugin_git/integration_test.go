@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -255,6 +256,126 @@ func TestDiffProtocol_RealGit_DetectsTipDrift(t *testing.T) {
 	if deleted != 0 {
 		t.Errorf("expected 0 deleted objects, got %d: %v", deleted, drifted.Differences)
 	}
+}
+
+// TestIncrementalCapture_RealGit_MatchesFullCapture captures a repo,
+// advances its branch, then re-captures incrementally from the prior
+// receipt — fetching only the delta — and asserts the result is
+// byte-identical (same payload digest) to a full capture of the advanced
+// state, and that it restores correctly.
+func TestIncrementalCapture_RealGit_MatchesFullCapture(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not on PATH")
+	}
+
+	repo := newLocalRepo(t)
+	store := newMemStore(t)
+
+	// Full capture of state 1.
+	res1, err := captureProtocol(context.Background(), capturePluginWriter(store), repo, "main")
+	if err != nil {
+		t.Fatalf("full capture 1: %v", err)
+	}
+
+	// Unchanged re-capture reuses the prior object set exactly.
+	resSame, ok, err := tryIncrementalCapture(
+		context.Background(), store, capturePluginWriter(store), repo, "main", res1.ReceiptDigest)
+	if err != nil || !ok {
+		t.Fatalf("incremental (unchanged): ok=%v err=%v", ok, err)
+	}
+	if receiptPayloadDigest(t, store, resSame.ReceiptDigest) != receiptPayloadDigest(t, store, res1.ReceiptDigest) {
+		t.Errorf("unchanged re-capture changed the payload digest")
+	}
+
+	// Advance the branch.
+	if err := os.WriteFile(filepath.Join(repo, "another.txt"), []byte("more\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git(t, repo, "add", "-A")
+	git(t, repo, "commit", "-q", "-m", "second")
+	newTip := strings.TrimSpace(git(t, repo, "rev-parse", "refs/heads/main"))
+
+	// Incremental capture from the prior receipt (delta fetch).
+	resInc, ok, err := tryIncrementalCapture(
+		context.Background(), store, capturePluginWriter(store), repo, "main", res1.ReceiptDigest)
+	if err != nil || !ok {
+		t.Fatalf("incremental capture: ok=%v err=%v", ok, err)
+	}
+
+	// Full capture of the advanced state into a separate store.
+	storeFull := newMemStore(t)
+	resFull, err := captureProtocol(context.Background(), capturePluginWriter(storeFull), repo, "main")
+	if err != nil {
+		t.Fatalf("full capture 2: %v", err)
+	}
+
+	// The incremental and full captures of the identical state produce the
+	// identical payload node (same objects, sorted; same tip/branch/count).
+	if got, want := receiptPayloadDigest(t, store, resInc.ReceiptDigest),
+		receiptPayloadDigest(t, storeFull, resFull.ReceiptDigest); got != want {
+		t.Errorf("incremental payload digest %s != full %s", got, want)
+	}
+	if got, want := receiptObjectOids(t, store, resInc.ReceiptDigest),
+		receiptObjectOids(t, storeFull, resFull.ReceiptDigest); !equalStrings(got, want) {
+		t.Errorf("object sets differ:\n inc=%v\nfull=%v", got, want)
+	}
+
+	// The incrementally-built receipt restores to a working clone at the
+	// advanced tip (all objects — prior + delta — are in the store).
+	dest := filepath.Join(t.TempDir(), "restored")
+	if err := (Plugin{}).RestoreProtocol(cutting_garden_plugins.ProtocolRestoreRequest{
+		Context:       context.Background(),
+		BlobStore:     store,
+		ReceiptDigest: resInc.ReceiptDigest,
+		RawDest:       dest,
+	}); err != nil {
+		t.Fatalf("restore incremental receipt: %v", err)
+	}
+	if got := strings.TrimSpace(git(t, dest, "rev-parse", "HEAD")); got != newTip {
+		t.Errorf("restored tip = %q, want %q", got, newTip)
+	}
+	if _, err := os.Stat(filepath.Join(dest, "another.txt")); err != nil {
+		t.Errorf("restored worktree missing another.txt: %v", err)
+	}
+}
+
+func receiptPayloadDigest(t *testing.T, store blob_stores.BlobStoreInitialized, receiptDigest string) string {
+	t.Helper()
+	n, err := readNode(store, receiptDigest)
+	if err != nil {
+		t.Fatalf("read receipt %s: %v", receiptDigest, err)
+	}
+	r, ok := n.RefByAlias("payload")
+	if !ok {
+		t.Fatalf("receipt %s has no payload ref", receiptDigest)
+	}
+	return r.Digest
+}
+
+func receiptObjectOids(t *testing.T, store blob_stores.BlobStoreInitialized, receiptDigest string) []string {
+	t.Helper()
+	payload, _, err := loadReceiptPayload(store, receiptDigest)
+	if err != nil {
+		t.Fatalf("load payload of %s: %v", receiptDigest, err)
+	}
+	oids := make([]string, 0, len(payload.Refs))
+	for _, r := range payload.Refs {
+		oids = append(oids, r.Alias)
+	}
+	sort.Strings(oids)
+	return oids
+}
+
+func equalStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 type repoObject struct {

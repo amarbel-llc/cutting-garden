@@ -75,11 +75,13 @@ compares the live source's branch tip to the receipt's. See
 
 ## What lives here
 
-- `Plugin.CaptureProtocol` / `captureProtocol` (`protocol.go`) — the RFC
-  0002 path: stream every object into the blob store, build the payload
-  node referencing them, then drive `capture_plugin.WriteReceipt`.
-  `captureProtocol` is Writer-parameterized so tests run it against an
-  in-memory content-addressed writer.
+- `Plugin.CaptureProtocol` (`protocol.go`) — the RFC 0002 capture entry
+  point: tries an incremental delta capture when the orchestrator
+  supplied a prior receipt (`PriorReceiptDigest`), else the full path.
+  `captureProtocol` is the full-clone core (stream every object → payload
+  node → `capture_plugin.WriteReceipt`); `writeGitReceipt` is the shared
+  payload+receipt builder (sorts refs by oid for byte-stable output).
+  Both are Writer-parameterized so tests drive an in-memory writer.
 - `Plugin.RestoreProtocol` (`restore.go`) — rebuild a working clone:
   `git init -b <branch>`, write each object leaf back via
   `git hash-object -w` (verifying recreated oids), set the branch to the
@@ -87,9 +89,18 @@ compares the live source's branch tip to the receipt's. See
   `protocol_consume.go`.
 - `Plugin.DiffProtocol` (`diff_protocol.go`) — two-stage: `git ls-remote`
   the source tip and compare to the receipt payload's tip (clean → no
-  clone); on a move, clone and enumerate live objects
-  (`listObjectTypes`) and emit the symmetric difference against the
-  captured object set as `A`/`D` lines under the leading `M` tip line.
+  transfer); on a move, negotiate the delta (`diffObjectsIncremental` →
+  `negotiateDelta`) and emit `A` lines for the added objects under the
+  leading `M` tip line. Non-fast-forward / unsupported transport falls
+  back to `diffObjectSets` (full clone, exact `A`/`D`).
+- `negotiateDelta` / `tryIncrementalCapture` (`incremental.go`) — the
+  shared incremental-sync layer over `internal/gitwire`: fetch only the
+  objects that differ between a captured tip and the live tip, detect
+  fast-forward (`capturedTipIsDeltaParent`), and either build a diff or
+  an incremental receipt (prior object set ∪ delta). Always falls back
+  to the full path when the fast path doesn't apply.
+- `internal/gitwire` (sibling package) — the hand-rolled
+  `want`/`have` fetch-pack client the above is built on.
 - `loadReceiptPayload` / `readNode` (`protocol_consume.go`) — the
   consume side: read and parse the receipt and payload nodes via
   `capture_plugin.ParseNode`.

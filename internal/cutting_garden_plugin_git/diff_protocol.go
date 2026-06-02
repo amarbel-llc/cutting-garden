@@ -16,15 +16,17 @@ var _ cutting_garden_plugins.ProtocolDiffPlugin = (*Plugin)(nil)
 // It first does a cheap tip probe: `git ls-remote` the source's current
 // tip (no object transfer) and compare it to the tip recorded in the
 // receipt's payload. Equal ⇒ no drift, and — by git's merkle property —
-// the entire reachable object set is unchanged, so it returns with no
-// clone.
+// the entire reachable object set is unchanged, so it returns having
+// touched nothing but the ref advertisement.
 //
-// A moved tip means the object set changed, so DiffProtocol then clones
-// the source (the object-level enumeration's unavoidable cost), lists
-// every live object, and diffs that set against the objects the receipt
-// captured: objects reachable now but not at capture are added (`A`),
-// objects captured but no longer reachable are deleted (`D`). The tip
-// move itself leads as an `M` line.
+// A moved tip means the object set changed. DiffProtocol then negotiates
+// just the differing objects (gitwire fetch-pack, `want live`/`have
+// captured`) and, on a fast-forward, reports those as additions (`A`)
+// with no removals. For a non-fast-forward (rebase/force-push) — where
+// additions alone don't capture what became unreachable — or an
+// unsupported transport, it falls back to a full clone and reports the
+// exact symmetric difference (`A`/`D`). The tip move leads as an `M`
+// line.
 func (Plugin) DiffProtocol(
 	req cutting_garden_plugins.ProtocolDiffRequest,
 ) (cutting_garden_plugins.ProtocolDiffResult, error) {
@@ -51,13 +53,41 @@ func (Plugin) DiffProtocol(
 		fmt.Sprintf("M %s tip %s -> %s", req.RawSource, meta.Tip, liveTip),
 	}
 
-	objectDiffs, err := diffObjectSets(req.Context, remote, branch, payload)
+	objectDiffs, err := diffObjectsIncremental(req.Context, remote, branch, payload, meta.Tip, liveTip)
 	if err != nil {
 		return cutting_garden_plugins.ProtocolDiffResult{}, err
 	}
 	differences = append(differences, objectDiffs...)
 
 	return cutting_garden_plugins.ProtocolDiffResult{Differences: differences}, nil
+}
+
+// diffObjectsIncremental computes the object-level difference using a
+// gitwire delta negotiation when possible. On a fast-forward the delta
+// is exactly the added objects (no removals); otherwise it falls back to
+// the full-clone symmetric difference.
+func diffObjectsIncremental(
+	ctx context.Context,
+	remote, branch string,
+	payload capture_plugin.Node,
+	capturedTip, liveTip string,
+) ([]string, error) {
+	df, cleanup, err := negotiateDelta(ctx, remote, capturedTip, liveTip)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
+
+	if df == nil || !df.fastForward {
+		return diffObjectSets(ctx, remote, branch, payload)
+	}
+
+	added := make([]string, 0, len(df.objects))
+	for oid, typ := range df.objects {
+		added = append(added, fmt.Sprintf("A %s %s", typ, oid))
+	}
+	sort.Strings(added)
+	return added, nil
 }
 
 // diffObjectSets clones the live source, enumerates its objects, and

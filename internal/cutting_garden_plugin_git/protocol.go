@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"runtime/debug"
+	"sort"
 	"strings"
 
 	"github.com/amarbel-llc/cutting-garden/internal/capture_plugin"
@@ -46,18 +47,34 @@ func (Plugin) CaptureProtocol(
 	}
 
 	w := capture_plugin.NewBlobStoreWriter(req.BlobStore)
+
+	// Incremental fast path: if the orchestrator supplied a prior receipt
+	// for this remote+branch, fetch only the objects that differ since
+	// then (gitwire negotiation) instead of re-cloning. Falls back to a
+	// full capture when that isn't possible (no prior, non-fast-forward,
+	// unsupported transport).
+	if req.PriorReceiptDigest != "" {
+		res, ok, ierr := tryIncrementalCapture(
+			req.Context, req.BlobStore, w, remote, branch, req.PriorReceiptDigest)
+		if ierr != nil {
+			return cutting_garden_plugins.ProtocolCaptureResult{}, ierr
+		}
+		if ok {
+			return res, nil
+		}
+	}
+
 	return captureProtocol(req.Context, w, remote, branch)
 }
 
-// captureProtocol is the Writer-parameterized core of CaptureProtocol,
-// split out so tests can drive it with an in-memory Writer.
+// captureProtocol is the full (clone-everything) Writer-parameterized
+// core of CaptureProtocol, split out so tests can drive it with an
+// in-memory Writer.
 func captureProtocol(
 	ctx context.Context,
 	w capture_plugin.Writer,
 	remote, branch string,
 ) (cutting_garden_plugins.ProtocolCaptureResult, error) {
-	source := canonicalSource(remote, branch)
-
 	var (
 		objectRefs     []capture_plugin.Ref
 		tip            string
@@ -81,12 +98,31 @@ func captureProtocol(
 		return cutting_garden_plugins.ProtocolCaptureResult{}, err
 	}
 
-	// Payload node: a JCS body of capture metadata plus one reference
-	// per stored git object. The receipt references this single node, so
-	// the receipt stays small while the object list lives one level down.
-	// Record the *resolved* branch (never empty, even when the arg left
-	// the branch to HEAD) so restore can recreate and check out the
-	// preserved branch by name.
+	return writeGitReceipt(ctx, w, remote, resolvedBranch, tip, objectRefs)
+}
+
+// writeGitReceipt assembles the git payload node (a JCS metadata body
+// plus one reference per object) and the RFC 0002 receipt tree over the
+// given object references, returning the receipt's markl id. Shared by
+// the full and incremental capture paths.
+//
+// The payload records the *resolved* branch (never empty, even when the
+// arg left the branch to HEAD) so restore can recreate the preserved
+// branch by name.
+func writeGitReceipt(
+	ctx context.Context,
+	w capture_plugin.Writer,
+	remote, resolvedBranch, tip string,
+	objectRefs []capture_plugin.Ref,
+) (cutting_garden_plugins.ProtocolCaptureResult, error) {
+	// Sort object references by oid so the payload node is byte-stable
+	// regardless of how the objects were gathered — a full clone and an
+	// incremental fetch of the same repo state yield the identical
+	// payload node (and thus the identical payload digest).
+	sort.Slice(objectRefs, func(i, j int) bool {
+		return objectRefs[i].Alias < objectRefs[j].Alias
+	})
+
 	payloadBody, err := capture_plugin.JCS(map[string]any{
 		"remote":       remote,
 		"branch":       resolvedBranch,
@@ -102,12 +138,10 @@ func captureProtocol(
 		return cutting_garden_plugins.ProtocolCaptureResult{}, errors.Wrap(err)
 	}
 
-	pluginEnvBody := map[string]any{"git_version": gitVersion(ctx)}
-
 	receiptDigest, err := capture_plugin.WriteReceipt(ctx, w, capture_plugin.ReceiptParams{
 		Kind: captureKind,
 		Invocation: capture_plugin.Invocation{
-			Target:    source,
+			Target:    canonicalSource(remote, resolvedBranch),
 			Format:    captureFormat,
 			Normalize: false,
 			Options:   map[string]any{},
@@ -119,7 +153,7 @@ func captureProtocol(
 		},
 		PluginEnv: capture_plugin.PluginEnv{
 			TypeString: pluginEnvType,
-			Body:       pluginEnvBody,
+			Body:       map[string]any{"git_version": gitVersion(ctx)},
 		},
 		PayloadRefs: []capture_plugin.Ref{
 			capture_plugin.LockedRef("payload", payloadDigest, payloadType),

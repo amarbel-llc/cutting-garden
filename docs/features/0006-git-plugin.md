@@ -89,6 +89,22 @@ A single git process streams the whole odb; payloads are handed to the
 blob writer as bounded readers, so a multi-gigabyte blob never buffers
 in memory.
 
+#### Incremental re-capture
+
+When the orchestrator finds a prior receipt for the same `git:…#branch`
+in `captures.log`, it passes it to the plugin, which re-captures
+**incrementally** instead of re-cloning. It resolves the live tip, and
+if it advanced (a fast-forward of the prior tip) it negotiates only the
+new objects over the wire via `internal/gitwire` (`want <live>` /
+`have <prior-tip>`), stores them, and writes a new receipt whose object
+set is the prior receipt's objects plus the delta. Because the object
+references are sorted by oid, **an incremental re-capture produces a
+byte-identical payload node to a full capture of the same state** (the
+receipts differ only in the per-run outcome datetime). Anything that
+doesn't fit the fast path — no prior receipt, a non-fast-forward
+(rebase/force-push), or an unsupported transport — falls back to the
+full clone above. See the wire-protocol note below.
+
 ### Diff
 
 ```
@@ -101,20 +117,35 @@ the receipt's payload node. Equal → no drift (exit 0), and — by git's
 merkle property — the entire reachable object set is unchanged, so no
 clone happens.
 
-A moved tip means the object set changed, so diff then clones the source
-(the unavoidable cost of object-level detail), lists every live object
-with `git cat-file --batch-all-objects --batch-check` (oid + type, no
-contents), and diffs that set against the objects the receipt captured:
+A moved tip means the object set changed. Diff then negotiates just the
+differing objects via `internal/gitwire` (`want <live>` / `have
+<captured-tip>`) — only the delta crosses the wire, no full clone. On a
+fast-forward those delta objects are exactly the additions, with no
+removals:
 
 ```
 M git:…#main tip <old> -> <new>
 A <git-type> <oid>     # reachable now, not at capture
-D <git-type> <oid>     # captured, no longer reachable
 ```
 
 A mismatch exit (1) follows. Content-addressing makes this exact: an
 object is identified by its oid, so a changed file surfaces as a new
-blob (`A`) and, if its old version became unreachable, a `D`.
+blob (`A`). For a **non-fast-forward** (rebase/force-push) — where
+additions alone don't capture what became unreachable — or an
+unsupported transport, diff falls back to a full clone and reports the
+exact symmetric difference (`A` and `D <git-type> <oid>` lines).
+
+## git wire protocol (incremental sync)
+
+Both incremental capture and object-level diff share one primitive:
+`internal/gitwire`, a hand-rolled client for git's `want`/`have`
+fetch-pack negotiation. It lets cutting-garden transfer **only the
+objects that differ** between a remote branch and a tip it already
+captured — advertising the captured tip as a `have` by oid alone (no
+local seeding), and, by declining the `thin-pack` capability, receiving
+a self-contained pack that `git unpack-objects` explodes directly. See
+`internal/gitwire/CLAUDE.md`. Local and smart-HTTP transports are
+implemented; other transports fall back to a full clone.
 
 ### Restore
 

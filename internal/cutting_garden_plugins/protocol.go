@@ -17,6 +17,14 @@ type ProtocolCaptureRequest struct {
 	Source    *url.URL
 	RawArg    string
 	BlobStore blob_stores.BlobStoreInitialized
+
+	// PriorReceiptDigest, when non-empty, is the markl id of the most
+	// recent receipt the orchestrator found for this same source. A
+	// protocol capture plugin MAY use it to fetch only the objects that
+	// changed since that capture (incremental capture); an empty value,
+	// an unreadable receipt, or a non-fast-forward change falls back to a
+	// full capture.
+	PriorReceiptDigest string
 }
 
 // ProtocolCaptureResult is the orchestrator-visible output of one

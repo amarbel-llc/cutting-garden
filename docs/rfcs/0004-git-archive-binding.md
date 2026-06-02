@@ -161,15 +161,27 @@ the local destination path's scheme.
 
 Diff compares a git receipt against a live `git:` source in two stages.
 First a tip probe: `git ls-remote` resolves the source's current tip and
-compares it to the payload body's `tip`. Equal ⇒ no drift, no clone.
+compares it to the payload body's `tip`. Equal ⇒ no drift, no transfer.
 
-A moved tip ⇒ diff clones the source, enumerates its objects
-(`git cat-file --batch-all-objects --batch-check`), and reports the
-symmetric difference against the payload node's object references: a
-leading `M … tip <old> -> <new>` line, then `A <git-type> <oid>` for
-objects reachable now but not at capture and `D <git-type> <oid>` for
-objects captured but no longer reachable. Because objects are
-content-addressed, this is exact — a changed file is a new blob (`A`).
+A moved tip ⇒ diff negotiates only the differing objects via the
+fetch-pack `want`/`have` protocol (`internal/gitwire`; `want <live>`,
+`have <captured-tip>`), so only the delta crosses the wire. On a
+fast-forward those objects are exactly the additions: a leading
+`M … tip <old> -> <new>` line followed by `A <git-type> <oid>` lines. A
+non-fast-forward (rebase/force-push) or an unsupported transport falls
+back to a full clone and reports the exact symmetric difference, adding
+`D <git-type> <oid>` for objects no longer reachable. Because objects
+are content-addressed, this is exact — a changed file is a new blob.
+
+## Incremental capture
+
+When a prior receipt for the same source is known, capture re-uses it as
+the negotiation `have`: it fetches only the objects added since the prior
+tip (a fast-forward) and writes a new receipt whose object set is the
+prior set plus the delta. Object references are sorted by oid, so an
+incremental capture and a full capture of the same state produce a
+byte-identical payload node. Non-fast-forward changes fall back to a full
+capture.
 
 ## References
 

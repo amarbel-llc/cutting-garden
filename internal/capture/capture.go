@@ -70,6 +70,7 @@ func (cmd *Capture) Run(req command.Request) {
 
 	args := req.PopArgs()
 	envBlobStore := command_components.MakeBlobStoreEnv(ctx)
+	cgEnvDir := command_components.MakeCgEnvDir(ctx)
 	shadowCandidates := blobStoreIds(envBlobStore.GetBlobStores())
 
 	groups, classifyFails, planErr := planCapture(args, shadowCandidates)
@@ -127,10 +128,11 @@ func (cmd *Capture) Run(req command.Request) {
 			// into the shared store-group receipt below.
 			if pp, ok := root.plugin.(cutting_garden_plugins.ProtocolCapturePlugin); ok {
 				res, perr := pp.CaptureProtocol(cutting_garden_plugins.ProtocolCaptureRequest{
-					Context:   ctx,
-					Source:    root.sourceURL,
-					RawArg:    root.path,
-					BlobStore: blobStore,
+					Context:            ctx,
+					Source:             root.sourceURL,
+					RawArg:             root.path,
+					BlobStore:          blobStore,
+					PriorReceiptDigest: findPriorReceipt(cgEnvDir, storeName, root.path),
 				})
 				if perr != nil {
 					sink.Failure(root.path, perr)
@@ -214,7 +216,7 @@ func (cmd *Capture) Run(req command.Request) {
 	}
 
 	if len(captureLogEntries) > 0 {
-		appendCaptureLog(command_components.MakeCgEnvDir(ctx), sink, captureLogEntries)
+		appendCaptureLog(cgEnvDir, sink, captureLogEntries)
 	}
 
 	if failCount > 0 {

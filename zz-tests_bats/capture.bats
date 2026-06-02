@@ -454,3 +454,48 @@ function capture_git_remote_stores_object_graph_as_rfc0002_tree { # @test
   assert_output --partial 'git-capture-object-blob-v1'
   assert_output --partial '"object_count":3'
 }
+
+function capture_git_incremental_recapture { # @test
+
+  # Re-capturing an advanced branch should reuse the prior receipt
+  # (found in captures.log) to fetch only the delta, and still produce a
+  # correct, restorable receipt of the new state.
+  require_bin GIT_BIN git || skip "git not available in this lane"
+
+  init_store
+
+  local repo="$BATS_TEST_TMPDIR/srcrepo"
+  mkdir -p "$repo"
+  "$GIT_BIN" -C "$repo" init -q -b main
+  "$GIT_BIN" -C "$repo" config user.email test@example.com
+  "$GIT_BIN" -C "$repo" config user.name Test
+  echo "hello" >"$repo/README.md"
+  "$GIT_BIN" -C "$repo" add -A
+  "$GIT_BIN" -C "$repo" commit -q -m initial
+
+  run_cg capture -format json "git:$repo#main"
+  assert_success
+  local rid1
+  rid1="$(receipt_id_of_group "$output")"
+  [[ -n $rid1 ]] || fail "no first receipt id: $output"
+
+  # Advance the branch.
+  echo "more" >"$repo/another.txt"
+  "$GIT_BIN" -C "$repo" add -A
+  "$GIT_BIN" -C "$repo" commit -q -m second
+
+  # Second capture: the orchestrator finds rid1 in captures.log and
+  # drives an incremental delta fetch.
+  run_cg capture -format json "git:$repo#main"
+  assert_success
+  local rid2
+  rid2="$(receipt_id_of_group "$output")"
+  [[ -n $rid2 ]] || fail "no second receipt id: $output"
+  [[ "$rid1" != "$rid2" ]] || fail "expected a new receipt for the advanced branch"
+
+  # The incrementally-built receipt restores the advanced state.
+  run_cg restore "$rid2" out
+  assert_success
+  [[ -f out/another.txt ]] || fail "restored worktree missing another.txt"
+  [[ -f out/README.md ]] || fail "restored worktree missing README.md"
+}
