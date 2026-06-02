@@ -1,8 +1,6 @@
 package cutting_garden_plugin_git
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
@@ -17,7 +15,8 @@ import (
 // match, re-emit the receipt's entries verbatim so the comparator
 // reports zero drift without paying for a re-clone. On miss (the branch
 // moved, or the receipt carried no ref.txt), fall back to a full
-// re-clone+bundle so every artifact gets a fresh blob-id.
+// re-clone that re-extracts the object graph so every object gets a
+// fresh blob-id.
 func (Plugin) ScanForDiff(
 	req cutting_garden_plugins.DiffScanRequest,
 ) (entries []capture_receipt.EntryV1, err error) {
@@ -41,18 +40,10 @@ func (Plugin) ScanForDiff(
 		return nil, err
 	}
 
-	probeDir, err := os.MkdirTemp("", "cg-git-probe-*")
-	if err != nil {
-		return nil, errors.Wrap(err)
-	}
-	defer errors.Deferred(&err, func() error { return os.RemoveAll(probeDir) })
-
-	probeRefPath := filepath.Join(probeDir, refFileName)
-	if err = os.WriteFile(probeRefPath, []byte(commit+"\n"), 0o644); err != nil {
-		return nil, errors.Wrap(err)
-	}
-
-	freshID, _, err := plugin_blob_io.WriteFileBlob(req.Context, req.BlobStore, probeRefPath)
+	// Hash the same `<tip>\n` bytes capture wrote to ref.txt; an
+	// unchanged tip yields an identical blob-id.
+	freshID, _, err := plugin_blob_io.WriteReaderBlob(
+		req.Context, req.BlobStore, strings.NewReader(commit+"\n"))
 	if err != nil {
 		return nil, err
 	}
@@ -65,8 +56,8 @@ func (Plugin) ScanForDiff(
 	}
 
 	// Stale — the branch tip moved or the receipt lacked a ref.txt.
-	// Re-clone+bundle in full so every artifact gets a fresh blob-id and
-	// the comparator can localize the difference.
+	// Re-clone and re-extract the object graph so every object gets a
+	// fresh blob-id and the comparator can localize the difference.
 	return rescan(req, remote, branch, source)
 }
 
@@ -126,36 +117,28 @@ func pathBase(p string) string {
 	return p
 }
 
-// rescan runs a full clone+bundle into a fresh staging dir and returns
-// freshly-hashed EntryV1s. Used when the ref.txt freshness probe reports
-// a miss. The dedicated staging dir guarantees that probe leftovers
-// can't surface as ghost entries in the returned set.
+// rescan re-clones the branch and re-extracts its full object graph,
+// returning freshly-hashed EntryV1s. Used when the ref.txt freshness
+// probe reports a miss (the tip moved). Per-object failures aggregate
+// into the returned error — diff is read-only and atomic.
 func rescan(
 	req cutting_garden_plugins.DiffScanRequest,
 	remote, branch, source string,
-) (entries []capture_receipt.EntryV1, err error) {
-	rescanDir, err := os.MkdirTemp("", "cg-git-rescan-*")
+) ([]capture_receipt.EntryV1, error) {
+	entries, failures, err := extractBranch(req.Context, req.BlobStore, remote, branch, source)
 	if err != nil {
-		return nil, errors.Wrap(err)
-	}
-	defer errors.Deferred(&err, func() error { return os.RemoveAll(rescanDir) })
-
-	if err = materializeBranch(req.Context, remote, branch, rescanDir); err != nil {
 		return nil, err
 	}
-
-	entries, failures := walkArtifacts(req.Context, req.BlobStore, rescanDir, source)
 	if len(failures) > 0 {
 		lines := make([]string, len(failures))
 		for i, f := range failures {
 			lines[i] = f.path + ": " + f.err.Error()
 		}
 		return nil, errors.ErrorWithStackf(
-			"git plugin: %d artifact failures during diff rescan:\n  %s",
+			"git plugin: %d object failures during diff rescan:\n  %s",
 			len(failures),
 			strings.Join(lines, "\n  "),
 		)
 	}
-
 	return entries, nil
 }

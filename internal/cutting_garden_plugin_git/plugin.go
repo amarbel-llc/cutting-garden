@@ -1,8 +1,10 @@
 // Package cutting_garden_plugin_git is the git capture/diff backend
-// for cutting-garden. It captures one branch of a git remote as a
-// self-contained git bundle plus a tiny `ref.txt` freshness sidecar,
-// streaming both into the destination blob store as regular file
-// entries.
+// for cutting-garden. It mirrors one branch of a git remote into the
+// destination blob store as a content-addressed merkle tree: every git
+// object reachable from the branch tip — each commit, tree, and blob —
+// is stored individually as its own blob, preserving git's native
+// object graph (and its dedup: an unchanged object keeps its oid and
+// stores once). A `ref.txt` entry records the tip commit oid.
 //
 // Registered for the `git` scheme in two forms:
 //
@@ -14,10 +16,10 @@
 // full acceptance rules and `docs/features/0006-git-plugin.md` for the
 // design rationale.
 //
-// Restore is intentionally not implemented; the captured `repo.bundle`
-// is a regular file the filesystem plugin materializes, and a user
-// reconstitutes the branch with `git clone repo.bundle`. See FDR 0006
-// §Restore Deferral.
+// Restore is intentionally not implemented; the stored objects are the
+// raw `git cat-file` payloads, reconstitutable into a repository with
+// `git hash-object`/`git unpack-objects`. See FDR 0006 §Restore
+// Deferral.
 package cutting_garden_plugin_git
 
 import (

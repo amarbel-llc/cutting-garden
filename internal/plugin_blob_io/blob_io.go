@@ -39,6 +39,20 @@ func WriteFileBlob(
 	}
 	defer errors.DeferredCloser(&err, src)
 
+	return WriteReaderBlob(ctx, store, src)
+}
+
+// WriteReaderBlob streams r into store and returns the content-addressed
+// markl id plus the byte count. It is the reader-based sibling of
+// WriteFileBlob, used by callers that already hold an open stream (e.g.
+// the git plugin piping `git cat-file` output, or an in-memory
+// strings.Reader) and want to avoid a temp-file round-trip. ctx is
+// observed for cancellation on every Read.
+func WriteReaderBlob(
+	ctx context.Context,
+	store blob_stores.BlobStoreInitialized,
+	r io.Reader,
+) (id domain_interfaces.MarklId, size int64, err error) {
 	wc, err := store.MakeBlobWriter(nil)
 	if err != nil {
 		err = errors.Wrap(err)
@@ -46,7 +60,7 @@ func WriteFileBlob(
 	}
 	defer errors.DeferredCloser(&err, wc)
 
-	if size, err = io.Copy(wc, NewCtxReader(ctx, src)); err != nil {
+	if size, err = io.Copy(wc, NewCtxReader(ctx, r)); err != nil {
 		err = errors.Wrap(err)
 		return
 	}

@@ -14,38 +14,44 @@ import (
 	"github.com/amarbel-llc/madder/go/pkgs/markl"
 )
 
-// fakeGitScript is the shim binary written onto PATH for every test
-// that exercises the capture/diff round-trip. It implements the three
-// git subcommands the plugin drives — `ls-remote` (with and without
-// `--symref`), `clone`, and `bundle create` — with deterministic
-// output so blob-ids are stable across runs.
+// fakeGitScript is the shim binary written onto PATH for the
+// hermetic capture/diff round-trip tests. It implements the git
+// subcommands the plugin drives — `clone`, `symbolic-ref`,
+// `rev-parse`, `ls-remote` (with and without `--symref`), and
+// `cat-file --batch-all-objects --batch` — with deterministic output
+// so blob-ids and the object graph are stable across runs.
 //
-// The resolved tip commit is a fixed constant; the diff freshness probe
-// re-derives the same value, so a capture-then-diff against the same
-// shim is a no-drift round-trip.
+// The cat-file stream emits one commit, one tree, and one blob in the
+// `<oid> SP <type> SP <size> LF <payload> LF` batch framing. The tip
+// commit oid matches what `rev-parse` and `ls-remote` report, so a
+// capture-then-diff against the same shim is a no-drift round-trip.
 const fakeGitScript = `#!/bin/sh
 set -e
 sub="$1"
 shift
 case "$sub" in
-  ls-remote)
-    sha="1111111111111111111111111111111111111111"
-    if [ "$1" = "--symref" ]; then
-      printf 'ref: refs/heads/main\tHEAD\n'
-      printf '%s\tHEAD\n' "$sha"
-    else
-      ref="$2"
-      printf '%s\t%s\n' "$sha" "$ref"
-    fi
-    ;;
   clone)
     for a in "$@"; do dir="$a"; done
     mkdir -p "$dir"
     ;;
-  bundle)
-    file="$2"
-    mkdir -p "$(dirname "$file")"
-    printf 'BUNDLE-bytes-for-test\n' > "$file"
+  symbolic-ref)
+    echo "main"
+    ;;
+  rev-parse)
+    printf 'commit_oid_1\n'
+    ;;
+  ls-remote)
+    if [ "$1" = "--symref" ]; then
+      printf 'ref: refs/heads/main\tHEAD\n'
+      printf 'commit_oid_1\tHEAD\n'
+    else
+      printf 'commit_oid_1\t%s\n' "$2"
+    fi
+    ;;
+  cat-file)
+    printf 'commit_oid_1 commit 12\ncommit-byte!\n'
+    printf 'tree_oid_1 tree 10\ntree-byte!\n'
+    printf 'blob_oid_1 blob 6\nhello!\n'
     ;;
   *)
     echo "fake-git: unknown subcommand $sub" >&2
@@ -54,19 +60,22 @@ case "$sub" in
 esac
 `
 
-// failingGitScript resolves ls-remote successfully but fails the clone
-// with a recognizable stderr line, so tests can assert the stderr-tail
+// failingGitScript clones successfully but fails the cat-file walk with
+// a recognizable stderr line, so tests can assert the stderr-tail
 // propagation path.
 const failingGitScript = `#!/bin/sh
 set -e
 sub="$1"
 shift
 case "$sub" in
-  ls-remote)
-    printf '1111111111111111111111111111111111111111\t%s\n' "$2"
-    ;;
   clone)
-    echo "fake-git: simulated auth failure" >&2
+    for a in "$@"; do dir="$a"; done
+    mkdir -p "$dir"
+    ;;
+  symbolic-ref) echo "main" ;;
+  rev-parse) printf 'commit_oid_1\n' ;;
+  cat-file)
+    echo "fake-git: simulated odb corruption" >&2
     exit 128
     ;;
   *)
@@ -112,7 +121,7 @@ func newDiscardStore() blob_stores.BlobStoreInitialized {
 	return blob_stores.NewDiscardBlobStore(markl.FormatHashSha256)
 }
 
-func TestPlugin_CaptureRoot_WritesBundleAndRef(t *testing.T) {
+func TestPlugin_CaptureRoot_StoresObjectGraph(t *testing.T) {
 	withFakeGit(t)
 
 	arg := "git:https://github.com/amarbel-llc/cutting-garden#main"
@@ -128,13 +137,18 @@ func TestPlugin_CaptureRoot_WritesBundleAndRef(t *testing.T) {
 	if result.FailCount != 0 {
 		t.Fatalf("FailCount = %d, want 0; failures: %v", result.FailCount, sink.failures)
 	}
-	if len(result.Entries) != 2 {
-		t.Fatalf("expected 2 entries (ref.txt + repo.bundle); got %d: %v",
-			len(result.Entries), entryPaths(result.Entries))
+	// ref.txt + one commit + one tree + one blob = 4 entries.
+	if len(result.Entries) != 4 {
+		t.Fatalf("expected 4 entries; got %d: %v", len(result.Entries), entryPaths(result.Entries))
 	}
 
 	wantSource := "https://github.com/amarbel-llc/cutting-garden#main"
-	seen := map[string]bool{refFileName: false, bundleFileName: false}
+	want := map[string]bool{
+		"ref.txt":             false,
+		"commit/commit_oid_1": false,
+		"tree/tree_oid_1":     false,
+		"blob/blob_oid_1":     false,
+	}
 	for _, e := range result.Entries {
 		if e.Type != capture_receipt.TypeFile {
 			t.Errorf("entry %q: Type = %q, want %q", e.Path, e.Type, capture_receipt.TypeFile)
@@ -145,15 +159,22 @@ func TestPlugin_CaptureRoot_WritesBundleAndRef(t *testing.T) {
 		if e.BlobId == "" {
 			t.Errorf("entry %q: BlobId is empty", e.Path)
 		}
-		seen[e.Path] = true
+		if _, ok := want[e.Path]; !ok {
+			t.Errorf("unexpected entry path %q", e.Path)
+		}
+		want[e.Path] = true
 	}
-	for name, ok := range seen {
-		if !ok {
-			t.Errorf("no entry for %q", name)
+	for path, seen := range want {
+		if !seen {
+			t.Errorf("missing entry for %q", path)
 		}
 	}
-	if len(sink.entries) != len(result.Entries) {
-		t.Errorf("sink saw %d entries, result has %d", len(sink.entries), len(result.Entries))
+
+	// The blob object's size must equal its git payload size (6 bytes).
+	for _, e := range result.Entries {
+		if e.Path == "blob/blob_oid_1" && e.Size != 6 {
+			t.Errorf("blob size = %d, want 6", e.Size)
+		}
 	}
 }
 
@@ -173,11 +194,10 @@ func TestPlugin_CaptureRoot_DefaultBranchResolvesHEAD(t *testing.T) {
 	if result.FailCount != 0 {
 		t.Fatalf("FailCount = %d, want 0; failures: %v", result.FailCount, sink.failures)
 	}
-	if len(result.Entries) != 2 {
-		t.Fatalf("expected 2 entries; got %d", len(result.Entries))
+	if len(result.Entries) != 4 {
+		t.Fatalf("expected 4 entries; got %d", len(result.Entries))
 	}
-	// Default-branch capture keeps the Root identity branch-free; the
-	// resolved branch lives only in ref.txt.
+	// Default-branch capture keeps the Root identity branch-free.
 	wantSource := "https://github.com/amarbel-llc/cutting-garden"
 	for _, e := range result.Entries {
 		if e.Root != wantSource {
@@ -207,7 +227,7 @@ func TestPlugin_CaptureRoot_BadArg(t *testing.T) {
 	}
 }
 
-func TestPlugin_CaptureRoot_CloneFailure_SurfacesStderrTail(t *testing.T) {
+func TestPlugin_CaptureRoot_CatFileFailure_SurfacesStderrTail(t *testing.T) {
 	installFakeGit(t, failingGitScript)
 
 	arg := "git:https://github.com/amarbel-llc/cutting-garden#main"
@@ -227,7 +247,7 @@ func TestPlugin_CaptureRoot_CloneFailure_SurfacesStderrTail(t *testing.T) {
 	if !strings.Contains(got, "stderr-tail:") {
 		t.Errorf("error %q missing 'stderr-tail:' marker", got)
 	}
-	if !strings.Contains(got, "simulated auth failure") {
+	if !strings.Contains(got, "simulated odb corruption") {
 		t.Errorf("error %q missing stderr line from fake shim", got)
 	}
 }
@@ -273,7 +293,7 @@ func TestPlugin_ScanForDiff_RefMissTriggersRescan(t *testing.T) {
 
 	staleEntries := []capture_receipt.EntryV1{
 		{Path: refFileName, Root: source, Type: capture_receipt.TypeFile, BlobId: "sha256-stale"},
-		{Path: bundleFileName, Root: source, Type: capture_receipt.TypeFile, BlobId: "sha256-stale-bundle"},
+		{Path: "commit/old", Root: source, Type: capture_receipt.TypeFile, BlobId: "sha256-stale-commit"},
 	}
 
 	diffEntries, err := Plugin{}.ScanForDiff(cutting_garden_plugins.DiffScanRequest{
@@ -286,10 +306,10 @@ func TestPlugin_ScanForDiff_RefMissTriggersRescan(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ScanForDiff: %v", err)
 	}
-	if len(diffEntries) != 2 {
-		t.Fatalf("rescan returned %d entries, want 2: %v", len(diffEntries), entryPaths(diffEntries))
+	// The rescan re-extracts the full object graph: ref.txt + 3 objects.
+	if len(diffEntries) != 4 {
+		t.Fatalf("rescan returned %d entries, want 4: %v", len(diffEntries), entryPaths(diffEntries))
 	}
-	// Fresh entries carry real blob-ids, not the stale receipt's.
 	for _, e := range diffEntries {
 		if strings.HasPrefix(e.BlobId, "sha256-stale") {
 			t.Errorf("entry %q kept stale blob-id %q", e.Path, e.BlobId)

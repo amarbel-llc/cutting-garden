@@ -7,15 +7,12 @@ import (
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 )
 
-// refFileName is the freshness sidecar captured alongside the bundle.
-// It holds the resolved branch tip commit id (one line). The diff
-// freshness probe re-derives this cheaply via `git ls-remote` and
-// compares blob-ids before paying for a full re-clone.
+// refFileName is the entry recording the captured branch's tip commit
+// id (one line). It is both the merkle root pointer — naming the commit
+// object whose subtree was stored — and the diff freshness key: the
+// probe re-derives the tip cheaply via `git ls-remote` and compares
+// blob-ids before paying for a full re-clone.
 const refFileName = "ref.txt"
-
-// bundleFileName is the single self-contained git bundle of the captured
-// branch. `git clone <this>` reconstitutes the branch with full history.
-const bundleFileName = "repo.bundle"
 
 // resolveTip queries the remote for the tip commit of branch without
 // cloning. When branch is empty it resolves the remote's default branch

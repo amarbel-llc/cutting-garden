@@ -31,7 +31,7 @@ func lookGit() (string, error) {
 
 // runGit shells out to git with args, honoring ctx for cancellation.
 // dir, when non-empty, becomes the child's working directory (used to
-// run `bundle create` inside the bare clone). stdout is discarded — the
+// run commands inside the bare clone). stdout is discarded — the
 // callers that need output use gitOutput instead. The last
 // stderrTailBytes of stderr are wrapped into the returned error on
 // non-zero exit.
