@@ -136,17 +136,32 @@ a mixed fs+git store group folds into one receipt that must carry a
 single type-tag. Same rationale as FDR 0003 §TypeTag reuse. The git
 object type is recoverable from the `<type>/<oid>` entry path.
 
-## Relationship to RFC 0002
+## RFC 0002 receipt tree
 
-RFC 0002 (Capture Plugin Protocol) frames every capture as a merkle
-tree of typed hyphence blobs (receipt → identity → environment →
-payload). This plugin captures a merkle tree — git's own object DAG —
-but emits it through the current `[]EntryV1` plugin interface that the
-`capture` orchestrator consumes today, not the RFC 0002 receipt/identity
-node types (which have no implementation in this repo yet). When the
-orchestrator grows an RFC 0002 emission path, a git **binding** can map
-these object entries onto protocol payload nodes; the object-graph
-extraction here is the substance that binding would carry.
+`cutting-garden capture git:…` emits a full [RFC 0002](../rfcs/0002-capture-plugin-protocol.md)
+capture merkle tree, not the legacy fs receipt. The protocol nodes
+(receipt → identity → {invocation, environment → host/binary/plugin},
+outcome) are produced by the new `internal/capture_plugin` package; the
+git-specific subtree (the `jcs-git-capture-payload-v1` node referencing
+every object leaf, the `jcs-git-capture-environment-v1` plugin-env node,
+and the `git-capture-object-<type>-v1` leaves) is the
+[git binding, RFC 0004](../rfcs/0004-git-archive-binding.md).
+
+Mechanically: the git plugin satisfies
+`cutting_garden_plugins.ProtocolCapturePlugin`, and the orchestrator
+routes any protocol-capable root through `CaptureProtocol`, recording the
+returned receipt markl-id directly instead of folding `[]EntryV1`
+records into a shared store-group receipt. The git object graph is the
+payload subtree; each object is a content-addressed leaf, so RFC 0002's
+automatic merkle dedup applies at git-object granularity.
+
+The plugin also still implements the `[]EntryV1` `CaptureRoot` (the same
+object-graph extraction in the legacy shape) — it backs the diff rescan
+and serves as the registered `CapturePlugin` fallback. **diff and
+restore against RFC 0002 git receipts are not yet implemented**: the
+`diff` command parses fs-v1 receipts, so diffing a git receipt is a
+follow-up (a protocol-aware receipt traversal). The cheap ls-remote tip
+probe described below is the diff mechanism once that traversal lands.
 
 ## Open Questions
 

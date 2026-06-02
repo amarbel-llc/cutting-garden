@@ -63,21 +63,19 @@ type artifactFailure struct {
 	err  error
 }
 
-// extractBranch clones the single branch bare into a scratch dir and
-// stores every git object (plus the ref.txt tip pointer) into store,
-// returning one EntryV1 per stored object. Per-object write failures
-// accumulate in failures (the walk continues); err is reserved for
-// hard failures (clone refused, branch unresolvable, cat-file crash)
-// that abort the whole capture. Shared by CaptureRoot and the diff
-// rescan path.
-func extractBranch(
+// withBareClone clones the single branch bare into a scratch dir,
+// resolves the branch name (from HEAD when branch is empty) and its tip
+// commit oid, then invokes fn with the clone dir, the resolved branch,
+// and the tip. The scratch dir is removed afterward. Shared by the
+// EntryV1 extraction (extractBranch) and the RFC 0002 protocol capture.
+func withBareClone(
 	ctx context.Context,
-	store blob_stores.BlobStoreInitialized,
-	remote, branch, source string,
-) (entries []capture_receipt.EntryV1, failures []artifactFailure, err error) {
+	remote, branch string,
+	fn func(cloneDir, resolvedBranch, tip string) error,
+) (err error) {
 	cloneDir, err := os.MkdirTemp("", "cg-git-clone-*")
 	if err != nil {
-		return nil, nil, errors.Wrap(err)
+		return errors.Wrap(err)
 	}
 	defer errors.Deferred(&err, func() error { return os.RemoveAll(cloneDir) })
 
@@ -87,71 +85,87 @@ func extractBranch(
 	}
 	cloneArgs = append(cloneArgs, "--", remote, cloneDir)
 	if err = runGit(ctx, "", cloneArgs...); err != nil {
-		return nil, nil, err
+		return err
 	}
 
 	resolvedBranch := branch
 	if resolvedBranch == "" {
 		out, serr := gitOutput(ctx, cloneDir, "symbolic-ref", "--short", "HEAD")
 		if serr != nil {
-			return nil, nil, serr
+			return serr
 		}
 		resolvedBranch = strings.TrimSpace(out)
 		if resolvedBranch == "" {
-			return nil, nil, errors.ErrorWithStackf(
+			return errors.ErrorWithStackf(
 				"git plugin: could not resolve default branch on %q", remote)
 		}
 	}
 
 	tipOut, rerr := gitOutput(ctx, cloneDir, "rev-parse", "refs/heads/"+resolvedBranch)
 	if rerr != nil {
-		return nil, nil, rerr
+		return rerr
 	}
 	tip := strings.TrimSpace(tipOut)
 	if tip == "" {
-		return nil, nil, errors.ErrorWithStackf(
+		return errors.ErrorWithStackf(
 			"git plugin: empty tip for branch %q on %q", resolvedBranch, remote)
 	}
 
-	// The tip pointer doubles as the merkle root reference and the diff
-	// freshness key.
-	refID, refSize, rwErr := plugin_blob_io.WriteReaderBlob(ctx, store, strings.NewReader(tip+"\n"))
-	if rwErr != nil {
-		return nil, nil, errors.Wrap(rwErr)
-	}
-	entries = append(entries, capture_receipt.EntryV1{
-		Path:   refFileName,
-		Root:   source,
-		Type:   capture_receipt.TypeFile,
-		Mode:   objectEntryMode,
-		Size:   refSize,
-		BlobId: refID.String(),
-	})
+	return fn(cloneDir, resolvedBranch, tip)
+}
 
-	visit := func(oid, typ string, _ int64, payload io.Reader) error {
-		id, size, werr := plugin_blob_io.WriteReaderBlob(ctx, store, payload)
-		if werr != nil {
-			failures = append(failures, artifactFailure{
-				path: objectPath(typ, oid),
-				err:  errors.Wrap(werr),
-			})
-			return nil
+// extractBranch clones the single branch bare and stores every git
+// object (plus the ref.txt tip pointer) into store, returning one
+// EntryV1 per stored object. Per-object write failures accumulate in
+// failures (the walk continues); err is reserved for hard failures
+// (clone refused, branch unresolvable, cat-file crash) that abort the
+// whole capture. Shared by CaptureRoot and the diff rescan path.
+func extractBranch(
+	ctx context.Context,
+	store blob_stores.BlobStoreInitialized,
+	remote, branch, source string,
+) (entries []capture_receipt.EntryV1, failures []artifactFailure, err error) {
+	err = withBareClone(ctx, remote, branch, func(cloneDir, _, tip string) error {
+		// The tip pointer doubles as the merkle root reference and the
+		// diff freshness key.
+		refID, refSize, rwErr := plugin_blob_io.WriteReaderBlob(ctx, store, strings.NewReader(tip+"\n"))
+		if rwErr != nil {
+			return errors.Wrap(rwErr)
 		}
 		entries = append(entries, capture_receipt.EntryV1{
-			Path:   objectPath(typ, oid),
+			Path:   refFileName,
 			Root:   source,
 			Type:   capture_receipt.TypeFile,
 			Mode:   objectEntryMode,
-			Size:   size,
-			BlobId: id.String(),
+			Size:   refSize,
+			BlobId: refID.String(),
 		})
-		return nil
-	}
 
-	if serr := streamAllObjects(ctx, cloneDir, visit); serr != nil {
-		return nil, nil, serr
-	}
+		visit := func(oid, typ string, _ int64, payload io.Reader) error {
+			id, size, werr := plugin_blob_io.WriteReaderBlob(ctx, store, payload)
+			if werr != nil {
+				failures = append(failures, artifactFailure{
+					path: objectPath(typ, oid),
+					err:  errors.Wrap(werr),
+				})
+				return nil
+			}
+			entries = append(entries, capture_receipt.EntryV1{
+				Path:   objectPath(typ, oid),
+				Root:   source,
+				Type:   capture_receipt.TypeFile,
+				Mode:   objectEntryMode,
+				Size:   size,
+				BlobId: id.String(),
+			})
+			return nil
+		}
 
+		return streamAllObjects(ctx, cloneDir, visit)
+	})
+	if err != nil {
+		return nil, nil, err
+	}
 	return entries, failures, nil
 }
 

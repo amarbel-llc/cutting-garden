@@ -78,6 +78,52 @@ func TestPlugin_CaptureRoot_RealGit_StoresEveryObject(t *testing.T) {
 	}
 }
 
+// TestCaptureProtocol_RealGit_TreeReferencesEveryObject drives the
+// RFC 0002 protocol capture against a real local repo and asserts the
+// payload node references every object in the source odb, each typed by
+// git kind, and that the receipt tree is well-formed.
+func TestCaptureProtocol_RealGit_TreeReferencesEveryObject(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not on PATH")
+	}
+
+	repo := newLocalRepo(t)
+	w := newMemWriter()
+
+	res, err := captureProtocol(context.Background(), w, repo, "main")
+	if err != nil {
+		t.Fatalf("captureProtocol: %v", err)
+	}
+
+	receipt := string(w.byDigest[res.ReceiptDigest])
+	if nodeTypeOf(receipt) != "cutting_garden-capture-receipt-git-v1" {
+		t.Fatalf("receipt type = %q", nodeTypeOf(receipt))
+	}
+	payloadRef := nodeRefs(receipt)["payload"]
+	payloadDigest, _, _ := strings.Cut(payloadRef, "|")
+	payload := string(w.byDigest[payloadDigest])
+	prefs := nodeRefs(payload)
+
+	srcObjs := realRepoObjects(t, repo)
+	if res.ObjectCount != len(srcObjs) {
+		t.Errorf("ObjectCount = %d, want %d", res.ObjectCount, len(srcObjs))
+	}
+	for _, o := range srcObjs {
+		ref, ok := prefs[o.oid]
+		if !ok {
+			t.Errorf("payload missing object %s %s", o.typ, o.oid)
+			continue
+		}
+		objDigest, objType, _ := strings.Cut(ref, "|")
+		if objType != objectTypeString(o.typ) {
+			t.Errorf("object %s ref type = %q, want %q", o.oid, objType, objectTypeString(o.typ))
+		}
+		if _, ok := w.byDigest[objDigest]; !ok {
+			t.Errorf("object %s blob not stored", o.oid)
+		}
+	}
+}
+
 type repoObject struct {
 	oid string
 	typ string

@@ -135,11 +135,12 @@
           go = pkgs.go_1_26;
           GOTOOLCHAIN = "local";
 
-          # makeWrapper wraps the installed binaries so `yt-dlp` (used
-          # by internal/cutting_garden_plugin_ytdlp via exec.LookPath)
-          # is on PATH at install time. Without this, nix-built users
-          # get a clear-but-late error from runYtdlp; the wrap puts
-          # the dependency in the closure where it belongs.
+          # makeWrapper wraps the installed binaries so the external
+          # tools the plugins shell out to via exec.LookPath are on PATH
+          # at install time: `yt-dlp` (internal/cutting_garden_plugin_ytdlp)
+          # and `git` (internal/cutting_garden_plugin_git). Without this,
+          # nix-built users get a clear-but-late error from the plugin;
+          # the wrap puts the dependency in the closure where it belongs.
           nativeBuildInputs = [ pkgs.makeWrapper ];
 
           # Phase 5: generate manpages + shell completion stubs, then
@@ -152,7 +153,8 @@
             rm $out/bin/cutting-garden-gen
             for bin in cutting-garden cg; do
               wrapProgram $out/bin/$bin \
-                --prefix PATH : ${pkgsUpstream.yt-dlp}/bin
+                --prefix PATH : ${pkgsUpstream.yt-dlp}/bin \
+                --prefix PATH : ${pkgs.git}/bin
             done
           '';
 
@@ -185,6 +187,13 @@
                 base = madder.packages.${system}.madder;
                 name = "madder";
               };
+              # git backs the git-plugin E2E (zz-tests_bats/capture.bats):
+              # the test builds a local repo with $GIT_BIN, and the
+              # wrapped cutting-garden finds git on PATH via wrapProgram.
+              GIT_BIN = {
+                base = pkgs.git;
+                name = "git";
+              };
             };
             batsLibPath = [ bats.packages.${system}.bats-libs.batsLibPath ];
           };
@@ -205,6 +214,10 @@
             # `go run ./cmd/cutting-garden capture ytdlp:…` from inside
             # the devshell behaves the same as a nix-built invocation.
             pkgsUpstream.yt-dlp
+            # git backs internal/cutting_garden_plugin_git's exec.LookPath,
+            # matching the wrap in the installed binary so
+            # `go run ./cmd/cutting-garden capture git:…` behaves the same.
+            pkgs.git
           ];
 
           GOTOOLCHAIN = "local";

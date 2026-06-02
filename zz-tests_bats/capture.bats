@@ -406,3 +406,51 @@ function capture_writes_log_entry_at_cg_scope { # @test
   assert_output --partial '"roots":["tree"]'
   assert_output --regexp '"ts":"[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z"'
 }
+
+function capture_git_remote_stores_object_graph_as_rfc0002_tree { # @test
+
+  require_bin GIT_BIN git || skip "git not available in this lane"
+
+  init_store
+
+  # Build a tiny local source repo on `main`: one commit ⇒ exactly
+  # three git objects (commit, tree, blob).
+  local repo="$BATS_TEST_TMPDIR/srcrepo"
+  mkdir -p "$repo"
+  "$GIT_BIN" -C "$repo" init -q -b main
+  "$GIT_BIN" -C "$repo" config user.email test@example.com
+  "$GIT_BIN" -C "$repo" config user.name Test
+  echo "hello" >"$repo/README.md"
+  "$GIT_BIN" -C "$repo" add -A
+  "$GIT_BIN" -C "$repo" commit -q -m initial
+
+  run_cg capture -format json "git:$repo#main"
+  assert_success
+
+  local rid
+  rid="$(receipt_id_of_group "$output")"
+  [[ -n $rid ]] || fail "no receipt id in output: $output"
+
+  # The receipt is an RFC 0002 git-kind receipt referencing identity,
+  # outcome, and the git payload node.
+  run_madder cat "$rid"
+  assert_success
+  assert_line '! cutting_garden-capture-receipt-git-v1'
+  assert_output --partial '- identity < @'
+  assert_output --partial '- outcome < @'
+  assert_output --partial 'jcs-git-capture-payload-v1'
+
+  # Follow the payload reference; it lists one ref per git object
+  # (commit/tree/blob) and records the tip + object count.
+  local payload_id
+  payload_id="$(echo "$output" | sed -nE 's/.*- payload < @([^ ]+) !.*/\1/p')"
+  [[ -n $payload_id ]] || fail "no payload id in receipt: $output"
+
+  run_madder cat "$payload_id"
+  assert_success
+  assert_line '! jcs-git-capture-payload-v1'
+  assert_output --partial 'git-capture-object-commit-v1'
+  assert_output --partial 'git-capture-object-tree-v1'
+  assert_output --partial 'git-capture-object-blob-v1'
+  assert_output --partial '"object_count":3'
+}

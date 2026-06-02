@@ -13,13 +13,42 @@ remote's default branch (HEAD) at capture time. Unlike the yt-dlp
 plugin it claims **no** bare transport scheme, so there is no host
 allowlist — a git capture is always opt-in via the `git:` prefix.
 
+## Two capture representations
+
+This plugin captures git's object graph two ways over the same
+extraction. The `cutting-garden capture` orchestrator uses the **RFC
+0002 protocol** path; the EntryV1 path remains for diff and as the
+registered `CapturePlugin` fallback.
+
+1. **RFC 0002 protocol tree** (`protocol.go`, `CaptureProtocol`) — the
+   primary path the binary takes. Stores each git object as a
+   content-addressed leaf blob, references them all from a single
+   `jcs-git-capture-payload-v1` payload node, and wraps that in the
+   protocol receipt → identity → environment/outcome tree via
+   `internal/capture_plugin`. Returns the root receipt's markl id. The
+   node schemas are pinned in
+   [RFC 0004](../../docs/rfcs/0004-git-archive-binding.md).
+2. **EntryV1 object graph** (`capture.go`, `CaptureRoot`) — the same
+   object-graph extraction expressed as the legacy `[]EntryV1` shape
+   (one `<type>/<oid>` file entry per object + `ref.txt`). The
+   orchestrator only falls back to this if the protocol interface is
+   absent; the diff rescan path reuses `extractBranch`.
+
+The orchestrator prefers `CaptureProtocol` whenever a plugin satisfies
+`cutting_garden_plugins.ProtocolCapturePlugin` (this one does), so a real
+`capture git:…` produces an RFC 0002 git receipt, not an fs receipt.
+
 ## What gets captured — git's object graph as a merkle tree
 
-This plugin does **not** bundle the repo into one opaque blob. It
-mirrors git's own merkle DAG into madder: it clones the single branch
-bare, then enumerates every object reachable from the tip and stores
-each one **individually** as its own content-addressed blob. One
-`EntryV1` per git object, named `<type>/<oid>`:
+Both paths mirror git's own merkle DAG into madder rather than bundling
+the repo into one opaque blob: a bare single-branch clone's object
+database is streamed with `git cat-file --batch-all-objects --batch`,
+and every reachable object is stored **individually** as its own
+content-addressed blob. Dedup falls out for free — an unchanged git
+object keeps its oid, its payload is byte-identical, and madder stores it
+once across captures.
+
+In the EntryV1 path each object is one entry named `<type>/<oid>`:
 
 - `commit/<oid>` — each commit object's payload.
 - `tree/<oid>`   — each tree object's payload.
@@ -42,11 +71,16 @@ working repo from loose objects is a follow-up. See
 
 ## What lives here
 
-- `Plugin.CaptureRoot` / `extractBranch` (`capture.go`) — bare
-  single-branch clone, resolve the tip, store `ref.txt`, then store
-  every object via the shared streaming walk. Per-object write failures
-  route to the sink; hard failures (clone refused, branch unresolvable)
-  abort the capture. `extractBranch` is reused by the diff rescan path.
+- `Plugin.CaptureProtocol` / `captureProtocol` (`protocol.go`) — the RFC
+  0002 path: stream every object into the blob store, build the payload
+  node referencing them, then drive `capture_plugin.WriteReceipt`.
+  `captureProtocol` is Writer-parameterized so tests run it against an
+  in-memory content-addressed writer.
+- `Plugin.CaptureRoot` / `extractBranch` (`capture.go`) — the EntryV1
+  path: bare single-branch clone (`withBareClone`), store `ref.txt`,
+  then store every object via the shared streaming walk. `withBareClone`
+  and `streamAllObjects` are shared with the protocol path; `extractBranch`
+  also backs the diff rescan.
 - `streamAllObjects` (`objects.go`) — runs one
   `git cat-file --batch-all-objects --batch` process and hands each
   object's payload to a visitor as a bounded `io.LimitReader`, so large

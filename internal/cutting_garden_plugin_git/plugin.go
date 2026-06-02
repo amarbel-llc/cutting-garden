@@ -33,8 +33,9 @@ import (
 type Plugin struct{}
 
 var (
-	_ cutting_garden_plugins.CapturePlugin = (*Plugin)(nil)
-	_ cutting_garden_plugins.DiffPlugin    = (*Plugin)(nil)
+	_ cutting_garden_plugins.CapturePlugin         = (*Plugin)(nil)
+	_ cutting_garden_plugins.DiffPlugin            = (*Plugin)(nil)
+	_ cutting_garden_plugins.ProtocolCapturePlugin = (*Plugin)(nil)
 )
 
 // Schemes returns the single URI scheme this plugin claims. Unlike the

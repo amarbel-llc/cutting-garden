@@ -23,13 +23,13 @@ import (
 
 	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
 	"github.com/amarbel-llc/cutting-garden/internal/capture_sink"
-	"github.com/amarbel-llc/cutting-garden/internal/command_components"
 	"github.com/amarbel-llc/cutting-garden/internal/command"
+	"github.com/amarbel-llc/cutting-garden/internal/command_components"
 	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
 	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
 	"github.com/amarbel-llc/madder/go/pkgs/output_format"
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/interfaces"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
+	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/interfaces"
 )
 
 // Capture is the value registered for the `capture` subcommand.
@@ -114,11 +114,40 @@ func (cmd *Capture) Run(req command.Request) {
 		sink.SetStore(storeName)
 
 		var entries []capture_receipt.EntryV1
+		entryRoots := 0
+		protocolReceipts := 0
 
 		for _, root := range group.roots {
 			if root.shadowNotice != "" {
 				sink.Notice("%s", root.shadowNotice)
 			}
+
+			// RFC 0002 plugins emit their own self-contained receipt
+			// merkle tree per root rather than folding EntryV1 records
+			// into the shared store-group receipt below.
+			if pp, ok := root.plugin.(cutting_garden_plugins.ProtocolCapturePlugin); ok {
+				res, perr := pp.CaptureProtocol(cutting_garden_plugins.ProtocolCaptureRequest{
+					Context:   ctx,
+					Source:    root.sourceURL,
+					RawArg:    root.path,
+					BlobStore: blobStore,
+				})
+				if perr != nil {
+					sink.Failure(root.path, perr)
+					failCount++
+					continue
+				}
+				sink.StoreGroupReceipt(res.ReceiptDigest, res.ObjectCount)
+				protocolReceipts++
+				captureLogEntries = append(captureLogEntries, captureLogEntry{
+					Ts:        captureLogTimestamp(),
+					ReceiptID: res.ReceiptDigest,
+					StoreID:   storeName,
+					Roots:     []string{root.path},
+				})
+				continue
+			}
+
 			result := root.plugin.CaptureRoot(cutting_garden_plugins.CaptureRootRequest{
 				Context:   ctx,
 				Source:    root.sourceURL,
@@ -127,22 +156,29 @@ func (cmd *Capture) Run(req command.Request) {
 				Sink:      sink,
 			})
 			entries = append(entries, result.Entries...)
+			entryRoots++
 			failCount += result.FailCount
 		}
 
-		// Collapse Root to "." for single-root groups per RFC 0001
-		// §Root Encoding. Multi-root groups keep distinct Root values.
-		if len(group.roots) == 1 {
+		// Collapse Root to "." when the EntryV1 entries came from a
+		// single root per RFC 0001 §Root Encoding. Multi-root groups
+		// keep distinct Root values.
+		if entryRoots == 1 {
 			for i := range entries {
 				entries[i].Root = "."
 			}
 		}
 
 		if len(entries) == 0 {
-			sink.Notice(
-				"notice: no entries captured for store=%s; receipt skipped",
-				quoteEmpty(storeName),
-			)
+			// Protocol roots already emitted their own receipts; only
+			// warn about a skipped store-group receipt when there was
+			// EntryV1 work that produced nothing.
+			if protocolReceipts == 0 {
+				sink.Notice(
+					"notice: no entries captured for store=%s; receipt skipped",
+					quoteEmpty(storeName),
+				)
+			}
 			continue
 		}
 
