@@ -59,3 +59,41 @@ func buildRepo(t *testing.T, commits ...map[string]string) (dir, branch string, 
 	}
 	return dir, head.Name().Short(), tips
 }
+
+// appendCommit adds one commit to an existing repo (opening it fresh),
+// advancing the checked-out branch, and returns the new tip oid. Used to
+// simulate upstream drift between a capture and a later diff/recapture.
+func appendCommit(t *testing.T, dir string, files map[string]string) (tip string) {
+	t.Helper()
+	repo, err := git.PlainOpen(dir)
+	if err != nil {
+		t.Fatalf("PlainOpen: %v", err)
+	}
+	wt, err := repo.Worktree()
+	if err != nil {
+		t.Fatalf("Worktree: %v", err)
+	}
+	for name, content := range files {
+		full := filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatalf("mkdir for %s: %v", name, err)
+		}
+		if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+		if _, err := wt.Add(name); err != nil {
+			t.Fatalf("add %s: %v", name, err)
+		}
+	}
+	h, err := wt.Commit("commit", &git.CommitOptions{
+		Author: &object.Signature{
+			Name:  "fixture",
+			Email: "fixture@example.com",
+			When:  time.Unix(1_600_000_100, 0).UTC(),
+		},
+	})
+	if err != nil {
+		t.Fatalf("append commit: %v", err)
+	}
+	return h.String()
+}
