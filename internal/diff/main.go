@@ -290,6 +290,7 @@ func (cmd *Diff) runProtocolDiff(
 		Context:       ctx,
 		BlobStore:     store,
 		ReceiptDigest: receiptIDStr,
+		StoreName:     cmd.Store,
 		Source:        sourceURL,
 		RawSource:     dirStr,
 	})
