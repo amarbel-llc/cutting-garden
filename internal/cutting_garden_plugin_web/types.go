@@ -31,16 +31,16 @@ const (
 	webFormatEnv = "CUTTING_GARDEN_WEB_FORMAT"
 )
 
-// knownFormats is the RFC 0003 web format catalog. Validated structurally
-// before invoking chrest so a typo fails fast rather than after a browser
+// knownFormats is the RFC 0003 web-archive batch format vocabulary —
+// what chrest's capture-batch accepts. Validated structurally before
+// invoking chrest so a typo fails fast rather than after a browser
 // launch. chrest is the authority on which it can actually produce.
 var knownFormats = map[string]bool{
+	"text":              true,
 	"pdf":               true,
-	"screenshot-png":    true,
-	"screenshot-jpeg":   true,
+	"screenshot":        true,
 	"mhtml":             true,
 	"a11y":              true,
-	"text":              true,
 	"html-monolith":     true,
 	"html-outer":        true,
 	"markdown-full":     true,
