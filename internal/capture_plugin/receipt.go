@@ -55,6 +55,14 @@ type ReceiptParams struct {
 	// recorded in the outcome body. Nil omits the field.
 	OutcomeStripped map[string]any
 
+	// OutcomePlugin is the optional plugin-defined outcome node (RFC 0002
+	// §Outcome "optional plugin ref"): per-run observations a binding
+	// records under the outcome, e.g. the web binding's http.* response
+	// metadata. When non-nil it is written as a child of the outcome node
+	// under the "plugin" alias. Nil omits it (the git binding emits no
+	// plugin-outcome — its outcome stays byte-identical).
+	OutcomePlugin *PluginEnv
+
 	// PayloadRefs link the receipt to the already-written payload
 	// subtree. Typically one ref; tree-shaped payloads MAY pass several.
 	PayloadRefs []Ref
@@ -68,9 +76,9 @@ type ReceiptParams struct {
 // post-order — every child before its parent, so each reference line
 // carries a real digest — and returns the root receipt's markl id.
 //
-// Order: invocation, host, binary, plugin-env, environment, outcome,
-// identity, receipt. (Payload nodes were written by the caller before
-// this call.)
+// Order: invocation, host, binary, plugin-env, environment,
+// plugin-outcome (if any), outcome, identity, receipt. (Payload nodes
+// were written by the caller before this call.)
 func WriteReceipt(
 	ctx context.Context,
 	w Writer,
@@ -122,6 +130,21 @@ func WriteReceipt(
 		return "", err
 	}
 
+	// Plugin-outcome (optional): written before the outcome so the
+	// outcome's "plugin" reference carries a real digest (post-order).
+	var outcomeRefs []Ref
+	if p.OutcomePlugin != nil {
+		poBody, err := jcsMarshal(p.OutcomePlugin.Body)
+		if err != nil {
+			return "", err
+		}
+		poDigest, _, err := WriteNode(ctx, w, encodeNode(p.OutcomePlugin.TypeString, nil, poBody))
+		if err != nil {
+			return "", err
+		}
+		outcomeRefs = []Ref{LockedRef("plugin", poDigest, p.OutcomePlugin.TypeString)}
+	}
+
 	now := p.Now
 	if now == nil {
 		now = time.Now
@@ -136,7 +159,7 @@ func WriteReceipt(
 	if err != nil {
 		return "", err
 	}
-	outDigest, _, err := WriteNode(ctx, w, encodeNode(TypeOutcome, nil, outBody))
+	outDigest, _, err := WriteNode(ctx, w, encodeNode(TypeOutcome, outcomeRefs, outBody))
 	if err != nil {
 		return "", err
 	}
