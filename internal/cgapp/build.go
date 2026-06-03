@@ -6,6 +6,7 @@
 package cgapp
 
 import (
+	"github.com/amarbel-llc/cutting-garden/internal/blob_writer"
 	"github.com/amarbel-llc/cutting-garden/internal/capture"
 	"github.com/amarbel-llc/cutting-garden/internal/command"
 	"github.com/amarbel-llc/cutting-garden/internal/diff"
@@ -17,6 +18,7 @@ import (
 	// when blob_store_env discovers an encrypted store config.
 	_ "github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugin_file"
 	_ "github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugin_git"
+	_ "github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugin_web"
 	_ "github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugin_ytdlp"
 	_ "github.com/amarbel-llc/madder/go/pkgs/markl_registrations"
 )
@@ -35,5 +37,9 @@ func Build() command.Utility {
 	utility.AddCmd("capture", capture.New())
 	utility.AddCmd("restore", restore.New())
 	utility.AddCmd("diff", diff.New())
+	// Hidden plumbing: the RFC 0002 writer-protocol sink that external
+	// capturer subprocesses (the web binding's chrest) pipe node blobs
+	// into. See internal/blob_writer and internal/cutting_garden_plugin_web.
+	utility.AddCmd("__write-blob", blob_writer.New())
 	return utility
 }

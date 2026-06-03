@@ -18,6 +18,13 @@ type ProtocolCaptureRequest struct {
 	RawArg    string
 	BlobStore blob_stores.BlobStoreInitialized
 
+	// StoreName is the destination store's name (empty = default).
+	// Subprocess-form plugins (the web binding) need it to build the
+	// `writer.cmd` argv that re-resolves this same store from a child
+	// process; in-process plugins (git) hold BlobStore directly and
+	// ignore it.
+	StoreName string
+
 	// PriorReceiptDigest, when non-empty, is the markl id of the most
 	// recent receipt the orchestrator found for this same source. A
 	// protocol capture plugin MAY use it to fetch only the objects that
@@ -78,6 +85,12 @@ type ProtocolDiffRequest struct {
 	ReceiptDigest string
 	Source        *url.URL
 	RawSource     string
+
+	// StoreName is the receipt's store name (empty = default). A
+	// subprocess-form diff (the web binding) re-captures the live source
+	// and needs it to build the `writer.cmd` argv; in-process diffs (git)
+	// hold BlobStore directly and ignore it.
+	StoreName string
 }
 
 // ProtocolDiffResult carries the human-readable difference lines (empty

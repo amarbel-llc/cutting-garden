@@ -132,6 +132,7 @@ func (cmd *Capture) Run(req command.Request) {
 					Source:             root.sourceURL,
 					RawArg:             root.path,
 					BlobStore:          blobStore,
+					StoreName:          storeName,
 					PriorReceiptDigest: findPriorReceipt(cgEnvDir, storeName, root.path),
 				})
 				if perr != nil {
