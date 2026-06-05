@@ -7,7 +7,7 @@ issues:
   - amarbel-llc/cutting-garden#10  # tree-capture pre-walk estimate + huh confirm-gate
 builds-on:
   - docs/rfcs/0002-capture-plugin-protocol.md
-  - amarbel-llc/cutting-garden#51  # RFC 0005 — JSON-RPC + FD-passed blob transport (proposed)
+  - amarbel-llc/cutting-garden#51  # RFC 0007 — JSON-RPC + FD-passed blob transport (proposed)
   - amarbel-llc/cutting-garden#50  # RFC 0005 — protocol-only plugin resolution (proposed)
   - amarbel-llc/purse-first docs/features/0010-operation-viewport.md (proposed)
 ---
@@ -280,8 +280,12 @@ The end UX decides these; prototyping (below) is how they get set.
 
 ## Sequencing
 
-RFC 0006 (notifications) + FDR 0009 (cg UX). Reconcile the two-in-flight
-RFC 0005 numbering collision (#50, #51) before taking 0006.
+RFC 0006 (notifications) + FDR 0009 (cg UX). RFC numbering is settled (see
+the [#51 comment][rfc-alloc]): **0005** = #50 (protocol-only resolution),
+**0006** = this design, **0007** = #51 (JSON-RPC transport). Pending #51
+actually renumbering its file from 0005 to 0007.
+
+[rfc-alloc]: https://github.com/amarbel-llc/cutting-garden/pull/51#issuecomment-4633090796
 
 1. `Reporter` interface + request-struct fields + no-op default.
 2. **Prototype the WET viewport `Model` + adapter** — the UX spike, the
@@ -294,9 +298,6 @@ RFC 0005 numbering collision (#50, #51) before taking 0006.
 
 ## Open questions
 
-- **RFC numbering.** Two RFC 0005s are in flight (#50, #51); this design
-  provisionally takes RFC 0006 / FDR 0009, to be reconciled when they
-  land.
 - **Viewport package name + home.** `internal/capture_viewport` vs a more
   generic `internal/operation_viewport`; bearing on how cleanly it
   upstreams to dewey.
