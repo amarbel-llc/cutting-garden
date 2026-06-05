@@ -53,3 +53,21 @@ func TestModel_HoldsAndShowsErrorOnFailure(t *testing.T) {
 		t.Errorf("failed done should surface the error; view:\n%s", view)
 	}
 }
+
+func TestModel_BarOnlyWhenTotalKnown(t *testing.T) {
+	indeterminate := New(WithTitle("cap")).View()
+	determinate := updateAll(New(WithTitle("cap")),
+		OperationStarted{Name: "cap", Total: 10},
+		OperationProgress{Current: 5, Total: 10},
+	).View()
+
+	if determinate == indeterminate {
+		t.Fatalf("determinate view should differ from indeterminate:\n%s", determinate)
+	}
+	if !strings.Contains(determinate, "%") {
+		t.Errorf("determinate view should render a percentage bar:\n%s", determinate)
+	}
+	if strings.Contains(indeterminate, "%") {
+		t.Errorf("indeterminate view should not render a bar:\n%s", indeterminate)
+	}
+}
