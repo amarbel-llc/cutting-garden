@@ -188,3 +188,11 @@ debug-ytdlp-channel-list URL='https://www.youtube.com/@YouTube/videos' LIMIT='10
       --playlist-end {{LIMIT}} \
       --print '%(id)s\t%(title)s' \
       -- {{URL}}
+
+# Drive the WET capture viewport with synthetic plan/progress/log events on
+# a real TTY, so the prototype's UX (collapse-on-done, tail height, bar
+# binding) can be eyeballed. Prototype/UX-spike artifact — see
+# docs/plans/2026-06-05-capture-progress-prototype.md. (#28)
+[group('debug')]
+debug-viewport-demo:
+    nix develop --command go run ./cmd/capture-viewport-demo
