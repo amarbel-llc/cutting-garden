@@ -4,6 +4,8 @@ result-*
 .direnv/
 # justfile lint-go-analyzer builds dewey analyzers here
 .tmp/
+# stray binary from `go build ./cmd/capture-viewport-demo` (UX-spike demo)
+/capture-viewport-demo
 
 # Editor noise
 .vscode/
