@@ -10,9 +10,9 @@ import (
 
 type stubPlugin struct{ schemes []string }
 
-func (s stubPlugin) Schemes() []string                    { return s.schemes }
-func (stubPlugin) TypeTag() string                        { return "stub-tag-v1" }
-func (stubPlugin) ValidateSource(*url.URL, string) error  { return nil }
+func (s stubPlugin) Schemes() []string                   { return s.schemes }
+func (stubPlugin) TypeTag() string                       { return "stub-tag-v1" }
+func (stubPlugin) ValidateSource(*url.URL, string) error { return nil }
 func (stubPlugin) CaptureRoot(CaptureRootRequest) CaptureRootResult {
 	return CaptureRootResult{}
 }
