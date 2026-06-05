@@ -44,6 +44,10 @@ type CaptureRootRequest struct {
 	RawArg    string
 	BlobStore blob_stores.BlobStoreInitialized
 	Sink      capture_sink.Sink
+
+	// Reporter receives non-identity plan/progress/log events. Optional —
+	// nil is a valid no-op (use ReporterOrNop). See reporter.go.
+	Reporter Reporter
 }
 
 // CaptureRootResult is what a CapturePlugin produces from one root:
@@ -80,6 +84,9 @@ type RestoreRequest struct {
 	BlobStore blob_stores.BlobStoreInitialized
 	Dest      *url.URL
 	RawDest   string
+
+	// Reporter receives non-identity plan/progress/log events. Optional.
+	Reporter Reporter
 }
 
 // RestorePlugin materializes a receipt's entries to the destination.
@@ -108,6 +115,9 @@ type DiffScanRequest struct {
 	RawDir         string
 	BlobStore      blob_stores.BlobStoreInitialized
 	ReceiptEntries []capture_receipt.EntryV1
+
+	// Reporter receives non-identity plan/progress/log events. Optional.
+	Reporter Reporter
 }
 
 // DiffPlugin enumerates the current state at a location and returns

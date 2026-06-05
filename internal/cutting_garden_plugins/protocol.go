@@ -18,6 +18,9 @@ type ProtocolCaptureRequest struct {
 	RawArg    string
 	BlobStore blob_stores.BlobStoreInitialized
 
+	// Reporter receives non-identity plan/progress/log events. Optional.
+	Reporter Reporter
+
 	// PriorReceiptDigest, when non-empty, is the markl id of the most
 	// recent receipt the orchestrator found for this same source. A
 	// protocol capture plugin MAY use it to fetch only the objects that
