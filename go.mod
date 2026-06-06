@@ -11,6 +11,7 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/go-git/go-billy/v5 v5.9.0
 	github.com/go-git/go-git/v5 v5.19.1
+	github.com/mattn/go-isatty v0.0.20
 	github.com/muesli/termenv v0.16.0
 	golang.org/x/crypto v0.51.0
 )
@@ -70,7 +71,6 @@ require (
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/kr/fs v0.1.0 // indirect
 	github.com/lucasb-eyer/go-colorful v1.3.0 // indirect
-	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-localereader v0.0.1 // indirect
 	github.com/mattn/go-runewidth v0.0.19 // indirect
 	github.com/mitchellh/hashstructure/v2 v2.0.2 // indirect
