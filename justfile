@@ -156,6 +156,14 @@ debug-make-fixture:
 debug-capture-fixture STORE='.default' FORMAT='auto': debug-build-go debug-make-fixture
     .tmp/cutting-garden capture -format={{FORMAT}} {{STORE}} .tmp/cap-fixture
 
+# Capture the fixture with the progress viewport forced on (-progress=always)
+# so the TTY spinner + bar + tail can be eyeballed even off a bare TTY.
+# Viewport renders on stderr; receipt ids land on stdout. (#28; see
+# docs/plans/2026-06-05-capture-progress-protocol-design.md)
+[group('debug')]
+debug-capture-fixture-progress STORE='.default': debug-build-go debug-make-fixture
+    .tmp/cutting-garden capture -progress=always {{STORE}} .tmp/cap-fixture
+
 [group('debug')]
 debug-capture-fixture-nix STORE='.default' FORMAT='auto': build-nix debug-make-fixture
     ./result/bin/cutting-garden capture -format={{FORMAT}} {{STORE}} .tmp/cap-fixture
