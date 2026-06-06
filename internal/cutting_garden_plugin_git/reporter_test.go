@@ -7,13 +7,16 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/amarbel-llc/cutting-garden/internal/capture_events"
 	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
 )
 
 // recordingReporter captures every Plan/Progress/Log call the plugin
 // makes so a test can assert on the emitted observability without
-// inspecting any blob bytes.
+// inspecting any blob bytes. It embeds capture_events.Nop and overrides
+// only what it records.
 type recordingReporter struct {
+	capture_events.Nop
 	mu       sync.Mutex
 	plans    []cutting_garden_plugins.ReportPlan
 	progress []cutting_garden_plugins.ReportProgress

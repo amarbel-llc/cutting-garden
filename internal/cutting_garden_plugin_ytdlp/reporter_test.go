@@ -6,16 +6,17 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/amarbel-llc/cutting-garden/internal/capture_events"
 	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
 )
 
-// recordingReporter captures Reporter events for assertions. It records
-// every Plan, Progress, and Log call in order so tests can assert
-// per-artifact progress emission and monotonicity.
+// recordingReporter captures Reporter events for assertions. It embeds
+// capture_events.Nop and records every Plan and Progress call in order
+// so tests can assert per-artifact progress emission and monotonicity.
 type recordingReporter struct {
+	capture_events.Nop
 	plans    []cutting_garden_plugins.ReportPlan
 	progress []cutting_garden_plugins.ReportProgress
-	logs     []string
 }
 
 func (r *recordingReporter) Plan(p cutting_garden_plugins.ReportPlan) {
@@ -25,8 +26,6 @@ func (r *recordingReporter) Plan(p cutting_garden_plugins.ReportPlan) {
 func (r *recordingReporter) Progress(p cutting_garden_plugins.ReportProgress) {
 	r.progress = append(r.progress, p)
 }
-
-func (r *recordingReporter) Log(string, ...any) {}
 
 // writeArtifactFixture populates dir with a handful of fake artifact
 // files (deterministic bytes so blob-ids are stable) and returns the

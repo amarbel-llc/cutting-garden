@@ -1,13 +1,19 @@
 package cutting_garden_plugins
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/amarbel-llc/cutting-garden/internal/capture_events"
+)
 
 // recordingReporter is a pointer-identity-comparable Reporter for tests.
-type recordingReporter struct{ plans int }
+// It embeds capture_events.Nop and overrides only what it records.
+type recordingReporter struct {
+	capture_events.Nop
+	plans int
+}
 
-func (r *recordingReporter) Plan(ReportPlan)         { r.plans++ }
-func (r *recordingReporter) Progress(ReportProgress) {}
-func (r *recordingReporter) Log(string, ...any)      {}
+func (r *recordingReporter) Plan(ReportPlan) { r.plans++ }
 
 func TestNopReporter_MethodsAreSafeNoOps(t *testing.T) {
 	var r Reporter = NopReporter{}

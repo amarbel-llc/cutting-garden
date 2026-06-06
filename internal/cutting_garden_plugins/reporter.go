@@ -1,66 +1,20 @@
 package cutting_garden_plugins
 
-// Reporter carries non-identity observability (plan / progress / log) from
-// a capture, restore, or diff plugin to the orchestrator. It is the
-// in-process analogue of RFC 0006's JSON-RPC notifications (see
-// docs/plans/2026-06-05-capture-progress-protocol-design.md).
-//
-// These events are SEMANTICS, NOT IDENTITY: an implementation MUST NOT let
-// them influence blob bytes, receipt shape, or any returned result. A
-// Reporter is opt-in (the #50 SourceValidator capability ethos): a nil
-// Reporter is valid and means "no observability"; plugins MAY omit any or
-// all calls. Use ReporterOrNop at the call site to drop the nil check.
-//
-// A plugin MAY call these methods from multiple goroutines concurrently
-// (the ytdlp plugin scans yt-dlp's stdout and stderr in parallel and
-// emits from both), so an implementation MUST be safe for concurrent
-// use. NopReporter is trivially safe; ProgramReporter forwards to
-// tea.Program.Send, which is goroutine-safe.
-type Reporter interface {
-	// Plan reports an up-front estimate of the work about to be done.
-	// Called at most once, before any Progress. Optional — a plugin that
-	// cannot estimate (streaming sources) never calls it, and the consumer
-	// falls back to an indeterminate display.
-	Plan(ReportPlan)
+import "github.com/amarbel-llc/cutting-garden/internal/capture_events"
 
-	// Progress reports incremental advancement, called many times as work
-	// proceeds. ReportProgress.Items SHOULD be monotonic non-decreasing.
-	Progress(ReportProgress)
+// Reporter is the unified capture-events stream. The historical name is
+// kept as an alias so request structs and plugin call sites read
+// unchanged; new code should say capture_events.Stream. See
+// internal/capture_events for the contract and semantics.
+type Reporter = capture_events.Stream
 
-	// Log emits a freeform human-readable line for the consumer's tail.
-	// Signature mirrors fmt.Printf; pass "%s" when holding a pre-formatted
-	// string.
-	Log(format string, args ...any)
-}
+type (
+	ReportPlan     = capture_events.ReportPlan
+	ReportProgress = capture_events.ReportProgress
+)
 
-// ReportPlan is the up-front work estimate. A zero field means "unknown":
-// Items == 0 yields an indeterminate display rather than a bar.
-type ReportPlan struct {
-	Items int64  // estimated total operations (e.g. filesystem entries)
-	Bytes int64  // estimated total bytes
-	Label string // human-readable scope, e.g. "walking ./src"
-}
+// NopReporter is the no-op Stream.
+type NopReporter = capture_events.Nop
 
-// ReportProgress is one incremental advancement sample.
-type ReportProgress struct {
-	Item       string // current item label, e.g. "src/main.go"
-	Items      int64  // operations completed so far (the bar numerator)
-	Bytes      int64  // bytes processed so far
-	BytesTotal int64  // total bytes for the current item; 0 = unknown
-}
-
-// NopReporter is a Reporter whose methods do nothing — the default when no
-// consumer is attached, so plugin code can report unconditionally.
-type NopReporter struct{}
-
-func (NopReporter) Plan(ReportPlan)         {}
-func (NopReporter) Progress(ReportProgress) {}
-func (NopReporter) Log(string, ...any)      {}
-
-// ReporterOrNop returns r, or a NopReporter when r is nil.
-func ReporterOrNop(r Reporter) Reporter {
-	if r == nil {
-		return NopReporter{}
-	}
-	return r
-}
+// ReporterOrNop returns r, or a no-op Stream when r is nil.
+func ReporterOrNop(r Reporter) Reporter { return capture_events.OrNop(r) }

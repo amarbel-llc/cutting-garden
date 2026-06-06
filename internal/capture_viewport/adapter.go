@@ -5,6 +5,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/amarbel-llc/cutting-garden/internal/capture_events"
+	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
 	cgp "github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
 )
 
@@ -50,3 +52,11 @@ func (r ProgramReporter) Progress(pr cgp.ReportProgress) {
 func (r ProgramReporter) Log(format string, args ...any) {
 	r.p.Send(LogLine{Text: fmt.Sprintf(format, args...)})
 }
+
+// TEMPORARY no-op stubs for the rest of the capture_events.Stream
+// contract. Task 3 wires these.
+func (r ProgramReporter) PhaseStart(string)               {}
+func (r ProgramReporter) PhaseEnd(capture_events.Verdict) {}
+func (r ProgramReporter) Entry(capture_receipt.EntryV1)   {}
+func (r ProgramReporter) Failure(string, error)           {}
+func (r ProgramReporter) Finalize(error)                  {}
