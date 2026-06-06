@@ -9,19 +9,36 @@ import (
 	"testing"
 
 	"github.com/amarbel-llc/cutting-garden/internal/capture_events"
+	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
 	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
 )
 
-// recordingReporter captures Reporter events for assertions. It embeds
-// capture_events.Nop and records every Plan, Progress, PhaseStart, and
-// PhaseEnd call in order so tests can assert per-artifact progress
-// emission, monotonicity, and phase verdicts.
+// recordingReporter captures Stream events for assertions. It embeds
+// capture_events.Nop and records every Plan, Progress, PhaseStart,
+// PhaseEnd, Entry, and Failure call in order so tests can assert
+// per-artifact progress emission, monotonicity, phase verdicts, and
+// (post-Stage-B) the per-entry result events.
 type recordingReporter struct {
 	capture_events.Nop
 	plans       []cutting_garden_plugins.ReportPlan
 	progress    []cutting_garden_plugins.ReportProgress
 	phaseStarts []string
 	phaseEnds   []capture_events.Verdict
+	entries     []capture_receipt.EntryV1
+	failures    []streamFailure
+}
+
+type streamFailure struct {
+	source string
+	err    error
+}
+
+func (r *recordingReporter) Entry(e capture_receipt.EntryV1) {
+	r.entries = append(r.entries, e)
+}
+
+func (r *recordingReporter) Failure(source string, err error) {
+	r.failures = append(r.failures, streamFailure{source: source, err: err})
 }
 
 func (r *recordingReporter) Plan(p cutting_garden_plugins.ReportPlan) {
@@ -70,7 +87,7 @@ func TestWalkArtifacts_EmitsProgressPerArtifact(t *testing.T) {
 	rep := &recordingReporter{}
 	const source = "https://youtu.be/video"
 	entries, failCount := walkArtifacts(
-		context.Background(), newDiscardStore(), dir, source, &recordingSink{}, rep,
+		context.Background(), newDiscardStore(), dir, source, rep,
 	)
 	if failCount != 0 {
 		t.Fatalf("failCount = %d, want 0", failCount)
@@ -136,10 +153,10 @@ func TestWalkArtifacts_ByteIdentityAcrossReporters(t *testing.T) {
 	// Both must produce byte-identical entry sets — the Reporter is
 	// observability only and MUST NOT influence blob-ids, paths, or sizes.
 	withReporter, failA := walkArtifacts(
-		context.Background(), newDiscardStore(), dir, source, &recordingSink{}, &recordingReporter{},
+		context.Background(), newDiscardStore(), dir, source, &recordingReporter{},
 	)
 	withNil, failB := walkArtifacts(
-		context.Background(), newDiscardStore(), dir, source, &recordingSink{}, nil,
+		context.Background(), newDiscardStore(), dir, source, nil,
 	)
 	if failA != 0 || failB != 0 {
 		t.Fatalf("failCounts = %d, %d, want 0, 0", failA, failB)
@@ -165,7 +182,6 @@ func TestCaptureRoot_EmitsDownloadAndWritePhases(t *testing.T) {
 		Source:    mustParseURL(t, "ytdlp:https://youtu.be/dQw4w9WgXcQ"),
 		RawArg:    "ytdlp:https://youtu.be/dQw4w9WgXcQ",
 		BlobStore: newDiscardStore(),
-		Sink:      &recordingSink{},
 		Reporter:  rep,
 	})
 	if result.FailCount != 0 {
@@ -205,7 +221,6 @@ func TestCaptureRoot_DownloadFailureVerdict(t *testing.T) {
 		Source:    mustParseURL(t, "ytdlp:https://youtu.be/abc"),
 		RawArg:    "ytdlp:https://youtu.be/abc",
 		BlobStore: newDiscardStore(),
-		Sink:      &recordingSink{},
 		Reporter:  rep,
 	})
 	if result.FailCount != 1 {
@@ -234,7 +249,7 @@ func TestWalkArtifacts_EmitsWritePhase(t *testing.T) {
 
 	rep := &recordingReporter{}
 	_, failCount := walkArtifacts(
-		context.Background(), newDiscardStore(), dir, "https://youtu.be/video", &recordingSink{}, rep,
+		context.Background(), newDiscardStore(), dir, "https://youtu.be/video", rep,
 	)
 	if failCount != 0 {
 		t.Fatalf("failCount = %d, want 0", failCount)
@@ -266,12 +281,11 @@ func TestWalkArtifacts_WritePhaseFailureVerdict(t *testing.T) {
 	}
 
 	rep := &recordingReporter{}
-	sink := &recordingSink{}
 	entries, failCount := walkArtifacts(
-		context.Background(), newDiscardStore(), dir, "https://youtu.be/video", sink, rep,
+		context.Background(), newDiscardStore(), dir, "https://youtu.be/video", rep,
 	)
 	if failCount != 1 {
-		t.Fatalf("failCount = %d, want 1; failures: %v", failCount, sink.failures)
+		t.Fatalf("failCount = %d, want 1; failures: %v", failCount, rep.failures)
 	}
 	if len(entries) != len(wantOrder)-1 {
 		t.Fatalf("entries = %d, want %d", len(entries), len(wantOrder)-1)

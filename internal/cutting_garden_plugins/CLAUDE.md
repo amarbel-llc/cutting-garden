@@ -14,9 +14,13 @@ blank-import each plugin so registration fires at binary startup.
 
 ## Layering
 
-Imports `internal/capture_receipt`, `internal/capture_sink`, and
-`madder/go/pkgs/blob_stores`. Future `capture` cmd will import this
-package; nothing here imports back.
+Imports `internal/capture_receipt`, `internal/capture_events` (via
+the `Reporter` alias in `reporter.go`), and
+`madder/go/pkgs/blob_stores`. The `capture` cmd imports this
+package; nothing here imports back. Per-entry results flow over the
+unified `capture_events.Stream` (Stage B); the legacy
+`capture_sink.Sink` is consumed only by the orchestrator and
+`capture_render_legacy`'s bridge.
 
 ## More information
 

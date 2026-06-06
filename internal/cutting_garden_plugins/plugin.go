@@ -16,7 +16,6 @@ import (
 	"net/url"
 
 	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
-	"github.com/amarbel-llc/cutting-garden/internal/capture_sink"
 	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
 )
 
@@ -34,32 +33,33 @@ type Plugin interface {
 }
 
 // CaptureRootRequest is what a CapturePlugin needs to walk one
-// capture root: the source URL (already parsed; may be schemeless),
-// the destination blob store, and a live event sink. Context is the
-// command's cancelable context; plugins MUST observe it on long-running
-// I/O (large file copies, etc.) so SIGINT/SIGTERM unwinds promptly.
+// capture root: the source URL (already parsed; may be schemeless)
+// and the destination blob store. Context is the command's cancelable
+// context; plugins MUST observe it on long-running I/O (large file
+// copies, etc.) so SIGINT/SIGTERM unwinds promptly.
 type CaptureRootRequest struct {
 	Context   context.Context
 	Source    *url.URL
 	RawArg    string
 	BlobStore blob_stores.BlobStoreInitialized
-	Sink      capture_sink.Sink
 
-	// Reporter receives non-identity plan/progress/log events. Optional —
-	// nil is a valid no-op (use ReporterOrNop). See reporter.go.
+	// Reporter is the unified event stream: per-entry Entry/Failure
+	// events plus non-identity plan/progress/log/phase events.
+	// Optional — nil is a valid no-op (use ReporterOrNop). See
+	// reporter.go.
 	Reporter Reporter
 }
 
 // CaptureRootResult is what a CapturePlugin produces from one root:
 // the entries to be folded into the receipt and a count of per-entry
-// failures the sink already reported.
+// failures the stream already reported.
 type CaptureRootResult struct {
 	Entries   []capture_receipt.EntryV1
 	FailCount int
 }
 
 // CapturePlugin walks one capture root into the destination store,
-// emitting entries and live sink events. Plugins MAY support only
+// emitting entries and live stream events. Plugins MAY support only
 // capture or only restore.
 type CapturePlugin interface {
 	Plugin

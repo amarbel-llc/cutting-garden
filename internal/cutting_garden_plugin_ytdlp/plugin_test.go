@@ -77,29 +77,6 @@ func installFakeYtdlp(t *testing.T, script string) {
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+prev)
 }
 
-// recordingSink captures sink events for assertions without touching
-// stdout/stderr. Matches the Sink contract well enough for the
-// CaptureRoot tests; nothing here exercises Notice/SetStore/
-// StoreGroupReceipt/Finalize.
-type recordingSink struct {
-	entries  []capture_receipt.EntryV1
-	failures []sinkFailure
-}
-
-type sinkFailure struct {
-	source string
-	err    error
-}
-
-func (s *recordingSink) SetStore(string)                 {}
-func (s *recordingSink) Entry(e capture_receipt.EntryV1) { s.entries = append(s.entries, e) }
-func (s *recordingSink) StoreGroupReceipt(string, int)   {}
-func (s *recordingSink) Notice(string, ...any)           {}
-func (s *recordingSink) Failure(source string, err error) {
-	s.failures = append(s.failures, sinkFailure{source: source, err: err})
-}
-func (s *recordingSink) Finalize() {}
-
 func newDiscardStore() blob_stores.BlobStoreInitialized {
 	return blob_stores.NewDiscardBlobStore(markl.FormatHashSha256)
 }
@@ -108,17 +85,17 @@ func TestPlugin_CaptureRoot_WritesAllArtifacts(t *testing.T) {
 	withFakeYtdlp(t)
 
 	source := mustParseURL(t, "ytdlp:https://youtu.be/dQw4w9WgXcQ")
-	sink := &recordingSink{}
+	rep := &recordingReporter{}
 	result := Plugin{}.CaptureRoot(cutting_garden_plugins.CaptureRootRequest{
 		Context:   context.Background(),
 		Source:    source,
 		RawArg:    "ytdlp:https://youtu.be/dQw4w9WgXcQ",
 		BlobStore: newDiscardStore(),
-		Sink:      sink,
+		Reporter:  rep,
 	})
 
 	if result.FailCount != 0 {
-		t.Fatalf("FailCount = %d, want 0; failures: %v", result.FailCount, sink.failures)
+		t.Fatalf("FailCount = %d, want 0; failures: %v", result.FailCount, rep.failures)
 	}
 	if len(result.Entries) != 4 {
 		t.Fatalf("expected 4 entries (mp4/info/jpg/vtt); got %d: %v",
@@ -147,8 +124,8 @@ func TestPlugin_CaptureRoot_WritesAllArtifacts(t *testing.T) {
 			t.Errorf("no entry with extension %q", ext)
 		}
 	}
-	if len(sink.entries) != len(result.Entries) {
-		t.Errorf("sink saw %d entries, result has %d", len(sink.entries), len(result.Entries))
+	if len(rep.entries) != len(result.Entries) {
+		t.Errorf("stream saw %d entries, result has %d", len(rep.entries), len(result.Entries))
 	}
 }
 
@@ -156,23 +133,23 @@ func TestPlugin_CaptureRoot_RejectsOffAllowlistHTTPS(t *testing.T) {
 	withFakeYtdlp(t)
 
 	source := mustParseURL(t, "https://vimeo.com/123")
-	sink := &recordingSink{}
+	rep := &recordingReporter{}
 	result := Plugin{}.CaptureRoot(cutting_garden_plugins.CaptureRootRequest{
 		Context:   context.Background(),
 		Source:    source,
 		RawArg:    "https://vimeo.com/123",
 		BlobStore: newDiscardStore(),
-		Sink:      sink,
+		Reporter:  rep,
 	})
 
 	if result.FailCount != 1 {
 		t.Fatalf("FailCount = %d, want 1", result.FailCount)
 	}
-	if len(sink.failures) != 1 {
-		t.Fatalf("sink failures = %d, want 1", len(sink.failures))
+	if len(rep.failures) != 1 {
+		t.Fatalf("stream failures = %d, want 1", len(rep.failures))
 	}
-	if !strings.Contains(sink.failures[0].err.Error(), "bare-https allowlist") {
-		t.Errorf("error %q missing 'bare-https allowlist'", sink.failures[0].err.Error())
+	if !strings.Contains(rep.failures[0].err.Error(), "bare-https allowlist") {
+		t.Errorf("error %q missing 'bare-https allowlist'", rep.failures[0].err.Error())
 	}
 }
 
@@ -181,12 +158,13 @@ func TestPlugin_ScanForDiff_InfoJSONMatchEmitsReceiptEntries(t *testing.T) {
 
 	// First capture to get the canonical info.json BlobId.
 	source := mustParseURL(t, "ytdlp:https://youtu.be/dQw4w9WgXcQ")
+	// Reporter deliberately omitted: a nil stream must be tolerated
+	// (ReporterOrNop inside CaptureRoot).
 	captureResult := Plugin{}.CaptureRoot(cutting_garden_plugins.CaptureRootRequest{
 		Context:   context.Background(),
 		Source:    source,
 		RawArg:    "ytdlp:https://youtu.be/dQw4w9WgXcQ",
 		BlobStore: newDiscardStore(),
-		Sink:      &recordingSink{},
 	})
 	if captureResult.FailCount != 0 {
 		t.Fatalf("capture FailCount = %d", captureResult.FailCount)
@@ -369,22 +347,22 @@ func TestPlugin_CaptureRoot_NonZeroExit_SurfacesStderrTail(t *testing.T) {
 	installFakeYtdlp(t, failingYtdlpScript)
 
 	source := mustParseURL(t, "ytdlp:https://youtu.be/abc")
-	sink := &recordingSink{}
+	rep := &recordingReporter{}
 	result := Plugin{}.CaptureRoot(cutting_garden_plugins.CaptureRootRequest{
 		Context:   context.Background(),
 		Source:    source,
 		RawArg:    "ytdlp:https://youtu.be/abc",
 		BlobStore: newDiscardStore(),
-		Sink:      sink,
+		Reporter:  rep,
 	})
 
 	if result.FailCount != 1 {
 		t.Fatalf("FailCount = %d, want 1", result.FailCount)
 	}
-	if len(sink.failures) != 1 {
-		t.Fatalf("sink failures = %d, want 1", len(sink.failures))
+	if len(rep.failures) != 1 {
+		t.Fatalf("stream failures = %d, want 1", len(rep.failures))
 	}
-	got := sink.failures[0].err.Error()
+	got := rep.failures[0].err.Error()
 	if !strings.Contains(got, "stderr-tail:") {
 		t.Errorf("error %q missing 'stderr-tail:' marker", got)
 	}

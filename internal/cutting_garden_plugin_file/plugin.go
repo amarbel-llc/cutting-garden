@@ -14,8 +14,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/amarbel-llc/cutting-garden/internal/capture_events"
 	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
-	"github.com/amarbel-llc/cutting-garden/internal/capture_sink"
 	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
 	"github.com/amarbel-llc/cutting-garden/internal/plugin_blob_io"
 	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
@@ -53,24 +53,26 @@ func (Plugin) ValidateSource(u *url.URL, raw string) error {
 
 // CaptureRoot walks the source filesystem path with filepath.WalkDir,
 // writes every regular file as a blob into req.BlobStore, appends a
-// capture_receipt.EntryV1 per visited entry, and emits live sink
-// events.
+// capture_receipt.EntryV1 per visited entry, and emits Entry/Failure
+// events on the unified Stream.
 func (Plugin) CaptureRoot(
 	req cutting_garden_plugins.CaptureRootRequest,
 ) cutting_garden_plugins.CaptureRootResult {
+	stream := cutting_garden_plugins.ReporterOrNop(req.Reporter)
+
 	path, err := pathFromURL(req.Source)
 	if err != nil {
-		req.Sink.Failure(req.RawArg, err)
+		stream.Failure(req.RawArg, err)
 		return cutting_garden_plugins.CaptureRootResult{FailCount: 1}
 	}
 
 	// Root field in EntryV1 is the resolved filesystem path so that
 	// schemeless `./foo` and `file:./foo` produce byte-identical
 	// receipts. The original CLI arg lives in req.RawArg (used for
-	// sink labels via the caller) but is not embedded in the wire
+	// event labels via the caller) but is not embedded in the wire
 	// format.
 	var entries []capture_receipt.EntryV1
-	fails := walkRoot(req.Context, req.BlobStore, path, &entries, req.Sink)
+	fails := walkRoot(req.Context, req.BlobStore, path, &entries, stream)
 	return cutting_garden_plugins.CaptureRootResult{
 		Entries:   entries,
 		FailCount: fails,
@@ -141,14 +143,14 @@ func walkRoot(
 	store blob_stores.BlobStoreInitialized,
 	walkPath string,
 	accum *[]capture_receipt.EntryV1,
-	sink capture_sink.Sink,
+	stream capture_events.Stream,
 ) int {
 	var failCount int
 	rootArg := walkPath
 
 	walkErr := filepath.WalkDir(walkPath, func(p string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
-			sink.Failure(p, walkErr)
+			stream.Failure(p, walkErr)
 			failCount++
 			if d != nil && d.IsDir() {
 				return filepath.SkipDir
@@ -158,7 +160,7 @@ func walkRoot(
 
 		info, err := d.Info()
 		if err != nil {
-			sink.Failure(p, errors.Wrap(err))
+			stream.Failure(p, errors.Wrap(err))
 			failCount++
 			if d.IsDir() {
 				return filepath.SkipDir
@@ -168,7 +170,7 @@ func walkRoot(
 
 		rel, err := filepath.Rel(walkPath, p)
 		if err != nil {
-			sink.Failure(p, errors.Wrap(err))
+			stream.Failure(p, errors.Wrap(err))
 			failCount++
 			return nil
 		}
@@ -185,7 +187,7 @@ func walkRoot(
 		case mode&fs.ModeSymlink != 0:
 			target, err := os.Readlink(p)
 			if err != nil {
-				sink.Failure(p, errors.Wrap(err))
+				stream.Failure(p, errors.Wrap(err))
 				failCount++
 				return nil
 			}
@@ -198,7 +200,7 @@ func walkRoot(
 		case mode.IsRegular():
 			id, size, err := plugin_blob_io.WriteFileBlob(ctx, store, p)
 			if err != nil {
-				sink.Failure(p, errors.Wrap(err))
+				stream.Failure(p, errors.Wrap(err))
 				failCount++
 				return nil
 			}
@@ -211,12 +213,12 @@ func walkRoot(
 		}
 
 		*accum = append(*accum, entry)
-		sink.Entry(entry)
+		stream.Entry(entry)
 		return nil
 	})
 
 	if walkErr != nil {
-		sink.Failure(rootArg, errors.Wrap(walkErr))
+		stream.Failure(rootArg, errors.Wrap(walkErr))
 		failCount++
 	}
 

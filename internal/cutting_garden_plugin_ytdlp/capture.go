@@ -9,7 +9,6 @@ import (
 
 	"github.com/amarbel-llc/cutting-garden/internal/capture_events"
 	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
-	"github.com/amarbel-llc/cutting-garden/internal/capture_sink"
 	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
 	"github.com/amarbel-llc/cutting-garden/internal/plugin_blob_io"
 	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
@@ -48,8 +47,8 @@ func captureDefaultArgs(outDir, source string) []string {
 
 // CaptureRoot resolves the source URL, runs yt-dlp into a tempdir,
 // streams every produced artifact into req.BlobStore as a separate
-// file entry, and emits sink events per artifact. Non-zero yt-dlp
-// exit collapses into a single sink.Failure on rawArg.
+// file entry, and emits Stream events per artifact. Non-zero yt-dlp
+// exit collapses into a single stream Failure on rawArg.
 func (Plugin) CaptureRoot(
 	req cutting_garden_plugins.CaptureRootRequest,
 ) cutting_garden_plugins.CaptureRootResult {
@@ -57,22 +56,27 @@ func (Plugin) CaptureRoot(
 
 	source, err := sourceURLFromArg(req.Source)
 	if err != nil {
-		req.Sink.Failure(req.RawArg, err)
+		r.Failure(req.RawArg, err)
 		return cutting_garden_plugins.CaptureRootResult{FailCount: 1}
 	}
 
 	tempDir, err := os.MkdirTemp("", "cg-ytdlp-capture-*")
 	if err != nil {
-		req.Sink.Failure(req.RawArg, errors.Wrap(err))
+		r.Failure(req.RawArg, errors.Wrap(err))
 		return cutting_garden_plugins.CaptureRootResult{FailCount: 1}
 	}
 	defer func() {
 		// Tempdir cleanup is best-effort: the capture has already
 		// streamed every artifact into the blob store, so a leftover
 		// directory only costs the user disk space. Surface it as a
-		// notice so it's visible without inflating FailCount.
+		// Log line so it's visible without inflating FailCount.
+		// Formerly sink.Notice; on the Stage B legacy bridge Log is a
+		// no-op, so this message no longer reaches legacy piped output —
+		// accepted, because it only fires when post-capture cleanup
+		// fails (rare, failure-only) and forwarding Log→Notice would
+		// break byte-identity on every run (see capture_render_legacy).
 		if rmErr := os.RemoveAll(tempDir); rmErr != nil {
-			req.Sink.Notice("ytdlp plugin: tempdir cleanup failed: %v", rmErr)
+			r.Log("ytdlp plugin: tempdir cleanup failed: %v", rmErr)
 		}
 	}()
 
@@ -95,12 +99,12 @@ func (Plugin) CaptureRoot(
 			OK:         false,
 			Diagnostic: map[string]any{"error": err.Error()},
 		})
-		req.Sink.Failure(req.RawArg, err)
+		r.Failure(req.RawArg, err)
 		return cutting_garden_plugins.CaptureRootResult{FailCount: 1}
 	}
 	r.PhaseEnd(capture_events.Verdict{OK: true})
 
-	entries, failCount := walkArtifacts(req.Context, req.BlobStore, tempDir, source, req.Sink, r)
+	entries, failCount := walkArtifacts(req.Context, req.BlobStore, tempDir, source, r)
 	return cutting_garden_plugins.CaptureRootResult{
 		Entries:   entries,
 		FailCount: failCount,
@@ -117,10 +121,11 @@ type artifactFile struct {
 	mode fs.FileMode
 }
 
-// walkArtifacts streams every regular file under outDir into store
-// and returns one EntryV1 per file. Subdirectories below outDir would
-// be unexpected from yt-dlp's default template; if they appear they
-// are walked recursively so nothing is silently dropped.
+// walkArtifacts streams every regular file under outDir into store,
+// returns one EntryV1 per file, and emits Entry/Failure on the
+// reporter Stream. Subdirectories below outDir would be unexpected
+// from yt-dlp's default template; if they appear they are walked
+// recursively so nothing is silently dropped.
 //
 // Two passes: pass 1 collects the files and pre-sums their sizes (the
 // files are local, so the total is free), pass 2 streams each into the
@@ -134,7 +139,6 @@ func walkArtifacts(
 	store blob_stores.BlobStoreInitialized,
 	outDir string,
 	source string,
-	sink capture_sink.Sink,
 	reporter cutting_garden_plugins.Reporter,
 ) ([]capture_receipt.EntryV1, int) {
 	// Nil-safe even when called directly (e.g. in tests): a nil reporter
@@ -152,7 +156,7 @@ func walkArtifacts(
 	var phaseTotal int64
 	walkErr := filepath.WalkDir(outDir, func(p string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
-			sink.Failure(p, errors.Wrap(walkErr))
+			reporter.Failure(p, errors.Wrap(walkErr))
 			failCount++
 			return nil
 		}
@@ -162,7 +166,7 @@ func walkArtifacts(
 
 		info, err := d.Info()
 		if err != nil {
-			sink.Failure(p, errors.Wrap(err))
+			reporter.Failure(p, errors.Wrap(err))
 			failCount++
 			return nil
 		}
@@ -174,7 +178,7 @@ func walkArtifacts(
 
 		rel, err := filepath.Rel(outDir, p)
 		if err != nil {
-			sink.Failure(p, errors.Wrap(err))
+			reporter.Failure(p, errors.Wrap(err))
 			failCount++
 			return nil
 		}
@@ -191,7 +195,7 @@ func walkArtifacts(
 	})
 
 	if walkErr != nil {
-		sink.Failure(outDir, errors.Wrap(walkErr))
+		reporter.Failure(outDir, errors.Wrap(walkErr))
 		failCount++
 	}
 
@@ -199,7 +203,7 @@ func walkArtifacts(
 		len(files), float64(phaseTotal)/(1<<20)))
 	// The write-phase verdict counts only failures from the loop below;
 	// pass-1 walk/stat failures predate the phase (they're already in
-	// failCount and the sink stream).
+	// failCount and the event stream).
 	failCountAtPhaseStart := failCount
 
 	// Pass 2: stream each file into the store. The byte-progress
@@ -208,8 +212,8 @@ func walkArtifacts(
 	// against phaseTotal — no Plan is emitted (the Plan contract is
 	// "<=1x, before any Progress" and the download phase may already
 	// have ticked); BytesTotal rides per-tick and the viewport Model
-	// re-arms from it. The Reporter is observability only — it never
-	// influences entries, blob bytes, or the sink stream.
+	// re-arms from it. Stream events are observability only — they never
+	// influence entries, blob bytes, or receipts.
 	for i, f := range files {
 		onBytes := func(fileBytes int64) {
 			reporter.Progress(cutting_garden_plugins.ReportProgress{
@@ -222,12 +226,12 @@ func walkArtifacts(
 
 		id, size, err := plugin_blob_io.WriteFileBlobProgress(ctx, store, f.path, onBytes)
 		if err != nil {
-			sink.Failure(f.path, errors.Wrap(err))
+			reporter.Failure(f.path, errors.Wrap(err))
 			failCount++
 			// A failed file still advances phaseDone by its full size:
 			// its bytes are in phaseTotal, so skipping them would leave
 			// the bar permanently short of 100%. The failure itself is
-			// surfaced via sink.Failure/failCount, not the bar.
+			// surfaced via Failure/failCount, not the bar.
 			phaseDone += f.size
 			continue
 		}
@@ -241,7 +245,7 @@ func walkArtifacts(
 			BlobId: id.String(),
 		}
 		entries = append(entries, entry)
-		sink.Entry(entry)
+		reporter.Entry(entry)
 		phaseDone += f.size
 	}
 

@@ -57,10 +57,10 @@ type ReportProgress struct {
 
 // Stream is the unified event contract. Phase events delimit TAP test
 // points: events between PhaseStart and PhaseEnd attribute to that
-// phase. Phases are flat (no nesting) in v1. Entry/Failure are
-// contract-complete now but unwired in Stage A — plugins still report
-// entries via the legacy capture_sink.Sink until Stage B migrates the
-// renderers; emitting them here is harmless (Nop) either way.
+// phase. Phases are flat (no nesting) in v1. Entry/Failure are the
+// per-entry result events: plugins emit them here (Stage B); the
+// pipe-path consumer is capture_render_legacy's bridge onto the
+// legacy sinks until the unified renderers land.
 type Stream interface {
 	// PhaseStart begins a phase. Consumers reset per-phase live state
 	// (bar, byte counters, tail) and label the in-progress display.
@@ -71,11 +71,11 @@ type Stream interface {
 	PhaseEnd(v Verdict)
 
 	// Entry reports one successfully captured entry (a subtest of the
-	// current phase in TAP terms). UNWIRED in Stage A — see above.
+	// current phase in TAP terms).
 	Entry(e capture_receipt.EntryV1)
 
 	// Failure reports a per-source failure (a failing subtest of the
-	// current phase). UNWIRED in Stage A — see above.
+	// current phase).
 	Failure(source string, err error)
 
 	// Log emits a freeform human line (TAP comment / viewport tail).

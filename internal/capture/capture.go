@@ -28,6 +28,7 @@ import (
 
 	"github.com/amarbel-llc/cutting-garden/internal/capture_events"
 	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
+	"github.com/amarbel-llc/cutting-garden/internal/capture_render_legacy"
 	"github.com/amarbel-llc/cutting-garden/internal/capture_sink"
 	"github.com/amarbel-llc/cutting-garden/internal/capture_viewport"
 	"github.com/amarbel-llc/cutting-garden/internal/command"
@@ -110,9 +111,9 @@ func validateProgress(value string) error {
 }
 
 // setupReporting builds the observability surface for a Run. It returns the
-// plugin-facing Reporter (nil when inactive — the caller wraps with
-// ReporterOrNop), the structured sink, and a finish(err) to call after the
-// capture loop.
+// viewport Reporter (nil when inactive — the caller then routes the plugin
+// Stream through the legacy sink bridge instead), the structured sink, and a
+// finish(err) to call after the capture loop.
 //
 // INACTIVE (progress off): reproduces a viewport-less capture exactly — the
 // sink is the resolved TAP/NDJSON writer on os.Stdout/os.Stderr and finish is
@@ -224,8 +225,22 @@ func (cmd *Capture) Run(req command.Request) {
 	// the viewport inactive the env construction is byte-identical to the
 	// pre-viewport path (default stderr sink).
 	rep, sink, finish := cmd.setupReporting(captureLabel(args))
-	reporter := cutting_garden_plugins.ReporterOrNop(rep)
 	viewportActive := rep != nil
+
+	// Plugins emit entries/failures on the unified Stream. On the pipe
+	// path the Stream is the legacy bridge: Entry/Failure forward 1:1 to
+	// the sink (byte-identical wire) and every other event is a no-op.
+	// On the TTY path it is the viewport reporter, whose Entry/Failure
+	// are no-ops — per-entry lines intentionally do not render in the
+	// TTY tail (pre-Stage-B they were swallowed by the discard sink).
+	// The orchestrator's own SetStore/Notice/StoreGroupReceipt/Finalize
+	// calls stay DIRECT on the sink, in their pre-Stage-B order.
+	var reporter cutting_garden_plugins.Reporter
+	if viewportActive {
+		reporter = rep
+	} else {
+		reporter = capture_render_legacy.NewSinkBridge(sink)
+	}
 	defer sink.Finalize()
 
 	// Teardown guarantee: everything below — env construction included —
@@ -336,7 +351,6 @@ func (cmd *Capture) Run(req command.Request) {
 				Source:    root.sourceURL,
 				RawArg:    root.path,
 				BlobStore: blobStore,
-				Sink:      sink,
 				Reporter:  reporter,
 			})
 			entries = append(entries, result.Entries...)
