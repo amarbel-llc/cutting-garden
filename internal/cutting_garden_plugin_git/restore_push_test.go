@@ -23,7 +23,7 @@ func TestRestoreProtocol_PushesToRemote(t *testing.T) {
 
 	store := newMemStore(t)
 	res, err := captureProtocol(
-		context.Background(), capture_plugin.NewBlobStoreWriter(store), dir, branch)
+		context.Background(), capture_plugin.NewBlobStoreWriter(store), dir, branch, cutting_garden_plugins.NopReporter{})
 	if err != nil {
 		t.Fatalf("captureProtocol: %v", err)
 	}

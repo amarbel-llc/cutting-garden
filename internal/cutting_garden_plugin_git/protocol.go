@@ -45,6 +45,15 @@ func objectTypeString(gitType string) string {
 func (Plugin) CaptureProtocol(
 	req cutting_garden_plugins.ProtocolCaptureRequest,
 ) (cutting_garden_plugins.ProtocolCaptureResult, error) {
+	// Non-identity observability: Plan/Progress/Log are SEMANTICS, not
+	// identity — they MUST NOT influence any blob bytes or the captured
+	// object graph (pinned by
+	// TestCaptureProtocol_Reporter_DoesNotAffectIdentity, which compares
+	// the payload digest with vs without a Reporter). ReporterOrNop makes
+	// a nil Reporter a no-op so the emission sites below stay
+	// unconditional.
+	r := cutting_garden_plugins.ReporterOrNop(req.Reporter)
+
 	remote, branch, err := remoteAndBranchFromArg(req.Source)
 	if err != nil {
 		return cutting_garden_plugins.ProtocolCaptureResult{}, err
@@ -59,7 +68,7 @@ func (Plugin) CaptureProtocol(
 	// unsupported transport).
 	if req.PriorReceiptDigest != "" {
 		res, ok, ierr := tryIncrementalCapture(
-			req.Context, req.BlobStore, w, remote, branch, req.PriorReceiptDigest)
+			req.Context, req.BlobStore, w, remote, branch, req.PriorReceiptDigest, r)
 		if ierr != nil {
 			return cutting_garden_plugins.ProtocolCaptureResult{}, ierr
 		}
@@ -68,7 +77,7 @@ func (Plugin) CaptureProtocol(
 		}
 	}
 
-	return captureProtocol(req.Context, w, remote, branch)
+	return captureProtocol(req.Context, w, remote, branch, r)
 }
 
 // captureProtocol is the full (clone-everything) Writer-parameterized
@@ -80,18 +89,27 @@ func captureProtocol(
 	ctx context.Context,
 	w capture_plugin.Writer,
 	remote, branch string,
+	r cutting_garden_plugins.Reporter,
 ) (cutting_garden_plugins.ProtocolCaptureResult, error) {
+	r.Log("cloning %s (branch %s)", remote, branchLabel(branch))
+
 	repo, tip, resolvedBranch, err := cloneBranchToMemory(ctx, remote, branch)
 	if err != nil {
 		return cutting_garden_plugins.ProtocolCaptureResult{}, err
 	}
+	r.Log("resolved %s at %s", resolvedBranch, shortHash(tip))
 
-	objectRefs, err := storeAllObjects(ctx, w, repo.Storer)
+	objectRefs, err := storeAllObjects(ctx, w, repo.Storer, r)
 	if err != nil {
 		return cutting_garden_plugins.ProtocolCaptureResult{}, err
 	}
 
-	return writeGitReceipt(ctx, w, remote, resolvedBranch, tip, objectRefs)
+	res, err := writeGitReceipt(ctx, w, remote, resolvedBranch, tip, objectRefs)
+	if err != nil {
+		return cutting_garden_plugins.ProtocolCaptureResult{}, err
+	}
+	r.Log("receipt %s", shortHash(res.ReceiptDigest))
+	return res, nil
 }
 
 // cloneBranchToMemory bare-clones a single branch of remote into an
@@ -139,25 +157,63 @@ func storeAllObjects(
 	ctx context.Context,
 	w capture_plugin.Writer,
 	store storer.EncodedObjectStorer,
+	r cutting_garden_plugins.Reporter,
 ) ([]capture_plugin.Ref, error) {
+	// Pre-count so the Reporter can render a determinate bar. After a
+	// single-branch in-memory clone the storer holds exactly the branch's
+	// reachable closure, so this pass touches only RAM (no I/O) — cheap
+	// relative to the per-object blob writes below.
+	count, err := countObjects(store)
+	if err != nil {
+		return nil, err
+	}
+	r.Plan(cutting_garden_plugins.ReportPlan{
+		Items: int64(count),
+		Label: "storing git objects",
+	})
+
 	iter, err := store.IterEncodedObjects(plumbing.AnyObject)
 	if err != nil {
 		return nil, errors.Wrap(err)
 	}
 	defer iter.Close()
 
-	var objectRefs []capture_plugin.Ref
+	objectRefs := make([]capture_plugin.Ref, 0, count)
 	if err := iter.ForEach(func(obj plumbing.EncodedObject) error {
 		ref, werr := writeEncodedObject(ctx, w, obj)
 		if werr != nil {
 			return werr
 		}
 		objectRefs = append(objectRefs, ref)
+		r.Progress(cutting_garden_plugins.ReportProgress{
+			Item:  obj.Hash().String(),
+			Items: int64(len(objectRefs)),
+		})
 		return nil
 	}); err != nil {
 		return nil, err
 	}
 	return objectRefs, nil
+}
+
+// countObjects counts the objects in store via a metadata-only pass over
+// the storer's iterator — used to feed the Reporter a determinate Plan
+// before the write loop. It does not load object payloads.
+func countObjects(store storer.EncodedObjectStorer) (int, error) {
+	iter, err := store.IterEncodedObjects(plumbing.AnyObject)
+	if err != nil {
+		return 0, errors.Wrap(err)
+	}
+	defer iter.Close()
+
+	var n int
+	if err := iter.ForEach(func(plumbing.EncodedObject) error {
+		n++
+		return nil
+	}); err != nil {
+		return 0, err
+	}
+	return n, nil
 }
 
 // writeGitReceipt assembles the git payload node (a JCS metadata body
@@ -230,6 +286,31 @@ func writeGitReceipt(
 
 // readerOf wraps node bytes in an io.Reader for the Writer.
 func readerOf(b []byte) io.Reader { return strings.NewReader(string(b)) }
+
+// shortHash abbreviates an oid or markl digest for a human-readable Log
+// line, mirroring git's short-hash convention. It trims any
+// algorithm prefix (e.g. "sha256-") so the abbreviation is of the digest
+// body, and is purely cosmetic (Reporter Logs are non-identity).
+func shortHash(h string) string {
+	if _, body, found := strings.Cut(h, "-"); found {
+		h = body
+	}
+	const shortLen = 12
+	if len(h) > shortLen {
+		return h[:shortLen]
+	}
+	return h
+}
+
+// branchLabel renders a branch name for a Log line, naming the implicit
+// default branch when the arg left it empty (resolved to HEAD at clone
+// time).
+func branchLabel(branch string) string {
+	if branch == "" {
+		return "HEAD"
+	}
+	return branch
+}
 
 // goGitModulePath is the module whose version is recorded as the git
 // plugin's tool identity now that capture runs in-process via go-git.

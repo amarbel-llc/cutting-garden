@@ -23,7 +23,7 @@ func TestRestoreProtocol_RebuildsCheckedOutClone(t *testing.T) {
 	tip := tips[0]
 
 	store := newMemStore(t)
-	res, err := captureProtocol(context.Background(), capture_plugin.NewBlobStoreWriter(store), dir, branch)
+	res, err := captureProtocol(context.Background(), capture_plugin.NewBlobStoreWriter(store), dir, branch, cutting_garden_plugins.NopReporter{})
 	if err != nil {
 		t.Fatalf("captureProtocol: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestRestoreProtocol_RebuildsCheckedOutClone(t *testing.T) {
 func TestRestoreProtocol_RejectsExistingDestination(t *testing.T) {
 	dir, branch, _ := buildRepo(t, map[string]string{"f.txt": "v1"})
 	store := newMemStore(t)
-	res, err := captureProtocol(context.Background(), capture_plugin.NewBlobStoreWriter(store), dir, branch)
+	res, err := captureProtocol(context.Background(), capture_plugin.NewBlobStoreWriter(store), dir, branch, cutting_garden_plugins.NopReporter{})
 	if err != nil {
 		t.Fatalf("captureProtocol: %v", err)
 	}

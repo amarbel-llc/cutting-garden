@@ -29,6 +29,7 @@ func tryIncrementalCapture(
 	store blob_stores.BlobStoreInitialized,
 	w capture_plugin.Writer,
 	remote, branch, priorReceiptDigest string,
+	r cutting_garden_plugins.Reporter,
 ) (cutting_garden_plugins.ProtocolCaptureResult, bool, error) {
 	priorPayload, priorMeta, err := loadReceiptPayload(store, priorReceiptDigest)
 	if err != nil {
@@ -44,6 +45,7 @@ func tryIncrementalCapture(
 	// Unchanged since the prior capture: re-emit a receipt reusing the
 	// prior object set, no fetch at all.
 	if liveTip == priorMeta.Tip {
+		r.Log("no changes since prior capture")
 		res, werr := writeGitReceipt(ctx, w, remote, resolvedBranch, liveTip, priorPayload.Refs)
 		if werr != nil {
 			return cutting_garden_plugins.ProtocolCaptureResult{}, false, werr
@@ -53,6 +55,8 @@ func tryIncrementalCapture(
 
 	// Seed the prior snapshot and fetch the live tip; only the delta
 	// crosses the wire. A fetch failure is a soft miss → full capture.
+	r.Log("fetching delta from %s (%s..%s)",
+		remote, shortHash(priorMeta.Tip), shortHash(liveTip))
 	seeded, err := seedStorer(store, priorPayload.Refs, priorMeta.Tip)
 	if err != nil {
 		return cutting_garden_plugins.ProtocolCaptureResult{}, false, err
@@ -68,7 +72,7 @@ func tryIncrementalCapture(
 		return cutting_garden_plugins.ProtocolCaptureResult{}, false, nil
 	}
 
-	deltaRefs, err := storeDeltaObjects(ctx, w, seeded, priorMeta.Tip, liveTip)
+	deltaRefs, err := storeDeltaObjects(ctx, w, seeded, priorMeta.Tip, liveTip, r)
 	if err != nil {
 		return cutting_garden_plugins.ProtocolCaptureResult{}, false, err
 	}
@@ -108,6 +112,7 @@ func storeDeltaObjects(
 	w capture_plugin.Writer,
 	st storer.EncodedObjectStorer,
 	priorTip, liveTip string,
+	r cutting_garden_plugins.Reporter,
 ) ([]capture_plugin.Ref, error) {
 	deltaHashes, err := revlist.Objects(st,
 		[]plumbing.Hash{plumbing.NewHash(liveTip)},
@@ -115,6 +120,11 @@ func storeDeltaObjects(
 	if err != nil {
 		return nil, errors.Wrapf(err, "git plugin: enumerate delta objects")
 	}
+
+	r.Plan(cutting_garden_plugins.ReportPlan{
+		Items: int64(len(deltaHashes)),
+		Label: "storing git objects",
+	})
 
 	refs := make([]capture_plugin.Ref, 0, len(deltaHashes))
 	for _, h := range deltaHashes {
@@ -127,6 +137,10 @@ func storeDeltaObjects(
 			return nil, werr
 		}
 		refs = append(refs, ref)
+		r.Progress(cutting_garden_plugins.ReportProgress{
+			Item:  h.String(),
+			Items: int64(len(refs)),
+		})
 	}
 	return refs, nil
 }

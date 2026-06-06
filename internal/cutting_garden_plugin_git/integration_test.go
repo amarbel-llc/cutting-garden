@@ -32,7 +32,7 @@ func TestCaptureProtocol_RealGit_TreeReferencesEveryObject(t *testing.T) {
 	repo := newLocalRepo(t)
 	w := newMemWriter()
 
-	res, err := captureProtocol(context.Background(), w, repo, "main")
+	res, err := captureProtocol(context.Background(), w, repo, "main", cutting_garden_plugins.NopReporter{})
 	if err != nil {
 		t.Fatalf("captureProtocol: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestRestoreProtocol_RealGit_RebuildsCheckedOutClone(t *testing.T) {
 	srcTip := strings.TrimSpace(gitCLI(t, repo, "rev-parse", "refs/heads/main"))
 
 	store := newMemStore(t)
-	res, err := captureProtocol(context.Background(), capturePluginWriter(store), repo, "main")
+	res, err := captureProtocol(context.Background(), capturePluginWriter(store), repo, "main", cutting_garden_plugins.NopReporter{})
 	if err != nil {
 		t.Fatalf("captureProtocol: %v", err)
 	}
@@ -130,7 +130,7 @@ func TestDiffProtocol_RealGit_DetectsTipDrift(t *testing.T) {
 
 	repo := newLocalRepo(t)
 	store := newMemStore(t)
-	res, err := captureProtocol(context.Background(), capturePluginWriter(store), repo, "main")
+	res, err := captureProtocol(context.Background(), capturePluginWriter(store), repo, "main", cutting_garden_plugins.NopReporter{})
 	if err != nil {
 		t.Fatalf("captureProtocol: %v", err)
 	}
@@ -205,14 +205,14 @@ func TestIncrementalCapture_RealGit_MatchesFullCapture(t *testing.T) {
 	store := newMemStore(t)
 
 	// Full capture of state 1.
-	res1, err := captureProtocol(context.Background(), capturePluginWriter(store), repo, "main")
+	res1, err := captureProtocol(context.Background(), capturePluginWriter(store), repo, "main", cutting_garden_plugins.NopReporter{})
 	if err != nil {
 		t.Fatalf("full capture 1: %v", err)
 	}
 
 	// Unchanged re-capture reuses the prior object set exactly.
 	resSame, ok, err := tryIncrementalCapture(
-		context.Background(), store, capturePluginWriter(store), repo, "main", res1.ReceiptDigest)
+		context.Background(), store, capturePluginWriter(store), repo, "main", res1.ReceiptDigest, cutting_garden_plugins.NopReporter{})
 	if err != nil || !ok {
 		t.Fatalf("incremental (unchanged): ok=%v err=%v", ok, err)
 	}
@@ -230,14 +230,14 @@ func TestIncrementalCapture_RealGit_MatchesFullCapture(t *testing.T) {
 
 	// Incremental capture from the prior receipt (delta fetch).
 	resInc, ok, err := tryIncrementalCapture(
-		context.Background(), store, capturePluginWriter(store), repo, "main", res1.ReceiptDigest)
+		context.Background(), store, capturePluginWriter(store), repo, "main", res1.ReceiptDigest, cutting_garden_plugins.NopReporter{})
 	if err != nil || !ok {
 		t.Fatalf("incremental capture: ok=%v err=%v", ok, err)
 	}
 
 	// Full capture of the advanced state into a separate store.
 	storeFull := newMemStore(t)
-	resFull, err := captureProtocol(context.Background(), capturePluginWriter(storeFull), repo, "main")
+	resFull, err := captureProtocol(context.Background(), capturePluginWriter(storeFull), repo, "main", cutting_garden_plugins.NopReporter{})
 	if err != nil {
 		t.Fatalf("full capture 2: %v", err)
 	}

@@ -17,7 +17,7 @@ import (
 
 func captureToReceipt(t *testing.T, store blob_stores.BlobStoreInitialized, dir, branch string) string {
 	t.Helper()
-	res, err := captureProtocol(context.Background(), capture_plugin.NewBlobStoreWriter(store), dir, branch)
+	res, err := captureProtocol(context.Background(), capture_plugin.NewBlobStoreWriter(store), dir, branch, cutting_garden_plugins.NopReporter{})
 	if err != nil {
 		t.Fatalf("captureProtocol: %v", err)
 	}

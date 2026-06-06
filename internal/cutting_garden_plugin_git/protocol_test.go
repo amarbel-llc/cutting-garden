@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/amarbel-llc/cutting-garden/internal/capture_plugin"
+	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
 )
 
 // memWriter is a content-addressed in-memory capture_plugin.Writer for
@@ -75,7 +76,7 @@ func TestCaptureProtocol_EmitsReceiptTreeOverObjectGraph(t *testing.T) {
 	tip := tips[0]
 
 	w := newMemWriter()
-	res, err := captureProtocol(context.Background(), w, dir, branch)
+	res, err := captureProtocol(context.Background(), w, dir, branch, cutting_garden_plugins.NopReporter{})
 	if err != nil {
 		t.Fatalf("captureProtocol: %v", err)
 	}
