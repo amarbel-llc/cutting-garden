@@ -17,6 +17,7 @@ import (
 	// when blob_store_env discovers an encrypted store config.
 	_ "github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugin_file"
 	_ "github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugin_git"
+	_ "github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugin_googlephotos"
 	_ "github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugin_ytdlp"
 	_ "github.com/amarbel-llc/madder/go/pkgs/markl_registrations"
 )

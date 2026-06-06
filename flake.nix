@@ -137,10 +137,11 @@
 
           # makeWrapper wraps the installed binaries so the external
           # tools a plugin shells out to via exec.LookPath are on PATH at
-          # install time. Today that is just `yt-dlp`
-          # (internal/cutting_garden_plugin_ytdlp). The git plugin is pure
-          # Go (go-git) and has no runtime `git` dependency, so git is no
-          # longer wrapped into the closure.
+          # install time. Today that is `yt-dlp`
+          # (internal/cutting_garden_plugin_ytdlp) and `gallery-dl`
+          # (internal/cutting_garden_plugin_googlephotos). The git plugin
+          # is pure Go (go-git) and has no runtime `git` dependency, so git
+          # is no longer wrapped into the closure.
           nativeBuildInputs = [ pkgs.makeWrapper ];
 
           # Phase 5: generate manpages + shell completion stubs, then
@@ -153,7 +154,8 @@
             rm $out/bin/cutting-garden-gen
             for bin in cutting-garden cg; do
               wrapProgram $out/bin/$bin \
-                --prefix PATH : ${pkgsUpstream.yt-dlp}/bin
+                --prefix PATH : ${pkgsUpstream.yt-dlp}/bin \
+                --prefix PATH : ${pkgsUpstream.gallery-dl}/bin
             done
           '';
 
@@ -246,6 +248,12 @@
             # `go run ./cmd/cutting-garden capture ytdlp:…` from inside
             # the devshell behaves the same as a nix-built invocation.
             pkgsUpstream.yt-dlp
+            # gallery-dl backs the Google Photos plugin
+            # (internal/cutting_garden_plugin_googlephotos); wrapped into
+            # the installed binary the same way, mirrored here so
+            # `go run ./cmd/cutting-garden capture gphotos:…` in the
+            # devshell matches a nix-built invocation.
+            pkgsUpstream.gallery-dl
             # The git plugin itself is pure Go (go-git) and needs no `git`
             # binary at runtime. git is kept here only as test scaffolding:
             # internal/cutting_garden_plugin_git's integration tests build
