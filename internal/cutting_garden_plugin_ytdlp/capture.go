@@ -26,7 +26,14 @@ const outputTemplate = "%(id)s.%(ext)s"
 // (skip-download mode) can share the -o handling.
 func captureDefaultArgs(outDir, source string) []string {
 	return []string{
-		"--no-progress",
+		// Structured progress: --newline keeps each progress update on
+		// its own line (no carriage-return overwrites), --progress-delta
+		// throttles updates to every 0.5s, and --progress-template emits
+		// our tab-delimited sentinel line (see exec.go) that runYtdlp
+		// parses into progressSamples.
+		"--newline",
+		"--progress-delta", "0.5",
+		"--progress-template", progressTemplate,
 		"--no-warnings",
 		"--write-info-json",
 		"--write-thumbnail",
@@ -65,7 +72,7 @@ func (Plugin) CaptureRoot(
 		}
 	}()
 
-	if err := runYtdlp(req.Context, tempDir, captureDefaultArgs(tempDir, source)); err != nil {
+	if err := runYtdlp(req.Context, tempDir, captureDefaultArgs(tempDir, source), nil, nil); err != nil {
 		req.Sink.Failure(req.RawArg, err)
 		return cutting_garden_plugins.CaptureRootResult{FailCount: 1}
 	}

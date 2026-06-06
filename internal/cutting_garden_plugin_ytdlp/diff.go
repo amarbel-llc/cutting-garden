@@ -55,7 +55,7 @@ func (Plugin) ScanForDiff(
 	}
 	defer errors.Deferred(&err, func() error { return os.RemoveAll(probeDir) })
 
-	if err = runYtdlp(req.Context, probeDir, probeArgs(probeDir, source)); err != nil {
+	if err = runYtdlp(req.Context, probeDir, probeArgs(probeDir, source), nil, nil); err != nil {
 		return nil, err
 	}
 
@@ -168,7 +168,7 @@ func rescan(
 	}
 	defer errors.Deferred(&err, func() error { return os.RemoveAll(rescanDir) })
 
-	if err = runYtdlp(req.Context, rescanDir, captureDefaultArgs(rescanDir, source)); err != nil {
+	if err = runYtdlp(req.Context, rescanDir, captureDefaultArgs(rescanDir, source), nil, nil); err != nil {
 		return nil, err
 	}
 

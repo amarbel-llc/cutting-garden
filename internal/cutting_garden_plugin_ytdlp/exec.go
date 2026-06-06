@@ -1,13 +1,42 @@
 package cutting_garden_plugin_ytdlp
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"io"
 	"os/exec"
+	"strconv"
+	"strings"
 
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 )
+
+// progressSentinel tags the structured progress lines yt-dlp emits via
+// --progress-template. Lines beginning with this prefix (plus a tab)
+// are parsed by parseProgressLine; everything else on stderr is treated
+// as a log line. The token is deliberately short and unlikely to appear
+// in yt-dlp's own diagnostics.
+const progressSentinel = "CGP"
+
+// progressTemplate is the --progress-template value paired with
+// progressSentinel. Field order matches parseProgressLine's expectations
+// exactly — keep the two in lockstep. The template emits, tab-separated:
+//
+//	CGP <downloaded_bytes> <total_bytes> <total_bytes_estimate> <info.id>
+//
+// yt-dlp fills unknown numeric fields with "NA"; parseProgressLine
+// tolerates that (and empty/"none") by treating them as zero, preferring
+// total_bytes and falling back to total_bytes_estimate.
+const progressTemplate = "download:" + progressSentinel +
+	"\t%(progress.downloaded_bytes)s" +
+	"\t%(progress.total_bytes)s" +
+	"\t%(progress.total_bytes_estimate)s" +
+	"\t%(info.id)s"
+
+// progressLinePrefix is the byte prefix that marks a parseable progress
+// line on stderr (sentinel followed by the field-separator tab).
+const progressLinePrefix = progressSentinel + "\t"
 
 // stderrTailBytes caps how much yt-dlp stderr is buffered for the
 // failure diagnostic. Enough to surface a typical error message
@@ -15,17 +44,98 @@ import (
 // progress noise when stderr is verbose.
 const stderrTailBytes = 4096
 
+// stderrScanBuf is the initial bufio.Scanner buffer; maxStderrLineBytes
+// caps line growth. yt-dlp progress and diagnostic lines are short, but
+// a stray long line (e.g. a wall of warnings) shouldn't make the scanner
+// error out — raise the ceiling well above the default 64 KiB.
+const (
+	stderrScanBuf      = 64 * 1024
+	maxStderrLineBytes = 1024 * 1024
+)
+
+// progressSample is one decoded progress observation: bytes downloaded
+// so far, the best-known total (total_bytes, else total_bytes_estimate,
+// else 0), and the video id the bytes belong to.
+type progressSample struct {
+	Downloaded int64
+	Total      int64
+	ID         string
+}
+
+// parseProgressLine decodes one stderr line emitted under
+// progressTemplate. ok is false for any line that is not a sentinel
+// progress line (so callers route it to onLog instead). For sentinel
+// lines, malformed numeric fields degrade to zero rather than erroring —
+// progress is advisory, never a reason to fail a capture.
+func parseProgressLine(line string) (sample progressSample, ok bool) {
+	if !strings.HasPrefix(line, progressLinePrefix) {
+		return progressSample{}, false
+	}
+
+	// Fields after the sentinel:
+	//   [0]=downloaded_bytes [1]=total_bytes
+	//   [2]=total_bytes_estimate [3]=info.id
+	fields := strings.Split(line, "\t")
+	const wantFields = 5 // sentinel + 4 values
+	if len(fields) < wantFields {
+		// A truncated sentinel line is not usable; surface it as a log
+		// line so it isn't silently swallowed.
+		return progressSample{}, false
+	}
+
+	downloaded := parseProgressInt(fields[1])
+	total := parseProgressInt(fields[2])
+	if total == 0 {
+		total = parseProgressInt(fields[3])
+	}
+
+	return progressSample{
+		Downloaded: downloaded,
+		Total:      total,
+		ID:         fields[4],
+	}, true
+}
+
+// parseProgressInt parses a yt-dlp numeric progress field. yt-dlp writes
+// "NA" (and occasionally "none") for unknown values; those and any
+// unparseable input collapse to 0 so a missing total never crashes a
+// capture.
+func parseProgressInt(s string) int64 {
+	switch s {
+	case "", "NA", "none":
+		return 0
+	}
+	n, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		return 0
+	}
+	return n
+}
+
 // runYtdlp shells out to yt-dlp with args, honoring ctx for
 // cancellation. yt-dlp itself decides what to write under outDir
 // (paths are passed via -o templates in args); stdout is discarded
 // because all artifacts land on disk. The last stderrTailBytes of
 // stderr are wrapped into the returned error on non-zero exit.
 //
+// stderr is scanned line-by-line: sentinel progress lines (see
+// progressTemplate) are decoded and handed to onProgress; every other
+// line is appended to the bounded tail AND handed to onLog. Both
+// callbacks are nil-safe — a nil callback simply skips delivery. Scanning
+// happens in this goroutine and completes before cmd.Wait per the
+// StderrPipe contract (the pipe must be drained to EOF before Wait).
+//
 // The binary is resolved through exec.LookPath, which honors the
 // caller's PATH. nix-built cutting-garden wraps the binaries with
 // makeWrapper so yt-dlp is on PATH at install time; devshells get it
 // the same way.
-func runYtdlp(ctx context.Context, outDir string, args []string) error {
+func runYtdlp(
+	ctx context.Context,
+	outDir string,
+	args []string,
+	onProgress func(progressSample),
+	onLog func(string),
+) error {
 	binPath, err := exec.LookPath("yt-dlp")
 	if err != nil {
 		return errors.ErrorWithStackf(
@@ -37,15 +147,53 @@ func runYtdlp(ctx context.Context, outDir string, args []string) error {
 
 	cmd := exec.CommandContext(ctx, binPath, args...)
 	cmd.Dir = outDir
-
-	var stderrTail bytes.Buffer
-	cmd.Stderr = newTailWriter(&stderrTail, stderrTailBytes)
 	cmd.Stdout = io.Discard
 
-	if runErr := cmd.Run(); runErr != nil {
+	stderrPipe, err := cmd.StderrPipe()
+	if err != nil {
+		return errors.Wrap(err)
+	}
+
+	if startErr := cmd.Start(); startErr != nil {
+		return errors.Wrap(startErr)
+	}
+
+	// Drain stderr to EOF in this goroutine before Wait, as StderrPipe
+	// requires. Sentinel lines feed onProgress; the rest tee into the
+	// bounded failure tail and onLog.
+	var stderrTail bytes.Buffer
+	tail := newTailWriter(&stderrTail, stderrTailBytes)
+
+	scanner := bufio.NewScanner(stderrPipe)
+	scanner.Buffer(make([]byte, 0, stderrScanBuf), maxStderrLineBytes)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if sample, ok := parseProgressLine(line); ok {
+			if onProgress != nil {
+				onProgress(sample)
+			}
+			continue
+		}
+		// Preserve a newline in the tail so multi-line diagnostics stay
+		// legible in the error message.
+		tail.Write([]byte(line))
+		tail.Write([]byte{'\n'})
+		if onLog != nil {
+			onLog(line)
+		}
+	}
+	// A scanner error (e.g. a line past maxStderrLineBytes) is advisory:
+	// note it in the tail but let cmd.Wait decide overall success.
+	if scanErr := scanner.Err(); scanErr != nil {
+		tail.Write([]byte("ytdlp plugin: stderr scan error: "))
+		tail.Write([]byte(scanErr.Error()))
+		tail.Write([]byte{'\n'})
+	}
+
+	if waitErr := cmd.Wait(); waitErr != nil {
 		return errors.ErrorWithStackf(
 			"ytdlp plugin: yt-dlp failed (%v)\nstderr-tail: %s",
-			runErr, stderrTail.String(),
+			waitErr, stderrTail.String(),
 		)
 	}
 
@@ -53,8 +201,8 @@ func runYtdlp(ctx context.Context, outDir string, args []string) error {
 }
 
 // tailWriter keeps only the last cap bytes written through it.
-// Implements io.Writer so it can be assigned to cmd.Stderr without
-// retaining yt-dlp's full progress stream.
+// Implements io.Writer so it can buffer yt-dlp's stderr stream without
+// retaining the full progress noise for the failure diagnostic.
 type tailWriter struct {
 	buf *bytes.Buffer
 	cap int
