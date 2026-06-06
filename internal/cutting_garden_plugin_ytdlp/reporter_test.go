@@ -2,8 +2,10 @@ package cutting_garden_plugin_ytdlp
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/amarbel-llc/cutting-garden/internal/capture_events"
@@ -11,12 +13,15 @@ import (
 )
 
 // recordingReporter captures Reporter events for assertions. It embeds
-// capture_events.Nop and records every Plan and Progress call in order
-// so tests can assert per-artifact progress emission and monotonicity.
+// capture_events.Nop and records every Plan, Progress, PhaseStart, and
+// PhaseEnd call in order so tests can assert per-artifact progress
+// emission, monotonicity, and phase verdicts.
 type recordingReporter struct {
 	capture_events.Nop
-	plans    []cutting_garden_plugins.ReportPlan
-	progress []cutting_garden_plugins.ReportProgress
+	plans       []cutting_garden_plugins.ReportPlan
+	progress    []cutting_garden_plugins.ReportProgress
+	phaseStarts []string
+	phaseEnds   []capture_events.Verdict
 }
 
 func (r *recordingReporter) Plan(p cutting_garden_plugins.ReportPlan) {
@@ -25,6 +30,14 @@ func (r *recordingReporter) Plan(p cutting_garden_plugins.ReportPlan) {
 
 func (r *recordingReporter) Progress(p cutting_garden_plugins.ReportProgress) {
 	r.progress = append(r.progress, p)
+}
+
+func (r *recordingReporter) PhaseStart(description string) {
+	r.phaseStarts = append(r.phaseStarts, description)
+}
+
+func (r *recordingReporter) PhaseEnd(v capture_events.Verdict) {
+	r.phaseEnds = append(r.phaseEnds, v)
 }
 
 // writeArtifactFixture populates dir with a handful of fake artifact
@@ -140,6 +153,142 @@ func TestWalkArtifacts_ByteIdentityAcrossReporters(t *testing.T) {
 			t.Errorf("entry[%d] differs:\n  reporter: {Path:%q Size:%d BlobId:%q}\n  nil:      {Path:%q Size:%d BlobId:%q}",
 				i, a.Path, a.Size, a.BlobId, b.Path, b.Size, b.BlobId)
 		}
+	}
+}
+
+func TestCaptureRoot_EmitsDownloadAndWritePhases(t *testing.T) {
+	withFakeYtdlp(t)
+
+	rep := &recordingReporter{}
+	result := Plugin{}.CaptureRoot(cutting_garden_plugins.CaptureRootRequest{
+		Context:   context.Background(),
+		Source:    mustParseURL(t, "ytdlp:https://youtu.be/dQw4w9WgXcQ"),
+		RawArg:    "ytdlp:https://youtu.be/dQw4w9WgXcQ",
+		BlobStore: newDiscardStore(),
+		Sink:      &recordingSink{},
+		Reporter:  rep,
+	})
+	if result.FailCount != 0 {
+		t.Fatalf("FailCount = %d, want 0", result.FailCount)
+	}
+
+	if len(rep.phaseStarts) != 2 {
+		t.Fatalf("phaseStarts = %d, want 2 (download + write): %v",
+			len(rep.phaseStarts), rep.phaseStarts)
+	}
+	if !strings.HasPrefix(rep.phaseStarts[0], "download ") {
+		t.Errorf("phaseStarts[0] = %q, want prefix %q", rep.phaseStarts[0], "download ")
+	}
+	if !strings.Contains(rep.phaseStarts[0], "https://youtu.be/dQw4w9WgXcQ") {
+		t.Errorf("phaseStarts[0] = %q, want the resolved source URL", rep.phaseStarts[0])
+	}
+	if !strings.HasPrefix(rep.phaseStarts[1], "write ") {
+		t.Errorf("phaseStarts[1] = %q, want prefix %q", rep.phaseStarts[1], "write ")
+	}
+
+	if len(rep.phaseEnds) != 2 {
+		t.Fatalf("phaseEnds = %d, want 2: %+v", len(rep.phaseEnds), rep.phaseEnds)
+	}
+	for i, v := range rep.phaseEnds {
+		if !v.OK {
+			t.Errorf("phaseEnds[%d].OK = false, want true: %+v", i, v)
+		}
+	}
+}
+
+func TestCaptureRoot_DownloadFailureVerdict(t *testing.T) {
+	installFakeYtdlp(t, failingYtdlpScript)
+
+	rep := &recordingReporter{}
+	result := Plugin{}.CaptureRoot(cutting_garden_plugins.CaptureRootRequest{
+		Context:   context.Background(),
+		Source:    mustParseURL(t, "ytdlp:https://youtu.be/abc"),
+		RawArg:    "ytdlp:https://youtu.be/abc",
+		BlobStore: newDiscardStore(),
+		Sink:      &recordingSink{},
+		Reporter:  rep,
+	})
+	if result.FailCount != 1 {
+		t.Fatalf("FailCount = %d, want 1", result.FailCount)
+	}
+
+	if len(rep.phaseStarts) != 1 || !strings.HasPrefix(rep.phaseStarts[0], "download ") {
+		t.Fatalf("phaseStarts = %v, want exactly the download phase", rep.phaseStarts)
+	}
+	if len(rep.phaseEnds) != 1 {
+		t.Fatalf("phaseEnds = %d, want 1: %+v", len(rep.phaseEnds), rep.phaseEnds)
+	}
+	v := rep.phaseEnds[0]
+	if v.OK {
+		t.Errorf("phaseEnds[0].OK = true, want false on yt-dlp failure")
+	}
+	errVal, ok := v.Diagnostic["error"].(string)
+	if !ok || errVal == "" {
+		t.Errorf("Diagnostic[%q] = %v, want non-empty error string", "error", v.Diagnostic["error"])
+	}
+}
+
+func TestWalkArtifacts_EmitsWritePhase(t *testing.T) {
+	dir := t.TempDir()
+	wantOrder := writeArtifactFixture(t, dir)
+
+	rep := &recordingReporter{}
+	_, failCount := walkArtifacts(
+		context.Background(), newDiscardStore(), dir, "https://youtu.be/video", &recordingSink{}, rep,
+	)
+	if failCount != 0 {
+		t.Fatalf("failCount = %d, want 0", failCount)
+	}
+
+	if len(rep.phaseStarts) != 1 {
+		t.Fatalf("phaseStarts = %d, want 1: %v", len(rep.phaseStarts), rep.phaseStarts)
+	}
+	wantPrefix := fmt.Sprintf("write %d artifacts", len(wantOrder))
+	if !strings.HasPrefix(rep.phaseStarts[0], wantPrefix) {
+		t.Errorf("phaseStarts[0] = %q, want prefix %q", rep.phaseStarts[0], wantPrefix)
+	}
+	if len(rep.phaseEnds) != 1 || !rep.phaseEnds[0].OK {
+		t.Fatalf("phaseEnds = %+v, want exactly one OK verdict", rep.phaseEnds)
+	}
+}
+
+func TestWalkArtifacts_WritePhaseFailureVerdict(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("running as root: chmod 000 files stay readable")
+	}
+	dir := t.TempDir()
+	wantOrder := writeArtifactFixture(t, dir)
+
+	// Make one artifact unreadable so its pass-2 blob write fails while
+	// pass-1 stat (and thus the phase total) still sees it.
+	if err := os.Chmod(filepath.Join(dir, "video.mp4"), 0o000); err != nil {
+		t.Fatalf("chmod fixture: %v", err)
+	}
+
+	rep := &recordingReporter{}
+	sink := &recordingSink{}
+	entries, failCount := walkArtifacts(
+		context.Background(), newDiscardStore(), dir, "https://youtu.be/video", sink, rep,
+	)
+	if failCount != 1 {
+		t.Fatalf("failCount = %d, want 1; failures: %v", failCount, sink.failures)
+	}
+	if len(entries) != len(wantOrder)-1 {
+		t.Fatalf("entries = %d, want %d", len(entries), len(wantOrder)-1)
+	}
+
+	if len(rep.phaseEnds) != 1 {
+		t.Fatalf("phaseEnds = %d, want 1: %+v", len(rep.phaseEnds), rep.phaseEnds)
+	}
+	v := rep.phaseEnds[0]
+	if v.OK {
+		t.Errorf("phaseEnds[0].OK = true, want false with a failed artifact")
+	}
+	if got := v.Diagnostic["entries"]; got != len(wantOrder) {
+		t.Errorf("Diagnostic[%q] = %v, want %d", "entries", got, len(wantOrder))
+	}
+	if got := v.Diagnostic["failed"]; got != 1 {
+		t.Errorf("Diagnostic[%q] = %v, want 1", "failed", got)
 	}
 }
 

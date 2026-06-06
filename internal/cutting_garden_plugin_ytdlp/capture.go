@@ -2,10 +2,12 @@ package cutting_garden_plugin_ytdlp
 
 import (
 	"context"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
 
+	"github.com/amarbel-llc/cutting-garden/internal/capture_events"
 	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
 	"github.com/amarbel-llc/cutting-garden/internal/capture_sink"
 	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
@@ -74,6 +76,7 @@ func (Plugin) CaptureRoot(
 		}
 	}()
 
+	r.PhaseStart("download " + source)
 	r.Log("running yt-dlp for %s", source)
 	// The download total is unknown up front (yt-dlp streams), so no Plan
 	// is emitted for this phase — bytes-based Progress yields an
@@ -88,9 +91,14 @@ func (Plugin) CaptureRoot(
 	onLog := func(line string) { r.Log("%s", line) }
 
 	if err := runYtdlp(req.Context, tempDir, captureDefaultArgs(tempDir, source), onProgress, onLog); err != nil {
+		r.PhaseEnd(capture_events.Verdict{
+			OK:         false,
+			Diagnostic: map[string]any{"error": err.Error()},
+		})
 		req.Sink.Failure(req.RawArg, err)
 		return cutting_garden_plugins.CaptureRootResult{FailCount: 1}
 	}
+	r.PhaseEnd(capture_events.Verdict{OK: true})
 
 	entries, failCount := walkArtifacts(req.Context, req.BlobStore, tempDir, source, req.Sink, r)
 	return cutting_garden_plugins.CaptureRootResult{
@@ -187,8 +195,12 @@ func walkArtifacts(
 		failCount++
 	}
 
-	reporter.Log("downloaded, writing %d artifacts (%.1f MiB)",
-		len(files), float64(phaseTotal)/(1<<20))
+	reporter.PhaseStart(fmt.Sprintf("write %d artifacts (%.1f MiB)",
+		len(files), float64(phaseTotal)/(1<<20)))
+	// The write-phase verdict counts only failures from the loop below;
+	// pass-1 walk/stat failures predate the phase (they're already in
+	// failCount and the sink stream).
+	failCountAtPhaseStart := failCount
 
 	// Pass 2: stream each file into the store. The byte-progress
 	// callback reports phaseDone (bytes of fully-written prior
@@ -231,6 +243,15 @@ func walkArtifacts(
 		entries = append(entries, entry)
 		sink.Entry(entry)
 		phaseDone += f.size
+	}
+
+	if phaseFailed := failCount - failCountAtPhaseStart; phaseFailed == 0 {
+		reporter.PhaseEnd(capture_events.Verdict{OK: true})
+	} else {
+		reporter.PhaseEnd(capture_events.Verdict{
+			OK:         false,
+			Diagnostic: map[string]any{"entries": len(files), "failed": phaseFailed},
+		})
 	}
 
 	return entries, failCount
