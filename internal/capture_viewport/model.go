@@ -16,7 +16,8 @@ const defaultTailLines = 5
 // Model renders a spinner + rolling log tail and, when a total is known, a
 // progress bar. Driven entirely by the messages in messages.go.
 type Model struct {
-	title    string
+	title    string // run title (WithTitle); the BatchDone frame renders this
+	phase    string // current phase description; empty when no phase is active
 	tailMax  int
 	tail     []string
 	spinner  spinner.Model
@@ -93,8 +94,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case PhaseStarted:
-		m.title = msg.Description
 		m.resetPhase()
+		m.phase = msg.Description
 		return m, nil
 	case PhaseEnded:
 		line := m.renderPhaseEnd(msg)
@@ -123,6 +124,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // resetPhase clears all per-phase live state. This is the designed
 // phase-boundary reset (retires the cg#56 bytesDone phase-bleed).
 func (m *Model) resetPhase() {
+	m.phase = ""
 	m.tail = nil
 	m.current, m.total = 0, 0
 	m.bytesDone, m.bytesTotal = 0, 0
@@ -139,7 +141,10 @@ func (m Model) renderPhaseEnd(msg PhaseEnded) string {
 		// Defensive fallback: the adapter stamps Description from its
 		// tracked phase, but an end-without-start (or a hand-sent
 		// message) still renders something sensible.
-		desc = m.title
+		desc = m.phase
+		if desc == "" {
+			desc = m.title
+		}
 	}
 	switch {
 	case msg.Verdict.Directive != nil:
@@ -194,9 +199,15 @@ func (m Model) View() string {
 		return b.String()
 	}
 
+	// The live header shows the active phase; between phases (and on
+	// runs without phases) it shows the run title.
+	header := m.title
+	if m.phase != "" {
+		header = m.phase
+	}
 	b.WriteString(m.spinner.View())
 	b.WriteByte(' ')
-	b.WriteString(m.title)
+	b.WriteString(header)
 	switch {
 	case m.total > 0:
 		// Item-count bar (e.g. git structural objects). Unchanged.

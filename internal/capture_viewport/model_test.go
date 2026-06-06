@@ -218,6 +218,39 @@ func TestModel_PhaseEndedSkipRendersDirective(t *testing.T) {
 	}
 }
 
+func TestModel_FinalFrameUsesRunTitleNotLastPhase(t *testing.T) {
+	// Reproduces the user transcript: with phase checkmarks, the
+	// BatchDone final frame rendered the LAST PHASE's description
+	// (a visual duplicate of that phase's persisted ✓ line) instead
+	// of the run title.
+	var tm tea.Model = New(WithTitle("capture rsync_dot_net"))
+	tm, _ = tm.Update(PhaseStarted{Description: "receipt store=rsync_dot_net"})
+	tm, _ = tm.Update(PhaseEnded{Description: "receipt store=rsync_dot_net", Verdict: VerdictView{OK: true}})
+	tm, _ = tm.Update(BatchDone{Err: nil})
+	view := tm.View()
+	if !strings.Contains(view, "capture rsync_dot_net") {
+		t.Errorf("final frame must show the run title; view:\n%s", view)
+	}
+	if strings.Contains(view, "receipt store=") {
+		t.Errorf("final frame must NOT repeat the last phase description; view:\n%s", view)
+	}
+}
+
+func TestModel_LiveHeaderRevertsToRunTitleAfterPhaseEnded(t *testing.T) {
+	// After PhaseEnded (no new PhaseStarted), the live header shows
+	// the run title again — the phase is cleared, not sticky.
+	var tm tea.Model = New(WithTitle("capture rsync_dot_net"))
+	tm, _ = tm.Update(PhaseStarted{Description: "download"})
+	tm, _ = tm.Update(PhaseEnded{Description: "download", Verdict: VerdictView{OK: true}})
+	view := tm.View()
+	if !strings.Contains(view, "capture rsync_dot_net") {
+		t.Errorf("live header should revert to the run title after PhaseEnded; view:\n%s", view)
+	}
+	if strings.Contains(view, "download") {
+		t.Errorf("ended phase description must not linger in the live header; view:\n%s", view)
+	}
+}
+
 func TestHumanizeBytes(t *testing.T) {
 	cases := []struct {
 		in   int64
