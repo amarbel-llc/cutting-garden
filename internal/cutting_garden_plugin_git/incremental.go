@@ -121,26 +121,44 @@ func storeDeltaObjects(
 		return nil, errors.Wrapf(err, "git plugin: enumerate delta objects")
 	}
 
-	r.Plan(cutting_garden_plugins.ReportPlan{
-		Items: int64(len(deltaHashes)),
-		Label: "storing git objects",
-	})
-
-	refs := make([]capture_plugin.Ref, 0, len(deltaHashes))
+	// Resolve every delta object up front so the Plan total can be framed
+	// over the structural skeleton (commit+tree) only — matching the full
+	// path. Blobs are written below but not reported individually, so
+	// Plan.Items must equal the count of structural Progress emissions, not
+	// len(deltaHashes).
+	deltaObjects := make([]plumbing.EncodedObject, 0, len(deltaHashes))
+	var structuralCount int64
 	for _, h := range deltaHashes {
 		obj, oerr := st.EncodedObject(plumbing.AnyObject, h)
 		if oerr != nil {
 			return nil, errors.Wrapf(oerr, "git plugin: resolve delta object %s", h)
 		}
+		deltaObjects = append(deltaObjects, obj)
+		if isStructural(obj.Type()) {
+			structuralCount++
+		}
+	}
+
+	r.Plan(cutting_garden_plugins.ReportPlan{
+		Items: structuralCount,
+		Label: "storing git objects",
+	})
+
+	refs := make([]capture_plugin.Ref, 0, len(deltaObjects))
+	var structural int64
+	for _, obj := range deltaObjects {
 		ref, werr := writeEncodedObject(ctx, w, obj)
 		if werr != nil {
 			return nil, werr
 		}
 		refs = append(refs, ref)
-		r.Progress(cutting_garden_plugins.ReportProgress{
-			Item:  h.String(),
-			Items: int64(len(refs)),
-		})
+		if isStructural(obj.Type()) {
+			structural++
+			r.Progress(cutting_garden_plugins.ReportProgress{
+				Item:  typeLabel(obj.Type()) + " " + obj.Hash().String(),
+				Items: structural,
+			})
+		}
 	}
 	return refs, nil
 }

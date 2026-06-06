@@ -16,6 +16,45 @@ import (
 	"github.com/go-git/go-git/v5/storage/memory"
 )
 
+// progressLogWriter is an io.Writer that turns go-git's clone progress
+// sideband — line-oriented server text using BOTH '\r' (in-place percent
+// updates) and '\n' (phase end) as separators — into Reporter.Log lines.
+// Each '\r'- or '\n'-delimited segment is trimmed and, if non-empty,
+// flushed to log; a trailing partial segment stays buffered for the next
+// Write. This is non-identity observability: it never touches captured
+// bytes.
+type progressLogWriter struct {
+	log func(string)
+	buf []byte
+}
+
+func (w *progressLogWriter) Write(p []byte) (int, error) {
+	w.buf = append(w.buf, p...)
+	for {
+		i := indexCRorLF(w.buf)
+		if i < 0 {
+			break
+		}
+		segment := strings.TrimSpace(string(w.buf[:i]))
+		w.buf = w.buf[i+1:]
+		if segment != "" {
+			w.log(segment)
+		}
+	}
+	return len(p), nil
+}
+
+// indexCRorLF returns the index of the first '\r' or '\n' in b, or -1 when
+// neither is present.
+func indexCRorLF(b []byte) int {
+	for i, c := range b {
+		if c == '\r' || c == '\n' {
+			return i
+		}
+	}
+	return -1
+}
+
 // Git-binding node type-strings under the RFC 0002 type convention.
 const (
 	// captureKind tags the receipt: cutting_garden-capture-receipt-git-v1.
@@ -93,7 +132,7 @@ func captureProtocol(
 ) (cutting_garden_plugins.ProtocolCaptureResult, error) {
 	r.Log("cloning %s (branch %s)", remote, branchLabel(branch))
 
-	repo, tip, resolvedBranch, err := cloneBranchToMemory(ctx, remote, branch)
+	repo, tip, resolvedBranch, err := cloneBranchToMemory(ctx, remote, branch, r)
 	if err != nil {
 		return cutting_garden_plugins.ProtocolCaptureResult{}, err
 	}
@@ -121,6 +160,7 @@ func captureProtocol(
 func cloneBranchToMemory(
 	ctx context.Context,
 	remote, branch string,
+	r cutting_garden_plugins.Reporter,
 ) (repo *git.Repository, tip, resolvedBranch string, err error) {
 	auth, err := authMethod(remote)
 	if err != nil {
@@ -131,6 +171,11 @@ func cloneBranchToMemory(
 		SingleBranch: true,
 		Tags:         git.NoTags,
 		Auth:         auth,
+		// Live clone-phase progress (Counting/Receiving objects). Setting
+		// Progress non-nil makes go-git request the server's progress
+		// sideband; it does NOT change which objects are transferred, so
+		// captured bytes are unchanged. A Nop reporter's Log is a no-op.
+		Progress: &progressLogWriter{log: func(s string) { r.Log("%s", s) }},
 	}
 	if branch != "" {
 		opts.ReferenceName = plumbing.NewBranchReferenceName(branch)
@@ -159,16 +204,20 @@ func storeAllObjects(
 	store storer.EncodedObjectStorer,
 	r cutting_garden_plugins.Reporter,
 ) ([]capture_plugin.Ref, error) {
-	// Pre-count so the Reporter can render a determinate bar. After a
-	// single-branch in-memory clone the storer holds exactly the branch's
-	// reachable closure, so this pass touches only RAM (no I/O) — cheap
-	// relative to the per-object blob writes below.
-	count, err := countObjects(store)
+	// Pre-count so the Reporter can render a determinate bar, framing the
+	// bar over commit+tree objects only. Blobs (file leaves) dominate the
+	// object count and are too numerous to report individually; we still
+	// WRITE every object below, but Plan/Progress track the structural
+	// skeleton so the bar's total matches the number of Progress emissions.
+	// After a single-branch in-memory clone the storer holds exactly the
+	// branch's reachable closure, so this pass touches only RAM (no I/O) —
+	// cheap relative to the per-object blob writes below.
+	structuralCount, err := countStructuralObjects(store)
 	if err != nil {
 		return nil, err
 	}
 	r.Plan(cutting_garden_plugins.ReportPlan{
-		Items: int64(count),
+		Items: int64(structuralCount),
 		Label: "storing git objects",
 	})
 
@@ -178,17 +227,23 @@ func storeAllObjects(
 	}
 	defer iter.Close()
 
-	objectRefs := make([]capture_plugin.Ref, 0, count)
+	var objectRefs []capture_plugin.Ref
+	var structural int64
 	if err := iter.ForEach(func(obj plumbing.EncodedObject) error {
 		ref, werr := writeEncodedObject(ctx, w, obj)
 		if werr != nil {
 			return werr
 		}
 		objectRefs = append(objectRefs, ref)
-		r.Progress(cutting_garden_plugins.ReportProgress{
-			Item:  obj.Hash().String(),
-			Items: int64(len(objectRefs)),
-		})
+		// Report only the structural skeleton (commit+tree); blobs are
+		// written above but not reported individually.
+		if isStructural(obj.Type()) {
+			structural++
+			r.Progress(cutting_garden_plugins.ReportProgress{
+				Item:  typeLabel(obj.Type()) + " " + obj.Hash().String(),
+				Items: structural,
+			})
+		}
 		return nil
 	}); err != nil {
 		return nil, err
@@ -196,10 +251,11 @@ func storeAllObjects(
 	return objectRefs, nil
 }
 
-// countObjects counts the objects in store via a metadata-only pass over
-// the storer's iterator — used to feed the Reporter a determinate Plan
-// before the write loop. It does not load object payloads.
-func countObjects(store storer.EncodedObjectStorer) (int, error) {
+// countStructuralObjects counts the commit and tree objects in store via a
+// metadata-only pass over the storer's iterator — used to feed the
+// Reporter a determinate Plan whose total equals the number of structural
+// Progress emissions in the write loop. It does not load object payloads.
+func countStructuralObjects(store storer.EncodedObjectStorer) (int, error) {
 	iter, err := store.IterEncodedObjects(plumbing.AnyObject)
 	if err != nil {
 		return 0, errors.Wrap(err)
@@ -207,13 +263,35 @@ func countObjects(store storer.EncodedObjectStorer) (int, error) {
 	defer iter.Close()
 
 	var n int
-	if err := iter.ForEach(func(plumbing.EncodedObject) error {
-		n++
+	if err := iter.ForEach(func(obj plumbing.EncodedObject) error {
+		if isStructural(obj.Type()) {
+			n++
+		}
 		return nil
 	}); err != nil {
 		return 0, err
 	}
 	return n, nil
+}
+
+// isStructural reports whether a git object type is part of the structural
+// skeleton (commit or tree) that Plan/Progress frame over — as opposed to
+// the blob leaves (and tags) that are stored but not reported individually.
+func isStructural(t plumbing.ObjectType) bool {
+	return t == plumbing.CommitObject || t == plumbing.TreeObject
+}
+
+// typeLabel renders a structural git object type as a short human-readable
+// Progress item prefix ("commit"/"tree").
+func typeLabel(t plumbing.ObjectType) string {
+	switch t {
+	case plumbing.CommitObject:
+		return "commit"
+	case plumbing.TreeObject:
+		return "tree"
+	default:
+		return t.String()
+	}
 }
 
 // writeGitReceipt assembles the git payload node (a JCS metadata body
