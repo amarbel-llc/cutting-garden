@@ -99,9 +99,16 @@ func TestClassifyArg(t *testing.T) {
 			wantURLPath: "", // file:dir-a → u.Opaque == "dir-a", u.Path == ""
 		},
 		{
-			name:     "UnknownSchemeFallsThroughToStoreId",
-			arg:      "unknown:missing-store",
-			wantKind: argKindStoreId,
+			// Unknown schemes still fall through to the schemeless
+			// heuristic (Lstat for colon-bearing filenames that exist),
+			// but since madder#227 a blob-store-id name is strictly
+			// [a-zA-Z0-9_-] — a colon can never appear in one — so a
+			// nonexistent unknown-scheme arg now classifies as an
+			// error rather than a phantom store-id.
+			name:        "UnknownSchemeNonexistentIsError",
+			arg:         "unknown:missing-store",
+			wantKind:    argKindError,
+			wantErrSubs: "neither a recognized URI",
 		},
 	}
 
