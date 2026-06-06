@@ -215,10 +215,12 @@
           # makeWrapper wraps the installed binaries so the external
           # tools a plugin shells out to via exec.LookPath are on PATH at
           # install time: `yt-dlp`
-          # (internal/cutting_garden_plugin_ytdlp) plus `cdparanoia` and
-          # `ddrescue` (internal/cutting_garden_plugin_optical). The git
-          # plugin is pure Go (go-git) and has no runtime `git`
-          # dependency, so git is no longer wrapped into the closure.
+          # (internal/cutting_garden_plugin_ytdlp), `gallery-dl`
+          # (internal/cutting_garden_plugin_googlephotos), plus
+          # `cdparanoia` and `ddrescue`
+          # (internal/cutting_garden_plugin_optical). The git plugin is
+          # pure Go (go-git) and has no runtime `git` dependency, so git
+          # is no longer wrapped into the closure.
           nativeBuildInputs = [ pkgs.makeWrapper ];
 
           # Phase 5: generate manpages + shell completion stubs, then
@@ -234,6 +236,7 @@
                 --prefix PATH : ${
                   pkgs.lib.makeBinPath [
                     pkgsUpstream.yt-dlp
+                    pkgsUpstream.gallery-dl
                     pkgsUpstream.cdparanoia
                     pkgsUpstream.ddrescue
                   ]
@@ -333,6 +336,12 @@
             # `go run ./cmd/cutting-garden capture ytdlp:…` from inside
             # the devshell behaves the same as a nix-built invocation.
             pkgsUpstream.yt-dlp
+            # gallery-dl backs the Google Photos plugin
+            # (internal/cutting_garden_plugin_googlephotos); wrapped into
+            # the installed binary the same way, mirrored here so
+            # `go run ./cmd/cutting-garden capture gphotos:…` in the
+            # devshell matches a nix-built invocation.
+            pkgsUpstream.gallery-dl
             # cdparanoia + ddrescue back the optical plugin
             # (internal/cutting_garden_plugin_optical), matching the wrap
             # in the installed binary so `capture optical:/dev/sr0` from
