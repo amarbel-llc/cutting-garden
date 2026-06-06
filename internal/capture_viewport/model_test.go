@@ -2,6 +2,7 @@ package capture_viewport
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -146,6 +147,74 @@ func TestModel_DistinctLogLinesAllLand(t *testing.T) {
 	m := got.(Model)
 	if len(m.tail) != 3 {
 		t.Errorf("distinct (and non-consecutive repeat) lines should all land; tail = %v", m.tail)
+	}
+}
+
+func TestModel_PhaseStartedResetsLiveState(t *testing.T) {
+	m := updateAll(New(WithTitle("capture")),
+		LogLine{Text: "old tail"},
+		OperationProgress{Current: 5, Total: 10, Bytes: 100, BytesTotal: 200},
+		PhaseStarted{Description: "write artifacts"},
+	)
+	view := m.View()
+	if strings.Contains(view, "old tail") {
+		t.Errorf("PhaseStarted should clear the tail; view:\n%s", view)
+	}
+	if !strings.Contains(view, "write artifacts") {
+		t.Errorf("PhaseStarted should retitle the header; view:\n%s", view)
+	}
+	if strings.Contains(view, "%") {
+		t.Errorf("PhaseStarted should reset bar/byte state (no stale bar); view:\n%s", view)
+	}
+}
+
+func TestModel_PhaseEndedOKEmitsPersistAndResets(t *testing.T) {
+	m := New(WithTitle("capture"))
+	var tm tea.Model = m
+	tm, _ = tm.Update(PhaseStarted{Description: "download"})
+	tm, _ = tm.Update(LogLine{Text: "tick"})
+	tm2, cmd := tm.Update(PhaseEnded{Description: "download", Verdict: VerdictView{OK: true}})
+	if cmd == nil {
+		t.Fatal("PhaseEnded must return a tea.Println cmd (the persistent line)")
+	}
+	if msg := cmd(); msg == nil {
+		t.Fatal("executing the cmd should produce a print message")
+	}
+	if view := tm2.View(); strings.Contains(view, "tick") {
+		t.Errorf("ok phase should collapse the tail; view:\n%s", view)
+	}
+}
+
+func TestModel_PhaseEndedFailHoldsTailInPersist(t *testing.T) {
+	var tm tea.Model = New(WithTitle("capture"))
+	tm, _ = tm.Update(PhaseStarted{Description: "write"})
+	tm, _ = tm.Update(LogLine{Text: "artifact-3 failed io"})
+	_, cmd := tm.Update(PhaseEnded{
+		Description: "write",
+		Verdict:     VerdictView{OK: false, Diagnostic: map[string]any{"failed": 2, "entries": 4}},
+	})
+	if cmd == nil {
+		t.Fatal("failing PhaseEnded must persist")
+	}
+	out := fmt.Sprint(cmd())
+	for _, want := range []string{"artifact-3 failed io", "✗", "write", "failed"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("persisted failure output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestModel_PhaseEndedSkipRendersDirective(t *testing.T) {
+	var tm tea.Model = New(WithTitle("capture"))
+	_, cmd := tm.Update(PhaseEnded{
+		Description: "store objects",
+		Verdict:     VerdictView{OK: true, Directive: &DirectiveView{Kind: "skip", Reason: "no changes"}},
+	})
+	out := fmt.Sprint(cmd())
+	for _, want := range []string{"store objects", "SKIP", "no changes"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("skip persist missing %q:\n%s", want, out)
+		}
 	}
 }
 

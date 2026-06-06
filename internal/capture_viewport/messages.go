@@ -36,5 +36,27 @@ type OperationProgress struct {
 // holds it and records the error.
 type OperationDone struct{ Err error }
 
+// PhaseStarted begins a phase: retitle the header and reset all
+// per-phase live state (tail, bar, bytes).
+type PhaseStarted struct{ Description string }
+
+// DirectiveView / VerdictView mirror capture_events.Directive/Verdict
+// for the view layer (no dependency inversion; the adapter converts).
+type DirectiveView struct{ Kind, Reason string }
+
+type VerdictView struct {
+	OK         bool
+	Directive  *DirectiveView
+	Diagnostic map[string]any
+}
+
+// PhaseEnded completes a phase: persist a verdict line above the live
+// region (tea.Println) and reset per-phase state. Description is carried
+// here too so an end without a start still renders something sensible.
+type PhaseEnded struct {
+	Description string
+	Verdict     VerdictView
+}
+
 // BatchDone ends the whole run and quits the program.
 type BatchDone struct{ Err error }

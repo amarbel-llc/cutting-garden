@@ -5,6 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/amarbel-llc/cutting-garden/internal/capture_events"
 	cgp "github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
 )
 
@@ -91,5 +92,25 @@ func TestProgramReporter_ProgressNoItemSkipsLogLine(t *testing.T) {
 	}
 }
 
+func TestProgramReporter_PhaseEventsMapToMessages(t *testing.T) {
+	fs := &fakeSender{}
+	r := NewReporter(fs)
+	r.PhaseStart("download")
+	r.PhaseEnd(capture_events.Verdict{OK: true})
+	r.Finalize(nil)
+	if len(fs.msgs) != 3 {
+		t.Fatalf("want 3 msgs, got %d: %#v", len(fs.msgs), fs.msgs)
+	}
+	if got := fs.msgs[0].(PhaseStarted); got.Description != "download" {
+		t.Errorf("PhaseStarted = %+v", got)
+	}
+	if got := fs.msgs[1].(PhaseEnded); !got.Verdict.OK || got.Description != "download" {
+		t.Errorf("PhaseEnded = %+v", got)
+	}
+	if _, ok := fs.msgs[2].(BatchDone); !ok {
+		t.Errorf("Finalize should send BatchDone, got %T", fs.msgs[2])
+	}
+}
+
 // Compile-time proof the adapter satisfies the plugin Reporter contract.
-var _ cgp.Reporter = ProgramReporter{}
+var _ cgp.Reporter = (*ProgramReporter)(nil)

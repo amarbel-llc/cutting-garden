@@ -2,6 +2,7 @@ package capture_viewport
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/progress"
@@ -91,6 +92,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.bytesTotal = msg.BytesTotal
 		}
 		return m, nil
+	case PhaseStarted:
+		m.title = msg.Description
+		m.resetPhase()
+		return m, nil
+	case PhaseEnded:
+		line := m.renderPhaseEnd(msg)
+		m.resetPhase()
+		return m, tea.Println(line)
 	case OperationDone:
 		if msg.Err != nil {
 			m.err = msg.Err
@@ -109,6 +118,60 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	default:
 		return m, nil
 	}
+}
+
+// resetPhase clears all per-phase live state. This is the designed
+// phase-boundary reset (retires the cg#56 bytesDone phase-bleed).
+func (m *Model) resetPhase() {
+	m.tail = nil
+	m.current, m.total = 0, 0
+	m.bytesDone, m.bytesTotal = 0, 0
+}
+
+// renderPhaseEnd builds the persistent multi-line string for a phase
+// verdict, following tap's TTY-viewport FDR: ok collapses to one green
+// line; failure holds the tail (persisted above) + red line + a
+// YAML-ish diagnostic; a skip/todo directive renders dim with the
+// directive text.
+func (m Model) renderPhaseEnd(msg PhaseEnded) string {
+	desc := msg.Description
+	if desc == "" {
+		// Defensive fallback: the adapter stamps Description from its
+		// tracked phase, but an end-without-start (or a hand-sent
+		// message) still renders something sensible.
+		desc = m.title
+	}
+	switch {
+	case msg.Verdict.Directive != nil:
+		d := msg.Verdict.Directive
+		return tailStyle.Render(fmt.Sprintf("↷ %s # %s %s",
+			desc, strings.ToUpper(d.Kind), d.Reason))
+	case msg.Verdict.OK:
+		return successStyle.Render("✓ " + desc)
+	default:
+		var b strings.Builder
+		for _, l := range m.tail { // hold the tail: persist it above
+			b.WriteString(tailStyle.Render("│ " + l))
+			b.WriteByte('\n')
+		}
+		b.WriteString(failStyle.Render("✗ " + desc))
+		for _, k := range sortedKeys(msg.Verdict.Diagnostic) {
+			b.WriteByte('\n')
+			b.WriteString(failStyle.Render(fmt.Sprintf("  %s: %v", k, msg.Verdict.Diagnostic[k])))
+		}
+		return b.String()
+	}
+}
+
+// sortedKeys returns the map's keys sorted — deterministic diagnostic
+// rendering.
+func sortedKeys(m map[string]any) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 var (
