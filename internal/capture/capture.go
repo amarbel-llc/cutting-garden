@@ -31,6 +31,7 @@ import (
 	"github.com/amarbel-llc/cutting-garden/internal/command"
 	"github.com/amarbel-llc/cutting-garden/internal/command_components"
 	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
+	"github.com/amarbel-llc/madder/go/pkgs/blob_store_env"
 	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
 	"github.com/amarbel-llc/madder/go/pkgs/output_format"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
@@ -177,16 +178,30 @@ func (cmd *Capture) Run(req command.Request) {
 	}
 
 	args := req.PopArgs()
-	envBlobStore := command_components.MakeBlobStoreEnv(ctx)
-	cgEnvDir := command_components.MakeCgEnvDir(ctx)
-	shadowCandidates := blobStoreIds(envBlobStore.GetBlobStores())
 
-	groups, classifyFails, planErr := planCapture(args, shadowCandidates)
-
+	// The reporting surface is built BEFORE the blob-store env: blob-store
+	// chatter follows the env's err sink (madder#228), and the sink target
+	// — the viewport Reporter — must exist when the env captures it. With
+	// the viewport inactive the env construction is byte-identical to the
+	// pre-viewport path (default stderr sink).
 	rep, sink, finish := cmd.setupReporting(captureLabel(args))
 	reporter := cutting_garden_plugins.ReporterOrNop(rep)
 	viewportActive := rep != nil
 	defer sink.Finalize()
+
+	var envBlobStore blob_store_env.BlobStoreEnv
+	if viewportActive {
+		envBlobStore = command_components.MakeBlobStoreEnvWithErr(ctx,
+			&reporterLineWriter{
+				log: func(s string) { reporter.Log("%s", s) },
+			})
+	} else {
+		envBlobStore = command_components.MakeBlobStoreEnv(ctx)
+	}
+	cgEnvDir := command_components.MakeCgEnvDir(ctx)
+	shadowCandidates := blobStoreIds(envBlobStore.GetBlobStores())
+
+	groups, classifyFails, planErr := planCapture(args, shadowCandidates)
 
 	failCount := 0
 	var captureLogEntries []captureLogEntry

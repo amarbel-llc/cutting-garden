@@ -3,7 +3,7 @@ module github.com/amarbel-llc/cutting-garden
 go 1.26
 
 require (
-	github.com/amarbel-llc/madder/go v0.3.30-0.20260526123337-14f07017cda3
+	github.com/amarbel-llc/madder/go v0.3.34-0.20260606173810-c5bfc1d6e4b8
 	github.com/amarbel-llc/purse-first/libs/dewey v0.1.8
 	github.com/amarbel-llc/tap/go v0.1.8
 	github.com/charmbracelet/bubbles v1.0.0

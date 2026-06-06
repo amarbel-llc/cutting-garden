@@ -2,9 +2,11 @@ package capture
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/amarbel-llc/madder/go/pkgs/output_format"
@@ -82,6 +84,80 @@ func TestCaptureLabel(t *testing.T) {
 				t.Errorf("captureLabel(%v) = %q, want %q", tt.args, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestReporterLineWriter_SplitsOnCRAndLF(t *testing.T) {
+	var got []string
+	w := &reporterLineWriter{log: func(s string) { got = append(got, s) }}
+
+	if _, err := io.WriteString(w, "alpha\nbeta\rgamma\n"); err != nil {
+		t.Fatal(err)
+	}
+
+	want := []string{"alpha", "beta", "gamma"}
+	if len(got) != len(want) {
+		t.Fatalf("logged %d segments %q, want %d %q", len(got), got, len(want), want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("segment[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestReporterLineWriter_BuffersPartialSegment(t *testing.T) {
+	var got []string
+	w := &reporterLineWriter{log: func(s string) { got = append(got, s) }}
+
+	io.WriteString(w, "# (blob_store: xyz) dia")
+	if len(got) != 0 {
+		t.Fatalf("partial segment flushed early: %q", got)
+	}
+
+	io.WriteString(w, "ling sftp host\n")
+	if len(got) != 1 || got[0] != "# (blob_store: xyz) dialing sftp host" {
+		t.Fatalf("got %q, want the joined segment", got)
+	}
+}
+
+func TestReporterLineWriter_SkipsEmptySegments(t *testing.T) {
+	var got []string
+	w := &reporterLineWriter{log: func(s string) { got = append(got, s) }}
+
+	io.WriteString(w, "\r\n\n   \n\r")
+	if len(got) != 0 {
+		t.Fatalf("empty/whitespace segments logged: %q", got)
+	}
+}
+
+// TestReporterLineWriter_ConcurrentWrites drives Write from many goroutines —
+// the blob store may chatter from its own goroutines — and asserts no segment
+// is lost. Meaningful under -race: it pins that Write serializes its buffer.
+func TestReporterLineWriter_ConcurrentWrites(t *testing.T) {
+	var mu sync.Mutex
+	var got []string
+	w := &reporterLineWriter{log: func(s string) {
+		mu.Lock()
+		defer mu.Unlock()
+		got = append(got, s)
+	}}
+
+	const writers, lines = 8, 50
+	var wg sync.WaitGroup
+	for g := range writers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range lines {
+				fmt.Fprintf(w, "writer-%d line-%d\n", g, i)
+			}
+		}()
+	}
+	wg.Wait()
+
+	if len(got) != writers*lines {
+		t.Fatalf("logged %d segments, want %d", len(got), writers*lines)
 	}
 }
 

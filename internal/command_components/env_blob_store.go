@@ -22,11 +22,14 @@
 package command_components
 
 import (
+	"io"
+
 	"github.com/amarbel-llc/madder/go/pkgs/blob_store_env"
 	"github.com/amarbel-llc/madder/go/pkgs/env_dir"
 	"github.com/amarbel-llc/madder/go/pkgs/env_local"
 	"github.com/amarbel-llc/madder/go/pkgs/env_ui"
 	"github.com/amarbel-llc/madder/go/pkgs/madder_env"
+	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/debug"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 )
 
@@ -52,8 +55,33 @@ func MakeEnvDir(ctx errors.Context, xdgScope string) env_dir.Env {
 // the blob-write path is intentionally omitted (madder's inventory
 // log is a different observability mechanism from cg's captures.log).
 func MakeBlobStoreEnv(ctx errors.Context) blob_store_env.BlobStoreEnv {
+	return makeBlobStoreEnvWithOptions(ctx, env_ui.Options{})
+}
+
+// MakeBlobStoreEnvWithErr is MakeBlobStoreEnv with the env's err sink
+// redirected to errWriter via env_ui's Options.CustomErr. Blob-store
+// chatter (lazy SFTP dial / host-key / remote-config / dir-check
+// lines) follows the env's err sink as of madder#228, so a caller
+// that owns stderr with a TUI (capture's -progress viewport) passes a
+// Reporter-backed writer here to keep that chatter from fracturing
+// the render. Stdout, stdin, and the UI sink are untouched.
+func MakeBlobStoreEnvWithErr(
+	ctx errors.Context,
+	errWriter io.Writer,
+) blob_store_env.BlobStoreEnv {
+	return makeBlobStoreEnvWithOptions(ctx, env_ui.Options{CustomErr: errWriter})
+}
+
+// makeBlobStoreEnvWithOptions is the shared body: env_ui.Make with
+// zero-value cliConfig/debug matches env_ui.MakeDefault exactly, so
+// MakeBlobStoreEnv's behavior is unchanged when options is the zero
+// Options.
+func makeBlobStoreEnvWithOptions(
+	ctx errors.Context,
+	options env_ui.Options,
+) blob_store_env.BlobStoreEnv {
 	dir := MakeEnvDir(ctx, "madder")
-	ui := env_ui.MakeDefault(ctx)
+	ui := env_ui.Make(ctx, nil, debug.Options{}, options)
 	return blob_store_env.MakeBlobStoreEnv(env_local.Make(ui, dir))
 }
 
