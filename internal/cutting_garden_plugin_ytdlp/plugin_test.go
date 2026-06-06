@@ -91,11 +91,11 @@ type sinkFailure struct {
 	err    error
 }
 
-func (s *recordingSink) SetStore(string)                                 {}
-func (s *recordingSink) Entry(e capture_receipt.EntryV1)                 { s.entries = append(s.entries, e) }
-func (s *recordingSink) StoreGroupReceipt(string, int)                   {}
-func (s *recordingSink) Notice(string, ...any)                           {}
-func (s *recordingSink) Failure(source string, err error)                {
+func (s *recordingSink) SetStore(string)                 {}
+func (s *recordingSink) Entry(e capture_receipt.EntryV1) { s.entries = append(s.entries, e) }
+func (s *recordingSink) StoreGroupReceipt(string, int)   {}
+func (s *recordingSink) Notice(string, ...any)           {}
+func (s *recordingSink) Failure(source string, err error) {
 	s.failures = append(s.failures, sinkFailure{source: source, err: err})
 }
 func (s *recordingSink) Finalize() {}

@@ -92,7 +92,6 @@ func (Plugin) CaptureRoot(
 		return cutting_garden_plugins.CaptureRootResult{FailCount: 1}
 	}
 
-	r.Log("downloaded, writing artifacts")
 	entries, failCount := walkArtifacts(req.Context, req.BlobStore, tempDir, source, req.Sink, r)
 	return cutting_garden_plugins.CaptureRootResult{
 		Entries:   entries,
@@ -100,10 +99,28 @@ func (Plugin) CaptureRoot(
 	}
 }
 
+// artifactFile is one regular file collected by walkArtifacts' first
+// pass: its absolute path, slash-separated rel-path under outDir, and
+// the stat size/perm used for byte-progress accounting and the entry.
+type artifactFile struct {
+	path string
+	rel  string
+	size int64
+	mode fs.FileMode
+}
+
 // walkArtifacts streams every regular file under outDir into store
 // and returns one EntryV1 per file. Subdirectories below outDir would
 // be unexpected from yt-dlp's default template; if they appear they
 // are walked recursively so nothing is silently dropped.
+//
+// Two passes: pass 1 collects the files and pre-sums their sizes (the
+// files are local, so the total is free), pass 2 streams each into the
+// store reporting cumulative bytes against that total — a multi-minute
+// upload of one large file moves the byte bar continuously instead of
+// jumping once per artifact. yt-dlp has already exited by the time we
+// run, so the tempdir is quiescent and pass-1 sizes stay valid for
+// pass 2.
 func walkArtifacts(
 	ctx context.Context,
 	store blob_stores.BlobStoreInitialized,
@@ -119,8 +136,12 @@ func walkArtifacts(
 	var (
 		entries   []capture_receipt.EntryV1
 		failCount int
+		files     []artifactFile
+		phaseDone int64
 	)
 
+	// Pass 1: collect regular files and pre-sum sizes.
+	var phaseTotal int64
 	walkErr := filepath.WalkDir(outDir, func(p string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			sink.Failure(p, errors.Wrap(walkErr))
@@ -151,37 +172,65 @@ func walkArtifacts(
 		}
 		rel = filepath.ToSlash(rel)
 
-		id, size, err := plugin_blob_io.WriteFileBlob(ctx, store, p)
-		if err != nil {
-			sink.Failure(p, errors.Wrap(err))
-			failCount++
-			return nil
-		}
-
-		entry := capture_receipt.EntryV1{
-			Path:   rel,
-			Root:   source,
-			Type:   capture_receipt.TypeFile,
-			Mode:   info.Mode().Perm(),
-			Size:   size,
-			BlobId: id.String(),
-		}
-		entries = append(entries, entry)
-		sink.Entry(entry)
-		// Items is the count of artifacts written so far (monotonic
-		// non-decreasing); Item is the artifact's rel-path. The Reporter
-		// is observability only — it never influences entries, blob bytes,
-		// or the sink stream above.
-		reporter.Progress(cutting_garden_plugins.ReportProgress{
-			Item:  rel,
-			Items: int64(len(entries)),
+		files = append(files, artifactFile{
+			path: p,
+			rel:  rel,
+			size: info.Size(),
+			mode: info.Mode().Perm(),
 		})
+		phaseTotal += info.Size()
 		return nil
 	})
 
 	if walkErr != nil {
 		sink.Failure(outDir, errors.Wrap(walkErr))
 		failCount++
+	}
+
+	reporter.Log("downloaded, writing %d artifacts (%.1f MiB)",
+		len(files), float64(phaseTotal)/(1<<20))
+
+	// Pass 2: stream each file into the store. The byte-progress
+	// callback reports phaseDone (bytes of fully-written prior
+	// artifacts) plus the current file's cumulative copied bytes,
+	// against phaseTotal — no Plan is emitted (the Plan contract is
+	// "<=1x, before any Progress" and the download phase may already
+	// have ticked); BytesTotal rides per-tick and the viewport Model
+	// re-arms from it. The Reporter is observability only — it never
+	// influences entries, blob bytes, or the sink stream.
+	for i, f := range files {
+		onBytes := func(fileBytes int64) {
+			reporter.Progress(cutting_garden_plugins.ReportProgress{
+				Item:       f.rel,
+				Items:      int64(i + 1),
+				Bytes:      phaseDone + fileBytes,
+				BytesTotal: phaseTotal,
+			})
+		}
+
+		id, size, err := plugin_blob_io.WriteFileBlobProgress(ctx, store, f.path, onBytes)
+		if err != nil {
+			sink.Failure(f.path, errors.Wrap(err))
+			failCount++
+			// A failed file still advances phaseDone by its full size:
+			// its bytes are in phaseTotal, so skipping them would leave
+			// the bar permanently short of 100%. The failure itself is
+			// surfaced via sink.Failure/failCount, not the bar.
+			phaseDone += f.size
+			continue
+		}
+
+		entry := capture_receipt.EntryV1{
+			Path:   f.rel,
+			Root:   source,
+			Type:   capture_receipt.TypeFile,
+			Mode:   f.mode,
+			Size:   size,
+			BlobId: id.String(),
+		}
+		entries = append(entries, entry)
+		sink.Entry(entry)
+		phaseDone += f.size
 	}
 
 	return entries, failCount

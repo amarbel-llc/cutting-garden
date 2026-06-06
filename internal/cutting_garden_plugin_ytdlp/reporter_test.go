@@ -67,25 +67,51 @@ func TestWalkArtifacts_EmitsProgressPerArtifact(t *testing.T) {
 		t.Fatalf("entries = %d, want %d: %v", len(entries), len(wantOrder), entryPaths(entries))
 	}
 
+	// The fixture files are all far below the 1 MiB progress stride, so
+	// each artifact produces exactly one Progress tick: the final flush
+	// from WriteFileBlobProgress carrying the file's full size. Larger
+	// files would add intermediate ticks ("at least one per artifact").
 	if len(rep.progress) != len(wantOrder) {
-		t.Fatalf("progress events = %d, want %d (one per artifact): %v",
+		t.Fatalf("progress events = %d, want %d (one final tick per sub-stride artifact): %v",
 			len(rep.progress), len(wantOrder), rep.progress)
 	}
 
-	// One Progress per artifact, with monotonic non-decreasing Items
-	// (1..N) and the right rel-path Item.
+	// Pre-compute per-file sizes so cumulative-Bytes assertions line up
+	// with the lexical emission order.
+	var phaseTotal int64
+	sizes := make([]int64, len(wantOrder))
+	for i, rel := range wantOrder {
+		info, err := os.Stat(filepath.Join(dir, rel))
+		if err != nil {
+			t.Fatalf("stat fixture %q: %v", rel, err)
+		}
+		sizes[i] = info.Size()
+		phaseTotal += info.Size()
+	}
+
+	var wantBytes int64
 	for i, p := range rep.progress {
-		wantItems := int64(i + 1)
-		if p.Items != wantItems {
+		wantBytes += sizes[i]
+		if wantItems := int64(i + 1); p.Items != wantItems {
 			t.Errorf("progress[%d].Items = %d, want %d", i, p.Items, wantItems)
 		}
 		if p.Item != wantOrder[i] {
 			t.Errorf("progress[%d].Item = %q, want %q", i, p.Item, wantOrder[i])
 		}
+		if p.Bytes != wantBytes {
+			t.Errorf("progress[%d].Bytes = %d, want %d (cumulative)", i, p.Bytes, wantBytes)
+		}
+		if p.BytesTotal != phaseTotal {
+			t.Errorf("progress[%d].BytesTotal = %d, want %d (phase total on every tick)",
+				i, p.BytesTotal, phaseTotal)
+		}
 		if i > 0 && p.Items < rep.progress[i-1].Items {
 			t.Errorf("progress[%d].Items = %d < prev %d (not monotonic)",
 				i, p.Items, rep.progress[i-1].Items)
 		}
+	}
+	if last := rep.progress[len(rep.progress)-1].Bytes; last != phaseTotal {
+		t.Errorf("final Bytes = %d, want %d (sum of artifact sizes)", last, phaseTotal)
 	}
 }
 
