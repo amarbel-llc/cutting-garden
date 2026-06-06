@@ -20,10 +20,16 @@ type OperationStarted struct {
 	Total int    // total operations; 0 = unknown (indeterminate)
 }
 
-// OperationProgress advances the bar numerator.
+// OperationProgress advances the bar numerator. Current/Total drive the
+// item-count bar (e.g. git's structural-object count); Bytes/BytesTotal
+// drive the byte bar (e.g. a yt-dlp stream download). A consumer may set
+// either pair, both, or neither — the Model's View precedence (items >
+// byte bar > indeterminate byte counter) decides what renders.
 type OperationProgress struct {
-	Current int // numerator
-	Total   int // denominator; 0 leaves the existing total unchanged
+	Current    int   // item numerator
+	Total      int   // item denominator; 0 leaves the existing total unchanged
+	Bytes      int64 // bytes processed so far
+	BytesTotal int64 // total bytes; 0 leaves the existing byte total unchanged
 }
 
 // OperationDone ends one operation: success collapses its tail, failure

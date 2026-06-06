@@ -32,10 +32,19 @@ func (r ProgramReporter) Plan(pl cgp.ReportPlan) {
 }
 
 func (r ProgramReporter) Progress(pr cgp.ReportProgress) {
+	// The Item line is sent unconditionally when present; the Model
+	// dedupes consecutive identical lines, so a streaming source that
+	// re-reports the same item label every tick (yt-dlp's video id)
+	// collapses to one tail line while distinct labels (git hashes) all
+	// land.
 	if pr.Item != "" {
 		r.p.Send(LogLine{Text: pr.Item})
 	}
-	r.p.Send(OperationProgress{Current: int(pr.Items)})
+	r.p.Send(OperationProgress{
+		Current:    int(pr.Items),
+		Bytes:      pr.Bytes,
+		BytesTotal: pr.BytesTotal,
+	})
 }
 
 func (r ProgramReporter) Log(format string, args ...any) {

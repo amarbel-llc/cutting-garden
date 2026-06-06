@@ -57,5 +57,39 @@ func TestProgramReporter_ProgressEmitsItemThenAdvance(t *testing.T) {
 	}
 }
 
+func TestProgramReporter_ProgressForwardsBytes(t *testing.T) {
+	fs := &fakeSender{}
+	// A byte-only sample (streaming source): Item label present, Items 0,
+	// with Bytes/BytesTotal set. The adapter must forward both byte fields.
+	NewReporter(fs).Progress(cgp.ReportProgress{
+		Item: "dQw4w9WgXcQ", Bytes: 1500, BytesTotal: 4096,
+	})
+
+	if len(fs.msgs) != 2 {
+		t.Fatalf("want 2 msgs, got %d: %+v", len(fs.msgs), fs.msgs)
+	}
+	op, ok := fs.msgs[1].(OperationProgress)
+	if !ok {
+		t.Fatalf("second msg want OperationProgress, got %T", fs.msgs[1])
+	}
+	if op.Bytes != 1500 || op.BytesTotal != 4096 {
+		t.Errorf("byte fields not forwarded: %+v", op)
+	}
+}
+
+func TestProgramReporter_ProgressNoItemSkipsLogLine(t *testing.T) {
+	fs := &fakeSender{}
+	// No Item label: only the OperationProgress advance is sent.
+	NewReporter(fs).Progress(cgp.ReportProgress{Bytes: 99, BytesTotal: 0})
+
+	if len(fs.msgs) != 1 {
+		t.Fatalf("want 1 msg (no LogLine without Item), got %d: %+v", len(fs.msgs), fs.msgs)
+	}
+	op, ok := fs.msgs[0].(OperationProgress)
+	if !ok || op.Bytes != 99 {
+		t.Errorf("want OperationProgress{Bytes:99}, got %+v", fs.msgs[0])
+	}
+}
+
 // Compile-time proof the adapter satisfies the plugin Reporter contract.
 var _ cgp.Reporter = ProgramReporter{}

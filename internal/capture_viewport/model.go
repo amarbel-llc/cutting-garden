@@ -1,6 +1,7 @@
 package capture_viewport
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/progress"
@@ -20,10 +21,12 @@ type Model struct {
 	spinner  spinner.Model
 	progress progress.Model
 
-	current int // bar numerator
-	total   int // bar denominator; 0 = indeterminate
-	done    bool
-	err     error
+	current    int   // item-bar numerator
+	total      int   // item-bar denominator; 0 = indeterminate
+	bytesDone  int64 // bytes processed so far (byte bar / counter)
+	bytesTotal int64 // total bytes; 0 = unknown
+	done       bool
+	err        error
 }
 
 // Option configures a Model.
@@ -55,6 +58,13 @@ func (m Model) Init() tea.Cmd { return m.spinner.Tick }
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case LogLine:
+		// Dedupe consecutive identical lines: a streaming source that
+		// re-reports the same item label every tick (yt-dlp's video id)
+		// would otherwise flood the tail. Distinct labels (git hashes)
+		// are unaffected since each differs from its predecessor.
+		if n := len(m.tail); n > 0 && m.tail[n-1] == msg.Text {
+			return m, nil
+		}
 		m.tail = append(m.tail, msg.Text)
 		if len(m.tail) > m.tailMax {
 			m.tail = m.tail[len(m.tail)-m.tailMax:]
@@ -75,6 +85,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.current = msg.Current
 		if msg.Total > 0 {
 			m.total = msg.Total
+		}
+		m.bytesDone = msg.Bytes
+		if msg.BytesTotal > 0 {
+			m.bytesTotal = msg.BytesTotal
 		}
 		return m, nil
 	case OperationDone:
@@ -120,10 +134,27 @@ func (m Model) View() string {
 	b.WriteString(m.spinner.View())
 	b.WriteByte(' ')
 	b.WriteString(m.title)
-	if m.total > 0 {
+	switch {
+	case m.total > 0:
+		// Item-count bar (e.g. git structural objects). Unchanged.
 		ratio := float64(m.current) / float64(m.total)
 		b.WriteString("  ")
 		b.WriteString(m.progress.ViewAs(ratio))
+	case m.bytesTotal > 0:
+		// Byte bar with humanized counts (e.g. a yt-dlp stream whose
+		// total_bytes_estimate is known).
+		ratio := float64(m.bytesDone) / float64(m.bytesTotal)
+		b.WriteString("  ")
+		b.WriteString(m.progress.ViewAs(ratio))
+		b.WriteByte(' ')
+		b.WriteString(humanizeBytes(m.bytesDone))
+		b.WriteByte('/')
+		b.WriteString(humanizeBytes(m.bytesTotal))
+	case m.bytesDone > 0:
+		// Indeterminate byte counter: bytes are flowing but no total is
+		// known yet (yt-dlp's total_bytes is NA until the final tick).
+		b.WriteByte(' ')
+		b.WriteString(humanizeBytes(m.bytesDone))
 	}
 	b.WriteByte('\n')
 
@@ -132,4 +163,20 @@ func (m Model) View() string {
 		b.WriteByte('\n')
 	}
 	return b.String()
+}
+
+// humanizeBytes formats n as a binary-prefixed size with one decimal
+// place (e.g. 1024 -> "1.0 KiB"). Values below 1 KiB render as whole
+// bytes ("512 B") since a fractional byte count is meaningless.
+func humanizeBytes(n int64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	div, exp := int64(unit), 0
+	for v := n / unit; v >= unit; v /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTPE"[exp])
 }

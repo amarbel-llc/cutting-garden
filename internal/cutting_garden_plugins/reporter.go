@@ -10,6 +10,12 @@ package cutting_garden_plugins
 // Reporter is opt-in (the #50 SourceValidator capability ethos): a nil
 // Reporter is valid and means "no observability"; plugins MAY omit any or
 // all calls. Use ReporterOrNop at the call site to drop the nil check.
+//
+// A plugin MAY call these methods from multiple goroutines concurrently
+// (the ytdlp plugin scans yt-dlp's stdout and stderr in parallel and
+// emits from both), so an implementation MUST be safe for concurrent
+// use. NopReporter is trivially safe; ProgramReporter forwards to
+// tea.Program.Send, which is goroutine-safe.
 type Reporter interface {
 	// Plan reports an up-front estimate of the work about to be done.
 	// Called at most once, before any Progress. Optional — a plugin that
@@ -37,9 +43,10 @@ type ReportPlan struct {
 
 // ReportProgress is one incremental advancement sample.
 type ReportProgress struct {
-	Item  string // current item label, e.g. "src/main.go"
-	Items int64  // operations completed so far (the bar numerator)
-	Bytes int64  // bytes processed so far
+	Item       string // current item label, e.g. "src/main.go"
+	Items      int64  // operations completed so far (the bar numerator)
+	Bytes      int64  // bytes processed so far
+	BytesTotal int64  // total bytes for the current item; 0 = unknown
 }
 
 // NopReporter is a Reporter whose methods do nothing — the default when no

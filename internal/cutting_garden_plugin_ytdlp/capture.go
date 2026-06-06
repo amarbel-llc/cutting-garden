@@ -80,8 +80,9 @@ func (Plugin) CaptureRoot(
 	// indeterminate display, which is the correct UX for a stream.
 	onProgress := func(s progressSample) {
 		r.Progress(cutting_garden_plugins.ReportProgress{
-			Item:  s.ID,
-			Bytes: s.Downloaded,
+			Item:       s.ID,
+			Bytes:      s.Downloaded,
+			BytesTotal: s.Total,
 		})
 	}
 	onLog := func(line string) { r.Log("%s", line) }
