@@ -8,7 +8,9 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
+	"github.com/amarbel-llc/cutting-garden/internal/capture_events"
 	"github.com/amarbel-llc/madder/go/pkgs/output_format"
 )
 
@@ -267,4 +269,90 @@ func TestSetupReporting_ActiveFinishIdempotent(t *testing.T) {
 	// Second call models Run's deferred guard firing after the inline
 	// call; sync.Once must make it return immediately without panicking.
 	finish(errCaptureAborted)
+}
+
+// recordingStream embeds capture_events.Nop and records the ordered event
+// trace — the standard test-recorder pattern for the Stream contract.
+type recordingStream struct {
+	capture_events.Nop
+	events []string
+}
+
+func (r *recordingStream) PhaseStart(desc string) {
+	r.events = append(r.events, "start:"+desc)
+}
+
+func (r *recordingStream) Log(format string, args ...any) {
+	r.events = append(r.events, "log:"+fmt.Sprintf(format, args...))
+}
+
+func (r *recordingStream) PhaseEnd(v capture_events.Verdict) {
+	r.events = append(r.events, fmt.Sprintf("end:ok=%v", v.OK))
+}
+
+func (r *recordingStream) Finalize(err error) {
+	r.events = append(r.events, fmt.Sprintf("finalize:err=%v", err))
+}
+
+// TestMakeFinish_RoutesThroughFinalizeOnce pins the Task-4 refactor: the
+// active-mode finish closure routes its terminal event through the stream's
+// Finalize (the adapter sends BatchDone) instead of a direct program Send,
+// and the sync.Once guarantees exactly one Finalize no matter how many
+// times finish fires (inline call + Run's deferred guard).
+func TestMakeFinish_RoutesThroughFinalizeOnce(t *testing.T) {
+	rec := &recordingStream{}
+	runDone := make(chan struct{})
+	close(runDone) // render loop already exited; the wait must not block
+
+	finish := makeFinish(rec, runDone)
+	finish(nil)
+	finish(errCaptureAborted) // models the deferred guard: must be a no-op
+
+	want := []string{"finalize:err=<nil>"}
+	if len(rec.events) != len(want) || rec.events[0] != want[0] {
+		t.Fatalf("events = %q, want exactly %q", rec.events, want)
+	}
+}
+
+// TestMakeFinish_WaitsForRunDone pins the second half of the Once body: the
+// first finish call must block until the program's render loop exits
+// (runDone closes), so the final frame flushes before Run sets exit codes.
+func TestMakeFinish_WaitsForRunDone(t *testing.T) {
+	rec := &recordingStream{}
+	runDone := make(chan struct{})
+	finish := makeFinish(rec, runDone)
+
+	returned := make(chan struct{})
+	go func() {
+		finish(nil)
+		close(returned)
+	}()
+
+	select {
+	case <-returned:
+		t.Fatal("finish returned before runDone closed")
+	case <-time.After(10 * time.Millisecond):
+		// still blocked — the wait is in place
+	}
+	close(runDone)
+	<-returned
+}
+
+func TestReportReceipt_EmitsPhaseAroundLog(t *testing.T) {
+	rec := &recordingStream{}
+	reportReceipt(rec, "storeA", "blake3:receipt", 42)
+
+	want := []string{
+		"start:receipt store=storeA",
+		"log:receipt store=storeA id=blake3:receipt count=42",
+		"end:ok=true",
+	}
+	if len(rec.events) != len(want) {
+		t.Fatalf("events = %q, want %q", rec.events, want)
+	}
+	for i := range want {
+		if rec.events[i] != want[i] {
+			t.Errorf("events[%d] = %q, want %q", i, rec.events[i], want[i])
+		}
+	}
 }

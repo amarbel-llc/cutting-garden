@@ -26,6 +26,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/amarbel-llc/cutting-garden/internal/capture_events"
 	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
 	"github.com/amarbel-llc/cutting-garden/internal/capture_sink"
 	"github.com/amarbel-llc/cutting-garden/internal/capture_viewport"
@@ -159,15 +160,43 @@ func (cmd *Capture) setupReporting(label string) (
 		defer close(runDone)
 		_, _ = p.Run()
 	}()
-	var finishOnce sync.Once
-	return capture_viewport.NewReporter(p),
+	rep := capture_viewport.NewReporter(p)
+	return rep,
 		capture_sink.NewNDJSON(io.Discard, io.Discard),
-		func(err error) {
-			finishOnce.Do(func() {
-				p.Send(capture_viewport.BatchDone{Err: err})
-				<-runDone
-			})
-		}
+		makeFinish(rep, runDone)
+}
+
+// makeFinish builds the once-guarded active-mode teardown: route the
+// terminal event through the stream's Finalize (the viewport adapter
+// sends BatchDone) and block until the program's render loop exits so
+// the final frame flushes and the terminal restores before the caller
+// sets the exit code. The sync.Once makes Run's deferred guard a no-op
+// after an inline finish(planErr)/finish(batchErr) already ran.
+func makeFinish(
+	stream cutting_garden_plugins.Reporter,
+	runDone <-chan struct{},
+) func(error) {
+	var once sync.Once
+	return func(err error) {
+		once.Do(func() {
+			stream.Finalize(err)
+			<-runDone
+		})
+	}
+}
+
+// reportReceipt emits the receipt phase on the event stream: a phase
+// wrapping the human-readable receipt line, persisted as a checkmark by
+// the viewport. Semantics only — the receipt's identity surface stays
+// with sink.StoreGroupReceipt and the post-teardown stdout reprint.
+func reportReceipt(
+	stream cutting_garden_plugins.Reporter,
+	storeLabel, receiptID string,
+	count int,
+) {
+	stream.PhaseStart(fmt.Sprintf("receipt store=%s", storeLabel))
+	stream.Log("receipt store=%s id=%s count=%d", storeLabel, receiptID, count)
+	stream.PhaseEnd(capture_events.Verdict{OK: true})
 }
 
 // capturedReceipt records a store-group receipt the loop emitted, so the
@@ -287,6 +316,8 @@ func (cmd *Capture) Run(req command.Request) {
 					continue
 				}
 				sink.StoreGroupReceipt(res.ReceiptDigest, res.ObjectCount)
+				reportReceipt(reporter,
+					quoteEmpty(storeName), res.ReceiptDigest, res.ObjectCount)
 				receipts = append(receipts, capturedReceipt{
 					store: storeName, receiptID: res.ReceiptDigest, count: res.ObjectCount,
 				})
@@ -358,6 +389,7 @@ func (cmd *Capture) Run(req command.Request) {
 			continue
 		}
 		sink.StoreGroupReceipt(receiptID, len(entries))
+		reportReceipt(reporter, quoteEmpty(storeName), receiptID, len(entries))
 		receipts = append(receipts, capturedReceipt{
 			store: storeName, receiptID: receiptID, count: len(entries),
 		})
