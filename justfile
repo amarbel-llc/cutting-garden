@@ -204,3 +204,25 @@ debug-ytdlp-channel-list URL='https://www.youtube.com/@YouTube/videos' LIMIT='10
 [group('debug')]
 debug-viewport-demo:
     nix develop --command go run ./cmd/capture-viewport-demo
+
+# Strace yt-dlp's writes to its output dir to see whether the merged
+# media file is written sequentially or with backward seeks (evidence
+# for the streaming-tempdir feasibility analysis; see ytdlp overlap-
+# ingestion issue). Forces a video+audio merge so ffmpeg's container-
+# header patching is exercised; leaves probe.strace + a summary in
+# .tmp/seekprobe for inspection.
+[group('debug')]
+debug-ytdlp-seek-probe URL='https://youtu.be/aqz-KE-bpKQ':
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p .tmp/seekprobe
+    cd .tmp/seekprobe
+    rm -f out.* probe.strace
+    strace -f -e trace=openat,open,lseek,write,pwrite64,ftruncate -o probe.strace \
+      yt-dlp -f 'bv*[height<=240]+ba' --max-filesize 60M \
+        -o 'out.%(ext)s' --no-playlist -- {{URL}} \
+      | tee ytdlp.log
+    echo '--- output-file fds (openat) ---'
+    grep -E 'openat\(.*"(\./)?(out\.|.*\.part|.*\.temp)' probe.strace || true
+    echo '--- lseek/pwrite64/ftruncate on those files: inspect probe.strace ---'
+    grep -cE '^\S+ +lseek' probe.strace || true
