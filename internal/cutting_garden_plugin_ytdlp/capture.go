@@ -51,6 +51,8 @@ func captureDefaultArgs(outDir, source string) []string {
 func (Plugin) CaptureRoot(
 	req cutting_garden_plugins.CaptureRootRequest,
 ) cutting_garden_plugins.CaptureRootResult {
+	r := cutting_garden_plugins.ReporterOrNop(req.Reporter)
+
 	source, err := sourceURLFromArg(req.Source)
 	if err != nil {
 		req.Sink.Failure(req.RawArg, err)
@@ -72,12 +74,25 @@ func (Plugin) CaptureRoot(
 		}
 	}()
 
-	if err := runYtdlp(req.Context, tempDir, captureDefaultArgs(tempDir, source), nil, nil); err != nil {
+	r.Log("running yt-dlp for %s", source)
+	// The download total is unknown up front (yt-dlp streams), so no Plan
+	// is emitted for this phase — bytes-based Progress yields an
+	// indeterminate display, which is the correct UX for a stream.
+	onProgress := func(s progressSample) {
+		r.Progress(cutting_garden_plugins.ReportProgress{
+			Item:  s.ID,
+			Bytes: s.Downloaded,
+		})
+	}
+	onLog := func(line string) { r.Log("%s", line) }
+
+	if err := runYtdlp(req.Context, tempDir, captureDefaultArgs(tempDir, source), onProgress, onLog); err != nil {
 		req.Sink.Failure(req.RawArg, err)
 		return cutting_garden_plugins.CaptureRootResult{FailCount: 1}
 	}
 
-	entries, failCount := walkArtifacts(req.Context, req.BlobStore, tempDir, source, req.Sink)
+	r.Log("downloaded, writing artifacts")
+	entries, failCount := walkArtifacts(req.Context, req.BlobStore, tempDir, source, req.Sink, r)
 	return cutting_garden_plugins.CaptureRootResult{
 		Entries:   entries,
 		FailCount: failCount,
@@ -94,7 +109,12 @@ func walkArtifacts(
 	outDir string,
 	source string,
 	sink capture_sink.Sink,
+	reporter cutting_garden_plugins.Reporter,
 ) ([]capture_receipt.EntryV1, int) {
+	// Nil-safe even when called directly (e.g. in tests): a nil reporter
+	// becomes a no-op, so Progress emission never gates on a live consumer.
+	reporter = cutting_garden_plugins.ReporterOrNop(reporter)
+
 	var (
 		entries   []capture_receipt.EntryV1
 		failCount int
@@ -147,6 +167,14 @@ func walkArtifacts(
 		}
 		entries = append(entries, entry)
 		sink.Entry(entry)
+		// Items is the count of artifacts written so far (monotonic
+		// non-decreasing); Item is the artifact's rel-path. The Reporter
+		// is observability only — it never influences entries, blob bytes,
+		// or the sink stream above.
+		reporter.Progress(cutting_garden_plugins.ReportProgress{
+			Item:  rel,
+			Items: int64(len(entries)),
+		})
 		return nil
 	})
 
