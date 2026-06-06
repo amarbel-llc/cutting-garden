@@ -42,7 +42,15 @@ var _ cgp.Reporter = (*ProgramReporter)(nil)
 func NewReporter(p sender) *ProgramReporter { return &ProgramReporter{p: p} }
 
 func (r *ProgramReporter) Plan(pl cgp.ReportPlan) {
-	r.p.Send(OperationStarted{Name: pl.Label, Total: int(pl.Items)})
+	// The Plan label is deliberately dropped: the Model sets its title
+	// from OperationStarted.Name, so forwarding a mid-phase Plan label
+	// (git's "storing git objects") would permanently clobber the run
+	// title — the BatchDone final frame would render the label instead
+	// of the WithTitle value. The phase description already labels the
+	// live header; only the item total flows through. The Model keeps
+	// its Name handling for raw-Model users that send OperationStarted
+	// directly.
+	r.p.Send(OperationStarted{Total: int(pl.Items)})
 }
 
 func (r *ProgramReporter) Progress(pr cgp.ReportProgress) {

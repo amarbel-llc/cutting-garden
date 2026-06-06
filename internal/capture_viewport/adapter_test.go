@@ -1,6 +1,7 @@
 package capture_viewport
 
 import (
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -25,8 +26,39 @@ func TestProgramReporter_PlanBecomesOperationStarted(t *testing.T) {
 	if !ok {
 		t.Fatalf("want OperationStarted, got %T", fs.msgs[0])
 	}
-	if got.Total != 42 || got.Name != "walking ./src" {
-		t.Errorf("unexpected OperationStarted: %+v", got)
+	// The Plan label is deliberately dropped: the Model sets its title
+	// from OperationStarted.Name, and a mid-phase Plan (git's "storing
+	// git objects") would permanently clobber the run title. The phase
+	// description already labels the live header; only the item total
+	// flows through.
+	if got.Total != 42 || got.Name != "" {
+		t.Errorf("want OperationStarted{Total:42} with empty Name, got %+v", got)
+	}
+}
+
+func TestProgramReporter_PlanLabelDoesNotClobberRunTitle(t *testing.T) {
+	// End-to-end git-capture scenario at Model level: the plugin emits a
+	// Plan{Label:...} mid-phase (incremental.go's "storing git objects");
+	// after PhaseEnded + BatchDone the final frame must render the run
+	// title, not the Plan label.
+	fs := &fakeSender{}
+	r := NewReporter(fs)
+	r.PhaseStart("store 5 objects")
+	r.Plan(cgp.ReportPlan{Items: 5, Label: "storing git objects"})
+	r.Progress(cgp.ReportProgress{Item: "abc123", Items: 3})
+	r.PhaseEnd(capture_events.Verdict{OK: true})
+	r.Finalize(nil)
+
+	var tm tea.Model = New(WithTitle("capture x"))
+	for _, msg := range fs.msgs {
+		tm, _ = tm.Update(msg)
+	}
+	view := tm.View()
+	if !strings.Contains(view, "capture x") {
+		t.Errorf("final frame must show the run title; view:\n%s", view)
+	}
+	if strings.Contains(view, "storing") {
+		t.Errorf("final frame must NOT show the Plan label; view:\n%s", view)
 	}
 }
 
