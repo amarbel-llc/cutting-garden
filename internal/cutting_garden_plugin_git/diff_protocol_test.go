@@ -84,7 +84,9 @@ func forceBranchToOrphan(t *testing.T, dir, branch string) {
 		When:  time.Unix(1_600_000_200, 0).UTC(),
 	}
 
-	setObj := func(what string, enc interface{ Encode(plumbing.EncodedObject) error }) plumbing.Hash {
+	setObj := func(what string, enc interface {
+		Encode(plumbing.EncodedObject) error
+	}) plumbing.Hash {
 		o := &plumbing.MemoryObject{}
 		if err := enc.Encode(o); err != nil {
 			t.Fatalf("encode %s: %v", what, err)

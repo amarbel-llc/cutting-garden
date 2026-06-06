@@ -65,6 +65,8 @@ Renderers:
 
 ## Stage A — phases + viewport (wire byte-identical)
 
+Status: implemented 2026-06-06 (commits 7620710..42c438f on calm-juniper).
+
 - Introduce `capture_events` (contract + nop + auto-numbering helper).
 - Orchestrator adapts: plugins emit on the unified stream; a thin shim
   forwards `Entry`/`Failure` to the legacy `Sink` exactly as today —
