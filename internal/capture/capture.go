@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -122,6 +123,12 @@ func validateProgress(value string) error {
 // finish sends BatchDone and blocks until the program's render loop exits so
 // the final frame flushes and the terminal restores before the caller sets
 // the exit code.
+//
+// finish is idempotent (sync.Once): Run defers a finish call so that dewey's
+// ctx-cancel panic-unwind (ContextContinueOrPanic — SIGINT, bad config in env
+// construction, mid-loop cancels) still tears the viewport down and restores
+// the terminal; when one of the inline finish(planErr)/finish(batchErr) calls
+// already ran, the deferred call is a no-op.
 func (cmd *Capture) setupReporting(label string) (
 	reporter cutting_garden_plugins.Reporter,
 	sink capture_sink.Sink,
@@ -152,11 +159,14 @@ func (cmd *Capture) setupReporting(label string) (
 		defer close(runDone)
 		_, _ = p.Run()
 	}()
+	var finishOnce sync.Once
 	return capture_viewport.NewReporter(p),
 		capture_sink.NewNDJSON(io.Discard, io.Discard),
 		func(err error) {
-			p.Send(capture_viewport.BatchDone{Err: err})
-			<-runDone
+			finishOnce.Do(func() {
+				p.Send(capture_viewport.BatchDone{Err: err})
+				<-runDone
+			})
 		}
 }
 
@@ -188,6 +198,18 @@ func (cmd *Capture) Run(req command.Request) {
 	reporter := cutting_garden_plugins.ReporterOrNop(rep)
 	viewportActive := rep != nil
 	defer sink.Finalize()
+
+	// Teardown guarantee: everything below — env construction included —
+	// can ctx-cancel, and dewey cancels panic-unwind through these defers
+	// (ContextContinueOrPanic is the catcher upstream). finish is
+	// once-guarded, so this deferred call is a no-op on the normal paths
+	// where an inline finish(planErr)/finish(batchErr) already ran; on
+	// unwind it shuts the renderer down and restores the terminal before
+	// the fatal error prints. The generic errCaptureAborted is deliberate:
+	// the real error still reaches the user via the error machinery after
+	// teardown — restoring the terminal is the priority here, not message
+	// fidelity in the final frame.
+	defer finish(errCaptureAborted)
 
 	var envBlobStore blob_store_env.BlobStoreEnv
 	if viewportActive {
@@ -387,6 +409,12 @@ func (cmd *Capture) Run(req command.Request) {
 func errCaptureFailed(n int) error {
 	return fmt.Errorf("capture failed entries: %d", n)
 }
+
+// errCaptureAborted is the BatchDone error the deferred teardown guard in
+// Run sends when a panic-unwind (ctx cancel, SIGINT) reaches it before any
+// inline finish call. It only ever shows in the viewport's final frame; the
+// real cause still prints via dewey's error machinery after teardown.
+var errCaptureAborted = fmt.Errorf("capture aborted")
 
 // writeReceipt encodes entries via capture_receipt and writes the
 // resulting blob into blobStore. Returns the blob's content-addressed

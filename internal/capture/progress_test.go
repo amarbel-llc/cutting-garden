@@ -236,3 +236,35 @@ func TestSetupReporting_InactiveRollbackByteIdentity(t *testing.T) {
 		t.Errorf("inactive sink did not write receipt to stdout: %q", never)
 	}
 }
+
+// TestSetupReporting_ActiveFinishIdempotent pins the teardown guarantee
+// behind Run's `defer finish(...)`: the active-mode finish is once-guarded,
+// so the deferred call after an inline finish already ran is a safe no-op —
+// no second BatchDone Send to a finished program and no second blocking
+// wait on its (already closed) run channel.
+func TestSetupReporting_ActiveFinishIdempotent(t *testing.T) {
+	origErr := os.Stderr
+	er, ew, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	os.Stderr = ew
+	t.Cleanup(func() {
+		os.Stderr = origErr
+		er.Close()
+		ew.Close()
+	})
+	// Drain render frames so the viewport never blocks on a full pipe.
+	go func() { _, _ = io.Copy(io.Discard, er) }()
+
+	cmd := &Capture{Format: output_format.Default, Progress: progressAlways}
+	rep, _, finish := cmd.setupReporting("capture .")
+	if rep == nil {
+		t.Fatal("progress=always: reporter nil, want active viewport")
+	}
+
+	finish(nil)
+	// Second call models Run's deferred guard firing after the inline
+	// call; sync.Once must make it return immediately without panicking.
+	finish(errCaptureAborted)
+}
