@@ -2,7 +2,10 @@ package cutting_garden_plugin_git
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -11,16 +14,30 @@ import (
 	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
 )
 
-// recordingReporter captures every Plan/Progress/Log call the plugin
-// makes so a test can assert on the emitted observability without
+// recordingReporter captures every Plan/Progress/Log/Phase* call the
+// plugin makes so a test can assert on the emitted observability without
 // inspecting any blob bytes. It embeds capture_events.Nop and overrides
 // only what it records.
 type recordingReporter struct {
 	capture_events.Nop
-	mu       sync.Mutex
-	plans    []cutting_garden_plugins.ReportPlan
-	progress []cutting_garden_plugins.ReportProgress
-	logs     []string
+	mu          sync.Mutex
+	plans       []cutting_garden_plugins.ReportPlan
+	progress    []cutting_garden_plugins.ReportProgress
+	logs        []string
+	phaseStarts []string
+	phaseEnds   []capture_events.Verdict
+}
+
+func (r *recordingReporter) PhaseStart(description string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.phaseStarts = append(r.phaseStarts, description)
+}
+
+func (r *recordingReporter) PhaseEnd(v capture_events.Verdict) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.phaseEnds = append(r.phaseEnds, v)
 }
 
 func (r *recordingReporter) Plan(p cutting_garden_plugins.ReportPlan) {
@@ -111,12 +128,135 @@ func TestCaptureProtocol_Reporter_EmitsStructuralPlanProgressLog(t *testing.T) {
 		}
 	}
 
-	// At least the clone and receipt phase Logs are present.
-	if !logsContainSubstr(rec.logs, "cloning") {
-		t.Errorf("expected a clone Log, got %v", rec.logs)
-	}
+	// The receipt Log is still present (the clone Log folded into the
+	// clone PhaseStart description below).
 	if !logsContainSubstr(rec.logs, "receipt") {
 		t.Errorf("expected a receipt Log, got %v", rec.logs)
+	}
+
+	// Full path emits exactly two phases: a clone phase (the old
+	// "cloning…" Log folded into its description) and a store phase whose
+	// count is the structural count — both ending OK with no directive.
+	if len(rec.phaseStarts) != 2 {
+		t.Fatalf("expected 2 PhaseStarts, got %d: %v", len(rec.phaseStarts), rec.phaseStarts)
+	}
+	if !strings.HasPrefix(rec.phaseStarts[0], "clone ") {
+		t.Errorf("phaseStarts[0] = %q, want prefix \"clone \"", rec.phaseStarts[0])
+	}
+	if got, want := rec.phaseStarts[1], fmt.Sprintf("store %d objects", wantStructural); got != want {
+		t.Errorf("phaseStarts[1] = %q, want %q", got, want)
+	}
+	if len(rec.phaseEnds) != 2 {
+		t.Fatalf("expected 2 PhaseEnds, got %d: %v", len(rec.phaseEnds), rec.phaseEnds)
+	}
+	for i, v := range rec.phaseEnds {
+		if !v.OK {
+			t.Errorf("phaseEnds[%d].OK = false, want true", i)
+		}
+		if v.Directive != nil {
+			t.Errorf("phaseEnds[%d].Directive = %+v, want nil", i, v.Directive)
+		}
+	}
+
+	// The resolved-tip Log survives as a clone-phase tail detail.
+	if !logsContainSubstr(rec.logs, "resolved") {
+		t.Errorf("expected a resolved-tip Log, got %v", rec.logs)
+	}
+}
+
+// TestIncrementalCapture_Reporter_PhaseEvents drives the incremental
+// probe against a real local repo and asserts its phase emissions:
+//
+//   - same-tip (nothing changed): one "check prior capture" phase that
+//     closes with an OK verdict carrying a SKIP directive (replacing the
+//     old bare "no changes" Log);
+//   - delta path: the check phase closes OK (changes found), then a
+//     clone-equivalent "fetch delta from …" phase, then a
+//     "store N delta objects" phase whose N matches the structural Plan.
+func TestIncrementalCapture_Reporter_PhaseEvents(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not on PATH")
+	}
+
+	repo := newLocalRepo(t)
+	store := newMemStore(t)
+
+	res1, err := captureProtocol(context.Background(),
+		capturePluginWriter(store), repo, "main", cutting_garden_plugins.NopReporter{})
+	if err != nil {
+		t.Fatalf("full capture: %v", err)
+	}
+
+	// Same-tip probe: the check phase ends with a skip directive.
+	recSame := &recordingReporter{}
+	_, ok, err := tryIncrementalCapture(context.Background(),
+		store, capturePluginWriter(store), repo, "main", res1.ReceiptDigest, recSame)
+	if err != nil || !ok {
+		t.Fatalf("incremental (unchanged): ok=%v err=%v", ok, err)
+	}
+	if len(recSame.phaseStarts) != 1 || recSame.phaseStarts[0] != "check prior capture" {
+		t.Fatalf("same-tip phaseStarts = %v, want [\"check prior capture\"]", recSame.phaseStarts)
+	}
+	if len(recSame.phaseEnds) != 1 {
+		t.Fatalf("same-tip phaseEnds = %v, want exactly 1", recSame.phaseEnds)
+	}
+	skip := recSame.phaseEnds[0]
+	if !skip.OK {
+		t.Errorf("skip verdict OK = false, want true")
+	}
+	if skip.Directive == nil {
+		t.Fatalf("skip verdict has no directive: %+v", skip)
+	}
+	if got, want := skip.Directive.Kind, capture_events.DirectiveSkip; got != want {
+		t.Errorf("skip directive kind = %q, want %q", got, want)
+	}
+	if got, want := skip.Directive.Reason, "no changes since prior capture"; got != want {
+		t.Errorf("skip directive reason = %q, want %q", got, want)
+	}
+	if logsContainSubstr(recSame.logs, "no changes") {
+		t.Errorf("the bare \"no changes\" Log should be replaced by the skip directive; logs: %v", recSame.logs)
+	}
+
+	// Advance the branch so the next probe takes the delta path.
+	if err := os.WriteFile(filepath.Join(repo, "another.txt"), []byte("more\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitCLI(t, repo, "add", "-A")
+	gitCLI(t, repo, "commit", "-q", "-m", "second")
+
+	recDelta := &recordingReporter{}
+	_, ok, err = tryIncrementalCapture(context.Background(),
+		store, capturePluginWriter(store), repo, "main", res1.ReceiptDigest, recDelta)
+	if err != nil || !ok {
+		t.Fatalf("incremental (delta): ok=%v err=%v", ok, err)
+	}
+
+	if len(recDelta.phaseStarts) != 3 {
+		t.Fatalf("delta phaseStarts = %v, want 3 (check, fetch, store)", recDelta.phaseStarts)
+	}
+	if got, want := recDelta.phaseStarts[0], "check prior capture"; got != want {
+		t.Errorf("delta phaseStarts[0] = %q, want %q", got, want)
+	}
+	if !strings.HasPrefix(recDelta.phaseStarts[1], "fetch delta from ") {
+		t.Errorf("delta phaseStarts[1] = %q, want prefix \"fetch delta from \"", recDelta.phaseStarts[1])
+	}
+	if len(recDelta.plans) != 1 {
+		t.Fatalf("delta plans = %v, want exactly 1", recDelta.plans)
+	}
+	if got, want := recDelta.phaseStarts[2],
+		fmt.Sprintf("store %d delta objects", recDelta.plans[0].Items); got != want {
+		t.Errorf("delta phaseStarts[2] = %q, want %q (N matching the structural Plan)", got, want)
+	}
+	if len(recDelta.phaseEnds) != 3 {
+		t.Fatalf("delta phaseEnds = %v, want 3", recDelta.phaseEnds)
+	}
+	for i, v := range recDelta.phaseEnds {
+		if !v.OK {
+			t.Errorf("delta phaseEnds[%d].OK = false, want true", i)
+		}
+		if v.Directive != nil {
+			t.Errorf("delta phaseEnds[%d].Directive = %+v, want nil (no skip on the delta path)", i, v.Directive)
+		}
 	}
 }
 

@@ -2,7 +2,9 @@ package cutting_garden_plugin_git
 
 import (
 	"context"
+	"fmt"
 
+	"github.com/amarbel-llc/cutting-garden/internal/capture_events"
 	"github.com/amarbel-llc/cutting-garden/internal/capture_plugin"
 	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
 	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
@@ -31,9 +33,16 @@ func tryIncrementalCapture(
 	remote, branch, priorReceiptDigest string,
 	r cutting_garden_plugins.Reporter,
 ) (cutting_garden_plugins.ProtocolCaptureResult, bool, error) {
+	// The probe is a phase: it closes with a SKIP directive when nothing
+	// changed, plain OK when changes were found (or on a soft fallback to
+	// a full capture), and is left open on a hard error (the error
+	// propagates; Finalize(err) marks the run failed).
+	r.PhaseStart("check prior capture")
+
 	priorPayload, priorMeta, err := loadReceiptPayload(store, priorReceiptDigest)
 	if err != nil {
 		// Unreadable prior receipt → fall back to a full capture.
+		r.PhaseEnd(capture_events.Verdict{OK: true})
 		return cutting_garden_plugins.ProtocolCaptureResult{}, false, nil
 	}
 
@@ -43,27 +52,42 @@ func tryIncrementalCapture(
 	}
 
 	// Unchanged since the prior capture: re-emit a receipt reusing the
-	// prior object set, no fetch at all.
+	// prior object set, no fetch at all. The skip directive replaces the
+	// old bare "no changes since prior capture" Log.
 	if liveTip == priorMeta.Tip {
-		r.Log("no changes since prior capture")
+		r.PhaseEnd(capture_events.Verdict{
+			OK: true,
+			Directive: &capture_events.Directive{
+				Kind:   capture_events.DirectiveSkip,
+				Reason: "no changes since prior capture",
+			},
+		})
 		res, werr := writeGitReceipt(ctx, w, remote, resolvedBranch, liveTip, priorPayload.Refs)
 		if werr != nil {
 			return cutting_garden_plugins.ProtocolCaptureResult{}, false, werr
 		}
 		return res, true, nil
 	}
+	r.PhaseEnd(capture_events.Verdict{OK: true})
 
 	// Seed the prior snapshot and fetch the live tip; only the delta
-	// crosses the wire. A fetch failure is a soft miss → full capture.
-	r.Log("fetching delta from %s (%s..%s)",
-		remote, shortHash(priorMeta.Tip), shortHash(liveTip))
+	// crosses the wire. A fetch failure is a soft miss → full capture
+	// (the failed phase verdict carries the swallowed fetch error). The
+	// old "fetching delta…" Log is folded into the phase description.
+	r.PhaseStart(fmt.Sprintf("fetch delta from %s (%s..%s)",
+		remote, shortHash(priorMeta.Tip), shortHash(liveTip)))
 	seeded, err := seedStorer(store, priorPayload.Refs, priorMeta.Tip)
 	if err != nil {
 		return cutting_garden_plugins.ProtocolCaptureResult{}, false, err
 	}
 	if ferr := fetchBranchInto(ctx, seeded, remote, resolvedBranch); ferr != nil {
+		r.PhaseEnd(capture_events.Verdict{
+			OK:         false,
+			Diagnostic: map[string]any{"error": ferr.Error()},
+		})
 		return cutting_garden_plugins.ProtocolCaptureResult{}, false, nil
 	}
+	r.PhaseEnd(capture_events.Verdict{OK: true})
 
 	// Incremental validity requires a fast-forward (the prior tip is an
 	// ancestor of the live tip), so every prior object stays reachable.
@@ -139,6 +163,10 @@ func storeDeltaObjects(
 		}
 	}
 
+	// The store phase starts only after the enumeration above so its
+	// description carries the real structural total — mirroring the full
+	// path's "store N objects" phase in storeAllObjects.
+	r.PhaseStart(fmt.Sprintf("store %d delta objects", structuralCount))
 	r.Plan(cutting_garden_plugins.ReportPlan{
 		Items: structuralCount,
 		Label: "storing git objects",
@@ -160,6 +188,7 @@ func storeDeltaObjects(
 			})
 		}
 	}
+	r.PhaseEnd(capture_events.Verdict{OK: true})
 	return refs, nil
 }
 

@@ -2,11 +2,13 @@ package cutting_garden_plugin_git
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"runtime/debug"
 	"sort"
 	"strings"
 
+	"github.com/amarbel-llc/cutting-garden/internal/capture_events"
 	"github.com/amarbel-llc/cutting-garden/internal/capture_plugin"
 	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
@@ -130,13 +132,21 @@ func captureProtocol(
 	remote, branch string,
 	r cutting_garden_plugins.Reporter,
 ) (cutting_garden_plugins.ProtocolCaptureResult, error) {
-	r.Log("cloning %s (branch %s)", remote, branchLabel(branch))
+	// The clone phase: the old "cloning…" Log is folded into the phase
+	// description; the clone-progress sideband Logs and the resolved-tip
+	// Log below land inside the phase as tail detail.
+	r.PhaseStart(fmt.Sprintf("clone %s (%s)", remote, branchLabel(branch)))
 
 	repo, tip, resolvedBranch, err := cloneBranchToMemory(ctx, remote, branch, r)
 	if err != nil {
+		r.PhaseEnd(capture_events.Verdict{
+			OK:         false,
+			Diagnostic: map[string]any{"error": err.Error()},
+		})
 		return cutting_garden_plugins.ProtocolCaptureResult{}, err
 	}
 	r.Log("resolved %s at %s", resolvedBranch, shortHash(tip))
+	r.PhaseEnd(capture_events.Verdict{OK: true})
 
 	objectRefs, err := storeAllObjects(ctx, w, repo.Storer, r)
 	if err != nil {
@@ -216,6 +226,10 @@ func storeAllObjects(
 	if err != nil {
 		return nil, err
 	}
+	// The store phase starts only after the pre-count so its description
+	// carries the real total. On a write error the phase is left open and
+	// the error propagates — Finalize(err) marks the run failed.
+	r.PhaseStart(fmt.Sprintf("store %d objects", structuralCount))
 	r.Plan(cutting_garden_plugins.ReportPlan{
 		Items: int64(structuralCount),
 		Label: "storing git objects",
@@ -248,6 +262,7 @@ func storeAllObjects(
 	}); err != nil {
 		return nil, err
 	}
+	r.PhaseEnd(capture_events.Verdict{OK: true})
 	return objectRefs, nil
 }
 
