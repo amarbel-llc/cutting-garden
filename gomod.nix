@@ -12,6 +12,7 @@
 {
   madder,
   tap,
+  crap,
   purse-first,
   system,
 }:
@@ -28,6 +29,11 @@
   "github.com/amarbel-llc/tap/go" = {
     src = tap.packages.${system}.go-pkgs;
     subPath = "go";
+  };
+  # crap.go-pkgs is full-repo-filtered (polyglot), so slice into go-crap.
+  "github.com/amarbel-llc/crap/go-crap" = {
+    src = crap.packages.${system}.go-pkgs;
+    subPath = "go-crap";
   };
   "github.com/amarbel-llc/purse-first/libs/dewey" = {
     src = purse-first.packages.${system}.go-pkgs;
