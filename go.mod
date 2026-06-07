@@ -23,6 +23,7 @@ require (
 	github.com/DataDog/zstd v1.5.7 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/ProtonMail/go-crypto v1.1.6 // indirect
+	github.com/amarbel-llc/crap/go-crap v0.0.0-00010101000000-000000000000
 	github.com/amarbel-llc/tommy v0.0.0-20260405143331-87255e87bf37 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.41.7 // indirect
@@ -101,3 +102,5 @@ tool (
 	github.com/amarbel-llc/purse-first/libs/dewey/cmd/repool
 	github.com/amarbel-llc/purse-first/libs/dewey/cmd/seqerror
 )
+
+replace github.com/amarbel-llc/crap/go-crap => ../crap/go-crap
