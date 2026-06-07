@@ -54,7 +54,9 @@ func (Plugin) ValidateSource(u *url.URL, raw string) error {
 // CaptureRoot walks the source filesystem path with filepath.WalkDir,
 // writes every regular file as a blob into req.BlobStore, appends a
 // capture_receipt.EntryV1 per visited entry, and emits Entry/Failure
-// events on the unified Stream.
+// events on the unified Stream, all wrapped in one "walk <arg>" phase
+// so the entries attribute to a test point on the unified renderers
+// (the legacy bridge drops phases; the wire there is unchanged).
 func (Plugin) CaptureRoot(
 	req cutting_garden_plugins.CaptureRootRequest,
 ) cutting_garden_plugins.CaptureRootResult {
@@ -62,9 +64,20 @@ func (Plugin) CaptureRoot(
 
 	path, err := pathFromURL(req.Source)
 	if err != nil {
+		// Pre-phase by design: the planner's ValidateSource already ran
+		// pathFromURL, so this branch is unreachable through the
+		// orchestrator — not worth a phase of its own.
 		stream.Failure(req.RawArg, err)
 		return cutting_garden_plugins.CaptureRootResult{FailCount: 1}
 	}
+
+	// Phase label prefers the original CLI arg (what the user typed);
+	// direct callers that pass no RawArg get the resolved path.
+	label := req.RawArg
+	if label == "" {
+		label = path
+	}
+	stream.PhaseStart("walk " + label)
 
 	// Root field in EntryV1 is the resolved filesystem path so that
 	// schemeless `./foo` and `file:./foo` produce byte-identical
@@ -73,6 +86,25 @@ func (Plugin) CaptureRoot(
 	// format.
 	var entries []capture_receipt.EntryV1
 	fails := walkRoot(req.Context, req.BlobStore, path, &entries, stream)
+
+	// Verdict mirrors the ytdlp write-phase semantics: not-OK carries
+	// {entries, failed}. The OK verdict also carries {entries} — it is
+	// free (len of the accumulated slice) and gives TAP consumers the
+	// count without parsing subtests (the ndjson renderer merges exact
+	// counts into every phase diagnostic regardless). Here "entries"
+	// counts successfully captured entries, not attempts.
+	if fails == 0 {
+		stream.PhaseEnd(capture_events.Verdict{
+			OK:         true,
+			Diagnostic: map[string]any{"entries": len(entries)},
+		})
+	} else {
+		stream.PhaseEnd(capture_events.Verdict{
+			OK:         false,
+			Diagnostic: map[string]any{"entries": len(entries), "failed": fails},
+		})
+	}
+
 	return cutting_garden_plugins.CaptureRootResult{
 		Entries:   entries,
 		FailCount: fails,
