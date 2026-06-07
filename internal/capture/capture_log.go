@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/amarbel-llc/cutting-garden/internal/capture_sink"
 	"github.com/amarbel-llc/madder/go/pkgs/env_dir"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/files"
 )
@@ -42,8 +41,9 @@ const captureLogFileName = "captures.log"
 
 // appendCaptureLog appends entries as NDJSON lines to the captures.log
 // file under cgEnvDir's $XDG_STATE_HOME/cutting-garden/. Best-effort:
-// errors surface as sink notices, never fatal. The blob is the source
-// of truth; the log is observability.
+// errors surface through notice (the active pipeline's informational
+// channel — legacy sink Notice or unified-renderer Log), never fatal.
+// The blob is the source of truth; the log is observability.
 //
 // Mirrors madder's inventory_log swallow-on-error policy — if a user's
 // $XDG_STATE_HOME is unwritable, the capture itself still succeeds.
@@ -53,7 +53,7 @@ const captureLogFileName = "captures.log"
 // generalization if a real consumer ever wants it.
 func appendCaptureLog(
 	cgEnvDir env_dir.Env,
-	sink capture_sink.Sink,
+	notice func(format string, args ...any),
 	entries []captureLogEntry,
 ) {
 	if len(entries) == 0 {
@@ -63,7 +63,7 @@ func appendCaptureLog(
 	path := cgEnvDir.GetXDG().State.MakePath(captureLogFileName).String()
 
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		sink.Notice(
+		notice(
 			"notice: cannot create captures.log directory %q: %v",
 			filepath.Dir(path), err,
 		)
@@ -76,14 +76,14 @@ func appendCaptureLog(
 		0o644,
 	)
 	if err != nil {
-		sink.Notice(
+		notice(
 			"notice: cannot open captures.log %q: %v", path, err,
 		)
 		return
 	}
 	defer func() {
 		if cerr := file.Close(); cerr != nil {
-			sink.Notice(
+			notice(
 				"notice: captures.log close error at %q: %v", path, cerr,
 			)
 		}
@@ -92,7 +92,7 @@ func appendCaptureLog(
 	encoder := json.NewEncoder(file)
 	for _, entry := range entries {
 		if err := encoder.Encode(entry); err != nil {
-			sink.Notice(
+			notice(
 				"notice: captures.log write error at %q: %v", path, err,
 			)
 			return

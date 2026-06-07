@@ -13,9 +13,10 @@
 // belonging to the same group share a destination store and fold into a
 // single receipt.
 //
-// The `--format=auto|tap|json` flag selects the per-record event sink
-// (NDJSON or TAP). Audit log (step 7), store-hint metadata (step 8),
-// and bats coverage (step 9) are still pending.
+// The `-format auto|tap|json|tap-legacy|json-legacy` flag selects the
+// event renderer on the pipe path (the unified TAP-14 / tap-ndjson
+// renderers, or the pre-unification legacy wire during the Stage B
+// dual-format window).
 package capture
 
 import (
@@ -25,10 +26,13 @@ import (
 	"sync"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mattn/go-isatty"
 
 	"github.com/amarbel-llc/cutting-garden/internal/capture_events"
 	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
 	"github.com/amarbel-llc/cutting-garden/internal/capture_render_legacy"
+	"github.com/amarbel-llc/cutting-garden/internal/capture_render_ndjson"
+	"github.com/amarbel-llc/cutting-garden/internal/capture_render_tap"
 	"github.com/amarbel-llc/cutting-garden/internal/capture_sink"
 	"github.com/amarbel-llc/cutting-garden/internal/capture_viewport"
 	"github.com/amarbel-llc/cutting-garden/internal/command"
@@ -36,7 +40,6 @@ import (
 	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
 	"github.com/amarbel-llc/madder/go/pkgs/blob_store_env"
 	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
-	"github.com/amarbel-llc/madder/go/pkgs/output_format"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/interfaces"
 )
@@ -48,9 +51,24 @@ const (
 	progressNever  = "never"
 )
 
+// Format flag values. tap/json are the unified Stage B renderers
+// (phases as TAP test points / tap-ndjson records); the *-legacy values
+// reproduce the exact pre-unification wire during the dual-format
+// window and are deprecated on arrival (removal per the design doc's
+// promotion criteria — docs/plans/2026-06-06-unified-capture-events-
+// tap-design.md §Rollback).
+const (
+	formatAuto       = "auto"
+	formatTAP        = "tap"
+	formatJSON       = "json"
+	formatTAPLegacy  = "tap-legacy"
+	formatJSONLegacy = "json-legacy"
+)
+
 // Capture is the value registered for the `capture` subcommand.
 //
-// Format is bound to the `--format` CLI flag by SetFlagDefinitions.
+// Format is bound to the `-format` CLI flag by SetFlagDefinitions
+// (auto|tap|json|tap-legacy|json-legacy — see the format constants).
 // A pointer receiver on Run is required so the parsed flag value
 // reaches the dispatch site.
 //
@@ -59,7 +77,7 @@ const (
 // structured per-record sink is suppressed in favor of the TUI; when
 // inactive the path is byte-identical to a viewport-less capture.
 type Capture struct {
-	Format   output_format.Format
+	Format   string
 	Progress string
 }
 
@@ -69,10 +87,9 @@ var (
 )
 
 // New constructs a Capture with its flag fields initialized to
-// defaults — matches the madder capture cmd's `Format:
-// output_format.Default` shape.
+// defaults.
 func New() *Capture {
-	return &Capture{Format: output_format.Default, Progress: progressAuto}
+	return &Capture{Format: formatAuto, Progress: progressAuto}
 }
 
 func (*Capture) GetDescription() command.Description {
@@ -84,7 +101,18 @@ func (*Capture) GetDescription() command.Description {
 func (cmd *Capture) SetFlagDefinitions(
 	flagSet interfaces.CLIFlagDefinitions,
 ) {
-	flagSet.Var(&cmd.Format, "format", output_format.FlagDescription)
+	flagSet.StringVar(
+		&cmd.Format,
+		"format",
+		formatAuto,
+		"event stream format on the pipe path: auto (tap on a stdout TTY, "+
+			"json when piped), tap (TAP-14 text — phases as test points with "+
+			"entry subtests), json (tap-ndjson records), or tap-legacy/"+
+			"json-legacy (the exact pre-unification wire; DEPRECATED — kept "+
+			"only for the dual-format transition window and removed once all "+
+			"consumers migrate, per the Stage B design doc's promotion "+
+			"criteria). Ignored while the -progress viewport is active.",
+	)
 	flagSet.StringVar(
 		&cmd.Progress,
 		"progress",
@@ -110,69 +138,199 @@ func validateProgress(value string) error {
 	)
 }
 
-// setupReporting builds the observability surface for a Run. It returns the
-// viewport Reporter (nil when inactive — the caller then routes the plugin
-// Stream through the legacy sink bridge instead), the structured sink, and a
-// finish(err) to call after the capture loop.
-//
-// INACTIVE (progress off): reproduces a viewport-less capture exactly — the
-// sink is the resolved TAP/NDJSON writer on os.Stdout/os.Stderr and finish is
-// a no-op. This is the rollback path; its sink construction MUST match the
-// pre-viewport code.
-//
-// ACTIVE (progress on): the viewport renders on stderr, the structured sink
-// is routed to io.Discard so per-record output does not race the TUI, and
-// finish sends BatchDone and blocks until the program's render loop exits so
-// the final frame flushes and the terminal restores before the caller sets
-// the exit code.
-//
-// finish is idempotent (sync.Once): Run defers a finish call so that dewey's
-// ctx-cancel panic-unwind (ContextContinueOrPanic — SIGINT, bad config in env
-// construction, mid-loop cancels) still tears the viewport down and restores
-// the terminal; when one of the inline finish(planErr)/finish(batchErr) calls
-// already ran, the deferred call is a no-op.
-func (cmd *Capture) setupReporting(label string) (
-	reporter cutting_garden_plugins.Reporter,
-	sink capture_sink.Sink,
-	finish func(error),
-) {
-	if !progressActive(cmd.Progress, os.Stderr) {
-		switch cmd.Format.Resolve(os.Stdout) {
-		case output_format.FormatTAP:
-			sink = capture_sink.NewTAP(os.Stdout)
-		default:
-			sink = capture_sink.NewNDJSON(os.Stdout, os.Stderr)
-		}
-		return nil, sink, func(error) {}
+// validateFormat enforces the allowed -format values. Mirrors
+// validateProgress; Run surfaces a failure as EX_USAGE.
+func validateFormat(value string) error {
+	switch value {
+	case formatAuto, formatTAP, formatJSON, formatTAPLegacy, formatJSONLegacy:
+		return nil
 	}
-
-	m := capture_viewport.New(capture_viewport.WithTitle(label))
-	p := tea.NewProgram(
-		m,
-		tea.WithOutput(os.Stderr),
-		tea.WithInput(nil),
-		// CRITICAL: leave SIGINT/SIGTERM to errors.Context's signal
-		// handling; do NOT let bubbletea install its own handler and race
-		// dewey's unwind.
-		tea.WithoutSignalHandler(),
+	return errors.ErrorWithStackf(
+		"invalid -format value %q; expected auto, tap, json, tap-legacy, or json-legacy",
+		value,
 	)
-	runDone := make(chan struct{})
-	go func() {
-		defer close(runDone)
-		_, _ = p.Run()
-	}()
-	rep := capture_viewport.NewReporter(p)
-	return rep,
-		capture_sink.NewNDJSON(io.Discard, io.Discard),
-		makeFinish(rep, runDone)
 }
 
-// makeFinish builds the once-guarded active-mode teardown: route the
-// terminal event through the stream's Finalize (the viewport adapter
-// sends BatchDone) and block until the program's render loop exits so
-// the final frame flushes and the terminal restores before the caller
-// sets the exit code. The sync.Once makes Run's deferred guard a no-op
-// after an inline finish(planErr)/finish(batchErr) already ran.
+// resolveFormat collapses formatAuto into tap or json based on whether
+// stdout is a terminal, replicating the TTY semantics of the madder
+// output_format.Resolve this flag replaced (go-isatty on stdout,
+// Cygwin/msys pipes counting as terminals). Non-auto values pass
+// through unchanged. The *os.File parameter exists for fd injection in
+// tests, like progressActive.
+func resolveFormat(value string, stdout *os.File) string {
+	if value != formatAuto {
+		return value
+	}
+	fd := stdout.Fd()
+	if isatty.IsTerminal(fd) || isatty.IsCygwinTerminal(fd) {
+		return formatTAP
+	}
+	return formatJSON
+}
+
+// pipeline is the per-run observability wiring setupPipeline selects.
+// Exactly one renderer consumes the unified Stream per run (viewport,
+// unified TAP/ndjson renderer, or the legacy bridge); the helper
+// methods below route the orchestrator's own events so Run's body never
+// branches on the active path.
+type pipeline struct {
+	// stream is the unified event Stream plugins and the orchestrator
+	// emit on: the viewport reporter (TTY), a unified renderer
+	// (tap/json pipe paths), or the legacy bridge (*-legacy pipe
+	// paths, Entry/Failure forwarded 1:1 to legacySink).
+	stream cutting_garden_plugins.Reporter
+
+	// legacySink receives the orchestrator's pre-unification direct
+	// calls (SetStore/Notice/StoreGroupReceipt/Failure/Finalize) in
+	// their exact historical order. Nil on the unified tap/json paths
+	// — there, notices route via stream.Log, receipts travel in the
+	// receipt phase's verdict diagnostic, and the trailing
+	// plan/summary comes from stream.Finalize. On the viewport path it
+	// is the io.Discard NDJSON sink, preserving the pre-Stage-B
+	// suppression exactly.
+	legacySink capture_sink.Sink
+
+	// finish fires the stream's Finalize exactly once with the batch
+	// error (sync.Once via makeFinish) and, on the viewport path,
+	// blocks until the render loop exits. Run defers a guard call for
+	// dewey's ctx-cancel panic-unwind.
+	finish func(error)
+
+	viewportActive bool
+}
+
+// notice routes an informational message: the legacy sinks have a
+// dedicated Notice channel (TAP comment / NDJSON stderr line); the
+// unified renderers carry it as a Log event (TAP comment; dropped by
+// ndjson, whose schema has no comment record).
+func (p *pipeline) notice(format string, args ...any) {
+	if p.legacySink != nil {
+		p.legacySink.Notice(format, args...)
+		return
+	}
+	p.stream.Log(format, args...)
+}
+
+// setStore is legacy-only: the legacy sinks stamp subsequent records
+// with the store id. The unified formats carry the store in the
+// receipt phase diagnostic instead.
+func (p *pipeline) setStore(store string) {
+	if p.legacySink != nil {
+		p.legacySink.SetStore(store)
+	}
+}
+
+// failure reports an orchestrator-level failure (argument classify,
+// receipt write, protocol root error): the legacy wire gets its
+// Failure record, and every path gets the Log echo (viewport tail
+// line / TAP comment) — the exact pre-Stage-B pairing. On the unified
+// formats the run-level verdict additionally reaches the wire via
+// finish(batchErr) → Finalize (bailout + summary).
+func (p *pipeline) failure(source string, err error) {
+	if p.legacySink != nil {
+		p.legacySink.Failure(source, err)
+	}
+	p.stream.Log("failure: %s: %v", source, err)
+}
+
+// receipt reports one store-group receipt: the legacy wire gets its
+// StoreGroupReceipt record; every path gets the receipt phase, whose
+// verdict diagnostic carries store/receipt_id/count machine-readably
+// for the unified formats.
+func (p *pipeline) receipt(storeName, receiptID string, count int) {
+	if p.legacySink != nil {
+		p.legacySink.StoreGroupReceipt(receiptID, count)
+	}
+	reportReceipt(p.stream, quoteEmpty(storeName), receiptID, count)
+}
+
+// closeLegacy finalizes the legacy sink (TAP plan emission / NDJSON
+// flush); Run defers it exactly where the pre-Stage-B
+// `defer sink.Finalize()` sat. No-op on the unified paths, whose
+// trailing records come from stream.Finalize via finish.
+func (p *pipeline) closeLegacy() {
+	if p.legacySink != nil {
+		p.legacySink.Finalize()
+	}
+}
+
+// setupPipeline builds the observability surface for a Run.
+//
+// VIEWPORT (progress active): the viewport renders on stderr, the
+// legacy sink is routed to io.Discard so per-record output does not
+// race the TUI, and finish blocks until the program's render loop
+// exits so the final frame flushes and the terminal restores before
+// the caller sets the exit code. This path ignores -format and is
+// byte-identical to the pre-format-rework viewport path.
+//
+// PIPE (progress inactive): -format selects the renderer. tap/json get
+// the unified Stage B renderers on os.Stdout (no legacy sink — see the
+// pipeline field docs). tap-legacy/json-legacy reproduce the
+// pre-unification construction exactly: the legacy sink on
+// os.Stdout(/os.Stderr) with the bridge as the plugin Stream; their
+// finish routes through the bridge's no-op Finalize, keeping the wire
+// byte-identical (the pinned rollback guarantee).
+func (cmd *Capture) setupPipeline(label string) pipeline {
+	if progressActive(cmd.Progress, os.Stderr) {
+		m := capture_viewport.New(capture_viewport.WithTitle(label))
+		p := tea.NewProgram(
+			m,
+			tea.WithOutput(os.Stderr),
+			tea.WithInput(nil),
+			// CRITICAL: leave SIGINT/SIGTERM to errors.Context's signal
+			// handling; do NOT let bubbletea install its own handler and race
+			// dewey's unwind.
+			tea.WithoutSignalHandler(),
+		)
+		runDone := make(chan struct{})
+		go func() {
+			defer close(runDone)
+			_, _ = p.Run()
+		}()
+		rep := capture_viewport.NewReporter(p)
+		return pipeline{
+			stream:         rep,
+			legacySink:     capture_sink.NewNDJSON(io.Discard, io.Discard),
+			finish:         makeFinish(rep, runDone),
+			viewportActive: true,
+		}
+	}
+
+	switch resolveFormat(cmd.Format, os.Stdout) {
+	case formatTAP:
+		r := capture_render_tap.New(os.Stdout)
+		return pipeline{stream: r, finish: makeFinish(r, nil)}
+	case formatJSON:
+		r := capture_render_ndjson.New(os.Stdout)
+		return pipeline{stream: r, finish: makeFinish(r, nil)}
+	case formatTAPLegacy:
+		sink := capture_sink.NewTAP(os.Stdout)
+		bridge := capture_render_legacy.NewSinkBridge(sink)
+		return pipeline{
+			stream:     bridge,
+			legacySink: sink,
+			finish:     makeFinish(bridge, nil),
+		}
+	default: // formatJSONLegacy — validateFormat bounds the set
+		sink := capture_sink.NewNDJSON(os.Stdout, os.Stderr)
+		bridge := capture_render_legacy.NewSinkBridge(sink)
+		return pipeline{
+			stream:     bridge,
+			legacySink: sink,
+			finish:     makeFinish(bridge, nil),
+		}
+	}
+}
+
+// makeFinish builds the once-guarded terminal-event closure: route err
+// through the stream's Finalize exactly once (the unified renderers
+// emit their trailing bailout/plan/summary; the viewport adapter sends
+// BatchDone; the legacy bridge's Finalize is a deliberate no-op), then
+// — when runDone is non-nil, i.e. the viewport path — block until the
+// program's render loop exits so the final frame flushes and the
+// terminal restores before the caller sets the exit code. The
+// sync.Once makes Run's deferred guard a no-op after an inline
+// finish(planErr)/finish(batchErr) already ran.
 func makeFinish(
 	stream cutting_garden_plugins.Reporter,
 	runDone <-chan struct{},
@@ -181,15 +339,20 @@ func makeFinish(
 	return func(err error) {
 		once.Do(func() {
 			stream.Finalize(err)
-			<-runDone
+			if runDone != nil {
+				<-runDone
+			}
 		})
 	}
 }
 
 // reportReceipt emits the receipt phase on the event stream: a phase
 // wrapping the human-readable receipt line, persisted as a checkmark by
-// the viewport. Semantics only — the receipt's identity surface stays
-// with sink.StoreGroupReceipt and the post-teardown stdout reprint.
+// the viewport. The verdict diagnostic carries the receipt
+// machine-readably for the unified formats (the legacy wire keeps
+// StoreGroupReceipt; the viewport's OK-collapse hides the diagnostic —
+// the post-teardown stdout reprint covers TTY humans). Semantics only —
+// the receipt's identity is the blob itself.
 func reportReceipt(
 	stream cutting_garden_plugins.Reporter,
 	storeLabel, receiptID string,
@@ -197,7 +360,14 @@ func reportReceipt(
 ) {
 	stream.PhaseStart(fmt.Sprintf("receipt store=%s", storeLabel))
 	stream.Log("receipt store=%s id=%s count=%d", storeLabel, receiptID, count)
-	stream.PhaseEnd(capture_events.Verdict{OK: true})
+	stream.PhaseEnd(capture_events.Verdict{
+		OK: true,
+		Diagnostic: map[string]any{
+			"store":      storeLabel,
+			"receipt_id": receiptID,
+			"count":      count,
+		},
+	})
 }
 
 // capturedReceipt records a store-group receipt the loop emitted, so the
@@ -212,6 +382,11 @@ type capturedReceipt struct {
 func (cmd *Capture) Run(req command.Request) {
 	ctx := req.Context.(errors.Context)
 
+	if err := validateFormat(cmd.Format); err != nil {
+		errors.ContextCancelWithBadRequestf(ctx, "%s", err.Error())
+		return
+	}
+
 	if err := validateProgress(cmd.Progress); err != nil {
 		errors.ContextCancelWithBadRequestf(ctx, "%s", err.Error())
 		return
@@ -224,24 +399,18 @@ func (cmd *Capture) Run(req command.Request) {
 	// — the viewport Reporter — must exist when the env captures it. With
 	// the viewport inactive the env construction is byte-identical to the
 	// pre-viewport path (default stderr sink).
-	rep, sink, finish := cmd.setupReporting(captureLabel(args))
-	viewportActive := rep != nil
-
-	// Plugins emit entries/failures on the unified Stream. On the pipe
-	// path the Stream is the legacy bridge: Entry/Failure forward 1:1 to
-	// the sink (byte-identical wire) and every other event is a no-op.
-	// On the TTY path it is the viewport reporter, whose Entry/Failure
-	// are no-ops — per-entry lines intentionally do not render in the
-	// TTY tail (pre-Stage-B they were swallowed by the discard sink).
-	// The orchestrator's own SetStore/Notice/StoreGroupReceipt/Finalize
-	// calls stay DIRECT on the sink, in their pre-Stage-B order.
-	var reporter cutting_garden_plugins.Reporter
-	if viewportActive {
-		reporter = rep
-	} else {
-		reporter = capture_render_legacy.NewSinkBridge(sink)
-	}
-	defer sink.Finalize()
+	//
+	// Plugins emit entries/failures on p.stream. On the *-legacy pipe
+	// paths that is the legacy bridge: Entry/Failure forward 1:1 to the
+	// sink (byte-identical wire) and every other event is a no-op. On the
+	// TTY path it is the viewport reporter, whose Entry/Failure are
+	// no-ops — per-entry lines intentionally do not render in the TTY
+	// tail. On the unified tap/json paths it is the Stage B renderer.
+	// The orchestrator's own events route through the pipeline helpers,
+	// which preserve the pre-Stage-B direct-sink order on the legacy and
+	// viewport paths.
+	p := cmd.setupPipeline(captureLabel(args))
+	defer p.closeLegacy()
 
 	// Teardown guarantee: everything below — env construction included —
 	// can ctx-cancel, and dewey cancels panic-unwind through these defers
@@ -253,13 +422,13 @@ func (cmd *Capture) Run(req command.Request) {
 	// the real error still reaches the user via the error machinery after
 	// teardown — restoring the terminal is the priority here, not message
 	// fidelity in the final frame.
-	defer finish(errCaptureAborted)
+	defer p.finish(errCaptureAborted)
 
 	var envBlobStore blob_store_env.BlobStoreEnv
-	if viewportActive {
+	if p.viewportActive {
 		envBlobStore = command_components.MakeBlobStoreEnvWithErr(ctx,
 			&reporterLineWriter{
-				log: func(s string) { reporter.Log("%s", s) },
+				log: func(s string) { p.stream.Log("%s", s) },
 			})
 	} else {
 		envBlobStore = command_components.MakeBlobStoreEnv(ctx)
@@ -274,22 +443,22 @@ func (cmd *Capture) Run(req command.Request) {
 	var receipts []capturedReceipt
 
 	for _, cf := range classifyFails {
-		sink.Failure(cf.arg, cf.err)
-		reporter.Log("failure: %s: %v", cf.arg, cf.err)
+		p.failure(cf.arg, cf.err)
 		failCount++
 	}
 
 	if planErr != nil {
-		sink.Failure("(arguments)", planErr)
-		reporter.Log("failure: %s: %v", "(arguments)", planErr)
-		finish(planErr)
+		p.failure("(arguments)", planErr)
+		// On the unified pipe paths Finalize(planErr) renders the bailout
+		// and trailing plan/summary; legacy/viewport semantics unchanged.
+		p.finish(planErr)
 		errors.ContextCancelWithBadRequestf(ctx, "%s", planErr.Error())
 		return
 	}
 
 	for _, group := range groups {
 		if group.switchNotice != "" {
-			sink.Notice("%s", group.switchNotice)
+			p.notice("%s", group.switchNotice)
 		}
 
 		var blobStore blob_stores.BlobStoreInitialized
@@ -301,7 +470,7 @@ func (cmd *Capture) Run(req command.Request) {
 			storeName = group.storeID.String()
 		}
 
-		sink.SetStore(storeName)
+		p.setStore(storeName)
 
 		var entries []capture_receipt.EntryV1
 		entryRoots := 0
@@ -309,7 +478,7 @@ func (cmd *Capture) Run(req command.Request) {
 
 		for _, root := range group.roots {
 			if root.shadowNotice != "" {
-				sink.Notice("%s", root.shadowNotice)
+				p.notice("%s", root.shadowNotice)
 			}
 
 			// RFC 0002 plugins emit their own self-contained receipt
@@ -322,17 +491,14 @@ func (cmd *Capture) Run(req command.Request) {
 					RawArg:             root.path,
 					BlobStore:          blobStore,
 					PriorReceiptDigest: findPriorReceipt(cgEnvDir, storeName, root.path),
-					Reporter:           reporter,
+					Reporter:           p.stream,
 				})
 				if perr != nil {
-					sink.Failure(root.path, perr)
-					reporter.Log("failure: %s: %v", root.path, perr)
+					p.failure(root.path, perr)
 					failCount++
 					continue
 				}
-				sink.StoreGroupReceipt(res.ReceiptDigest, res.ObjectCount)
-				reportReceipt(reporter,
-					quoteEmpty(storeName), res.ReceiptDigest, res.ObjectCount)
+				p.receipt(storeName, res.ReceiptDigest, res.ObjectCount)
 				receipts = append(receipts, capturedReceipt{
 					store: storeName, receiptID: res.ReceiptDigest, count: res.ObjectCount,
 				})
@@ -351,7 +517,7 @@ func (cmd *Capture) Run(req command.Request) {
 				Source:    root.sourceURL,
 				RawArg:    root.path,
 				BlobStore: blobStore,
-				Reporter:  reporter,
+				Reporter:  p.stream,
 			})
 			entries = append(entries, result.Entries...)
 			entryRoots++
@@ -372,7 +538,7 @@ func (cmd *Capture) Run(req command.Request) {
 			// warn about a skipped store-group receipt when there was
 			// EntryV1 work that produced nothing.
 			if protocolReceipts == 0 {
-				sink.Notice(
+				p.notice(
 					"notice: no entries captured for store=%s; receipt skipped",
 					quoteEmpty(storeName),
 				)
@@ -389,7 +555,7 @@ func (cmd *Capture) Run(req command.Request) {
 
 		hint, hintErr := capture_receipt.ComputeStoreHint(blobStore, effectiveStoreId)
 		if hintErr != nil {
-			sink.Notice(
+			p.notice(
 				"notice: omitting store-hint for store=%s: %v",
 				quoteEmpty(storeName), hintErr,
 			)
@@ -397,13 +563,11 @@ func (cmd *Capture) Run(req command.Request) {
 
 		receiptID, err := writeReceipt(blobStore, entries, hint)
 		if err != nil {
-			sink.Failure("(receipt)", err)
-			reporter.Log("failure: %s: %v", "(receipt)", err)
+			p.failure("(receipt)", err)
 			failCount++
 			continue
 		}
-		sink.StoreGroupReceipt(receiptID, len(entries))
-		reportReceipt(reporter, quoteEmpty(storeName), receiptID, len(entries))
+		p.receipt(storeName, receiptID, len(entries))
 		receipts = append(receipts, capturedReceipt{
 			store: storeName, receiptID: receiptID, count: len(entries),
 		})
@@ -417,25 +581,26 @@ func (cmd *Capture) Run(req command.Request) {
 	}
 
 	if len(captureLogEntries) > 0 {
-		appendCaptureLog(cgEnvDir, sink, captureLogEntries)
+		appendCaptureLog(cgEnvDir, p.notice, captureLogEntries)
 	}
 
 	// Tear down the viewport BEFORE setting the exit code so its final frame
 	// flushes and the terminal restores first. The BatchDone error mirrors
-	// the failure-vs-success the exit code will reflect. In inactive mode
-	// finish is a no-op, so this ordering is identical to the pre-viewport
-	// path.
+	// the failure-vs-success the exit code will reflect. On the legacy pipe
+	// paths finish routes through the bridge's no-op Finalize, so this
+	// ordering is identical to the pre-viewport path; on the unified pipe
+	// paths it renders the trailing bailout/plan/summary.
 	var batchErr error
 	if failCount > 0 {
 		batchErr = errCaptureFailed(failCount)
 	}
-	finish(batchErr)
+	p.finish(batchErr)
 
 	// The live sink that would have shown receipt id(s) was suppressed under
 	// the viewport; reprint them on stdout so they survive (and stay
 	// greppable). Inactive mode already emitted them via the real sink — do
 	// NOT double-print.
-	if viewportActive {
+	if p.viewportActive {
 		for _, r := range receipts {
 			fmt.Fprintf(os.Stdout, "receipt store=%s id=%s count=%d\n",
 				quoteEmpty(r.store), r.receiptID, r.count)

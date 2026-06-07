@@ -2,14 +2,12 @@ package capture
 
 import (
 	"encoding/json"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/amarbel-llc/cutting-garden/internal/capture_sink"
 	"github.com/amarbel-llc/madder/go/pkgs/env_dir"
 	"github.com/amarbel-llc/madder/go/pkgs/madder_env"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
@@ -31,19 +29,13 @@ func setupCgEnvDir(t *testing.T) env_dir.Env {
 	)
 }
 
-// discardSink is a NDJSON sink with both streams routed to io.Discard.
-// appendCaptureLog calls Notice on it for error reporting; we just
-// don't need to inspect the output in these tests.
-func discardSink(t *testing.T) capture_sink.Sink {
-	t.Helper()
-	sink := capture_sink.NewNDJSON(io.Discard, io.Discard)
-	t.Cleanup(sink.Finalize)
-	return sink
-}
+// discardNotice swallows appendCaptureLog's best-effort error
+// reporting; these tests don't need to inspect it.
+func discardNotice(string, ...any) {}
 
 func TestAppendCaptureLog_EmptyEntriesIsNoop(t *testing.T) {
 	cg := setupCgEnvDir(t)
-	appendCaptureLog(cg, discardSink(t), nil)
+	appendCaptureLog(cg, discardNotice, nil)
 
 	path := cg.GetXDG().State.MakePath(captureLogFileName).String()
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
@@ -68,7 +60,7 @@ func TestAppendCaptureLog_WritesNDJSON(t *testing.T) {
 			Roots:     []string{"dir-b", "dir-c"},
 		},
 	}
-	appendCaptureLog(cg, discardSink(t), entries)
+	appendCaptureLog(cg, discardNotice, entries)
 
 	path := cg.GetXDG().State.MakePath(captureLogFileName).String()
 	raw, err := os.ReadFile(path)
@@ -102,12 +94,11 @@ func TestAppendCaptureLog_WritesNDJSON(t *testing.T) {
 
 func TestAppendCaptureLog_AppendsAcrossCalls(t *testing.T) {
 	cg := setupCgEnvDir(t)
-	sink := discardSink(t)
 
-	appendCaptureLog(cg, sink, []captureLogEntry{
+	appendCaptureLog(cg, discardNotice, []captureLogEntry{
 		{Ts: "t1", ReceiptID: "a", Roots: []string{"."}},
 	})
-	appendCaptureLog(cg, sink, []captureLogEntry{
+	appendCaptureLog(cg, discardNotice, []captureLogEntry{
 		{Ts: "t2", ReceiptID: "b", Roots: []string{"."}},
 	})
 

@@ -55,7 +55,7 @@ func (*Capture) GetFiles() []command.FilePath {
 func (*Capture) GetExamples() []command.Example {
 	return []command.Example{
 		{
-			Description: "Capture a single tree into the default store (NDJSON output).",
+			Description: "Capture a single tree into the default store (tap-ndjson records when piped).",
 			Command:     "cutting-garden capture src",
 		},
 		{
@@ -67,8 +67,12 @@ func (*Capture) GetExamples() []command.Example {
 			Command:     "cutting-garden capture .default src .work docs",
 		},
 		{
-			Description: "TAP-formatted output for CI consumers.",
+			Description: "TAP-14 output for CI consumers (phases as test points, entries as subtests).",
 			Command:     "cutting-garden capture -format tap src",
+		},
+		{
+			Description: "The pre-unification wire (DEPRECATED; dual-format window only).",
+			Command:     "cutting-garden capture -format json-legacy src",
 		},
 		{
 			Description: "Capture a URL-shaped argument via a registered plugin (e.g. yt-dlp).",

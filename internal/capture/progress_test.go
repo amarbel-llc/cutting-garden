@@ -11,7 +11,9 @@ import (
 	"time"
 
 	"github.com/amarbel-llc/cutting-garden/internal/capture_events"
-	"github.com/amarbel-llc/madder/go/pkgs/output_format"
+	"github.com/amarbel-llc/cutting-garden/internal/capture_render_legacy"
+	"github.com/amarbel-llc/cutting-garden/internal/capture_render_ndjson"
+	"github.com/amarbel-llc/cutting-garden/internal/capture_render_tap"
 )
 
 func TestValidateProgress(t *testing.T) {
@@ -67,6 +69,53 @@ func TestProgressActive(t *testing.T) {
 			t.Errorf("auto with NO_COLOR set = true, want false")
 		}
 	})
+}
+
+func TestValidateFormat(t *testing.T) {
+	for _, v := range []string{
+		formatAuto, formatTAP, formatJSON, formatTAPLegacy, formatJSONLegacy,
+	} {
+		if err := validateFormat(v); err != nil {
+			t.Errorf("validateFormat(%q) = %v, want nil", v, err)
+		}
+	}
+
+	err := validateFormat("yaml")
+	if err == nil {
+		t.Fatalf("validateFormat(%q) = nil, want error", "yaml")
+	}
+	for _, want := range []string{
+		"auto", "tap", "json", "tap-legacy", "json-legacy",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q missing allowed value %q", err.Error(), want)
+		}
+	}
+}
+
+// TestResolveFormat pins the auto-resolution semantics inherited from
+// madder's output_format.Resolve: a non-TTY stdout (a pipe write end
+// here) resolves auto to json; the TTY branch (isatty/Cygwin → tap)
+// mirrors progressActive's probe and is not exercisable without a pty.
+// Non-auto values pass through untouched.
+func TestResolveFormat(t *testing.T) {
+	_, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { w.Close() })
+
+	if got := resolveFormat(formatAuto, w); got != formatJSON {
+		t.Errorf("resolveFormat(auto, pipe) = %q, want %q", got, formatJSON)
+	}
+
+	for _, v := range []string{
+		formatTAP, formatJSON, formatTAPLegacy, formatJSONLegacy,
+	} {
+		if got := resolveFormat(v, w); got != v {
+			t.Errorf("resolveFormat(%q) = %q, want passthrough", v, got)
+		}
+	}
 }
 
 func TestCaptureLabel(t *testing.T) {
@@ -191,14 +240,12 @@ func captureStdout(t *testing.T, fn func()) string {
 	return out
 }
 
-// TestSetupReporting_InactiveRollbackByteIdentity is the rollback guarantee:
-// with stderr a non-TTY pipe, -progress=never and -progress=auto MUST both
-// take the inactive branch (nil reporter, real sink, no-op finish) and emit
-// byte-identical stdout. This pins that activating the viewport flag without
-// a TTY does not perturb the structured output.
-func TestSetupReporting_InactiveRollbackByteIdentity(t *testing.T) {
-	// Force stderr to a non-TTY so auto resolves inactive regardless of the
-	// test runner's environment.
+// forceNonTTYStderr replaces os.Stderr with a pipe write end so
+// -progress=auto resolves inactive regardless of the test runner's
+// environment, and clears NO_COLOR so the probe (not the env var)
+// decides.
+func forceNonTTYStderr(t *testing.T) {
+	t.Helper()
 	origErr := os.Stderr
 	er, ew, err := os.Pipe()
 	if err != nil {
@@ -212,18 +259,31 @@ func TestSetupReporting_InactiveRollbackByteIdentity(t *testing.T) {
 	})
 	t.Setenv("NO_COLOR", "")
 	os.Unsetenv("NO_COLOR")
+}
+
+// TestSetupPipeline_LegacyRollbackByteIdentity is the legacy-window
+// rollback guarantee: on the *-legacy pipe path, -progress=never and
+// -progress=auto (non-TTY stderr) MUST both take the inactive branch
+// (no viewport, real legacy sink, finish routing through the bridge's
+// no-op Finalize) and emit byte-identical stdout — the orchestrator's
+// direct sink calls reach the wire exactly as before Stage B.
+func TestSetupPipeline_LegacyRollbackByteIdentity(t *testing.T) {
+	forceNonTTYStderr(t)
 
 	run := func(mode string) string {
-		cmd := &Capture{Format: output_format.Default, Progress: mode}
+		cmd := &Capture{Format: formatJSONLegacy, Progress: mode}
 		return captureStdout(t, func() {
-			rep, sink, finish := cmd.setupReporting("capture .")
-			if rep != nil {
-				t.Errorf("mode=%q: reporter non-nil, want inactive (nil)", mode)
+			p := cmd.setupPipeline("capture .")
+			if p.viewportActive {
+				t.Errorf("mode=%q: viewport active, want inactive", mode)
 			}
-			sink.SetStore("")
-			sink.StoreGroupReceipt("sha256-abc", 3)
-			finish(nil) // must be a no-op on the inactive path
-			sink.Finalize()
+			if p.legacySink == nil {
+				t.Fatalf("mode=%q: legacySink nil, want the legacy NDJSON sink", mode)
+			}
+			p.setStore("")
+			p.receipt("", "sha256-abc", 3)
+			p.finish(nil) // bridge Finalize is a no-op: no extra bytes
+			p.closeLegacy()
 		})
 	}
 
@@ -237,14 +297,75 @@ func TestSetupReporting_InactiveRollbackByteIdentity(t *testing.T) {
 	if !strings.Contains(never, "sha256-abc") {
 		t.Errorf("inactive sink did not write receipt to stdout: %q", never)
 	}
+	if !strings.Contains(never, "store_group_receipt") {
+		t.Errorf("legacy wire shape missing from stdout: %q", never)
+	}
 }
 
-// TestSetupReporting_ActiveFinishIdempotent pins the teardown guarantee
-// behind Run's `defer finish(...)`: the active-mode finish is once-guarded,
-// so the deferred call after an inline finish already ran is a safe no-op —
-// no second BatchDone Send to a finished program and no second blocking
-// wait on its (already closed) run channel.
-func TestSetupReporting_ActiveFinishIdempotent(t *testing.T) {
+// TestSetupPipeline_SelectionTable pins the -format → pipeline shape
+// mapping on the pipe path (stderr non-TTY → viewport inactive): the
+// unified formats get their Stage B renderer with NO legacy sink; the
+// *-legacy formats get the bridge over a real legacy sink; auto on a
+// piped stdout resolves to json.
+func TestSetupPipeline_SelectionTable(t *testing.T) {
+	forceNonTTYStderr(t)
+
+	tests := []struct {
+		format     string
+		wantStream string
+		wantLegacy bool
+	}{
+		{formatTAP, "*capture_render_tap.Renderer", false},
+		{formatJSON, "*capture_render_ndjson.Renderer", false},
+		{formatTAPLegacy, "*capture_render_legacy.SinkBridge", true},
+		{formatJSONLegacy, "*capture_render_legacy.SinkBridge", true},
+		// captureStdout's pipe makes stdout non-TTY: auto → json.
+		{formatAuto, "*capture_render_ndjson.Renderer", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.format, func(t *testing.T) {
+			cmd := &Capture{Format: tt.format, Progress: progressNever}
+			// Construct inside captureStdout: the TAP renderer writes its
+			// version header at construction time.
+			_ = captureStdout(t, func() {
+				p := cmd.setupPipeline("capture .")
+				defer p.finish(nil)
+				defer p.closeLegacy()
+
+				if p.viewportActive {
+					t.Error("viewport active on the pipe path")
+				}
+
+				var gotStream string
+				switch p.stream.(type) {
+				case *capture_render_tap.Renderer:
+					gotStream = "*capture_render_tap.Renderer"
+				case *capture_render_ndjson.Renderer:
+					gotStream = "*capture_render_ndjson.Renderer"
+				case *capture_render_legacy.SinkBridge:
+					gotStream = "*capture_render_legacy.SinkBridge"
+				default:
+					gotStream = fmt.Sprintf("%T", p.stream)
+				}
+				if gotStream != tt.wantStream {
+					t.Errorf("stream = %s, want %s", gotStream, tt.wantStream)
+				}
+
+				if got := p.legacySink != nil; got != tt.wantLegacy {
+					t.Errorf("legacySink non-nil = %v, want %v", got, tt.wantLegacy)
+				}
+			})
+		})
+	}
+}
+
+// TestSetupPipeline_ActiveFinishIdempotent pins the teardown guarantee
+// behind Run's `defer p.finish(...)`: the active-mode finish is
+// once-guarded, so the deferred call after an inline finish already ran
+// is a safe no-op — no second BatchDone Send to a finished program and
+// no second blocking wait on its (already closed) run channel.
+func TestSetupPipeline_ActiveFinishIdempotent(t *testing.T) {
 	origErr := os.Stderr
 	er, ew, err := os.Pipe()
 	if err != nil {
@@ -259,23 +380,24 @@ func TestSetupReporting_ActiveFinishIdempotent(t *testing.T) {
 	// Drain render frames so the viewport never blocks on a full pipe.
 	go func() { _, _ = io.Copy(io.Discard, er) }()
 
-	cmd := &Capture{Format: output_format.Default, Progress: progressAlways}
-	rep, _, finish := cmd.setupReporting("capture .")
-	if rep == nil {
-		t.Fatal("progress=always: reporter nil, want active viewport")
+	cmd := &Capture{Format: formatAuto, Progress: progressAlways}
+	p := cmd.setupPipeline("capture .")
+	if !p.viewportActive {
+		t.Fatal("progress=always: viewport inactive, want active")
 	}
 
-	finish(nil)
+	p.finish(nil)
 	// Second call models Run's deferred guard firing after the inline
 	// call; sync.Once must make it return immediately without panicking.
-	finish(errCaptureAborted)
+	p.finish(errCaptureAborted)
 }
 
 // recordingStream embeds capture_events.Nop and records the ordered event
 // trace — the standard test-recorder pattern for the Stream contract.
 type recordingStream struct {
 	capture_events.Nop
-	events []string
+	events         []string
+	lastDiagnostic map[string]any
 }
 
 func (r *recordingStream) PhaseStart(desc string) {
@@ -287,7 +409,9 @@ func (r *recordingStream) Log(format string, args ...any) {
 }
 
 func (r *recordingStream) PhaseEnd(v capture_events.Verdict) {
-	r.events = append(r.events, fmt.Sprintf("end:ok=%v", v.OK))
+	r.events = append(r.events, fmt.Sprintf("end:ok=%v diag=%v", v.OK,
+		v.Diagnostic != nil))
+	r.lastDiagnostic = v.Diagnostic
 }
 
 func (r *recordingStream) Finalize(err error) {
@@ -307,6 +431,33 @@ func TestMakeFinish_RoutesThroughFinalizeOnce(t *testing.T) {
 	finish := makeFinish(rec, runDone)
 	finish(nil)
 	finish(errCaptureAborted) // models the deferred guard: must be a no-op
+
+	want := []string{"finalize:err=<nil>"}
+	if len(rec.events) != len(want) || rec.events[0] != want[0] {
+		t.Fatalf("events = %q, want exactly %q", rec.events, want)
+	}
+}
+
+// TestMakeFinish_NilRunDoneSkipsWait pins the pipe-path variant: with no
+// render loop to wait on (runDone nil — the unified and legacy pipe
+// paths), finish must finalize once and return immediately instead of
+// blocking on a nil channel.
+func TestMakeFinish_NilRunDoneSkipsWait(t *testing.T) {
+	rec := &recordingStream{}
+	finish := makeFinish(rec, nil)
+
+	returned := make(chan struct{})
+	go func() {
+		finish(nil)
+		finish(errCaptureAborted) // deferred-guard model: must be a no-op
+		close(returned)
+	}()
+
+	select {
+	case <-returned:
+	case <-time.After(time.Second):
+		t.Fatal("finish blocked with nil runDone")
+	}
 
 	want := []string{"finalize:err=<nil>"}
 	if len(rec.events) != len(want) || rec.events[0] != want[0] {
@@ -345,7 +496,7 @@ func TestReportReceipt_EmitsPhaseAroundLog(t *testing.T) {
 	want := []string{
 		"start:receipt store=storeA",
 		"log:receipt store=storeA id=blake3:receipt count=42",
-		"end:ok=true",
+		"end:ok=true diag=true",
 	}
 	if len(rec.events) != len(want) {
 		t.Fatalf("events = %q, want %q", rec.events, want)
@@ -354,5 +505,13 @@ func TestReportReceipt_EmitsPhaseAroundLog(t *testing.T) {
 		if rec.events[i] != want[i] {
 			t.Errorf("events[%d] = %q, want %q", i, rec.events[i], want[i])
 		}
+	}
+
+	// The verdict diagnostic carries the receipt machine-readably for
+	// the unified formats (legacy keeps StoreGroupReceipt).
+	diag := rec.lastDiagnostic
+	if diag["store"] != "storeA" || diag["receipt_id"] != "blake3:receipt" ||
+		diag["count"] != 42 {
+		t.Errorf("receipt diagnostic = %v, want store/receipt_id/count", diag)
 	}
 }
