@@ -4,12 +4,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-Phase 1 — framework bootstrap. The repo is a port of dodder's command-dispatch
-framework, being extracted to back a future filesystem-tree capture/restore
-CLI atop [madder](https://github.com/amarbel-llc/madder). No user-facing
-subcommands exist yet; `cmd/cutting-garden/main.go` only registers
-`complete`. Design context lives in
-`amarbel-llc/madder` → `docs/plans/2026-05-10-extract-cutting-garden-design.md`.
+A filesystem-tree capture/restore CLI atop
+[madder](https://github.com/amarbel-llc/madder), grown from a port of
+dodder's command-dispatch framework. Three user-facing subcommands —
+`capture`, `restore`, `diff` — plus the hidden `complete` are
+registered in `internal/cgapp.Build()`, the single factory shared by
+the `cutting-garden` binary, its `cg` alias, and the
+manpage/completion generator `cutting-garden-gen`. Capture/restore/
+diff backends are URI-scheme-keyed plugins (file, git, yt-dlp) under
+`internal/cutting_garden_plugin_*`. The original extraction design
+lives in `amarbel-llc/madder` →
+`docs/plans/2026-05-10-extract-cutting-garden-design.md`; newer design
+docs live in this repo under `docs/{rfcs,features,plans}/`.
 
 Comments and TODOs frequently reference upstream dodder issues (#161, #183,
 …) and madder issues — check those before "fixing" what looks like a bug; some
@@ -65,7 +71,7 @@ Everything user-facing lives behind one type: `command.Utility` in
 in `utility.go`:
 
 ```
-main → MakeUtility(name, config) → RegisterComplete(&u) → u.Run(os.Args)
+main → cgapp.Build() [MakeUtility + RegisterComplete + AddCmd…] → u.Run(os.Args)
 ```
 
 `Utility.Run` →
@@ -100,7 +106,7 @@ interfaces — implement only what your command needs:
 | `CommandWithDescription` | `cmd.go` | `complete` listing, manpage NAME/DESCRIPTION |
 | `CommandWithArgs` | `arg.go` | manpage ARGUMENTS section |
 | `CommandWithEnvVars` / `CommandWithFiles` / `CommandWithExamples` / `CommandWithSeeAlso` / `CommandWithManpageFiles` | `manpage.go` | corresponding manpage sections |
-| `CommandWithMCPAnnotations` | `arg.go` | future MCP wiring (inert in Phase 1) |
+| `CommandWithMCPAnnotations` | `arg.go` | future MCP wiring (still inert) |
 | `interfaces.CommandComponentWriter` (`SetFlagDefinitions`) | dewey | flag binding during parse and during completion |
 | `Completer` (`Complete(Request, any, CommandLineInput)`) | `completion.go` | tab-completion candidates |
 | `SupportsCompletion` | `completion.go` | marker only — not yet dispatched on |
@@ -114,8 +120,11 @@ at the call site.
 `RegisterComplete(&utility)` adds a hidden `complete` subcommand that the
 shell stubs invoke. `Utility.GenerateCompletions(outDir)` and
 `GenerateManpages(outDir)` write installable artifacts under
-`<outDir>/share/...`. The flake's `postInstall` is empty — wiring those
-generators into the build is a Phase 2 TODO (see `flake.nix:40`).
+`<outDir>/share/...`. The flake's `postInstall` runs
+`cutting-garden-gen $out` to install both, then deletes the gen binary
+so release artifacts don't ship it (pinned by
+`zz-tests_bats/install_artifacts.bats`). For eyeballing a page after
+editing command metadata, use `just debug-manpage <page>`.
 
 The bash/fish/zsh stubs hold no per-command knowledge; they shell out to
 `<binary> complete --bash-style --in-progress=<cur> -- <words>`. The
