@@ -112,7 +112,7 @@ func (s *tapSink) Finalize() {
 // Stage B capture_render_tap renderer reuses the exact same bytes per
 // entry (no text drift between the legacy and unified TAP formats).
 func FormatTAPEntry(e capture_receipt.EntryV1) string {
-	rel := joinRootPath(e.Root, e.Path)
+	rel := JoinRootPath(e.Root, e.Path)
 	mode := fmt.Sprintf("%04o", e.Mode.Perm())
 
 	switch e.Type {
@@ -127,9 +127,13 @@ func FormatTAPEntry(e capture_receipt.EntryV1) string {
 	}
 }
 
-// joinRootPath formats Root+Path for human-readable TAP output. The
-// receipt itself stores them separately for parser clarity.
-func joinRootPath(root, path string) string {
+// JoinRootPath formats Root+Path for human-readable output. The receipt
+// itself stores them separately for parser clarity. Exported so the
+// Stage B capture_render_ndjson renderer uses the same text basis for
+// its subtest descriptions as the TAP forms (without inheriting
+// FormatTAPEntry's flattened metadata suffix — ndjson carries that
+// structured, in the diagnostic).
+func JoinRootPath(root, path string) string {
 	if path == "." || path == "" {
 		return root
 	}
