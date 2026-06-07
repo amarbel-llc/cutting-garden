@@ -26,6 +26,13 @@ const apiPrefix = "/api/localsend/v2"
 // protocolVersion is advertised in our device-info JSON.
 const protocolVersion = "2.0"
 
+// maxPrepareUploadBody caps the prepare-upload request body. The body
+// only declares file metadata (names, sizes, hashes) — 1 MiB is a
+// generous ceiling that still stops a hostile sender from allocating
+// an unbounded files map. File content on /upload is exempt: it is
+// legitimately unbounded and streams into the blob store.
+const maxPrepareUploadBody = 1 << 20
+
 // deviceInfo is the LocalSend device descriptor exchanged by the info
 // and register handshakes and echoed inside prepare-upload requests.
 type deviceInfo struct {
@@ -172,6 +179,7 @@ func (s *server) handlePrepareUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req prepareUploadRequest
+	r.Body = http.MaxBytesReader(w, r.Body, maxPrepareUploadBody)
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid prepare-upload body", http.StatusBadRequest)
 		return
@@ -335,18 +343,33 @@ func (s *server) handleCancel(w http.ResponseWriter, r *http.Request) {
 
 // failFile settles a single file in the active session without tearing
 // down the whole session, and logs the reason. A later successful
-// upload of the remaining files can still finalize.
+// upload of the remaining files can still finalize; if the failed file
+// was the LAST pending one, the session finalizes here — folding any
+// files that did arrive — so the single-session slot is released
+// (otherwise every future prepare-upload would 409 until an explicit
+// cancel that the protocol does not require senders to issue).
 func (s *server) failFile(sessionID, fileID, format string, args ...any) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.current == nil || s.current.id != sessionID {
+		s.mu.Unlock()
 		return
 	}
+	var done *session
 	if f := s.current.files[fileID]; f != nil && !f.done {
 		f.done = true
 		s.current.pending--
+		if s.current.pending == 0 {
+			done = s.current
+			s.current = nil
+		}
 	}
 	s.log("session %s: "+format, append([]any{sessionID}, args...)...)
+	// finalize must run outside the lock, mirroring handleUpload.
+	s.mu.Unlock()
+
+	if done != nil {
+		s.finalize(done, "failed")
+	}
 }
 
 // finalize writes the session's receipt (with synthesized directory

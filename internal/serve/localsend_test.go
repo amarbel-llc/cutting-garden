@@ -209,6 +209,86 @@ func TestServe_UnsafeFileNameRejected(t *testing.T) {
 	}
 }
 
+func TestServe_LastFileFailureFinalizesSession(t *testing.T) {
+	ts := newTestServer(t)
+	files := map[string]fileMeta{
+		"f1": {ID: "f1", FileName: "good.txt", Size: 3},
+		"f2": {ID: "f2", FileName: "../escape.txt", Size: 3},
+	}
+	pr := decodePrepare(t, ts.prepare(t, files))
+
+	ts.upload(t, pr.SessionID, "f1", pr.Files["f1"], []byte("abc")).Body.Close()
+
+	// The session's LAST pending file fails sanitization. The session
+	// must finalize (folding the one good file) and release the
+	// single-session slot — not wedge every future prepare-upload.
+	bad := ts.upload(t, pr.SessionID, "f2", pr.Files["f2"], []byte("xyz"))
+	bad.Body.Close()
+	if bad.StatusCode != http.StatusBadRequest {
+		t.Fatalf("unsafe upload = %d, want 400", bad.StatusCode)
+	}
+
+	ts.mu.Lock()
+	if len(ts.receipts) != 1 || len(ts.receipts[0]) != 1 {
+		t.Fatalf("receipts = %+v, want one receipt with one entry", ts.receipts)
+	}
+	ts.mu.Unlock()
+
+	next := ts.prepare(t, map[string]fileMeta{
+		"g1": {ID: "g1", FileName: "next.txt", Size: 1},
+	})
+	defer next.Body.Close()
+	if next.StatusCode != http.StatusOK {
+		t.Fatalf("prepare after failed session = %d, want 200 (receiver wedged)",
+			next.StatusCode)
+	}
+}
+
+func TestServe_AllFilesFailedReleasesSessionWithoutReceipt(t *testing.T) {
+	ts := newTestServer(t)
+	files := map[string]fileMeta{
+		"f1": {ID: "f1", FileName: "../only.txt", Size: 1},
+	}
+	pr := decodePrepare(t, ts.prepare(t, files))
+
+	bad := ts.upload(t, pr.SessionID, "f1", pr.Files["f1"], []byte("x"))
+	bad.Body.Close()
+	if bad.StatusCode != http.StatusBadRequest {
+		t.Fatalf("unsafe upload = %d, want 400", bad.StatusCode)
+	}
+
+	ts.mu.Lock()
+	if len(ts.receipts) != 0 {
+		t.Fatalf("receipts = %+v, want none for an all-failed session", ts.receipts)
+	}
+	ts.mu.Unlock()
+
+	next := ts.prepare(t, map[string]fileMeta{
+		"g1": {ID: "g1", FileName: "next.txt", Size: 1},
+	})
+	defer next.Body.Close()
+	if next.StatusCode != http.StatusOK {
+		t.Fatalf("prepare after all-failed session = %d, want 200 (receiver wedged)",
+			next.StatusCode)
+	}
+}
+
+func TestServe_PrepareUploadBodyTooLargeRejected(t *testing.T) {
+	ts := newTestServer(t)
+
+	// A body over the 1 MiB cap must be rejected, not decoded.
+	huge := bytes.Repeat([]byte("a"), maxPrepareUploadBody+1)
+	resp, err := http.Post(ts.http.URL+apiPrefix+"/prepare-upload",
+		"application/json", bytes.NewReader(huge))
+	if err != nil {
+		t.Fatalf("prepare-upload: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("oversized prepare = %d, want 400", resp.StatusCode)
+	}
+}
+
 func TestServe_CancelWritesPartialReceipt(t *testing.T) {
 	ts := newTestServer(t)
 	files := map[string]fileMeta{

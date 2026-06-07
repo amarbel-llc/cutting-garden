@@ -68,6 +68,12 @@ cancelled (or whose process is signalled) after some files arrived still
 writes a receipt for exactly the files received, and appends a line to
 `captures.log`. Blobs are content-addressed, so re-sends are free.
 
+A session whose last pending file *fails* (unsafe name, blob-write
+error) finalizes the same way: any files that did arrive are folded
+into a receipt and the single-session slot is released, so a failed
+transfer never wedges the receiver waiting for a cancel the protocol
+does not require senders to issue.
+
 ## Exit semantics
 
 serve runs until interrupted. SIGINT/SIGTERM/SIGHUP cancel the
