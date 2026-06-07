@@ -139,8 +139,8 @@ func TestUtility_Run_NonMismatchError_ExitsTwo(t *testing.T) {
 
 // Regression for #35: handleMainErrors must surface the user-facing
 // BadRequest message on stderr, not just exit silently with code 64.
-// The message is wrapped behind dewey's HTTP error / errWithoutStack
-// hidden-unwrap layers; userFacingErrorMessage must walk past them.
+// Since dewey RFC 0002 (purse-first#107) the message IS the error's
+// Error(); this pins that the rendering survives the wrapping layers.
 
 func TestUtility_Run_NoArgs_PrintsErrorMessage(t *testing.T) {
 	out := captureStderr(func() {

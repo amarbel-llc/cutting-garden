@@ -30,8 +30,8 @@ schema = 3
     hash = 'sha256-Vpf3qlG4Cauq7b2CPhKOe56GhJsBJLbK0HgfoxY72qE='
 
   [mod.'github.com/amarbel-llc/purse-first/libs/dewey']
-    version = 'v0.1.8'
-    hash = 'sha256-dNrByOns78mIRKUK9003JKK0p3L3UmYeZjRYt3J/huM='
+    version = 'v0.3.0'
+    hash = 'sha256-2ZLpvKJ8yescpMRKFz5UmF3hAvWguJGF5Q/ksYVWIgc='
 
   [mod.'github.com/amarbel-llc/tap/go']
     version = 'v0.1.11'

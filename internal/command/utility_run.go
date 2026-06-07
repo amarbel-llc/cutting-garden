@@ -16,28 +16,6 @@ func extendNameIfNecessary(name string) string {
 	return name
 }
 
-// userFacingErrorMessage walks past ErrorHiddenWrapper layers (notably
-// dewey's `errWithoutStack` and the `http` status wrapper that backs
-// BadRequestf/ConflictWrapf/etc.) so a CLI user sees the actual
-// message instead of "errors.HTTP: 400 Bad Request".
-//
-// Workaround pending amarbel-llc/purse-first#107 — once dewey's HTTP
-// status errors carry status as semantics rather than identity, this
-// helper collapses to err.Error().
-func userFacingErrorMessage(err error) string {
-	for {
-		hidden, ok := err.(interfaces.ErrorHiddenWrapper)
-		if !ok || !hidden.ShouldHideUnwrap() {
-			return err.Error()
-		}
-		underlying := hidden.Unwrap()
-		if underlying == nil {
-			return err.Error()
-		}
-		err = underlying
-	}
-}
-
 // handleMainErrors formats a fatal error for the user and returns
 // the appropriate exit code. cmd/cutting-garden/main.go propagates
 // the returned code via os.Exit; Utility.Run itself never does so
@@ -57,7 +35,12 @@ func handleMainErrors(
 	if err == nil {
 		return 0
 	}
-	fmt.Fprintf(os.Stderr, "%s: %s\n", utilityName, userFacingErrorMessage(err))
+	// err.Error() carries the user-facing message directly since dewey's
+	// RFC 0002 (purse-first#107): HTTP-status errors render their
+	// underlying message, with the status carried as semantics via
+	// errors.As. The pre-RFC hidden-unwrap walking (userFacingErrorMessage)
+	// is gone.
+	fmt.Fprintf(os.Stderr, "%s: %s\n", utilityName, err)
 	if errors.Is400BadRequest(err) {
 		return 64 // EX_USAGE
 	}

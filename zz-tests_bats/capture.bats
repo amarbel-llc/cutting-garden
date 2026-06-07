@@ -373,7 +373,11 @@ function capture_per_entry_failure_continues_walk { # @test
   # Restore perms before any assert_* might exit, so bats can clean up.
   chmod 644 tree/secret.txt
 
-  assert_failure
+  # Exit 2 ("trouble"), NOT 64 (EX_USAGE): per-entry capture failures
+  # are runtime IO trouble, not a malformed invocation. Pins the
+  # post-dewey-RFC-0002 retag of the failed-entries cancel away from
+  # BadRequest.
+  assert_failure 2
 
   # On the unified json wire the walk is one failing phase record with
   # the per-entry results nested as subtests: the sibling captures as a

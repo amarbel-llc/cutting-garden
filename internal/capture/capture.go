@@ -643,7 +643,12 @@ func (cmd *Capture) Run(req command.Request) {
 	}
 
 	if failCount > 0 {
-		errors.ContextCancelWithBadRequestf(ctx,
+		// Plain (non-BadRequest) cancel: per-entry capture failures are
+		// runtime IO trouble (exit 2), not a malformed invocation (exit
+		// 64). Matches diff/restore, which route runtime failures
+		// through ContextCancelWithError. Retagged after dewey RFC 0002
+		// made the status tagging deliberate rather than incidental.
+		errors.ContextCancelWithErrorf(ctx,
 			"capture failed entries: %d", failCount)
 	}
 }
@@ -651,7 +656,7 @@ func (cmd *Capture) Run(req command.Request) {
 // errCaptureFailed is the BatchDone error shown in the viewport's final
 // frame; it mirrors the message the exit-code path uses. Kept as a plain
 // error because the viewport only renders its Error() string and the exit
-// code is set independently via ContextCancelWithBadRequestf below.
+// code is set independently via ContextCancelWithErrorf below.
 func errCaptureFailed(n int) error {
 	return fmt.Errorf("capture failed entries: %d", n)
 }
