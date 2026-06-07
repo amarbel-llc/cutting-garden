@@ -49,6 +49,18 @@
       inputs.bats.follows = "bats";
     };
 
+    # Sourced via gomod.nix's `goFlakeInputs` to bridge crap's go-crap
+    # module (the shared CRAP-2 viewport + ndjson-crap) the same way tap is
+    # bridged. crap is polyglot, so its go-pkgs is sliced with
+    # subPath = "go-crap".
+    crap = {
+      url = "github:amarbel-llc/crap";
+      inputs.igloo.follows = "igloo";
+      inputs.nixpkgs-master.follows = "nixpkgs-master";
+      inputs.utils.follows = "flake-utils";
+      inputs.bats.follows = "bats";
+    };
+
     # Sourced via gomod.nix's `goFlakeInputs` to bridge dewey
     # (libs/dewey within the purse-first workspace) the same way
     # madder + tap are bridged. purse-first's go-pkgs is the whole
@@ -109,6 +121,7 @@
       gomod2nix,
       madder,
       tap,
+      crap,
       purse-first,
       bats,
       conformist,
@@ -132,6 +145,7 @@
           inherit
             madder
             tap
+            crap
             purse-first
             tommy
             system

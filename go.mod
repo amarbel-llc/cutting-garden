@@ -103,5 +103,3 @@ tool (
 	github.com/amarbel-llc/purse-first/libs/dewey/cmd/repool
 	github.com/amarbel-llc/purse-first/libs/dewey/cmd/seqerror
 )
-
-replace github.com/amarbel-llc/crap/go-crap => ../crap/go-crap

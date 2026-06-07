@@ -12,6 +12,7 @@
 {
   madder,
   tap,
+  crap,
   purse-first,
   tommy,
   system,
@@ -29,6 +30,13 @@
   "github.com/amarbel-llc/tap/go" = {
     src = tap.packages.${system}.go-pkgs;
     subPath = "go";
+  };
+  # crap.go-pkgs is full-repo-filtered (polyglot), so slice into go-crap.
+  # The module is at major version 2, so the key carries the /v2 suffix
+  # while the on-disk subPath stays go-crap.
+  "github.com/amarbel-llc/crap/go-crap/v2" = {
+    src = crap.packages.${system}.go-pkgs;
+    subPath = "go-crap";
   };
   "github.com/amarbel-llc/purse-first/libs/dewey" = {
     src = purse-first.packages.${system}.go-pkgs;

@@ -47,7 +47,8 @@ divergences from dodder are intentional carry-forwards.
 
 - `nix build` — produces `result/bin/cutting-garden`. Module sources come
   from two places:
-    - **Flake-input bridge** (`gomod.nix`): madder, tap, and dewey
+    - **Flake-input bridge** (`gomod.nix`): madder, tap, crap
+      (`go-crap`, the shared CRAP-2 viewport + ndjson-crap), and dewey
       (`libs/dewey` within the purse-first workspace) are sourced from
       sibling flakes via `goFlakeInputs` (RFC 0001). Bumping any of them
       is a `flake.lock`-only edit; no `go get` + `gomod2nix generate`
@@ -73,9 +74,9 @@ never let go fetch a different toolchain.
 
 Two cases:
 
-1. **A bridged dep (madder, tap, dewey)** — bump the flake input:
+1. **A bridged dep (madder, tap, crap, dewey)** — bump the flake input:
    ```sh
-   nix flake update madder   # or tap, or purse-first (dewey lives there)
+   nix flake update madder   # or tap, crap, or purse-first (dewey lives there)
    ```
    `flake.lock` is the source of truth; `go.mod` keeps its real `require`
    line (the bridge merges over it at eval time). No `gomod2nix generate`
