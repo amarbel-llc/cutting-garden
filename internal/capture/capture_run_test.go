@@ -2,6 +2,7 @@ package capture
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -66,8 +67,9 @@ func TestRun_InvalidFormatIsUsageError(t *testing.T) {
 // TestRun_SmokeTAP drives Run end-to-end on `-format tap` with a piped
 // stdout: a file argument classifies as a failure and the plan errors
 // out, so the unified TAP renderer must produce the version header, the
-// failure Log echoes as comments, the Finalize(planErr) bailout, and
-// the trailing plan — parseable TAP-14 with no legacy sink involved.
+// per-arg failure as a failing phase point (plus its comment echo), the
+// Finalize(planErr) bailout, and the trailing plan — parseable TAP-14
+// with no legacy sink involved.
 func TestRun_SmokeTAP(t *testing.T) {
 	work := t.TempDir()
 	loose := filepath.Join(work, "loose.txt")
@@ -88,17 +90,22 @@ func TestRun_SmokeTAP(t *testing.T) {
 	if !strings.Contains(out, "# failure: loose.txt:") {
 		t.Errorf("missing failure comment echo in %q", out)
 	}
+	if !strings.Contains(out, "not ok 1 - loose.txt") {
+		t.Errorf("missing per-arg failing phase point in %q", out)
+	}
 	if !strings.Contains(out, "Bail out!") {
 		t.Errorf("missing bailout from Finalize(planErr) in %q", out)
 	}
-	if last := lines[len(lines)-1]; last != "1..0" {
-		t.Errorf("last line = %q, want trailing plan 1..0", last)
+	if last := lines[len(lines)-1]; last != "1..1" {
+		t.Errorf("last line = %q, want trailing plan 1..1", last)
 	}
 }
 
 // TestRun_SmokeJSON is the tap-ndjson sibling: every stdout line must
-// parse as JSON, with the bailout record carrying the plan error and a
-// trailing summary marked bailed.
+// parse as JSON. The per-arg classify failure surfaces as a failing
+// test record whose diagnostic carries the error machine-readably
+// (ndjson drops Log), then the bailout record with the plan error and
+// a trailing summary marked bailed.
 func TestRun_SmokeJSON(t *testing.T) {
 	work := t.TempDir()
 	if err := os.WriteFile(
@@ -115,18 +122,30 @@ func TestRun_SmokeJSON(t *testing.T) {
 	}
 
 	records := parseNDJSON(t, out)
-	if len(records) != 2 {
-		t.Fatalf("got %d records, want bailout + summary; out=%q", len(records), out)
+	if len(records) != 3 {
+		t.Fatalf("got %d records, want failing test + bailout + summary; out=%q", len(records), out)
 	}
-	if records[0]["type"] != "bailout" {
-		t.Errorf("records[0].type = %v, want bailout", records[0]["type"])
+
+	failing := records[0]
+	if failing["type"] != "test" || failing["ok"] != false ||
+		failing["description"] != "loose.txt" {
+		t.Errorf("records[0] = %v, want a failing test record for loose.txt", failing)
 	}
-	if msg, _ := records[0]["message"].(string); !strings.Contains(msg, "no usable directories") {
-		t.Errorf("bailout message = %v, want the plan error", records[0]["message"])
+	diag, _ := failing["diagnostic"].(map[string]any)
+	if errText, _ := diag["error"].(string); errText == "" {
+		t.Errorf("records[0].diagnostic = %v, want a non-empty error", diag)
 	}
-	summary := records[1]
-	if summary["type"] != "summary" || summary["bailed"] != true {
-		t.Errorf("records[1] = %v, want a bailed summary", summary)
+
+	if records[1]["type"] != "bailout" {
+		t.Errorf("records[1].type = %v, want bailout", records[1]["type"])
+	}
+	if msg, _ := records[1]["message"].(string); !strings.Contains(msg, "no usable directories") {
+		t.Errorf("bailout message = %v, want the plan error", records[1]["message"])
+	}
+	summary := records[2]
+	if summary["type"] != "summary" || summary["bailed"] != true ||
+		summary["failed"] != float64(1) {
+		t.Errorf("records[2] = %v, want a bailed summary with failed=1", summary)
 	}
 }
 
@@ -214,5 +233,68 @@ func TestPipeline_SuccessWireJSON(t *testing.T) {
 	if summary["type"] != "summary" || summary["bailed"] != false ||
 		summary["passed"] != float64(1) {
 		t.Errorf("records[1] = %v, want a clean summary with passed=1", summary)
+	}
+}
+
+// TestPipeline_FailurePhaseWireJSON pins the per-arg failure wire on
+// the unified json renderer: failurePhase brackets the legacy/log
+// emission in a failing phase whose diagnostic carries the error
+// machine-readably (ndjson drops Log), and the summary counts it.
+func TestPipeline_FailurePhaseWireJSON(t *testing.T) {
+	forceNonTTYStderr(t)
+
+	cmd := &Capture{Format: formatJSON, Progress: progressNever}
+	out := captureStdout(t, func() {
+		p := cmd.setupPipeline("capture loose.txt")
+		p.failurePhase("loose.txt", fmt.Errorf("not a directory"))
+		p.finish(nil)
+		p.closeLegacy()
+	})
+
+	records := parseNDJSON(t, out)
+	if len(records) != 2 {
+		t.Fatalf("got %d records, want failing test + summary; out=%q", len(records), out)
+	}
+
+	test := records[0]
+	if test["type"] != "test" || test["ok"] != false ||
+		test["description"] != "loose.txt" {
+		t.Fatalf("records[0] = %v, want a failing test record for loose.txt", test)
+	}
+	diag, _ := test["diagnostic"].(map[string]any)
+	if diag["error"] != "not a directory" {
+		t.Errorf("diagnostic = %v, want error=%q", diag, "not a directory")
+	}
+
+	summary := records[1]
+	if summary["type"] != "summary" || summary["failed"] != float64(1) {
+		t.Errorf("records[1] = %v, want a summary with failed=1", summary)
+	}
+}
+
+// TestPipeline_FailurePhaseWireTAP is the TAP sibling: a failing test
+// point with the error diagnostic, plus the legacy comment echo.
+func TestPipeline_FailurePhaseWireTAP(t *testing.T) {
+	forceNonTTYStderr(t)
+
+	cmd := &Capture{Format: formatTAP, Progress: progressNever}
+	out := captureStdout(t, func() {
+		p := cmd.setupPipeline("capture loose.txt")
+		p.failurePhase("loose.txt", fmt.Errorf("not a directory"))
+		p.finish(nil)
+		p.closeLegacy()
+	})
+
+	if !strings.Contains(out, "not ok 1 - loose.txt") {
+		t.Errorf("missing failing phase point in %q", out)
+	}
+	if !strings.Contains(out, "# failure: loose.txt: not a directory") {
+		t.Errorf("missing failure comment echo in %q", out)
+	}
+	if !strings.Contains(out, "not a directory") {
+		t.Errorf("missing error diagnostic in %q", out)
+	}
+	if !strings.HasSuffix(out, "1..1\n") {
+		t.Errorf("missing trailing plan 1..1 in %q", out)
 	}
 }

@@ -233,6 +233,24 @@ func (p *pipeline) failure(source string, err error) {
 	p.stream.Log("failure: %s: %v", source, err)
 }
 
+// failurePhase reports a per-argument failure (classify refusal,
+// protocol-root error, receipt write) as its own failing phase
+// bracketing the legacy/log emission: PhaseStart(source) + the
+// pre-Stage-B failure pairing + PhaseEnd{OK:false, {"error"}}. The
+// phase is what makes the failure machine-readable on the unified
+// json wire (ndjson drops Log); the bridge drops phases, so the
+// legacy wire is unchanged, and the viewport persists a ✗ line. The
+// planErr bail deliberately stays on plain failure — its detail
+// reaches the wire via finish(planErr)'s bailout instead.
+func (p *pipeline) failurePhase(source string, err error) {
+	p.stream.PhaseStart(source)
+	p.failure(source, err)
+	p.stream.PhaseEnd(capture_events.Verdict{
+		OK:         false,
+		Diagnostic: map[string]any{"error": err.Error()},
+	})
+}
+
 // receipt reports one store-group receipt: the legacy wire gets its
 // StoreGroupReceipt record; every path gets the receipt phase, whose
 // verdict diagnostic carries store/receipt_id/count machine-readably
@@ -443,7 +461,7 @@ func (cmd *Capture) Run(req command.Request) {
 	var receipts []capturedReceipt
 
 	for _, cf := range classifyFails {
-		p.failure(cf.arg, cf.err)
+		p.failurePhase(cf.arg, cf.err)
 		failCount++
 	}
 
@@ -494,7 +512,7 @@ func (cmd *Capture) Run(req command.Request) {
 					Reporter:           p.stream,
 				})
 				if perr != nil {
-					p.failure(root.path, perr)
+					p.failurePhase(root.path, perr)
 					failCount++
 					continue
 				}
@@ -563,7 +581,7 @@ func (cmd *Capture) Run(req command.Request) {
 
 		receiptID, err := writeReceipt(blobStore, entries, hint)
 		if err != nil {
-			p.failure("(receipt)", err)
+			p.failurePhase("(receipt)", err)
 			failCount++
 			continue
 		}
