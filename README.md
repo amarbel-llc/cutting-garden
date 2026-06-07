@@ -3,11 +3,21 @@
 Filesystem-tree capture/restore CLI built on top of
 [madder](https://github.com/amarbel-llc/madder)'s blob store.
 
-## Status
+## Commands
 
-Phase 1 — framework bootstrap. No commands implemented yet. See
-[the extraction design](https://github.com/amarbel-llc/madder/blob/master/docs/plans/2026-05-10-extract-cutting-garden-design.md)
-in the madder repo for context.
+- `capture [STORE_ID | DIR]...` — walk directories (or scheme-addressed
+  sources: `git:`, yt-dlp URLs) and write every file as a
+  content-addressed blob plus one receipt per store group.
+- `restore RECEIPT_ID DEST` — materialize a receipt's tree at DEST.
+- `diff RECEIPT_ID [DIR]` — compare a receipt against the filesystem;
+  exits 1 on drift, `diff(1)`-style.
+- `serve` — long-lived [LocalSend](https://github.com/localsend/protocol)
+  receiver bound to the host's Tailscale address; every incoming
+  transfer lands as a normal capture receipt
+  ([FDR 0011](docs/features/0011-localsend-serve.md)).
+
+`cg` is an alias binary. Manpages and shell completions are generated
+from the command metadata at build time.
 
 ## Build
 
@@ -20,3 +30,7 @@ nix build
 ```sh
 go test ./...
 ```
+
+Design docs live under `docs/{rfcs,features,plans}/`; the original
+extraction design is in
+[the madder repo](https://github.com/amarbel-llc/madder/blob/master/docs/plans/2026-05-10-extract-cutting-garden-design.md).
