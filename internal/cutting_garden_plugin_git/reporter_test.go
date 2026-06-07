@@ -260,6 +260,83 @@ func TestIncrementalCapture_Reporter_PhaseEvents(t *testing.T) {
 	}
 }
 
+// TestIncrementalCapture_Reporter_FetchFailureTodoDirective provokes a
+// fetch failure on the delta path: the branch ref is pointed at a
+// fabricated oid, so the tip probe (which reads refs only) sees a change
+// while the fetch — which must build a pack starting from that missing
+// commit — fails. The fetch phase must close as TAP's tolerated-failure
+// form (OK=false with a TODO directive "fell back to full capture"), not
+// a bare not-ok that strict harnesses would fail inside a passing run,
+// and the swallowed fetch error must ride in the verdict diagnostic. The
+// soft-fallback contract is unchanged: (ok=false, err=nil) so the caller
+// runs a full capture.
+func TestIncrementalCapture_Reporter_FetchFailureTodoDirective(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not on PATH")
+	}
+
+	repo := newLocalRepo(t)
+	store := newMemStore(t)
+
+	res1, err := captureProtocol(context.Background(),
+		capturePluginWriter(store), repo, "main", cutting_garden_plugins.NopReporter{})
+	if err != nil {
+		t.Fatalf("full capture: %v", err)
+	}
+
+	// Point main at an oid no object database holds. Written directly
+	// because `git update-ref` refuses a nonexistent object; the loose-ref
+	// write is safe here since go-git (and so this whole suite) requires
+	// the files ref backend anyway.
+	bogus := strings.Repeat("deadbeef", 5)
+	refPath := filepath.Join(repo, ".git", "refs", "heads", "main")
+	if err := os.WriteFile(refPath, []byte(bogus+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	rec := &recordingReporter{}
+	_, ok, err := tryIncrementalCapture(context.Background(),
+		store, capturePluginWriter(store), repo, "main", res1.ReceiptDigest, rec)
+	if err != nil {
+		t.Fatalf("fetch failure must be a soft miss (err=nil), got: %v", err)
+	}
+	if ok {
+		t.Fatalf("fetch failure must report ok=false (fall back to full capture)")
+	}
+
+	if len(rec.phaseStarts) != 2 {
+		t.Fatalf("phaseStarts = %v, want 2 (check, fetch)", rec.phaseStarts)
+	}
+	if !strings.HasPrefix(rec.phaseStarts[1], "fetch delta from ") {
+		t.Errorf("phaseStarts[1] = %q, want prefix \"fetch delta from \"", rec.phaseStarts[1])
+	}
+	if len(rec.phaseEnds) != 2 {
+		t.Fatalf("phaseEnds = %v, want 2", rec.phaseEnds)
+	}
+
+	v := rec.phaseEnds[1]
+	if v.OK {
+		t.Errorf("fetch verdict OK = true, want false")
+	}
+	if v.Directive == nil {
+		t.Fatalf("fetch verdict carries no directive (a bare not-ok fails strict TAP harnesses): %+v", v)
+	} else {
+		if got, want := v.Directive.Kind, capture_events.DirectiveTodo; got != want {
+			t.Errorf("directive kind = %q, want %q", got, want)
+		}
+		if got, want := v.Directive.Reason, "fell back to full capture"; got != want {
+			t.Errorf("directive reason = %q, want %q", got, want)
+		}
+	}
+	errVal, present := v.Diagnostic["error"]
+	if !present {
+		t.Fatalf("verdict diagnostic missing \"error\": %+v", v.Diagnostic)
+	}
+	if s, isStr := errVal.(string); !isStr || s == "" {
+		t.Errorf("diagnostic[\"error\"] = %#v, want a non-empty string", errVal)
+	}
+}
+
 // countCommitTreeObjects returns the number of commit and tree objects in
 // repo's object database, via the real-git oracle — the expected
 // structural Plan/Progress count.

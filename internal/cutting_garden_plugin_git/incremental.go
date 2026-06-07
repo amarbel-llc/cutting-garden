@@ -81,8 +81,12 @@ func tryIncrementalCapture(
 		return cutting_garden_plugins.ProtocolCaptureResult{}, false, err
 	}
 	if ferr := fetchBranchInto(ctx, seeded, remote, resolvedBranch); ferr != nil {
+		// TAP's tolerated-failure form: a bare not-ok inside a passing
+		// run would fail strict harnesses, but this failure is absorbed
+		// by the full-capture fallback — so it carries a TODO directive.
 		r.PhaseEnd(capture_events.Verdict{
 			OK:         false,
+			Directive:  &capture_events.Directive{Kind: capture_events.DirectiveTodo, Reason: "fell back to full capture"},
 			Diagnostic: map[string]any{"error": ferr.Error()},
 		})
 		return cutting_garden_plugins.ProtocolCaptureResult{}, false, nil
