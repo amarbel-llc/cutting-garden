@@ -42,8 +42,9 @@ func (*Capture) GetEnvVars() []command.EnvVar {
 func (*Capture) GetFiles() []command.FilePath {
 	return []command.FilePath{
 		{
-			Path:        "$XDG_STATE_HOME/cutting-garden/captures.log",
-			Description: "NDJSON audit log of every successful capture (one entry per receipt). Best-effort write.",
+			Path: "$XDG_STATE_HOME/cutting-garden/captures.log",
+			Description: "NDJSON audit log of every written receipt — including " +
+				"partial receipts from failed or interrupted runs. Best-effort write.",
 		},
 		{
 			Path:        "$XDG_DATA_HOME/madder/<store>/",

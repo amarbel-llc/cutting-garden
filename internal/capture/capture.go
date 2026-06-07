@@ -95,6 +95,23 @@ func New() *Capture {
 func (*Capture) GetDescription() command.Description {
 	return command.Description{
 		Short: "capture one or more directory trees into madder's blob stores",
+		Long: "Walks each source path (or hands URL-shaped args to the " +
+			"matching plugin), writes every regular file as a " +
+			"content-addressed blob, and emits one receipt blob per " +
+			"store group describing the captured entries.\n" +
+			".PP\n" +
+			"Partial results are deliberately durable. Per-entry failures " +
+			"and interruption (SIGINT/SIGTERM/SIGHUP) do not discard " +
+			"completed work: every entry captured before the abort is " +
+			"still folded into the store-group receipt, the receipt blob " +
+			"is written, and captures.log records it. The run itself " +
+			"reports the failure \\(em failing phase records and a " +
+			"bailout on the event stream, and a nonzero exit \\(em but " +
+			"the receipt blob carries no interrupted marker: it is an " +
+			"ordinary receipt describing exactly the entries that were " +
+			"captured. Blobs are content-addressed, so re-running the " +
+			"same capture after an interruption re-reads the sources but " +
+			"stores nothing twice.",
 	}
 }
 

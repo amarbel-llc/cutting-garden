@@ -183,6 +183,62 @@ debug-make-multiroot-fixture: debug-make-fixture
 debug-capture-multiroot STORE='.default' FORMAT='auto': debug-build-go debug-make-multiroot-fixture
     .tmp/cutting-garden capture -format={{FORMAT}} {{STORE}} .tmp/cap-fixture .tmp/cap-fixture-2
 
+# Generate all manpages into .tmp/manpages and render PAGE as text,
+# for eyeballing roff output after editing command Description/manpage
+# metadata (the doc-edit dev-loop; flake postInstall wiring is still
+# the Phase 2 TODO).
+[group('debug')]
+debug-manpage PAGE='cutting-garden-capture':
+    #!/usr/bin/env bash
+    set -euo pipefail
+    rm -rf .tmp/manpages
+    nix develop --command go run ./cmd/cutting-garden-gen .tmp/manpages
+    page=".tmp/manpages/share/man/man1/{{ PAGE }}.1"
+    [[ -f "$page" ]] || { echo "no $page; pages:"; ls .tmp/manpages/share/man/man1/; exit 1; }
+    if command -v man >/dev/null 2>&1; then
+      MANWIDTH=78 man -l "$page"
+    else
+      cat "$page"
+    fi
+
+# e2e SIGINT-cancellation probe for the capture walk (#68 follow-up;
+# pins the live-binary behavior the unit tests in
+# internal/cutting_garden_plugin_file/cancellation_test.go pin
+# in-process). Captures TREE into the user's existing default madder
+# store (blobs are content-addressed; TREE itself is only read),
+# SIGINTs the process mid-walk, then reports exit code, elapsed time,
+# how far the walk got vs the tree's total entry count, and the
+# tails. NOTE: the orchestrator still flushes a PARTIAL receipt for
+# the entries captured before the abort (observed 2026-06-07; see the
+# bailout record that follows it). Expected: prompt exit, a
+# "context canceled" failure on the in-flight blob copy plus one on
+# the root, entry count well below total.
+[group('debug')]
+debug-sigint-capture TREE='/home/sasha/Downloads' DELAY='0.7': debug-build-go
+    #!/usr/bin/env bash
+    set -uo pipefail
+    root="{{ justfile_directory() }}"
+    tmp="$root/.tmp/sigint-e2e"
+    rm -rf "$tmp" && mkdir -p "$tmp"
+    cd "$(dirname "{{ TREE }}")"
+    start=$(date +%s%3N)
+    "$root/.tmp/cutting-garden" capture -format=json -progress=never \
+      "$(basename "{{ TREE }}")" >"$tmp/out.ndjson" 2>"$tmp/err.log" &
+    pid=$!
+    sleep "{{ DELAY }}"
+    kill -INT "$pid"
+    wait "$pid"; code=$?
+    end=$(date +%s%3N)
+    echo "exit code: $code"
+    echo "elapsed: $((end - start))ms (SIGINT sent at {{ DELAY }}s)"
+    echo "records on stdout: $(wc -l <"$tmp/out.ndjson")"
+    echo "total entries in tree: $(find "{{ TREE }}" | wc -l)"
+    echo "context-canceled mentions (stdout/stderr): \
+    $(grep -c 'context canceled' "$tmp/out.ndjson" || true) / \
+    $(grep -c 'context canceled' "$tmp/err.log" || true)"
+    echo "--- stdout tail ---"; tail -5 "$tmp/out.ndjson"
+    echo "--- stderr tail ---"; tail -15 "$tmp/err.log"
+
 # Probe whether yt-dlp can enumerate a channel's videos via
 # --flat-playlist. Used to validate the assumption before any plugin-
 # side work to support channel-level capture. Defaults to the
