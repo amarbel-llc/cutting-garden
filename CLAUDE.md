@@ -6,13 +6,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A filesystem-tree capture/restore CLI atop
 [madder](https://github.com/amarbel-llc/madder), grown from a port of
-dodder's command-dispatch framework. Three user-facing subcommands —
-`capture`, `restore`, `diff` — plus the hidden `complete` are
+dodder's command-dispatch framework. Four user-facing subcommands —
+`capture`, `restore`, `diff`, `serve` — plus the hidden `complete` are
 registered in `internal/cgapp.Build()`, the single factory shared by
 the `cutting-garden` binary, its `cg` alias, and the
 manpage/completion generator `cutting-garden-gen`. Capture/restore/
 diff backends are URI-scheme-keyed plugins (file, git, yt-dlp) under
-`internal/cutting_garden_plugin_*`. The original extraction design
+`internal/cutting_garden_plugin_*`. `serve` (`internal/serve/`) is a
+long-lived LocalSend receiver bound to the host's Tailscale address:
+each incoming transfer lands as a normal fs-v1 capture receipt
+(FDR 0011). The original extraction design
 lives in `amarbel-llc/madder` →
 `docs/plans/2026-05-10-extract-cutting-garden-design.md`; newer design
 docs live in this repo under `docs/{rfcs,features,plans}/`.
