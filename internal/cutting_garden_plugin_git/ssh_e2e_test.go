@@ -123,9 +123,11 @@ func startAgent(t *testing.T) {
 		t.Fatalf("agent add: %v", err)
 	}
 
-	// A short path under /tmp — unix socket paths have a ~108-char limit
-	// that the worktree's .tmp/<longtestname> dir blows past.
-	sockDir, err := os.MkdirTemp("", "cgssh")
+	// A short path under literally /tmp — unix socket paths have a
+	// ~108-char limit. MkdirTemp("", ...) honors $TMPDIR, which the
+	// worktree's .tmp/ (and the merge gate's nested nix-shell tmpdirs)
+	// blows past, yielding bind: invalid argument. Pin the parent.
+	sockDir, err := os.MkdirTemp("/tmp", "cgssh")
 	if err != nil {
 		t.Fatalf("agent sock dir: %v", err)
 	}
