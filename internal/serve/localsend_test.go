@@ -88,9 +88,16 @@ func (ts *testServer) upload(t *testing.T, sessionID, fileID, token string, data
 	return resp
 }
 
+// closeBody closes a response body, discarding the error. Test bodies
+// here are tiny and fully consumed (or empty); close errors on them are
+// not load-bearing, mirroring files.CloseReadOnly's rationale.
+func closeBody(resp *http.Response) {
+	resp.Body.Close() //defer:err-checked
+}
+
 func decodePrepare(t *testing.T, resp *http.Response) prepareUploadResponse {
 	t.Helper()
-	defer resp.Body.Close()
+	defer closeBody(resp)
 	var out prepareUploadResponse
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		t.Fatalf("decode prepare response: %v", err)
@@ -180,7 +187,7 @@ func TestServe_SecondSessionConflicts(t *testing.T) {
 	resp.Body.Close()
 
 	resp2 := ts.prepare(t, files)
-	defer resp2.Body.Close()
+	defer closeBody(resp2)
 	if resp2.StatusCode != http.StatusConflict {
 		t.Fatalf("second prepare = %d, want 409", resp2.StatusCode)
 	}
@@ -189,7 +196,7 @@ func TestServe_SecondSessionConflicts(t *testing.T) {
 func TestServe_EmptyFilesNoContent(t *testing.T) {
 	ts := newTestServer(t)
 	resp := ts.prepare(t, map[string]fileMeta{})
-	defer resp.Body.Close()
+	defer closeBody(resp)
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("empty prepare = %d, want 204", resp.StatusCode)
 	}
@@ -203,7 +210,7 @@ func TestServe_UnsafeFileNameRejected(t *testing.T) {
 	pr := decodePrepare(t, ts.prepare(t, files))
 
 	resp := ts.upload(t, pr.SessionID, "f1", pr.Files["f1"], []byte("x"))
-	defer resp.Body.Close()
+	defer closeBody(resp)
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("unsafe upload = %d, want 400", resp.StatusCode)
 	}
@@ -237,7 +244,7 @@ func TestServe_LastFileFailureFinalizesSession(t *testing.T) {
 	next := ts.prepare(t, map[string]fileMeta{
 		"g1": {ID: "g1", FileName: "next.txt", Size: 1},
 	})
-	defer next.Body.Close()
+	defer closeBody(next)
 	if next.StatusCode != http.StatusOK {
 		t.Fatalf("prepare after failed session = %d, want 200 (receiver wedged)",
 			next.StatusCode)
@@ -266,7 +273,7 @@ func TestServe_AllFilesFailedReleasesSessionWithoutReceipt(t *testing.T) {
 	next := ts.prepare(t, map[string]fileMeta{
 		"g1": {ID: "g1", FileName: "next.txt", Size: 1},
 	})
-	defer next.Body.Close()
+	defer closeBody(next)
 	if next.StatusCode != http.StatusOK {
 		t.Fatalf("prepare after all-failed session = %d, want 200 (receiver wedged)",
 			next.StatusCode)
@@ -283,7 +290,7 @@ func TestServe_PrepareUploadBodyTooLargeRejected(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prepare-upload: %v", err)
 	}
-	defer resp.Body.Close()
+	defer closeBody(resp)
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("oversized prepare = %d, want 400", resp.StatusCode)
 	}
@@ -324,7 +331,7 @@ func TestServe_InfoAndRegister(t *testing.T) {
 	if err != nil {
 		t.Fatalf("info: %v", err)
 	}
-	defer resp.Body.Close()
+	defer closeBody(resp)
 	var info deviceInfo
 	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
 		t.Fatalf("decode info: %v", err)
