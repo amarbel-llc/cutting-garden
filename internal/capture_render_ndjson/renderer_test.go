@@ -75,7 +75,6 @@ var scriptedGolden = []string{
 	`{"type":"test","n":2,"description":"empty phase","ok":true,"directive":null,"diagnostic":{"entries":0,"failed":0},"output":null,"subtest":null,"line":0}`,
 	`{"type":"test","n":3,"description":"skipped phase","ok":true,"directive":{"kind":"skip","reason":"offline"},"diagnostic":{"entries":0,"failed":0},"output":null,"subtest":null,"line":0}`,
 	`{"type":"test","n":4,"description":"todo phase","ok":false,"directive":{"kind":"todo","reason":"fell back to full capture"},"diagnostic":{"entries":0,"error":"fetch failed","failed":0},"output":null,"subtest":null,"line":0}`,
-	`{"type":"plan","count":4}`,
 	`{"type":"summary","passed":1,"failed":1,"skipped":1,"todo":1,"total":4,"plan_count":4,"bailed":false,"valid":true,"diagnostics":[]}`,
 }
 
@@ -100,7 +99,6 @@ func TestRenderer_FinalizeError_Bailout(t *testing.T) {
 
 	want := strings.Join([]string{
 		`{"type":"test","n":1,"description":"p","ok":true,"directive":null,"diagnostic":{"entries":0,"failed":0},"output":null,"subtest":null,"line":0}`,
-		`{"type":"plan","count":1}`,
 		`{"type":"bailout","message":"ssh: connection lost","line":0}`,
 		`{"type":"summary","passed":1,"failed":0,"skipped":0,"todo":0,"total":1,"plan_count":1,"bailed":true,"valid":true,"diagnostics":[]}`,
 	}, "\n") + "\n"
@@ -180,11 +178,11 @@ func TestRenderer_RoundTripTapStructs(t *testing.T) {
 	}
 
 	var summary ndjson.SummaryRecord
-	if err := json.Unmarshal([]byte(scriptedGolden[5]), &summary); err != nil {
+	if err := json.Unmarshal([]byte(scriptedGolden[4]), &summary); err != nil {
 		t.Fatalf("unmarshal SummaryRecord: %v", err)
 	}
-	if got := reencode(summary); got != scriptedGolden[5] {
-		t.Errorf("SummaryRecord round-trip mismatch\ngot:  %s\nwant: %s", got, scriptedGolden[5])
+	if got := reencode(summary); got != scriptedGolden[4] {
+		t.Errorf("SummaryRecord round-trip mismatch\ngot:  %s\nwant: %s", got, scriptedGolden[4])
 	}
 }
 

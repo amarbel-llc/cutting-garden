@@ -11,10 +11,7 @@
 //   - Records reuse tap's canonical structs (TestRecord,
 //     DirectiveValue, BailoutRecord, SummaryRecord), so field names,
 //     order, and the all-fields-present/null-when-absent conventions
-//     match tap's wire by construction. The one exception is the plan
-//     record: the facade does not (yet) re-export internal PlanRecord
-//     (Output.Plan references it, but the type is unnameable outside
-//     tap), so planRecord below is a field-order-identical local copy.
+//     match tap's wire by construction.
 //   - Entry subtests: Description is the Root/Path join (the same text
 //     basis as the TAP forms via capture_sink.JoinRootPath); the
 //     per-type metadata that FormatTAPEntry flattens into text stays
@@ -34,12 +31,18 @@
 //     against the schema's closed `type` set.
 //   - Plan/Progress are deliberate no-ops: they are ephemeral
 //     progress-bar events for the -progress viewport, not records.
-//   - Finalize emits the trailing plan record (count = phases), a
-//     bailout record when err != nil, then the summary computed from
-//     the phase verdicts (directive precedence mirrors tap's own
-//     Aggregator.Finalize: skip/todo count before ok/fail). Encode
-//     errors are ignored throughout, like the legacy sink: events are
-//     semantics, not identity, and the Stream API is fire-and-forget.
+//   - No plan record is emitted: tap-ndjson mandates that a plan
+//     record, if present, be the FIRST record, and the phase count is
+//     only known at Finalize — a late plan must be omitted and
+//     reported via the summary's plan_count instead (tap's
+//     conformance language: "a trailing TAP plan emits no plan
+//     record").
+//   - Finalize emits a bailout record when err != nil, then the
+//     summary computed from the phase verdicts (directive precedence
+//     mirrors tap's own Aggregator.Finalize: skip/todo count before
+//     ok/fail). Encode errors are ignored throughout, like the legacy
+//     sink: events are semantics, not identity, and the Stream API is
+//     fire-and-forget.
 package capture_render_ndjson
 
 import (
@@ -64,15 +67,6 @@ import (
 // exact regardless.
 const successSubtestCap = 1000
 
-// planRecord mirrors tap-ndjson's plan record {type, count}. Local
-// copy because tap's pkgs/ndjson facade does not re-export the
-// internal PlanRecord type; field order matches the internal struct so
-// the encoded line is byte-identical to tap's.
-type planRecord struct {
-	Type  string `json:"type"`
-	Count int    `json:"count"`
-}
-
 // Renderer is a capture_events.Stream emitting tap-ndjson records. The
 // mutex satisfies the Stream contract's concurrency tolerance.
 type Renderer struct {
@@ -86,7 +80,7 @@ type Renderer struct {
 	failures  int
 	truncated bool
 
-	// Run tallies for the trailing plan + summary.
+	// Run tallies for the trailing summary.
 	phases  int
 	passed  int
 	failed  int
@@ -98,7 +92,7 @@ var _ capture_events.Stream = (*Renderer)(nil)
 
 // New constructs a Renderer writing NDJSON lines to w. Each completed
 // phase is encoded immediately; the caller must invoke Finalize to
-// emit the trailing plan and summary records.
+// emit the trailing summary record.
 func New(w io.Writer) *Renderer {
 	enc := json.NewEncoder(w)
 	// Match tap's own WriteAll encoder configuration.
@@ -203,9 +197,9 @@ func (r *Renderer) Failure(source string, err error) {
 // Log is a deliberate drop: tap-ndjson has no comment record type.
 func (r *Renderer) Log(string, ...any) {}
 
-// Plan is a no-op: ReportPlan is the ephemeral progress-bar estimate,
-// not the trailing plan record (which Finalize derives from the phase
-// count).
+// Plan is a no-op: ReportPlan is the ephemeral progress-bar estimate;
+// no plan record is ever emitted (see the package comment), so the
+// count surfaces only as the summary's plan_count.
 func (r *Renderer) Plan(capture_events.ReportPlan) {}
 
 // Progress is a no-op: incremental advancement is viewport-only.
@@ -215,7 +209,6 @@ func (r *Renderer) Finalize(err error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	_ = r.enc.Encode(planRecord{Type: "plan", Count: r.phases})
 	if err != nil {
 		_ = r.enc.Encode(ndjson.BailoutRecord{
 			Type:    "bailout",
