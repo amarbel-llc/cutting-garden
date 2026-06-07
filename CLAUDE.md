@@ -45,9 +45,9 @@ never let go fetch a different toolchain.
 
 Two cases:
 
-1. **A bridged dep (madder, tap)** — bump the flake input:
+1. **A bridged dep (madder, tap, dewey)** — bump the flake input:
    ```sh
-   nix flake update madder   # or tap
+   nix flake update madder   # or tap, or purse-first (dewey lives there)
    ```
    `flake.lock` is the source of truth; `go.mod` keeps its real `require`
    line (the bridge merges over it at eval time). No `gomod2nix generate`
