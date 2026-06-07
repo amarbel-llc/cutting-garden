@@ -24,9 +24,9 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/amarbel-llc/cutting-garden/internal/capture_log"
 	"github.com/amarbel-llc/cutting-garden/internal/command"
 	"github.com/amarbel-llc/cutting-garden/internal/command_components"
-	"github.com/amarbel-llc/madder/go/pkgs/blob_store_id"
 	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/interfaces"
@@ -121,14 +121,14 @@ func (cmd *Serve) Run(req command.Request) {
 	store, storeName, effectiveStoreId := resolveStore(ctx, envBlobStore, cmd.Store)
 
 	cgEnvDir := command_components.MakeCgEnvDir(ctx)
-	captureLogPath := cgEnvDir.GetXDG().State.MakePath("captures.log").String()
+	captureLogPath := cgEnvDir.GetXDG().State.MakePath(capture_log.FileName).String()
 
 	logf := func(format string, args ...any) {
 		fmt.Fprintf(os.Stderr, format+"\n", args...)
 	}
 
 	srv := newServer(
-		ctx, store, storeName, effectiveStoreId, captureLogPath,
+		store, storeName, effectiveStoreId, captureLogPath,
 		cmd.makeInfo(), logf,
 	)
 
@@ -202,14 +202,15 @@ func (cmd *Serve) makeInfo() deviceInfo {
 }
 
 // resolveStore returns the destination blob store plus its display name
-// (empty for the default store) and the resolved id used for the
-// receipt's store-hint. A bad -store cancels ctx (EX_USAGE) via the env.
+// (empty for the default store) and the store-id used for the receipt's
+// store-hint. Parsing and configured-store lookup delegate to
+// command_components.ResolveStoreByID; a bad -store cancels ctx
+// (EX_USAGE).
 func resolveStore(
 	ctx errors.Context,
 	envBlobStore interface {
-		GetDefaultBlobStore() blob_stores.BlobStoreInitialized
+		command_components.MaterializationEnv
 		GetDefaultBlobStoreId() string
-		GetBlobStore(blob_store_id.Id) blob_stores.BlobStoreInitialized
 	},
 	storeFlag string,
 ) (store blob_stores.BlobStoreInitialized, storeName, effectiveStoreId string) {
@@ -218,11 +219,10 @@ func resolveStore(
 			envBlobStore.GetDefaultBlobStoreId()
 	}
 
-	var id blob_store_id.Id
-	if err := id.Set(storeFlag); err != nil {
-		errors.ContextCancelWithBadRequestf(ctx,
-			"invalid -store %q: %v", storeFlag, err)
+	store, err := command_components.ResolveStoreByID(envBlobStore, storeFlag)
+	if err != nil {
+		errors.ContextCancelWithBadRequestf(ctx, "%s", err.Error())
 		return
 	}
-	return envBlobStore.GetBlobStore(id), id.String(), id.String()
+	return store, storeFlag, storeFlag
 }

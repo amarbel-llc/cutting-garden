@@ -16,6 +16,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/amarbel-llc/cutting-garden/internal/capture_log"
 	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
 )
 
@@ -159,7 +160,7 @@ func TestServe_FullTransfer_WritesReceiptAndLog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read captures.log: %v", err)
 	}
-	var entry captureLogEntry
+	var entry capture_log.Entry
 	if err := json.Unmarshal(bytes.TrimSpace(data), &entry); err != nil {
 		t.Fatalf("parse captures.log line %q: %v", data, err)
 	}

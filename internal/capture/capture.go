@@ -29,6 +29,7 @@ import (
 	"github.com/mattn/go-isatty"
 
 	"github.com/amarbel-llc/cutting-garden/internal/capture_events"
+	"github.com/amarbel-llc/cutting-garden/internal/capture_log"
 	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
 	"github.com/amarbel-llc/cutting-garden/internal/capture_render_legacy"
 	"github.com/amarbel-llc/cutting-garden/internal/capture_render_ndjson"
@@ -539,7 +540,7 @@ func (cmd *Capture) Run(req command.Request) {
 				})
 				protocolReceipts++
 				captureLogEntries = append(captureLogEntries, captureLogEntry{
-					Ts:        captureLogTimestamp(),
+					Ts:        capture_log.Timestamp(),
 					ReceiptID: res.ReceiptDigest,
 					StoreID:   storeName,
 					Roots:     []string{root.path},
@@ -596,7 +597,7 @@ func (cmd *Capture) Run(req command.Request) {
 			)
 		}
 
-		receiptID, err := writeReceipt(blobStore, entries, hint)
+		receiptID, err := capture_receipt.WriteV1ToStore(blobStore, entries, hint)
 		if err != nil {
 			p.failurePhase("(receipt)", err)
 			failCount++
@@ -608,7 +609,7 @@ func (cmd *Capture) Run(req command.Request) {
 		})
 
 		captureLogEntries = append(captureLogEntries, captureLogEntry{
-			Ts:        captureLogTimestamp(),
+			Ts:        capture_log.Timestamp(),
 			ReceiptID: receiptID,
 			StoreID:   storeName,
 			Roots:     rootPaths(group.roots),
@@ -667,28 +668,3 @@ func errCaptureFailed(n int) error {
 // real cause still prints via dewey's error machinery after teardown.
 var errCaptureAborted = fmt.Errorf("capture aborted")
 
-// writeReceipt encodes entries via capture_receipt and writes the
-// resulting blob into blobStore. Returns the blob's content-addressed
-// markl id as a string. When hint is non-nil, the receipt's hyphence
-// metadata block carries an RFC 0001 store-hint line; pass nil for
-// hint to omit. Mirrors madder's writeReceiptBlob shape.
-func writeReceipt(
-	blobStore blob_stores.BlobStoreInitialized,
-	entries []capture_receipt.EntryV1,
-	hint *capture_receipt.StoreHint,
-) (id string, err error) {
-	wc, err := blobStore.MakeBlobWriter(nil)
-	if err != nil {
-		err = errors.Wrap(err)
-		return
-	}
-	defer errors.DeferredCloser(&err, wc)
-
-	if _, err = capture_receipt.WriteV1WithHint(wc, entries, hint); err != nil {
-		err = errors.Wrap(err)
-		return
-	}
-
-	id = wc.GetMarklId().String()
-	return
-}

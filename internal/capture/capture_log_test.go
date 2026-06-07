@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/amarbel-llc/cutting-garden/internal/capture_log"
 	"github.com/amarbel-llc/madder/go/pkgs/env_dir"
 	"github.com/amarbel-llc/madder/go/pkgs/madder_env"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
@@ -15,7 +16,7 @@ import (
 
 // setupCgEnvDir builds a cutting-garden-scoped env_dir rooted at a
 // per-test tempdir by overriding XDG_STATE_HOME. The returned env_dir's
-// GetXDG().State.MakePath(captureLogFileName) resolves under the
+// GetXDG().State.MakePath(capture_log.FileName) resolves under the
 // tempdir.
 func setupCgEnvDir(t *testing.T) env_dir.Env {
 	t.Helper()
@@ -37,7 +38,7 @@ func TestAppendCaptureLog_EmptyEntriesIsNoop(t *testing.T) {
 	cg := setupCgEnvDir(t)
 	appendCaptureLog(cg, discardNotice, nil)
 
-	path := cg.GetXDG().State.MakePath(captureLogFileName).String()
+	path := cg.GetXDG().State.MakePath(capture_log.FileName).String()
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Errorf("expected captures.log to not exist for empty entries, got err=%v", err)
 	}
@@ -62,7 +63,7 @@ func TestAppendCaptureLog_WritesNDJSON(t *testing.T) {
 	}
 	appendCaptureLog(cg, discardNotice, entries)
 
-	path := cg.GetXDG().State.MakePath(captureLogFileName).String()
+	path := cg.GetXDG().State.MakePath(capture_log.FileName).String()
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatalf("read captures.log: %v", err)
@@ -102,7 +103,7 @@ func TestAppendCaptureLog_AppendsAcrossCalls(t *testing.T) {
 		{Ts: "t2", ReceiptID: "b", Roots: []string{"."}},
 	})
 
-	path := cg.GetXDG().State.MakePath(captureLogFileName).String()
+	path := cg.GetXDG().State.MakePath(capture_log.FileName).String()
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
@@ -114,13 +115,13 @@ func TestAppendCaptureLog_AppendsAcrossCalls(t *testing.T) {
 }
 
 func TestCaptureLogTimestamp_ParsesAsRFC3339UTC(t *testing.T) {
-	ts := captureLogTimestamp()
+	ts := capture_log.Timestamp()
 	parsed, err := time.Parse(time.RFC3339, ts)
 	if err != nil {
-		t.Fatalf("captureLogTimestamp %q is not RFC3339: %v", ts, err)
+		t.Fatalf("capture_log.Timestamp %q is not RFC3339: %v", ts, err)
 	}
 	if loc := parsed.Location(); loc != time.UTC {
-		t.Errorf("captureLogTimestamp %q parsed location = %v, want UTC", ts, loc)
+		t.Errorf("capture_log.Timestamp %q parsed location = %v, want UTC", ts, loc)
 	}
 }
 

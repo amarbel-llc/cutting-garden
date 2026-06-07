@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/amarbel-llc/cutting-garden/internal/capture_log"
 	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
 	"github.com/amarbel-llc/cutting-garden/internal/plugin_blob_io"
 	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
@@ -60,14 +61,22 @@ type prepareUploadResponse struct {
 	Files     map[string]string `json:"files"` // fileId -> token
 }
 
+// sessionFile is one declared file's per-session state: the metadata
+// the sender announced, the upload token we minted for it, and whether
+// its upload has settled (succeeded or failed).
+type sessionFile struct {
+	meta  fileMeta
+	token string
+	done  bool
+}
+
 // session is one in-flight LocalSend transfer. LocalSend receivers
 // handle a single session at a time, so the server holds at most one.
 type session struct {
 	id          string
 	senderAlias string
-	tokens      map[string]string   // fileId -> upload token
-	files       map[string]fileMeta // fileId -> declared metadata
-	pending     map[string]struct{} // fileIds not yet uploaded
+	files       map[string]*sessionFile // fileId -> per-file state
+	pending     int                     // files not yet settled
 	entries     []capture_receipt.EntryV1
 }
 
@@ -97,7 +106,6 @@ type server struct {
 // newServer wires the default store-backed blob/receipt writers around
 // store. captureLogPath is where finalized receipts are journaled.
 func newServer(
-	ctx context.Context,
 	store blob_stores.BlobStoreInitialized,
 	storeName, effectiveStoreId, captureLogPath string,
 	info deviceInfo,
@@ -116,14 +124,16 @@ func newServer(
 		}
 		return id.String(), size, nil
 	}
+	// The store's config is immutable for the server's lifetime, so the
+	// receipt store-hint is computed once here, not per finalized session.
+	hint, hintErr := capture_receipt.ComputeStoreHint(store, effectiveStoreId)
+	if hintErr != nil {
+		log("notice: omitting store-hint for store=%s: %v",
+			quoteEmpty(storeName), hintErr)
+		hint = nil
+	}
 	s.writeReceipt = func(entries []capture_receipt.EntryV1) (string, error) {
-		hint, hintErr := capture_receipt.ComputeStoreHint(store, effectiveStoreId)
-		if hintErr != nil {
-			s.log("notice: omitting store-hint for store=%s: %v",
-				quoteEmpty(storeName), hintErr)
-			hint = nil
-		}
-		return writeReceiptBlob(store, entries, hint)
+		return capture_receipt.WriteV1ToStore(store, entries, hint)
 	}
 	return s
 }
@@ -185,9 +195,8 @@ func (s *server) handlePrepareUpload(w http.ResponseWriter, r *http.Request) {
 	sess := &session{
 		id:          randToken(),
 		senderAlias: req.Info.Alias,
-		tokens:      make(map[string]string, len(req.Files)),
-		files:       make(map[string]fileMeta, len(req.Files)),
-		pending:     make(map[string]struct{}, len(req.Files)),
+		files:       make(map[string]*sessionFile, len(req.Files)),
+		pending:     len(req.Files),
 	}
 	resp := prepareUploadResponse{
 		SessionID: sess.id,
@@ -195,9 +204,7 @@ func (s *server) handlePrepareUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	for fileID, meta := range req.Files {
 		token := randToken()
-		sess.tokens[fileID] = token
-		sess.files[fileID] = meta
-		sess.pending[fileID] = struct{}{}
+		sess.files[fileID] = &sessionFile{meta: meta, token: token}
 		resp.Files[fileID] = token
 	}
 
@@ -234,22 +241,22 @@ func (s *server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unknown session", http.StatusForbidden)
 		return
 	}
-	meta, known := sess.files[fileID]
-	if !known || sess.tokens[fileID] != token {
+	f := sess.files[fileID]
+	if f == nil || f.token != token {
 		s.mu.Unlock()
 		http.Error(w, "invalid file or token", http.StatusForbidden)
 		return
 	}
-	if _, stillPending := sess.pending[fileID]; !stillPending {
+	if f.done {
 		s.mu.Unlock()
 		http.Error(w, "file already uploaded", http.StatusConflict)
 		return
 	}
 	s.mu.Unlock()
 
-	cleanName, err := sanitizeFileName(meta.FileName)
+	cleanName, err := sanitizeFileName(f.meta.FileName)
 	if err != nil {
-		s.failFile(sessionID, fileID, "%s: %v", meta.FileName, err)
+		s.failFile(sessionID, fileID, "%s: %v", f.meta.FileName, err)
 		http.Error(w, "unsafe file name", http.StatusBadRequest)
 		return
 	}
@@ -281,18 +288,20 @@ func (s *server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	sess = s.current
-	if _, stillPending := sess.pending[fileID]; !stillPending {
+	f = sess.files[fileID]
+	if f.done {
 		// Raced another upload of the same file id; keep the first.
 		s.mu.Unlock()
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	delete(sess.pending, fileID)
+	f.done = true
+	sess.pending--
 	sess.entries = append(sess.entries, entry)
 	s.log("session %s: received %s (%d bytes)", sess.id, cleanName, size)
 
 	var done *session
-	if len(sess.pending) == 0 {
+	if sess.pending == 0 {
 		done = sess
 		s.current = nil
 	}
@@ -324,16 +333,19 @@ func (s *server) handleCancel(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// failFile drops a single file from the active session's pending set and
-// logs the reason, without tearing down the whole session. A later
-// successful upload of the remaining files can still finalize.
+// failFile settles a single file in the active session without tearing
+// down the whole session, and logs the reason. A later successful
+// upload of the remaining files can still finalize.
 func (s *server) failFile(sessionID, fileID, format string, args ...any) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.current == nil || s.current.id != sessionID {
 		return
 	}
-	delete(s.current.pending, fileID)
+	if f := s.current.files[fileID]; f != nil && !f.done {
+		f.done = true
+		s.current.pending--
+	}
 	s.log("session %s: "+format, append([]any{sessionID}, args...)...)
 }
 
@@ -358,32 +370,12 @@ func (s *server) finalize(sess *session, reason string) {
 	s.log("receipt store=%s id=%s count=%d (%s)",
 		quoteEmpty(s.storeName), receiptID, len(entries), reason)
 
-	appendCaptureLog(s.captureLogPath, s.log, captureLogEntry{
-		Ts:        captureLogTimestamp(),
+	capture_log.Append(s.captureLogPath, s.log, []capture_log.Entry{{
+		Ts:        capture_log.Timestamp(),
 		ReceiptID: receiptID,
 		StoreID:   s.storeName,
 		Roots:     []string{"localsend:" + quoteEmpty(sess.senderAlias)},
-	})
-}
-
-// writeReceiptBlob encodes entries into blobStore and returns the
-// receipt blob's markl id. Mirrors capture.writeReceipt.
-func writeReceiptBlob(
-	blobStore blob_stores.BlobStoreInitialized,
-	entries []capture_receipt.EntryV1,
-	hint *capture_receipt.StoreHint,
-) (id string, err error) {
-	wc, err := blobStore.MakeBlobWriter(nil)
-	if err != nil {
-		return "", errors.Wrap(err)
-	}
-	defer errors.DeferredCloser(&err, wc)
-
-	if _, err = capture_receipt.WriteV1WithHint(wc, entries, hint); err != nil {
-		return "", errors.Wrap(err)
-	}
-
-	return wc.GetMarklId().String(), nil
+	}})
 }
 
 // sanitizeFileName coerces a sender-supplied LocalSend fileName into a
