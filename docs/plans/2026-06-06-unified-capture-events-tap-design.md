@@ -81,6 +81,10 @@ Status: implemented 2026-06-06 (commits 7620710..42c438f on calm-juniper).
 
 ## Stage B — sink unification (the wire change)
 
+Status: implemented 2026-06-07 (commits ba4e9b1..254e900 on calm-juniper).
+Dual-format window OPEN as of this date — promotion criteria per Rollback
+section.
+
 - Prereq: tap exports `pkgs/ndjson`; cg bumps tap.
 - TAP-text sink: phases as top-level test points; entries via
   `Writer.Subtest()`; `Log` → comments; trailing plan + summary line.

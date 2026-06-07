@@ -6,11 +6,11 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/interfaces"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/collections_slice"
+	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/config_cli"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/flags"
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/config_cli"
+	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/interfaces"
 )
 
 // Config is the interface a Utility uses to source its CLI config —

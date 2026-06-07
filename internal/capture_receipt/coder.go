@@ -21,10 +21,10 @@ import (
 	"github.com/amarbel-llc/madder/go/pkgs/domain_interfaces"
 	"github.com/amarbel-llc/madder/go/pkgs/hyphence"
 	"github.com/amarbel-llc/madder/go/pkgs/ids"
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/interfaces"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/ohio"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/format"
+	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/interfaces"
+	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/ohio"
 )
 
 // TypeStructV1 is the wire type-id that appears on the `! ` line of a
