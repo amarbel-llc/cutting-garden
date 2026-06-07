@@ -85,7 +85,7 @@ type tapSink struct {
 func (s *tapSink) SetStore(store string) { s.store = store }
 
 func (s *tapSink) Entry(e capture_receipt.EntryV1) {
-	s.tw.Ok(formatTAPEntry(e))
+	s.tw.Ok(FormatTAPEntry(e))
 }
 
 func (s *tapSink) StoreGroupReceipt(receiptID string, count int) {
@@ -107,7 +107,11 @@ func (s *tapSink) Finalize() {
 	s.tw.Plan()
 }
 
-func formatTAPEntry(e capture_receipt.EntryV1) string {
+// FormatTAPEntry renders one captured entry as the single-line TAP test
+// point description used since the original tapSink. Exported so the
+// Stage B capture_render_tap renderer reuses the exact same bytes per
+// entry (no text drift between the legacy and unified TAP formats).
+func FormatTAPEntry(e capture_receipt.EntryV1) string {
 	rel := joinRootPath(e.Root, e.Path)
 	mode := fmt.Sprintf("%04o", e.Mode.Perm())
 
