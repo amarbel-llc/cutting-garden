@@ -40,7 +40,7 @@ serve synthesizes the intermediate `dir` entries so `restore`'s
 |---|---|
 | `GET  /api/localsend/v2/info` | our device-info JSON |
 | `POST /api/localsend/v2/register` | discovery handshake; echoes our info |
-| `POST /api/localsend/v2/prepare-upload` | open a session; allocate a per-file token; `204` if no files, `401` on PIN miss, `409` if a session is already active |
+| `POST /api/localsend/v2/prepare-upload` | open a session; allocate a per-file token; `204` if no files, `409` if a session is already active |
 | `POST /api/localsend/v2/upload` | stream one file's bytes into the blob store; finalize the receipt when the last file lands |
 | `POST /api/localsend/v2/cancel` | drop the active session (a partial receipt is still written for files already received) |
 
@@ -83,7 +83,6 @@ a daemon stopped by a signal.
 - `-port N` — listen port (default `53317`, the LocalSend default).
 - `-store STORE_ID` — destination blob store (default store if omitted).
 - `-alias NAME` — device alias advertised to senders (default: hostname).
-- `-pin PIN` — require a matching `?pin=` on prepare-upload.
 
 ## Non-goals
 

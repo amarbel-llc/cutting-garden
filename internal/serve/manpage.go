@@ -27,8 +27,8 @@ func (*Serve) GetExamples() []command.Example {
 			Command:     "cutting-garden serve",
 		},
 		{
-			Description: "Receive into a named store, requiring a PIN.",
-			Command:     "cutting-garden serve -store .work -pin 123456",
+			Description: "Receive into a named store.",
+			Command:     "cutting-garden serve -store .work",
 		},
 		{
 			Description: "Bind an explicit host/port instead of auto-detecting Tailscale.",

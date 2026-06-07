@@ -76,7 +76,6 @@ type session struct {
 // injectable so the protocol flow can be exercised without a real store.
 type server struct {
 	info           deviceInfo
-	pin            string
 	captureLogPath string
 	storeName      string // "" for the default store
 	log            func(format string, args ...any)
@@ -102,12 +101,10 @@ func newServer(
 	store blob_stores.BlobStoreInitialized,
 	storeName, effectiveStoreId, captureLogPath string,
 	info deviceInfo,
-	pin string,
 	log func(format string, args ...any),
 ) *server {
 	s := &server{
 		info:           info,
-		pin:            pin,
 		captureLogPath: captureLogPath,
 		storeName:      storeName,
 		log:            log,
@@ -161,11 +158,6 @@ func (s *server) handleRegister(w http.ResponseWriter, r *http.Request) {
 func (s *server) handlePrepareUpload(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
-	if s.pin != "" && r.URL.Query().Get("pin") != s.pin {
-		http.Error(w, "PIN required", http.StatusUnauthorized)
 		return
 	}
 

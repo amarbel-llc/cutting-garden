@@ -47,7 +47,6 @@ type Serve struct {
 	Port  int
 	Store string
 	Alias string
-	Pin   string
 }
 
 var (
@@ -91,8 +90,6 @@ func (cmd *Serve) SetFlagDefinitions(flagSet interfaces.CLIFlagDefinitions) {
 			"when omitted).")
 	flagSet.StringVar(&cmd.Alias, "alias", "",
 		"device alias advertised to senders (default: hostname).")
-	flagSet.StringVar(&cmd.Pin, "pin", "",
-		"require senders to supply this PIN on prepare-upload.")
 }
 
 func (cmd *Serve) Run(req command.Request) {
@@ -132,7 +129,7 @@ func (cmd *Serve) Run(req command.Request) {
 
 	srv := newServer(
 		ctx, store, storeName, effectiveStoreId, captureLogPath,
-		cmd.makeInfo(), cmd.Pin, logf,
+		cmd.makeInfo(), logf,
 	)
 
 	httpServer := &http.Server{

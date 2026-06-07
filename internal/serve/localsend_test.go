@@ -29,13 +29,12 @@ type testServer struct {
 	logPath  string
 }
 
-func newTestServer(t *testing.T, pin string) *testServer {
+func newTestServer(t *testing.T) *testServer {
 	t.Helper()
 	logPath := filepath.Join(t.TempDir(), "captures.log")
 	ts := &testServer{logPath: logPath}
 	s := &server{
 		info:           deviceInfo{Alias: "test", Version: protocolVersion},
-		pin:            pin,
 		captureLogPath: logPath,
 		storeName:      "",
 		log:            func(string, ...any) {},
@@ -60,16 +59,13 @@ func newTestServer(t *testing.T, pin string) *testServer {
 	return ts
 }
 
-func (ts *testServer) prepare(t *testing.T, pin string, files map[string]fileMeta) *http.Response {
+func (ts *testServer) prepare(t *testing.T, files map[string]fileMeta) *http.Response {
 	t.Helper()
 	body, _ := json.Marshal(prepareUploadRequest{
 		Info:  deviceInfo{Alias: "sender"},
 		Files: files,
 	})
 	u := ts.http.URL + apiPrefix + "/prepare-upload"
-	if pin != "" {
-		u += "?pin=" + url.QueryEscape(pin)
-	}
 	resp, err := http.Post(u, "application/json", bytes.NewReader(body))
 	if err != nil {
 		t.Fatalf("prepare-upload: %v", err)
@@ -102,13 +98,13 @@ func decodePrepare(t *testing.T, resp *http.Response) prepareUploadResponse {
 }
 
 func TestServe_FullTransfer_WritesReceiptAndLog(t *testing.T) {
-	ts := newTestServer(t, "")
+	ts := newTestServer(t)
 
 	files := map[string]fileMeta{
 		"f1": {ID: "f1", FileName: "a.txt", Size: 3},
 		"f2": {ID: "f2", FileName: "docs/b.txt", Size: 5},
 	}
-	resp := ts.prepare(t, "", files)
+	resp := ts.prepare(t, files)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("prepare status = %d, want 200", resp.StatusCode)
 	}
@@ -173,42 +169,25 @@ func TestServe_FullTransfer_WritesReceiptAndLog(t *testing.T) {
 }
 
 func TestServe_SecondSessionConflicts(t *testing.T) {
-	ts := newTestServer(t, "")
+	ts := newTestServer(t)
 	files := map[string]fileMeta{"f1": {ID: "f1", FileName: "a.txt", Size: 1}}
 
-	resp := ts.prepare(t, "", files)
+	resp := ts.prepare(t, files)
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("first prepare = %d, want 200", resp.StatusCode)
 	}
 	resp.Body.Close()
 
-	resp2 := ts.prepare(t, "", files)
+	resp2 := ts.prepare(t, files)
 	defer resp2.Body.Close()
 	if resp2.StatusCode != http.StatusConflict {
 		t.Fatalf("second prepare = %d, want 409", resp2.StatusCode)
 	}
 }
 
-func TestServe_PinRequired(t *testing.T) {
-	ts := newTestServer(t, "1234")
-	files := map[string]fileMeta{"f1": {ID: "f1", FileName: "a.txt", Size: 1}}
-
-	bad := ts.prepare(t, "", files)
-	bad.Body.Close()
-	if bad.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("no-pin prepare = %d, want 401", bad.StatusCode)
-	}
-
-	ok := ts.prepare(t, "1234", files)
-	defer ok.Body.Close()
-	if ok.StatusCode != http.StatusOK {
-		t.Fatalf("good-pin prepare = %d, want 200", ok.StatusCode)
-	}
-}
-
 func TestServe_EmptyFilesNoContent(t *testing.T) {
-	ts := newTestServer(t, "")
-	resp := ts.prepare(t, "", map[string]fileMeta{})
+	ts := newTestServer(t)
+	resp := ts.prepare(t, map[string]fileMeta{})
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusNoContent {
 		t.Fatalf("empty prepare = %d, want 204", resp.StatusCode)
@@ -216,11 +195,11 @@ func TestServe_EmptyFilesNoContent(t *testing.T) {
 }
 
 func TestServe_UnsafeFileNameRejected(t *testing.T) {
-	ts := newTestServer(t, "")
+	ts := newTestServer(t)
 	files := map[string]fileMeta{
 		"f1": {ID: "f1", FileName: "../escape.txt", Size: 1},
 	}
-	pr := decodePrepare(t, ts.prepare(t, "", files))
+	pr := decodePrepare(t, ts.prepare(t, files))
 
 	resp := ts.upload(t, pr.SessionID, "f1", pr.Files["f1"], []byte("x"))
 	defer resp.Body.Close()
@@ -230,12 +209,12 @@ func TestServe_UnsafeFileNameRejected(t *testing.T) {
 }
 
 func TestServe_CancelWritesPartialReceipt(t *testing.T) {
-	ts := newTestServer(t, "")
+	ts := newTestServer(t)
 	files := map[string]fileMeta{
 		"f1": {ID: "f1", FileName: "a.txt", Size: 3},
 		"f2": {ID: "f2", FileName: "b.txt", Size: 3},
 	}
-	pr := decodePrepare(t, ts.prepare(t, "", files))
+	pr := decodePrepare(t, ts.prepare(t, files))
 
 	// Upload only one of two files, then cancel.
 	ts.upload(t, pr.SessionID, "f1", pr.Files["f1"], []byte("abc")).Body.Close()
@@ -258,7 +237,7 @@ func TestServe_CancelWritesPartialReceipt(t *testing.T) {
 }
 
 func TestServe_InfoAndRegister(t *testing.T) {
-	ts := newTestServer(t, "")
+	ts := newTestServer(t)
 
 	resp, err := http.Get(ts.http.URL + apiPrefix + "/info")
 	if err != nil {
