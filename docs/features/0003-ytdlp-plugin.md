@@ -173,6 +173,13 @@ devshell.
 
 ## Future host-routing layer for `https`
 
+> **Superseded (2026-06-07):** the router-meta-plugin sketch below is
+> not adopted. Host routing is specified registry-native in
+> [RFC 0006](../rfcs/0006-host-bound-plugin-resolution.md) (decisions
+> in [FDR 0010](0010-host-bound-plugin-dispatch.md)), whose migration
+> plan converts `httpsAllowlist` into host bindings. The section is
+> retained for design rationale.
+
 This plugin claims the `https` scheme outright. Registry registration
 panics on duplicate scheme claims
 (`cutting_garden_plugins.MustRegisterCapture`), so no other plugin can
