@@ -91,29 +91,51 @@ init_store() {
   assert_success
 }
 
-# receipt_id_of_group, receipt_count_of_group, receipt_store_of_group
-# extract single fields from one `store_group_receipt` NDJSON line in
-# a capture's stdout. The 2nd arg is the 1-indexed group number for
-# multi-store captures (default 1).
+# Unified json wire (tap-ndjson, Stage B) receipt helpers. Each
+# store-group receipt is one top-level `test` record whose description
+# starts with "receipt store=" and whose diagnostic carries
+# {store, receipt_id, count} machine-readably (see the Stage B wire
+# notes in docs/plans/2026-06-06-unified-capture-events-tap-design.md).
+# jq -R + fromjson? skips non-JSON lines: bats merges stderr into
+# $output, and only the record stream is JSON. The idx arg is the
+# 1-indexed group number for multi-store captures (default 1).
+receipt_diag_of_group() {
+  local out="$1" field="$2" idx="${3:-1}"
+  echo "$out" |
+    jq -rR --arg field "$field" '
+      fromjson? | objects |
+      select(.type=="test" and (.description|startswith("receipt store="))) |
+      .diagnostic[$field]' |
+    sed -n "${idx}p"
+}
+
 receipt_id_of_group() {
-  local out="$1" idx="${2:-1}"
-  echo "$out" | grep -F '"type":"store_group_receipt"' |
-    sed -n "${idx}p" |
-    sed -E 's/.*"receipt_id":"([^"]+)".*/\1/'
+  receipt_diag_of_group "$1" receipt_id "${2:-1}"
 }
 
 receipt_count_of_group() {
-  local out="$1" idx="${2:-1}"
-  echo "$out" | grep -F '"type":"store_group_receipt"' |
-    sed -n "${idx}p" |
-    sed -E 's/.*"count":([0-9]+).*/\1/'
+  receipt_diag_of_group "$1" count "${2:-1}"
 }
 
+# The unified wire labels the default store "(default)"; map it back to
+# the empty store-id the pre-unification wire used so lane assertions
+# stay store-id-shaped ("" == default).
 receipt_store_of_group() {
-  local out="$1" idx="${2:-1}"
-  echo "$out" | grep -F '"type":"store_group_receipt"' |
-    sed -n "${idx}p" |
-    sed -E 's/.*"store":"([^"]*)".*/\1/'
+  local store
+  store="$(receipt_diag_of_group "$1" store "${2:-1}")"
+  [[ $store == "(default)" ]] || echo "$store"
+}
+
+# receipt_group_count echoes how many store-group receipt records a
+# capture's output carries (the new-wire analogue of grepping for the
+# retired `store_group_receipt` record type).
+receipt_group_count() {
+  echo "$1" |
+    jq -rR '
+      fromjson? | objects |
+      select(.type=="test" and (.description|startswith("receipt store="))) |
+      .description' |
+    wc -l
 }
 
 # capture_receipt_id captures DIR into the active store and echoes the
@@ -122,8 +144,25 @@ capture_receipt_id() {
   local dir="$1"
   run_cg capture -format json "$dir"
   assert_success
-  echo "$output" | grep -F '"type":"store_group_receipt"' |
-    sed -E 's/.*"receipt_id":"([^"]+)".*/\1/' | head -n 1
+  receipt_id_of_group "$output"
+}
+
+# *_legacy: the pre-unification NDJSON `store_group_receipt` shapes.
+# Used ONLY by the dual-format window regression lanes in capture.bats
+# (-format json-legacy); delete together with the window per the design
+# doc's promotion criteria.
+receipt_id_of_group_legacy() {
+  local out="$1" idx="${2:-1}"
+  echo "$out" | grep -F '"type":"store_group_receipt"' |
+    sed -n "${idx}p" |
+    sed -E 's/.*"receipt_id":"([^"]+)".*/\1/'
+}
+
+receipt_count_of_group_legacy() {
+  local out="$1" idx="${2:-1}"
+  echo "$out" | grep -F '"type":"store_group_receipt"' |
+    sed -n "${idx}p" |
+    sed -E 's/.*"count":([0-9]+).*/\1/'
 }
 
 # write_blob_id stores a file as a blob in the active store (or in

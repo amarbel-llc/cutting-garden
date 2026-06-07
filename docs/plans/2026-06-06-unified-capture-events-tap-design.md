@@ -89,6 +89,27 @@ Status: implemented 2026-06-06 (commits 7620710..42c438f on calm-juniper).
   nesting + counts diagnostic per phase.
 - bats wire assertions migrate; the Stage-A shim is deleted.
 
+### Stage B wire notes (window limitations)
+
+Known deltas between the unified formats and the legacy wire during
+the dual-format window — accepted, not bugs:
+
+- **No per-entry store stamping on `json`.** The legacy jsonSink
+  stamped every entry record with the active `store` id. On tap-ndjson
+  the store lives once in the receipt phase's verdict diagnostic
+  (`{store, receipt_id, count}`); entry subtests attribute to a store
+  by ordering (they precede their group's receipt phase). `json-legacy`
+  retains the per-entry stamping for the duration of the window.
+- **Store-switch and shadow notices are TAP comments on `tap`,
+  dropped on `json`.** Notices route through `Stream.Log`; the
+  tap-ndjson schema has no comment record type, so the ndjson renderer
+  drops them. `json-legacy` keeps the old stderr routing. Consumers
+  needing the shadow warning machine-readably should not exist yet; if
+  they appear, that's a schema conversation with tap, not a cg patch.
+- **`Line: 0` on every ndjson record.** Capture events carry no
+  source-line provenance (there is no TAP text document for lines to
+  index into); tap-ndjson requires the field, so it is pinned to 0.
+
 ## Rollback
 
 - **Stage A**: purely additive; `-progress=never` and piped output

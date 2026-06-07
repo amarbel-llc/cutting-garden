@@ -224,9 +224,12 @@
             # ssh-keygen / ssh-add (the plugin authenticates ssh via the
             # agent). git: the test ssh server execs git's pack helpers
             # (git-upload-pack / git-receive-pack) by name on PATH.
+            # jq: lib/common.bash's receipt helpers parse the unified
+            # tap-ndjson capture wire (Stage B).
             nativeBuildInputs = [
               pkgs.openssh
               pkgs.git
+              pkgs.jq
             ];
           };
         };

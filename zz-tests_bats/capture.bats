@@ -18,8 +18,8 @@ function capture_simple_dir { # @test
   assert_success
 
   local n
-  n="$(echo "$output" | grep -c '"type":"store_group_receipt"' || true)"
-  [[ $n -eq 1 ]] || fail "expected 1 receipt summary, got $n. output:"$'\n'"$output"
+  n="$(receipt_group_count "$output")"
+  [[ $n -eq 1 ]] || fail "expected 1 receipt record, got $n. output:"$'\n'"$output"
 
   # 3 files + tree/ + tree/sub = 5 entries.
   local count rid
@@ -142,8 +142,8 @@ function capture_multi_store_group { # @test
   assert_success
 
   local n
-  n="$(echo "$output" | grep -c '"type":"store_group_receipt"' || true)"
-  [[ $n -eq 2 ]] || fail "expected 2 receipt summaries, got $n. output:"$'\n'"$output"
+  n="$(receipt_group_count "$output")"
+  [[ $n -eq 2 ]] || fail "expected 2 receipt records, got $n. output:"$'\n'"$output"
 
   local rid1 store1 rid2 store2
   rid1="$(receipt_id_of_group "$output" 1)"
@@ -232,7 +232,12 @@ function capture_refuses_parent_escape_root { # @test
   popd >/dev/null
 
   assert_failure
-  assert_output --partial 'outside working directory'
+  # The per-arg refusal is a failing phase record on the unified json
+  # wire: ok==false, error detail in the diagnostic.
+  echo "$output" |
+    jq -rR 'fromjson? | objects | select(.type=="test" and .ok==false) | .diagnostic.error' |
+    grep -q 'outside working directory' ||
+    fail "no failing phase record carrying the refusal. output:"$'\n'"$output"
 }
 
 function capture_refuses_absolute_root { # @test
@@ -247,7 +252,11 @@ function capture_refuses_absolute_root { # @test
 
   run_cg capture -format json "$outside"
   assert_failure
-  assert_output --partial 'outside working directory'
+  # Failing phase record on the json wire, like the parent-escape lane.
+  echo "$output" |
+    jq -rR 'fromjson? | objects | select(.type=="test" and .ok==false) | .diagnostic.error' |
+    grep -q 'outside working directory' ||
+    fail "no failing phase record carrying the refusal. output:"$'\n'"$output"
 }
 
 function capture_refuses_collision_after_clean { # @test
@@ -317,8 +326,10 @@ function capture_warns_when_dir_shadows_store { # @test
 
   # A bare arg "shadowed" matches both a directory in CWD and a
   # configured blob-store-id. The dir wins (matching `write`'s
-  # precedent) and a shadow warning routes to stderr. Capture still
-  # succeeds.
+  # precedent) and a shadow warning is emitted. Capture still
+  # succeeds. The unified json wire DROPS notices (tap-ndjson has no
+  # comment record — Stage B wire notes), so this lane asserts the
+  # notice as a TAP comment under -format tap.
   init_store
   run_madder init -encryption none shadowed
   assert_success
@@ -326,19 +337,20 @@ function capture_warns_when_dir_shadows_store { # @test
   mkdir shadowed
   echo "x" >shadowed/x.txt
 
-  run_cg capture -format json shadowed
+  run_cg capture -format tap shadowed
   assert_success
 
-  # Receipt is for the default store (the dir won; no store switch).
-  local rid store
-  rid="$(receipt_id_of_group "$output")"
-  store="$(receipt_store_of_group "$output")"
-
-  [[ -n $rid ]] || fail "no receipt id: $output"
-  [[ -z $store ]] || fail "expected default store (empty), got '$store'"
-
-  # NDJSON sink routes notices to stderr; bats merges into $output.
+  # Notices are TAP comments on the unified tap wire.
   assert_output --partial 'shadows blob-store-id'
+
+  # Receipt is for the default store (the dir won; no store switch):
+  # the receipt phase point names "(default)", and its comment echo
+  # carries the id.
+  assert_output --partial 'receipt store=(default)'
+  local rid
+  rid="$(echo "$output" |
+    sed -nE 's/^# receipt store=[^ ]+ id=([^ ]+) count=.*/\1/p' | head -n 1)"
+  [[ -n $rid ]] || fail "no receipt id in output: $output"
 }
 
 function capture_per_entry_failure_continues_walk { # @test
@@ -363,8 +375,85 @@ function capture_per_entry_failure_continues_walk { # @test
 
   assert_failure
 
-  assert_line --regexp '"path":"good.txt".*"type":"file"'
-  assert_line --regexp '"source":"tree/secret.txt".*"error"'
+  # On the unified json wire the walk is one failing phase record with
+  # the per-entry results nested as subtests: the sibling captures as a
+  # passing subtest, the unreadable file as a failing one carrying the
+  # error in its diagnostic.
+  local phase
+  phase="$(echo "$output" |
+    jq -cR 'fromjson? | objects | select(.type=="test" and .description=="walk tree")')"
+  [[ -n $phase ]] || fail "no walk phase record. output:"$'\n'"$output"
+
+  echo "$phase" | jq -e '.ok == false' >/dev/null ||
+    fail "walk phase should fail: $phase"
+  echo "$phase" | jq -e '
+    .subtest[] | select(.description=="tree/good.txt"
+      and .ok==true and .diagnostic.type=="file")' >/dev/null ||
+    fail "missing passing good.txt subtest: $phase"
+  echo "$phase" | jq -e '
+    .subtest[] | select(.description=="tree/secret.txt"
+      and .ok==false and (.diagnostic.error|length) > 0)' >/dev/null ||
+    fail "missing failing secret.txt subtest: $phase"
+}
+
+# ---------------------------------------------------------------------
+# Dual-format window regression net (Stage B). One lane per legacy
+# format pins the exact pre-unification wire behind -format tap-legacy
+# / json-legacy. DELETE these two lanes (and the *_legacy helpers in
+# lib/common.bash) together with the legacy formats once the window
+# closes — promotion criteria in
+# docs/plans/2026-06-06-unified-capture-events-tap-design.md §Rollback.
+# ---------------------------------------------------------------------
+
+function capture_legacy_tap_wire_window { # @test
+
+  init_store
+
+  mkdir tree
+  chmod 755 tree
+  echo "alpha" >tree/a.txt
+  chmod 644 tree/a.txt
+
+  run_cg capture -format tap-legacy tree
+  assert_success
+
+  # The flat pre-unification TAP stream: one top-level point per entry
+  # (no phase points, no subtest indentation), the receipt summary
+  # point, and the trailing plan.
+  assert_line 'TAP version 14'
+  assert_line 'ok 1 - tree dir mode=0755'
+  assert_line --regexp '^ok 2 - tree/a\.txt file mode=0644 size=6 blob=blake2b256-'
+  assert_line --regexp '^ok 3 - receipt store="" id=blake2b256-[a-z0-9]+ count=2$'
+  assert_line '1..3'
+}
+
+function capture_legacy_json_wire_window { # @test
+
+  init_store
+
+  mkdir tree
+  chmod 755 tree
+  echo "alpha" >tree/a.txt
+  chmod 644 tree/a.txt
+
+  run_cg capture -format json-legacy tree
+  assert_success
+
+  # The pre-unification NDJSON stream: flat per-entry records plus the
+  # store_group_receipt summary record.
+  local n
+  n="$(echo "$output" | grep -c '"type":"store_group_receipt"' || true)"
+  [[ $n -eq 1 ]] || fail "expected 1 legacy receipt record, got $n. output:"$'\n'"$output"
+
+  assert_output --partial '"path":".","root":"tree","type":"dir","mode":"0755"}'
+  assert_output --partial '"path":"a.txt","root":"tree","type":"file","mode":"0644","size":6,"blob_id":"blake2b256-'
+  assert_output --partial '"type":"store_group_receipt","store":"","receipt_id":"blake2b256-'
+
+  local rid count
+  rid="$(receipt_id_of_group_legacy "$output")"
+  count="$(receipt_count_of_group_legacy "$output")"
+  [[ -n $rid ]] || fail "no legacy receipt_id: $output"
+  [[ $count -eq 2 ]] || fail "expected count=2, got $count"
 }
 
 function capture_writes_log_entry_at_cg_scope { # @test
