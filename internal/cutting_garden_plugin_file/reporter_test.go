@@ -26,6 +26,8 @@ type recordingStream struct {
 	phaseEnds   []capture_events.Verdict
 	entries     []capture_receipt.EntryV1
 	failures    []streamFailure
+	plans       []capture_events.ReportPlan
+	progress    []capture_events.ReportProgress
 }
 
 type streamFailure struct {
@@ -51,6 +53,16 @@ func (r *recordingStream) Entry(e capture_receipt.EntryV1) {
 func (r *recordingStream) Failure(source string, err error) {
 	r.ops = append(r.ops, "failure")
 	r.failures = append(r.failures, streamFailure{source: source, err: err})
+}
+
+func (r *recordingStream) Plan(p capture_events.ReportPlan) {
+	r.ops = append(r.ops, "plan")
+	r.plans = append(r.plans, p)
+}
+
+func (r *recordingStream) Progress(p capture_events.ReportProgress) {
+	r.ops = append(r.ops, "progress")
+	r.progress = append(r.progress, p)
 }
 
 var _ cutting_garden_plugins.Reporter = (*recordingStream)(nil)
@@ -125,9 +137,65 @@ func TestCaptureRoot_EmitsWalkPhase(t *testing.T) {
 		t.Errorf("ops[last] = %q, want phase_end", last)
 	}
 	for i, op := range rep.ops[1 : len(rep.ops)-1] {
-		if op != "entry" {
-			t.Errorf("ops[%d] = %q, want entry", i+1, op)
+		if op != "entry" && op != "progress" {
+			t.Errorf("ops[%d] = %q, want entry or progress", i+1, op)
 		}
+	}
+}
+
+// TestCaptureRoot_EmitsIndeterminateWalkProgress pins the cg#68
+// option-B progress wire: the walk never calls Plan (a single-pass
+// WalkDir has no up-front total, so the viewport stays indeterminate
+// per the Reporter contract), and every captured entry emits one
+// Progress sample whose Items numerator is monotonic and whose Item
+// names the directory being walked — the dir itself for dir entries,
+// the parent for everything else — so the viewport tail (which
+// dedupes consecutive identical lines) rolls through directories.
+func TestCaptureRoot_EmitsIndeterminateWalkProgress(t *testing.T) {
+	dir := t.TempDir()
+	writeWalkFixture(t, dir)
+
+	rep := &recordingStream{}
+	result := Plugin{}.CaptureRoot(cutting_garden_plugins.CaptureRootRequest{
+		Context:   context.Background(),
+		Source:    &url.URL{Path: dir},
+		RawArg:    "fixture-arg",
+		BlobStore: newDiscardStore(),
+		Reporter:  rep,
+	})
+	if result.FailCount != 0 {
+		t.Fatalf("FailCount = %d, want 0; failures: %v", result.FailCount, rep.failures)
+	}
+
+	if len(rep.plans) != 0 {
+		t.Errorf("Plan calls = %+v, want none (indeterminate walk)", rep.plans)
+	}
+
+	// One Progress per captured entry, in walk (lexical) order:
+	// ., a.txt, b.txt, sub, sub/c.txt.
+	wantItems := []string{
+		dir,
+		dir,
+		dir,
+		filepath.Join(dir, "sub"),
+		filepath.Join(dir, "sub"),
+	}
+	if len(rep.progress) != len(wantItems) {
+		t.Fatalf("progress samples = %d, want %d: %+v",
+			len(rep.progress), len(wantItems), rep.progress)
+	}
+	for i, p := range rep.progress {
+		if p.Items != int64(i+1) {
+			t.Errorf("progress[%d].Items = %d, want %d (monotonic)", i, p.Items, i+1)
+		}
+		if p.Item != wantItems[i] {
+			t.Errorf("progress[%d].Item = %q, want %q", i, p.Item, wantItems[i])
+		}
+	}
+
+	// Progress nests inside the phase like every other walk event.
+	if rep.ops[0] != "phase_start" || rep.ops[len(rep.ops)-1] != "phase_end" {
+		t.Errorf("ops = %v, want progress bracketed by the phase", rep.ops)
 	}
 }
 

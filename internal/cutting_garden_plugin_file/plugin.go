@@ -169,7 +169,17 @@ func (Plugin) ScanForDiff(
 
 // walkRoot, writeFileBlob: previously inline in
 // madder's `india/commands_cutting_garden/capture.go`. The walk is
-// unchanged; only the home moved.
+// unchanged; only the home moved — except the per-entry Progress
+// emission (cg#68), which diverges from the madder original.
+//
+// Progress is indeterminate by design: a single-pass WalkDir has no
+// up-front total, and the Reporter contract says a plugin that cannot
+// estimate never calls Plan. Each captured entry emits one sample
+// whose Item names the directory being walked (the viewport tail
+// dedupes consecutive identical lines, so this rolls through
+// directories rather than flooding with files) and whose Items is the
+// monotonic captured-entry count, ready as a bar numerator if a
+// pre-walk estimate (cg#10) lands later.
 func walkRoot(
 	ctx context.Context,
 	store blob_stores.BlobStoreInitialized,
@@ -181,6 +191,16 @@ func walkRoot(
 	rootArg := walkPath
 
 	walkErr := filepath.WalkDir(walkPath, func(p string, d fs.DirEntry, walkErr error) error {
+		// Cancellation (SIGINT/SIGTERM cancel the errors.Context this
+		// derives from) aborts the walk itself: returning the error
+		// stops WalkDir, and the trailing handler records it as the
+		// single failure. Without this check only the per-file blob
+		// copy aborts (via CtxReader) and the walk would enumerate the
+		// whole remaining tree into one Failure per file.
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
 		if walkErr != nil {
 			stream.Failure(p, walkErr)
 			failCount++
@@ -246,6 +266,15 @@ func walkRoot(
 
 		*accum = append(*accum, entry)
 		stream.Entry(entry)
+
+		walkingDir := p
+		if !mode.IsDir() {
+			walkingDir = filepath.Dir(p)
+		}
+		stream.Progress(capture_events.ReportProgress{
+			Item:  walkingDir,
+			Items: int64(len(*accum)),
+		})
 		return nil
 	})
 
@@ -368,6 +397,14 @@ func materializeEntries(
 	}
 
 	for i := range entries {
+		// Per-entry cancel check (SIGINT/SIGTERM): CtxReader only covers
+		// file blob copies; dir and symlink entries are mkdir/symlink IO
+		// that would otherwise run the receipt to completion after a
+		// cancel.
+		if err := ctx.Err(); err != nil {
+			return errors.Wrap(err)
+		}
+
 		e := entries[i]
 		materialized := filepath.Clean(filepath.Join(cleanDest, e.Root, e.Path))
 
@@ -445,6 +482,12 @@ func walkForDiff(
 	var perEntryFailures []string
 
 	walkErr := filepath.WalkDir(dir, func(p string, d fs.DirEntry, walkErr error) error {
+		// Same prompt-cancel semantics as walkRoot: abort the walk
+		// instead of aggregating one failure per remaining file.
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
 		if walkErr != nil {
 			perEntryFailures = append(perEntryFailures,
 				fmt.Sprintf("%s: %v", p, walkErr))
