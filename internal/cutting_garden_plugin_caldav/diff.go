@@ -1,0 +1,79 @@
+package cutting_garden_plugin_caldav
+
+import (
+	"strings"
+
+	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
+	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
+	"github.com/amarbel-llc/cutting-garden/internal/plugin_blob_io"
+	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
+)
+
+// ScanForDiff re-fetches every VTODO/VEVENT resource under the endpoint
+// and returns one EntryV1 per resource with a freshly computed blob-id
+// (hashed through the caller's discard store — no bytes persisted).
+// Entry keys (Path) match what CaptureRoot produced, so the diff
+// comparator localizes added/removed/modified resources. Per-resource
+// failures aggregate into the returned error — diff is read-only and
+// atomic.
+func (Plugin) ScanForDiff(
+	req cutting_garden_plugins.DiffScanRequest,
+) ([]capture_receipt.EntryV1, error) {
+	base, username, password, err := connectionFromArg(req.Dir)
+	if err != nil {
+		return nil, err
+	}
+	c := newClient(base, username, password)
+	origin, _ := originOf(base)
+
+	calendars, err := c.listCalendars(req.Context)
+	if err != nil {
+		return nil, err
+	}
+
+	var (
+		entries  []capture_receipt.EntryV1
+		failures []string
+	)
+
+	for _, cal := range calendars {
+		for _, component := range capturedComponents {
+			resources, listErr := c.listResources(req.Context, cal.href, component)
+			if listErr != nil {
+				failures = append(failures, listErr.Error())
+				continue
+			}
+
+			for _, res := range resources {
+				rel := serverPath(c.resolveHref(res.href))
+				if rel == "" {
+					continue
+				}
+
+				id, size, writeErr := plugin_blob_io.WriteReaderBlob(
+					req.Context, req.BlobStore, strings.NewReader(res.data))
+				if writeErr != nil {
+					failures = append(failures, rel+": "+writeErr.Error())
+					continue
+				}
+
+				entries = append(entries, capture_receipt.EntryV1{
+					Path:   rel,
+					Root:   origin,
+					Type:   capture_receipt.TypeFile,
+					Mode:   resourceMode,
+					Size:   size,
+					BlobId: id.String(),
+				})
+			}
+		}
+	}
+
+	if len(failures) > 0 {
+		return nil, errors.ErrorWithStackf(
+			"caldav plugin: %d failures during diff scan:\n  %s",
+			len(failures), strings.Join(failures, "\n  "))
+	}
+
+	return entries, nil
+}

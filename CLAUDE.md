@@ -11,8 +11,8 @@ dodder's command-dispatch framework. Five user-facing subcommands —
 `complete` are registered in `internal/cgapp.Build()`, the single factory shared by
 the `cutting-garden` binary, its `cg` alias, and the
 manpage/completion generator `cutting-garden-gen`. Capture/restore/
-diff backends are URI-scheme-keyed plugins (file, git, yt-dlp) under
-`internal/cutting_garden_plugin_*`. `serve` (`internal/serve/`) is a
+diff backends are URI-scheme-keyed plugins (file, git, yt-dlp, caldav)
+under `internal/cutting_garden_plugin_*`. `serve` (`internal/serve/`) is a
 long-lived LocalSend receiver bound to the host's Tailscale address:
 each incoming transfer lands as a normal fs-v1 capture receipt
 (FDR 0011). The original extraction design
