@@ -21,6 +21,9 @@ Filesystem-tree capture/restore CLI built on top of
 - `health` — report every registered URI-scheme plugin and the
   capabilities it implements (capture / restore / diff / protocol /
   traversal), as a table or `-format json`.
+- `list URI` — list the immediate child nodes a traversable plugin
+  exposes for URI (e.g. a CalDAV endpoint's calendars; descend by
+  listing a calendar's URI), as a table or `-format json`.
 
 `cg` is an alias binary. Manpages and shell completions are generated
 from the command metadata at build time.

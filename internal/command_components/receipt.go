@@ -50,6 +50,33 @@ func ResolveDiffPlugin(
 	return u, plugin, nil
 }
 
+// ResolveRootListerPlugin parses uriStr as a URL and returns the
+// RootLister registered for its scheme — the read-only traversal
+// capability the `list` command consumes. Resolution goes through the
+// capture registry because every RootLister plugin is also a capture
+// plugin. Errors if the scheme is unknown or its plugin does not
+// implement RootLister (e.g. the file plugin, which has no
+// sub-structure to enumerate). Sibling to ResolveDiffPlugin.
+func ResolveRootListerPlugin(
+	uriStr string,
+) (*url.URL, cutting_garden_plugins.RootLister, error) {
+	u, err := url.Parse(uriStr)
+	if err != nil {
+		return nil, nil, errors.Wrapf(err, "parse uri %q", uriStr)
+	}
+	plugin, err := cutting_garden_plugins.ResolveCapture(u.Scheme)
+	if err != nil {
+		return nil, nil, err
+	}
+	lister, ok := plugin.(cutting_garden_plugins.RootLister)
+	if !ok {
+		return nil, nil, errors.ErrorWithStackf(
+			"scheme %q does not support listing (its plugin exposes no "+
+				"traversal)", u.Scheme)
+	}
+	return u, lister, nil
+}
+
 // ReadReceiptBlob fetches and parses the receipt blob.
 //
 // With storeOverride non-empty: resolve that store, read directly.

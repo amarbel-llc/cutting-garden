@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: experimental
 date: 2026-06-08
 promotion-criteria: |
   Promote to `experimental` once the RootLister interface, a read-only
@@ -13,13 +13,13 @@ promotion-criteria: |
 
 # Plugin root traversal and expansion
 
-> **Partially implemented.** The `RootLister` interface
-> (`internal/cutting_garden_plugins/traversal.go`) and the caldav
-> reference implementer (`Types()` + `ListRoots()`, with `CaptureRoot`
-> reworked onto the shared traversal and #81's failure-receipt fix
-> folded in) have landed. The read-only `list` command, the `--split`
-> planner expansion, and `health` (#80) are not yet built. The node-type
-> versioning this leans on is the subject of #79.
+> **Experimental.** The `RootLister` interface
+> (`internal/cutting_garden_plugins/traversal.go`), the caldav reference
+> implementer (`Types()` + `ListRoots()`, with `CaptureRoot` reworked
+> onto the shared traversal and #81's failure-receipt fix folded in), the
+> read-only `list` command (`internal/list/`), and `health` (#80) have
+> landed. The `--split` planner expansion and the MCP traversal server
+> remain. The node-type versioning this leans on is the subject of #79.
 
 ## Problem Statement
 
