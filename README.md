@@ -6,7 +6,7 @@ Filesystem-tree capture/restore CLI built on top of
 ## Commands
 
 - `capture [STORE_ID | DIR]...` — walk directories (or scheme-addressed
-  sources: `git:`, yt-dlp URLs) and write every file as a
+  sources: `git:`, `caldav:`, yt-dlp URLs) and write every file as a
   content-addressed blob plus one receipt per store group.
 - `restore RECEIPT_ID DEST` — materialize a receipt's tree at DEST.
 - `diff RECEIPT_ID [DIR]` — compare a receipt against the filesystem;

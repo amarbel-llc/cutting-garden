@@ -89,59 +89,46 @@ type davPropStat struct {
 }
 
 type davProp struct {
-	DisplayName      string           `xml:"DAV: displayname"`
-	SupportedCalComp *calCompSet      `xml:"urn:ietf:params:xml:ns:caldav supported-calendar-component-set"`
-	CalendarData     string           `xml:"urn:ietf:params:xml:ns:caldav calendar-data"`
-	GetETag          string           `xml:"DAV: getetag"`
-	ResourceType     *davResourceType `xml:"DAV: resourcetype"`
+	DisplayName  string           `xml:"DAV: displayname"`
+	CalendarData string           `xml:"urn:ietf:params:xml:ns:caldav calendar-data"`
+	ResourceType *davResourceType `xml:"DAV: resourcetype"`
 }
 
 type davResourceType struct {
 	Calendar *struct{} `xml:"urn:ietf:params:xml:ns:caldav calendar"`
 }
 
-type calCompSet struct {
-	Comps []calComp `xml:"urn:ietf:params:xml:ns:caldav comp"`
-}
-
-type calComp struct {
-	Name string `xml:"name,attr"`
-}
-
 // calendar is a discovered CalDAV calendar collection.
 type calendar struct {
-	href           string
-	displayName    string
-	componentTypes []string
+	href        string
+	displayName string
 }
 
-// resource is one raw iCalendar object (a VTODO or VEVENT resource)
-// with its href and ETag. data is the verbatim text/calendar body.
+// resource is one raw iCalendar object (a VTODO or VEVENT resource):
+// data is the verbatim text/calendar body, keyed by its server href.
 type resource struct {
 	href string
-	etag string
 	data string
 }
 
 const propfindCalendars = `<?xml version="1.0" encoding="utf-8" ?>
-<d:propfind xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+<d:propfind xmlns:d="DAV:">
   <d:prop>
     <d:displayname />
     <d:resourcetype />
-    <c:supported-calendar-component-set />
   </d:prop>
 </d:propfind>`
 
 // listCalendars performs a Depth:1 PROPFIND from the base URL and
 // returns every child collection whose resourcetype includes
 // <C:calendar>.
-func (c *client) listCalendars(ctx context.Context) ([]calendar, error) {
+func (c *client) listCalendars(ctx context.Context) (calendars []calendar, err error) {
 	resp, err := c.do(ctx, "PROPFIND", c.base, propfindCalendars,
 		"application/xml; charset=utf-8", 1)
 	if err != nil {
 		return nil, errors.Wrapf(err, "PROPFIND %s", c.base)
 	}
-	defer resp.Body.Close()
+	defer errors.DeferredCloser(&err, resp.Body)
 
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -158,7 +145,6 @@ func (c *client) listCalendars(ctx context.Context) ([]calendar, error) {
 		return nil, errors.Wrapf(err, "parse multistatus from %s", c.base)
 	}
 
-	var calendars []calendar
 	for _, r := range ms.Responses {
 		for _, ps := range r.PropStat {
 			if !strings.Contains(ps.Status, "200") {
@@ -167,28 +153,21 @@ func (c *client) listCalendars(ctx context.Context) ([]calendar, error) {
 			if ps.Prop.ResourceType == nil || ps.Prop.ResourceType.Calendar == nil {
 				continue
 			}
-			cal := calendar{
+			calendars = append(calendars, calendar{
 				href:        r.Href,
 				displayName: ps.Prop.DisplayName,
-			}
-			if ps.Prop.SupportedCalComp != nil {
-				for _, comp := range ps.Prop.SupportedCalComp.Comps {
-					cal.componentTypes = append(cal.componentTypes, comp.Name)
-				}
-			}
-			calendars = append(calendars, cal)
+			})
 		}
 	}
 	return calendars, nil
 }
 
 // calendarQuery is the REPORT body template that fetches every resource
-// of one component type (VTODO or VEVENT) with its ETag and raw
-// calendar-data. %s is the component name.
+// of one component type (VTODO or VEVENT) with its raw calendar-data.
+// %s is the component name.
 const calendarQuery = `<?xml version="1.0" encoding="utf-8" ?>
 <c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
   <d:prop>
-    <d:getetag />
     <c:calendar-data />
   </d:prop>
   <c:filter>
@@ -204,7 +183,7 @@ const calendarQuery = `<?xml version="1.0" encoding="utf-8" ?>
 func (c *client) listResources(
 	ctx context.Context,
 	calendarHref, component string,
-) ([]resource, error) {
+) (resources []resource, err error) {
 	url := c.resolveHref(calendarHref)
 	body := fmt.Sprintf(calendarQuery, component)
 	resp, err := c.do(ctx, "REPORT", url, body,
@@ -212,7 +191,7 @@ func (c *client) listResources(
 	if err != nil {
 		return nil, errors.Wrapf(err, "REPORT %s (%s)", url, component)
 	}
-	defer resp.Body.Close()
+	defer errors.DeferredCloser(&err, resp.Body)
 
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -229,7 +208,6 @@ func (c *client) listResources(
 		return nil, errors.Wrapf(err, "parse multistatus from %s", url)
 	}
 
-	var resources []resource
 	for _, r := range ms.Responses {
 		for _, ps := range r.PropStat {
 			if !strings.Contains(ps.Status, "200") || ps.Prop.CalendarData == "" {
@@ -237,7 +215,6 @@ func (c *client) listResources(
 			}
 			resources = append(resources, resource{
 				href: r.Href,
-				etag: ps.Prop.GetETag,
 				data: ps.Prop.CalendarData,
 			})
 		}
@@ -248,14 +225,14 @@ func (c *client) listResources(
 // putResource creates or overwrites the resource at href with icalData.
 // No conditional header is sent: restore is an unconditional
 // materialization of the captured bytes onto the destination.
-func (c *client) putResource(ctx context.Context, href, icalData string) error {
+func (c *client) putResource(ctx context.Context, href, icalData string) (err error) {
 	url := c.resolveHref(href)
 	resp, err := c.do(ctx, "PUT", url, icalData,
 		"text/calendar; charset=utf-8", -1)
 	if err != nil {
 		return errors.Wrapf(err, "PUT %s", url)
 	}
-	defer resp.Body.Close()
+	defer errors.DeferredCloser(&err, resp.Body)
 
 	if resp.StatusCode != http.StatusCreated &&
 		resp.StatusCode != http.StatusNoContent &&

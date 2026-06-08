@@ -7,7 +7,6 @@ import (
 	"github.com/amarbel-llc/cutting-garden/internal/capture_events"
 	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
 	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
-	"github.com/amarbel-llc/cutting-garden/internal/plugin_blob_io"
 )
 
 // capturedComponents is the set of iCalendar component types the plugin
@@ -69,30 +68,19 @@ func (Plugin) CaptureRoot(
 			}
 
 			for _, res := range resources {
-				rel := serverPath(c.resolveHref(res.href))
+				entry, rel, writeErr := storeResource(
+					req.Context, req.BlobStore, c, origin, res)
 				if rel == "" {
-					// A resource href that resolves to the collection root
-					// carries no object to capture; skip rather than emit a
-					// pathless entry.
+					// Resolves to the collection root — no object to
+					// capture; skip rather than emit a pathless entry.
 					continue
 				}
-
-				id, size, writeErr := plugin_blob_io.WriteReaderBlob(
-					req.Context, req.BlobStore, strings.NewReader(res.data))
 				if writeErr != nil {
 					r.Failure(rel, writeErr)
 					failCount++
 					continue
 				}
 
-				entry := capture_receipt.EntryV1{
-					Path:   rel,
-					Root:   origin,
-					Type:   capture_receipt.TypeFile,
-					Mode:   resourceMode,
-					Size:   size,
-					BlobId: id.String(),
-				}
 				entries = append(entries, entry)
 				r.Entry(entry)
 				r.Progress(cutting_garden_plugins.ReportProgress{

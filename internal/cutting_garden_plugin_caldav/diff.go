@@ -5,7 +5,6 @@ import (
 
 	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
 	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
-	"github.com/amarbel-llc/cutting-garden/internal/plugin_blob_io"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 )
 
@@ -45,26 +44,17 @@ func (Plugin) ScanForDiff(
 			}
 
 			for _, res := range resources {
-				rel := serverPath(c.resolveHref(res.href))
+				entry, rel, writeErr := storeResource(
+					req.Context, req.BlobStore, c, origin, res)
 				if rel == "" {
 					continue
 				}
-
-				id, size, writeErr := plugin_blob_io.WriteReaderBlob(
-					req.Context, req.BlobStore, strings.NewReader(res.data))
 				if writeErr != nil {
 					failures = append(failures, rel+": "+writeErr.Error())
 					continue
 				}
 
-				entries = append(entries, capture_receipt.EntryV1{
-					Path:   rel,
-					Root:   origin,
-					Type:   capture_receipt.TypeFile,
-					Mode:   resourceMode,
-					Size:   size,
-					BlobId: id.String(),
-				})
+				entries = append(entries, entry)
 			}
 		}
 	}

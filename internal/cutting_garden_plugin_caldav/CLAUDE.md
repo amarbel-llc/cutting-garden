@@ -81,6 +81,6 @@ on-disk tree of calendar objects.
 
 ## References
 
-- [FDR 0012: caldav plugin](../../docs/features/0012-caldav-plugin.md) — behavior.
+- [FDR 0013: caldav plugin](../../docs/features/0013-caldav-plugin.md) — behavior.
 - [FDR 0005: URI-scheme plugins](../../docs/features/0005-uri-scheme-plugins.md)
   — the scheme-keyed plugin model this implements.
