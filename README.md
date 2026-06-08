@@ -18,6 +18,9 @@ Filesystem-tree capture/restore CLI built on top of
 - `failures RECEIPT_ID` — inspect a capture failure receipt: which
   entries failed, why, and whether the run was aborted
   ([FDR 0012](docs/features/0012-capture-failure-receipts.md)).
+- `health` — report every registered URI-scheme plugin and the
+  capabilities it implements (capture / restore / diff / protocol /
+  traversal), as a table or `-format json`.
 
 `cg` is an alias binary. Manpages and shell completions are generated
 from the command metadata at build time.

@@ -10,6 +10,7 @@ import (
 	"github.com/amarbel-llc/cutting-garden/internal/command"
 	"github.com/amarbel-llc/cutting-garden/internal/diff"
 	"github.com/amarbel-llc/cutting-garden/internal/failures"
+	"github.com/amarbel-llc/cutting-garden/internal/health"
 	"github.com/amarbel-llc/cutting-garden/internal/restore"
 	"github.com/amarbel-llc/cutting-garden/internal/serve"
 	// Blank-imports register plugin schemes and markl-id purposes at
@@ -26,8 +27,9 @@ import (
 
 // Build returns a fully-configured cutting-garden Utility with the
 // canonical name "cutting-garden", the "cg" alias, the hidden
-// `complete` subcommand registered, and the five user-facing
-// subcommands (capture, restore, diff, serve, failures) attached.
+// `complete` subcommand registered, and the six user-facing
+// subcommands (capture, restore, diff, serve, failures, health)
+// attached.
 //
 // Every cutting-garden binary main.go calls this and dispatches
 // utility.Run(os.Args).
@@ -40,5 +42,6 @@ func Build() command.Utility {
 	utility.AddCmd("diff", diff.New())
 	utility.AddCmd("serve", serve.New())
 	utility.AddCmd("failures", failures.New())
+	utility.AddCmd("health", health.New())
 	return utility
 }
