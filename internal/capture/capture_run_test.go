@@ -1,6 +1,7 @@
 package capture
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/amarbel-llc/cutting-garden/internal/capture_failures"
+	"github.com/amarbel-llc/cutting-garden/internal/capture_log"
 	"github.com/amarbel-llc/cutting-garden/internal/command"
 	"github.com/amarbel-llc/cutting-garden/internal/command_components"
 	"github.com/amarbel-llc/madder/go/pkgs/blob_store_configs"
@@ -413,6 +415,27 @@ func TestRun_UnreadableFileWritesFailureReceipt(t *testing.T) {
 	}
 	if len(v.Meta.Roots) != 1 || v.Meta.Roots[0] != "." {
 		t.Errorf("Roots = %v, want [.]", v.Meta.Roots)
+	}
+
+	// captures.log: the group's entry carries outcome +
+	// failure_receipt_id pointing at the failure receipt.
+	logRaw, err := os.ReadFile(filepath.Join(
+		os.Getenv("XDG_STATE_HOME"), "cutting-garden", capture_log.FileName,
+	))
+	if err != nil {
+		t.Fatalf("read captures.log: %v", err)
+	}
+	var logEntry captureLogEntry
+	if err := json.Unmarshal(bytes.TrimSpace(logRaw), &logEntry); err != nil {
+		t.Fatalf("parse captures.log %q: %v", logRaw, err)
+	}
+	if logEntry.Outcome != capture_failures.OutcomeFailures {
+		t.Errorf("log Outcome = %q, want %q",
+			logEntry.Outcome, capture_failures.OutcomeFailures)
+	}
+	if logEntry.FailureReceiptID != m[1] {
+		t.Errorf("log FailureReceiptID = %q, want %q",
+			logEntry.FailureReceiptID, m[1])
 	}
 }
 

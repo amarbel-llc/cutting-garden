@@ -632,8 +632,11 @@ func (cmd *Capture) Run(req command.Request) {
 		// receiptID is the group's success-receipt id; "" when no
 		// EntryV1 receipt applies (empty group, protocol-only group)
 		// or its write failed. The failure receipt records it as
-		// Meta.Receipt.
+		// Meta.Receipt. groupLogIdx tracks the group's captures.log
+		// entry (if one was built) so the failure-receipt block below
+		// can annotate it with outcome + failure_receipt_id.
 		receiptID := ""
+		groupLogIdx := -1
 		if len(entries) == 0 {
 			// Protocol roots already emitted their own receipts; only
 			// warn about a skipped store-group receipt when there was
@@ -683,6 +686,7 @@ func (cmd *Capture) Run(req command.Request) {
 					StoreID:   storeName,
 					Roots:     rootPaths(group.roots),
 				})
+				groupLogIdx = len(captureLogEntries) - 1
 			}
 		}
 
@@ -715,15 +719,32 @@ func (cmd *Capture) Run(req command.Request) {
 				store: storeName, key: "spill", value: spillPath,
 				count: len(groupFailures),
 			})
+			// Outcome is journaled even when the failure receipt
+			// spilled; the spill path itself stays on stderr only.
+			if groupLogIdx >= 0 {
+				captureLogEntries[groupLogIdx].Outcome = fv.Meta.Outcome
+			}
 		default:
-			// failuresID is the durable markl id of this group's
-			// failure receipt. Task 4 wires this into the captures.log
-			// entry (outcome + failure_receipt_id fields).
 			p.failures(storeName, "id", failuresID, len(groupFailures))
 			failureReceipts = append(failureReceipts, capturedFailureReceipt{
 				store: storeName, key: "id", value: failuresID,
 				count: len(groupFailures),
 			})
+			if groupLogIdx >= 0 {
+				captureLogEntries[groupLogIdx].Outcome = fv.Meta.Outcome
+				captureLogEntries[groupLogIdx].FailureReceiptID = failuresID
+			} else {
+				// No success entry exists for this group (empty group or
+				// its receipt write failed) — journal a receipt-less line
+				// so the log still leads triage to the failure receipt.
+				captureLogEntries = append(captureLogEntries, captureLogEntry{
+					Ts:               fv.Meta.Ts,
+					StoreID:          storeName,
+					Roots:            rootPaths(group.roots),
+					Outcome:          fv.Meta.Outcome,
+					FailureReceiptID: failuresID,
+				})
+			}
 		}
 	}
 

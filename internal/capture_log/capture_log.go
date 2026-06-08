@@ -36,6 +36,13 @@ type Entry struct {
 	// order they were captured. serve records a pseudo-root naming the
 	// sending device ("localsend:<alias>").
 	Roots []string `json:"roots"`
+	// Outcome is "" for a clean capture, else "failures" or "aborted"
+	// (capture_failures outcome values).
+	Outcome string `json:"outcome,omitempty"`
+	// FailureReceiptID is the markl id of the failure receipt, when one
+	// was written ("" when clean, or when the write spilled locally —
+	// the spill path is reported on stderr, not journaled).
+	FailureReceiptID string `json:"failure_receipt_id,omitempty"`
 }
 
 // Append appends entries as NDJSON lines to the captures.log at path.

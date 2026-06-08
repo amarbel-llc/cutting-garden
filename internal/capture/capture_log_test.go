@@ -114,6 +114,44 @@ func TestAppendCaptureLog_AppendsAcrossCalls(t *testing.T) {
 	}
 }
 
+func TestCaptureLogEntry_OutcomeAndFailureReceiptID(t *testing.T) {
+	cg := setupCgEnvDir(t)
+
+	appendCaptureLog(cg, discardNotice, []captureLogEntry{
+		{Ts: "t1", ReceiptID: "a", Roots: []string{"."}},
+		{
+			Ts: "t2", ReceiptID: "b", Roots: []string{"."},
+			Outcome:          "failures",
+			FailureReceiptID: "sha256-fff",
+		},
+	})
+
+	path := cg.GetXDG().State.MakePath(capture_log.FileName).String()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimRight(string(raw), "\n"), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("got %d lines, want 2", len(lines))
+	}
+
+	// Clean entry: neither key appears on the wire (omitempty).
+	for _, key := range []string{"outcome", "failure_receipt_id"} {
+		if strings.Contains(lines[0], key) {
+			t.Errorf("clean entry contains %q: %s", key, lines[0])
+		}
+	}
+
+	var got captureLogEntry
+	if err := json.Unmarshal([]byte(lines[1]), &got); err != nil {
+		t.Fatalf("decode line 1: %v", err)
+	}
+	if got.Outcome != "failures" || got.FailureReceiptID != "sha256-fff" {
+		t.Errorf("entry 1 = %+v", got)
+	}
+}
+
 func TestCaptureLogTimestamp_ParsesAsRFC3339UTC(t *testing.T) {
 	ts := capture_log.Timestamp()
 	parsed, err := time.Parse(time.RFC3339, ts)
