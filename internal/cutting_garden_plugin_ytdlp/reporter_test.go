@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/amarbel-llc/cutting-garden/internal/capture_events"
+	"github.com/amarbel-llc/cutting-garden/internal/capture_failures"
 	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
 	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
 )
@@ -86,11 +87,11 @@ func TestWalkArtifacts_EmitsProgressPerArtifact(t *testing.T) {
 
 	rep := &recordingReporter{}
 	const source = "https://youtu.be/video"
-	entries, failCount := walkArtifacts(
+	entries, failures := walkArtifacts(
 		context.Background(), newDiscardStore(), dir, source, rep,
 	)
-	if failCount != 0 {
-		t.Fatalf("failCount = %d, want 0", failCount)
+	if len(failures) != 0 {
+		t.Fatalf("failures = %+v, want none", failures)
 	}
 	if len(entries) != len(wantOrder) {
 		t.Fatalf("entries = %d, want %d: %v", len(entries), len(wantOrder), entryPaths(entries))
@@ -158,8 +159,8 @@ func TestWalkArtifacts_ByteIdentityAcrossReporters(t *testing.T) {
 	withNil, failB := walkArtifacts(
 		context.Background(), newDiscardStore(), dir, source, nil,
 	)
-	if failA != 0 || failB != 0 {
-		t.Fatalf("failCounts = %d, %d, want 0, 0", failA, failB)
+	if len(failA) != 0 || len(failB) != 0 {
+		t.Fatalf("failures = %+v, %+v, want none", failA, failB)
 	}
 	if len(withReporter) != len(withNil) {
 		t.Fatalf("entry count differs: reporter=%d nil=%d", len(withReporter), len(withNil))
@@ -248,11 +249,11 @@ func TestWalkArtifacts_EmitsWritePhase(t *testing.T) {
 	wantOrder := writeArtifactFixture(t, dir)
 
 	rep := &recordingReporter{}
-	_, failCount := walkArtifacts(
+	_, failures := walkArtifacts(
 		context.Background(), newDiscardStore(), dir, "https://youtu.be/video", rep,
 	)
-	if failCount != 0 {
-		t.Fatalf("failCount = %d, want 0", failCount)
+	if len(failures) != 0 {
+		t.Fatalf("failures = %+v, want none", failures)
 	}
 
 	if len(rep.phaseStarts) != 1 {
@@ -281,14 +282,29 @@ func TestWalkArtifacts_WritePhaseFailureVerdict(t *testing.T) {
 	}
 
 	rep := &recordingReporter{}
-	entries, failCount := walkArtifacts(
+	entries, failures := walkArtifacts(
 		context.Background(), newDiscardStore(), dir, "https://youtu.be/video", rep,
 	)
-	if failCount != 1 {
-		t.Fatalf("failCount = %d, want 1; failures: %v", failCount, rep.failures)
+	if len(failures) != 1 {
+		t.Fatalf("failures = %+v, want exactly one; stream: %v", failures, rep.failures)
 	}
 	if len(entries) != len(wantOrder)-1 {
 		t.Fatalf("entries = %d, want %d", len(entries), len(wantOrder)-1)
+	}
+
+	// Task-2 contract: the blob-write failure carries per-entry detail.
+	f := failures[0]
+	if f.Op != capture_failures.OpBlobWrite {
+		t.Errorf("failures[0].Op = %q, want %q", f.Op, capture_failures.OpBlobWrite)
+	}
+	if !strings.HasSuffix(f.Path, "video.mp4") {
+		t.Errorf("failures[0].Path = %q, want suffix %q", f.Path, "video.mp4")
+	}
+	if f.Root != "https://youtu.be/video" {
+		t.Errorf("failures[0].Root = %q, want the source URL", f.Root)
+	}
+	if f.Error == "" {
+		t.Errorf("failures[0].Error is empty, want the blob-write error text")
 	}
 
 	if len(rep.phaseEnds) != 1 {

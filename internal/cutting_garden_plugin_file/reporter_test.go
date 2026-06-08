@@ -5,9 +5,11 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/amarbel-llc/cutting-garden/internal/capture_events"
+	"github.com/amarbel-llc/cutting-garden/internal/capture_failures"
 	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
 	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
 	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
@@ -245,5 +247,56 @@ func TestCaptureRoot_WalkPhaseFailureVerdict(t *testing.T) {
 	}
 	if len(rep.failures) != 1 {
 		t.Errorf("failures = %v, want exactly one", rep.failures)
+	}
+}
+
+// TestCaptureRoot_PopulatesFailures pins the Task-2 plugin contract:
+// every failed entry surfaces in result.Failures with root/path/op/
+// error detail for the orchestrator's failure receipt, and FailCount
+// stays derived from len(Failures).
+func TestCaptureRoot_PopulatesFailures(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("running as root: chmod 000 files stay readable")
+	}
+	dir := t.TempDir()
+	writeWalkFixture(t, dir)
+	unreadable := filepath.Join(dir, "b.txt")
+	if err := os.Chmod(unreadable, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chmod(unreadable, 0o644); err != nil {
+			t.Errorf("restore fixture perms: %v", err)
+		}
+	})
+
+	rep := &recordingStream{}
+	result := Plugin{}.CaptureRoot(cutting_garden_plugins.CaptureRootRequest{
+		Context:   context.Background(),
+		Source:    &url.URL{Path: dir},
+		RawArg:    "fixture-arg",
+		BlobStore: newDiscardStore(),
+		Reporter:  rep,
+	})
+
+	if result.FailCount != len(result.Failures) {
+		t.Errorf("FailCount = %d, want len(Failures) = %d",
+			result.FailCount, len(result.Failures))
+	}
+	if len(result.Failures) != 1 {
+		t.Fatalf("Failures = %+v, want exactly one", result.Failures)
+	}
+	f := result.Failures[0]
+	if f.Op != capture_failures.OpBlobWrite {
+		t.Errorf("Failures[0].Op = %q, want %q", f.Op, capture_failures.OpBlobWrite)
+	}
+	if !strings.HasSuffix(f.Path, "b.txt") {
+		t.Errorf("Failures[0].Path = %q, want suffix %q", f.Path, "b.txt")
+	}
+	if f.Root != dir {
+		t.Errorf("Failures[0].Root = %q, want resolved walk root %q", f.Root, dir)
+	}
+	if f.Error == "" {
+		t.Errorf("Failures[0].Error is empty, want the blob-write error text")
 	}
 }

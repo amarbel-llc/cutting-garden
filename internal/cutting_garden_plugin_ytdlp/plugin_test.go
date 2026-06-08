@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/amarbel-llc/cutting-garden/internal/capture_failures"
 	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
 	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
 	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
@@ -368,6 +369,26 @@ func TestPlugin_CaptureRoot_NonZeroExit_SurfacesStderrTail(t *testing.T) {
 	}
 	if !strings.Contains(got, "simulated geo-block") {
 		t.Errorf("error %q missing stderr line from fake shim", got)
+	}
+
+	// Task-2 contract: the tool failure also lands in result.Failures
+	// as a root-level plugin failure for the failure receipt.
+	if result.FailCount != len(result.Failures) {
+		t.Errorf("FailCount = %d, want len(Failures) = %d",
+			result.FailCount, len(result.Failures))
+	}
+	if len(result.Failures) != 1 {
+		t.Fatalf("Failures = %+v, want exactly one", result.Failures)
+	}
+	f := result.Failures[0]
+	if f.Op != capture_failures.OpPlugin {
+		t.Errorf("Failures[0].Op = %q, want %q", f.Op, capture_failures.OpPlugin)
+	}
+	if f.Root == "" || f.Path == "" {
+		t.Errorf("Failures[0] root/path empty: %+v (root-level failures carry the source)", f)
+	}
+	if !strings.Contains(f.Error, "simulated geo-block") {
+		t.Errorf("Failures[0].Error = %q, want the yt-dlp stderr detail", f.Error)
 	}
 }
 

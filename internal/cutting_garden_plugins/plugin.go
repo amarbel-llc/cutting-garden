@@ -15,6 +15,7 @@ import (
 	"context"
 	"net/url"
 
+	"github.com/amarbel-llc/cutting-garden/internal/capture_failures"
 	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
 	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
 )
@@ -56,6 +57,13 @@ type CaptureRootRequest struct {
 type CaptureRootResult struct {
 	Entries   []capture_receipt.EntryV1
 	FailCount int
+
+	// Failures records each failed entry (root/path/op/error) for the
+	// capture orchestrator's failure receipt. FailCount stays the count
+	// authority for exit semantics; producers MUST keep
+	// FailCount == len(Failures) unless a failure has no per-entry
+	// identity (then FailCount may exceed).
+	Failures []capture_failures.FailureV1
 }
 
 // CapturePlugin walks one capture root into the destination store,

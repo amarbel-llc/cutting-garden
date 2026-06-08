@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/amarbel-llc/cutting-garden/internal/capture_events"
+	"github.com/amarbel-llc/cutting-garden/internal/capture_failures"
 	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
 	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
 	"github.com/amarbel-llc/cutting-garden/internal/plugin_blob_io"
@@ -66,9 +67,18 @@ func (Plugin) CaptureRoot(
 	if err != nil {
 		// Pre-phase by design: the planner's ValidateSource already ran
 		// pathFromURL, so this branch is unreachable through the
-		// orchestrator — not worth a phase of its own.
+		// orchestrator — not worth a phase of its own. The failure is
+		// root-level (no walk happened), so Path mirrors Root.
 		stream.Failure(req.RawArg, err)
-		return cutting_garden_plugins.CaptureRootResult{FailCount: 1}
+		return cutting_garden_plugins.CaptureRootResult{
+			FailCount: 1,
+			Failures: []capture_failures.FailureV1{{
+				Root:  req.RawArg,
+				Path:  req.RawArg,
+				Op:    capture_failures.OpPlugin,
+				Error: err.Error(),
+			}},
+		}
 	}
 
 	// Phase label prefers the original CLI arg (what the user typed);
@@ -85,7 +95,8 @@ func (Plugin) CaptureRoot(
 	// event labels via the caller) but is not embedded in the wire
 	// format.
 	var entries []capture_receipt.EntryV1
-	fails := walkRoot(req.Context, req.BlobStore, path, &entries, stream)
+	failures := walkRoot(req.Context, req.BlobStore, path, &entries, stream)
+	fails := len(failures)
 
 	// Verdict mirrors the ytdlp write-phase semantics: not-OK carries
 	// {entries, failed}. The OK verdict also carries {entries} — it is
@@ -108,6 +119,7 @@ func (Plugin) CaptureRoot(
 	return cutting_garden_plugins.CaptureRootResult{
 		Entries:   entries,
 		FailCount: fails,
+		Failures:  failures,
 	}
 }
 
@@ -186,9 +198,20 @@ func walkRoot(
 	walkPath string,
 	accum *[]capture_receipt.EntryV1,
 	stream capture_events.Stream,
-) int {
-	var failCount int
+) (failures []capture_failures.FailureV1) {
 	rootArg := walkPath
+
+	// recordFailure pairs every stream.Failure with a durable
+	// FailureV1 for the orchestrator's failure receipt; the caller
+	// derives FailCount from len(failures), so the two stay 1:1.
+	recordFailure := func(path, op string, err error) {
+		failures = append(failures, capture_failures.FailureV1{
+			Root:  rootArg,
+			Path:  path,
+			Op:    op,
+			Error: err.Error(),
+		})
+	}
 
 	walkErr := filepath.WalkDir(walkPath, func(p string, d fs.DirEntry, walkErr error) error {
 		// Cancellation (SIGINT/SIGTERM cancel the errors.Context this
@@ -203,7 +226,7 @@ func walkRoot(
 
 		if walkErr != nil {
 			stream.Failure(p, walkErr)
-			failCount++
+			recordFailure(p, capture_failures.OpWalk, walkErr)
 			if d != nil && d.IsDir() {
 				return filepath.SkipDir
 			}
@@ -213,7 +236,7 @@ func walkRoot(
 		info, err := d.Info()
 		if err != nil {
 			stream.Failure(p, errors.Wrap(err))
-			failCount++
+			recordFailure(p, capture_failures.OpStat, err)
 			if d.IsDir() {
 				return filepath.SkipDir
 			}
@@ -223,7 +246,7 @@ func walkRoot(
 		rel, err := filepath.Rel(walkPath, p)
 		if err != nil {
 			stream.Failure(p, errors.Wrap(err))
-			failCount++
+			recordFailure(p, capture_failures.OpStat, err)
 			return nil
 		}
 		rel = filepath.ToSlash(rel)
@@ -240,7 +263,7 @@ func walkRoot(
 			target, err := os.Readlink(p)
 			if err != nil {
 				stream.Failure(p, errors.Wrap(err))
-				failCount++
+				recordFailure(p, capture_failures.OpReadlink, err)
 				return nil
 			}
 			entry.Type = capture_receipt.TypeSymlink
@@ -253,7 +276,7 @@ func walkRoot(
 			id, size, err := plugin_blob_io.WriteFileBlob(ctx, store, p)
 			if err != nil {
 				stream.Failure(p, errors.Wrap(err))
-				failCount++
+				recordFailure(p, capture_failures.OpBlobWrite, err)
 				return nil
 			}
 			entry.Type = capture_receipt.TypeFile
@@ -280,10 +303,10 @@ func walkRoot(
 
 	if walkErr != nil {
 		stream.Failure(rootArg, errors.Wrap(walkErr))
-		failCount++
+		recordFailure(rootArg, capture_failures.OpWalk, walkErr)
 	}
 
-	return failCount
+	return failures
 }
 
 // checkRootScope refuses dir args that resolve outside PWD per RFC
