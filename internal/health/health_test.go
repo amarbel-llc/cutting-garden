@@ -76,7 +76,9 @@ func TestRun_TextTable(t *testing.T) {
 		t.Fatalf("exit = %d, want 0; output:\n%s", code, buf.String())
 	}
 	out := buf.String()
-	for _, want := range []string{"PLUGIN", "SCHEMES", "TRAVERSAL", "caldav", "ytdlp"} {
+	// "(default)" is the file plugin's empty schemeless claim, rendered
+	// readably instead of a bare leading comma.
+	for _, want := range []string{"PLUGIN", "SCHEMES", "TRAVERSAL", "caldav", "ytdlp", "(default)"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("text output missing %q:\n%s", want, out)
 		}

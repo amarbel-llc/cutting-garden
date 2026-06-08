@@ -194,7 +194,7 @@ func writeText(w io.Writer, rows []pluginRow) error {
 	for _, r := range rows {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			r.Plugin,
-			strings.Join(r.Schemes, ","),
+			schemesLabel(r.Schemes),
 			yesNo(r.Capture),
 			r.Restore,
 			yesNo(r.Diff),
@@ -236,6 +236,21 @@ func orDash(s string) string {
 		return "-"
 	}
 	return s
+}
+
+// schemesLabel renders a plugin's schemes for the table, showing the
+// empty schemeless-default claim as "(default)" rather than a bare
+// leading comma. The json output keeps the raw scheme strings.
+func schemesLabel(schemes []string) string {
+	out := make([]string, len(schemes))
+	for i, s := range schemes {
+		if s == "" {
+			out[i] = "(default)"
+			continue
+		}
+		out[i] = s
+	}
+	return strings.Join(out, ",")
 }
 
 // validateFormat enforces the -format value constraint. Mirrors
