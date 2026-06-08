@@ -5,6 +5,7 @@ go 1.26
 require (
 	github.com/amarbel-llc/madder/go v0.3.34-0.20260606181718-93166ec22ba5
 	github.com/amarbel-llc/purse-first/libs/dewey v0.3.0
+	github.com/amarbel-llc/purse-first/libs/go-mcp v0.3.1
 	github.com/amarbel-llc/tap/go v0.1.11
 	github.com/charmbracelet/bubbles v1.0.0
 	github.com/charmbracelet/bubbletea v1.3.10
