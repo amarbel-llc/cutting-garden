@@ -73,6 +73,7 @@ start_test_ssh_agent() {
   sock_dir="$(mktemp -d /tmp/cgssh.XXXXXX)"
   export TEST_SSH_AGENT_SOCK_DIR="$sock_dir"
 
+  # shellcheck disable=SC2153  # SSH_AGENT_BIN is injected via require_bin (line 66), not a typo of SSH_AGENT_PID
   eval "$("${SSH_AGENT_BIN}" -a "$sock_dir/agent.sock" -s)" >/dev/null
   "${SSH_ADD_BIN}" "$key" 2>/dev/null
 

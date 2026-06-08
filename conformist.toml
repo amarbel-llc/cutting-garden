@@ -1,0 +1,50 @@
+# conformist configuration (treefmt successor): the goimports -> gofumpt -> nixfmt
+# -> shfmt formatter chain that produces this repo's canonical formatting, plus
+# linters conformist runs natively (shellcheck). Run via `conformist` (repair) /
+# `conformist check` — or `just fmt` / `just lint-fmt`.
+
+# Generated / locked / prose — not formatted.
+excludes = [
+  "flake.lock",
+  "go.sum",
+  "gomod2nix.toml",
+  "version.txt",
+  "sweatfile",
+  "LICENSE",
+  "*.md",
+  "result",
+  "result-*",
+  ".tmp/**",
+  # conformist's own config is TOML with intentional layout; leave it be.
+  "conformist.toml",
+]
+
+# Go: goimports (priority 1) must run before gofumpt (priority 2) so the
+# import-grouped output is re-canonicalized by gofumpt. -w so each writes in
+# place (required for conformist's sandbox check to observe drift).
+[formatter.goimports]
+command = "goimports"
+options = ["-w"]
+includes = ["*.go"]
+priority = 1
+
+[formatter.gofumpt]
+command = "gofumpt"
+options = ["-w"]
+includes = ["*.go"]
+priority = 2
+
+[formatter.nixfmt]
+command = "nixfmt"
+includes = ["*.nix"]
+
+# Project shell style: 2-space indent, simplify, case-branch indent. -w writes.
+[formatter.shfmt]
+command = "shfmt"
+options = ["-w", "-i", "2", "-s", "-ci"]
+includes = ["*.sh", "*.bash", "*.bats"]
+
+# Linter: shellcheck runs read-only in `conformist check` (no autofix).
+[linter.shellcheck]
+command = "shellcheck"
+includes = ["*.sh", "*.bash", "*.bats"]

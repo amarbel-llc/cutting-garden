@@ -1,7 +1,7 @@
 default: build test
 
 [group('build')]
-build: build-gomod2nix build-go build-nix
+build: build-gomod2nix build-go build-nix build-nix-check
 
 [group('build')]
 build-go: build-gomod2nix
@@ -15,8 +15,16 @@ build-gomod2nix:
 build-nix:
     nix build --show-trace
 
+# Run the flake checks (checks.formatting = the sandboxed conformist
+# gate). `nix build` does NOT evaluate `checks`, so this is a distinct
+# step from build-nix; it's what makes the formatting gate fire in the
+# `just` pre-merge hook. See eng-design_patterns-conformist(7).
+[group('build')]
+build-nix-check:
+    nix flake check --show-trace
+
 [group('post-build')]
-test: test-go lint-go lint-go-analyzers test-bats
+test: test-go lint-go lint-fmt lint-go-analyzers test-bats
 
 [group('post-build')]
 test-go:
@@ -26,6 +34,15 @@ test-go:
 lint-go:
     nix develop --command go vet ./...
     gum log --level info "lint-go: ok"
+
+# Read-only formatting + lint gate via conformist (treefmt successor):
+# Go (goimports -> gofumpt), Nix (nixfmt), shell/bats (shfmt) + shellcheck.
+# Config in ./conformist.toml. `just fmt` is the write mode. The sandboxed
+# flake-check counterpart is `just build-nix-check`.
+[group('pre-build')]
+lint-fmt:
+    nix develop --command conformist check
+    gum log --level info "lint-fmt: ok"
 
 # Run one dewey analyzer (defererr, repool, seqerror) as a go vet -vettool.
 # Built ad-hoc into .tmp/analyzers/<name> from the module cache. See #30.
@@ -140,6 +157,13 @@ release version:
     gum log --level info "Created tag: $tag"
     git push origin "$tag"
     gum log --level info "Pushed $tag"
+
+# Format all source via conformist (the treefmt successor): Go
+# (goimports -> gofumpt), Nix (nixfmt), shell/bats (shfmt). Config lives
+# in ./conformist.toml. The read-only counterpart is `lint-fmt`.
+[group('codemod')]
+fmt:
+    nix develop --command conformist
 
 [group('debug')]
 debug-build-go:

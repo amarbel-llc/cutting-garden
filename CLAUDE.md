@@ -39,6 +39,12 @@ divergences from dodder are intentional carry-forwards.
 - `go test ./internal/command -run TestUtility_Run_DispatchesToRegisteredCmd`
   — single-test pattern.
 - `go build ./...` — compile check inside the devshell.
+- `just fmt` formats the tree via `conformist` (goimports→gofumpt, nixfmt,
+  shfmt) + lints (shellcheck); config in `conformist.toml`. `just lint-fmt`
+  is the read-only gate (wired into `test`), and `just build-nix-check`
+  (= `nix flake check`, `checks.formatting`) the sandboxed one (wired into
+  `build`). `nix fmt` runs the same formatter. See
+  `eng-design_patterns-conformist`(7).
 
 The flake's `devShells.default` provides `go_1_26`, `gopls`, and `gomod2nix`.
 `GOTOOLCHAIN = "local"` is pinned in both the package build and devshell —

@@ -240,11 +240,11 @@ function restore_round_trips_unusual_filenames { # @test
   mkdir src
 
   # Multi-byte UTF-8: emoji + CJK ideographs.
-  echo "tree" >$'src/\xf0\x9f\x8c\xb3-emoji.txt'    # 🌳
-  echo "test" >$'src/\xe6\xb8\xac\xe8\xa9\xa6-cjk.txt'  # 測試
+  echo "tree" >$'src/\xf0\x9f\x8c\xb3-emoji.txt'       # 🌳
+  echo "test" >$'src/\xe6\xb8\xac\xe8\xa9\xa6-cjk.txt' # 測試
 
   # Control chars in basename: tab, newline.
-  echo "tabbed"   >$'src/has\ttab.txt'
+  echo "tabbed" >$'src/has\ttab.txt'
   echo "newlined" >$'src/has\nnewline.txt'
 
   local rid
@@ -266,10 +266,10 @@ function restore_round_trips_unusual_filenames { # @test
 
   # Content must also round-trip.
   diff $'src/\xf0\x9f\x8c\xb3-emoji.txt' \
-       $'out/\xf0\x9f\x8c\xb3-emoji.txt' ||
+    $'out/\xf0\x9f\x8c\xb3-emoji.txt' ||
     fail "emoji-name file content differs"
   diff $'src/\xe6\xb8\xac\xe8\xa9\xa6-cjk.txt' \
-       $'out/\xe6\xb8\xac\xe8\xa9\xa6-cjk.txt' ||
+    $'out/\xe6\xb8\xac\xe8\xa9\xa6-cjk.txt' ||
     fail "CJK-name file content differs"
   diff $'src/has\ttab.txt' $'out/has\ttab.txt' ||
     fail "tab-name file content differs"

@@ -396,9 +396,9 @@ function diff_reports_multiple_differences_sorted_by_path { # @test
   run_cg restore -store .default "$rid" out
   assert_success
 
-  echo "modified" >out/a.txt       # M  a.txt
-  rm out/b.txt                     # D  b.txt
-  echo "extra" >out/extra.txt      # A  extra.txt
+  echo "modified" >out/a.txt  # M  a.txt
+  rm out/b.txt                # D  b.txt
+  echo "extra" >out/extra.txt # A  extra.txt
 
   run_cg diff -color never "$rid" out
   assert_failure 1
@@ -491,7 +491,7 @@ function diff_is_clean_when_run_from_captured_dir_with_dot { # @test
   rid="$(capture_receipt_id src)"
   [[ -n $rid ]] || fail "no receipt id"
 
-  cd src
+  cd src || return 1
   run_cg diff -color never "$rid" .
   assert_success
   [[ -z $output ]] || refute_line --regexp '^[MADT]  '

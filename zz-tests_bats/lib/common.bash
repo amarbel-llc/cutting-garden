@@ -14,6 +14,7 @@
 # uses them.
 
 if [[ -z $BATS_TEST_TMPDIR ]]; then
+  # shellcheck disable=SC2016  # naming the var in the message, not expanding it
   echo 'common.bash loaded before $BATS_TEST_TMPDIR set. aborting.' >&2
   cat >&2 <<-'EOM'
     only load this file from .bats files like so:
@@ -144,6 +145,7 @@ capture_receipt_id() {
   local dir="$1"
   run_cg capture -format json "$dir"
   assert_success
+  # shellcheck disable=SC2154  # $output is set by bats' `run` (via run_cg)
   receipt_id_of_group "$output"
 }
 
@@ -181,6 +183,7 @@ write_blob_id() {
     run_madder write -format tap "$store" "$path"
   fi
   assert_success
+  # shellcheck disable=SC2154  # $output is set by bats' `run` (via run_madder)
   echo "$output" | grep '^ok ' | awk '{print $4}' | head -n 1
 }
 

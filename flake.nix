@@ -71,6 +71,19 @@
       inputs.nixpkgs-master.follows = "nixpkgs-master";
       inputs.utils.follows = "flake-utils";
     };
+
+    # conformist: eng's treefmt-v2 successor — a formatter + linter
+    # multiplexer that walks the tree and runs matched tools by glob.
+    # Config lives in ./conformist.toml. Wired below as the `nix fmt`
+    # formatter, a sandboxed `checks.formatting` gate, and (via the
+    # justfile) `just fmt` / `just lint-fmt`. See
+    # eng-design_patterns-conformist(7).
+    conformist = {
+      url = "github:amarbel-llc/conformist";
+      inputs.igloo.follows = "igloo";
+      inputs.nixpkgs-master.follows = "nixpkgs-master";
+      inputs.utils.follows = "flake-utils";
+    };
   };
 
   outputs =
@@ -84,6 +97,7 @@
       tap,
       purse-first,
       bats,
+      conformist,
       ...
     }:
     flake-utils.lib.eachDefaultSystem (
@@ -100,7 +114,12 @@
         # specific deps from sibling flake outputs instead of the
         # organic gomod2nix.toml hash (RFC 0001 §Consumer interface).
         goFlakeInputs = import ./gomod.nix {
-          inherit madder tap purse-first system;
+          inherit
+            madder
+            tap
+            purse-first
+            system
+            ;
         };
 
         # pkgsUpstream is the bare Hydra-blessed nixpkgs (no overlays)
@@ -112,13 +131,38 @@
           inherit system;
         };
 
+        # conformist toolchain: the formatter/linter binaries
+        # ./conformist.toml drives, sourced from the SHA-pinned
+        # nixpkgs-master (pkgsUpstream) so output is byte-reproducible
+        # and not taken from the ambient environment
+        # (eng-design_patterns-conformist(7) §THE CWD-AWARE WRAPPER).
+        # goimports ships in gotools. A new formatter/linter in
+        # conformist.toml needs its binary added here.
+        conformistTools = [
+          conformist.packages.${system}.default
+          pkgsUpstream.gotools # goimports
+          pkgsUpstream.gofumpt
+          pkgsUpstream.nixfmt
+          pkgsUpstream.shfmt
+          pkgsUpstream.shellcheck
+        ];
+
+        # `nix fmt` entrypoint: conformist with its toolchain on PATH,
+        # in repair mode (rewrites in place). `just fmt` is the alias;
+        # `just lint-fmt` (conformist check) is the read-only
+        # counterpart, and checks.formatting below is the sandboxed gate.
+        conformistFmt = pkgs.writeShellApplication {
+          name = "conformist-fmt";
+          runtimeInputs = conformistTools;
+          text = ''exec conformist "$@"'';
+        };
+
         # version.txt at repo root is the single source of truth for
         # the release version (eng-versioning(7) §SINGLE VERSION SOURCE
         # OF TRUTH; `just release` sed-rewrites it). Trailing newline
         # stripped so the nix derivation's `version` attr is a clean
         # semver string.
-        cgVersion =
-          pkgs.lib.removeSuffix "\n" (builtins.readFile ./version.txt);
+        cgVersion = pkgs.lib.removeSuffix "\n" (builtins.readFile ./version.txt);
 
         cuttingGarden = pkgs.buildGoApplication {
           pname = "cutting-garden";
@@ -256,10 +300,38 @@
             # absent), so `just test-go` exercises the real-git cross-checks
             # in the devshell rather than skipping them.
             pkgs.git
+            # conformist (+ its formatter toolchain) on PATH so
+            # `conformist` / `conformist check` run in the dev shell,
+            # which is how `just fmt` / `just lint-fmt` invoke it.
+            conformistFmt
           ];
 
           GOTOOLCHAIN = "local";
         };
+
+        # `nix fmt` runs conformist in repair mode (see conformistFmt).
+        formatter = conformistFmt;
+
+        # Read-only formatting gate as a flake check: conformist
+        # sandbox-copies the tree, diffs against the formatter output,
+        # and exits non-zero on drift — it never writes the source.
+        # `nix flake check` (wired into the merge gate via the justfile's
+        # build-nix-check recipe) runs it.
+        #
+        # --tree-root ${self} is REQUIRED: conformist otherwise derives
+        # the tree root from --config-file's directory, which resolves to
+        # a bare /nix/store/<hash>-conformist.toml, so the walk would
+        # cover the entire /nix/store closure and run for tens of minutes
+        # (eng-design_patterns-conformist(7) §THE READ-ONLY CHECK).
+        checks.formatting =
+          pkgs.runCommand "cutting-garden-conformist-check"
+            {
+              nativeBuildInputs = conformistTools ++ [ pkgs.git ];
+            }
+            ''
+              conformist check -v --tree-root ${self} --config-file ${./conformist.toml}
+              touch "$out"
+            '';
       }
     );
 }

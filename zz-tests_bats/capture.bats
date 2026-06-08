@@ -89,7 +89,7 @@ function capture_zero_args_uses_pwd_into_default { # @test
   mkdir tree
   echo "x" >tree/x.txt
 
-  cd tree
+  cd tree || return 1
   run_cg capture -format json
   assert_success
 
@@ -114,7 +114,7 @@ function capture_one_arg_store_id_uses_pwd { # @test
   mkdir tree
   echo "y" >tree/y.txt
 
-  cd tree
+  cd tree || return 1
   run_cg capture -format json alt
   assert_success
 
@@ -227,9 +227,9 @@ function capture_refuses_parent_escape_root { # @test
   mkdir -p inner
   echo "x" >inner/x.txt
 
-  pushd inner >/dev/null
+  pushd inner >/dev/null || return 1
   run_cg capture -format json ..
-  popd >/dev/null
+  popd >/dev/null || return 1
 
   assert_failure
   # The per-arg refusal is a failing phase record on the unified json
@@ -584,7 +584,7 @@ function capture_git_incremental_recapture { # @test
   local rid2
   rid2="$(receipt_id_of_group "$output")"
   [[ -n $rid2 ]] || fail "no second receipt id: $output"
-  [[ "$rid1" != "$rid2" ]] || fail "expected a new receipt for the advanced branch"
+  [[ $rid1 != "$rid2" ]] || fail "expected a new receipt for the advanced branch"
 
   # The incrementally-built receipt restores the advanced state.
   run_cg restore "$rid2" out
