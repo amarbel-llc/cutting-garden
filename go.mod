@@ -3,7 +3,7 @@ module github.com/amarbel-llc/cutting-garden
 go 1.26
 
 require (
-	github.com/amarbel-llc/madder/go v0.3.34-0.20260606181718-93166ec22ba5
+	github.com/amarbel-llc/madder/go v0.3.36
 	github.com/amarbel-llc/purse-first/libs/dewey v0.3.0
 	github.com/amarbel-llc/tap/go v0.1.11
 	github.com/charmbracelet/bubbles v1.0.0
@@ -23,7 +23,7 @@ require (
 	github.com/DataDog/zstd v1.5.7 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/ProtonMail/go-crypto v1.1.6 // indirect
-	github.com/amarbel-llc/tommy v0.0.0-20260405143331-87255e87bf37 // indirect
+	github.com/amarbel-llc/tommy v0.3.4-0.20260608131104-42624689df9b // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.41.7 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.10 // indirect

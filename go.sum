@@ -17,6 +17,8 @@ github.com/ProtonMail/go-crypto v1.1.6 h1:ZcV+Ropw6Qn0AX9brlQLAUXfqLBc7Bl+f/DmNx
 github.com/ProtonMail/go-crypto v1.1.6/go.mod h1:rA3QumHc/FZ8pAHreoekgiAbzpNsfQAosU5td4SnOrE=
 github.com/amarbel-llc/madder/go v0.3.34-0.20260606181718-93166ec22ba5 h1:VT+jaWdzXB4GgOD5HZefN5Db2QrXxFPZBVUwfK5u5+w=
 github.com/amarbel-llc/madder/go v0.3.34-0.20260606181718-93166ec22ba5/go.mod h1:EngAwhk6yyFQwr8E4U7UGNqBdXDdTIXXyzyEVpuvTmg=
+github.com/amarbel-llc/madder/go v0.3.36 h1:WEax/sCZendfI7/ANyrrCywUjacZo7dXrUQl3kMSibI=
+github.com/amarbel-llc/madder/go v0.3.36/go.mod h1:G43LN9C99cGd7viBhljhlAl9EcV8DGp/STTbtPxa9NY=
 github.com/amarbel-llc/purse-first/libs/dewey v0.1.8 h1:vdSI99KvN/fnfkmHFhBV41FPXIQlgfikIrnZ1QYYzM8=
 github.com/amarbel-llc/purse-first/libs/dewey v0.1.8/go.mod h1:zhf7U0L8ZNAAwrSdWSHUDadxu0Q6NaY49tnK3MzRfjo=
 github.com/amarbel-llc/purse-first/libs/dewey v0.3.0 h1:jQnQfaGQ9O++eAd3NSEeerGH4xvg/HFwPYrGLIxZKgA=
@@ -25,6 +27,8 @@ github.com/amarbel-llc/tap/go v0.1.11 h1:4IZ8bkuwnlnxIEJjMSDNmT8M+nvlG9sdYKdgivB
 github.com/amarbel-llc/tap/go v0.1.11/go.mod h1:VY3Dtchk+BgU7jE4tieCCViVCMqr/LFK1wVY736WbLw=
 github.com/amarbel-llc/tommy v0.0.0-20260405143331-87255e87bf37 h1:OQA0sRnQMO5c4qcOXdxp0mKQMWIEcs9yvPfkoXafMtQ=
 github.com/amarbel-llc/tommy v0.0.0-20260405143331-87255e87bf37/go.mod h1:eAaOHBrPo/hzBU/CkWgXP67Qq6v5aMyVtiAZ3tYUuOc=
+github.com/amarbel-llc/tommy v0.3.4-0.20260608131104-42624689df9b h1:FqUxU20opcmlJW0p+9yMSHxJ2yDeA9NOndcff0FIeOQ=
+github.com/amarbel-llc/tommy v0.3.4-0.20260608131104-42624689df9b/go.mod h1:kG0fD+lPC5mevUK4ycd2746F9bXz84DY2UZRbPaIeYo=
 github.com/anmitsu/go-shlex v0.0.0-20200514113438-38f4b401e2be h1:9AeTilPcZAjCFIImctFaOjnTIavg87rW78vTPkQqLI8=
 github.com/anmitsu/go-shlex v0.0.0-20200514113438-38f4b401e2be/go.mod h1:ySMOLuWl6zY27l47sB3qLNK6tF2fkHG55UZxx8oIVo4=
 github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5 h1:0CwZNZbxp69SHPdPJAN/hZIm0C4OItdklCFmMRWYpio=
