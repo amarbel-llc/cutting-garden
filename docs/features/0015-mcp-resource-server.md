@@ -106,14 +106,14 @@ client has discovered, not only the ones returned by the most recent
 - **Leaf content.** When (and whether) `resources/read` on a leaf should
   fetch the object body and return it as resource content, versus keeping
   the server purely structural. Tied to FDR 0014's body-fetch open
-  question.
+  question. Tracked at #85.
 - **Pagination / huge trees.** Mirrors FDR 0014's huge-tree guardrail:
   an endpoint with thousands of children would return one enormous
   `resources/list`. The `go-mcp` V1 cursor shape exists; wiring it is
-  deferred until a real client hits the wall.
+  deferred until a real client hits the wall. Tracked at #86.
 - **Change notifications.** `notifications/resources/list_changed` is not
   emitted. The tree is re-read per request; a long-lived client sees
-  changes only on its next call.
+  changes only on its next call. Tracked at #87.
 
 ## More Information
 
