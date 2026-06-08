@@ -5,10 +5,18 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
+	"github.com/amarbel-llc/cutting-garden/internal/capture_failures"
 	"github.com/amarbel-llc/cutting-garden/internal/command"
+	"github.com/amarbel-llc/cutting-garden/internal/command_components"
+	"github.com/amarbel-llc/madder/go/pkgs/blob_store_configs"
+	"github.com/amarbel-llc/madder/go/pkgs/directory_layout"
+	"github.com/amarbel-llc/madder/go/pkgs/ids"
+	"github.com/amarbel-llc/madder/go/pkgs/markl"
+	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 )
 
 // isolateXDG points every XDG base dir at a per-test tempdir and opts
@@ -40,6 +48,14 @@ func isolateXDG(t *testing.T) {
 func runCaptureViaUtility(t *testing.T, args ...string) (string, int) {
 	t.Helper()
 	isolateXDG(t)
+	return driveCapture(t, args...)
+}
+
+// driveCapture is runCaptureViaUtility without the XDG isolation, for
+// callers that pre-seed the isolated scope themselves (e.g.
+// initDefaultBlobStore for end-to-end store-backed runs).
+func driveCapture(t *testing.T, args ...string) (string, int) {
+	t.Helper()
 	forceNonTTYStderr(t)
 
 	var code int
@@ -49,6 +65,43 @@ func runCaptureViaUtility(t *testing.T, args ...string) (string, int) {
 		code = u.Run(append([]string{"cg-test", "capture"}, args...))
 	})
 	return out, code
+}
+
+// initDefaultBlobStore writes a minimal local hash-bucketed store
+// config into the isolated madder XDG scope so end-to-end Run tests
+// have a real default store to capture into — the Go-test analogue of
+// the bats lanes' `madder init -encryption none default`. Call after
+// isolateXDG.
+func initDefaultBlobStore(t *testing.T) {
+	t.Helper()
+	storeDir := filepath.Join(
+		os.Getenv("XDG_DATA_HOME"), "madder", "blob_stores", "default",
+	)
+	if err := os.MkdirAll(storeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	file, err := os.Create(
+		filepath.Join(storeDir, directory_layout.FileNameBlobStoreConfig),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	typed := &blob_store_configs.TypedConfig{
+		Type: ids.GetOrPanic(ids.TypeTomlBlobStoreConfigV3).TypeStruct,
+		Blob: &blob_store_configs.TomlV3{
+			HashTypeId:      "sha256",
+			HashBuckets:     []int{2},
+			CompressionType: "none",
+		},
+	}
+	if _, err := blob_store_configs.EncodeWithDigest(typed, file); err != nil {
+		t.Fatalf("encode blob_store-config: %v", err)
+	}
+	if err := file.Close(); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // TestRun_InvalidFormatIsUsageError pins validateFormat's wiring at the
@@ -269,6 +322,97 @@ func TestPipeline_FailurePhaseWireJSON(t *testing.T) {
 	summary := records[1]
 	if summary["type"] != "summary" || summary["failed"] != float64(1) {
 		t.Errorf("records[1] = %v, want a summary with failed=1", summary)
+	}
+}
+
+// TestRun_UnreadableFileWritesFailureReceipt drives Run end-to-end
+// against a real local blob store: a fixture tree with one unreadable
+// file yields the success receipt AND a durable failure receipt — the
+// `failures store=` line carries its id, the blob round-trips via
+// capture_failures.Read with the failed path, and the exit code stays
+// driven by failCount exactly as before (2, runtime trouble).
+func TestRun_UnreadableFileWritesFailureReceipt(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("running as root: chmod 000 files stay readable")
+	}
+	isolateXDG(t)
+	initDefaultBlobStore(t)
+
+	work := t.TempDir()
+	if err := os.WriteFile(
+		filepath.Join(work, "a.txt"), []byte("ok\n"), 0o644,
+	); err != nil {
+		t.Fatal(err)
+	}
+	unreadable := filepath.Join(work, "b.txt")
+	if err := os.WriteFile(unreadable, []byte("nope\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(unreadable, 0o000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chmod(unreadable, 0o644); err != nil {
+			t.Errorf("restore fixture perms: %v", err)
+		}
+	})
+	t.Chdir(work)
+
+	out, code := driveCapture(t, "-format=tap", ".")
+
+	if code != 2 {
+		t.Errorf("exit code = %d, want 2 (failed entries); out=%q", code, out)
+	}
+	if !strings.Contains(out, "receipt store=") {
+		t.Errorf("missing success receipt line in %q", out)
+	}
+
+	m := regexp.MustCompile(
+		`failures store=\S+ id=(\S+) count=1`,
+	).FindStringSubmatch(out)
+	if m == nil {
+		t.Fatalf("missing `failures store=... id=... count=1` line in %q", out)
+	}
+
+	var failuresID markl.Id
+	if err := failuresID.Set(m[1]); err != nil {
+		t.Fatalf("failures id %q does not parse: %v", m[1], err)
+	}
+
+	ctx := errors.MakeContextDefault()
+	env := command_components.MakeBlobStoreEnv(ctx)
+	v, err := capture_failures.Read(env.GetDefaultBlobStore(), &failuresID)
+	if err != nil {
+		t.Fatalf("read failure receipt blob: %v", err)
+	}
+
+	if v.Meta.Outcome != capture_failures.OutcomeFailures {
+		t.Errorf("Outcome = %q, want %q",
+			v.Meta.Outcome, capture_failures.OutcomeFailures)
+	}
+	if v.Meta.Signal != "" {
+		t.Errorf("Signal = %q, want \"\"", v.Meta.Signal)
+	}
+	if v.Meta.Receipt == "" {
+		t.Error("Meta.Receipt is empty, want the paired success-receipt id")
+	}
+	if v.Meta.Failed != 1 || len(v.Failures) != 1 {
+		t.Fatalf("Failed = %d, len(Failures) = %d, want 1/1; %+v",
+			v.Meta.Failed, len(v.Failures), v.Failures)
+	}
+	f := v.Failures[0]
+	if f.Op != capture_failures.OpBlobWrite {
+		t.Errorf("Failures[0].Op = %q, want %q",
+			f.Op, capture_failures.OpBlobWrite)
+	}
+	if !strings.HasSuffix(f.Path, "b.txt") {
+		t.Errorf("Failures[0].Path = %q, want suffix b.txt", f.Path)
+	}
+	if f.Error == "" {
+		t.Error("Failures[0].Error is empty")
+	}
+	if len(v.Meta.Roots) != 1 || v.Meta.Roots[0] != "." {
+		t.Errorf("Roots = %v, want [.]", v.Meta.Roots)
 	}
 }
 

@@ -29,6 +29,7 @@ import (
 	"github.com/mattn/go-isatty"
 
 	"github.com/amarbel-llc/cutting-garden/internal/capture_events"
+	"github.com/amarbel-llc/cutting-garden/internal/capture_failures"
 	"github.com/amarbel-llc/cutting-garden/internal/capture_log"
 	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
 	"github.com/amarbel-llc/cutting-garden/internal/capture_render_legacy"
@@ -280,6 +281,34 @@ func (p *pipeline) receipt(storeName, receiptID string, count int) {
 	reportReceipt(p.stream, quoteEmpty(storeName), receiptID, count)
 }
 
+// failures reports one store-group failure receipt (or its local
+// spill): the legacy wire gets the line as a Notice (the
+// pre-unification sinks have no failure-receipt record type); every
+// path gets a failures phase whose verdict diagnostic carries
+// store/<key>/count machine-readably for the unified formats. key is
+// "id" when the receipt landed in the blob store, "spill" when the
+// store write failed and the bytes spilled locally (value is then the
+// spill path).
+func (p *pipeline) failures(storeName, key, value string, count int) {
+	storeLabel := quoteEmpty(storeName)
+	line := fmt.Sprintf(
+		"failures store=%s %s=%s count=%d", storeLabel, key, value, count,
+	)
+	if p.legacySink != nil {
+		p.legacySink.Notice("%s", line)
+	}
+	p.stream.PhaseStart(fmt.Sprintf("failures store=%s", storeLabel))
+	p.stream.Log("%s", line)
+	p.stream.PhaseEnd(capture_events.Verdict{
+		OK: true,
+		Diagnostic: map[string]any{
+			"store": storeLabel,
+			key:     value,
+			"count": count,
+		},
+	})
+}
+
 // closeLegacy finalizes the legacy sink (TAP plan emission / NDJSON
 // flush); Run defers it exactly where the pre-Stage-B
 // `defer sink.Finalize()` sat. No-op on the unified paths, whose
@@ -415,6 +444,16 @@ type capturedReceipt struct {
 	count     int
 }
 
+// capturedFailureReceipt records a failure receipt (or its local
+// spill) the loop emitted, so the line can be reprinted to stdout
+// after the viewport tears down — same rationale as capturedReceipt.
+type capturedFailureReceipt struct {
+	store string
+	key   string // "id" (store blob) or "spill" (local fallback path)
+	value string
+	count int
+}
+
 func (cmd *Capture) Run(req command.Request) {
 	ctx := req.Context.(errors.Context)
 
@@ -477,10 +516,21 @@ func (cmd *Capture) Run(req command.Request) {
 	failCount := 0
 	var captureLogEntries []captureLogEntry
 	var receipts []capturedReceipt
+	var failureReceipts []capturedFailureReceipt
+
+	// Classify failures precede any store group; carryFailures folds
+	// them into the FIRST group's failure receipt so they are recorded
+	// durably (they have no group of their own).
+	var carryFailures []capture_failures.FailureV1
 
 	for _, cf := range classifyFails {
 		p.failurePhase(cf.arg, cf.err)
 		failCount++
+		carryFailures = append(carryFailures, capture_failures.FailureV1{
+			Path:  cf.arg,
+			Op:    capture_failures.OpPlugin,
+			Error: cf.err.Error(),
+		})
 	}
 
 	if planErr != nil {
@@ -508,6 +558,9 @@ func (cmd *Capture) Run(req command.Request) {
 
 		p.setStore(storeName)
 
+		groupFailures := carryFailures
+		carryFailures = nil
+
 		var entries []capture_receipt.EntryV1
 		entryRoots := 0
 		protocolReceipts := 0
@@ -532,6 +585,12 @@ func (cmd *Capture) Run(req command.Request) {
 				if perr != nil {
 					p.failurePhase(root.path, perr)
 					failCount++
+					groupFailures = append(groupFailures, capture_failures.FailureV1{
+						Root:  root.path,
+						Path:  root.path,
+						Op:    capture_failures.OpPlugin,
+						Error: perr.Error(),
+					})
 					continue
 				}
 				p.receipt(storeName, res.ReceiptDigest, res.ObjectCount)
@@ -558,6 +617,7 @@ func (cmd *Capture) Run(req command.Request) {
 			entries = append(entries, result.Entries...)
 			entryRoots++
 			failCount += result.FailCount
+			groupFailures = append(groupFailures, result.Failures...)
 		}
 
 		// Collapse Root to "." when the EntryV1 entries came from a
@@ -569,6 +629,11 @@ func (cmd *Capture) Run(req command.Request) {
 			}
 		}
 
+		// receiptID is the group's success-receipt id; "" when no
+		// EntryV1 receipt applies (empty group, protocol-only group)
+		// or its write failed. The failure receipt records it as
+		// Meta.Receipt.
+		receiptID := ""
 		if len(entries) == 0 {
 			// Protocol roots already emitted their own receipts; only
 			// warn about a skipped store-group receipt when there was
@@ -579,41 +644,87 @@ func (cmd *Capture) Run(req command.Request) {
 					quoteEmpty(storeName),
 				)
 			}
+		} else {
+			// Empty storeName (default store) → resolve to its actual id
+			// per RFC 0001 §Store-Hint Resolution.
+			effectiveStoreId := storeName
+			if effectiveStoreId == "" {
+				effectiveStoreId = envBlobStore.GetDefaultBlobStoreId()
+			}
+
+			hint, hintErr := capture_receipt.ComputeStoreHint(blobStore, effectiveStoreId)
+			if hintErr != nil {
+				p.notice(
+					"notice: omitting store-hint for store=%s: %v",
+					quoteEmpty(storeName), hintErr,
+				)
+			}
+
+			var err error
+			receiptID, err = capture_receipt.WriteV1ToStore(blobStore, entries, hint)
+			if err != nil {
+				p.failurePhase("(receipt)", err)
+				failCount++
+				groupFailures = append(groupFailures, capture_failures.FailureV1{
+					Path:  "(receipt)",
+					Op:    capture_failures.OpReceiptWrite,
+					Error: err.Error(),
+				})
+				receiptID = ""
+			} else {
+				p.receipt(storeName, receiptID, len(entries))
+				receipts = append(receipts, capturedReceipt{
+					store: storeName, receiptID: receiptID, count: len(entries),
+				})
+
+				captureLogEntries = append(captureLogEntries, captureLogEntry{
+					Ts:        capture_log.Timestamp(),
+					ReceiptID: receiptID,
+					StoreID:   storeName,
+					Roots:     rootPaths(group.roots),
+				})
+			}
+		}
+
+		// One failure receipt per group that had failures, or that was
+		// active when a signal aborted the run (outcome aborted enables
+		// resume-style retry — design §Write path). A group with zero
+		// failures and no abort writes nothing. The write never alters
+		// the run's exit code: failCount alone drives it.
+		ctxAborted := ctx.Err() != nil
+		if len(groupFailures) == 0 && !ctxAborted {
 			continue
 		}
 
-		// Empty storeName (default store) → resolve to its actual id
-		// per RFC 0001 §Store-Hint Resolution.
-		effectiveStoreId := storeName
-		if effectiveStoreId == "" {
-			effectiveStoreId = envBlobStore.GetDefaultBlobStoreId()
-		}
-
-		hint, hintErr := capture_receipt.ComputeStoreHint(blobStore, effectiveStoreId)
-		if hintErr != nil {
+		fv := buildFailureReceipt(
+			rootPaths(group.roots), len(entries), groupFailures,
+			receiptID, ctxAborted, signalCauseName(ctx),
+		)
+		failuresID, spillPath, ferr := writeFailureReceipt(blobStore, cgEnvDir, fv)
+		switch {
+		case ferr != nil:
+			// Degrade to a notice (design §Error handling): losing the
+			// failure receipt must not mask the run's own outcome.
 			p.notice(
-				"notice: omitting store-hint for store=%s: %v",
-				quoteEmpty(storeName), hintErr,
+				"notice: failure receipt for store=%s not recorded: %v",
+				quoteEmpty(storeName), ferr,
 			)
+		case spillPath != "":
+			p.failures(storeName, "spill", spillPath, len(groupFailures))
+			failureReceipts = append(failureReceipts, capturedFailureReceipt{
+				store: storeName, key: "spill", value: spillPath,
+				count: len(groupFailures),
+			})
+		default:
+			// failuresID is the durable markl id of this group's
+			// failure receipt. Task 4 wires this into the captures.log
+			// entry (outcome + failure_receipt_id fields).
+			p.failures(storeName, "id", failuresID, len(groupFailures))
+			failureReceipts = append(failureReceipts, capturedFailureReceipt{
+				store: storeName, key: "id", value: failuresID,
+				count: len(groupFailures),
+			})
 		}
-
-		receiptID, err := capture_receipt.WriteV1ToStore(blobStore, entries, hint)
-		if err != nil {
-			p.failurePhase("(receipt)", err)
-			failCount++
-			continue
-		}
-		p.receipt(storeName, receiptID, len(entries))
-		receipts = append(receipts, capturedReceipt{
-			store: storeName, receiptID: receiptID, count: len(entries),
-		})
-
-		captureLogEntries = append(captureLogEntries, captureLogEntry{
-			Ts:        capture_log.Timestamp(),
-			ReceiptID: receiptID,
-			StoreID:   storeName,
-			Roots:     rootPaths(group.roots),
-		})
 	}
 
 	if len(captureLogEntries) > 0 {
@@ -641,6 +752,12 @@ func (cmd *Capture) Run(req command.Request) {
 			fmt.Fprintf(os.Stdout, "receipt store=%s id=%s count=%d\n",
 				quoteEmpty(r.store), r.receiptID, r.count)
 		}
+		// Failure-receipt ids (or spill paths) survive viewport
+		// teardown the same way the success-receipt ids do.
+		for _, f := range failureReceipts {
+			fmt.Fprintf(os.Stdout, "failures store=%s %s=%s count=%d\n",
+				quoteEmpty(f.store), f.key, f.value, f.count)
+		}
 	}
 
 	if failCount > 0 {
@@ -667,4 +784,3 @@ func errCaptureFailed(n int) error {
 // inline finish call. It only ever shows in the viewport's final frame; the
 // real cause still prints via dewey's error machinery after teardown.
 var errCaptureAborted = fmt.Errorf("capture aborted")
-
