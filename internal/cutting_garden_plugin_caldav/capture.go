@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/amarbel-llc/cutting-garden/internal/capture_events"
+	"github.com/amarbel-llc/cutting-garden/internal/capture_failures"
 	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
 	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
 )
@@ -29,20 +30,20 @@ func (Plugin) CaptureRoot(
 	base, username, password, err := connectionFromArg(req.Source)
 	if err != nil {
 		r.Failure(req.RawArg, err)
-		return cutting_garden_plugins.CaptureRootResult{FailCount: 1}
+		return rootFailure(req.RawArg, err)
 	}
 	c := newClient(base, username, password)
 	origin, _ := originOf(base)
 
 	r.PhaseStart("list calendars " + base)
-	calendars, err := c.listCalendars(req.Context)
+	_, calendars, err := c.discoverCalendars(req.Context)
 	if err != nil {
 		r.PhaseEnd(capture_events.Verdict{
 			OK:         false,
 			Diagnostic: map[string]any{"error": err.Error()},
 		})
 		r.Failure(req.RawArg, err)
-		return cutting_garden_plugins.CaptureRootResult{FailCount: 1}
+		return rootFailure(req.RawArg, err)
 	}
 	r.PhaseEnd(capture_events.Verdict{
 		OK:         true,
@@ -50,20 +51,32 @@ func (Plugin) CaptureRoot(
 	})
 
 	var (
-		entries   []capture_receipt.EntryV1
-		failCount int
+		entries  []capture_receipt.EntryV1
+		failures []capture_failures.FailureV1
 	)
+	// recordFailure pairs every stream Failure with a durable FailureV1
+	// so the capture's failure receipt records what went wrong; the
+	// returned FailCount is derived from len(failures), keeping the two
+	// 1:1 per the CaptureRootResult contract.
+	recordFailure := func(failPath, op string, failErr error) {
+		failures = append(failures, capture_failures.FailureV1{
+			Root:  origin,
+			Path:  failPath,
+			Op:    op,
+			Error: failErr.Error(),
+		})
+	}
 
 	for _, cal := range calendars {
 		label := calendarLabel(cal)
 		r.PhaseStart("capture " + label)
-		failAtPhaseStart := failCount
+		failAtPhaseStart := len(failures)
 
 		for _, component := range capturedComponents {
 			resources, listErr := c.listResources(req.Context, cal.href, component)
 			if listErr != nil {
 				r.Failure(cal.href, listErr)
-				failCount++
+				recordFailure(cal.href, capture_failures.OpPlugin, listErr)
 				continue
 			}
 
@@ -77,7 +90,7 @@ func (Plugin) CaptureRoot(
 				}
 				if writeErr != nil {
 					r.Failure(rel, writeErr)
-					failCount++
+					recordFailure(rel, capture_failures.OpBlobWrite, writeErr)
 					continue
 				}
 
@@ -90,7 +103,7 @@ func (Plugin) CaptureRoot(
 			}
 		}
 
-		if phaseFailed := failCount - failAtPhaseStart; phaseFailed == 0 {
+		if phaseFailed := len(failures) - failAtPhaseStart; phaseFailed == 0 {
 			r.PhaseEnd(capture_events.Verdict{OK: true})
 		} else {
 			r.PhaseEnd(capture_events.Verdict{
@@ -102,7 +115,24 @@ func (Plugin) CaptureRoot(
 
 	return cutting_garden_plugins.CaptureRootResult{
 		Entries:   entries,
-		FailCount: failCount,
+		FailCount: len(failures),
+		Failures:  failures,
+	}
+}
+
+// rootFailure shapes a whole-arg plugin failure (connection setup or
+// calendar discovery) as a one-element result. The failure has no
+// per-entry identity below the root, so Path mirrors Root per the
+// CaptureRootResult contract.
+func rootFailure(rawArg string, err error) cutting_garden_plugins.CaptureRootResult {
+	return cutting_garden_plugins.CaptureRootResult{
+		FailCount: 1,
+		Failures: []capture_failures.FailureV1{{
+			Root:  rawArg,
+			Path:  rawArg,
+			Op:    capture_failures.OpPlugin,
+			Error: err.Error(),
+		}},
 	}
 }
 

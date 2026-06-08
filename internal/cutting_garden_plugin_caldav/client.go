@@ -119,12 +119,16 @@ const propfindCalendars = `<?xml version="1.0" encoding="utf-8" ?>
   </d:prop>
 </d:propfind>`
 
-// listCalendars performs a Depth:1 PROPFIND from the base URL and
-// returns every child collection whose resourcetype includes
-// <C:calendar>.
-func (c *client) listCalendars(ctx context.Context) (calendars []calendar, err error) {
+// propfindResponses issues a Depth:depth PROPFIND from the base URL and
+// returns the raw multistatus responses — the collection itself and its
+// children — so callers can inspect resourcetypes. Shared by calendar
+// discovery for capture, diff, and traversal.
+func (c *client) propfindResponses(
+	ctx context.Context,
+	depth int,
+) (responses []davResponse, err error) {
 	resp, err := c.do(ctx, "PROPFIND", c.base, propfindCalendars,
-		"application/xml; charset=utf-8", 1)
+		"application/xml; charset=utf-8", depth)
 	if err != nil {
 		return nil, errors.Wrapf(err, "PROPFIND %s", c.base)
 	}
@@ -144,22 +148,51 @@ func (c *client) listCalendars(ctx context.Context) (calendars []calendar, err e
 	if err := xml.Unmarshal(data, &ms); err != nil {
 		return nil, errors.Wrapf(err, "parse multistatus from %s", c.base)
 	}
+	return ms.Responses, nil
+}
 
-	for _, r := range ms.Responses {
-		for _, ps := range r.PropStat {
-			if !strings.Contains(ps.Status, "200") {
-				continue
-			}
-			if ps.Prop.ResourceType == nil || ps.Prop.ResourceType.Calendar == nil {
-				continue
-			}
-			calendars = append(calendars, calendar{
-				href:        r.Href,
-				displayName: ps.Prop.DisplayName,
-			})
+// calendarFromResponse returns the calendar a multistatus response
+// describes and true when the response is a 200 calendar collection;
+// false otherwise.
+func calendarFromResponse(r davResponse) (calendar, bool) {
+	for _, ps := range r.PropStat {
+		if !strings.Contains(ps.Status, "200") {
+			continue
 		}
+		if ps.Prop.ResourceType == nil || ps.Prop.ResourceType.Calendar == nil {
+			continue
+		}
+		return calendar{href: r.Href, displayName: ps.Prop.DisplayName}, true
 	}
-	return calendars, nil
+	return calendar{}, false
+}
+
+// discoverCalendars classifies the base URL via a Depth:1 PROPFIND. When
+// the base is itself a calendar collection it returns selfIsCalendar
+// true and that single calendar; otherwise it returns the child
+// calendars under the base (the calendar-home case). This is the one
+// traversal source shared by CaptureRoot, ScanForDiff, and ListRoots, so
+// discovery and capture cannot disagree about the tree.
+func (c *client) discoverCalendars(
+	ctx context.Context,
+) (selfIsCalendar bool, calendars []calendar, err error) {
+	responses, err := c.propfindResponses(ctx, 1)
+	if err != nil {
+		return false, nil, err
+	}
+
+	selfKey := strings.TrimRight(serverPath(c.base), "/")
+	for _, r := range responses {
+		cal, ok := calendarFromResponse(r)
+		if !ok {
+			continue
+		}
+		if strings.TrimRight(serverPath(c.resolveHref(r.Href)), "/") == selfKey {
+			return true, []calendar{cal}, nil
+		}
+		calendars = append(calendars, cal)
+	}
+	return false, calendars, nil
 }
 
 // calendarQuery is the REPORT body template that fetches every resource
@@ -220,6 +253,67 @@ func (c *client) listResources(
 		}
 	}
 	return resources, nil
+}
+
+// calendarHrefQuery is the lightweight REPORT body template: it requests
+// only getetag (no calendar-data), so enumerating a calendar's members
+// does not transfer their bodies. %s is the component name.
+const calendarHrefQuery = `<?xml version="1.0" encoding="utf-8" ?>
+<c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+  <d:prop>
+    <d:getetag />
+  </d:prop>
+  <c:filter>
+    <c:comp-filter name="VCALENDAR">
+      <c:comp-filter name="%s" />
+    </c:comp-filter>
+  </c:filter>
+</c:calendar-query>`
+
+// listObjectHrefs issues a Depth:1 REPORT for one component type that
+// fetches only getetag, and returns the member resource hrefs without
+// their bodies. Traversal (ListRoots) uses it so enumerating a
+// calendar's objects stays cheap; capture uses listResources, which
+// carries the bodies it needs.
+func (c *client) listObjectHrefs(
+	ctx context.Context,
+	calendarHref, component string,
+) (hrefs []string, err error) {
+	url := c.resolveHref(calendarHref)
+	body := fmt.Sprintf(calendarHrefQuery, component)
+	resp, err := c.do(ctx, "REPORT", url, body,
+		"application/xml; charset=utf-8", 1)
+	if err != nil {
+		return nil, errors.Wrapf(err, "REPORT %s (%s)", url, component)
+	}
+	defer errors.DeferredCloser(&err, resp.Body)
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, errors.Wrap(err)
+	}
+	if resp.StatusCode != http.StatusMultiStatus {
+		return nil, errors.ErrorWithStackf(
+			"REPORT %s (%s): status %d: %s",
+			url, component, resp.StatusCode, snippet(data))
+	}
+
+	var ms multistatusResponse
+	if err := xml.Unmarshal(data, &ms); err != nil {
+		return nil, errors.Wrapf(err, "parse multistatus from %s", url)
+	}
+
+	// A calendar-query REPORT returns only member objects, never the
+	// collection itself, so every 200 response is one object.
+	for _, r := range ms.Responses {
+		for _, ps := range r.PropStat {
+			if strings.Contains(ps.Status, "200") {
+				hrefs = append(hrefs, r.Href)
+				break
+			}
+		}
+	}
+	return hrefs, nil
 }
 
 // putResource creates or overwrites the resource at href with icalData.

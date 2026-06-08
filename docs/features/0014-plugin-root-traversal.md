@@ -13,10 +13,13 @@ promotion-criteria: |
 
 # Plugin root traversal and expansion
 
-> **Design-only.** No code exists yet. This FDR records the direction
-> agreed in the #78 design pass (2026-06-08); the normative interface is
-> ratified as it lands. The node-type versioning it leans on is the
-> subject of #79.
+> **Partially implemented.** The `RootLister` interface
+> (`internal/cutting_garden_plugins/traversal.go`) and the caldav
+> reference implementer (`Types()` + `ListRoots()`, with `CaptureRoot`
+> reworked onto the shared traversal and #81's failure-receipt fix
+> folded in) have landed. The read-only `list` command, the `--split`
+> planner expansion, and `health` (#80) are not yet built. The node-type
+> versioning this leans on is the subject of #79.
 
 ## Problem Statement
 
@@ -89,10 +92,12 @@ type RootLister interface {
     // container.
     Types() []NodeType
 
-    // ListRoots returns the immediate children of node; a nil node means
-    // the endpoint root. Read-only and lazy: descend a container by
-    // calling ListRoots again with that container's URI. A leaf has no
-    // children.
+    // ListRoots returns the immediate children of node — the URI whose
+    // children to enumerate. A consumer begins at the user-supplied
+    // endpoint URI and descends a container by calling again with its
+    // URI. RootLister plugins are stateless, so node always identifies
+    // the target (including the top-level endpoint) and MUST be non-nil.
+    // Read-only and lazy; a leaf has no children.
     ListRoots(ctx context.Context, node *url.URL) ([]Node, error)
 }
 ```
@@ -185,6 +190,9 @@ receipts (personal, work); `--split '//caldav-object-v1'` yields three
   scheme; it does not compose a unified tree across plugins.
 - **Opt-in.** Plugins with no meaningful sub-structure (the file plugin)
   do not implement `RootLister`; the planner keeps one-arg-one-root.
+  Protocol (RFC 0002) plugins like git also opt out: they capture one
+  receipt via `CaptureProtocol`, not `CaptureRoot`, so `RootLister` is
+  an EntryV1-plugin capability.
 
 ## Open Questions
 
@@ -200,11 +208,20 @@ receipts (personal, work); `--split '//caldav-object-v1'` yields three
 - **Huge-tree guardrails.** Mirroring FDR 0004's `--ytdlp-limit`: a
   server with thousands of objects under one endpoint must not silently
   fan out unbounded. A default cap or refuse-with-hint is likely needed.
-- **Where bulk orchestration lives.** Planner-side (walk `ListRoots`,
-  feed leaves to `CaptureRoot`) keeps plugins thin but moves traversal
-  policy into the planner; a default `CaptureRoot(container)` that
-  self-walks keeps it plugin-side. The two must not both re-implement
-  the walk.
+- **Where bulk orchestration lives.** Resolved for the caldav reference
+  impl by a third option: capture and `ListRoots` share an internal
+  traversal primitive (caldav's `discoverCalendars`) rather than one
+  calling the other, so neither re-implements the walk and `CaptureRoot`
+  keeps its bulk body-fetch (a per-calendar REPORT-with-data) instead of
+  regressing to a per-object GET. Open whether the planner-side walk is
+  still wanted for `--split` (capturing each frontier node as its own
+  receipt) — that is the unbuilt half.
+- **Lightweight enumeration vs body-fetch.** `ListRoots` returns
+  structure only (URIs + types); for caldav it uses a getetag-only
+  REPORT so discovery never transfers object bodies. Capturing a leaf
+  still needs its body, which the plugin fetches in whatever batch its
+  protocol allows — so "capture built on the traversal" shares the
+  *structure* source, not the body-fetch path.
 
 ## More Information
 

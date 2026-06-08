@@ -25,7 +25,7 @@ func (Plugin) ScanForDiff(
 	c := newClient(base, username, password)
 	origin, _ := originOf(base)
 
-	calendars, err := c.listCalendars(req.Context)
+	_, calendars, err := c.discoverCalendars(req.Context)
 	if err != nil {
 		return nil, err
 	}

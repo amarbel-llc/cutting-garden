@@ -26,6 +26,9 @@ type fakeCalDAV struct {
 	component map[string]string
 	// puts records every PUT the server received (href -> body).
 	puts map[string]string
+	// failComponent, when set, makes the REPORT for that component
+	// ("VTODO"/"VEVENT") answer 500 — for exercising per-entry failures.
+	failComponent string
 }
 
 func newFakeCalDAV() *fakeCalDAV {
@@ -87,6 +90,11 @@ func (f *fakeCalDAV) report(w http.ResponseWriter, r *http.Request) {
 	want := "VTODO"
 	if strings.Contains(string(body), `name="VEVENT"`) {
 		want = "VEVENT"
+	}
+
+	if f.failComponent != "" && want == f.failComponent {
+		http.Error(w, "report boom", http.StatusInternalServerError)
+		return
 	}
 
 	hrefs := make([]string, 0, len(f.resources))
