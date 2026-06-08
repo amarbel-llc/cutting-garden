@@ -15,6 +15,9 @@ Filesystem-tree capture/restore CLI built on top of
   receiver bound to the host's Tailscale address; every incoming
   transfer lands as a normal capture receipt
   ([FDR 0011](docs/features/0011-localsend-serve.md)).
+- `failures RECEIPT_ID` — inspect a capture failure receipt: which
+  entries failed, why, and whether the run was aborted
+  ([FDR 0012](docs/features/0012-capture-failure-receipts.md)).
 
 `cg` is an alias binary. Manpages and shell completions are generated
 from the command metadata at build time.
