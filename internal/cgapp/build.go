@@ -13,6 +13,7 @@ import (
 	"github.com/amarbel-llc/cutting-garden/internal/failures"
 	"github.com/amarbel-llc/cutting-garden/internal/health"
 	"github.com/amarbel-llc/cutting-garden/internal/list"
+	"github.com/amarbel-llc/cutting-garden/internal/mcp"
 	"github.com/amarbel-llc/cutting-garden/internal/restore"
 	"github.com/amarbel-llc/cutting-garden/internal/serve"
 
@@ -31,9 +32,9 @@ import (
 
 // Build returns a fully-configured cutting-garden Utility with the
 // canonical name "cutting-garden", the "cg" alias, the hidden
-// `complete` subcommand registered, and the seven user-facing
-// subcommands (capture, restore, diff, serve, failures, health, list)
-// attached.
+// `complete` subcommand registered, and the eight user-facing
+// subcommands (capture, restore, diff, serve, failures, health, list,
+// mcp) attached.
 //
 // Every cutting-garden binary main.go calls this and dispatches
 // utility.Run(os.Args).
@@ -48,6 +49,7 @@ func Build() command.Utility {
 	utility.AddCmd("failures", failures.New())
 	utility.AddCmd("health", health.New())
 	utility.AddCmd("list", list.New())
+	utility.AddCmd("mcp", mcp.New())
 	// Hidden plumbing: the RFC 0002 writer-protocol sink that external
 	// capturer subprocesses (the web binding's chrest) pipe node blobs
 	// into. See internal/blob_writer and internal/cutting_garden_plugin_web.

@@ -33,4 +33,11 @@
     src = purse-first.packages.${system}.go-pkgs;
     subPath = "libs/dewey";
   };
+  # go-mcp lives in the same purse-first workspace as dewey, so the same
+  # go-pkgs output backs it; slice into its module subdir. Bridged like
+  # dewey so a purse-first bump stays a flake.lock-only edit.
+  "github.com/amarbel-llc/purse-first/libs/go-mcp" = {
+    src = purse-first.packages.${system}.go-pkgs;
+    subPath = "libs/go-mcp";
+  };
 }

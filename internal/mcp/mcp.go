@@ -1,0 +1,133 @@
+// Package mcp wires the `mcp` subcommand: serve the capturable trees of
+// one or more traversable plugin endpoints over the Model Context
+// Protocol, so an MCP client (e.g. Claude) can discover and descend what
+// a cutting-garden plugin exposes without capturing it.
+//
+// Positional surface:
+//
+//	mcp URI [URI...]
+//
+// Each URI is a traversable plugin endpoint (its scheme's plugin must
+// implement RootLister; the file plugin does not). The server speaks
+// newline-delimited JSON-RPC over stdin/stdout — the MCP stdio
+// transport — so it is launched by a client, not run interactively. It
+// advertises only resource capabilities:
+//
+//   - resources/list — the immediate children of every configured
+//     endpoint (one ListRoots call per endpoint).
+//   - resources/read — the immediate children of the read URI, letting a
+//     client descend a container lazily, one level per read.
+//
+// Read-only: no blob store is touched and nothing is captured (FDR
+// 0014's body-fetch path stays with `capture`). The server runs until
+// the client closes the connection or it is interrupted
+// (SIGINT/SIGTERM/SIGHUP). Exit 0 on a clean shutdown, 64 on a missing
+// or unresolvable endpoint argument, 2 on a transport error.
+package mcp
+
+import (
+	"context"
+	"net/url"
+	"os"
+
+	"github.com/amarbel-llc/cutting-garden/internal/command"
+	"github.com/amarbel-llc/cutting-garden/internal/command_components"
+	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
+	"github.com/amarbel-llc/purse-first/libs/go-mcp/server"
+	"github.com/amarbel-llc/purse-first/libs/go-mcp/transport"
+)
+
+const serverName = "cutting-garden"
+
+// instructions is the usage hint advertised to MCP clients. It names the
+// traversal model so a client knows reads descend rather than fetch
+// bytes.
+const instructions = "Resources are the capturable trees of cutting-garden " +
+	"plugin endpoints. resources/list returns each endpoint's immediate " +
+	"children; reading a container resource returns its children as a JSON " +
+	"array, so you descend the tree one level per read. Discovery is " +
+	"read-only — nothing is captured."
+
+// MCP is the value registered for the `mcp` subcommand. It carries no
+// flags today; the configured endpoints arrive as positional args.
+type MCP struct{}
+
+var _ command.Cmd = (*MCP)(nil)
+
+// New constructs an MCP command.
+func New() *MCP { return &MCP{} }
+
+func (*MCP) GetDescription() command.Description {
+	return command.Description{
+		Short: "serve traversable plugin endpoints over the Model Context Protocol",
+		Long: "Runs a Model Context Protocol server (newline-delimited " +
+			"JSON-RPC over stdin/stdout) that exposes the capturable tree of " +
+			"each endpoint URI as MCP resources. resources/list returns every " +
+			"endpoint's immediate children; reading a container resource " +
+			"returns that node's children, so a client descends lazily one " +
+			"level per read \\(em the same RootLister traversal `list` and " +
+			"capture share. Read-only; no blob store is touched and nothing " +
+			"is captured. Launched by an MCP client, not run interactively; " +
+			"runs until the client disconnects or it is interrupted.",
+	}
+}
+
+func (cmd *MCP) Run(req command.Request) {
+	ctx := req.Context.(errors.Context)
+
+	args := req.PopArgs()
+	if len(args) == 0 {
+		errors.ContextCancelWithBadRequestf(ctx,
+			"mcp takes at least one endpoint URI argument")
+		return
+	}
+
+	roots, err := resolveRoots(args)
+	if err != nil {
+		// A bad endpoint is a usage error: the client misconfigured the
+		// server's argv. Fail fast (EX_USAGE) before the transport opens.
+		errors.ContextCancelWithBadRequestf(ctx, "%s", err.Error())
+		return
+	}
+
+	provider := newResources(roots)
+
+	// The MCP protocol owns stdout (JSON-RPC frames), so diagnostics must
+	// never leak there; the server itself writes only protocol frames.
+	srv, err := server.New(
+		transport.NewStdio(os.Stdin, os.Stdout),
+		server.Options{
+			ServerName:        serverName,
+			Instructions:      instructions,
+			Resources:         provider,
+			PreferV1Providers: true,
+		},
+	)
+	if err != nil {
+		errors.ContextCancelWithError(ctx, errors.Wrap(err))
+		return
+	}
+
+	// errors.Context satisfies context.Context, so SIGINT/SIGTERM/SIGHUP
+	// cancellation threads straight into Run and unwinds the message loop.
+	// A clean shutdown (context cancelled or client EOF) is exit 0.
+	if runErr := srv.Run(ctx); runErr != nil &&
+		!errors.Is(runErr, context.Canceled) {
+		errors.ContextCancelWithError(ctx, errors.Wrap(runErr))
+	}
+}
+
+// resolveRoots parses each endpoint argument and verifies its scheme has
+// a RootLister plugin, so a non-traversable or unknown scheme is rejected
+// up front rather than producing an empty listing at runtime.
+func resolveRoots(args []string) ([]*url.URL, error) {
+	roots := make([]*url.URL, 0, len(args))
+	for _, arg := range args {
+		u, _, err := command_components.ResolveRootListerPlugin(arg)
+		if err != nil {
+			return nil, err
+		}
+		roots = append(roots, u)
+	}
+	return roots, nil
+}

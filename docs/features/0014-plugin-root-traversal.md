@@ -17,9 +17,11 @@ promotion-criteria: |
 > (`internal/cutting_garden_plugins/traversal.go`), the caldav reference
 > implementer (`Types()` + `ListRoots()`, with `CaptureRoot` reworked
 > onto the shared traversal and #81's failure-receipt fix folded in), the
-> read-only `list` command (`internal/list/`), and `health` (#80) have
-> landed. The `--split` planner expansion and the MCP traversal server
-> remain. The node-type versioning this leans on is the subject of #79.
+> read-only `list` command (`internal/list/`), `health` (#80), and the
+> MCP resource-traversal server (`internal/mcp/`, the `mcp` subcommand;
+> see [FDR 0015](0015-mcp-resource-server.md)) have landed. The `--split`
+> planner expansion is the remaining unbuilt half. The node-type
+> versioning this leans on is the subject of #79.
 
 ## Problem Statement
 
