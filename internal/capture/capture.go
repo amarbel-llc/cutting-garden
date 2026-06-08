@@ -78,9 +78,16 @@ const (
 // (see progressActive), the live viewport runs on stderr and the
 // structured per-record sink is suppressed in favor of the TUI; when
 // inactive the path is byte-identical to a viewport-less capture.
+//
+// Pack is bound to `--pack`. When set, every blob store written to
+// during the run that supports packfiles (madder inventory-archive
+// stores — those implementing blob_stores.PackableArchive) is packed
+// once after all receipts are durable, consolidating loose blobs into
+// archive files. Stores that do not support packfiles are skipped.
 type Capture struct {
 	Format   string
 	Progress string
+	Pack     bool
 }
 
 var (
@@ -140,6 +147,17 @@ func (cmd *Capture) SetFlagDefinitions(
 			"NO_COLOR is unset), always, or never. When active, -format "+
 			"is ignored and the per-record stream is suppressed in favor "+
 			"of the TUI on stderr.",
+	)
+	flagSet.BoolVar(
+		&cmd.Pack,
+		"pack",
+		false,
+		"after every receipt is written, run madder's pack operation on "+
+			"each store written to that supports packfiles (inventory-"+
+			"archive stores), consolidating loose blobs into archive "+
+			"files. Stores that do not support packfiles are skipped. "+
+			"Packing runs only once receipts are durable and never alters "+
+			"the run's exit code: a pack failure degrades to a notice.",
 	)
 }
 
@@ -523,6 +541,23 @@ func (cmd *Capture) Run(req command.Request) {
 	// durably (they have no group of their own).
 	var carryFailures []capture_failures.FailureV1
 
+	// Stores written to during the run, in first-write order and deduped
+	// by effective store id (groups sharing the default store collapse to
+	// one entry). Populated only under --pack; consumed by
+	// packWrittenStores after the group loop.
+	var packOrder []string
+	packStores := map[string]blob_stores.BlobStoreInitialized{}
+	recordWrite := func(id string, bs blob_stores.BlobStoreInitialized) {
+		if !cmd.Pack {
+			return
+		}
+		if _, seen := packStores[id]; seen {
+			return
+		}
+		packStores[id] = bs
+		packOrder = append(packOrder, id)
+	}
+
 	for _, cf := range classifyFails {
 		p.failurePhase(cf.arg, cf.err)
 		failCount++
@@ -557,6 +592,15 @@ func (cmd *Capture) Run(req command.Request) {
 		}
 
 		p.setStore(storeName)
+
+		// effectiveStoreId resolves the default-store sentinel ("") to its
+		// actual id (RFC 0001 §Store-Hint Resolution). Reused for the
+		// store hint below and as the --pack dedup key so groups sharing
+		// the default store pack it once.
+		effectiveStoreId := storeName
+		if effectiveStoreId == "" {
+			effectiveStoreId = envBlobStore.GetDefaultBlobStoreId()
+		}
 
 		groupFailures := carryFailures
 		carryFailures = nil
@@ -597,6 +641,7 @@ func (cmd *Capture) Run(req command.Request) {
 				receipts = append(receipts, capturedReceipt{
 					store: storeName, receiptID: res.ReceiptDigest, count: res.ObjectCount,
 				})
+				recordWrite(effectiveStoreId, blobStore)
 				protocolReceipts++
 				captureLogEntries = append(captureLogEntries, captureLogEntry{
 					Ts:        capture_log.Timestamp(),
@@ -648,13 +693,6 @@ func (cmd *Capture) Run(req command.Request) {
 				)
 			}
 		} else {
-			// Empty storeName (default store) → resolve to its actual id
-			// per RFC 0001 §Store-Hint Resolution.
-			effectiveStoreId := storeName
-			if effectiveStoreId == "" {
-				effectiveStoreId = envBlobStore.GetDefaultBlobStoreId()
-			}
-
 			hint, hintErr := capture_receipt.ComputeStoreHint(blobStore, effectiveStoreId)
 			if hintErr != nil {
 				p.notice(
@@ -687,6 +725,7 @@ func (cmd *Capture) Run(req command.Request) {
 					Roots:     rootPaths(group.roots),
 				})
 				groupLogIdx = len(captureLogEntries) - 1
+				recordWrite(effectiveStoreId, blobStore)
 			}
 		}
 
@@ -748,6 +787,14 @@ func (cmd *Capture) Run(req command.Request) {
 		}
 	}
 
+	// --pack: consolidate loose blobs into archive files now that every
+	// receipt is durable. Runs before teardown so its notices route
+	// through the live pipeline like any other; deliberately non-fatal
+	// (see packWrittenStores).
+	if cmd.Pack {
+		packWrittenStores(ctx, p.notice, packOrder, packStores)
+	}
+
 	if len(captureLogEntries) > 0 {
 		appendCaptureLog(cgEnvDir, p.notice, captureLogEntries)
 	}
@@ -789,6 +836,45 @@ func (cmd *Capture) Run(req command.Request) {
 		// made the status tagging deliberate rather than incidental.
 		errors.ContextCancelWithErrorf(ctx,
 			"capture failed entries: %d", failCount)
+	}
+}
+
+// packWrittenStores runs madder's pack operation on every store written
+// during the run that supports packfiles. A store supports packfiles iff
+// its underlying blob store implements blob_stores.PackableArchive (today
+// the madder inventory-archive stores) — the same duck-typed capability
+// check madder's own `pack` command uses; stores that don't (plain local
+// stores, remote SFTP/S3/WebDAV) are skipped with a notice so an explicit
+// --pack still reports what it did.
+//
+// It is deliberately non-fatal: by the time it runs every receipt is
+// already durable, so packing is a storage optimization. A pack failure
+// degrades to a notice and never changes the run's exit code, mirroring
+// the failure-receipt handling above.
+func packWrittenStores(
+	ctx errors.Context,
+	notice func(format string, args ...any),
+	order []string,
+	stores map[string]blob_stores.BlobStoreInitialized,
+) {
+	for _, id := range order {
+		blobStore := stores[id]
+
+		packable, ok := blobStore.BlobStore.(blob_stores.PackableArchive)
+		if !ok {
+			notice(
+				"notice: store=%s does not support packfiles; pack skipped",
+				quoteEmpty(id),
+			)
+			continue
+		}
+
+		if err := packable.Pack(blob_stores.PackOptions{Context: ctx}); err != nil {
+			notice("notice: pack failed for store=%s: %v", quoteEmpty(id), err)
+			continue
+		}
+
+		notice("notice: packed store=%s", quoteEmpty(id))
 	}
 }
 
