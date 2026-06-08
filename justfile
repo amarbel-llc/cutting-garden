@@ -50,11 +50,11 @@ lint-fmt:
 lint-go-analyzer name:
     #!/usr/bin/env bash
     set -euo pipefail
-    bin="{{justfile_directory()}}/.tmp/analyzers/{{name}}"
+    bin="{{ justfile_directory() }}/.tmp/analyzers/{{ name }}"
     mkdir -p "$(dirname "$bin")"
-    nix develop --command go build -o "$bin" github.com/amarbel-llc/purse-first/libs/dewey/cmd/{{name}}
+    nix develop --command go build -o "$bin" github.com/amarbel-llc/purse-first/libs/dewey/cmd/{{ name }}
     nix develop --command go vet -vettool="$bin" ./...
-    gum log --level info "lint-go-analyzer {{name}}: ok"
+    gum log --level info "lint-go-analyzer {{ name }}: ok"
 
 # Run all three dewey analyzers in sequence.
 [group('pre-build')]
@@ -84,12 +84,12 @@ bump-version new_version:
     #!/usr/bin/env bash
     set -euo pipefail
     current="$(cat version.txt 2>/dev/null | tr -d '\n' || true)"
-    if [[ "$current" == "{{new_version}}" ]]; then
-      gum log --level info "already at {{new_version}}"
+    if [[ "$current" == "{{ new_version }}" ]]; then
+      gum log --level info "already at {{ new_version }}"
       exit 0
     fi
-    echo "{{new_version}}" > version.txt
-    gum log --level info "bumped version: ${current:-(none)} → {{new_version}}"
+    echo "{{ new_version }}" > version.txt
+    gum log --level info "bumped version: ${current:-(none)} → {{ new_version }}"
 
 # Tag a release. Pass the bare semver; the "v" prefix is added for you.
 # Creates a signed annotated tag, pushes it to origin, verifies the
@@ -100,13 +100,13 @@ bump-version new_version:
 tag version message:
     #!/usr/bin/env bash
     set -euo pipefail
-    tag="v{{version}}"
+    tag="v{{ version }}"
     prev=$(git tag --sort=-v:refname -l "v*" | head -1)
     if [[ -n "$prev" ]]; then
       gum log --level info "Previous: $prev"
       git log --oneline "$prev"..HEAD
     fi
-    git tag -s -m "{{message}}" "$tag"
+    git tag -s -m "{{ message }}" "$tag"
     gum log --level info "Created tag: $tag"
     git push origin "$tag"
     gum log --level info "Pushed $tag"
@@ -130,7 +130,7 @@ release version:
       exit 1
     fi
     prev=$(git tag --sort=-v:refname -l "v*" | head -1)
-    header="release v{{version}}"
+    header="release v{{ version }}"
     if [[ -n "$prev" ]]; then
       summary=$(git log --format='- %s' "$prev"..HEAD)
       if [[ -n "$summary" ]]; then
@@ -141,14 +141,14 @@ release version:
     else
       msg="$header"
     fi
-    just bump-version "{{version}}"
+    just bump-version "{{ version }}"
     if ! git diff --quiet version.txt; then
       git add version.txt
-      git commit -m "chore: release v{{version}}"
+      git commit -m "chore: release v{{ version }}"
       git push origin master
       gum log --level info "pushed version.txt bump to master"
     fi
-    tag="v{{version}}"
+    tag="v{{ version }}"
     if [[ -n "$prev" ]]; then
       gum log --level info "Previous: $prev"
       git log --oneline "$prev"..HEAD || true
@@ -178,7 +178,7 @@ debug-make-fixture:
 
 [group('debug')]
 debug-capture-fixture STORE='.default' FORMAT='auto': debug-build-go debug-make-fixture
-    .tmp/cutting-garden capture -format={{FORMAT}} {{STORE}} .tmp/cap-fixture
+    .tmp/cutting-garden capture -format={{ FORMAT }} {{ STORE }} .tmp/cap-fixture
 
 # Capture the fixture with the progress viewport forced on (-progress=always)
 # so the TTY spinner + bar + tail can be eyeballed even off a bare TTY.
@@ -186,15 +186,15 @@ debug-capture-fixture STORE='.default' FORMAT='auto': debug-build-go debug-make-
 # docs/plans/2026-06-05-capture-progress-protocol-design.md)
 [group('debug')]
 debug-capture-fixture-progress STORE='.default': debug-build-go debug-make-fixture
-    .tmp/cutting-garden capture -progress=always {{STORE}} .tmp/cap-fixture
+    .tmp/cutting-garden capture -progress=always {{ STORE }} .tmp/cap-fixture
 
 [group('debug')]
 debug-capture-fixture-nix STORE='.default' FORMAT='auto': build-nix debug-make-fixture
-    ./result/bin/cutting-garden capture -format={{FORMAT}} {{STORE}} .tmp/cap-fixture
+    ./result/bin/cutting-garden capture -format={{ FORMAT }} {{ STORE }} .tmp/cap-fixture
 
 [group('debug')]
 debug-madder-init STORE='.test':
-    nix develop --command madder init {{STORE}}
+    nix develop --command madder init {{ STORE }}
 
 [group('debug')]
 debug-make-multiroot-fixture: debug-make-fixture
@@ -205,7 +205,7 @@ debug-make-multiroot-fixture: debug-make-fixture
 
 [group('debug')]
 debug-capture-multiroot STORE='.default' FORMAT='auto': debug-build-go debug-make-multiroot-fixture
-    .tmp/cutting-garden capture -format={{FORMAT}} {{STORE}} .tmp/cap-fixture .tmp/cap-fixture-2
+    .tmp/cutting-garden capture -format={{ FORMAT }} {{ STORE }} .tmp/cap-fixture .tmp/cap-fixture-2
 
 # Generate all manpages into .tmp/manpages and render PAGE as text,
 # for eyeballing roff output after editing command Description/manpage
@@ -273,9 +273,9 @@ debug-sigint-capture TREE='/home/sasha/Downloads' DELAY='0.7': debug-build-go
 debug-ytdlp-channel-list URL='https://www.youtube.com/@YouTube/videos' LIMIT='10':
     nix develop --command yt-dlp \
       --flat-playlist \
-      --playlist-end {{LIMIT}} \
+      --playlist-end {{ LIMIT }} \
       --print '%(id)s\t%(title)s' \
-      -- {{URL}}
+      -- {{ URL }}
 
 # Drive the WET capture viewport with synthetic plan/progress/log events on
 # a real TTY, so the prototype's UX (collapse-on-done, tail height, bar
@@ -300,7 +300,7 @@ debug-ytdlp-seek-probe URL='https://youtu.be/aqz-KE-bpKQ':
     rm -f out.* probe.strace
     strace -f -e trace=openat,open,lseek,write,pwrite64,ftruncate -o probe.strace \
       yt-dlp -f 'bv*[height<=240]+ba' --max-filesize 60M \
-        -o 'out.%(ext)s' --no-playlist -- {{URL}} \
+        -o 'out.%(ext)s' --no-playlist -- {{ URL }} \
       | tee ytdlp.log
     echo '--- output-file fds (openat) ---'
     grep -E 'openat\(.*"(\./)?(out\.|.*\.part|.*\.temp)' probe.strace || true

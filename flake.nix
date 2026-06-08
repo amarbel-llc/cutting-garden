@@ -145,6 +145,9 @@
           pkgsUpstream.nixfmt
           pkgsUpstream.shfmt
           pkgsUpstream.shellcheck
+          # just provides its own formatter (`just --unstable --fmt`);
+          # the [formatter.just] block in conformist.toml drives it.
+          pkgsUpstream.just
         ];
 
         # `nix fmt` entrypoint: conformist with its toolchain on PATH,

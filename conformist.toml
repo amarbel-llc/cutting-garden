@@ -48,3 +48,18 @@ includes = ["*.sh", "*.bash", "*.bats"]
 [linter.shellcheck]
 command = "shellcheck"
 includes = ["*.sh", "*.bash", "*.bats"]
+
+# just ships its own formatter, but `just --fmt` targets a single
+# --justfile rather than accepting the file list conformist passes as
+# args — so wrap it in a bash loop (cf. eng's [formatter.jq]). --fmt is
+# gated behind --unstable as of just 1.51, and rewrites in place itself
+# (no tempfile round-trip needed). The normalization is interpolation
+# spacing: {{x}} -> {{ x }}.
+[formatter.just]
+command = "bash"
+options = [
+  "-euc",
+  "for f in \"$@\"; do just --unstable --fmt --justfile \"$f\"; done\n",
+  "--",
+]
+includes = ["justfile", "*.justfile", ".justfile"]
