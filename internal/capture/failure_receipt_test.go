@@ -212,6 +212,41 @@ func TestWriteFailureReceipt_SpillsWhenStoreWriteFails(t *testing.T) {
 	}
 }
 
+// TestSpillFailureReceipt_SameTsDoesNotOverwrite pins the multi-group
+// collision case: two groups spilling within the same wall-clock
+// second (identical Meta.Ts) must land in two distinct files — the
+// second spill must not truncate the first ("triage info must survive
+// the outage", design §Write path).
+func TestSpillFailureReceipt_SameTsDoesNotOverwrite(t *testing.T) {
+	cg := setupCgEnvDir(t)
+	const ts = "2026-06-07T12:00:00Z"
+
+	first, err := spillFailureReceipt(cg, ts, []byte("group-a\n"))
+	if err != nil {
+		t.Fatalf("first spill: %v", err)
+	}
+	second, err := spillFailureReceipt(cg, ts, []byte("group-b\n"))
+	if err != nil {
+		t.Fatalf("second spill: %v", err)
+	}
+
+	if first == second {
+		t.Fatalf("both spills landed at %q; want distinct paths", first)
+	}
+	for path, want := range map[string]string{
+		first:  "group-a\n",
+		second: "group-b\n",
+	} {
+		got, rerr := os.ReadFile(path)
+		if rerr != nil {
+			t.Fatalf("read %q: %v", path, rerr)
+		}
+		if string(got) != want {
+			t.Errorf("%q = %q, want %q", path, got, want)
+		}
+	}
+}
+
 // TestWriteFailureReceipt_SpillFailureReturnsError pins the
 // double-failure contract: when the store write AND the spill both
 // fail, writeFailureReceipt reports an error (the caller degrades it

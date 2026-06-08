@@ -11,8 +11,10 @@ package capture
 import (
 	"bytes"
 	"context"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/amarbel-llc/cutting-garden/internal/capture_failures"
@@ -133,21 +135,55 @@ func writeFailureBlobBytes(
 // $XDG_STATE_HOME/cutting-garden/failures/<ts>.ndjson so triage
 // information survives the store outage that caused it. The filename
 // is Meta.Ts with ':' replaced by '-' (filesystem-safe RFC3339).
+// Timestamps have one-second resolution, so two store groups spilling
+// in the same second would collide on the name — O_EXCL plus a
+// `-N` suffix retry keeps every group's spill intact instead of
+// letting the second truncate the first.
 func spillFailureReceipt(
 	cgEnvDir env_dir.Env,
 	ts string,
 	data []byte,
 ) (string, error) {
-	name := strings.ReplaceAll(ts, ":", "-") + ".ndjson"
-	path := cgEnvDir.GetXDG().State.MakePath("failures", name).String()
+	stem := strings.ReplaceAll(ts, ":", "-")
+	dir := cgEnvDir.GetXDG().State.MakePath("failures").String()
 
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", errors.Wrap(err)
 	}
 
-	if err := os.WriteFile(path, data, 0o644); err != nil {
-		return "", errors.Wrap(err)
+	// Bounded retry: same-second collisions come from store groups in
+	// one invocation, so a handful of suffixes is plenty; bail rather
+	// than loop forever on a pathological directory.
+	const maxSpillSuffix = 100
+	for i := 0; i <= maxSpillSuffix; i++ {
+		name := stem
+		if i > 0 {
+			name += "-" + strconv.Itoa(i)
+		}
+		path := filepath.Join(dir, name+".ndjson")
+
+		file, err := os.OpenFile(
+			path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644,
+		)
+		if errors.Is(err, fs.ErrExist) {
+			continue
+		}
+		if err != nil {
+			return "", errors.Wrap(err)
+		}
+
+		if _, werr := file.Write(data); werr != nil {
+			_ = file.Close() //defer:err-checked — write error wins
+			return "", errors.Wrap(werr)
+		}
+		if cerr := file.Close(); cerr != nil {
+			return "", errors.Wrap(cerr)
+		}
+		return path, nil
 	}
 
-	return path, nil
+	return "", errors.ErrorWithStackf(
+		"spill name collision not resolved after %d suffixes under %q",
+		maxSpillSuffix, dir,
+	)
 }
