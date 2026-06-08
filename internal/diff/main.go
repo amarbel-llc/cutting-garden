@@ -203,7 +203,8 @@ func (cmd *Diff) runDiff(
 	if !ok {
 		return errors.ErrorWithStackf(
 			"receipt %s: unexpected blob shape %T (expected *V1)",
-			&receiptID, blob)
+			&receiptID, blob,
+		)
 	}
 
 	sourceStore, err := command_components.ResolveMaterializationStore(
@@ -228,7 +229,8 @@ func (cmd *Diff) runDiff(
 			RawDir:         dirStr,
 			BlobStore:      discardStore,
 			ReceiptEntries: v1.Entries,
-		})
+		},
+	)
 	if scanErr != nil {
 		return scanErr
 	}
@@ -257,7 +259,8 @@ func (cmd *Diff) runDiff(
 		return command.Mismatchf(
 			"tree differs from receipt: %d %s",
 			len(differences),
-			pluralize("entry", "entries", len(differences)))
+			pluralize("entry", "entries", len(differences)),
+		)
 	}
 
 	return nil
@@ -305,7 +308,8 @@ func (cmd *Diff) runProtocolDiff(
 		return command.Mismatchf(
 			"source differs from receipt: %d %s",
 			len(res.Differences),
-			pluralize("difference", "differences", len(res.Differences)))
+			pluralize("difference", "differences", len(res.Differences)),
+		)
 	}
 
 	return nil

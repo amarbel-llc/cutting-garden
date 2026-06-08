@@ -95,7 +95,8 @@ func (receiptMetadataCoder) DecodeFrom(
 		i := strings.Index(rest, sep)
 		if i < 0 {
 			return errors.ErrorWithStackf(
-				"capture_receipt: malformed store-hint line: %q", value)
+				"capture_receipt: malformed store-hint line: %q", value,
+			)
 		}
 
 		hint = &StoreHint{

@@ -141,7 +141,8 @@ func (c *client) propfindResponses(
 	if resp.StatusCode != http.StatusMultiStatus {
 		return nil, errors.ErrorWithStackf(
 			"PROPFIND %s: status %d: %s",
-			c.base, resp.StatusCode, snippet(data))
+			c.base, resp.StatusCode, snippet(data),
+		)
 	}
 
 	var ms multistatusResponse
@@ -233,7 +234,8 @@ func (c *client) listResources(
 	if resp.StatusCode != http.StatusMultiStatus {
 		return nil, errors.ErrorWithStackf(
 			"REPORT %s (%s): status %d: %s",
-			url, component, resp.StatusCode, snippet(data))
+			url, component, resp.StatusCode, snippet(data),
+		)
 	}
 
 	var ms multistatusResponse
@@ -295,7 +297,8 @@ func (c *client) listObjectHrefs(
 	if resp.StatusCode != http.StatusMultiStatus {
 		return nil, errors.ErrorWithStackf(
 			"REPORT %s (%s): status %d: %s",
-			url, component, resp.StatusCode, snippet(data))
+			url, component, resp.StatusCode, snippet(data),
+		)
 	}
 
 	var ms multistatusResponse
@@ -333,7 +336,8 @@ func (c *client) putResource(ctx context.Context, href, icalData string) (err er
 		resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		return errors.ErrorWithStackf(
-			"PUT %s: status %d: %s", url, resp.StatusCode, snippet(body))
+			"PUT %s: status %d: %s", url, resp.StatusCode, snippet(body),
+		)
 	}
 	return nil
 }

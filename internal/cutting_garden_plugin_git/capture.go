@@ -19,6 +19,7 @@ func (Plugin) CaptureRoot(
 ) cutting_garden_plugins.CaptureRootResult {
 	cutting_garden_plugins.ReporterOrNop(req.Reporter).Failure(req.RawArg,
 		errors.ErrorWithStackf(
-			"git plugin: capture uses the RFC 0002 protocol path, not the EntryV1 path"))
+			"git plugin: capture uses the RFC 0002 protocol path, not the EntryV1 path",
+		))
 	return cutting_garden_plugins.CaptureRootResult{FailCount: 1}
 }

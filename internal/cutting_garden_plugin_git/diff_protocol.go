@@ -59,7 +59,8 @@ func (Plugin) DiffProtocol(
 	}
 
 	objectDiffs, err := objectGraphDiff(
-		req.Context, req.BlobStore, remote, resolvedBranch, payload, meta.Tip, liveTip)
+		req.Context, req.BlobStore, remote, resolvedBranch, payload, meta.Tip, liveTip,
+	)
 	if err != nil {
 		return cutting_garden_plugins.ProtocolDiffResult{}, err
 	}

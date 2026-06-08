@@ -134,7 +134,8 @@ func (failuresMetadataCoder) EncodeTo(
 	if !ok {
 		return 0, errors.ErrorWithStackf(
 			"capture_failures: metadata EncodeTo: expected *V1, got %T",
-			typedBlob.Blob)
+			typedBlob.Blob,
+		)
 	}
 
 	meta := v1.Meta
@@ -155,7 +156,8 @@ func (failuresMetadataCoder) EncodeTo(
 	for _, root := range meta.Roots {
 		lines = append(lines, "- root "+root)
 	}
-	lines = append(lines,
+	lines = append(
+		lines,
 		"- captured "+strconv.FormatInt(meta.Captured, 10),
 		"- failed "+strconv.FormatInt(meta.Failed, 10),
 		"! "+typedBlob.Type.StringSansOp(),
@@ -233,7 +235,8 @@ func (v1BodyCoder) EncodeTo(
 	if !ok {
 		return 0, errors.ErrorWithStackf(
 			"capture_failures: v1BodyCoder.EncodeTo: expected *V1, got %T",
-			*blobPtr)
+			*blobPtr,
+		)
 	}
 
 	for _, failure := range v1.Failures {

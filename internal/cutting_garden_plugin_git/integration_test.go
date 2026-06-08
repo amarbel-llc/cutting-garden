@@ -212,7 +212,8 @@ func TestIncrementalCapture_RealGit_MatchesFullCapture(t *testing.T) {
 
 	// Unchanged re-capture reuses the prior object set exactly.
 	resSame, ok, err := tryIncrementalCapture(
-		context.Background(), store, capturePluginWriter(store), repo, "main", res1.ReceiptDigest, cutting_garden_plugins.NopReporter{})
+		context.Background(), store, capturePluginWriter(store), repo, "main", res1.ReceiptDigest, cutting_garden_plugins.NopReporter{},
+	)
 	if err != nil || !ok {
 		t.Fatalf("incremental (unchanged): ok=%v err=%v", ok, err)
 	}
@@ -230,7 +231,8 @@ func TestIncrementalCapture_RealGit_MatchesFullCapture(t *testing.T) {
 
 	// Incremental capture from the prior receipt (delta fetch).
 	resInc, ok, err := tryIncrementalCapture(
-		context.Background(), store, capturePluginWriter(store), repo, "main", res1.ReceiptDigest, cutting_garden_plugins.NopReporter{})
+		context.Background(), store, capturePluginWriter(store), repo, "main", res1.ReceiptDigest, cutting_garden_plugins.NopReporter{},
+	)
 	if err != nil || !ok {
 		t.Fatalf("incremental capture: ok=%v err=%v", ok, err)
 	}
@@ -367,7 +369,8 @@ func gitCLI(t *testing.T, dir string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(),
+	cmd.Env = append(
+		os.Environ(),
 		"GIT_CONFIG_GLOBAL=/dev/null",
 		"GIT_CONFIG_SYSTEM=/dev/null",
 		"GIT_TERMINAL_PROMPT=0",

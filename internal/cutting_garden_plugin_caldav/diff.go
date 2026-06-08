@@ -45,7 +45,8 @@ func (Plugin) ScanForDiff(
 
 			for _, res := range resources {
 				entry, rel, writeErr := storeResource(
-					req.Context, req.BlobStore, c, origin, res)
+					req.Context, req.BlobStore, c, origin, res,
+				)
 				if rel == "" {
 					continue
 				}
@@ -62,7 +63,8 @@ func (Plugin) ScanForDiff(
 	if len(failures) > 0 {
 		return nil, errors.ErrorWithStackf(
 			"caldav plugin: %d failures during diff scan:\n  %s",
-			len(failures), strings.Join(failures, "\n  "))
+			len(failures), strings.Join(failures, "\n  "),
+		)
 	}
 
 	return entries, nil

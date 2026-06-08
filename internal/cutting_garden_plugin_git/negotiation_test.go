@@ -61,7 +61,8 @@ func TestSeededStorer_FetchTransfersOnlyDelta(t *testing.T) {
 	// Capture closure(A) the production way, then read back its refs/tip.
 	store := newMemStore(t)
 	res, err := captureProtocol(
-		context.Background(), capture_plugin.NewBlobStoreWriter(store), dir, branch, cutting_garden_plugins.NopReporter{})
+		context.Background(), capture_plugin.NewBlobStoreWriter(store), dir, branch, cutting_garden_plugins.NopReporter{},
+	)
 	if err != nil {
 		t.Fatalf("capture A: %v", err)
 	}

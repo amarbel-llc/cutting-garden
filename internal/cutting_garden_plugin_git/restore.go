@@ -83,7 +83,8 @@ func restoreLocalClone(
 		return errors.Wrapf(err, "git plugin: set branch %s to %s", branch, tipStr)
 	}
 	if err := repo.Storer.SetReference(
-		plumbing.NewSymbolicReference(plumbing.HEAD, branchRef)); err != nil {
+		plumbing.NewSymbolicReference(plumbing.HEAD, branchRef),
+	); err != nil {
 		return errors.Wrapf(err, "git plugin: point HEAD at %s", branch)
 	}
 
@@ -114,7 +115,8 @@ func restoreRemotePush(
 
 	branchRef := plumbing.NewBranchReferenceName(branch)
 	if err := st.SetReference(
-		plumbing.NewHashReference(branchRef, plumbing.NewHash(tipStr))); err != nil {
+		plumbing.NewHashReference(branchRef, plumbing.NewHash(tipStr)),
+	); err != nil {
 		return errors.Wrapf(err, "git plugin: set branch %s to %s", branch, tipStr)
 	}
 
@@ -144,7 +146,8 @@ func assertDestAbsent(dest string) error {
 	if _, err := os.Lstat(dest); err == nil {
 		return errors.ErrorWithStackf(
 			"%s: destination already exists\n"+
-				"hint: choose a destination that does not exist", dest)
+				"hint: choose a destination that does not exist", dest,
+		)
 	} else if !os.IsNotExist(err) {
 		return errors.Wrapf(err, "stat %q", dest)
 	}

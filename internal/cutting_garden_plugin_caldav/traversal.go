@@ -42,7 +42,8 @@ func (Plugin) ListRoots(
 ) ([]cutting_garden_plugins.Node, error) {
 	if node == nil {
 		return nil, errors.ErrorWithStackf(
-			"caldav plugin: ListRoots requires a node URI")
+			"caldav plugin: ListRoots requires a node URI",
+		)
 	}
 
 	base, username, password, err := connectionFromArg(node)

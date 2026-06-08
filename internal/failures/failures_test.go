@@ -16,6 +16,7 @@ import (
 	"github.com/amarbel-llc/madder/go/pkgs/blob_store_configs"
 	"github.com/amarbel-llc/madder/go/pkgs/directory_layout"
 	"github.com/amarbel-llc/madder/go/pkgs/ids"
+
 	// Blank-import the markl purpose registrations: EncodeWithDigest in
 	// initDefaultBlobStore digests the store config under the
 	// "madder-blob_store-config-digest-v1" purpose, which panics unless
@@ -116,10 +117,14 @@ func sampleFailuresV1() *capture_failures.V1 {
 			Failed:   2,
 		},
 		Failures: []capture_failures.FailureV1{
-			{Root: "./", Path: "a/b.ts", Op: capture_failures.OpBlobWrite,
-				Error: "read: permission denied"},
-			{Root: "./", Path: "c.txt", Op: capture_failures.OpStat,
-				Error: "stale handle"},
+			{
+				Root: "./", Path: "a/b.ts", Op: capture_failures.OpBlobWrite,
+				Error: "read: permission denied",
+			},
+			{
+				Root: "./", Path: "c.txt", Op: capture_failures.OpStat,
+				Error: "stale handle",
+			},
 		},
 	}
 }
@@ -161,8 +166,10 @@ func TestRun_TextGolden_AbortedWithSignal(t *testing.T) {
 			Failed:   1,
 		},
 		Failures: []capture_failures.FailureV1{
-			{Root: "./", Path: "sub/d.txt", Op: capture_failures.OpWalk,
-				Error: "context canceled"},
+			{
+				Root: "./", Path: "sub/d.txt", Op: capture_failures.OpWalk,
+				Error: "context canceled",
+			},
 		},
 	})
 

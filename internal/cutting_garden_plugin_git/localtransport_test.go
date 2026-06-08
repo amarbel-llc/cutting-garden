@@ -25,7 +25,8 @@ func TestLocalPath_NoGitBinary(t *testing.T) {
 
 	// capture
 	res, err := captureProtocol(
-		context.Background(), capture_plugin.NewBlobStoreWriter(store), dir, branch, cutting_garden_plugins.NopReporter{})
+		context.Background(), capture_plugin.NewBlobStoreWriter(store), dir, branch, cutting_garden_plugins.NopReporter{},
+	)
 	if err != nil {
 		t.Fatalf("capture with empty PATH: %v", err)
 	}

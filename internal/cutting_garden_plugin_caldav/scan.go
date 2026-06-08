@@ -30,7 +30,8 @@ func storeResource(
 	}
 
 	id, size, err := plugin_blob_io.WriteReaderBlob(
-		ctx, store, strings.NewReader(res.data))
+		ctx, store, strings.NewReader(res.data),
+	)
 	if err != nil {
 		return capture_receipt.EntryV1{}, rel, err
 	}

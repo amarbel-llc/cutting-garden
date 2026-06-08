@@ -161,7 +161,6 @@ func (utility Utility) Run(args []string) int {
 
 		cmd.Run(req)
 	})
-
 	if err != nil {
 		return handleMainErrors(ctx, utilityNameWithExtension, err)
 	}

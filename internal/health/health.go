@@ -10,6 +10,7 @@
 //	health [-format text|json]
 //
 // Exit 0 on success, 64 on a bad -format value or trailing arguments.
+
 // Reporting the home-manager `serve` module status is a future addition
 // (no status signal exists today).
 package health
@@ -192,7 +193,8 @@ func writeText(w io.Writer, rows []pluginRow) error {
 	// error-free; only the final flush to w is fallible.
 	fmt.Fprintln(tw, "PLUGIN\tSCHEMES\tCAPTURE\tRESTORE\tDIFF\tPROTOCOL\tTRAVERSAL")
 	for _, r := range rows {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+		fmt.Fprintf(
+			tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			r.Plugin,
 			schemesLabel(r.Schemes),
 			yesNo(r.Capture),

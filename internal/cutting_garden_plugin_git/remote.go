@@ -45,7 +45,8 @@ func listRemoteTip(
 			}
 		}
 		return "", "", errors.ErrorWithStackf(
-			"git plugin: branch %q not found on %s", branch, remote)
+			"git plugin: branch %q not found on %s", branch, remote,
+		)
 	}
 
 	// Default branch: resolve HEAD. A symbolic HEAD names the branch it
@@ -70,7 +71,8 @@ func listRemoteTip(
 		}
 	}
 	return "", "", errors.ErrorWithStackf(
-		"git plugin: cannot resolve default branch (HEAD) on %s", remote)
+		"git plugin: cannot resolve default branch (HEAD) on %s", remote,
+	)
 }
 
 // fetchBranchInto fetches branch from remote into st over go-git's
@@ -88,7 +90,8 @@ func fetchBranchInto(ctx context.Context, st storage.Storer, remote, branch stri
 		URLs: []string{remote},
 	})
 	refspec := config.RefSpec(fmt.Sprintf(
-		"+refs/heads/%s:refs/remotes/origin/%s", branch, branch))
+		"+refs/heads/%s:refs/remotes/origin/%s", branch, branch,
+	))
 	if err := rem.FetchContext(ctx, &git.FetchOptions{
 		RefSpecs: []config.RefSpec{refspec},
 		Tags:     git.NoTags,

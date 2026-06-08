@@ -109,7 +109,8 @@ func (v1BodyCoder) EncodeTo(
 	v1, ok := (*blobPtr).(*V1)
 	if !ok {
 		return 0, errors.ErrorWithStackf(
-			"capture_receipt: v1BodyCoder.EncodeTo: expected *V1, got %T", *blobPtr)
+			"capture_receipt: v1BodyCoder.EncodeTo: expected *V1, got %T", *blobPtr,
+		)
 	}
 
 	entries := append([]EntryV1(nil), v1.Entries...)

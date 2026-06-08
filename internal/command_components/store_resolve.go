@@ -37,13 +37,15 @@ func ResolveStoreByID(
 	var id blob_store_id.Id
 	if err := id.Set(idStr); err != nil {
 		return blob_stores.BlobStoreInitialized{}, errors.Wrapf(
-			err, "parse -store value %q", idStr)
+			err, "parse -store value %q", idStr,
+		)
 	}
 	stores := env.GetBlobStores()
 	store, ok := stores[id.String()]
 	if !ok {
 		return blob_stores.BlobStoreInitialized{}, errors.ErrorWithStackf(
-			"-store %q is not a configured blob store", idStr)
+			"-store %q is not a configured blob store", idStr,
+		)
 	}
 	return store, nil
 }
@@ -133,5 +135,6 @@ func ResolveMaterializationStore(
 	return blob_stores.BlobStoreInitialized{}, errors.ErrorWithStackf(
 		"pass -store <id> to override and use the current store\n"+
 			"hint: re-running with -store %s uses the current configuration",
-		hint.StoreId)
+		hint.StoreId,
+	)
 }

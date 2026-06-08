@@ -7,6 +7,7 @@ import (
 
 	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
 	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
+
 	// Blank-import the file plugin so its init() registers under
 	// "", "file" restore schemes. Without it,
 	// cutting_garden_plugins.ResolveRestore returns an empty-registry

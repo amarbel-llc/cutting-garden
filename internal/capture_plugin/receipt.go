@@ -151,7 +151,8 @@ func WriteReceipt(
 	}
 
 	receiptRefs := make([]Ref, 0, 2+len(p.PayloadRefs))
-	receiptRefs = append(receiptRefs,
+	receiptRefs = append(
+		receiptRefs,
 		LockedRef("identity", idDigest, TypeIdentity),
 		LockedRef("outcome", outDigest, TypeOutcome),
 	)

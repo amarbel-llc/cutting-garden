@@ -64,7 +64,8 @@ func loadEncodedObject(
 	if gitType == "" {
 		return nil, errors.ErrorWithStackf(
 			"git plugin: payload reference %q has non-object type %q",
-			ref.Alias, ref.TypeString)
+			ref.Alias, ref.TypeString,
+		)
 	}
 	objType, err := plumbing.ParseObjectType(gitType)
 	if err != nil {
@@ -90,7 +91,8 @@ func loadEncodedObject(
 	if got := mem.Hash().String(); got != ref.Alias {
 		return nil, errors.ErrorWithStackf(
 			"git plugin: object integrity mismatch: captured oid %q, "+
-				"recreated oid %q (type %s)", ref.Alias, got, gitType)
+				"recreated oid %q (type %s)", ref.Alias, got, gitType,
+		)
 	}
 	return mem, nil
 }
@@ -119,7 +121,8 @@ func populateNegotiationStorer(
 	}
 
 	tipRef := plumbing.NewHashReference(
-		plumbing.ReferenceName(priorTipRef), plumbing.NewHash(tip))
+		plumbing.ReferenceName(priorTipRef), plumbing.NewHash(tip),
+	)
 	if err := dst.SetReference(tipRef); err != nil {
 		return errors.Wrapf(err, "git plugin: seed tip ref %s", tip)
 	}

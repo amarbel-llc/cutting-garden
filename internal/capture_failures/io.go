@@ -37,7 +37,8 @@ func ReadV1(r io.Reader) (*V1, error) {
 	if !ok {
 		return nil, errors.ErrorWithStackf(
 			"capture_failures: expected *V1, got %T (type %q)",
-			tb.Blob, tb.Type)
+			tb.Blob, tb.Type,
+		)
 	}
 
 	return v1, nil

@@ -17,7 +17,8 @@ func updateAll(m tea.Model, msgs ...tea.Msg) tea.Model {
 }
 
 func TestModel_TailKeepsLastNLines(t *testing.T) {
-	got := updateAll(New(WithTailLines(3)),
+	got := updateAll(
+		New(WithTailLines(3)),
 		LogLine{Text: "a"}, LogLine{Text: "b"},
 		LogLine{Text: "c"}, LogLine{Text: "d"},
 	)
@@ -33,7 +34,8 @@ func TestModel_TailKeepsLastNLines(t *testing.T) {
 }
 
 func TestModel_CollapsesTailOnSuccessfulDone(t *testing.T) {
-	got := updateAll(New(WithTitle("cap")),
+	got := updateAll(
+		New(WithTitle("cap")),
 		LogLine{Text: "noisy"},
 		BatchDone{Err: nil},
 	)
@@ -47,7 +49,8 @@ func TestModel_CollapsesTailOnSuccessfulDone(t *testing.T) {
 }
 
 func TestModel_HoldsAndShowsErrorOnFailure(t *testing.T) {
-	got := updateAll(New(WithTitle("cap")),
+	got := updateAll(
+		New(WithTitle("cap")),
 		BatchDone{Err: errors.New("boom")},
 	)
 	if view := got.View(); !strings.Contains(view, "boom") {
@@ -57,7 +60,8 @@ func TestModel_HoldsAndShowsErrorOnFailure(t *testing.T) {
 
 func TestModel_BarOnlyWhenTotalKnown(t *testing.T) {
 	indeterminate := New(WithTitle("cap")).View()
-	determinate := updateAll(New(WithTitle("cap")),
+	determinate := updateAll(
+		New(WithTitle("cap")),
 		OperationStarted{Name: "cap", Total: 10},
 		OperationProgress{Current: 5, Total: 10},
 	).View()
@@ -74,7 +78,8 @@ func TestModel_BarOnlyWhenTotalKnown(t *testing.T) {
 }
 
 func TestModel_ByteBarWhenBytesTotalKnown(t *testing.T) {
-	view := updateAll(New(WithTitle("dl")),
+	view := updateAll(
+		New(WithTitle("dl")),
 		OperationProgress{Bytes: 512 * 1024, BytesTotal: 1024 * 1024},
 	).View()
 
@@ -93,7 +98,8 @@ func TestModel_ByteBarWhenBytesTotalKnown(t *testing.T) {
 func TestModel_ByteCounterWhenOnlyDoneKnown(t *testing.T) {
 	// total_bytes is NA mid-stream: only bytesDone is set, so an
 	// indeterminate counter (no bar, no "%") renders.
-	view := updateAll(New(WithTitle("dl")),
+	view := updateAll(
+		New(WithTitle("dl")),
 		OperationProgress{Bytes: 2 * 1024 * 1024, BytesTotal: 0},
 	).View()
 
@@ -108,7 +114,8 @@ func TestModel_ByteCounterWhenOnlyDoneKnown(t *testing.T) {
 func TestModel_ItemBarTakesPrecedenceOverBytes(t *testing.T) {
 	// When both an item total and a byte total are known, the item bar
 	// wins (git path) and the byte humanization is not appended.
-	view := updateAll(New(WithTitle("cap")),
+	view := updateAll(
+		New(WithTitle("cap")),
 		OperationStarted{Name: "cap", Total: 4},
 		OperationProgress{Current: 2, Total: 4, Bytes: 999, BytesTotal: 4096},
 	).View()
@@ -124,7 +131,8 @@ func TestModel_ItemBarTakesPrecedenceOverBytes(t *testing.T) {
 func TestModel_DedupesConsecutiveIdenticalLogLines(t *testing.T) {
 	// yt-dlp re-reports the same video id every tick; the tail should
 	// collapse consecutive identical lines to one.
-	got := updateAll(New(WithTailLines(5)),
+	got := updateAll(
+		New(WithTailLines(5)),
 		LogLine{Text: "dQw4w9WgXcQ"},
 		LogLine{Text: "dQw4w9WgXcQ"},
 	)
@@ -139,7 +147,8 @@ func TestModel_DedupesConsecutiveIdenticalLogLines(t *testing.T) {
 
 func TestModel_DistinctLogLinesAllLand(t *testing.T) {
 	// git emits distinct hashes; none are deduped.
-	got := updateAll(New(WithTailLines(5)),
+	got := updateAll(
+		New(WithTailLines(5)),
 		LogLine{Text: "aaa"},
 		LogLine{Text: "bbb"},
 		LogLine{Text: "aaa"}, // non-consecutive repeat: kept
@@ -151,7 +160,8 @@ func TestModel_DistinctLogLinesAllLand(t *testing.T) {
 }
 
 func TestModel_PhaseStartedResetsLiveState(t *testing.T) {
-	m := updateAll(New(WithTitle("capture")),
+	m := updateAll(
+		New(WithTitle("capture")),
 		LogLine{Text: "old tail"},
 		OperationProgress{Current: 5, Total: 10, Bytes: 100, BytesTotal: 200},
 		PhaseStarted{Description: "write artifacts"},

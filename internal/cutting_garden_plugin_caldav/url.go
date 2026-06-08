@@ -32,7 +32,8 @@ func baseURLFromArg(u *url.URL) (string, error) {
 	if u.Scheme != schemeCalDAV {
 		return "", errors.ErrorWithStackf(
 			"caldav plugin: unsupported scheme %q in %q",
-			u.Scheme, u.String())
+			u.Scheme, u.String(),
+		)
 	}
 
 	// Opaque form: caldav:<inner-url>. url.Parse splits ?query off the
@@ -51,7 +52,8 @@ func baseURLFromArg(u *url.URL) (string, error) {
 			return "", errors.ErrorWithStackf(
 				"caldav plugin: inner URL must be http or https, got %q in %q\n"+
 					"hint: use `caldav:http://host/path` or `caldav:https://host/path`",
-				parsed.Scheme, u.String())
+				parsed.Scheme, u.String(),
+			)
 		}
 		return inner, nil
 	}
@@ -60,7 +62,8 @@ func baseURLFromArg(u *url.URL) (string, error) {
 		return "", errors.ErrorWithStackf(
 			"caldav plugin: empty host in %q\n"+
 				"hint: pass `caldav://host/path` or `caldav:<http-url>`",
-			u.String())
+			u.String(),
+		)
 	}
 
 	rebuilt := &url.URL{

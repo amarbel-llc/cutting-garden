@@ -82,7 +82,8 @@ func (Plugin) CaptureRoot(
 
 			for _, res := range resources {
 				entry, rel, writeErr := storeResource(
-					req.Context, req.BlobStore, c, origin, res)
+					req.Context, req.BlobStore, c, origin, res,
+				)
 				if rel == "" {
 					// Resolves to the collection root — no object to
 					// capture; skip rather than emit a pathless entry.

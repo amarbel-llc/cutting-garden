@@ -79,7 +79,8 @@ func TestGenerateCompletions_AliasesGetTheirOwnStubs(t *testing.T) {
 
 	// Canonical stubs exist and reference the canonical binary name.
 	canonicalBash, err := os.ReadFile(filepath.Join(
-		dir, "share", "bash-completion", "completions", "demo"))
+		dir, "share", "bash-completion", "completions", "demo",
+	))
 	if err != nil {
 		t.Fatalf("canonical bash stub missing: %v", err)
 	}
@@ -90,7 +91,8 @@ func TestGenerateCompletions_AliasesGetTheirOwnStubs(t *testing.T) {
 	// Alias stubs exist for all three shells and reference the alias
 	// name, NOT the canonical name.
 	aliasBash, err := os.ReadFile(filepath.Join(
-		dir, "share", "bash-completion", "completions", "dm"))
+		dir, "share", "bash-completion", "completions", "dm",
+	))
 	if err != nil {
 		t.Fatalf("alias bash stub missing: %v", err)
 	}
@@ -106,7 +108,8 @@ func TestGenerateCompletions_AliasesGetTheirOwnStubs(t *testing.T) {
 	}
 
 	aliasFish, err := os.ReadFile(filepath.Join(
-		dir, "share", "fish", "vendor_completions.d", "dm.fish"))
+		dir, "share", "fish", "vendor_completions.d", "dm.fish",
+	))
 	if err != nil {
 		t.Fatalf("alias fish stub missing: %v", err)
 	}
@@ -115,7 +118,8 @@ func TestGenerateCompletions_AliasesGetTheirOwnStubs(t *testing.T) {
 	}
 
 	aliasZsh, err := os.ReadFile(filepath.Join(
-		dir, "share", "zsh", "site-functions", "_dm"))
+		dir, "share", "zsh", "site-functions", "_dm",
+	))
 	if err != nil {
 		t.Fatalf("alias zsh stub missing: %v", err)
 	}

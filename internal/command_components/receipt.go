@@ -72,7 +72,8 @@ func ResolveRootListerPlugin(
 	if !ok {
 		return nil, nil, errors.ErrorWithStackf(
 			"scheme %q does not support listing (its plugin exposes no "+
-				"traversal)", u.Scheme)
+				"traversal)", u.Scheme,
+		)
 	}
 	return u, lister, nil
 }
@@ -117,7 +118,8 @@ func ReadReceiptBlob(
 	}
 
 	return nil, ids.TypeStruct{}, errors.ErrorWithStackf(
-		"receipt %s not found in any configured store", receiptID)
+		"receipt %s not found in any configured store", receiptID,
+	)
 }
 
 // LocateReceiptStore finds the configured store that holds the receipt
@@ -144,7 +146,8 @@ func LocateReceiptStore(
 		}
 	}
 	return blob_stores.BlobStoreInitialized{}, errors.ErrorWithStackf(
-		"receipt %s not found in any configured store", receiptID)
+		"receipt %s not found in any configured store", receiptID,
+	)
 }
 
 // PeekReceiptType reads only the `! type` line from a receipt blob's
@@ -181,7 +184,8 @@ func PeekReceiptType(
 		}
 	}
 	return "", errors.ErrorWithStackf(
-		"receipt %s: no `! type` line in metadata", receiptID)
+		"receipt %s: no `! type` line in metadata", receiptID,
+	)
 }
 
 // CheckReceiptTypeTag refuses a receipt whose wire-format type-tag
@@ -217,5 +221,6 @@ func CheckReceiptTypeTag(
 			"for scheme %q; cross-scheme %s is not supported "+
 			"(cutting-garden#18)",
 		receiptID, receiptTypeTag.StringSansOp(),
-		plugin.TypeTag(), destURL.Scheme, operation)
+		plugin.TypeTag(), destURL.Scheme, operation,
+	)
 }

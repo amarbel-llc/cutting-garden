@@ -168,7 +168,8 @@ func (cmd *Restore) runRestore(
 	if !ok {
 		return errors.ErrorWithStackf(
 			"receipt %s: unexpected blob shape %T (expected *V1)",
-			&receiptID, blob)
+			&receiptID, blob,
+		)
 	}
 
 	materializationStore, err := command_components.ResolveMaterializationStore(

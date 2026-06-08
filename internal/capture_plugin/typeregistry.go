@@ -58,7 +58,8 @@ func RegisterType(def TypeDef) {
 	}
 	if def.IANAMediaType == "" {
 		panic(errors.ErrorWithStackf(
-			"capture_plugin: type %q missing iana_media_type", def.TypeString))
+			"capture_plugin: type %q missing iana_media_type", def.TypeString,
+		))
 	}
 
 	sig, err := signatureOf(def)
@@ -70,7 +71,8 @@ func RegisterType(def TypeDef) {
 	defer typeRegistryMu.Unlock()
 	if _, ok := typeRegistry[def.TypeString]; ok {
 		panic(errors.ErrorWithStackf(
-			"capture_plugin: type %q already registered", def.TypeString))
+			"capture_plugin: type %q already registered", def.TypeString,
+		))
 	}
 	typeRegistry[def.TypeString] = typeEntry{def: def, signature: sig}
 }
@@ -116,7 +118,8 @@ func VerifyRef(r Ref) error {
 	if r.Sig != want {
 		return errors.ErrorWithStackf(
 			"capture_plugin: type-lock mismatch for %q: reference signature %s, "+
-				"this binary's signature %s", r.TypeString, r.Sig, want)
+				"this binary's signature %s", r.TypeString, r.Sig, want,
+		)
 	}
 	return nil
 }

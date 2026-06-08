@@ -28,10 +28,14 @@ func stubTimestamp(t *testing.T, ts string) {
 
 func sampleFailures() []capture_failures.FailureV1 {
 	return []capture_failures.FailureV1{
-		{Root: ".", Path: "a/b.txt", Op: capture_failures.OpBlobWrite,
-			Error: "read: permission denied"},
-		{Root: ".", Path: "c.txt", Op: capture_failures.OpStat,
-			Error: "stale handle"},
+		{
+			Root: ".", Path: "a/b.txt", Op: capture_failures.OpBlobWrite,
+			Error: "read: permission denied",
+		},
+		{
+			Root: ".", Path: "c.txt", Op: capture_failures.OpStat,
+			Error: "stale handle",
+		},
 	}
 }
 

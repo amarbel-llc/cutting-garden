@@ -109,7 +109,8 @@ func (Plugin) CaptureProtocol(
 	// unsupported transport).
 	if req.PriorReceiptDigest != "" {
 		res, ok, ierr := tryIncrementalCapture(
-			req.Context, req.BlobStore, w, remote, branch, req.PriorReceiptDigest, r)
+			req.Context, req.BlobStore, w, remote, branch, req.PriorReceiptDigest, r,
+		)
 		if ierr != nil {
 			return cutting_garden_plugins.ProtocolCaptureResult{}, ierr
 		}

@@ -19,10 +19,10 @@ import (
 // the "listtest" scheme and returns two canned container nodes.
 type listFake struct{}
 
-func (listFake) Schemes() []string                       { return []string{"listtest"} }
-func (listFake) TypeTag() string                         { return "cutting_garden-test-v1" }
-func (listFake) ValidateSource(*url.URL, string) error   { return nil }
-func (listFake) ValidateDiffDir(*url.URL, string) error  { return nil }
+func (listFake) Schemes() []string                      { return []string{"listtest"} }
+func (listFake) TypeTag() string                        { return "cutting_garden-test-v1" }
+func (listFake) ValidateSource(*url.URL, string) error  { return nil }
+func (listFake) ValidateDiffDir(*url.URL, string) error { return nil }
 func (listFake) CaptureRoot(cutting_garden_plugins.CaptureRootRequest) cutting_garden_plugins.CaptureRootResult {
 	return cutting_garden_plugins.CaptureRootResult{}
 }

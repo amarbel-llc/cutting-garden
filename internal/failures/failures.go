@@ -168,7 +168,8 @@ func writeText(w io.Writer, v *capture_failures.V1) error {
 		receipt = "(none)"
 	}
 
-	if _, err := fmt.Fprintf(w,
+	if _, err := fmt.Fprintf(
+		w,
 		"outcome: %s\nreceipt: %s\nroots: %s\ncaptured: %d  failed: %d\n",
 		outcome, receipt, strings.Join(v.Meta.Roots, " "),
 		v.Meta.Captured, v.Meta.Failed,
@@ -177,7 +178,8 @@ func writeText(w io.Writer, v *capture_failures.V1) error {
 	}
 
 	for _, f := range v.Failures {
-		if _, err := fmt.Fprintf(w,
+		if _, err := fmt.Fprintf(
+			w,
 			"%s\t%s\t%s\t%s\n", f.Op, f.Root, f.Path, f.Error,
 		); err != nil {
 			return errors.Wrap(err)

@@ -86,7 +86,8 @@ func forceBranchToOrphan(t *testing.T, dir, branch string) {
 
 	setObj := func(what string, enc interface {
 		Encode(plumbing.EncodedObject) error
-	}) plumbing.Hash {
+	},
+	) plumbing.Hash {
 		o := &plumbing.MemoryObject{}
 		if err := enc.Encode(o); err != nil {
 			t.Fatalf("encode %s: %v", what, err)
@@ -156,7 +157,8 @@ func TestDiffProtocol_FastForwardReportsAdditions(t *testing.T) {
 // commit yields only deletions (the dropped commit, tree, and blob) — no
 // fetch is needed (the live tip is already held) and no full clone.
 func TestDiffProtocol_RewindReportsDeletions(t *testing.T) {
-	dir, branch, tips := buildRepo(t,
+	dir, branch, tips := buildRepo(
+		t,
 		map[string]string{"f.txt": "v1"},
 		map[string]string{"f.txt": "v2"},
 	)

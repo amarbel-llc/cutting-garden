@@ -158,7 +158,8 @@ func (cmd *Serve) Run(req command.Request) {
 	go func() {
 		<-ctx.Done()
 		shutCtx, cancel := context.WithTimeout(
-			context.Background(), shutdownGrace)
+			context.Background(), shutdownGrace,
+		)
 		defer cancel()
 		_ = httpServer.Shutdown(shutCtx)
 	}()

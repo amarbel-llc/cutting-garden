@@ -42,7 +42,8 @@ func ParseNode(r io.Reader) (Node, error) {
 	lines := strings.Split(string(raw), "\n")
 	if len(lines) == 0 || lines[0] != hyphence.Boundary {
 		return Node{}, errors.ErrorWithStackf(
-			"capture_plugin: node does not open with %q boundary", hyphence.Boundary)
+			"capture_plugin: node does not open with %q boundary", hyphence.Boundary,
+		)
 	}
 
 	var node Node
@@ -59,7 +60,8 @@ func ParseNode(r io.Reader) (Node, error) {
 			ref, ok := parseRefLine(line)
 			if !ok {
 				return Node{}, errors.ErrorWithStackf(
-					"capture_plugin: malformed reference line %q", line)
+					"capture_plugin: malformed reference line %q", line,
+				)
 			}
 			node.Refs = append(node.Refs, ref)
 		}
@@ -67,11 +69,13 @@ func ParseNode(r io.Reader) (Node, error) {
 
 	if i >= len(lines) {
 		return Node{}, errors.ErrorWithStackf(
-			"capture_plugin: node missing closing boundary")
+			"capture_plugin: node missing closing boundary",
+		)
 	}
 	if node.Type == "" {
 		return Node{}, errors.ErrorWithStackf(
-			"capture_plugin: node missing `! type` line")
+			"capture_plugin: node missing `! type` line",
+		)
 	}
 
 	// Body: present iff a blank line follows the closing boundary.

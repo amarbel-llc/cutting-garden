@@ -147,7 +147,8 @@ func TestGenerateUtilityManpage_AliasesInNameAndSymlinked(t *testing.T) {
 		t.Fatalf("GenerateUtilityManpage: %v", err)
 	}
 	body, err := os.ReadFile(filepath.Join(
-		dir, "share", "man", "man1", "demo.1"))
+		dir, "share", "man", "man1", "demo.1",
+	))
 	if err != nil {
 		t.Fatalf("missing canonical manpage: %v", err)
 	}
@@ -157,7 +158,8 @@ func TestGenerateUtilityManpage_AliasesInNameAndSymlinked(t *testing.T) {
 
 	for _, alias := range []string{"dm", "dem"} {
 		linkPath := filepath.Join(
-			dir, "share", "man", "man1", alias+".1")
+			dir, "share", "man", "man1", alias+".1",
+		)
 		target, err := os.Readlink(linkPath)
 		if err != nil {
 			t.Errorf("expected %s.1 to be a symlink: %v", alias, err)
@@ -183,7 +185,8 @@ func TestGenerateUtilityManpage_AliasSymlinkIsIdempotent(t *testing.T) {
 		}
 	}
 	target, err := os.Readlink(filepath.Join(
-		dir, "share", "man", "man1", "dm.1"))
+		dir, "share", "man", "man1", "dm.1",
+	))
 	if err != nil {
 		t.Fatalf("symlink missing after second run: %v", err)
 	}

@@ -55,13 +55,15 @@ func loadReceiptPayload(
 	if kind, ok := capture_plugin.KindFromReceiptType(receipt.Type); !ok || kind != captureKind {
 		return capture_plugin.Node{}, payloadMeta{}, errors.ErrorWithStackf(
 			"git plugin: receipt %s is not a git receipt (type %q)",
-			receiptDigest, receipt.Type)
+			receiptDigest, receipt.Type,
+		)
 	}
 
 	payloadRef, ok := receipt.RefByAlias("payload")
 	if !ok {
 		return capture_plugin.Node{}, payloadMeta{}, errors.ErrorWithStackf(
-			"git plugin: receipt %s has no payload reference", receiptDigest)
+			"git plugin: receipt %s has no payload reference", receiptDigest,
+		)
 	}
 	// Honor the FDR-0001 type lock: a signed reference whose signature
 	// disagrees with this binary's type definition is rejected.
@@ -87,7 +89,8 @@ func loadReceiptPayload(
 	}
 	if meta.Tip == "" {
 		return capture_plugin.Node{}, payloadMeta{}, errors.ErrorWithStackf(
-			"git plugin: payload %s records no tip", payloadRef.Digest)
+			"git plugin: payload %s records no tip", payloadRef.Digest,
+		)
 	}
 
 	return payload, meta, nil
