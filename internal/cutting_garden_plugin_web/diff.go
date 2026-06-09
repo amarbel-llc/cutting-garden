@@ -19,12 +19,19 @@ import (
 func (Plugin) DiffProtocol(
 	req cutting_garden_plugins.ProtocolDiffRequest,
 ) (cutting_garden_plugins.ProtocolDiffResult, error) {
-	storedPayload, err := receiptPayloadRef(req.BlobStore, req.ReceiptDigest)
+	// Parse the stored receipt once and derive both the payload ref and the
+	// recorded format from it, rather than re-reading the same receipt blob.
+	storedReceipt, err := readNode(req.BlobStore, req.ReceiptDigest)
 	if err != nil {
 		return cutting_garden_plugins.ProtocolDiffResult{}, err
 	}
 
-	format, err := receiptFormat(req.BlobStore, req.ReceiptDigest)
+	storedPayload, err := payloadRefFromReceipt(storedReceipt, req.ReceiptDigest)
+	if err != nil {
+		return cutting_garden_plugins.ProtocolDiffResult{}, err
+	}
+
+	format, err := formatFromReceipt(req.BlobStore, storedReceipt, req.ReceiptDigest)
 	if err != nil {
 		return cutting_garden_plugins.ProtocolDiffResult{}, err
 	}

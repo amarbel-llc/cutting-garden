@@ -30,8 +30,9 @@ func readNode(
 	return
 }
 
-// receiptPayloadRef walks a web receipt to its single payload reference,
-// verifying the receipt kind and the payload's type lock along the way.
+// receiptPayloadRef reads a web receipt by digest and walks it to its
+// single payload reference. A thin wrapper over payloadRefFromReceipt for
+// callers that hold only the digest (restore, the live-capture diff path).
 func receiptPayloadRef(
 	store blob_stores.BlobStoreInitialized,
 	receiptDigest string,
@@ -40,6 +41,17 @@ func receiptPayloadRef(
 	if err != nil {
 		return capture_plugin.Ref{}, err
 	}
+	return payloadRefFromReceipt(receipt, receiptDigest)
+}
+
+// payloadRefFromReceipt walks an already-read web receipt to its single
+// payload reference, verifying the receipt kind and the payload's type lock
+// along the way. Splitting the read out lets DiffProtocol parse the stored
+// receipt once and derive both the payload ref and the format from it.
+func payloadRefFromReceipt(
+	receipt capture_plugin.Node,
+	receiptDigest string,
+) (capture_plugin.Ref, error) {
 	if kind, ok := capture_plugin.KindFromReceiptType(receipt.Type); !ok || kind != captureKind {
 		return capture_plugin.Ref{}, errors.ErrorWithStackf(
 			"web plugin: receipt %s is not a web receipt (type %q)",
@@ -70,6 +82,18 @@ func receiptFormat(
 	if err != nil {
 		return "", err
 	}
+	return formatFromReceipt(store, receipt, receiptDigest)
+}
+
+// formatFromReceipt recovers the capture format from an already-read
+// receipt by walking receipt → identity → invocation. The receipt node is
+// passed in so DiffProtocol need not re-read it; identity and invocation
+// are still fetched from the store.
+func formatFromReceipt(
+	store blob_stores.BlobStoreInitialized,
+	receipt capture_plugin.Node,
+	receiptDigest string,
+) (string, error) {
 	idRef, ok := receipt.RefByAlias("identity")
 	if !ok {
 		return "", errors.ErrorWithStackf(
