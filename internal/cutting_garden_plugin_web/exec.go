@@ -57,6 +57,13 @@ func runCaptureBatch(ctx context.Context, input batchInput) (batchOutput, error)
 	cmd.Stderr = stderrTail
 
 	if runErr := cmd.Run(); runErr != nil {
+		// A canceled context (SIGINT/SIGTERM) kills chrest, surfacing as a
+		// generic exit error. Report the cancellation rather than mislabeling
+		// an intentional interrupt as a chrest crash.
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return batchOutput{}, errors.Wrapf(ctxErr,
+				"web plugin: chrest capture-batch canceled")
+		}
 		return batchOutput{}, errors.ErrorWithStackf(
 			"web plugin: chrest capture-batch failed (%v)\nstderr-tail: %s",
 			runErr, stderrTail.String(),

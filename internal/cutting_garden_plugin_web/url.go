@@ -23,6 +23,17 @@ func captureTarget(u *url.URL, raw string) (string, error) {
 		)
 	}
 
+	// Reject the authority form `web://host/...`: url.Parse treats the host
+	// as web's own authority and drops the inner scheme, so http vs https is
+	// ambiguous. Point the user at the opaque form, which carries the inner
+	// URL — scheme included — verbatim.
+	if u.Opaque == "" && u.Host != "" {
+		return "", errors.BadRequestf(
+			"web plugin: use the opaque form web:<http(s)-url> "+
+				"(e.g. web:https://%s%s), not web://<host>", u.Host, u.Path,
+		)
+	}
+
 	// Derive the inner URL from raw rather than u.Opaque: the outer parse
 	// peels a `?query`/`#fragment` off into u.RawQuery/u.Fragment, so
 	// u.Opaque drops them. Stripping the `web:` prefix off raw preserves

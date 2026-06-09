@@ -2,6 +2,7 @@ package cutting_garden_plugin_web
 
 import (
 	"os"
+	"path/filepath"
 
 	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
 	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
@@ -32,6 +33,22 @@ func (Plugin) RestoreProtocol(
 	dest := req.RawDest
 	if dest == "" {
 		return errors.BadRequestf("web plugin: restore requires a destination path")
+	}
+
+	// Refuse an existing destination and create any missing parent dirs,
+	// matching the git binding's restore precondition (assertDestAbsent +
+	// MkdirAll) so restore never silently clobbers an existing file and
+	// works when the parent directory does not yet exist.
+	if _, statErr := os.Lstat(dest); statErr == nil {
+		return errors.BadRequestf(
+			"web plugin: destination %s already exists\n"+
+				"hint: choose a destination that does not exist", dest,
+		)
+	} else if !os.IsNotExist(statErr) {
+		return errors.Wrapf(statErr, "web plugin: stat destination %s", dest)
+	}
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		return errors.Wrapf(err, "web plugin: create destination parent for %s", dest)
 	}
 
 	if err := os.WriteFile(dest, payload.Body, 0o644); err != nil {
