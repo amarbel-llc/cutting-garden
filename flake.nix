@@ -184,10 +184,11 @@
 
           # makeWrapper wraps the installed binaries so the external
           # tools a plugin shells out to via exec.LookPath are on PATH at
-          # install time. Today that is just `yt-dlp`
-          # (internal/cutting_garden_plugin_ytdlp). The git plugin is pure
-          # Go (go-git) and has no runtime `git` dependency, so git is no
-          # longer wrapped into the closure.
+          # install time: `yt-dlp`
+          # (internal/cutting_garden_plugin_ytdlp) plus `cdparanoia` and
+          # `ddrescue` (internal/cutting_garden_plugin_optical). The git
+          # plugin is pure Go (go-git) and has no runtime `git`
+          # dependency, so git is no longer wrapped into the closure.
           nativeBuildInputs = [ pkgs.makeWrapper ];
 
           # Phase 5: generate manpages + shell completion stubs, then
@@ -200,7 +201,13 @@
             rm $out/bin/cutting-garden-gen
             for bin in cutting-garden cg; do
               wrapProgram $out/bin/$bin \
-                --prefix PATH : ${pkgsUpstream.yt-dlp}/bin
+                --prefix PATH : ${
+                  pkgs.lib.makeBinPath [
+                    pkgsUpstream.yt-dlp
+                    pkgsUpstream.cdparanoia
+                    pkgsUpstream.ddrescue
+                  ]
+                }
             done
           '';
 
@@ -296,6 +303,12 @@
             # `go run ./cmd/cutting-garden capture ytdlp:…` from inside
             # the devshell behaves the same as a nix-built invocation.
             pkgsUpstream.yt-dlp
+            # cdparanoia + ddrescue back the optical plugin
+            # (internal/cutting_garden_plugin_optical), matching the wrap
+            # in the installed binary so `capture optical:/dev/sr0` from
+            # the devshell behaves the same as a nix-built invocation.
+            pkgsUpstream.cdparanoia
+            pkgsUpstream.ddrescue
             # The git plugin itself is pure Go (go-git) and needs no `git`
             # binary at runtime. git is kept here only as test scaffolding:
             # internal/cutting_garden_plugin_git's integration tests build
