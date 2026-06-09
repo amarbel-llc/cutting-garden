@@ -19,7 +19,8 @@ func captureTarget(u *url.URL, raw string) (string, error) {
 	}
 	if u.Scheme != "web" {
 		return "", errors.BadRequestf(
-			"web plugin: unsupported scheme %q (use web:<http(s)-url>)", u.Scheme)
+			"web plugin: unsupported scheme %q (use web:<http(s)-url>)", u.Scheme,
+		)
 	}
 
 	// Derive the inner URL from raw rather than u.Opaque: the outer parse
@@ -37,7 +38,8 @@ func captureTarget(u *url.URL, raw string) (string, error) {
 	}
 	if iu.Scheme != "http" && iu.Scheme != "https" {
 		return "", errors.BadRequestf(
-			"web plugin: target %q must be http(s), got scheme %q", inner, iu.Scheme)
+			"web plugin: target %q must be http(s), got scheme %q", inner, iu.Scheme,
+		)
 	}
 	if iu.Host == "" {
 		return "", errors.BadRequestf("web plugin: target %q has no host", inner)

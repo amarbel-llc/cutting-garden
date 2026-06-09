@@ -28,7 +28,6 @@ type ProtocolCaptureRequest struct {
 	// ignore it.
 	StoreName string
 
-
 	// PriorReceiptDigest, when non-empty, is the markl id of the most
 	// recent receipt the orchestrator found for this same source. A
 	// protocol capture plugin MAY use it to fetch only the objects that

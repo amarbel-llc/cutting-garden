@@ -22,7 +22,8 @@ func (Plugin) CaptureProtocol(
 	if !validFormat(format) {
 		return cutting_garden_plugins.ProtocolCaptureResult{}, errors.BadRequestf(
 			"web plugin: unknown capture format %q (set %s to a supported format)",
-			format, webFormatEnv)
+			format, webFormatEnv,
+		)
 	}
 
 	receiptID, err := capture(req.Context, req.StoreName, target, format)
@@ -68,21 +69,25 @@ func capture(
 	if len(out.Errors) > 0 {
 		return "", errors.ErrorWithStackf(
 			"web plugin: chrest batch error (%s): %s",
-			out.Errors[0].Kind, out.Errors[0].Message)
+			out.Errors[0].Kind, out.Errors[0].Message,
+		)
 	}
 	if len(out.Captures) != 1 {
 		return "", errors.ErrorWithStackf(
-			"web plugin: chrest returned %d capture results, want 1", len(out.Captures))
+			"web plugin: chrest returned %d capture results, want 1", len(out.Captures),
+		)
 	}
 
 	c := out.Captures[0]
 	if c.Error != nil {
 		return "", errors.ErrorWithStackf(
-			"web plugin: capture failed (%s): %s", c.Error.Kind, c.Error.Message)
+			"web plugin: capture failed (%s): %s", c.Error.Kind, c.Error.Message,
+		)
 	}
 	if c.Receipt == nil || c.Receipt.Id == "" {
 		return "", errors.ErrorWithStackf(
-			"web plugin: chrest returned no receipt for capture %q", c.Name)
+			"web plugin: chrest returned no receipt for capture %q", c.Name,
+		)
 	}
 
 	return c.Receipt.Id, nil
@@ -98,6 +103,7 @@ func (Plugin) CaptureRoot(
 	req cutting_garden_plugins.CaptureRootRequest,
 ) cutting_garden_plugins.CaptureRootResult {
 	req.Sink.Failure(req.RawArg, errors.ErrorWithStackf(
-		"web plugin: capture uses the RFC 0002 protocol path, not the EntryV1 path"))
+		"web plugin: capture uses the RFC 0002 protocol path, not the EntryV1 path",
+	))
 	return cutting_garden_plugins.CaptureRootResult{FailCount: 1}
 }

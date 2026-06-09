@@ -43,12 +43,14 @@ func receiptPayloadRef(
 	if kind, ok := capture_plugin.KindFromReceiptType(receipt.Type); !ok || kind != captureKind {
 		return capture_plugin.Ref{}, errors.ErrorWithStackf(
 			"web plugin: receipt %s is not a web receipt (type %q)",
-			receiptDigest, receipt.Type)
+			receiptDigest, receipt.Type,
+		)
 	}
 	payloadRef, ok := receipt.RefByAlias("payload")
 	if !ok {
 		return capture_plugin.Ref{}, errors.ErrorWithStackf(
-			"web plugin: receipt %s has no payload reference", receiptDigest)
+			"web plugin: receipt %s has no payload reference", receiptDigest,
+		)
 	}
 	if err := capture_plugin.VerifyRef(payloadRef); err != nil {
 		return capture_plugin.Ref{}, err
@@ -71,7 +73,8 @@ func receiptFormat(
 	idRef, ok := receipt.RefByAlias("identity")
 	if !ok {
 		return "", errors.ErrorWithStackf(
-			"web plugin: receipt %s has no identity reference", receiptDigest)
+			"web plugin: receipt %s has no identity reference", receiptDigest,
+		)
 	}
 	identity, err := readNode(store, idRef.Digest)
 	if err != nil {
@@ -80,7 +83,8 @@ func receiptFormat(
 	invRef, ok := identity.RefByAlias("invocation")
 	if !ok {
 		return "", errors.ErrorWithStackf(
-			"web plugin: identity %s has no invocation reference", idRef.Digest)
+			"web plugin: identity %s has no invocation reference", idRef.Digest,
+		)
 	}
 	inv, err := readNode(store, invRef.Digest)
 	if err != nil {
@@ -94,7 +98,8 @@ func receiptFormat(
 	}
 	if body.Format == "" {
 		return "", errors.ErrorWithStackf(
-			"web plugin: invocation %s records no format", invRef.Digest)
+			"web plugin: invocation %s records no format", invRef.Digest,
+		)
 	}
 	return body.Format, nil
 }

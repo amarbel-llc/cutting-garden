@@ -48,5 +48,6 @@ func (Plugin) ScanForDiff(
 	cutting_garden_plugins.DiffScanRequest,
 ) ([]capture_receipt.EntryV1, error) {
 	return nil, errors.ErrorWithStackf(
-		"web plugin: diff uses the RFC 0002 protocol path, not the EntryV1 path")
+		"web plugin: diff uses the RFC 0002 protocol path, not the EntryV1 path",
+	)
 }

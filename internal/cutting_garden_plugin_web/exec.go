@@ -40,7 +40,8 @@ func runCaptureBatch(ctx context.Context, input batchInput) (batchOutput, error)
 	if err != nil {
 		return batchOutput{}, errors.ErrorWithStackf(
 			"web plugin: %s not found on PATH (%v); enter the devshell or install chrest",
-			capturerBinary, err)
+			capturerBinary, err,
+		)
 	}
 
 	raw, err := json.Marshal(input)
@@ -58,7 +59,8 @@ func runCaptureBatch(ctx context.Context, input batchInput) (batchOutput, error)
 	if runErr := cmd.Run(); runErr != nil {
 		return batchOutput{}, errors.ErrorWithStackf(
 			"web plugin: chrest capture-batch failed (%v)\nstderr-tail: %s",
-			runErr, stderrTail.String())
+			runErr, stderrTail.String(),
+		)
 	}
 
 	var out batchOutput
@@ -68,7 +70,8 @@ func runCaptureBatch(ctx context.Context, input batchInput) (batchOutput, error)
 	}
 	if out.Schema != batchSchema {
 		return batchOutput{}, errors.ErrorWithStackf(
-			"web plugin: chrest batch output schema %q, want %q", out.Schema, batchSchema)
+			"web plugin: chrest batch output schema %q, want %q", out.Schema, batchSchema,
+		)
 	}
 	return out, nil
 }
