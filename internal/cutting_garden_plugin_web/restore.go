@@ -1,6 +1,7 @@
 package cutting_garden_plugin_web
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 
@@ -20,13 +21,8 @@ func (Plugin) ProtocolKind() string { return captureKind }
 // chrest subprocess.
 func (Plugin) RestoreProtocol(
 	req cutting_garden_plugins.ProtocolRestoreRequest,
-) error {
+) (err error) {
 	payloadRef, err := receiptPayloadRef(req.BlobStore, req.ReceiptDigest)
-	if err != nil {
-		return err
-	}
-
-	payload, err := capture_plugin.ReadNode(req.BlobStore, payloadRef.Digest)
 	if err != nil {
 		return err
 	}
@@ -48,11 +44,27 @@ func (Plugin) RestoreProtocol(
 	} else if !os.IsNotExist(statErr) {
 		return errors.Wrapf(statErr, "web plugin: stat destination %s", dest)
 	}
-	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
-		return errors.Wrapf(err, "web plugin: create destination parent for %s", dest)
+	if mkErr := os.MkdirAll(filepath.Dir(dest), 0o755); mkErr != nil {
+		return errors.Wrapf(mkErr, "web plugin: create destination parent for %s", dest)
 	}
 
-	if err := os.WriteFile(dest, payload.Body, 0o644); err != nil {
+	// Stream the payload body straight to disk rather than buffering it:
+	// the web payload node body IS the captured artifact (PDF/PNG/MHTML)
+	// and can be many MB. OpenNodeBody parses the node framing and returns
+	// a reader positioned at the body.
+	_, body, err := capture_plugin.OpenNodeBody(req.BlobStore, payloadRef.Digest)
+	if err != nil {
+		return err
+	}
+	defer errors.DeferredCloser(&err, body)
+
+	f, err := os.Create(dest)
+	if err != nil {
+		return errors.Wrapf(err, "web plugin: create %s", dest)
+	}
+	defer errors.DeferredCloser(&err, f)
+
+	if _, err = io.Copy(f, body); err != nil {
 		return errors.Wrapf(err, "web plugin: write payload to %s", dest)
 	}
 	return nil

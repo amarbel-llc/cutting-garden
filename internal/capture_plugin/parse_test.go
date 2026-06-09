@@ -2,6 +2,7 @@ package capture_plugin
 
 import (
 	"bytes"
+	"io"
 	"testing"
 )
 
@@ -39,6 +40,50 @@ func TestParseNode_RoundTripsBuildNode(t *testing.T) {
 	}
 	if string(bytes.TrimSpace(gotB.Body)) != string(body) {
 		t.Errorf("body round-trip = %q, want %q", gotB.Body, body)
+	}
+}
+
+func TestParseNodeHeader_BodyMatchesParseNode(t *testing.T) {
+	refs := []Ref{
+		{Alias: "payload", Digest: "sha256-pay", TypeString: "jcs-git-capture-payload-v1"},
+	}
+	cases := map[string][]byte{
+		"nil body":            nil,
+		"json body":           []byte(`{"object_count":3,"tip":"abc"}`),
+		"no trailing newline": []byte("no-newline-here"),
+		// Embedded newline + non-text bytes + no trailing newline: the
+		// stream path must reproduce these byte-for-byte, not line-split.
+		"binary body": {0x00, 0x01, 0x02, 0xff, '\n', 'x'},
+	}
+	for name, body := range cases {
+		t.Run(name, func(t *testing.T) {
+			blob := BuildNode("jcs-git-capture-payload-v1", refs, body)
+
+			want, err := ParseNode(bytes.NewReader(blob))
+			if err != nil {
+				t.Fatalf("ParseNode: %v", err)
+			}
+
+			gotNode, bodyReader, err := ParseNodeHeader(bytes.NewReader(blob))
+			if err != nil {
+				t.Fatalf("ParseNodeHeader: %v", err)
+			}
+			gotBody, err := io.ReadAll(bodyReader)
+			if err != nil {
+				t.Fatalf("read streamed body: %v", err)
+			}
+
+			if gotNode.Type != want.Type {
+				t.Errorf("type = %q, want %q", gotNode.Type, want.Type)
+			}
+			if len(gotNode.Refs) != len(want.Refs) {
+				t.Errorf("refs len = %d, want %d", len(gotNode.Refs), len(want.Refs))
+			}
+			// The streamed body must equal ParseNode's Body byte-for-byte.
+			if !bytes.Equal(gotBody, want.Body) {
+				t.Errorf("streamed body = %q, want ParseNode body %q", gotBody, want.Body)
+			}
+		})
 	}
 }
 
