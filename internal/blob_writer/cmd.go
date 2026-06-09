@@ -44,6 +44,11 @@ func (*WriteBlob) GetDescription() command.Description {
 	}
 }
 
+// CommandHidden marks `__write-blob` as framework plumbing: chrest invokes
+// it as its writer.cmd, so it must stay dispatchable but never appear in
+// the usage banner, the manpages, or tab-completion candidates.
+func (*WriteBlob) CommandHidden() {}
+
 func (cmd *WriteBlob) SetFlagDefinitions(flagSet interfaces.CLIFlagDefinitions) {
 	flagSet.StringVar(&cmd.Store, "store", "",
 		"destination blob store name (empty selects the default store)")
@@ -70,6 +75,17 @@ func (cmd *WriteBlob) Run(req command.Request) {
 	id, size, err := plugin_blob_io.WriteReaderBlob(ctx, store, os.Stdin)
 	if err != nil {
 		errors.ContextCancelWithError(ctx, err)
+		return
+	}
+
+	// An RFC 0002 node blob is always framed (type header + body), so it
+	// is never zero bytes. A zero-byte read means the writer closed stdin
+	// without sending anything — a truncated/empty transfer — so refuse it
+	// rather than emit a receipt for an empty blob the caller would treat
+	// as a successfully written node.
+	if size == 0 {
+		errors.ContextCancelWithBadRequestf(ctx,
+			"__write-blob: refusing empty stdin (no node bytes received)")
 		return
 	}
 

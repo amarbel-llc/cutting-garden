@@ -8,15 +8,21 @@ import (
 )
 
 // GenerateManpages walks the registered command set and emits a roff
-// man(1) page per subcommand under <outDir>/share/man/man1/. Each
-// page surfaces whatever opt-in interfaces the command implements
-// (Description, Args, EnvVars, Files, Examples, SeeAlso).
+// man(1) page per user-facing subcommand under <outDir>/share/man/man1/.
+// Each page surfaces whatever opt-in interfaces the command implements
+// (Description, Args, EnvVars, Files, Examples, SeeAlso). Commands that
+// implement CommandHidden (framework plumbing like `complete` and
+// `__write-blob`) are skipped — they get no page, matching their absence
+// from the toplevel SUBCOMMANDS/SEE ALSO list.
 func (utility Utility) GenerateManpages(outDir string) error {
 	manDir := filepath.Join(outDir, "share", "man", "man1")
 	if err := os.MkdirAll(manDir, 0o755); err != nil {
 		return err
 	}
 	for name, cmd := range utility.AllCmds() {
+		if isHidden(cmd) {
+			continue
+		}
 		body, err := utility.renderManpage(name, cmd)
 		if err != nil {
 			return err

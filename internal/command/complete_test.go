@@ -23,6 +23,12 @@ type plainCmd struct{}
 
 func (plainCmd) Run(req Request) {}
 
+// hiddenCmd opts out of user-facing surfaces via CommandHidden.
+type hiddenCmd struct{}
+
+func (hiddenCmd) Run(req Request) {}
+func (hiddenCmd) CommandHidden()  {}
+
 func TestComplete_BareInvocation_ListsSubcommands(t *testing.T) {
 	u := MakeUtility("test", nil)
 	u.AddCmd("alpha", plainCmd{})
@@ -34,6 +40,28 @@ func TestComplete_BareInvocation_ListsSubcommands(t *testing.T) {
 	out := buf.String()
 	if !strings.Contains(out, "alpha") || !strings.Contains(out, "beta") {
 		t.Errorf("bare complete did not list subcommands: %q", out)
+	}
+}
+
+func TestComplete_BareInvocation_OmitsHiddenSubcommands(t *testing.T) {
+	u := MakeUtility("test", nil)
+	u.AddCmd("alpha", plainCmd{})
+	u.AddCmd("__hidden", hiddenCmd{})
+
+	var buf bytes.Buffer
+	captureComplete(t, &u, &buf, []string{})
+
+	out := buf.String()
+	if !strings.Contains(out, "alpha") {
+		t.Errorf("visible subcommand missing from completion: %q", out)
+	}
+	// Both __hidden and the RegisterComplete-added `complete` are
+	// CommandHidden and must not appear as completion candidates.
+	if strings.Contains(out, "__hidden") {
+		t.Errorf("hidden subcommand leaked into completion: %q", out)
+	}
+	if strings.Contains(out, "complete") {
+		t.Errorf("complete subcommand leaked into completion: %q", out)
 	}
 }
 

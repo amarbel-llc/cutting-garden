@@ -8,17 +8,12 @@ import (
 	"strings"
 )
 
-// completeSubcommandName is the hidden completion subcommand
-// registered by RegisterComplete. Excluded from the toplevel
-// utility manpage's SUBCOMMANDS section — it's framework machinery,
-// not user-facing.
-const completeSubcommandName = "complete"
-
 // GenerateUtilityManpage writes the toplevel <utility>.1 manpage to
 // <outDir>/share/man/man1/<utility>.1. The page surfaces the utility
 // name plus any registered aliases, its global synopsis, the
-// user-facing subcommand list (sorted alphabetically, with `complete`
-// filtered out), and a SEE ALSO list of the per-subcommand manpages.
+// user-facing subcommand list (sorted alphabetically, with CommandHidden
+// commands filtered out), and a SEE ALSO list of the per-subcommand
+// manpages.
 //
 // Per-subcommand pages are written separately by GenerateManpages;
 // the generator binary calls both in sequence.
@@ -90,14 +85,13 @@ type subcommandSummary struct {
 	short string
 }
 
-// userFacingSubcommands returns subcommands sorted alphabetically
-// with the hidden `complete` subcommand filtered out. Defensive
-// against future hidden subcommands by name-match; if more accrue,
-// promote to an opt-in "hidden" interface.
+// userFacingSubcommands returns subcommands sorted alphabetically with
+// commands that implement CommandHidden (framework plumbing like
+// `complete` and `__write-blob`) filtered out.
 func (utility Utility) userFacingSubcommands() []subcommandSummary {
 	var out []subcommandSummary
 	for name, cmd := range utility.AllCmds() {
-		if name == completeSubcommandName {
+		if isHidden(cmd) {
 			continue
 		}
 		short := "(no description)"

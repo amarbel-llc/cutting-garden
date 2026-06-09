@@ -30,15 +30,26 @@ function install_emits_toplevel_manpage { # @test
 }
 
 function install_emits_subcommand_manpages { # @test
-  # One .1.gz per user-facing subcommand. `complete` is generated
-  # too (GenerateManpages doesn't filter it), included here for
-  # parity with what's actually on disk.
+  # One .1.gz per user-facing subcommand.
   local prefix
   prefix="$(install_prefix)"
 
-  for sub in capture restore diff serve complete; do
+  for sub in capture restore diff serve failures health list; do
     [[ -f "$prefix/share/man/man1/cutting-garden-$sub.1.gz" ]] ||
       fail "missing manpage for subcommand '$sub' at $prefix/share/man/man1/cutting-garden-$sub.1.gz"
+  done
+}
+
+function install_omits_hidden_subcommand_manpages { # @test
+  # Hidden commands (CommandHidden: `complete`, `__write-blob`) are
+  # framework plumbing — they get no per-subcommand manpage, matching
+  # their absence from the toplevel SUBCOMMANDS/SEE ALSO list.
+  local prefix
+  prefix="$(install_prefix)"
+
+  for sub in complete __write-blob; do
+    [[ ! -e "$prefix/share/man/man1/cutting-garden-$sub.1.gz" ]] ||
+      fail "hidden subcommand '$sub' should not have a manpage at $prefix/share/man/man1/cutting-garden-$sub.1.gz"
   done
 }
 

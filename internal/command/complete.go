@@ -42,6 +42,11 @@ func (c *completeCmd) GetDescription() Description {
 	return Description{Short: "complete a command-line"}
 }
 
+// CommandHidden marks `complete` as framework plumbing: the shell stubs
+// invoke it directly, so it never needs to appear in the usage banner,
+// the manpages, or tab-completion candidates.
+func (c *completeCmd) CommandHidden() {}
+
 func (c *completeCmd) SetFlagDefinitions(
 	flagSet interfaces.CLIFlagDefinitions,
 ) {
@@ -95,6 +100,9 @@ func (c *completeCmd) Run(req Request) {
 func (c *completeCmd) completeSubcommands() {
 	out := completeOut()
 	for name, subcmd := range c.util.AllCmds() {
+		if isHidden(subcmd) {
+			continue
+		}
 		if d, ok := subcmd.(CommandWithDescription); ok {
 			fmt.Fprintf(out, "%s\t%s\n", name, d.GetDescription().Short)
 		} else {
