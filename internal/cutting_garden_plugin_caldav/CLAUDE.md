@@ -21,11 +21,18 @@ materializes calendar state, it does not offer interactive mutation.
 
 ## Credentials
 
-The endpoint host comes from the URL; credentials come from the URL's
-userinfo when present, otherwise from `CALDAV_USERNAME` /
-`CALDAV_PASSWORD` (the same env vars bob's caldav used). A request with
-no resolvable credentials is sent unauthenticated — the server's 401 is
+The endpoint host comes from the URL; credentials resolve by the RFC 0007
+precedence (`connectionFromArg`, `config.go`): the URL's userinfo when
+present, else a configured account matched by host + longest path prefix
+(`[[caldav.accounts]]`, injected via `SetConfiguredAccounts`; password
+from the account's `password_env`), else the global `CALDAV_USERNAME` /
+`CALDAV_PASSWORD` (the same env vars bob's caldav used). A request with no
+resolvable credentials is sent unauthenticated — the server's 401 is
 surfaced as the capture/diff/restore error.
+
+`Roots` (`config.go`) exposes the configured accounts' endpoints as
+credential-free traversal roots for the `RootProvider` capability
+(`list`/`mcp` with no argument). See [RFC 0007](../../docs/rfcs/0007-config-subsystem.md).
 
 ## What lives here
 

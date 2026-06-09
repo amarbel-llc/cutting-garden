@@ -27,20 +27,16 @@ func init() {
 }
 
 // driveMCP dispatches the mcp subcommand through a fresh Utility (flag
-// parsing included), returning the exit code. The happy path starts a
-// long-lived stdio server, so these cases exercise only the pre-server
-// argument validation that returns before the transport opens.
+// parsing included) with explicit endpoint args, returning the exit code.
+// These cases exercise only the explicit-override path's pre-server
+// argument validation that returns before the transport opens. The no-arg
+// (config-driven) path starts a long-lived stdio server, so it is not
+// driven here; the provider round-trips in server_test cover it.
 func driveMCP(t *testing.T, args ...string) int {
 	t.Helper()
 	u := command.MakeUtility("cg-test", nil)
 	u.AddCmd("mcp", New())
 	return u.Run(append([]string{"cg-test", "mcp"}, args...))
-}
-
-func TestRun_MissingArgIsUsageError(t *testing.T) {
-	if code := driveMCP(t); code != 64 {
-		t.Fatalf("exit = %d, want 64 (EX_USAGE for no endpoint)", code)
-	}
 }
 
 func TestRun_UnknownSchemeIsUsageError(t *testing.T) {

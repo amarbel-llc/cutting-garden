@@ -134,10 +134,16 @@ func TestRun_SchemeNotListableIsTrouble(t *testing.T) {
 	}
 }
 
-func TestRun_MissingArgIsUsageError(t *testing.T) {
+// TestRun_NoArgListsConfiguredRoots pins the RFC 0007 contract change: a
+// no-argument `list` no longer errors — it lists the aggregated roots. With
+// an isolated (absent) config and no RootProvider fakes registered here,
+// the listing is empty, but the invocation succeeds (exit 0).
+func TestRun_NoArgListsConfiguredRoots(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir()) // no config file → empty config
 	var buf bytes.Buffer
-	if code := driveList(t, &buf); code != 64 {
-		t.Fatalf("exit = %d, want 64 (EX_USAGE)", code)
+	if code := driveList(t, &buf); code != 0 {
+		t.Fatalf("exit = %d, want 0 (no-arg lists roots); output:\n%s",
+			code, buf.String())
 	}
 }
 

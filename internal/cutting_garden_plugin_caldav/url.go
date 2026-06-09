@@ -92,11 +92,21 @@ func connectionFromArg(u *url.URL) (base, username, password string, err error) 
 	}
 
 	if parsed.User != nil {
+		// Step 1: explicit URI userinfo wins (RFC 0007 § Credential
+		// Resolution). Strip it from base so the connection target is
+		// credential-free.
 		username = parsed.User.Username()
 		password, _ = parsed.User.Password()
 		parsed.User = nil
 		base = parsed.String()
+	} else if acct, ok := matchAccount(parsed.Host, parsed.Path); ok {
+		// Step 2: a configured account matching this node's host + longest
+		// path prefix supplies the credentials; the password comes from the
+		// account's PasswordEnv.
+		username = acct.Username
+		password = acct.Password()
 	} else {
+		// Step 3: fall back to the global environment (today's behavior).
 		username = os.Getenv(envUsername)
 		password = os.Getenv(envPassword)
 	}

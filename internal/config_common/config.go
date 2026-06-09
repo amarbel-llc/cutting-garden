@@ -1,0 +1,51 @@
+// Package config_common holds the shared, plugin-neutral configuration
+// types for cutting-garden's config subsystem (RFC 0007): a Root (a
+// plugin entry point with no credentials) and an Account (a credentialed
+// root). Plugin packages embed these in their own config sections.
+//
+// This package imports neither internal/cgconfig nor any plugin package,
+// so it is the leaf that keeps the config aggregator (cgconfig, which
+// imports the plugins for their delegated sections) and the plugins
+// themselves free of an import cycle (RFC 0007 § Package Layering).
+package config_common
+
+import "os"
+
+// Root is a plugin entry point with no credentials — a "preferred root"
+// for plugins that cannot enumerate roots from ambient state (e.g. a
+// web/yt-dlp plugin). Name is a label unique within its plugin section;
+// URL is the endpoint in the form the plugin accepts on the command line
+// (e.g. "caldav://dav.host/dav/me/").
+//
+// Root carries no tommy codegen directive of its own: it is consumed
+// today only as Account's embedded base, and tommy promotes an embedded
+// struct's tagged fields directly into the embedder's generated code. A
+// preferred-roots plugin that delegates to a bare []Root will add the
+// `//go:generate tommy generate` directive to Root then.
+type Root struct {
+	Name string `toml:"name"`
+	URL  string `toml:"url"`
+}
+
+// Account is a credentialed root (a Root plus credential indirection) for
+// plugins whose roots require authentication (caldav, and the planned
+// sftp/webdav/github). PasswordEnv names the environment variable holding
+// the password; the secret itself is never stored in the config file
+// (RFC 0007 § Security Considerations).
+//
+//go:generate tommy generate
+type Account struct {
+	Root
+	Username    string `toml:"username,omitempty"`
+	PasswordEnv string `toml:"password_env,omitempty"`
+}
+
+// Password resolves the account's password from the environment variable
+// named by PasswordEnv, or "" when PasswordEnv is empty or the variable
+// is unset.
+func (a Account) Password() string {
+	if a.PasswordEnv == "" {
+		return ""
+	}
+	return os.Getenv(a.PasswordEnv)
+}

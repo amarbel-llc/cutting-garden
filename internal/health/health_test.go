@@ -45,9 +45,12 @@ func TestProbe_CapabilitiesPerPlugin(t *testing.T) {
 		}
 	}
 
-	// file: full capture/restore/diff, no protocol, no traversal.
+	// file: full capture/restore/diff, no protocol, and now RootLister
+	// traversal — intrinsic-PWD roots (RFC 0007) declaring directory +
+	// file node types.
 	if r := rows["file"]; !r.Capture || r.Restore != "yes" || !r.Diff ||
-		r.Protocol != "" || len(r.Traversal) != 0 {
+		r.Protocol != "" ||
+		strings.Join(r.Traversal, ",") != "cutting_garden-file-directory-v1,cutting_garden-file-object-v1" {
 		t.Errorf("file row = %+v", r)
 	}
 	// git: capture/diff, restore via protocol, protocol kind "git".

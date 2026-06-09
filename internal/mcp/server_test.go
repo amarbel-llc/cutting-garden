@@ -69,7 +69,8 @@ func runServerOnce(t *testing.T, requests ...string) map[int64]rpcResponse {
 }
 
 func TestServer_ResourcesListRoundTrip(t *testing.T) {
-	resps := runServerOnce(t,
+	resps := runServerOnce(
+		t,
 		`{"jsonrpc":"2.0","id":1,"method":"resources/list"}`,
 	)
 
@@ -97,7 +98,8 @@ func TestServer_ResourcesListRoundTrip(t *testing.T) {
 }
 
 func TestServer_ResourcesReadRoundTrip(t *testing.T) {
-	resps := runServerOnce(t,
+	resps := runServerOnce(
+		t,
 		`{"jsonrpc":"2.0","id":7,"method":"resources/read","params":{"uri":"faketest://h/work"}}`,
 	)
 

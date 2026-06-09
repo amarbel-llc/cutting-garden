@@ -15,8 +15,10 @@ func (*List) GetArgs() []command.ArgGroup {
 				Name: "uri",
 				Description: "scheme-addressed URI whose immediate child nodes " +
 					"to list (e.g. `caldav://host/dav/me/`). Its plugin must " +
-					"support traversal; the file plugin does not.",
-				Required: true,
+					"support traversal. With no URI, the configured and " +
+					"intrinsic roots are listed instead \\(em the entry points " +
+					"to descend (cutting-garden config.toml, RFC 0007).",
+				Required: false,
 			},
 		},
 	}}
@@ -24,6 +26,11 @@ func (*List) GetArgs() []command.ArgGroup {
 
 func (*List) GetExamples() []command.Example {
 	return []command.Example{
+		{
+			Description: "List every configured and intrinsic root (the entry " +
+				"points to descend).",
+			Command: "cutting-garden list",
+		},
 		{
 			Description: "List the calendars under a CalDAV endpoint.",
 			Command:     "cutting-garden list caldav://dav.host/dav/me/",

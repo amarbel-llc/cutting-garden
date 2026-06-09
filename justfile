@@ -24,7 +24,7 @@ build-nix-check:
     nix flake check --show-trace
 
 [group('post-build')]
-test: test-go lint-go lint-fmt lint-go-analyzers test-bats
+test: generate-check test-go lint-go lint-fmt lint-go-analyzers test-bats
 
 [group('post-build')]
 test-go:
@@ -164,6 +164,33 @@ release version:
 [group('codemod')]
 fmt:
     nix develop --command conformist
+
+# Regenerate the tommy TOML-codegen companions (*_tommy.go) for the config
+# subsystem (RFC 0007). Run after editing any `//go:generate tommy
+# generate` struct (config_common, plugin config sections, cgconfig). The
+# read-only drift gate is `generate-check`, wired into `test`.
+#
+# -run tommy scopes this to the tommy directives only: a bare
+# `go generate ./...` would also fire other generators (e.g. dagnabit's
+# pkgs/ facades), whose binaries are not in the devshell.
+[group('codemod')]
+generate:
+    nix develop --command go generate -run tommy ./...
+
+# Assert the committed *_tommy.go companions are current: regenerate, then
+# fail on any drift — a stale or hand-edited generated file, or a tommy
+# version bump (the header stamps the producing tommy build). The
+# go-generate-then-clean-diff form tommy-generate(1) recommends for CI.
+[group('pre-build')]
+generate-check: generate
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if ! git diff --quiet -- '*_tommy.go'; then
+      git --no-pager diff -- '*_tommy.go'
+      gum log --level error "generate-check: *_tommy.go out of date; run \`just generate\` and commit"
+      exit 1
+    fi
+    gum log --level info "generate-check: ok"
 
 [group('debug')]
 debug-build-go:

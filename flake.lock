@@ -695,7 +695,8 @@
         "madder": "madder",
         "nixpkgs-master": "nixpkgs-master_2",
         "purse-first": "purse-first_3",
-        "tap": "tap_2"
+        "tap": "tap_2",
+        "tommy": "tommy_2"
       }
     },
     "rust-overlay": {
@@ -902,6 +903,39 @@
       },
       "original": {
         "owner": "amarbel-llc",
+        "repo": "tommy",
+        "type": "github"
+      }
+    },
+    "tommy_2": {
+      "inputs": {
+        "bats": [
+          "bats"
+        ],
+        "igloo": [
+          "igloo"
+        ],
+        "nixpkgs-master": [
+          "nixpkgs-master"
+        ],
+        "tap": [
+          "tap"
+        ],
+        "utils": [
+          "flake-utils"
+        ]
+      },
+      "locked": {
+        "lastModified": 1780940612,
+        "narHash": "sha256-mHNivk5E0bySKdh2sXcYopzC/Nhyb4AKU+4rDN+BOJ4=",
+        "owner": "amarbel-llc",
+        "repo": "tommy",
+        "rev": "44424a475ee6545f12f5cfea7a2ccbc87b7708b9",
+        "type": "github"
+      },
+      "original": {
+        "owner": "amarbel-llc",
+        "ref": "v0.4.2",
         "repo": "tommy",
         "type": "github"
       }

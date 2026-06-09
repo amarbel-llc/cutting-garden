@@ -174,7 +174,8 @@ func TestReadResource_LeafYieldsEmptyListing(t *testing.T) {
 	r := newFakeResources(t, "faketest://h/")
 
 	got, err := r.ReadResource(
-		context.Background(), "faketest://h/work/task1.ics")
+		context.Background(), "faketest://h/work/task1.ics",
+	)
 	if err != nil {
 		t.Fatalf("ReadResource: %v", err)
 	}

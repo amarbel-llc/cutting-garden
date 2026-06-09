@@ -6,23 +6,38 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A filesystem-tree capture/restore CLI atop
 [madder](https://github.com/amarbel-llc/madder), grown from a port of
-dodder's command-dispatch framework. Seven user-facing subcommands —
-`capture`, `restore`, `diff`, `serve`, `failures`, `health`, `list` —
-plus two hidden ones (`complete` for shell completion and `__write-blob`,
-the RFC 0002 writer-protocol sink chrest pipes node blobs into) are
-registered in `internal/cgapp.Build()`, the single factory shared by
-the `cutting-garden` binary, its `cg` alias, and the
+dodder's command-dispatch framework. Eight user-facing subcommands —
+`capture`, `restore`, `diff`, `serve`, `failures`, `health`, `list`,
+`mcp` — plus two hidden ones (`complete` for shell completion and
+`__write-blob`, the RFC 0002 writer-protocol sink chrest pipes node blobs
+into) are registered in `internal/cgapp.Build()`, the single factory
+shared by the `cutting-garden` binary, its `cg` alias, and the
 manpage/completion generator `cutting-garden-gen`. Hidden subcommands
 implement `command.CommandHidden` so they stay dispatchable but are
-filtered out of usage, manpages, and completion. Capture/restore/
-diff backends are URI-scheme-keyed plugins (file, git, yt-dlp, caldav,
-web) under `internal/cutting_garden_plugin_*`. `serve` (`internal/serve/`) is a
+filtered out of usage, manpages, and completion. Capture/restore/diff
+backends are URI-scheme-keyed plugins (file, git, yt-dlp, caldav, web)
+under `internal/cutting_garden_plugin_*`. `serve` (`internal/serve/`) is a
 long-lived LocalSend receiver bound to the host's Tailscale address:
 each incoming transfer lands as a normal fs-v1 capture receipt
 (FDR 0011). The original extraction design
 lives in `amarbel-llc/madder` →
 `docs/plans/2026-05-10-extract-cutting-garden-design.md`; newer design
 docs live in this repo under `docs/{rfcs,features,plans}/`.
+
+`list` and `mcp` are the read-only consumers of the plugin **traversal**
+primitive (`RootLister`, FDR 0014): `list` prints a node's child nodes,
+`mcp` serves them over the Model Context Protocol (FDR 0015). Both, with
+no URI, aggregate every plugin's **roots** (the `RootProvider` capability)
+from the **config subsystem** (RFC 0007): a tommy-codegen'd
+`$XDG_CONFIG_HOME/cutting-garden/config.toml` of per-plugin named accounts
+(caldav) plus intrinsic roots (the file plugin's working directory). The
+config types live in `internal/config_common` (shared `Root`/`Account`
+base) and `internal/cgconfig` (`ConfigV0`, the delegated aggregator); the
+loader is `command_components.LoadConfig`. `*_tommy.go` files are
+generated — run `just generate` after editing a `//go:generate tommy
+generate` struct; `just`'s `generate-check` gate fails on drift. tommy is
+a flake-bridged dep (devshell binary + Go library at one rev; see
+`gomod.nix`).
 
 Comments and TODOs frequently reference upstream dodder issues (#161, #183,
 …) and madder issues — check those before "fixing" what looks like a bug; some

@@ -13,6 +13,7 @@
   madder,
   tap,
   purse-first,
+  tommy,
   system,
 }:
 {
@@ -39,5 +40,12 @@
   "github.com/amarbel-llc/purse-first/libs/go-mcp" = {
     src = purse-first.packages.${system}.go-pkgs;
     subPath = "libs/go-mcp";
+  };
+  # tommy's go-pkgs is the whole repo-root module (its module path is the
+  # repo root), so no subPath. Bridged so the devshell `tommy generate`
+  # binary and the Go library compile at one flake.lock rev — tommy
+  # stamps its version into generated files and `--check` fails on skew.
+  "github.com/amarbel-llc/tommy" = {
+    src = tommy.packages.${system}.go-pkgs;
   };
 }

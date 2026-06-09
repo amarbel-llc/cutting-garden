@@ -13,11 +13,13 @@ func (*MCP) GetArgs() []command.ArgGroup {
 		Args: []command.Arg{
 			{
 				Name: "uri",
-				Description: "one or more traversable plugin endpoint URIs to " +
-					"expose as MCP resources (e.g. `caldav://host/dav/me/`). " +
-					"Each scheme's plugin must support traversal; the file " +
-					"plugin does not.",
-				Required: true,
+				Description: "optional traversable plugin endpoint URIs to " +
+					"expose as MCP resources (e.g. `caldav://host/dav/me/`), " +
+					"overriding the config. With no URI, every plugin's " +
+					"configured and intrinsic roots are surfaced \\(em the " +
+					"configured CalDAV accounts and the file plugin's working " +
+					"directory (cutting-garden config.toml, RFC 0007).",
+				Required: false,
 				Variadic: true,
 			},
 		},
@@ -27,13 +29,13 @@ func (*MCP) GetArgs() []command.ArgGroup {
 func (*MCP) GetExamples() []command.Example {
 	return []command.Example{
 		{
-			Description: "Serve a CalDAV endpoint's calendars as MCP resources.",
-			Command:     "cutting-garden mcp caldav://dav.host/dav/me/",
+			Description: "Serve every configured and intrinsic root (the " +
+				"common case; reads $XDG_CONFIG_HOME/cutting-garden/config.toml).",
+			Command: "cutting-garden mcp",
 		},
 		{
-			Description: "Expose several endpoints in one server.",
-			Command: "cutting-garden mcp caldav://dav.host/dav/me/ " +
-				"caldav://dav.host/dav/team/",
+			Description: "Override the config: serve one explicit endpoint.",
+			Command:     "cutting-garden mcp caldav://dav.host/dav/me/",
 		},
 	}
 }

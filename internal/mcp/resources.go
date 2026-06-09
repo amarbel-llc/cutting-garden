@@ -105,7 +105,7 @@ func (r *Resources) ReadResource(
 	views := make([]nodeView, 0, len(nodes))
 	for _, n := range nodes {
 		views = append(views, nodeView{
-			URI:       uriString(n.URI),
+			URI:       n.URIString(),
 			Name:      n.Name,
 			Type:      n.Type,
 			Container: isContainer(lister, n.Type),
@@ -152,7 +152,7 @@ func nodeToResource(
 ) protocol.Resource {
 	container := isContainer(lister, n.Type)
 	res := protocol.Resource{
-		URI:         uriString(n.URI),
+		URI:         n.URIString(),
 		Name:        n.Name,
 		Description: describe(container, n.Type),
 	}
@@ -186,13 +186,4 @@ func describe(container bool, tag string) string {
 		return kind
 	}
 	return fmt.Sprintf("%s node (type %s)", kind, tag)
-}
-
-// uriString renders a node URI, tolerating a nil URL. Mirrors
-// internal/list's helper of the same shape.
-func uriString(u *url.URL) string {
-	if u == nil {
-		return ""
-	}
-	return u.String()
 }

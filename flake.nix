@@ -84,6 +84,20 @@
       inputs.nixpkgs-master.follows = "nixpkgs-master";
       inputs.utils.follows = "flake-utils";
     };
+
+    # tommy: TOML library + `tommy generate` codegen binary (RFC 0007's
+    # config format). Pinned to a tag so the devshell binary and the
+    # bridged Go library (gomod.nix, added with the config code) stay at
+    # one rev — tommy stamps its version into generated files and
+    # `tommy generate --check` fails on binary/library skew.
+    tommy = {
+      url = "github:amarbel-llc/tommy/v0.4.2";
+      inputs.igloo.follows = "igloo";
+      inputs.nixpkgs-master.follows = "nixpkgs-master";
+      inputs.utils.follows = "flake-utils";
+      inputs.bats.follows = "bats";
+      inputs.tap.follows = "tap";
+    };
   };
 
   outputs =
@@ -98,6 +112,7 @@
       purse-first,
       bats,
       conformist,
+      tommy,
       ...
     }:
     flake-utils.lib.eachDefaultSystem (
@@ -118,6 +133,7 @@
             madder
             tap
             purse-first
+            tommy
             system
             ;
         };
@@ -307,6 +323,11 @@
             # `conformist` / `conformist check` run in the dev shell,
             # which is how `just fmt` / `just lint-fmt` invoke it.
             conformistFmt
+            # tommy: the `tommy generate` codegen binary for RFC 0007's
+            # config format (`//go:generate tommy generate`). Devshell-
+            # only; generated `*_tommy.go` companions are committed, so
+            # the package build needs no codegen at build time.
+            tommy.packages.${system}.default
           ];
 
           GOTOOLCHAIN = "local";

@@ -40,6 +40,17 @@ type Node struct {
 	Type string
 }
 
+// URIString renders the node's URI, tolerating a nil URL (rendered as
+// the empty string). The shared helper every traversal consumer (the
+// `list` command, the MCP server) uses to project a Node's address
+// into text.
+func (n Node) URIString() string {
+	if n.URI == nil {
+		return ""
+	}
+	return n.URI.String()
+}
+
 // RootLister is the OPTIONAL traversal capability a Plugin implements
 // when its scheme has meaningful sub-structure a user may want to
 // discover, address, diff, or restore independently (a CalDAV
@@ -80,4 +91,25 @@ type RootLister interface {
 	// Read-only: ListRoots never mutates the source and never writes to
 	// a blob store.
 	ListRoots(ctx context.Context, node *url.URL) ([]Node, error)
+}
+
+// RootProvider is the OPTIONAL capability of a RootLister that can
+// enumerate its own top-level roots with no input node — the entry points
+// a no-argument `mcp` / `list` surfaces (RFC 0007). It is probed by type
+// assertion exactly as RootLister is.
+//
+// The source of the roots is plugin-defined and invisible to the caller:
+// intrinsic ambient state (the file plugin's working directory),
+// configured credentialed accounts (caldav), or configured preferred
+// roots (a future web/yt-dlp plugin). A plugin that can enumerate none
+// returns an empty slice — it then contributes nothing and does not appear
+// in the aggregated listing.
+type RootProvider interface {
+	RootLister
+
+	// Roots returns the plugin's top-level roots. Each URL MUST be
+	// credential-free (no userinfo): these are surfaced to clients (e.g.
+	// as MCP resource URIs). An empty slice (not an error) means the
+	// plugin has no roots to offer.
+	Roots(ctx context.Context) ([]*url.URL, error)
 }

@@ -20,6 +20,7 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"path"
 	"strings"
 	"text/tabwriter"
 
@@ -90,22 +91,63 @@ func (cmd *List) Run(req command.Request) {
 		return
 	}
 
-	uriStr := req.PopArg("uri")
-	if uriStr == "" {
+	// The URI is optional: PeekArgs rather than PopArg, which would poison
+	// the context with a "missing argument" usage error on the no-arg path.
+	args := req.PeekArgs()
+	switch {
+	case len(args) == 0:
+		// No URI: list every configured and intrinsic root across all
+		// plugins (RFC 0007) — the entry points to descend into.
+		if err := cmd.runRoots(ctx); err != nil {
+			errors.ContextCancelWithError(ctx, err)
+		}
+	case len(args) > 1:
 		errors.ContextCancelWithBadRequestf(ctx,
-			"list takes exactly one positional argument (<uri>)")
-		return
+			"too many positional arguments; list takes at most one (<uri>), "+
+				"trailing: %v", args[1:])
+	default:
+		if err := cmd.runList(ctx, args[0]); err != nil {
+			errors.ContextCancelWithError(ctx, err)
+		}
 	}
-	if req.RemainingArgCount() > 0 {
-		errors.ContextCancelWithBadRequestf(ctx,
-			"too many positional arguments; list takes exactly one (<uri>), "+
-				"trailing: %v", req.PeekArgs())
-		return
+}
+
+// runRoots loads the config, injects it into the plugins, and renders the
+// aggregated top-level roots — each a URI the user can then pass back to
+// `list` to descend one level.
+func (cmd *List) runRoots(ctx errors.Context) error {
+	if err := command_components.LoadAndInjectConfig(os.Stderr); err != nil {
+		return err
+	}
+	roots, err := command_components.AggregateRoots(ctx)
+	if err != nil {
+		return err
 	}
 
-	if err := cmd.runList(ctx, uriStr); err != nil {
-		errors.ContextCancelWithError(ctx, err)
+	nodes := make([]cutting_garden_plugins.Node, 0, len(roots))
+	for _, root := range roots {
+		nodes = append(nodes, cutting_garden_plugins.Node{
+			URI:  root,
+			Name: rootLabel(root),
+		})
 	}
+
+	if cmd.Format == formatJSON {
+		return writeJSON(cmd.output, nodes)
+	}
+	return writeText(cmd.output, nodes)
+}
+
+// rootLabel derives a short display name for a root URI: the last path
+// segment, else the host, else the full URI.
+func rootLabel(u *url.URL) string {
+	if trimmed := strings.TrimRight(u.Path, "/"); trimmed != "" {
+		return path.Base(trimmed)
+	}
+	if u.Host != "" {
+		return u.Host
+	}
+	return u.String()
 }
 
 // runList resolves the RootLister for uriStr, enumerates the node's
@@ -137,7 +179,7 @@ func writeText(w io.Writer, nodes []cutting_garden_plugins.Node) error {
 	// is fallible.
 	fmt.Fprintln(tw, "URI\tNAME\tTYPE")
 	for _, n := range nodes {
-		fmt.Fprintf(tw, "%s\t%s\t%s\n", uriString(n.URI), n.Name, n.Type)
+		fmt.Fprintf(tw, "%s\t%s\t%s\n", n.URIString(), n.Name, n.Type)
 	}
 	if err := tw.Flush(); err != nil {
 		return errors.Wrap(err)
@@ -163,7 +205,7 @@ func writeJSON(w io.Writer, nodes []cutting_garden_plugins.Node) error {
 	enc := json.NewEncoder(w)
 	for _, n := range nodes {
 		if err := enc.Encode(nodeView{
-			URI:  uriString(n.URI),
+			URI:  n.URIString(),
 			Name: n.Name,
 			Type: n.Type,
 		}); err != nil {
@@ -171,13 +213,6 @@ func writeJSON(w io.Writer, nodes []cutting_garden_plugins.Node) error {
 		}
 	}
 	return nil
-}
-
-func uriString(u *url.URL) string {
-	if u == nil {
-		return ""
-	}
-	return u.String()
 }
 
 // validateFormat enforces the -format value constraint. Mirrors

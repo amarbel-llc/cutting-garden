@@ -15,6 +15,11 @@ excludes = [
   "result",
   "result-*",
   ".tmp/**",
+  # tommy codegen output (RFC 0007 config subsystem): `tommy generate`
+  # owns its formatting and stamps a version header; gofumpt would
+  # reformat it and fight `just generate-check`. Generated, so not ours
+  # to format.
+  "*_tommy.go",
   # conformist's own config is TOML with intentional layout; leave it be.
   "conformist.toml",
 ]
