@@ -1,4 +1,4 @@
-# RFC 0005 — Capture Plugin Transport: JSON-RPC + FD-passed blob sockets
+# RFC 0007 — Capture Plugin Transport: JSON-RPC + FD-passed blob sockets
 
 - Status: **proposed**
 - Date: 2026-06-03
