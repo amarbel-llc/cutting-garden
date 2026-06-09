@@ -50,6 +50,7 @@ var (
 
 	// consume side
 	ParseNode           = internal.ParseNode
+	ReadNode            = internal.ReadNode
 	KindFromReceiptType = internal.KindFromReceiptType
 
 	// type-signature registry

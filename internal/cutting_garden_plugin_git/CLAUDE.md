@@ -99,9 +99,9 @@ pinned by `TestSeededStorer_FetchTransfersOnlyDelta`.)
   sorted by oid, so an incremental capture and a full capture of the same
   state produce a **byte-identical** payload node. Non-fast-forward or a
   fetch failure falls back to a full capture.
-- `loadReceiptPayload` / `readNode` (`protocol_consume.go`) — the consume
-  side: read and parse the receipt and payload nodes via
-  `capture_plugin.ParseNode`.
+- `loadReceiptPayload` (`protocol_consume.go`) — the consume side: walks
+  the receipt to its payload node, reading and parsing each via the shared
+  `capture_plugin.ReadNode` (store-backed `ParseNode`).
 - `remoteAndBranchFromArg` / `canonicalSource` (`url.go`) — argument
   coercion and the network-free Root identity (`<remote>#<branch>`,
   npm/pip convention).

@@ -276,7 +276,7 @@ func TestIncrementalCapture_RealGit_MatchesFullCapture(t *testing.T) {
 
 func receiptPayloadDigest(t *testing.T, store blob_stores.BlobStoreInitialized, receiptDigest string) string {
 	t.Helper()
-	n, err := readNode(store, receiptDigest)
+	n, err := capture_plugin.ReadNode(store, receiptDigest)
 	if err != nil {
 		t.Fatalf("read receipt %s: %v", receiptDigest, err)
 	}

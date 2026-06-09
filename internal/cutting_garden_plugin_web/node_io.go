@@ -5,30 +5,8 @@ import (
 
 	"github.com/amarbel-llc/cutting-garden/internal/capture_plugin"
 	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
-	"github.com/amarbel-llc/madder/go/pkgs/markl"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 )
-
-// readNode reads and parses one hyphence node blob from the store by its
-// markl digest. Mirrors the git binding's readNode.
-func readNode(
-	store blob_stores.BlobStoreInitialized,
-	digest string,
-) (node capture_plugin.Node, err error) {
-	var id markl.Id
-	if err = id.Set(digest); err != nil {
-		return capture_plugin.Node{}, errors.Wrapf(err, "web plugin: parse blob id %q", digest)
-	}
-
-	reader, err := store.MakeBlobReader(&id)
-	if err != nil {
-		return capture_plugin.Node{}, errors.Wrapf(err, "web plugin: open blob %s", digest)
-	}
-	defer errors.DeferredCloser(&err, reader)
-
-	node, err = capture_plugin.ParseNode(reader)
-	return
-}
 
 // receiptPayloadRef reads a web receipt by digest and walks it to its
 // single payload reference. A thin wrapper over payloadRefFromReceipt for
@@ -37,7 +15,7 @@ func receiptPayloadRef(
 	store blob_stores.BlobStoreInitialized,
 	receiptDigest string,
 ) (capture_plugin.Ref, error) {
-	receipt, err := readNode(store, receiptDigest)
+	receipt, err := capture_plugin.ReadNode(store, receiptDigest)
 	if err != nil {
 		return capture_plugin.Ref{}, err
 	}
@@ -78,7 +56,7 @@ func receiptFormat(
 	store blob_stores.BlobStoreInitialized,
 	receiptDigest string,
 ) (string, error) {
-	receipt, err := readNode(store, receiptDigest)
+	receipt, err := capture_plugin.ReadNode(store, receiptDigest)
 	if err != nil {
 		return "", err
 	}
@@ -100,7 +78,7 @@ func formatFromReceipt(
 			"web plugin: receipt %s has no identity reference", receiptDigest,
 		)
 	}
-	identity, err := readNode(store, idRef.Digest)
+	identity, err := capture_plugin.ReadNode(store, idRef.Digest)
 	if err != nil {
 		return "", err
 	}
@@ -110,7 +88,7 @@ func formatFromReceipt(
 			"web plugin: identity %s has no invocation reference", idRef.Digest,
 		)
 	}
-	inv, err := readNode(store, invRef.Digest)
+	inv, err := capture_plugin.ReadNode(store, invRef.Digest)
 	if err != nil {
 		return "", err
 	}

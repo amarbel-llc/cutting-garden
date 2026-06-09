@@ -3,6 +3,7 @@ package cutting_garden_plugin_web
 import (
 	"fmt"
 
+	"github.com/amarbel-llc/cutting-garden/internal/capture_plugin"
 	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
 )
 
@@ -21,7 +22,7 @@ func (Plugin) DiffProtocol(
 ) (cutting_garden_plugins.ProtocolDiffResult, error) {
 	// Parse the stored receipt once and derive both the payload ref and the
 	// recorded format from it, rather than re-reading the same receipt blob.
-	storedReceipt, err := readNode(req.BlobStore, req.ReceiptDigest)
+	storedReceipt, err := capture_plugin.ReadNode(req.BlobStore, req.ReceiptDigest)
 	if err != nil {
 		return cutting_garden_plugins.ProtocolDiffResult{}, err
 	}

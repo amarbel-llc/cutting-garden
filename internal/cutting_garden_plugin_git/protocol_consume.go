@@ -6,7 +6,6 @@ import (
 
 	"github.com/amarbel-llc/cutting-garden/internal/capture_plugin"
 	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
-	"github.com/amarbel-llc/madder/go/pkgs/markl"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 )
 
@@ -18,29 +17,6 @@ type payloadMeta struct {
 	ObjectCount int    `json:"object_count"`
 }
 
-// readNode fetches and parses one protocol node blob by its markl
-// digest string.
-func readNode(
-	store blob_stores.BlobStoreInitialized,
-	digest string,
-) (node capture_plugin.Node, err error) {
-	var id markl.Id
-	if err = id.Set(digest); err != nil {
-		return capture_plugin.Node{}, errors.Wrapf(err, "parse node id %q", digest)
-	}
-	reader, err := store.MakeBlobReader(&id)
-	if err != nil {
-		return capture_plugin.Node{}, errors.Wrapf(err, "open node %s", digest)
-	}
-	defer errors.DeferredCloser(&err, reader)
-
-	node, err = capture_plugin.ParseNode(reader)
-	if err != nil {
-		return capture_plugin.Node{}, errors.Wrapf(err, "parse node %s", digest)
-	}
-	return node, nil
-}
-
 // loadReceiptPayload reads the receipt node, follows its `payload`
 // reference to the git payload node, and returns that node plus its
 // decoded metadata. It validates the receipt is a git-kind receipt.
@@ -48,7 +24,7 @@ func loadReceiptPayload(
 	store blob_stores.BlobStoreInitialized,
 	receiptDigest string,
 ) (capture_plugin.Node, payloadMeta, error) {
-	receipt, err := readNode(store, receiptDigest)
+	receipt, err := capture_plugin.ReadNode(store, receiptDigest)
 	if err != nil {
 		return capture_plugin.Node{}, payloadMeta{}, err
 	}
@@ -71,7 +47,7 @@ func loadReceiptPayload(
 		return capture_plugin.Node{}, payloadMeta{}, err
 	}
 
-	payload, err := readNode(store, payloadRef.Digest)
+	payload, err := capture_plugin.ReadNode(store, payloadRef.Digest)
 	if err != nil {
 		return capture_plugin.Node{}, payloadMeta{}, err
 	}

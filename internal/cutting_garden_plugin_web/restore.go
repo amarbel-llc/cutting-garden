@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/amarbel-llc/cutting-garden/internal/capture_plugin"
 	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
 	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
@@ -25,7 +26,7 @@ func (Plugin) RestoreProtocol(
 		return err
 	}
 
-	payload, err := readNode(req.BlobStore, payloadRef.Digest)
+	payload, err := capture_plugin.ReadNode(req.BlobStore, payloadRef.Digest)
 	if err != nil {
 		return err
 	}
