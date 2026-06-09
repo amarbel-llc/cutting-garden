@@ -290,16 +290,29 @@ func (cmd *Diff) runProtocolDiff(
 		Context:       ctx,
 		BlobStore:     store,
 		ReceiptDigest: receiptIDStr,
-		StoreName:     cmd.Store,
-		Source:        sourceURL,
-		RawSource:     dirStr,
+		// Re-capture into the SAME store the receipt was located in, not the
+		// raw -store flag (which is empty when omitted). LocateReceiptStore
+		// may resolve a non-default store, and a subprocess-form diff (the
+		// web binding) re-captures the live source via writer.cmd: threading
+		// the located store's canonical id keeps DiffProtocol's live
+		// re-capture and its readback on one store. The subprocess writer
+		// re-resolves this same id from the inherited env — blob_store_id's
+		// String form is canonical, so there is no separate digest pin lost
+		// across the process boundary.
+		StoreName: store.GetId().String(),
+		Source:    sourceURL,
+		RawSource: dirStr,
 	})
 	if err != nil {
 		return err
 	}
 
+	renderer, err := newDiffRenderer(cmd.Color, os.Stdout)
+	if err != nil {
+		return err
+	}
 	for _, line := range res.Differences {
-		fmt.Fprintln(os.Stdout, line)
+		fmt.Fprintln(os.Stdout, renderDiffLine(renderer, line))
 	}
 
 	if len(res.Differences) > 0 {
