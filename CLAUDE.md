@@ -6,13 +6,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A filesystem-tree capture/restore CLI atop
 [madder](https://github.com/amarbel-llc/madder), grown from a port of
-dodder's command-dispatch framework. Five user-facing subcommands —
-`capture`, `restore`, `diff`, `serve`, `failures` — plus the hidden
-`complete` are registered in `internal/cgapp.Build()`, the single factory shared by
+dodder's command-dispatch framework. Seven user-facing subcommands —
+`capture`, `restore`, `diff`, `serve`, `failures`, `health`, `list` —
+plus two hidden ones (`complete` for shell completion and `__write-blob`,
+the RFC 0002 writer-protocol sink chrest pipes node blobs into) are
+registered in `internal/cgapp.Build()`, the single factory shared by
 the `cutting-garden` binary, its `cg` alias, and the
-manpage/completion generator `cutting-garden-gen`. Capture/restore/
-diff backends are URI-scheme-keyed plugins (file, git, yt-dlp, caldav)
-under `internal/cutting_garden_plugin_*`. `serve` (`internal/serve/`) is a
+manpage/completion generator `cutting-garden-gen`. Hidden subcommands
+implement `command.CommandHidden` so they stay dispatchable but are
+filtered out of usage, manpages, and completion. Capture/restore/
+diff backends are URI-scheme-keyed plugins (file, git, yt-dlp, caldav,
+web) under `internal/cutting_garden_plugin_*`. `serve` (`internal/serve/`) is a
 long-lived LocalSend receiver bound to the host's Tailscale address:
 each incoming transfer lands as a normal fs-v1 capture receipt
 (FDR 0011). The original extraction design
