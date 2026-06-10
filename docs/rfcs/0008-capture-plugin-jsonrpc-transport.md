@@ -1,4 +1,8 @@
-# RFC 0007 — Capture Plugin Transport: JSON-RPC + FD-passed blob sockets
+# RFC 0008 — Capture Plugin Transport: JSON-RPC + FD-passed blob sockets
+
+> Renumbered from RFC 0007 (and before that 0005): 0005 went to
+> protocol-only plugin resolution, and 0007 was independently claimed by
+> the config subsystem, which has the wider reference footprint.
 
 - Status: **proposed**
 - Date: 2026-06-03

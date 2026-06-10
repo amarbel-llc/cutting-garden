@@ -1,7 +1,17 @@
+---
+status: experimental
+date: 2026-06-08
+promotion-criteria: |
+  Promote to `accepted` once real LocalSend transfers from a phone have
+  landed as fs-v1 receipts over a sustained period without the receiver
+  needing protocol-level fixes, and the home-manager service module
+  (#72) question is resolved one way or the other.
+---
+
 # FDR 0011 — `serve`: LocalSend receiver bound to Tailscale
 
-Status: implemented
-Issue: amarbel-llc/cutting-garden#69
+> Originally recorded inline as "Status: implemented"; converted to the
+> standard FDR frontmatter. Issue: amarbel-llc/cutting-garden#69.
 
 ## Summary
 

@@ -7,7 +7,7 @@ issues:
   - amarbel-llc/cutting-garden#10  # tree-capture pre-walk estimate + huh confirm-gate
 builds-on:
   - docs/rfcs/0002-capture-plugin-protocol.md
-  - amarbel-llc/cutting-garden#51  # RFC 0007 — JSON-RPC + FD-passed blob transport (proposed)
+  - amarbel-llc/cutting-garden#51  # RFC 0008 — JSON-RPC + FD-passed blob transport (proposed; renumbered from 0007)
   - amarbel-llc/cutting-garden#50  # RFC 0005 — protocol-only plugin resolution (proposed)
   - amarbel-llc/purse-first docs/features/0010-operation-viewport.md (proposed)
 ---
