@@ -30,6 +30,11 @@ const (
 // advisory; a slow server must not stall a capture for long.
 const cddbHTTPTimeout = 10 * time.Second
 
+// cddbMaxResponseBytes caps how much of a CDDB response is read. Real
+// xmcd records are under a few KiB; the cap keeps a misbehaving server
+// from ballooning memory (the timeout bounds time, not size).
+const cddbMaxResponseBytes = 1 << 20
+
 // cddbServer resolves the env override: (base URL, true) when the
 // lookup should run, ("", false) when disabled via "off".
 func cddbServer() (string, bool) {
@@ -130,7 +135,7 @@ func cddbCommand(ctx context.Context, base, cmd string) (lines []string, raw str
 		)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, cddbMaxResponseBytes))
 	if err != nil {
 		return nil, "", errors.Wrap(err)
 	}

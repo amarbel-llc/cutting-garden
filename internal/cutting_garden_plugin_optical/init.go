@@ -10,5 +10,5 @@ func init() {
 	// Restore and diff intentionally not registered: optical artifacts
 	// are regular files the filesystem plugin materializes, and a disc
 	// re-rip is far too expensive to back a diff probe. See
-	// docs/features/0015-optical-plugin.md.
+	// docs/features/0016-optical-plugin.md.
 }

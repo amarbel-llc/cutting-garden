@@ -17,7 +17,7 @@
 //
 // Restore is intentionally not implemented; the produced artifacts are
 // regular files the filesystem plugin materializes. See
-// docs/features/0015-optical-plugin.md for the rationale and the
+// docs/features/0016-optical-plugin.md for the rationale and the
 // TypeTag-reuse decision.
 package cutting_garden_plugin_optical
 
@@ -80,7 +80,7 @@ func (Plugin) CaptureRoot(
 
 	tempDir, err := os.MkdirTemp("", "cg-optical-capture-*")
 	if err != nil {
-		r.Failure(req.RawArg, errors.Wrap(err))
+		r.Failure(req.RawArg, err)
 		return rootLevelFailure(req.RawArg, err)
 	}
 	defer func() {
@@ -283,7 +283,10 @@ func walkArtifacts(
 		}
 		entries = append(entries, entry)
 		reporter.Entry(entry)
-		phaseDone += f.size
+		// Advance by the streamed byte count, not the pass-1 stat size:
+		// if the file changed size between passes, the bar must agree
+		// with the Bytes values reported during the stream.
+		phaseDone += size
 	}
 
 	if phaseFailed := len(failures) - failCountAtPhaseStart; phaseFailed == 0 {

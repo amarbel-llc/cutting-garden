@@ -6,7 +6,7 @@ The optical-media capture backend for cutting-garden. Peer leaf of
 (`optical:/dev/sr0`, optionally `?mode=image|audio`).
 
 **Capture only.** Restore and diff are intentionally not registered;
-see [FDR 0015](../../docs/features/0015-optical-plugin.md).
+see [FDR 0016](../../docs/features/0016-optical-plugin.md).
 
 ## Two modes, one plugin
 

@@ -123,6 +123,27 @@ type-tag and restores cleanly through the file plugin. `EntryV1.Root`
 carries the device path, so origin is still recoverable without a
 schema change.
 
+The plugin declares no node types (it does not implement `RootLister`,
+see below), so the node-type versioning question FDR 0014 tracks at #79
+does not apply here.
+
+## Traversal and config roots: deliberately out
+
+The plugin implements neither `RootLister` (FDR 0014) nor
+`RootProvider` (RFC 0007):
+
+- **No `RootLister`.** A device is an atomic, single-rooted capture
+  target — unlike a CalDAV endpoint (calendars → objects) there is no
+  sub-structure to enumerate without ripping the disc, and the
+  traversal contract is lazy structure discovery, not media I/O. Like
+  the file plugin, optical simply opts out.
+- **No `RootProvider`.** Enumerating drives (`/dev/sr*`) is
+  platform-specific discovery, and a drive's interesting state is the
+  disc in it, which only capture can see. Configured optical roots
+  (e.g. a named drive in `config.toml`) are possible future work if
+  `list`/`mcp` users want drives surfaced; until then `optical:` roots
+  are CLI-argument-only.
+
 ## Restore Deferral
 
 Restore is intentionally not implemented. The produced `.iso` / `.map`
@@ -130,6 +151,11 @@ Restore is intentionally not implemented. The produced `.iso` / `.map`
 materializes them on `cutting-garden restore`. Writing bytes back to a
 physical optical drive (burning) is a different operation with
 different failure modes and hardware assumptions, out of scope here.
+
+This deferral is sound because entries are origin-agnostic: a receipt
+mixing fs and optical roots carries the one fs-v1 tag (see TypeTag
+reuse), so FDR 0005's scheme/tag match guard restores the whole receipt
+through the file plugin without knowing some entries were ripped.
 
 ## Diff Deferral
 
