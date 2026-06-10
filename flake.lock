@@ -152,6 +152,71 @@
     "conformist_3": {
       "inputs": {
         "igloo": [
+          "crap",
+          "igloo"
+        ],
+        "nixpkgs-master": [
+          "crap",
+          "nixpkgs-master"
+        ],
+        "purse-first": "purse-first_2",
+        "utils": [
+          "crap",
+          "utils"
+        ]
+      },
+      "locked": {
+        "lastModified": 1780872932,
+        "narHash": "sha256-S79nFo8f5CvRMX8E0Xl7Rw5YHjiahMjUhj0HR32Jeok=",
+        "owner": "amarbel-llc",
+        "repo": "conformist",
+        "rev": "4edeb28944a7fd939d2ddd2b876c2cb2dc5ad075",
+        "type": "github"
+      },
+      "original": {
+        "owner": "amarbel-llc",
+        "repo": "conformist",
+        "type": "github"
+      }
+    },
+    "conformist_4": {
+      "inputs": {
+        "igloo": [
+          "crap",
+          "conformist",
+          "purse-first",
+          "igloo"
+        ],
+        "nixpkgs-master": [
+          "crap",
+          "conformist",
+          "purse-first",
+          "nixpkgs-master"
+        ],
+        "utils": [
+          "crap",
+          "conformist",
+          "purse-first",
+          "utils"
+        ]
+      },
+      "locked": {
+        "lastModified": 1780578823,
+        "narHash": "sha256-fYpYfjnpvcQ1/byC6UisbYc5boGxbH0gj0jyJfUDhOI=",
+        "owner": "amarbel-llc",
+        "repo": "conformist",
+        "rev": "e7a3240c6fe46caec85c4966b011f784e1846637",
+        "type": "github"
+      },
+      "original": {
+        "owner": "amarbel-llc",
+        "repo": "conformist",
+        "type": "github"
+      }
+    },
+    "conformist_5": {
+      "inputs": {
+        "igloo": [
           "madder",
           "igloo"
         ],
@@ -213,6 +278,36 @@
       }
     },
     "crap": {
+      "inputs": {
+        "bats": [
+          "bats"
+        ],
+        "conformist": "conformist_3",
+        "igloo": [
+          "igloo"
+        ],
+        "nixpkgs-master": [
+          "nixpkgs-master"
+        ],
+        "utils": [
+          "flake-utils"
+        ]
+      },
+      "locked": {
+        "lastModified": 1780933394,
+        "narHash": "sha256-24qe2c9D9OnG3fbNFIjWaxx9Xx8x4Z85LsV6W4/JuTY=",
+        "owner": "amarbel-llc",
+        "repo": "crap",
+        "rev": "17fa2834e1a8861f0aeb6bc0d0a9392e7bd64875",
+        "type": "github"
+      },
+      "original": {
+        "owner": "amarbel-llc",
+        "repo": "crap",
+        "type": "github"
+      }
+    },
+    "crap_2": {
       "inputs": {
         "bats": [
           "madder",
@@ -370,6 +465,35 @@
     "gomod2nix_2": {
       "inputs": {
         "flake-utils": [
+          "crap",
+          "conformist",
+          "purse-first",
+          "utils"
+        ],
+        "nixpkgs-master": [
+          "crap",
+          "conformist",
+          "purse-first",
+          "nixpkgs-master"
+        ]
+      },
+      "locked": {
+        "lastModified": 1779583462,
+        "narHash": "sha256-E32c2DtK6w8oJ00RplIgXqY2c4UVobZVTxaLRIbXhEE=",
+        "owner": "amarbel-llc",
+        "repo": "gomod2nix",
+        "rev": "2ae99ee109b3214305f098a4ebccd91b323a86b2",
+        "type": "github"
+      },
+      "original": {
+        "owner": "amarbel-llc",
+        "repo": "gomod2nix",
+        "type": "github"
+      }
+    },
+    "gomod2nix_3": {
+      "inputs": {
+        "flake-utils": [
           "flake-utils"
         ],
         "nixpkgs": [
@@ -390,40 +514,15 @@
         "type": "github"
       }
     },
-    "gomod2nix_3": {
-      "inputs": {
-        "flake-utils": [
-          "madder",
-          "purse-first",
-          "utils"
-        ],
-        "nixpkgs-master": [
-          "madder",
-          "purse-first",
-          "nixpkgs-master"
-        ]
-      },
-      "locked": {
-        "lastModified": 1779583462,
-        "narHash": "sha256-E32c2DtK6w8oJ00RplIgXqY2c4UVobZVTxaLRIbXhEE=",
-        "owner": "amarbel-llc",
-        "repo": "gomod2nix",
-        "rev": "2ae99ee109b3214305f098a4ebccd91b323a86b2",
-        "type": "github"
-      },
-      "original": {
-        "owner": "amarbel-llc",
-        "repo": "gomod2nix",
-        "type": "github"
-      }
-    },
     "gomod2nix_4": {
       "inputs": {
         "flake-utils": [
+          "madder",
           "purse-first",
           "utils"
         ],
         "nixpkgs-master": [
+          "madder",
           "purse-first",
           "nixpkgs-master"
         ]
@@ -443,6 +542,31 @@
       }
     },
     "gomod2nix_5": {
+      "inputs": {
+        "flake-utils": [
+          "purse-first",
+          "utils"
+        ],
+        "nixpkgs-master": [
+          "purse-first",
+          "nixpkgs-master"
+        ]
+      },
+      "locked": {
+        "lastModified": 1779583462,
+        "narHash": "sha256-E32c2DtK6w8oJ00RplIgXqY2c4UVobZVTxaLRIbXhEE=",
+        "owner": "amarbel-llc",
+        "repo": "gomod2nix",
+        "rev": "2ae99ee109b3214305f098a4ebccd91b323a86b2",
+        "type": "github"
+      },
+      "original": {
+        "owner": "amarbel-llc",
+        "repo": "gomod2nix",
+        "type": "github"
+      }
+    },
+    "gomod2nix_6": {
       "inputs": {
         "flake-utils": "flake-utils_2",
         "nixpkgs-master": "nixpkgs-master_3"
@@ -486,8 +610,8 @@
     "madder": {
       "inputs": {
         "bats": "bats_2",
-        "conformist": "conformist_3",
-        "crap": "crap",
+        "conformist": "conformist_5",
+        "crap": "crap_2",
         "doppelgang": "doppelgang",
         "igloo": [
           "igloo"
@@ -495,7 +619,7 @@
         "nixpkgs-master": [
           "nixpkgs-master"
         ],
-        "purse-first": "purse-first_2",
+        "purse-first": "purse-first_3",
         "tap": "tap",
         "tommy": "tommy",
         "utils": [
@@ -597,7 +721,41 @@
     },
     "purse-first_2": {
       "inputs": {
-        "gomod2nix": "gomod2nix_3",
+        "conformist": "conformist_4",
+        "gomod2nix": "gomod2nix_2",
+        "igloo": [
+          "crap",
+          "conformist",
+          "igloo"
+        ],
+        "nixpkgs-master": [
+          "crap",
+          "conformist",
+          "nixpkgs-master"
+        ],
+        "utils": [
+          "crap",
+          "conformist",
+          "utils"
+        ]
+      },
+      "locked": {
+        "lastModified": 1780797655,
+        "narHash": "sha256-OMrT14KCj/lzsP04gtKzSfQ84M/OC8HCQ7r3DPKU8uo=",
+        "owner": "amarbel-llc",
+        "repo": "purse-first",
+        "rev": "a5521b9f96fc5bdb753fa8bba053b79aa6f1a0ab",
+        "type": "github"
+      },
+      "original": {
+        "owner": "amarbel-llc",
+        "repo": "purse-first",
+        "type": "github"
+      }
+    },
+    "purse-first_3": {
+      "inputs": {
+        "gomod2nix": "gomod2nix_4",
         "igloo": [
           "madder",
           "igloo"
@@ -625,9 +783,9 @@
         "type": "github"
       }
     },
-    "purse-first_3": {
+    "purse-first_4": {
       "inputs": {
-        "gomod2nix": "gomod2nix_4",
+        "gomod2nix": "gomod2nix_5",
         "igloo": [
           "igloo"
         ],
@@ -652,7 +810,7 @@
         "type": "github"
       }
     },
-    "purse-first_4": {
+    "purse-first_5": {
       "inputs": {
         "gomod2nix": [
           "tap",
@@ -689,12 +847,13 @@
       "inputs": {
         "bats": "bats",
         "conformist": "conformist",
+        "crap": "crap",
         "flake-utils": "flake-utils",
-        "gomod2nix": "gomod2nix_2",
+        "gomod2nix": "gomod2nix_3",
         "igloo": "igloo",
         "madder": "madder",
         "nixpkgs-master": "nixpkgs-master_2",
-        "purse-first": "purse-first_3",
+        "purse-first": "purse-first_4",
         "tap": "tap_2",
         "tommy": "tommy_2"
       }
@@ -842,14 +1001,14 @@
           "bats"
         ],
         "crane": "crane_2",
-        "gomod2nix": "gomod2nix_5",
+        "gomod2nix": "gomod2nix_6",
         "igloo": [
           "igloo"
         ],
         "nixpkgs-master": [
           "nixpkgs-master"
         ],
-        "purse-first": "purse-first_4",
+        "purse-first": "purse-first_5",
         "rust-overlay": "rust-overlay_2",
         "treefmt-nix": "treefmt-nix_4",
         "utils": [
