@@ -221,6 +221,13 @@
           # (internal/cutting_garden_plugin_optical). The git plugin is
           # pure Go (go-git) and has no runtime `git` dependency, so git
           # is no longer wrapped into the closure.
+          #
+          # The optical-plugin tools (cdparanoia, ddrescue) are gated to
+          # Linux: they rip from a physical drive (/dev/sr0), which a mac
+          # has no equivalent of, and pkgsUpstream.cdparanoia has no
+          # cached aarch64-darwin build — it builds from source and its
+          # darwin patch set fails (patch-interface_common__interface.c,
+          # 3/6 hunks rejected). Tracked in cutting-garden#97.
           nativeBuildInputs = [ pkgs.makeWrapper ];
 
           # Phase 5: generate manpages + shell completion stubs, then
@@ -234,12 +241,16 @@
             for bin in cutting-garden cg; do
               wrapProgram $out/bin/$bin \
                 --prefix PATH : ${
-                  pkgs.lib.makeBinPath [
-                    pkgsUpstream.yt-dlp
-                    pkgsUpstream.gallery-dl
-                    pkgsUpstream.cdparanoia
-                    pkgsUpstream.ddrescue
-                  ]
+                  pkgs.lib.makeBinPath (
+                    [
+                      pkgsUpstream.yt-dlp
+                      pkgsUpstream.gallery-dl
+                    ]
+                    ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux [
+                      pkgsUpstream.cdparanoia
+                      pkgsUpstream.ddrescue
+                    ]
+                  )
                 }
             done
           '';
@@ -342,12 +353,8 @@
             # `go run ./cmd/cutting-garden capture gphotos:…` in the
             # devshell matches a nix-built invocation.
             pkgsUpstream.gallery-dl
-            # cdparanoia + ddrescue back the optical plugin
-            # (internal/cutting_garden_plugin_optical), matching the wrap
-            # in the installed binary so `capture optical:/dev/sr0` from
-            # the devshell behaves the same as a nix-built invocation.
-            pkgsUpstream.cdparanoia
-            pkgsUpstream.ddrescue
+            # cdparanoia + ddrescue (optical plugin) are appended below,
+            # Linux-only — see the optionals clause after this list.
             # The git plugin itself is pure Go (go-git) and needs no `git`
             # binary at runtime. git is kept here only as test scaffolding:
             # internal/cutting_garden_plugin_git's integration tests build
@@ -364,6 +371,17 @@
             # only; generated `*_tommy.go` companions are committed, so
             # the package build needs no codegen at build time.
             tommy.packages.${system}.default
+          ]
+          # cdparanoia + ddrescue back the optical plugin
+          # (internal/cutting_garden_plugin_optical), matching the wrap in
+          # the installed binary so `capture optical:/dev/sr0` from the
+          # devshell behaves the same as a nix-built invocation. Linux-only:
+          # they rip from a physical drive a mac has no equivalent of, and
+          # pkgsUpstream.cdparanoia has no cached aarch64-darwin build (its
+          # darwin patch set fails). Tracked in cutting-garden#97.
+          ++ pkgs.lib.optionals pkgs.stdenv.hostPlatform.isLinux [
+            pkgsUpstream.cdparanoia
+            pkgsUpstream.ddrescue
           ];
 
           GOTOOLCHAIN = "local";
