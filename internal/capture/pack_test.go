@@ -50,9 +50,8 @@ func TestPackWrittenStores_PacksPackableStores(t *testing.T) {
 	packWrittenStores(
 		ctx,
 		collectNotices(&notices),
-		[]string{"archive"},
-		map[string]blob_stores.BlobStoreInitialized{
-			"archive": {BlobStore: fp},
+		[]writtenStore{
+			{id: "archive", store: blob_stores.BlobStoreInitialized{BlobStore: fp}},
 		},
 	)
 
@@ -75,9 +74,8 @@ func TestPackWrittenStores_SkipsNonPackableStores(t *testing.T) {
 	packWrittenStores(
 		errors.MakeContextDefault(),
 		collectNotices(&notices),
-		[]string{"local"},
-		map[string]blob_stores.BlobStoreInitialized{
-			"local": {}, // nil BlobStore → not a PackableArchive
+		[]writtenStore{
+			{id: "local"}, // nil BlobStore → not a PackableArchive
 		},
 	)
 
@@ -97,10 +95,9 @@ func TestPackWrittenStores_PackErrorIsNonFatal(t *testing.T) {
 	packWrittenStores(
 		errors.MakeContextDefault(),
 		collectNotices(&notices),
-		[]string{"bad", "good"},
-		map[string]blob_stores.BlobStoreInitialized{
-			"bad":  {BlobStore: failing},
-			"good": {BlobStore: ok},
+		[]writtenStore{
+			{id: "bad", store: blob_stores.BlobStoreInitialized{BlobStore: failing}},
+			{id: "good", store: blob_stores.BlobStoreInitialized{BlobStore: ok}},
 		},
 	)
 

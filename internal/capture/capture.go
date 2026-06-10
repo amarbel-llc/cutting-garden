@@ -541,21 +541,24 @@ func (cmd *Capture) Run(req command.Request) {
 	// durably (they have no group of their own).
 	var carryFailures []capture_failures.FailureV1
 
-	// Stores written to during the run, in first-write order and deduped
+	// Stores the run's groups capture into, in first-use order and deduped
 	// by effective store id (groups sharing the default store collapse to
-	// one entry). Populated only under --pack; consumed by
-	// packWrittenStores after the group loop.
-	var packOrder []string
-	packStores := map[string]blob_stores.BlobStoreInitialized{}
-	recordWrite := func(id string, bs blob_stores.BlobStoreInitialized) {
+	// one entry). Recorded per group rather than per successful receipt:
+	// blobs land in the store during CaptureRoot/CaptureProtocol (and via
+	// failure receipts) even when the group's receipt write later fails,
+	// and packing a store that received nothing is a no-op. Populated only
+	// under --pack; consumed by packWrittenStores after the group loop.
+	var packTargets []writtenStore
+	recordPackTarget := func(id string, bs blob_stores.BlobStoreInitialized) {
 		if !cmd.Pack {
 			return
 		}
-		if _, seen := packStores[id]; seen {
-			return
+		for _, w := range packTargets {
+			if w.id == id {
+				return
+			}
 		}
-		packStores[id] = bs
-		packOrder = append(packOrder, id)
+		packTargets = append(packTargets, writtenStore{id: id, store: bs})
 	}
 
 	for _, cf := range classifyFails {
@@ -601,6 +604,7 @@ func (cmd *Capture) Run(req command.Request) {
 		if effectiveStoreId == "" {
 			effectiveStoreId = envBlobStore.GetDefaultBlobStoreId()
 		}
+		recordPackTarget(effectiveStoreId, blobStore)
 
 		groupFailures := carryFailures
 		carryFailures = nil
@@ -642,7 +646,6 @@ func (cmd *Capture) Run(req command.Request) {
 				receipts = append(receipts, capturedReceipt{
 					store: storeName, receiptID: res.ReceiptDigest, count: res.ObjectCount,
 				})
-				recordWrite(effectiveStoreId, blobStore)
 				protocolReceipts++
 				captureLogEntries = append(captureLogEntries, captureLogEntry{
 					Ts:        capture_log.Timestamp(),
@@ -726,7 +729,6 @@ func (cmd *Capture) Run(req command.Request) {
 					Roots:     rootPaths(group.roots),
 				})
 				groupLogIdx = len(captureLogEntries) - 1
-				recordWrite(effectiveStoreId, blobStore)
 			}
 		}
 
@@ -793,7 +795,7 @@ func (cmd *Capture) Run(req command.Request) {
 	// through the live pipeline like any other; deliberately non-fatal
 	// (see packWrittenStores).
 	if cmd.Pack {
-		packWrittenStores(ctx, p.notice, packOrder, packStores)
+		packWrittenStores(ctx, p.notice, packTargets)
 	}
 
 	if len(captureLogEntries) > 0 {
@@ -855,28 +857,34 @@ func (cmd *Capture) Run(req command.Request) {
 func packWrittenStores(
 	ctx errors.Context,
 	notice func(format string, args ...any),
-	order []string,
-	stores map[string]blob_stores.BlobStoreInitialized,
+	targets []writtenStore,
 ) {
-	for _, id := range order {
-		blobStore := stores[id]
-
-		packable, ok := blobStore.BlobStore.(blob_stores.PackableArchive)
+	for _, w := range targets {
+		packable, ok := w.store.BlobStore.(blob_stores.PackableArchive)
 		if !ok {
 			notice(
 				"notice: store=%s does not support packfiles; pack skipped",
-				quoteEmpty(id),
+				quoteEmpty(w.id),
 			)
 			continue
 		}
 
 		if err := packable.Pack(blob_stores.PackOptions{Context: ctx}); err != nil {
-			notice("notice: pack failed for store=%s: %v", quoteEmpty(id), err)
+			notice("notice: pack failed for store=%s: %v", quoteEmpty(w.id), err)
 			continue
 		}
 
-		notice("notice: packed store=%s", quoteEmpty(id))
+		notice("notice: packed store=%s", quoteEmpty(w.id))
 	}
+}
+
+// writtenStore pairs a store's effective id with its initialized handle
+// for the --pack pass. Kept as an ordered slice (first-write order); the
+// handful of stores a run touches makes linear dedup cheaper than a
+// map+slice pair.
+type writtenStore struct {
+	id    string
+	store blob_stores.BlobStoreInitialized
 }
 
 // errCaptureFailed is the BatchDone error shown in the viewport's final
