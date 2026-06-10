@@ -9,10 +9,14 @@
 //     read errors on scratched media. Works for any data disc
 //     (CD-ROM, DVD, Blu-ray).
 //   - audio — cdparanoia rips each audio-CD track to a separate
-//     `trackNN.cdda.wav`, using its jitter/error correction.
+//     `trackNN.cdda.wav`, using its jitter/error correction. The rip
+//     is preceded by a metadata phase (audio_meta.go) that captures
+//     the disc TOC, its CDDB disc id, a best-effort CDDB lookup, and
+//     per-track ID3v2.4 tag blobs as sidecar entries: `disc.toc.json`,
+//     `disc.cddb` (raw server response, when matched), `trackNN.id3`.
 //
-// Restore is intentionally not implemented; the produced .iso/.map/.wav
-// files are regular files the filesystem plugin materializes. See
+// Restore is intentionally not implemented; the produced artifacts are
+// regular files the filesystem plugin materializes. See
 // docs/features/0015-optical-plugin.md for the rationale and the
 // TypeTag-reuse decision.
 package cutting_garden_plugin_optical
@@ -88,6 +92,17 @@ func (Plugin) CaptureRoot(
 			r.Log("optical plugin: tempdir cleanup failed: %v", rmErr)
 		}
 	}()
+
+	// Audio mode prepends a metadata phase: read the TOC, compute the
+	// CDDB disc id, best-effort CDDB lookup, and write the
+	// disc.toc.json / disc.cddb / trackNN.id3 sidecars into the tempdir
+	// so the post-rip walk streams them as ordinary entries.
+	if src.mode == modeAudio {
+		if err := writeAudioMetadata(req.Context, tempDir, src.device, r); err != nil {
+			r.Failure(req.RawArg, err)
+			return rootLevelFailure(src.device, err)
+		}
+	}
 
 	bin, args := toolInvocation(src)
 

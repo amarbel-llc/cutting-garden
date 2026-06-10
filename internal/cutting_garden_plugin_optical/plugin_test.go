@@ -26,14 +26,37 @@ printf '# fake ddrescue mapfile\n0x00000000 0x00100000 +\n' > disc.iso.map
 echo "ddrescue: finished" >&2
 `
 
-// fakeCdparanoiaScript stands in for cdparanoia -B: two deterministic
-// track WAVs in the working directory.
+// fakeCdparanoiaScript stands in for cdparanoia: `-Q` prints a
+// two-track TOC to stderr (where the real tool puts it) and exits;
+// otherwise it acts as `-B`, writing two deterministic track WAVs into
+// the working directory. The TOC numbers are the test vector for the
+// CDDB disc-id assertions (disc id 0c020e02, total 526 s).
 const fakeCdparanoiaScript = `#!/bin/sh
 set -e
+for arg in "$@"; do
+  if [ "$arg" = "-Q" ]; then
+    cat >&2 <<'TOC'
+cdparanoia III release 10.2 (September 11, 2008)
+
+Table of contents (audio tracks only):
+track        length       begin        copy pre ch
+===========================================================
+  1.    19502 [04:20.02]        0 [00:00.00]    no   no  2
+  2.    19952 [04:26.02]    19502 [04:20.02]    no   no  2
+TOTAL   39454 [08:46.04]    (audio only)
+TOC
+    exit 0
+  fi
+done
 printf 'RIFFfake-track-1WAVE' > track01.cdda.wav
 printf 'RIFFfake-track-2WAVE' > track02.cdda.wav
 echo "cdparanoia: done" >&2
 `
+
+// fakeTOCDiscID is the CDDB disc id the fake shim's TOC computes to:
+// start seconds 2 and 262 → digit sums 2 + 10 = 12 (0x0c); total
+// (39454+150)/75 − 150/75 = 526 (0x020e); 2 tracks.
+const fakeTOCDiscID = "0c020e02"
 
 // failingScript writes a recognizable stderr line and exits non-zero so
 // tests can assert the stderr-tail propagation path.
@@ -112,8 +135,9 @@ func TestPlugin_CaptureRoot_ImageMode_WritesImageAndMap(t *testing.T) {
 	}
 }
 
-func TestPlugin_CaptureRoot_AudioMode_WritesTracks(t *testing.T) {
+func TestPlugin_CaptureRoot_AudioMode_WritesTracksAndMetadata(t *testing.T) {
 	installFakeBin(t, cdparanoiaBin, fakeCdparanoiaScript)
+	t.Setenv(cddbURLEnvVar, cddbOff)
 
 	result := Plugin{}.CaptureRoot(cutting_garden_plugins.CaptureRootRequest{
 		Context:   context.Background(),
@@ -124,16 +148,90 @@ func TestPlugin_CaptureRoot_AudioMode_WritesTracks(t *testing.T) {
 	})
 
 	if result.FailCount != 0 {
-		t.Fatalf("FailCount = %d, want 0", result.FailCount)
+		t.Fatalf("FailCount = %d, want 0; failures: %v", result.FailCount, result.Failures)
 	}
-	if len(result.Entries) != 2 {
-		t.Fatalf("entries = %d, want 2 tracks: %v",
-			len(result.Entries), entryPaths(result.Entries))
+
+	// CDDB off: two WAVs, two ID3 sidecars, the TOC metadata — and no
+	// disc.cddb (no lookup ran).
+	want := map[string]bool{
+		"track01.cdda.wav": false,
+		"track02.cdda.wav": false,
+		"track01.id3":      false,
+		"track02.id3":      false,
+		tocFilename:        false,
+	}
+	if len(result.Entries) != len(want) {
+		t.Fatalf("entries = %d, want %d: %v",
+			len(result.Entries), len(want), entryPaths(result.Entries))
 	}
 	for _, e := range result.Entries {
-		if !strings.HasSuffix(e.Path, ".cdda.wav") {
-			t.Errorf("entry %q: want .cdda.wav suffix", e.Path)
+		if _, ok := want[e.Path]; !ok {
+			t.Errorf("unexpected entry %q", e.Path)
+			continue
 		}
+		want[e.Path] = true
+	}
+	for name, seen := range want {
+		if !seen {
+			t.Errorf("missing expected artifact %q", name)
+		}
+	}
+}
+
+func TestPlugin_CaptureRoot_AudioMode_CDDBMatchAddsRawBlob(t *testing.T) {
+	installFakeBin(t, cdparanoiaBin, fakeCdparanoiaScript)
+	t.Setenv(cddbURLEnvVar, startFakeCDDBServer(t))
+
+	result := Plugin{}.CaptureRoot(cutting_garden_plugins.CaptureRootRequest{
+		Context:   context.Background(),
+		Source:    mustParseURL(t, "optical:/dev/sr0?mode=audio"),
+		RawArg:    "optical:/dev/sr0?mode=audio",
+		BlobStore: newDiscardStore(),
+	})
+
+	if result.FailCount != 0 {
+		t.Fatalf("FailCount = %d, want 0; failures: %v", result.FailCount, result.Failures)
+	}
+	paths := map[string]bool{}
+	for _, e := range result.Entries {
+		paths[e.Path] = true
+	}
+	if !paths[cddbFilename] {
+		t.Errorf("entries missing %q with a matching cddb server: %v",
+			cddbFilename, entryPaths(result.Entries))
+	}
+	if len(result.Entries) != 6 {
+		t.Fatalf("entries = %d, want 6 (2 wav + 2 id3 + toc + cddb): %v",
+			len(result.Entries), entryPaths(result.Entries))
+	}
+}
+
+func TestPlugin_CaptureRoot_AudioMode_TOCFailure_RootFailure(t *testing.T) {
+	installFakeBin(t, cdparanoiaBin, failingScript)
+	t.Setenv(cddbURLEnvVar, cddbOff)
+
+	rep := &recordingReporter{}
+	result := Plugin{}.CaptureRoot(cutting_garden_plugins.CaptureRootRequest{
+		Context:   context.Background(),
+		Source:    mustParseURL(t, "optical:/dev/sr0?mode=audio"),
+		RawArg:    "optical:/dev/sr0?mode=audio",
+		BlobStore: newDiscardStore(),
+		Reporter:  rep,
+	})
+
+	if result.FailCount != 1 {
+		t.Fatalf("FailCount = %d, want 1", result.FailCount)
+	}
+	if !strings.Contains(result.Failures[0].Error, "no medium found") {
+		t.Errorf("Failures[0].Error = %q, want the -Q stderr detail", result.Failures[0].Error)
+	}
+	// The toc phase opened and closed with a failure verdict; the rip
+	// phase never started.
+	if len(rep.phaseStarts) != 1 || !strings.HasPrefix(rep.phaseStarts[0], "read toc ") {
+		t.Fatalf("phaseStarts = %v, want exactly the toc phase", rep.phaseStarts)
+	}
+	if len(rep.phaseEnds) != 1 || rep.phaseEnds[0].OK {
+		t.Fatalf("phaseEnds = %+v, want exactly one failure verdict", rep.phaseEnds)
 	}
 }
 

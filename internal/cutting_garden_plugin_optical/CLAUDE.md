@@ -15,7 +15,10 @@ see [FDR 0015](../../docs/features/0015-optical-plugin.md).
   `disc.iso` plus its rescue `disc.iso.map`, recovering from read
   errors on scratched media.
 - `mode=audio` — `cdparanoia -d <device> -B`. Rips each audio-CD track
-  to a separate `trackNN.cdda.wav` with jitter/error correction.
+  to a separate `trackNN.cdda.wav` with jitter/error correction, after
+  a metadata phase that also captures `disc.toc.json` (TOC + CDDB disc
+  id + parsed CDDB fields), `disc.cddb` (raw CDDB response, when
+  matched), and per-track ID3v2.4 tag blobs (`trackNN.id3`).
 
 ## What lives here
 
@@ -28,6 +31,18 @@ see [FDR 0015](../../docs/features/0015-optical-plugin.md).
   and (device, mode) → (binary, argv). The device path must be
   absolute; a bare-host form (`optical://dev/sr0`) and unknown modes
   are refused with hints.
+- `writeAudioMetadata` (`audio_meta.go`) — the audio-mode pre-rip
+  phase: `cdparanoia -Q` TOC parse, local CDDB disc-id computation,
+  best-effort CDDB lookup, and the metadata sidecar writes. TOC
+  failure is fatal; CDDB failure/no-match/disable degrades to
+  TOC-only metadata with a Log line.
+- `cddbLookup` (`cddb.go`) — two-step freedb-over-HTTP client
+  (query → read, proto 6/UTF-8, 10 s timeout). Server defaults to
+  gnudb; `CG_OPTICAL_CDDB_URL` overrides it, and the literal `off`
+  disables the lookup (tests point it at an httptest server).
+- `trackID3` (`id3.go`) — dependency-free ID3v2.4 builder (UTF-8 text
+  frames + a `CDDB_DISC_ID` TXXX frame). Empty values produce no
+  frame; no-CDDB tags carry `Track NN` fallback titles.
 - `runExternal` (`exec.go`) — `os/exec` wrapper that honors
   ctx-cancellation, forwards both stdout and stderr to the reporter's
   `Log`, and surfaces the last 4 KiB of stderr on non-zero exit.
