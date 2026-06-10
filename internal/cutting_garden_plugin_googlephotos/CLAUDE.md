@@ -19,7 +19,7 @@ gallery-dl could not extract.
 
 **Restore is intentionally not implemented.** Captured artifacts are
 regular files; the filesystem plugin materializes them. See
-[FDR 0009](../../docs/features/0009-google-photos-plugin.md) §Restore
+[FDR 0017](../../docs/features/0017-google-photos-plugin.md) §Restore
 Deferral.
 
 ## Exec-a-tool, like yt-dlp
@@ -43,7 +43,7 @@ into the failure.
   fresh tempdir and hash every artifact, returning fresh entries for the
   diff command to compare against the receipt. There is **no** cheap
   freshness probe (a Google Photos album has no single canonical metadata
-  sidecar to hash); the optimization is deferred — see FDR 0009 §Diff.
+  sidecar to hash); the optimization is deferred — see FDR 0017 §Diff.
 - `sourceURLFromArg` (`url.go`) — URL coercion across the two accepted
   argument forms plus host-allowlist enforcement and a leading-`-` guard.
 - `runGalleryDL` (`exec.go`) — `os/exec` wrapper that honors

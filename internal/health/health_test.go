@@ -15,6 +15,7 @@ import (
 	_ "github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugin_caldav"
 	_ "github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugin_file"
 	_ "github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugin_git"
+	_ "github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugin_googlephotos"
 	_ "github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugin_optical"
 	_ "github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugin_ytdlp"
 )
@@ -40,7 +41,7 @@ func rowsByName(rows []pluginRow) map[string]pluginRow {
 func TestProbe_CapabilitiesPerPlugin(t *testing.T) {
 	rows := rowsByName(collectRows())
 
-	for _, name := range []string{"file", "git", "ytdlp", "caldav", "optical"} {
+	for _, name := range []string{"file", "git", "ytdlp", "caldav", "optical", "gphotos"} {
 		if _, ok := rows[name]; !ok {
 			t.Fatalf("plugin %q not enumerated; got %v", name, keys(rows))
 		}
@@ -68,6 +69,11 @@ func TestProbe_CapabilitiesPerPlugin(t *testing.T) {
 	if r := rows["optical"]; !r.Capture || r.Restore != "no" || r.Diff ||
 		r.Protocol != "" || len(r.Traversal) != 0 {
 		t.Errorf("optical row = %+v", r)
+	}
+	// gphotos: capture/diff, no restore, no protocol, no traversal.
+	if r := rows["gphotos"]; !r.Capture || r.Restore != "no" || !r.Diff ||
+		r.Protocol != "" || len(r.Traversal) != 0 {
+		t.Errorf("gphotos row = %+v", r)
 	}
 	// caldav: full capture/restore/diff + RootLister traversal types.
 	r := rows["caldav"]

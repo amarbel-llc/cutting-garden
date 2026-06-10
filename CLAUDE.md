@@ -16,7 +16,7 @@ manpage/completion generator `cutting-garden-gen`. Hidden subcommands
 implement `command.CommandHidden` so they stay dispatchable but are
 filtered out of usage, manpages, and completion. Capture/restore/diff
 backends are URI-scheme-keyed plugins (file, git, yt-dlp, caldav, web,
-optical) under `internal/cutting_garden_plugin_*`. `serve` (`internal/serve/`) is a
+optical, gphotos) under `internal/cutting_garden_plugin_*`. `serve` (`internal/serve/`) is a
 long-lived LocalSend receiver bound to the host's Tailscale address:
 each incoming transfer lands as a normal fs-v1 capture receipt
 (FDR 0011). The original extraction design

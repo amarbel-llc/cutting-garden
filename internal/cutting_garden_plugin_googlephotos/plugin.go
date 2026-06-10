@@ -18,7 +18,7 @@
 //
 // Restore is intentionally not implemented; captured artifacts are
 // regular files that the filesystem plugin can materialize. See
-// `docs/features/0009-google-photos-plugin.md` for the deferral
+// `docs/features/0017-google-photos-plugin.md` for the deferral
 // rationale.
 package cutting_garden_plugin_googlephotos
 

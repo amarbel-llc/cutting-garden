@@ -22,12 +22,14 @@ import (
 // plugin always does a full re-scan. A Google Photos album has no single
 // canonical metadata sidecar to hash, so a content-addressed freshness
 // probe would have to enumerate the album's per-item metadata anyway;
-// the lighter probe is deferred (see FDR 0009 §Diff). Diff is read-only
+// the lighter probe is deferred (see FDR 0017 §Diff). Diff is read-only
 // and atomic, so per-entry failures aggregate into the returned error
 // rather than streaming through a sink.
 func (Plugin) ScanForDiff(
 	req cutting_garden_plugins.DiffScanRequest,
 ) (entries []capture_receipt.EntryV1, err error) {
+	r := cutting_garden_plugins.ReporterOrNop(req.Reporter)
+
 	source, err := sourceURLFromArg(req.Dir)
 	if err != nil {
 		return nil, err
@@ -37,7 +39,15 @@ func (Plugin) ScanForDiff(
 	if err != nil {
 		return nil, errors.Wrap(err)
 	}
-	defer errors.Deferred(&err, func() error { return os.RemoveAll(scanDir) })
+	defer func() {
+		// Scandir cleanup is best-effort, mirroring CaptureRoot's tempdir
+		// handling: by now every entry is hashed, so a leftover directory
+		// only costs disk space — it must not fail an otherwise
+		// successful (read-only) diff scan.
+		if rmErr := os.RemoveAll(scanDir); rmErr != nil {
+			r.Log("google-photos plugin: scandir cleanup failed: %v", rmErr)
+		}
+	}()
 
 	if err = runGalleryDL(req.Context, scanDir, captureDefaultArgs(scanDir, source)); err != nil {
 		return nil, err

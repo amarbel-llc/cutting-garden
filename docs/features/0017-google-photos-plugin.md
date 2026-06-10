@@ -135,6 +135,23 @@ authenticated write access to the Google Photos API and is out of scope;
 no concrete need has been identified. The plugin's `init()` deliberately
 omits the `MustRegisterRestore` call.
 
+## Traversal and config roots: deliberately out
+
+The plugin implements neither `RootLister` (FDR 0014) nor
+`RootProvider` (RFC 0007):
+
+- **No `RootLister`.** A share URL is a single album — one capture root.
+  An album does have enumerable structure (its photos), but enumerating
+  it requires a gallery-dl run, and the traversal contract is lazy
+  structure discovery, not a full extractor invocation. FDR 0014 names
+  exactly this shape of remote-folder enumeration (its Google Drive
+  example) as deferred; an album-listing traversal would ride that
+  decision, not precede it.
+- **No `RootProvider`.** Share URLs are pasted, not configured; there is
+  no account or endpoint to enumerate from `config.toml`. Whole-library
+  capture (which WOULD have a configured account) is a separate FDR —
+  see Open Questions.
+
 ## gallery-dl runtime dependency
 
 The plugin shells out to `gallery-dl` via `os/exec` and locates the
