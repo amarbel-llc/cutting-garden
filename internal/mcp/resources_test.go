@@ -28,7 +28,7 @@ func (fakeLister) CaptureRoot(
 func (fakeLister) Types() []cutting_garden_plugins.NodeType {
 	return []cutting_garden_plugins.NodeType{
 		{Tag: "test-calendar-v1", Container: true},
-		{Tag: "test-object-v1", Container: false},
+		{Tag: "test-object-v1", Container: false, MimeType: "text/calendar"},
 	}
 }
 
@@ -168,6 +168,9 @@ func TestReadResource_ContainerYieldsChildren(t *testing.T) {
 	if leaf.Type != "test-object-v1" {
 		t.Errorf("child type = %q, want test-object-v1", leaf.Type)
 	}
+	if leaf.MimeType != "text/calendar" {
+		t.Errorf("child mimetype = %q, want the declared text/calendar", leaf.MimeType)
+	}
 }
 
 func TestReadResource_LeafYieldsEmptyListing(t *testing.T) {
@@ -206,11 +209,27 @@ func TestListResourceTemplates_Empty(t *testing.T) {
 	}
 }
 
-func TestIsContainer_UnknownTagIsLeaf(t *testing.T) {
-	if isContainer(fakeLister{}, "no-such-tag-v1") {
-		t.Error("unknown tag treated as container; want leaf")
+func TestNodeToResource_LeafAdvertisesBodyMimeType(t *testing.T) {
+	mk := func(typ string) cutting_garden_plugins.Node {
+		return cutting_garden_plugins.Node{
+			URI:  &url.URL{Scheme: "faketest", Host: "h", Path: "/x"},
+			Name: "x",
+			Type: typ,
+		}
 	}
-	if !isContainer(fakeLister{}, "test-calendar-v1") {
-		t.Error("declared container tag treated as leaf")
+
+	// A declared leaf carries its declared mimetype.
+	if got := nodeToResource(fakeLister{}, mk("test-object-v1")).MimeType; got != "text/calendar" {
+		t.Errorf("declared leaf mimetype = %q, want text/calendar", got)
+	}
+	// An unknown tag is a leaf of unspecified mimetype → the contract
+	// default, never an invented container.
+	if got := nodeToResource(fakeLister{}, mk("no-such-tag-v1")).MimeType; got != cutting_garden_plugins.MimeTypeDefault {
+		t.Errorf("unknown-tag leaf mimetype = %q, want %q",
+			got, cutting_garden_plugins.MimeTypeDefault)
+	}
+	// A container keeps the listing mimetype, not a body type.
+	if got := nodeToResource(fakeLister{}, mk("test-calendar-v1")).MimeType; got != mimeListing {
+		t.Errorf("container mimetype = %q, want %q", got, mimeListing)
 	}
 }

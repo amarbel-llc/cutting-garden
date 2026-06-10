@@ -57,14 +57,29 @@ type NodeType struct {
     // Container is true when nodes of this type can be descended (have
     // children) and false for leaves (capturable objects with none).
     Container bool
+    // MimeType is the content type of a leaf's body (e.g.
+    // "text/calendar" for a CalDAV object). Empty means unspecified:
+    // consumers resolve a leaf's empty MimeType to
+    // application/octet-stream (BodyMimeType). Containers have no body
+    // of their own, so their MimeType is conventionally empty and the
+    // leaf default never applies to them.
+    MimeType string
 }
 ```
 
 The declared list is the plugin's compatibility surface: a format change
 adds a `-v2` entry while the `-v1` entry stays readable, so a consumer
 built against `-v1` keeps working when `-v2` nodes appear beside it. It
-also lets the tree be self-describing — descendability and format
-version are looked up in the list, never hardcoded against tag strings.
+also lets the tree be self-describing — descendability, format version,
+and body content type are looked up in the list (`NodeTypeFor` +
+`BodyMimeType`), never hardcoded against tag strings.
+
+`NodeType` deliberately grows toward dodder's type definitions — the
+`!toml-type-v2` blob whose fields include `binary`, `file-extension`,
+`mime-type`, and formatters (dodder FDR 0010 "core types") — one field
+at a time as a consumer needs it. `MimeType` is the first such field;
+`application/octet-stream` plays the role of dodder's null type `!`
+(opaque bytes, no schema) at the leaf default.
 
 ### The traversal primitive
 

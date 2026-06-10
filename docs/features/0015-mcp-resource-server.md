@@ -58,13 +58,18 @@ by `internal/mcp/Resources`, a `go-mcp` `server.ResourceProvider`:
 | MCP method | Mapping |
 |---|---|
 | `resources/list` | The immediate children of every root — one `ListRoots(root)` call each. The roots are the configured/intrinsic entry points; their children are the discoverable resources. |
-| `resources/read <uri>` | `ListRoots(uri)` rendered as a JSON array of node views (`uri`, `name`, `type`, `container`). A client descends a container lazily by reading successively deeper URIs. |
+| `resources/read <uri>` | `ListRoots(uri)` rendered as a JSON array of node views (`uri`, `name`, `type`, `container`, `mimeType`). A client descends a container lazily by reading successively deeper URIs. |
 | `resources/templates/list` | Empty — cutting-garden resources are enumerated, not URI-template parameterized. |
 
-A node's `container` flag is resolved from the plugin's declared `Types()`,
-never hardcoded against tag strings (FDR 0014's self-description
-contract): a container advertises the `application/json` listing mimetype
-so a client knows a read yields more structure; a leaf reads as an empty
+A node's `container` flag and body mimetype are resolved from the
+plugin's declared `Types()`, never hardcoded against tag strings (FDR
+0014's self-description contract). A container advertises the
+`application/json` listing mimetype so a client knows a read yields more
+structure; a leaf advertises its declared `NodeType.MimeType` (e.g.
+`text/calendar` for a CalDAV object), defaulting to
+`application/octet-stream` when the plugin declares none — what the
+object's bytes *are*, even though `resources/read` does not fetch them
+yet (the leaf body-fetch open question below). A leaf reads as an empty
 array.
 
 ### Roots come from config, not argv

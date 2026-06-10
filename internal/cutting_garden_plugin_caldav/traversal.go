@@ -27,7 +27,9 @@ var _ cutting_garden_plugins.RootLister = (*Plugin)(nil)
 func (Plugin) Types() []cutting_garden_plugins.NodeType {
 	return []cutting_garden_plugins.NodeType{
 		{Tag: typeCalendar, Container: true},
-		{Tag: typeObject, Container: false},
+		// A leaf is a single .ics resource (VEVENT/VTODO), captured as
+		// its verbatim bytes — iCalendar's registered mimetype.
+		{Tag: typeObject, Container: false, MimeType: "text/calendar"},
 	}
 }
 

@@ -5,11 +5,17 @@ import (
 	"net/url"
 )
 
+// MimeTypeDefault is the mimetype a leaf NodeType speaks when its
+// declaration leaves MimeType empty: opaque bytes, dodder's null-type
+// posture. Consumers MUST apply this default rather than propagating
+// the empty string.
+const MimeTypeDefault = "application/octet-stream"
+
 // NodeType is one entry in a RootLister plugin's declared type list. It
 // is the unit of self-description for the traversal tree: a Node names
 // its type by Tag, and a consumer resolves that Tag against the
-// plugin's Types() to learn whether the node can be descended and which
-// format version it speaks.
+// plugin's Types() to learn whether the node can be descended, which
+// format version it speaks, and what its bytes are.
 //
 // Tag is a hyphenated, horizontally-versioned identifier in the
 // madder/dodder scheme (e.g. "cutting_garden-caldav-calendar-v1"). The
@@ -17,12 +23,52 @@ import (
 // format change adds a "-v2" entry while the "-v1" entry stays
 // readable, so a consumer built against -v1 keeps working when -v2
 // nodes appear beside it (see amarbel-llc/cutting-garden#79).
+//
+// The shape deliberately grows toward dodder's type definitions
+// (dodder FDR 0010; the `!toml-type-v2` blob with binary /
+// file-extension / mime-type / formatter fields), one field at a time
+// as a consumer needs it — MimeType is the first.
 type NodeType struct {
 	// Tag is the hyphenated, horizontally-versioned type identifier.
 	Tag string
 	// Container is true when nodes of this type can be descended (have
 	// children) and false for leaves — capturable objects with none.
 	Container bool
+	// MimeType is the content type of a node's body — what a capture
+	// of one leaf of this type yields (e.g. "text/calendar" for a
+	// CalDAV object). Empty means unspecified: consumers resolve a
+	// leaf's empty MimeType to MimeTypeDefault (use BodyMimeType).
+	// Containers have no body of their own (their "content" is their
+	// child listing, a consumer-side rendering concern), so a
+	// container's MimeType is conventionally empty and consumers MUST
+	// NOT apply the leaf default to containers.
+	MimeType string
+}
+
+// BodyMimeType resolves the declared MimeType per the contract: a
+// leaf's empty MimeType defaults to MimeTypeDefault; a container has
+// no body, so its MimeType (conventionally empty) passes through
+// unchanged.
+func (t NodeType) BodyMimeType() string {
+	if t.MimeType == "" && !t.Container {
+		return MimeTypeDefault
+	}
+	return t.MimeType
+}
+
+// NodeTypeFor resolves a Node.Type tag against the plugin's declared
+// Types() — the one lookup every traversal consumer performs. ok is
+// false for an unknown tag; the zero NodeType then behaves as a leaf of
+// unspecified mimetype, so a consumer built against the declared list
+// neither invents descendability nor fabricates a content type beyond
+// the leaf default.
+func NodeTypeFor(lister RootLister, tag string) (NodeType, bool) {
+	for _, t := range lister.Types() {
+		if t.Tag == tag {
+			return t, true
+		}
+	}
+	return NodeType{}, false
 }
 
 // Node is one addressable point in a RootLister plugin's capturable

@@ -104,11 +104,13 @@ func (r *Resources) ReadResource(
 
 	views := make([]nodeView, 0, len(nodes))
 	for _, n := range nodes {
+		nt, _ := cutting_garden_plugins.NodeTypeFor(lister, n.Type)
 		views = append(views, nodeView{
 			URI:       n.URIString(),
 			Name:      n.Name,
 			Type:      n.Type,
-			Container: isContainer(lister, n.Type),
+			Container: nt.Container,
+			MimeType:  nt.BodyMimeType(),
 		})
 	}
 	body, err := json.MarshalIndent(views, "", "  ")
@@ -133,46 +135,41 @@ func (r *Resources) ListResourceTemplates(
 	return nil, nil
 }
 
-// nodeView is the JSON projection of a Node in a read listing. Container
-// is resolved from the plugin's declared Types() so a client can tell a
-// descendable node from a leaf without hardcoding tag strings.
+// nodeView is the JSON projection of a Node in a read listing.
+// Container and MimeType are resolved from the plugin's declared
+// Types() so a client can tell a descendable node from a leaf — and
+// what a leaf's bytes are — without hardcoding tag strings. MimeType is
+// the node body's content type (leaf default applied); it is empty for
+// containers, whose listing rendering is the server's concern.
 type nodeView struct {
 	URI       string `json:"uri"`
 	Name      string `json:"name"`
 	Type      string `json:"type"`
 	Container bool   `json:"container"`
+	MimeType  string `json:"mimeType,omitempty"`
 }
 
 // nodeToResource maps a traversal Node onto an MCP resource. A container
 // advertises the JSON listing mimetype (reading it yields children); a
-// leaf carries none (reading it yields an empty listing today).
+// leaf advertises its declared body mimetype (NodeType.MimeType, leaf
+// default application/octet-stream) — what the object's bytes are, even
+// though resources/read does not fetch them yet (#85).
 func nodeToResource(
 	lister cutting_garden_plugins.RootLister,
 	n cutting_garden_plugins.Node,
 ) protocol.Resource {
-	container := isContainer(lister, n.Type)
+	nt, _ := cutting_garden_plugins.NodeTypeFor(lister, n.Type)
 	res := protocol.Resource{
 		URI:         n.URIString(),
 		Name:        n.Name,
-		Description: describe(container, n.Type),
+		Description: describe(nt.Container, n.Type),
 	}
-	if container {
+	if nt.Container {
 		res.MimeType = mimeListing
+	} else {
+		res.MimeType = nt.BodyMimeType()
 	}
 	return res
-}
-
-// isContainer resolves a Node.Type tag against the plugin's declared
-// Types() to learn whether nodes of that type can be descended. An
-// unknown tag is treated as a leaf — a consumer built against the
-// declared list does not invent descendability.
-func isContainer(lister cutting_garden_plugins.RootLister, tag string) bool {
-	for _, t := range lister.Types() {
-		if t.Tag == tag {
-			return t.Container
-		}
-	}
-	return false
 }
 
 // describe renders a short, human-readable resource description from the
