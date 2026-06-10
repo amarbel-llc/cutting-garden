@@ -66,7 +66,7 @@ For each `optical:` root the plugin:
      sectors were recovered vs. still bad.
    - **audio** — `cdparanoia -d <device> -B`. Batch mode writes one
      `trackNN.cdda.wav` per track using cdparanoia's jitter/error
-     correction.
+     correction. Audio mode prepends a metadata phase (see below).
 3. Streams every produced regular file into the blob store as one
    `EntryV1` (two-pass walk, identical to the yt-dlp plugin: pass 1
    pre-sums sizes, pass 2 streams each file reporting cumulative
@@ -74,6 +74,43 @@ For each `optical:` root the plugin:
 
 A non-zero tool exit collapses into a single root-level
 `OpPlugin` failure on the argument, carrying the tool's stderr tail.
+
+### Audio metadata: TOC, CDDB, ID3
+
+Before ripping, audio mode runs a "read toc" phase (`audio_meta.go`)
+that captures the disc's identity and metadata as sidecar entries in
+the same receipt — yt-dlp's `info.json` idiom applied to optical
+media:
+
+1. `cdparanoia -Q` reads the table of contents. A TOC failure is
+   fatal (an unreadable disc would fail the rip anyway).
+2. The classic CDDB/freedb 8-hex-digit disc id is computed locally
+   from the TOC — no network needed for disc identity.
+3. A best-effort CDDB lookup (freedb HTTP protocol, proto 6/UTF-8)
+   resolves album/artist/year/genre and per-track titles. The server
+   defaults to gnudb (`http://gnudb.gnudb.org/~cddb/cddb.cgi`) and is
+   overridable via `CG_OPTICAL_CDDB_URL`; the literal value `off`
+   disables the lookup entirely. Network failure, a no-match, or a
+   10-second timeout degrades to TOC-only metadata with a Log line —
+   the lookup NEVER fails a capture.
+4. Sidecar artifacts land in the rip tempdir, so the post-rip walk
+   streams them into the merkle tree as ordinary `EntryV1`s:
+   - `disc.toc.json` — device, CDDB disc id, total seconds, per-track
+     begin/length sectors + duration, and (when matched) the parsed
+     CDDB fields including per-track titles. Compilation-style
+     `artist / title` track entries are split per CDDB convention.
+   - `disc.cddb` — the raw CDDB read response verbatim, as provenance
+     for the parsed fields. Only written on a successful match.
+   - `trackNN.id3` — a standalone ID3v2.4 tag blob per track (UTF-8
+     text frames: TIT2/TPE1/TALB/TDRC/TCON/TRCK, plus a
+     `CDDB_DISC_ID` TXXX frame). With no CDDB match the tag degrades
+     to `Track NN` + track position + disc id. The blob is exactly
+     the byte shape an encoder prepends to an MP3/FLAC transcode of
+     the paired WAV.
+
+CD-Text extraction (disc-resident metadata, no network) is possible
+future work; CDDB covers the overwhelming majority of pressed audio
+CDs.
 
 ### TypeTag reuse
 
