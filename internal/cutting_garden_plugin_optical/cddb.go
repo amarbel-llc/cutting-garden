@@ -104,7 +104,8 @@ func cddbQueryCmd(discID string, tracks []tocTrack) string {
 		parts = append(parts, strconv.FormatInt(t.BeginSector+leadInSectors, 10))
 	}
 	parts = append(parts, strconv.FormatInt(
-		(leadOutSector(tracks)+leadInSectors)/sectorsPerSecond, 10))
+		(leadOutSector(tracks)+leadInSectors)/sectorsPerSecond, 10,
+	))
 	return strings.Join(parts, " ")
 }
 
