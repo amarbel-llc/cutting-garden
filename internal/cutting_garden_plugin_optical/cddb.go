@@ -128,7 +128,7 @@ func cddbCommand(ctx context.Context, base, cmd string) (lines []string, raw str
 	if err != nil {
 		return nil, "", errors.Wrap(err)
 	}
-	defer resp.Body.Close()
+	defer errors.DeferredCloser(&err, resp.Body)
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, "", errors.ErrorWithStackf(
