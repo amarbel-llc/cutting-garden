@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: experimental
 date: 2026-04-28
 ported-from: amarbel-llc/madder docs/features/0001-restore.md
 promotion-criteria: |
