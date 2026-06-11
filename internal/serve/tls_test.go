@@ -105,12 +105,12 @@ func TestTLSListener_HandshakeServesInfo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("https GET /info: %v", err)
 	}
-	defer resp.Body.Close()
 
 	var info deviceInfo
 	if err := json.NewDecoder(resp.Body).Decode(&info); err != nil {
 		t.Fatalf("decode info: %v", err)
 	}
+	resp.Body.Close()
 	if info.Protocol != "https" {
 		t.Fatalf("advertised protocol %q, want https", info.Protocol)
 	}
