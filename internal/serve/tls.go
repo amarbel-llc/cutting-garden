@@ -102,8 +102,15 @@ func mintAndPersistCert(path string) (tls.Certificate, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return tls.Certificate{}, errors.Wrap(err)
 	}
+	// Write-then-rename so a kill mid-write can't leave a truncated
+	// PEM behind — loadOrCreateTLSCert treats an existing file as
+	// authoritative, so a partial one would fail every later start.
 	// 0600: the file carries the private key.
-	if err := os.WriteFile(path, buf, 0o600); err != nil {
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, buf, 0o600); err != nil {
+		return tls.Certificate{}, errors.Wrap(err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
 		return tls.Certificate{}, errors.Wrap(err)
 	}
 
