@@ -36,7 +36,8 @@ func TestLoadOrCreateTLSCert_PersistsAcrossLoads(t *testing.T) {
 // app/lib/util/security_helper.dart and its unit test). Pin that shape.
 func TestCertFingerprint_UppercaseHexOfLeafDER(t *testing.T) {
 	cert, err := loadOrCreateTLSCert(
-		filepath.Join(t.TempDir(), tlsCertFileName))
+		filepath.Join(t.TempDir(), tlsCertFileName),
+	)
 	if err != nil {
 		t.Fatalf("mint: %v", err)
 	}
@@ -60,7 +61,8 @@ func TestCertFingerprint_UppercaseHexOfLeafDER(t *testing.T) {
 // against configuring TLS without terminating it (cf. dodder#258).
 func TestTLSListener_HandshakeServesInfo(t *testing.T) {
 	cert, err := loadOrCreateTLSCert(
-		filepath.Join(t.TempDir(), tlsCertFileName))
+		filepath.Join(t.TempDir(), tlsCertFileName),
+	)
 	if err != nil {
 		t.Fatalf("mint: %v", err)
 	}
@@ -98,7 +100,8 @@ func TestTLSListener_HandshakeServesInfo(t *testing.T) {
 	}}
 
 	resp, err := client.Get(
-		"https://" + inner.Addr().String() + apiPrefix + "/info")
+		"https://" + inner.Addr().String() + apiPrefix + "/info",
+	)
 	if err != nil {
 		t.Fatalf("https GET /info: %v", err)
 	}

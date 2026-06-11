@@ -84,7 +84,8 @@ func mintAndPersistCert(path string) (tls.Certificate, error) {
 	}
 
 	der, err := x509.CreateCertificate(
-		rand.Reader, &template, &template, &key.PublicKey, key)
+		rand.Reader, &template, &template, &key.PublicKey, key,
+	)
 	if err != nil {
 		return tls.Certificate{}, errors.Wrap(err)
 	}
@@ -95,9 +96,11 @@ func mintAndPersistCert(path string) (tls.Certificate, error) {
 
 	var buf []byte
 	buf = append(buf, pem.EncodeToMemory(
-		&pem.Block{Type: "CERTIFICATE", Bytes: der})...)
+		&pem.Block{Type: "CERTIFICATE", Bytes: der},
+	)...)
 	buf = append(buf, pem.EncodeToMemory(
-		&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER})...)
+		&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER},
+	)...)
 
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return tls.Certificate{}, errors.Wrap(err)
