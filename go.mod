@@ -3,7 +3,7 @@ module github.com/amarbel-llc/cutting-garden
 go 1.26
 
 require (
-	github.com/amarbel-llc/crap/go-crap/v2 v2.1.1
+	github.com/amarbel-llc/crap/go-crap/v2 v2.2.2
 	github.com/amarbel-llc/madder/go v0.3.36
 	github.com/amarbel-llc/purse-first/libs/dewey v0.3.0
 	github.com/amarbel-llc/purse-first/libs/go-mcp v0.3.1
