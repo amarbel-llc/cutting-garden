@@ -18,6 +18,7 @@ import (
 	"net"
 	"os/exec"
 	"strings"
+	"sync"
 
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 	"golang.org/x/crypto/ssh"
@@ -28,6 +29,14 @@ import (
 type Server struct {
 	ln      net.Listener
 	hostPub ssh.PublicKey
+
+	// wg counts the accept loop plus every in-flight connection and
+	// session goroutine, so Close can drain the git pack helpers the
+	// sessions spawn. The accept loop holds an entry for the server's
+	// whole lifetime, which keeps the nested Adds (conns from the
+	// loop, sessions from their conn) safely above zero while Close
+	// waits (#57).
+	wg sync.WaitGroup
 }
 
 // Start launches the server on 127.0.0.1 with an ephemeral port and a
@@ -56,6 +65,7 @@ func Start() (*Server, error) {
 	}
 
 	s := &Server{ln: ln, hostPub: signer.PublicKey()}
+	s.wg.Add(1)
 	go s.acceptLoop(cfg)
 	return s, nil
 }
@@ -63,8 +73,16 @@ func Start() (*Server, error) {
 // Addr is the server's host:port (e.g. 127.0.0.1:54321).
 func (s *Server) Addr() string { return s.ln.Addr().String() }
 
-// Close stops accepting connections.
-func (s *Server) Close() error { return s.ln.Close() }
+// Close stops accepting connections, then blocks until every in-flight
+// connection — including the git pack helpers spawned for exec sessions
+// — has finished. The wait is what lets callers delete the repositories
+// the helpers write into as soon as Close returns: without it, TempDir
+// cleanup races receive-pack's writes under objects/ (#57).
+func (s *Server) Close() error {
+	err := s.ln.Close()
+	s.wg.Wait()
+	return err
+}
 
 // KnownHostsLine returns an OpenSSH known_hosts line trusting this server's
 // host key at its address — write it to a file and point SSH_KNOWN_HOSTS at
@@ -74,16 +92,21 @@ func (s *Server) KnownHostsLine() string {
 }
 
 func (s *Server) acceptLoop(cfg *ssh.ServerConfig) {
+	defer s.wg.Done()
 	for {
 		conn, err := s.ln.Accept()
 		if err != nil {
 			return
 		}
-		go serveConn(conn, cfg)
+		s.wg.Add(1)
+		go func() {
+			defer s.wg.Done()
+			_ = s.serveConn(conn, cfg)
+		}()
 	}
 }
 
-func serveConn(nConn net.Conn, cfg *ssh.ServerConfig) (err error) {
+func (s *Server) serveConn(nConn net.Conn, cfg *ssh.ServerConfig) (err error) {
 	sConn, chans, reqs, nerr := ssh.NewServerConn(nConn, cfg)
 	if nerr != nil {
 		return nerr
@@ -100,7 +123,15 @@ func serveConn(nConn net.Conn, cfg *ssh.ServerConfig) (err error) {
 		if aerr != nil {
 			return aerr
 		}
-		go handleSession(ch, chReqs)
+		// Sessions get their own WaitGroup entry: the connection
+		// goroutine can return (client hung up) while the session's
+		// git helper is still finalizing, and Close must wait for the
+		// helper, not just the connection.
+		s.wg.Add(1)
+		go func() {
+			defer s.wg.Done()
+			handleSession(ch, chReqs)
+		}()
 	}
 	return nil
 }

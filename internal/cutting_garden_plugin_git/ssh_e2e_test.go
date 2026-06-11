@@ -29,6 +29,14 @@ func TestSSHRemote_CaptureDiffRestore(t *testing.T) {
 		t.Skip("git not on PATH (test ssh server runs git's pack helpers)")
 	}
 
+	// Every t.TempDir() is created BEFORE the server starts: t.Cleanup
+	// runs LIFO, so the server's Close — which drains the git pack
+	// helpers writing into these directories (#57) — must be registered
+	// after them to run first.
+	knownHosts := filepath.Join(t.TempDir(), "known_hosts")
+	src, branch, tips := buildRepo(t, map[string]string{"f.txt": "v1"})
+	bare := filepath.Join(t.TempDir(), "dest.git")
+
 	srv, err := gittestssh.Start()
 	if err != nil {
 		t.Fatalf("start ssh server: %v", err)
@@ -37,7 +45,6 @@ func TestSSHRemote_CaptureDiffRestore(t *testing.T) {
 	addr := srv.Addr()
 
 	// Trust the server's host key via SSH_KNOWN_HOSTS (go-git reads it).
-	knownHosts := filepath.Join(t.TempDir(), "known_hosts")
 	if err := os.WriteFile(knownHosts, []byte(srv.KnownHostsLine()+"\n"), 0o644); err != nil {
 		t.Fatalf("write known_hosts: %v", err)
 	}
@@ -47,7 +54,6 @@ func TestSSHRemote_CaptureDiffRestore(t *testing.T) {
 	// NewSSHAgentAuth consumes); the server accepts any key.
 	startAgent(t)
 
-	src, branch, tips := buildRepo(t, map[string]string{"f.txt": "v1"})
 	sshURL := func(path string) string { return fmt.Sprintf("ssh://git@%s%s", addr, path) }
 
 	// capture over ssh
@@ -82,7 +88,6 @@ func TestSSHRemote_CaptureDiffRestore(t *testing.T) {
 	}
 
 	// restore-push over ssh into a bare "remote"
-	bare := filepath.Join(t.TempDir(), "dest.git")
 	if _, err := git.PlainInit(bare, true); err != nil {
 		t.Fatalf("init bare: %v", err)
 	}
