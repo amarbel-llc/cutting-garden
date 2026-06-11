@@ -139,8 +139,8 @@ func (cmd *Serve) Run(req command.Request) {
 
 	// HTTPS mode (the default): a persisted self-signed cert whose hash
 	// becomes the advertised device fingerprint (LocalSend protocol §2).
-	scheme := "http"
-	info := cmd.makeInfo()
+	// HTTP mode advertises a random per-process fingerprint instead.
+	protocol, fingerprint := "http", ""
 	var tlsConfig *tls.Config
 	if cmd.TLS {
 		certPath := cgEnvDir.GetXDG().State.MakePath(tlsCertFileName).String()
@@ -150,15 +150,16 @@ func (cmd *Serve) Run(req command.Request) {
 				errors.Wrapf(certErr, "TLS certificate at %s", certPath))
 			return
 		}
-		info.Protocol = "https"
-		info.Fingerprint = certFingerprint(cert)
+		protocol = "https"
+		fingerprint = certFingerprint(cert)
 		tlsConfig = tlsServerConfig(cert)
-		scheme = "https"
+	} else {
+		fingerprint = randToken()
 	}
 
 	srv := newServer(
 		store, storeName, effectiveStoreId, captureLogPath,
-		info, logf,
+		cmd.makeInfo(protocol, fingerprint), logf,
 	)
 
 	httpServer := &http.Server{
@@ -182,7 +183,7 @@ func (cmd *Serve) Run(req command.Request) {
 	}
 
 	logf("serve: LocalSend receiver listening on %s://%s%s",
-		scheme, addr, apiPrefix)
+		protocol, addr, apiPrefix)
 	logf("serve: device alias=%q store=%s; Ctrl-C to stop",
 		srv.info.Alias, quoteEmpty(storeName))
 
@@ -213,11 +214,10 @@ func (cmd *Serve) resolveBindHost() (string, error) {
 	return tailscaleAddr()
 }
 
-// makeInfo builds the advertised device descriptor with plain-HTTP
-// defaults (random per-process fingerprint, protocol "http"); the TLS
-// path in Run overrides fingerprint and protocol from the persisted
-// certificate. Alias defaults to the hostname.
-func (cmd *Serve) makeInfo() deviceInfo {
+// makeInfo builds the advertised device descriptor. The caller decides
+// protocol and fingerprint (cert-derived in HTTPS mode, random in HTTP
+// mode — LocalSend protocol §2). Alias defaults to the hostname.
+func (cmd *Serve) makeInfo(protocol, fingerprint string) deviceInfo {
 	alias := cmd.Alias
 	if alias == "" {
 		if h, err := os.Hostname(); err == nil && h != "" {
@@ -231,9 +231,9 @@ func (cmd *Serve) makeInfo() deviceInfo {
 		Version:     protocolVersion,
 		DeviceModel: "cutting-garden",
 		DeviceType:  "headless",
-		Fingerprint: randToken(),
+		Fingerprint: fingerprint,
 		Port:        cmd.Port,
-		Protocol:    "http",
+		Protocol:    protocol,
 		Download:    false,
 	}
 }

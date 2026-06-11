@@ -49,23 +49,12 @@ func loadOrCreateTLSCert(path string) (tls.Certificate, error) {
 	}
 }
 
-// parseCertPEM splits a combined cert+key PEM file back into the two
-// byte slices tls.X509KeyPair wants.
+// parseCertPEM builds the keypair from the combined cert+key PEM file.
+// tls.X509KeyPair tolerates the combined layout: it collects
+// CERTIFICATE blocks from its first argument and skips ahead to the
+// private-key block in its second, so the same bytes serve as both.
 func parseCertPEM(pemBytes []byte) (tls.Certificate, error) {
-	var certPEM, keyPEM []byte
-	for rest := pemBytes; ; {
-		var block *pem.Block
-		if block, rest = pem.Decode(rest); block == nil {
-			break
-		}
-		encoded := pem.EncodeToMemory(block)
-		if block.Type == "CERTIFICATE" {
-			certPEM = append(certPEM, encoded...)
-		} else {
-			keyPEM = append(keyPEM, encoded...)
-		}
-	}
-	cert, err := tls.X509KeyPair(certPEM, keyPEM)
+	cert, err := tls.X509KeyPair(pemBytes, pemBytes)
 	if err != nil {
 		return tls.Certificate{}, errors.Wrap(err)
 	}
@@ -118,7 +107,10 @@ func mintAndPersistCert(path string) (tls.Certificate, error) {
 		return tls.Certificate{}, errors.Wrap(err)
 	}
 
-	return parseCertPEM(buf)
+	return tls.Certificate{
+		Certificate: [][]byte{der},
+		PrivateKey:  key,
+	}, nil
 }
 
 // certFingerprint is the LocalSend HTTPS-mode device fingerprint:
