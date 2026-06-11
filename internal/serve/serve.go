@@ -17,6 +17,7 @@ package serve
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net"
 	"net/http"
@@ -47,6 +48,7 @@ type Serve struct {
 	Port  int
 	Store string
 	Alias string
+	TLS   bool
 }
 
 var (
@@ -56,7 +58,7 @@ var (
 
 // New constructs a Serve with flag defaults.
 func New() *Serve {
-	return &Serve{Port: defaultPort}
+	return &Serve{Port: defaultPort, TLS: true}
 }
 
 func (*Serve) GetDescription() command.Description {
@@ -73,8 +75,12 @@ func (*Serve) GetDescription() command.Description {
 			"Discovery by LAN multicast is out of scope (Tailscale has no " +
 			"multicast); senders reach the receiver by its tailnet " +
 			"address via LocalSend's manual-IP / favorites path. The " +
-			"server runs until interrupted (SIGINT/SIGTERM/SIGHUP), " +
-			"draining any in-flight transfer before exiting.",
+			"server speaks HTTPS by default with a persisted self-signed " +
+			"certificate whose SHA-256 is the advertised device " +
+			"fingerprint, matching the LocalSend app's default " +
+			"encryption mode. The server runs until interrupted " +
+			"(SIGINT/SIGTERM/SIGHUP), draining any in-flight transfer " +
+			"before exiting.",
 	}
 }
 
@@ -90,6 +96,10 @@ func (cmd *Serve) SetFlagDefinitions(flagSet interfaces.CLIFlagDefinitions) {
 			"when omitted).")
 	flagSet.StringVar(&cmd.Alias, "alias", "",
 		"device alias advertised to senders (default: hostname).")
+	flagSet.BoolVar(&cmd.TLS, "tls", true,
+		"serve HTTPS with a persisted self-signed certificate, which "+
+			"the LocalSend app's default encryption mode requires. "+
+			"-tls=false serves plain HTTP (e.g. for curl debugging).")
 }
 
 func (cmd *Serve) Run(req command.Request) {
@@ -127,9 +137,28 @@ func (cmd *Serve) Run(req command.Request) {
 		fmt.Fprintf(os.Stderr, format+"\n", args...)
 	}
 
+	// HTTPS mode (the default): a persisted self-signed cert whose hash
+	// becomes the advertised device fingerprint (LocalSend protocol §2).
+	scheme := "http"
+	info := cmd.makeInfo()
+	var tlsConfig *tls.Config
+	if cmd.TLS {
+		certPath := cgEnvDir.GetXDG().State.MakePath(tlsCertFileName).String()
+		cert, certErr := loadOrCreateTLSCert(certPath)
+		if certErr != nil {
+			errors.ContextCancelWithError(ctx,
+				errors.Wrapf(certErr, "TLS certificate at %s", certPath))
+			return
+		}
+		info.Protocol = "https"
+		info.Fingerprint = certFingerprint(cert)
+		tlsConfig = tlsServerConfig(cert)
+		scheme = "https"
+	}
+
 	srv := newServer(
 		store, storeName, effectiveStoreId, captureLogPath,
-		cmd.makeInfo(), logf,
+		info, logf,
 	)
 
 	httpServer := &http.Server{
@@ -146,9 +175,14 @@ func (cmd *Serve) Run(req command.Request) {
 			errors.Wrapf(err, "listen on %s", addr))
 		return
 	}
+	// TLS termination happens by wrapping the listener; http.Server's
+	// TLSConfig field alone does nothing under plain Serve (dodder#258).
+	if tlsConfig != nil {
+		listener = tls.NewListener(listener, tlsConfig)
+	}
 
-	logf("serve: LocalSend receiver listening on http://%s%s",
-		addr, apiPrefix)
+	logf("serve: LocalSend receiver listening on %s://%s%s",
+		scheme, addr, apiPrefix)
 	logf("serve: device alias=%q store=%s; Ctrl-C to stop",
 		srv.info.Alias, quoteEmpty(storeName))
 
@@ -179,8 +213,10 @@ func (cmd *Serve) resolveBindHost() (string, error) {
 	return tailscaleAddr()
 }
 
-// makeInfo builds the advertised device descriptor. Alias defaults to
-// the hostname; a fresh random fingerprint is minted per process.
+// makeInfo builds the advertised device descriptor with plain-HTTP
+// defaults (random per-process fingerprint, protocol "http"); the TLS
+// path in Run overrides fingerprint and protocol from the persisted
+// certificate. Alias defaults to the hostname.
 func (cmd *Serve) makeInfo() deviceInfo {
 	alias := cmd.Alias
 	if alias == "" {

@@ -312,6 +312,67 @@ debug-ytdlp-channel-list URL='https://www.youtube.com/@YouTube/videos' LIMIT='10
 debug-viewport-demo:
     nix develop --command go run ./cmd/capture-viewport-demo
 
+# Run one package's go tests (optionally one test via RUN) without the
+# full `just test` lane — the tight agent dev-loop while iterating on a
+# single package.
+[group('debug')]
+debug-test-pkg PKG='./internal/serve' RUN='':
+    #!/usr/bin/env bash
+    set -euo pipefail
+    run=()
+    if [[ -n '{{ RUN }}' ]]; then run=(-run '{{ RUN }}'); fi
+    nix develop --command go test "${run[@]}" {{ PKG }}
+
+# Inspect why `serve` Tailscale auto-detection picks (or misses) an
+# address: dump every interface address, the tailscale CLI's own view,
+# then run the built binary's serve for 2s to capture its bind line.
+# Agent debug dev-loop for the serve/Tailscale bind investigation.
+# Probe port defaults off 53317 so an already-running LocalSend won't
+# confound address detection with EADDRINUSE.
+[group('debug')]
+debug-serve-bind PORT='53399': debug-build-go
+    #!/usr/bin/env bash
+    set -uo pipefail
+    echo '--- ip -o addr show ---'
+    ip -o addr show
+    echo '--- tailscale ip ---'
+    tailscale ip 2>&1 || true
+    echo '--- cutting-garden serve probe (2s) ---'
+    timeout 2 .tmp/cutting-garden serve -port {{ PORT }} 2>&1
+    echo "probe exit: $? (124 = ran until timeout, i.e. bound successfully)"
+
+# Probe a live `serve` with curl as an independent LocalSend client:
+# GET /info and POST /register over HTTPS (-k: LocalSend peers pin the
+# cert hash, they don't CA-validate), and verify the presented cert's
+# SHA-256 matches the advertised fingerprint — the property the app's
+# favorites pinning relies on. Agent debug dev-loop for serve's
+# LocalSend HTTPS mode.
+[group('debug')]
+debug-localsend-probe PORT='53398': debug-build-go
+    #!/usr/bin/env bash
+    set -uo pipefail
+    .tmp/cutting-garden serve -port {{ PORT }} &
+    pid=$!
+    trap 'kill "$pid" 2>/dev/null' EXIT
+    sleep 1
+    host=$(tailscale ip -4)
+    base="$host:{{ PORT }}/api/localsend/v2"
+    echo '--- GET /info (HTTPS, no CA validation) ---'
+    curl -sSk "https://$base/info"; echo
+    echo '--- POST /register (HTTPS) ---'
+    curl -sSk -X POST "https://$base/register" \
+      -H 'content-type: application/json' \
+      -d '{"alias":"probe","version":"2.1","deviceModel":"curl","deviceType":"headless","fingerprint":"probe-fp","port":{{ PORT }},"protocol":"https","download":false}'
+    echo
+    echo '--- advertised fingerprint vs presented cert hash ---'
+    advertised=$(curl -sSk "https://$base/info" | jq -r .fingerprint)
+    presented=$(openssl s_client -connect "$host:{{ PORT }}" </dev/null 2>/dev/null \
+      | openssl x509 -outform DER | openssl dgst -sha256 \
+      | awk '{print toupper($NF)}')
+    echo "advertised: $advertised"
+    echo "presented:  $presented"
+    [[ "$advertised" == "$presented" ]] && echo MATCH || echo MISMATCH
+
 # Strace yt-dlp's writes to its output dir to see whether the merged
 # media file is written sequentially or with backward seeks (evidence
 # for the streaming-tempdir feasibility analysis; see ytdlp overlap-

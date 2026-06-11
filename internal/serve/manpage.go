@@ -15,7 +15,8 @@ func (*Serve) GetEnvVars() []command.EnvVar {
 			Name: "XDG_STATE_HOME",
 			Description: "Base directory under whose cutting-garden/ subdir " +
 				"captures.log is appended; one NDJSON line per finalized " +
-				"receipt (shared with the capture command).",
+				"receipt (shared with the capture command). The persisted " +
+				"TLS certificate (localsend-tls.pem) lives there too.",
 		},
 	}
 }
@@ -46,6 +47,12 @@ func (*Serve) GetFiles() []command.FilePath {
 		{
 			Path:        "$XDG_STATE_HOME/cutting-garden/captures.log",
 			Description: "NDJSON audit trail; one line per finalized receipt.",
+		},
+		{
+			Path: "$XDG_STATE_HOME/cutting-garden/localsend-tls.pem",
+			Description: "self-signed TLS certificate and private key, " +
+				"minted on first run; its SHA-256 is the device " +
+				"fingerprint senders pin.",
 		},
 		{
 			Path:        "$XDG_DATA_HOME/madder/<store>/",

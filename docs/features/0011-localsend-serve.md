@@ -92,6 +92,35 @@ cg command, a signal-cancelled context surfaces as a non-zero exit (the
 framework's `Signal` cause → exit 2) — there is no "clean" exit code for
 a daemon stopped by a signal.
 
+## HTTPS mode (default)
+
+The LocalSend app ships with its encryption setting **on**, in which
+mode it speaks HTTPS to peers and refuses plain-HTTP ones — observed as
+the app declining to add a serve receiver by IP (the original "TLS out
+of scope, Tailscale encrypts the transport" stance didn't survive
+contact with the app). The protocol wants *self-signed* TLS, not
+CA-valid TLS: per §2 of the spec, a device's HTTPS-mode fingerprint
+**is** the uppercase-hex SHA-256 of its certificate DER; senders pin
+that hash instead of validating a chain.
+
+serve therefore defaults to HTTPS with a self-signed ECDSA P-256
+certificate persisted at `$XDG_STATE_HOME/cutting-garden/
+localsend-tls.pem` (cert + PKCS#8 key, mode 0600), minted on first run
+with 10-year validity — mirroring the app's own cert. Persisting keeps
+the fingerprint stable across restarts so sender apps recognize the
+receiver as the same device. The advertised `fingerprint` field is
+derived from the cert; in `-tls=false` mode it falls back to a random
+per-process token (spec §2's HTTP-mode behavior).
+
+TLS is terminated by wrapping the TCP listener (`tls.NewListener`) —
+setting `http.Server.TLSConfig` alone does nothing under `Serve`
+(dodder#258 was exactly that bug).
+
+Tailscale-minted Let's Encrypt certs (dodder's `-tailscale-tls`
+pattern) were considered and deferred: `tailscale.com/client/local`'s
+`GetCertificate` rejects SNI-less hellos, and LocalSend's add-by-IP
+path — the only discovery path over a tailnet — sends no SNI.
+
 ## Flags
 
 - `-bind HOST` — explicit listen host; overrides Tailscale auto-detect.
@@ -99,10 +128,14 @@ a daemon stopped by a signal.
 - `-port N` — listen port (default `53317`, the LocalSend default).
 - `-store STORE_ID` — destination blob store (default store if omitted).
 - `-alias NAME` — device alias advertised to senders (default: hostname).
+- `-tls` — HTTPS with the persisted self-signed cert (default `true`);
+  `-tls=false` serves plain HTTP (curl debugging, senders with
+  encryption disabled).
 
 ## Non-goals
 
 - Sending (serve is receive-only; `download:false`).
 - UDP multicast discovery / announce.
-- HTTPS/TLS (Tailscale already provides the encrypted transport; the
-  LocalSend `protocol` field is advertised as `http`).
+- CA-validated TLS (LocalSend pins cert hashes; a Tailscale/Let's
+  Encrypt cert option is tracked separately and blocked on the SNI
+  question above).
