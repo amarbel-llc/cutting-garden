@@ -161,6 +161,48 @@
           inherit system;
         };
 
+        # tommy codegen as a conformist linter driver. Walks the tree for
+        # `//go:generate tommy generate` directives and runs `tommy generate`
+        # per file (REPAIR mode; the conformist.toml CHECK command is a no-op
+        # `true`). Resolves tommy + go from the AMBIENT PATH and skips (exit 0)
+        # when either is missing — so in the sandboxed checks.formatting lane
+        # (no go) it is a safe no-op, and in the devshell it regenerates the
+        # config-subsystem *_tommy.go, landing in the `conformist --commit`
+        # chore.
+        tommyCodegen = pkgs.writeShellApplication {
+          name = "conformist-tommy-codegen";
+          runtimeInputs = [
+            pkgs.coreutils
+            pkgs.findutils
+            pkgs.gnugrep
+          ];
+          text = ''
+            mode="repair"
+            if [ "''${1:-}" = "--check" ]; then
+              mode="check"
+            fi
+            if ! command -v tommy >/dev/null 2>&1; then
+              echo "tommy-codegen: tommy not on PATH; skipping" >&2
+              exit 0
+            fi
+            if ! command -v go >/dev/null 2>&1; then
+              echo "tommy-codegen: go not on PATH; skipping" >&2
+              exit 0
+            fi
+            status=0
+            while IFS= read -r f; do
+              dir=$(dirname "$f")
+              base=$(basename "$f")
+              if [ "$mode" = "check" ]; then
+                ( cd "$dir" || exit 1; GOFILE="$base" tommy generate --check; ) || status=1
+              else
+                ( cd "$dir" || exit 1; GOFILE="$base" tommy generate; ) || status=1
+              fi
+            done < <(grep -rIl --include='*.go' 'go:generate tommy generate' . 2>/dev/null | grep -v '/result' || true)
+            exit "$status"
+          '';
+        };
+
         # conformist toolchain: the formatter/linter binaries
         # ./conformist.toml drives, sourced from the SHA-pinned
         # nixpkgs-master (pkgsUpstream) so output is byte-reproducible
@@ -178,6 +220,11 @@
           # just provides its own formatter (`just --unstable --fmt`);
           # the [formatter.just] block in conformist.toml drives it.
           pkgsUpstream.just
+          # tommy ([formatter.tommy], `tommy fmt` over *.toml) + the codegen
+          # linter driver ([linter.tommy-codegen]). On the conformistTools PATH
+          # so both the wrapper and the sandboxed checks.formatting resolve them.
+          tommy.packages.${system}.default
+          tommyCodegen
         ];
 
         # `nix fmt` entrypoint: conformist with its toolchain on PATH,
@@ -371,6 +418,10 @@
             # only; generated `*_tommy.go` companions are committed, so
             # the package build needs no codegen at build time.
             tommy.packages.${system}.default
+            # conformist's tommy-codegen linter driver, so bare `conformist`
+            # (run via `just fmt` / `just lint-fmt` in the devshell) resolves
+            # the [linter.tommy-codegen] repair command.
+            tommyCodegen
           ]
           # cdparanoia + ddrescue back the optical plugin
           # (internal/cutting_garden_plugin_optical), matching the wrap in

@@ -68,3 +68,27 @@ options = [
   "--",
 ]
 includes = ["justfile", "*.justfile", ".justfile"]
+
+# TOML via tommy's CST-preserving formatter (`tommy fmt`). conformist.toml itself
+# is excluded above (intentional layout); the generated *_tommy.go is .go (also
+# excluded above), so this only touches hand-written *.toml.
+[formatter.tommy]
+command = "tommy"
+options = ["fmt"]
+includes = ["*.toml"]
+
+# tommy codegen as a REPAIR linter: `conformist` / `nix fmt` / `conformist
+# --commit` runs `tommy generate` for every `//go:generate tommy generate` source
+# file (the RFC 0007 config-subsystem *_tommy.go), so regenerated codegen lands
+# in the auto-fix chore. The driver self-gates on tommy + go (present in the
+# devshell `just fmt` runs under; absent in the sandboxed checks.formatting lane,
+# where it is a no-op). The CHECK command is a deliberate no-op (`true`) so the
+# sandboxed `conformist check` never reports false codegen drift — `tommy generate
+# --check` compares against tommy's raw render and needs the go toolchain, which
+# the sandbox lacks; true staleness stays gated by `just generate-check`.
+# passes-files=false: the driver walks the tree for the directive itself.
+[linter.tommy-codegen]
+command = "true"
+repair-command = "conformist-tommy-codegen"
+includes = ["*.go", "**/*.go"]
+passes-files = false
