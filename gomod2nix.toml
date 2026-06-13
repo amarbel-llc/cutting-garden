@@ -25,6 +25,10 @@ schema = 3
     version = 'v1.1.6'
     hash = 'sha256-XlFT3uxgpPYFTND54uO8fH33jtQqAHWa7zrv24nw/PE='
 
+  [mod.'github.com/amarbel-llc/crap/go-crap/v2']
+    version = 'v2.2.2'
+    hash = 'sha256-ZyZNwjoJjDNB3pVJnHXomcQ5EYNOoLVSQu2X1Tj3CCY='
+
   [mod.'github.com/amarbel-llc/madder/go']
     version = 'v0.3.36'
     hash = 'sha256-cNKWsP8CGWZNyEh40R6L0eAav+DqFaWZpGpzX3LGWUs='
