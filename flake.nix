@@ -161,6 +161,14 @@
           inherit system;
         };
 
+        # tommy's conformist codegen linter driver ([linter.tommy-codegen]),
+        # owned by the tommy flake so the pinned tommy input resolves which tommy
+        # backs it (no per-repo driver duplication). It bakes that tommy in and
+        # skips when go is absent — so in the sandboxed checks.formatting lane
+        # (no go) it is a safe no-op, and in the devshell it regenerates the
+        # config-subsystem *_tommy.go, landing in the `conformist --commit` chore.
+        tommyCodegen = tommy.packages.${system}.conformist-tommy-codegen;
+
         # conformist toolchain: the formatter/linter binaries
         # ./conformist.toml drives, sourced from the SHA-pinned
         # nixpkgs-master (pkgsUpstream) so output is byte-reproducible
@@ -178,6 +186,11 @@
           # just provides its own formatter (`just --unstable --fmt`);
           # the [formatter.just] block in conformist.toml drives it.
           pkgsUpstream.just
+          # tommy ([formatter.tommy], `tommy fmt` over *.toml) + the codegen
+          # linter driver ([linter.tommy-codegen]). On the conformistTools PATH
+          # so both the wrapper and the sandboxed checks.formatting resolve them.
+          tommy.packages.${system}.default
+          tommyCodegen
         ];
 
         # `nix fmt` entrypoint: conformist with its toolchain on PATH,
@@ -371,6 +384,10 @@
             # only; generated `*_tommy.go` companions are committed, so
             # the package build needs no codegen at build time.
             tommy.packages.${system}.default
+            # conformist's tommy-codegen linter driver, so bare `conformist`
+            # (run via `just fmt` / `just lint-fmt` in the devshell) resolves
+            # the [linter.tommy-codegen] repair command.
+            tommyCodegen
           ]
           # cdparanoia + ddrescue back the optical plugin
           # (internal/cutting_garden_plugin_optical), matching the wrap in
