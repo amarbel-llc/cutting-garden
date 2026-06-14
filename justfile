@@ -75,25 +75,29 @@ update-go: && build-gomod2nix
 update-nix:
     nix flake update
 
-# Sed-rewrite version.txt to the given semver. Single source of truth
-# per eng-versioning(7) §SINGLE VERSION SOURCE OF TRUTH; flake.nix
-# reads it via builtins.readFile. No-op if already at target.
+# Rewrite version.env to the given semver. Single source of truth per
+# eng-versioning(7) §SINGLE VERSION SOURCE OF TRUTH; flake.nix reads it
+# via builtins.match. No-op if already at target.
 # Usage: just bump-version 0.1.0
 [group('maintenance')]
 bump-version new_version:
     #!/usr/bin/env bash
     set -euo pipefail
-    current="$(cat version.txt 2>/dev/null | tr -d '\n' || true)"
+    current=""
+    if [[ -f version.env ]]; then
+      . ./version.env
+      current="${CUTTING_GARDEN_VERSION:-}"
+    fi
     if [[ "$current" == "{{ new_version }}" ]]; then
       gum log --level info "already at {{ new_version }}"
       exit 0
     fi
-    echo "{{ new_version }}" > version.txt
+    printf 'export CUTTING_GARDEN_VERSION=%s\n' "{{ new_version }}" > version.env
     gum log --level info "bumped version: ${current:-(none)} → {{ new_version }}"
 
 # Tag a release. Pass the bare semver; the "v" prefix is added for you.
 # Creates a signed annotated tag, pushes it to origin, verifies the
-# signature. Standalone callers (without bumping version.txt) use this
+# signature. Standalone callers (without bumping version.env) use this
 # directly; `just release` calls it under the hood.
 # Usage: just tag 0.1.0 "feat: phase-5 polish + release"
 [group('maintenance')]
@@ -112,7 +116,7 @@ tag version message:
     gum log --level info "Pushed $tag"
     git tag -v "$tag"
 
-# Cut a release: must be run on master. Bumps version.txt, commits the
+# Cut a release: must be run on master. Bumps version.env, commits the
 # bump with a changelog-style message built from commits since the last
 # v* tag, pushes master, then signs and pushes the v{{version}} tag.
 # Usage: just release 0.1.0
@@ -142,11 +146,11 @@ release version:
       msg="$header"
     fi
     just bump-version "{{ version }}"
-    if ! git diff --quiet version.txt; then
-      git add version.txt
+    if ! git diff --quiet version.env; then
+      git add version.env
       git commit -m "chore: release v{{ version }}"
       git push origin master
-      gum log --level info "pushed version.txt bump to master"
+      gum log --level info "pushed version.env bump to master"
     fi
     tag="v{{ version }}"
     if [[ -n "$prev" ]]; then

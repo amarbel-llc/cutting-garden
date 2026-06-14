@@ -96,11 +96,13 @@ client has discovered. No blob store is touched and nothing is captured.
 
 ### Clown plugin packaging
 
-The repo ships a Claude Code ("clown") plugin manifest
-(`.claude-plugin/plugin.json` + `.mcp.json`) that registers the server as
-`cutting-garden mcp` (no args). A client loading the plugin gets the
-configured CalDAV accounts and the working-directory tree as MCP resources
-out of the box.
+The repo ships a clown plugin under `plugins/cutting-garden/`
+(`.claude-plugin/plugin.json` + `clown.json.in`). The flake's
+`cutting-garden-clown-plugin` output substitutes the real binary path into
+`clown.json` and stages `share/purse-first/cutting-garden/`, which eng's
+`mkCircus` mounts to register the server as `cutting-garden mcp` (no args).
+A client loading the plugin gets the configured CalDAV accounts and the
+working-directory tree as MCP resources out of the box.
 
 ## Examples
 

@@ -8,9 +8,11 @@ A filesystem-tree capture/restore CLI atop
 [madder](https://github.com/amarbel-llc/madder), grown from a port of
 dodder's command-dispatch framework. Eight user-facing subcommands —
 `capture`, `restore`, `diff`, `serve`, `failures`, `health`, `list`,
-`mcp` — plus two hidden ones (`complete` for shell completion and
+`mcp` — plus three hidden ones (`complete` for shell completion,
 `__write-blob`, the RFC 0002 writer-protocol sink chrest pipes node blobs
-into) are registered in `internal/cgapp.Build()`, the single factory
+into, and `hook`, the clown-plugin PreToolUse sink — inert until the MCP
+server grows write tools, cutting-garden#102) are registered in
+`internal/cgapp.Build()`, the single factory
 shared by the `cutting-garden` binary, its `cg` alias, and the
 manpage/completion generator `cutting-garden-gen`. Hidden subcommands
 implement `command.CommandHidden` so they stay dispatchable but are

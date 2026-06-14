@@ -190,12 +190,17 @@
           text = ''exec conformist "$@"'';
         };
 
-        # version.txt at repo root is the single source of truth for
-        # the release version (eng-versioning(7) §SINGLE VERSION SOURCE
-        # OF TRUTH; `just release` sed-rewrites it). Trailing newline
-        # stripped so the nix derivation's `version` attr is a clean
-        # semver string.
-        cgVersion = pkgs.lib.removeSuffix "\n" (builtins.readFile ./version.txt);
+        # version.env at repo root is the single source of truth for the
+        # release version (eng-versioning(7) §SINGLE VERSION SOURCE OF
+        # TRUTH; `just bump-version` rewrites it). The match captures
+        # everything after CUTTING_GARDEN_VERSION= up to the line break;
+        # the `export` prefix is tolerated. Used for the derivation
+        # `version` attr and baked into the clown plugin manifest
+        # (cuttingGardenClownPlugin) so plugin.json can't drift from the
+        # binary.
+        cgVersion = builtins.head (
+          builtins.match ".*CUTTING_GARDEN_VERSION=([^\n]+).*" (builtins.readFile ./version.env)
+        );
 
         cuttingGarden = pkgs.buildGoApplication {
           pname = "cutting-garden";
@@ -280,10 +285,60 @@
           GOTOOLCHAIN = "local";
           meta.mainProgram = "cutting-garden-test-git-sshd";
         };
+
+        # cutting-garden-clown-plugin stages a clown plugin (see
+        # clown-plugin-protocol(7) / clown-json(5)) that exposes
+        # cutting-garden's capturable trees as MCP resources via
+        # `cutting-garden mcp` (FDR 0015). eng's mkCircus mounts it by
+        # consuming this derivation's
+        # share/purse-first/cutting-garden/{.claude-plugin/plugin.json,
+        # clown.json} (cutting-garden#101).
+        #
+        # The clown plugin protocol disallows ${...} expansion in
+        # stdioServers.command, so the binary path is baked in at build
+        # time via Nix substitution: the source-controlled clown.json.in
+        # uses an @cutting-garden@ placeholder rewritten to the real
+        # binary here. Unlike madder — whose MCP server is a separate
+        # madder-mcp binary — cutting-garden's MCP is a SUBCOMMAND of the
+        # main binary, so command = the main binary and args = ["mcp"].
+        # Pinning the binary into clown.json (rather than relying on PATH)
+        # keeps the plugin closure self-contained.
+        #
+        # plugin.json.in similarly bakes in cgVersion (@version@) so the
+        # manifest can't drift from the binary (the drift this replaced:
+        # a hand-maintained plugin.json that lagged version.env by four
+        # patch releases). hooks/ ships a PreToolUse hook scaffold whose
+        # handler execs `cutting-garden hook`; it is inert today (the MCP
+        # server is read-only, exposes no tools) and wired ahead of CUD
+        # tools (cutting-garden#102). clown auto-discovers
+        # $CLAUDE_PLUGIN_ROOT/hooks/hooks.json.
+        cuttingGardenClownPlugin = pkgs.runCommand "cutting-garden-clown-plugin" { } ''
+          pluginRoot=$out/share/purse-first/cutting-garden
+          mkdir -p $pluginRoot/.claude-plugin
+          substitute \
+            ${./plugins/cutting-garden/.claude-plugin/plugin.json.in} \
+            $pluginRoot/.claude-plugin/plugin.json \
+            --replace-fail '@version@' '${cgVersion}'
+          substitute \
+            ${./plugins/cutting-garden/clown.json.in} \
+            $pluginRoot/clown.json \
+            --replace-fail '@cutting-garden@' '${cuttingGarden}/bin/cutting-garden'
+          mkdir -p $pluginRoot/hooks
+          ${pkgs.jq}/bin/jq -e . ${./plugins/cutting-garden/hooks/hooks.json} > /dev/null
+          install -m 0644 ${./plugins/cutting-garden/hooks/hooks.json} $pluginRoot/hooks/hooks.json
+          substitute \
+            ${./plugins/cutting-garden/hooks/handler} \
+            $pluginRoot/hooks/handler \
+            --replace-fail '@cutting-garden@' '${cuttingGarden}/bin/cutting-garden'
+          chmod 0755 $pluginRoot/hooks/handler
+        '';
       in
       {
         packages = {
           default = cuttingGarden;
+
+          # Clown plugin closure for eng's mkCircus (cutting-garden#101).
+          cutting-garden-clown-plugin = cuttingGardenClownPlugin;
 
           # bats-capture is the hermetic Phase 2 step 9 test lane. It
           # builds a derivation whose only purpose is to run the bats

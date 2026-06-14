@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "stdioServers": {
+    "cutting-garden": {
+      "command": "@cutting-garden@",
+      "args": ["mcp"]
+    }
+  }
+}

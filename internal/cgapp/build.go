@@ -12,6 +12,7 @@ import (
 	"github.com/amarbel-llc/cutting-garden/internal/diff"
 	"github.com/amarbel-llc/cutting-garden/internal/failures"
 	"github.com/amarbel-llc/cutting-garden/internal/health"
+	"github.com/amarbel-llc/cutting-garden/internal/hook"
 	"github.com/amarbel-llc/cutting-garden/internal/list"
 	"github.com/amarbel-llc/cutting-garden/internal/mcp"
 	"github.com/amarbel-llc/cutting-garden/internal/restore"
@@ -56,5 +57,10 @@ func Build() command.Utility {
 	// capturer subprocesses (the web binding's chrest) pipe node blobs
 	// into. See internal/blob_writer and internal/cutting_garden_plugin_web.
 	utility.AddCmd("__write-blob", blob_writer.New())
+	// Hidden plumbing: the clown-plugin PreToolUse hook sink. The plugin's
+	// hooks/handler execs `cutting-garden hook` per hook event; it routes
+	// stdin/stdout through internal/claude_hooks. Inert today (the MCP
+	// server is read-only, exposes no tools), wired ahead of CUD tools.
+	utility.AddCmd("hook", hook.New())
 	return utility
 }

@@ -8,7 +8,7 @@ excludes = [
   "flake.lock",
   "go.sum",
   "gomod2nix.toml",
-  "version.txt",
+  "version.env",
   "sweatfile",
   "LICENSE",
   "*.md",

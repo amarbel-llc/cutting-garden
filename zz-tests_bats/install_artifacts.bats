@@ -41,13 +41,13 @@ function install_emits_subcommand_manpages { # @test
 }
 
 function install_omits_hidden_subcommand_manpages { # @test
-  # Hidden commands (CommandHidden: `complete`, `__write-blob`) are
-  # framework plumbing — they get no per-subcommand manpage, matching
+  # Hidden commands (CommandHidden: `complete`, `__write-blob`, `hook`)
+  # are framework plumbing — they get no per-subcommand manpage, matching
   # their absence from the toplevel SUBCOMMANDS/SEE ALSO list.
   local prefix
   prefix="$(install_prefix)"
 
-  for sub in complete __write-blob; do
+  for sub in complete __write-blob hook; do
     [[ ! -e "$prefix/share/man/man1/cutting-garden-$sub.1.gz" ]] ||
       fail "hidden subcommand '$sub' should not have a manpage at $prefix/share/man/man1/cutting-garden-$sub.1.gz"
   done
