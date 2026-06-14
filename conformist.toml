@@ -54,6 +54,19 @@ includes = ["*.sh", "*.bash", "*.bats"]
 command = "shellcheck"
 includes = ["*.sh", "*.bash", "*.bats"]
 
+# tommy ships `tommy fmt`, the canonical TOML formatter for RFC 0007's
+# config format. conformist passes matched files positionally
+# (`tommy fmt <files...>`) and tommy rewrites in place. `*` crosses `/`
+# in conformist's gobwas globs, so a single `*.toml` covers nested files.
+# Today both repo TOMLs (conformist.toml, gomod2nix.toml) are in the
+# excludes above, so this is a no-op until a non-excluded *.toml lands —
+# it future-proofs new config TOML and keeps the toolchain consistent
+# across eng repos (cutting-garden#… tommy↔conformist wiring).
+[formatter.tommy]
+command = "tommy"
+options = ["fmt"]
+includes = ["*.toml"]
+
 # just ships its own formatter, but `just --fmt` targets a single
 # --justfile rather than accepting the file list conformist passes as
 # args — so wrap it in a bash loop (cf. eng's [formatter.jq]). --fmt is

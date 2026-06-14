@@ -178,6 +178,11 @@
           # just provides its own formatter (`just --unstable --fmt`);
           # the [formatter.just] block in conformist.toml drives it.
           pkgsUpstream.just
+          # tommy ships `tommy fmt`, driven by the [formatter.tommy] block
+          # in conformist.toml. Sourced from the pinned `tommy` flake input
+          # (not pkgsUpstream) so the formatter rev matches the `tommy
+          # generate` codegen binary already in the devshell.
+          tommy.packages.${system}.default
         ];
 
         # `nix fmt` entrypoint: conformist with its toolchain on PATH,
