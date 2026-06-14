@@ -1052,16 +1052,16 @@
         ]
       },
       "locked": {
-        "lastModified": 1780940612,
-        "narHash": "sha256-mHNivk5E0bySKdh2sXcYopzC/Nhyb4AKU+4rDN+BOJ4=",
+        "lastModified": 1781445262,
+        "narHash": "sha256-YsbRRsjH7e54PKLKrwoTfo4LA8mHh0//k4Wrtq+Ad/E=",
         "owner": "amarbel-llc",
         "repo": "tommy",
-        "rev": "44424a475ee6545f12f5cfea7a2ccbc87b7708b9",
+        "rev": "41efed39bbfd893600e47cc81a7f200675f02032",
         "type": "github"
       },
       "original": {
         "owner": "amarbel-llc",
-        "ref": "v0.4.2",
+        "ref": "v0.4.6",
         "repo": "tommy",
         "type": "github"
       }

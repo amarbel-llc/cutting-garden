@@ -54,6 +54,24 @@ includes = ["*.sh", "*.bash", "*.bats"]
 command = "shellcheck"
 includes = ["*.sh", "*.bash", "*.bats"]
 
+# tommy codegen-drift guard. The conformist-tommy-codegen driver greps
+# *.go for `//go:generate tommy generate` directives (the RFC 0007
+# config structs) and regenerates the *_tommy.go companions — the
+# automated form of `just generate` (and the test lane's generate-check
+# codec-drift guard).
+#   - command = "true": the CHECK lane is a no-op. tommy's own `--check`
+#     diverges from our gofumpt'd committed codec and needs the go
+#     toolchain on PATH, so it would false-flag in the sandboxed gate.
+#   - repair-command regenerates, so codegen lands in the `conformist`
+#     repair lane (`just fmt`). The driver self-skips when tommy/go are
+#     absent, keeping the sandboxed check a safe no-op.
+#   - passes-files = false: whole-tree, run once (not per-file).
+[linter.tommy-codegen]
+command = "true"
+repair-command = "conformist-tommy-codegen"
+includes = ["*.go"]
+passes-files = false
+
 # tommy ships `tommy fmt`, the canonical TOML formatter for RFC 0007's
 # config format. conformist passes matched files positionally
 # (`tommy fmt <files...>`) and tommy rewrites in place. `*` crosses `/`
@@ -61,7 +79,7 @@ includes = ["*.sh", "*.bash", "*.bats"]
 # Today both repo TOMLs (conformist.toml, gomod2nix.toml) are in the
 # excludes above, so this is a no-op until a non-excluded *.toml lands —
 # it future-proofs new config TOML and keeps the toolchain consistent
-# across eng repos (cutting-garden#… tommy↔conformist wiring).
+# across eng repos as part of the tommy↔conformist wiring.
 [formatter.tommy]
 command = "tommy"
 options = ["fmt"]

@@ -103,7 +103,7 @@
     # one rev — tommy stamps its version into generated files and
     # `tommy generate --check` fails on binary/library skew.
     tommy = {
-      url = "github:amarbel-llc/tommy/v0.4.2";
+      url = "github:amarbel-llc/tommy/v0.4.6";
       inputs.igloo.follows = "igloo";
       inputs.nixpkgs-master.follows = "nixpkgs-master";
       inputs.utils.follows = "flake-utils";
@@ -183,6 +183,12 @@
           # (not pkgsUpstream) so the formatter rev matches the `tommy
           # generate` codegen binary already in the devshell.
           tommy.packages.${system}.default
+          # conformist-tommy-codegen: tommy's driver that greps *.go for
+          # `//go:generate tommy generate` directives and regenerates the
+          # *_tommy.go companions. Drives the [linter.tommy-codegen] repair
+          # lane in conformist.toml — the automated form of `just generate`
+          # / the #159 codec-drift guard.
+          tommy.packages.${system}.conformist-tommy-codegen
         ];
 
         # `nix fmt` entrypoint: conformist with its toolchain on PATH,

@@ -36,10 +36,11 @@ from the **config subsystem** (RFC 0007): a tommy-codegen'd
 config types live in `internal/config_common` (shared `Root`/`Account`
 base) and `internal/cgconfig` (`ConfigV0`, the delegated aggregator); the
 loader is `command_components.LoadConfig`. `*_tommy.go` files are
-generated — run `just generate` after editing a `//go:generate tommy
-generate` struct; `just`'s `generate-check` gate fails on drift. tommy is
-a flake-bridged dep (devshell binary + Go library at one rev; see
-`gomod.nix`).
+generated — run `just generate` (or `just fmt`, which also regenerates
+them via conformist's `[linter.tommy-codegen]` repair lane) after editing
+a `//go:generate tommy generate` struct; `just`'s `generate-check` gate
+fails on drift. tommy is a flake-bridged dep (devshell binary + Go library
+at one rev; see `gomod.nix`).
 
 Comments and TODOs frequently reference upstream dodder issues (#161, #183,
 …) and madder issues — check those before "fixing" what looks like a bug; some

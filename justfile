@@ -36,12 +36,20 @@ lint-go:
     gum log --level info "lint-go: ok"
 
 # Read-only formatting + lint gate via conformist (treefmt successor):
-# Go (goimports -> gofumpt), Nix (nixfmt), shell/bats (shfmt) + shellcheck.
-# Config in ./conformist.toml. `just fmt` is the write mode. The sandboxed
+# Go (goimports -> gofumpt), Nix (nixfmt), shell/bats (shfmt) + shellcheck,
+# TOML (tommy fmt), and the tommy-codegen drift guard. Config in
+# ./conformist.toml. `just fmt` is the write mode. The sandboxed
 # flake-check counterpart is `just build-nix-check`.
+#
+# Invokes `conformist-fmt` (the flake's hermetic wrapper, runtimeInputs =
+# conformistTools), NOT plain `conformist`: plain `conformist` resolves to
+# the home-manager profile binary, whose fixed eng toolchain can't see
+# repo-local tools like conformist-tommy-codegen (tommy v0.4.6). The
+# wrapper carries the repo's pinned toolchain. Generalizing this into the
+# eng convention is tracked in amarbel-llc/purse-first#155.
 [group('pre-build')]
 lint-fmt:
-    nix develop --command conformist check
+    nix develop --command conformist-fmt check
     gum log --level info "lint-fmt: ok"
 
 # Run one dewey analyzer (defererr, repool, seqerror) as a go vet -vettool.
@@ -163,11 +171,14 @@ release version:
     gum log --level info "Pushed $tag"
 
 # Format all source via conformist (the treefmt successor): Go
-# (goimports -> gofumpt), Nix (nixfmt), shell/bats (shfmt). Config lives
-# in ./conformist.toml. The read-only counterpart is `lint-fmt`.
+# (goimports -> gofumpt), Nix (nixfmt), shell/bats (shfmt), TOML (tommy
+# fmt), and the tommy-codegen repair lane (regenerates *_tommy.go). Config
+# lives in ./conformist.toml. The read-only counterpart is `lint-fmt`.
+# Uses the hermetic `conformist-fmt` wrapper (not plain `conformist`) so
+# the repo's pinned toolchain is on PATH — see the lint-fmt comment.
 [group('codemod')]
 fmt:
-    nix develop --command conformist
+    nix develop --command conformist-fmt
 
 # Regenerate the tommy TOML-codegen companions (*_tommy.go) for the config
 # subsystem (RFC 0007). Run after editing any `//go:generate tommy
