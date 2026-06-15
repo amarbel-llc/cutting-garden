@@ -426,3 +426,21 @@ debug-ytdlp-seek-probe URL='https://youtu.be/aqz-KE-bpKQ':
     grep -E 'openat\(.*"(\./)?(out\.|.*\.part|.*\.temp)' probe.strace || true
     echo '--- lseek/pwrite64/ftruncate on those files: inspect probe.strace ---'
     grep -cE '^\S+ +lseek' probe.strace || true
+
+# Probe the MCP server's initialize handshake and print the negotiated
+# serverInfo, verifying serverInfo.version is a populated string — the
+# fix for the client Zod error "serverInfo.version: expected string,
+# received undefined". Uses the nix-built binary (result/bin) so the
+# ldflag-burnt version shows; a `go build` binary would report "dev".
+# Agent debug dev-loop for the MCP serverInfo wiring.
+[group('debug')]
+debug-mcp-init: build-nix
+    #!/usr/bin/env bash
+    set -uo pipefail
+    req='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"probe","version":"0"}}}'
+    resp=$(printf '%s\n' "$req" | timeout 5 result/bin/cutting-garden mcp || true)
+    echo "--- raw initialize response ---"
+    echo "$resp"
+    echo '--- serverInfo ---'
+    echo "$resp" | jq -c '.result.serverInfo' 2>/dev/null \
+      || echo '(no serverInfo in response)'
