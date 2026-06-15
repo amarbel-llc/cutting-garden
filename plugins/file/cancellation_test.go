@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
-	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
+	"github.com/amarbel-llc/cutting-garden/pkgs/capture_receipt"
+	"github.com/amarbel-llc/cutting-garden/pkgs/cutting_garden_plugins"
 )
 
 // TestCaptureRoot_AbortsOnContextCancellation pins prompt-cancel

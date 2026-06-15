@@ -1,8 +1,12 @@
 # cutting_garden_plugin_file
 
-The filesystem capture/restore backend for cutting-garden. Peer leaf
-of `cutting_garden_plugins/` — not a nested subpackage. Registered
-in init() under both the `""` (schemeless) and `"file"` URI schemes.
+The filesystem capture/restore backend for cutting-garden. Migrated out
+of `internal/` to `plugins/file/` (RFC 0009 §5): it consumes the public
+plugin SDK (`pkgs/cutting_garden_plugins` plus the `pkgs/capture_*` and
+`pkgs/plugin_blob_io` facades), never `internal/`, so it is structurally
+identical to an out-of-tree plugin. Registered in init() under both the
+`""` (schemeless) and `"file"` URI schemes; the `plugins/all` aggregator
+blank-imports it into the in-repo binaries.
 
 Owns the wire-format type-tag
 `cutting_garden-capture_receipt-fs-v1`. The tag is locked per
@@ -26,8 +30,8 @@ rather than the URI scheme name "file".
   `walkForDiff`.
 
 Blob streaming (`WriteFileBlob`) and ctx-cancellation wrapping
-(`CtxReader`) are delegated to `internal/plugin_blob_io/`, shared
-with the yt-dlp plugin.
+(`CtxReader`) are delegated to `pkgs/plugin_blob_io` (the SDK facade over
+`internal/plugin_blob_io`), shared with the yt-dlp plugin.
 
 Vendored from `madder@7d295b9` (tag `go/v0.3.16`),
 `go/internal/hotel/cutting_garden_plugin_file/`. The receipt-blob
