@@ -5,18 +5,30 @@ import (
 	"strings"
 )
 
-// RegisteredPlugins returns every plugin registered in the capture,
-// restore, or diff registry, deduplicated and sorted by scheme set. It
-// is the read surface the `health` command uses to enumerate plugins and
-// probe their capabilities; the registries are otherwise resolve-only.
+// RegisteredPlugins returns every plugin registered in the scheme,
+// capture, restore, or diff registry, deduplicated and sorted by scheme
+// set. It is the read surface the `health`, `list`, and `mcp` commands use
+// to enumerate plugins and probe their capabilities; the registries are
+// otherwise resolve-only.
 //
 // The protocol registries (protocol_registry.go) contribute no new
 // plugins — a protocol plugin is also registered as a capture/diff
 // plugin — so protocol capabilities are detected by type-asserting the
-// returned Plugin, not by enumerating those registries.
+// returned Plugin, not by enumerating those registries. The scheme
+// registry (scheme_registry.go) is unioned in so a plugin registered via
+// MustRegisterScheme alone — implementing none of capture/restore/diff,
+// e.g. a RootProvider-only traversal plugin (RFC 0005, RFC 0009 §3) — is
+// still enumerated. Dedup by scheme set means a plugin registered both via
+// a direction and via MustRegisterScheme appears exactly once.
 func RegisteredPlugins() []Plugin {
 	byKey := map[string]Plugin{}
 	collect := func(p Plugin) { byKey[pluginKey(p)] = p }
+
+	defaultSchemeRegistry.mu.RLock()
+	for _, p := range defaultSchemeRegistry.plugins {
+		collect(p)
+	}
+	defaultSchemeRegistry.mu.RUnlock()
 
 	defaultCaptureRegistry.mu.RLock()
 	for _, p := range defaultCaptureRegistry.plugins {
