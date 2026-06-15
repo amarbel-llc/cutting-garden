@@ -1,7 +1,6 @@
 # cutting_garden_plugin_optical
 
-The optical-media capture backend for cutting-garden. Peer leaf of
-`cutting_garden_plugins/` — not a nested subpackage. Registered in
+The optical-media capture backend for cutting-garden. Lives outside `internal/` (in `plugins/`), consuming the public plugin SDK (`pkgs/`, RFC 0009) like an out-of-tree plugin would — it imports `pkgs/`, never `internal/` (enforced by the `internal/sdklayering` guard). Registered in
 `init()` under the single `"optical"` URI scheme
 (`optical:/dev/sr0`, optionally `?mode=image|audio`).
 

@@ -1,7 +1,6 @@
 # cutting_garden_plugin_git
 
-The git capture/diff/restore backend for cutting-garden. Peer leaf of
-`cutting_garden_plugins/` — not a nested subpackage. Registered in
+The git capture/diff/restore backend for cutting-garden. Lives outside `internal/` (in `plugins/`), consuming the public plugin SDK (`pkgs/`, RFC 0009) like an out-of-tree plugin would — it imports `pkgs/`, never `internal/` (enforced by the `internal/sdklayering` guard). Registered in
 `init()` under the single `"git"` URI scheme, in two argument forms:
 
 - opaque       `git:<remote-url>[#<branch>]` — any transport

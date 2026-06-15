@@ -1,7 +1,6 @@
 # cutting_garden_plugin_ytdlp
 
-The yt-dlp capture/diff backend for cutting-garden. Peer leaf of
-`cutting_garden_plugins/` — not a nested subpackage. Registered in
+The yt-dlp capture/diff backend for cutting-garden. Lives outside `internal/` (in `plugins/`), consuming the public plugin SDK (`pkgs/`, RFC 0009) like an out-of-tree plugin would — it imports `pkgs/`, never `internal/` (enforced by the `internal/sdklayering` guard). Registered in
 `init()` under the `"ytdlp"` URI scheme (both opaque
 `ytdlp:<source-url>` and hierarchical `ytdlp://<host>/<path>` forms)
 and under `"https"` for a closed host allowlist (`httpsAllowlist` in
