@@ -1,11 +1,7 @@
 default: build test
 
 [group('build')]
-build: build-gomod2nix build-go build-nix build-nix-check
-
-[group('build')]
-build-go: build-gomod2nix
-    nix develop --command go build ./...
+build: build-gomod2nix build-nix build-nix-check
 
 [group('build')]
 build-gomod2nix:
