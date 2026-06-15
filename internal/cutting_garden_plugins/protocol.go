@@ -35,6 +35,15 @@ type ProtocolCaptureRequest struct {
 	// an unreadable receipt, or a non-fast-forward change falls back to a
 	// full capture.
 	PriorReceiptDigest string
+
+	// BinaryVersion is the cutting-garden binary's build version, injected
+	// by the orchestrator (from internal/buildinfo) for a plugin that
+	// records it in its receipt's RFC 0002 Binary node. Passing it through
+	// the request keeps plugins from reaching for global build state — a
+	// plugin relocated out of internal/ (RFC 0009) cannot import
+	// internal/buildinfo, and the facade copy of its mutable var would go
+	// stale. Empty when the orchestrator has no version to supply.
+	BinaryVersion string
 }
 
 // ProtocolCaptureResult is the orchestrator-visible output of one

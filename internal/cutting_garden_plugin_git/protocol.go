@@ -8,7 +8,6 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/amarbel-llc/cutting-garden/internal/buildinfo"
 	"github.com/amarbel-llc/cutting-garden/internal/capture_events"
 	"github.com/amarbel-llc/cutting-garden/internal/capture_plugin"
 	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
@@ -78,6 +77,15 @@ func objectTypeString(gitType string) string {
 	return "git-capture-object-" + gitType + "-v1"
 }
 
+// optVersion extracts the optional binary version threaded through the
+// capture helpers as a trailing variadic (empty when a test omits it).
+func optVersion(version []string) string {
+	if len(version) > 0 {
+		return version[0]
+	}
+	return ""
+}
+
 // CaptureProtocol implements cutting_garden_plugins.ProtocolCapturePlugin:
 // it stores the branch's full object graph as content-addressed blobs
 // and wraps them in an RFC 0002 receipt merkle tree (receipt → identity
@@ -110,7 +118,7 @@ func (Plugin) CaptureProtocol(
 	// unsupported transport).
 	if req.PriorReceiptDigest != "" {
 		res, ok, ierr := tryIncrementalCapture(
-			req.Context, req.BlobStore, w, remote, branch, req.PriorReceiptDigest, r,
+			req.Context, req.BlobStore, w, remote, branch, req.PriorReceiptDigest, r, req.BinaryVersion,
 		)
 		if ierr != nil {
 			return cutting_garden_plugins.ProtocolCaptureResult{}, ierr
@@ -120,7 +128,7 @@ func (Plugin) CaptureProtocol(
 		}
 	}
 
-	return captureProtocol(req.Context, w, remote, branch, r)
+	return captureProtocol(req.Context, w, remote, branch, r, req.BinaryVersion)
 }
 
 // captureProtocol is the full (clone-everything) Writer-parameterized
@@ -128,11 +136,15 @@ func (Plugin) CaptureProtocol(
 // in-memory Writer. It mirrors git's object graph into madder by cloning
 // the single branch into an in-memory go-git storer (no `git` binary, no
 // working tree) and streaming every reachable object through the bridge.
+// version is a trailing variadic so the many in-package tests that drive
+// captureProtocol directly compile unchanged; the production caller
+// (CaptureProtocol) always supplies req.BinaryVersion.
 func captureProtocol(
 	ctx context.Context,
 	w capture_plugin.Writer,
 	remote, branch string,
 	r cutting_garden_plugins.Reporter,
+	version ...string,
 ) (cutting_garden_plugins.ProtocolCaptureResult, error) {
 	// The clone phase: the old "cloning…" Log is folded into the phase
 	// description; the clone-progress sideband Logs and the resolved-tip
@@ -155,7 +167,7 @@ func captureProtocol(
 		return cutting_garden_plugins.ProtocolCaptureResult{}, err
 	}
 
-	res, err := writeGitReceipt(ctx, w, remote, resolvedBranch, tip, objectRefs)
+	res, err := writeGitReceipt(ctx, w, remote, resolvedBranch, tip, optVersion(version), objectRefs)
 	if err != nil {
 		return cutting_garden_plugins.ProtocolCaptureResult{}, err
 	}
@@ -322,7 +334,7 @@ func typeLabel(t plumbing.ObjectType) string {
 func writeGitReceipt(
 	ctx context.Context,
 	w capture_plugin.Writer,
-	remote, resolvedBranch, tip string,
+	remote, resolvedBranch, tip, version string,
 	objectRefs []capture_plugin.Ref,
 ) (cutting_garden_plugins.ProtocolCaptureResult, error) {
 	// Sort object references by oid so the payload node is byte-stable
@@ -359,7 +371,7 @@ func writeGitReceipt(
 		Host: capture_plugin.GatherHost(),
 		Binary: capture_plugin.BinaryInfo{
 			Name:    "cutting-garden",
-			Version: buildinfo.Version,
+			Version: version,
 		},
 		PluginEnv: capture_plugin.PluginEnv{
 			TypeString: pluginEnvType,

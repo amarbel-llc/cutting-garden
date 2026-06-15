@@ -28,6 +28,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mattn/go-isatty"
 
+	"github.com/amarbel-llc/cutting-garden/internal/buildinfo"
 	"github.com/amarbel-llc/cutting-garden/internal/capture_events"
 	"github.com/amarbel-llc/cutting-garden/internal/capture_failures"
 	"github.com/amarbel-llc/cutting-garden/internal/capture_log"
@@ -630,6 +631,7 @@ func (cmd *Capture) Run(req command.Request) {
 					StoreName:          storeName,
 					PriorReceiptDigest: findPriorReceipt(cgEnvDir, storeName, root.path),
 					Reporter:           p.stream,
+					BinaryVersion:      buildinfo.Version,
 				})
 				if perr != nil {
 					p.failurePhase(root.path, perr)

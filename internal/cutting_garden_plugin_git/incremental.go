@@ -32,6 +32,7 @@ func tryIncrementalCapture(
 	w capture_plugin.Writer,
 	remote, branch, priorReceiptDigest string,
 	r cutting_garden_plugins.Reporter,
+	version ...string,
 ) (cutting_garden_plugins.ProtocolCaptureResult, bool, error) {
 	// The probe is a phase: it closes with a SKIP directive when nothing
 	// changed, plain OK when changes were found (or on a soft fallback to
@@ -62,7 +63,7 @@ func tryIncrementalCapture(
 				Reason: "no changes since prior capture",
 			},
 		})
-		res, werr := writeGitReceipt(ctx, w, remote, resolvedBranch, liveTip, priorPayload.Refs)
+		res, werr := writeGitReceipt(ctx, w, remote, resolvedBranch, liveTip, optVersion(version), priorPayload.Refs)
 		if werr != nil {
 			return cutting_garden_plugins.ProtocolCaptureResult{}, false, werr
 		}
@@ -108,7 +109,7 @@ func tryIncrementalCapture(
 	// Fast-forward ⇒ closure(prior) ⊆ closure(live), so the new object set
 	// is the prior set plus the delta.
 	allRefs := unionRefs(priorPayload.Refs, deltaRefs)
-	res, werr := writeGitReceipt(ctx, w, remote, resolvedBranch, liveTip, allRefs)
+	res, werr := writeGitReceipt(ctx, w, remote, resolvedBranch, liveTip, optVersion(version), allRefs)
 	if werr != nil {
 		return cutting_garden_plugins.ProtocolCaptureResult{}, false, werr
 	}
