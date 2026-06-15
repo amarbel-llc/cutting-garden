@@ -49,7 +49,7 @@ into the failure.
 - `runGalleryDL` (`exec.go`) — `os/exec` wrapper that honors
   ctx-cancellation and surfaces the last 4 KiB of stderr on non-zero
   exit. Resolves the binary via `exec.LookPath`.
-- Blob streaming is delegated to `internal/plugin_blob_io`'s
+- Blob streaming is delegated to `pkgs/plugin_blob_io`'s
   `WriteFileBlob`, shared with the filesystem and yt-dlp plugins.
 
 ## TypeTag reuse

@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/amarbel-llc/cutting-garden/internal/capture_events"
-	"github.com/amarbel-llc/cutting-garden/internal/capture_failures"
-	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
-	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
+	"github.com/amarbel-llc/cutting-garden/pkgs/capture_events"
+	"github.com/amarbel-llc/cutting-garden/pkgs/capture_failures"
+	"github.com/amarbel-llc/cutting-garden/pkgs/capture_receipt"
+	"github.com/amarbel-llc/cutting-garden/pkgs/cutting_garden_plugins"
 	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
 	"github.com/amarbel-llc/madder/go/pkgs/markl"
 )

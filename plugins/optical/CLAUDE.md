@@ -49,7 +49,7 @@ see [FDR 0016](../../docs/features/0016-optical-plugin.md).
   Resolves the binary via `exec.LookPath`; the Nix flake wraps
   cutting-garden so `ddrescue`/`cdparanoia` are on PATH at install
   time (and in the devshell).
-- Blob streaming is delegated to `internal/plugin_blob_io`'s
+- Blob streaming is delegated to `pkgs/plugin_blob_io`'s
   `WriteFileBlobProgress`, shared with the filesystem and ytdlp
   plugins.
 

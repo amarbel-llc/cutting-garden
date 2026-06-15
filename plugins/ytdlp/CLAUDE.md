@@ -32,7 +32,7 @@ Deferral.
   flake wraps cutting-garden binaries so yt-dlp is on PATH at
   install time.
 - Blob streaming is delegated to
-  `internal/plugin_blob_io/`'s `WriteFileBlob`, shared with the
+  `pkgs/plugin_blob_io/`'s `WriteFileBlob`, shared with the
   filesystem plugin. The package also owns `CtxReader`, the
   ctx-cancellation wrapper used by both plugins' copy loops.
 

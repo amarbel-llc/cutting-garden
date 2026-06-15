@@ -13,8 +13,8 @@ package cutting_garden_plugin_ytdlp
 import (
 	"net/url"
 
-	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
-	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
+	"github.com/amarbel-llc/cutting-garden/pkgs/capture_receipt"
+	"github.com/amarbel-llc/cutting-garden/pkgs/cutting_garden_plugins"
 )
 
 // Plugin is the yt-dlp capture/diff backend.
