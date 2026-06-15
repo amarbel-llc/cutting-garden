@@ -18,18 +18,18 @@ import (
 	"github.com/amarbel-llc/cutting-garden/internal/restore"
 	"github.com/amarbel-llc/cutting-garden/internal/serve"
 
-	// Blank-imports register plugin schemes and markl-id purposes at
-	// init time. The file plugin must register before any subcommand
-	// dispatch routes through ResolveRestore / ResolveDiff; markl_
-	// registrations covers the blech32 purpose lookups that fire
-	// when blob_store_env discovers an encrypted store config.
-	_ "github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugin_caldav"
-	_ "github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugin_file"
-	_ "github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugin_git"
-	_ "github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugin_googlephotos"
-	_ "github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugin_optical"
-	_ "github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugin_web"
-	_ "github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugin_ytdlp"
+	// markl-id purpose registrations (the blech32 purpose lookups that
+	// fire when blob_store_env discovers an encrypted store config). Not a
+	// plugin, and every binary that calls Build needs it, so it stays
+	// wired here.
+	//
+	// The capture/restore/diff/traversal PLUGINS are deliberately NOT
+	// imported here (RFC 0009 §5 step 3): Build() must stay plugin-bare so
+	// an external binary built on the SDK (pkgs/cgapp.Build) inherits only
+	// the plugins it explicitly links. Each in-repo binary blank-imports
+	// `plugins/all` from its own main to register the standard set; that
+	// aggregator is the single list, so the three in-repo mains cannot
+	// drift apart.
 	_ "github.com/amarbel-llc/madder/go/pkgs/markl_registrations"
 )
 

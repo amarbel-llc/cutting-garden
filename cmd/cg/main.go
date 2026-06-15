@@ -10,6 +10,10 @@ import (
 	"os"
 
 	"github.com/amarbel-llc/cutting-garden/internal/cgapp"
+
+	// Register the standard in-repo plugin set. cgapp.Build() is
+	// plugin-bare (RFC 0009 §5 step 3); the in-repo binaries opt in here.
+	_ "github.com/amarbel-llc/cutting-garden/plugins/all"
 )
 
 func main() {

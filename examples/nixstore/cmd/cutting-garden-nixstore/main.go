@@ -5,13 +5,14 @@
 // standard subcommands (list/mcp/serve/…). It imports ONLY pkgs/, the
 // shape a real out-of-repo binary takes.
 //
+// Because cgapp.Build() is plugin-bare (RFC 0009 §5 step 3), this binary
+// links ONLY the nix-store plugin — none of the in-tree plugins, which the
+// cutting-garden binaries opt into via plugins/all. That is the decoupling
+// the SDK exists to provide.
+//
 // It is not shipped: the flake's buildGoApplication builds an explicit
 // subPackages list (cmd/cutting-garden, cmd/cg, cmd/cutting-garden-gen),
 // so this example is exercised only by `go build ./...` / `go test ./...`.
-//
-// Until the RFC 0009 §5 step-3 relocation lands, cgapp.Build() also links
-// the in-tree plugins, so this binary bundles them; the real out-of-repo
-// binary will link only its own plugin once Build() is bare.
 package main
 
 import (
