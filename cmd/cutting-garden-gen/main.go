@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/amarbel-llc/cutting-garden/internal/buildinfo"
 	"github.com/amarbel-llc/cutting-garden/internal/cgapp"
 
 	// Register the standard in-repo plugin set so generated manpages and
@@ -34,6 +35,20 @@ import (
 	// plugin-bare (RFC 0009 §5 step 3); the in-repo binaries opt in here.
 	_ "github.com/amarbel-llc/cutting-garden/plugins/all"
 )
+
+// Declared so the shared `-X main.version` / `-X main.commit` ldflags the
+// fork injects across every subPackage have matching symbols in this
+// binary. cutting-garden-gen is a build-time tool (deleted post-install)
+// and surfaces neither value, but the ldflags list is shared, so without
+// these the linker would warn about an unknown -X target.
+var (
+	version = "dev"
+	commit  = "unknown"
+)
+
+func init() {
+	buildinfo.Set(version, commit)
+}
 
 func main() {
 	if len(os.Args) < 2 {

@@ -17,6 +17,7 @@ import (
 	"github.com/amarbel-llc/cutting-garden/internal/mcp"
 	"github.com/amarbel-llc/cutting-garden/internal/restore"
 	"github.com/amarbel-llc/cutting-garden/internal/serve"
+	"github.com/amarbel-llc/cutting-garden/internal/version"
 
 	// markl-id purpose registrations (the blech32 purpose lookups that
 	// fire when blob_store_env discovers an encrypted store config). Not a
@@ -35,9 +36,9 @@ import (
 
 // Build returns a fully-configured cutting-garden Utility with the
 // canonical name "cutting-garden", the "cg" alias, the hidden
-// `complete` subcommand registered, and the eight user-facing
+// `complete` subcommand registered, and the nine user-facing
 // subcommands (capture, restore, diff, serve, failures, health, list,
-// mcp) attached.
+// mcp, version) attached.
 //
 // Every cutting-garden binary main.go calls this and dispatches
 // utility.Run(os.Args).
@@ -53,6 +54,7 @@ func Build() command.Utility {
 	utility.AddCmd("health", health.New())
 	utility.AddCmd("list", list.New())
 	utility.AddCmd("mcp", mcp.New())
+	utility.AddCmd("version", version.New())
 	// Hidden plumbing: the RFC 0002 writer-protocol sink that external
 	// capturer subprocesses (the web binding's chrest) pipe node blobs
 	// into. See internal/blob_writer and internal/cutting_garden_plugin_web.

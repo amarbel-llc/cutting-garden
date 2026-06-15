@@ -6,12 +6,26 @@ package main
 import (
 	"os"
 
+	"github.com/amarbel-llc/cutting-garden/internal/buildinfo"
 	"github.com/amarbel-llc/cutting-garden/internal/cgapp"
 
 	// Register the standard in-repo plugin set. cgapp.Build() is
 	// plugin-bare (RFC 0009 §5 step 3); the in-repo binaries opt in here.
 	_ "github.com/amarbel-llc/cutting-garden/plugins/all"
 )
+
+// Populated at link time via `-X main.version` / `-X main.commit`, which
+// the amarbel-llc/nixpkgs fork auto-injects from the derivation's
+// version/commit attrs (sourced from version.env + the flake rev). Bare
+// `go build` leaves the dev defaults.
+var (
+	version = "dev"
+	commit  = "unknown"
+)
+
+func init() {
+	buildinfo.Set(version, commit)
+}
 
 func main() {
 	utility := cgapp.Build()

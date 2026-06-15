@@ -34,7 +34,7 @@ function install_emits_subcommand_manpages { # @test
   local prefix
   prefix="$(install_prefix)"
 
-  for sub in capture restore diff serve failures health list; do
+  for sub in capture restore diff serve failures health list mcp version; do
     [[ -f "$prefix/share/man/man1/cutting-garden-$sub.1.gz" ]] ||
       fail "missing manpage for subcommand '$sub' at $prefix/share/man/man1/cutting-garden-$sub.1.gz"
   done

@@ -33,6 +33,7 @@ import (
 	"net/url"
 	"os"
 
+	"github.com/amarbel-llc/cutting-garden/internal/buildinfo"
 	"github.com/amarbel-llc/cutting-garden/internal/command"
 	"github.com/amarbel-llc/cutting-garden/internal/command_components"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
@@ -95,7 +96,14 @@ func (cmd *MCP) Run(req command.Request) {
 	srv, err := server.New(
 		transport.NewStdio(os.Stdin, os.Stdout),
 		server.Options{
-			ServerName:        serverName,
+			ServerName: serverName,
+			// ServerVersion is REQUIRED: the MCP initialize response's
+			// serverInfo.version is a non-optional string in the client's
+			// schema. Omitting it makes clients reject the handshake
+			// ("expected string, received undefined"). buildinfo.Version is
+			// the ldflag-burnt release version ("dev" on bare builds —
+			// still a valid non-empty string).
+			ServerVersion:     buildinfo.Version,
 			Instructions:      instructions,
 			Resources:         provider,
 			PreferV1Providers: true,

@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/amarbel-llc/cutting-garden/internal/buildinfo"
 	"github.com/amarbel-llc/cutting-garden/internal/capture_events"
 	"github.com/amarbel-llc/cutting-garden/internal/capture_plugin"
 	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
@@ -358,7 +359,7 @@ func writeGitReceipt(
 		Host: capture_plugin.GatherHost(),
 		Binary: capture_plugin.BinaryInfo{
 			Name:    "cutting-garden",
-			Version: cgVersion(),
+			Version: buildinfo.Version,
 		},
 		PluginEnv: capture_plugin.PluginEnv{
 			TypeString: pluginEnvType,
@@ -424,16 +425,4 @@ func goGitVersion() string {
 		}
 	}
 	return "go-git (unknown)"
-}
-
-// cgVersion returns the cutting-garden binary version for the identity
-// binary node. It reads the Go build info main-module version; absent a
-// tagged build (e.g. `go test`, `go run`), it reports "dev".
-func cgVersion() string {
-	if info, ok := debug.ReadBuildInfo(); ok {
-		if v := info.Main.Version; v != "" && v != "(devel)" {
-			return v
-		}
-	}
-	return "dev"
 }

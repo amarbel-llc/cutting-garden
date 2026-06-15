@@ -213,9 +213,18 @@
           builtins.match ".*CUTTING_GARDEN_VERSION=([^\n]+).*" (builtins.readFile ./version.env)
         );
 
+        # shortRev for clean builds, dirtyShortRev for dirty working trees
+        # (so devshell/worktree builds show `<sha>-dirty` rather than
+        # masquerading as a clean release), "unknown" as a last resort.
+        # The fork's buildGoApplication auto-injects version/commit as
+        # `-X main.version` / `-X main.commit` on every subPackage; the cmd
+        # mains forward them into internal/buildinfo (eng-versioning(7)).
+        cgCommit = self.shortRev or self.dirtyShortRev or "unknown";
+
         cuttingGarden = pkgs.buildGoApplication {
           pname = "cutting-garden";
           version = cgVersion;
+          commit = cgCommit;
           src = ./.;
           pwd = ./.;
           modules = ./gomod2nix.toml;
@@ -384,6 +393,17 @@
               };
             };
             batsLibPath = [ bats.packages.${system}.bats-libs.batsLibPath ];
+            # version.env staged sibling-of-bats (lands at stage/version.env;
+            # bats runs from stage/zz-tests_bats/) so version.bats can read
+            # the source-of-truth release version via
+            # ${BATS_TEST_DIRNAME}/../version.env and pin it against the
+            # binary's ldflag-burnt `version` output.
+            extraStagedFiles = [
+              {
+                src = ./version.env;
+                dest = "version.env";
+              }
+            ];
             # openssh: ssh.bats's lib/git_ssh.bash runs ssh-agent /
             # ssh-keygen / ssh-add (the plugin authenticates ssh via the
             # agent). git: the test ssh server execs git's pack helpers
