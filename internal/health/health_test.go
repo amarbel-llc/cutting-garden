@@ -13,11 +13,11 @@ import (
 	// RegisteredPlugins() enumerates. The production binaries get these
 	// via cgapp's blank-imports.
 	_ "github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugin_caldav"
-	_ "github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugin_file"
 	_ "github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugin_git"
-	_ "github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugin_googlephotos"
-	_ "github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugin_optical"
-	_ "github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugin_ytdlp"
+	_ "github.com/amarbel-llc/cutting-garden/plugins/file"
+	_ "github.com/amarbel-llc/cutting-garden/plugins/googlephotos"
+	_ "github.com/amarbel-llc/cutting-garden/plugins/optical"
+	_ "github.com/amarbel-llc/cutting-garden/plugins/ytdlp"
 )
 
 // driveHealth dispatches the health subcommand through a fresh Utility

@@ -11,7 +11,7 @@ import (
 	// "", "file" diff schemes. Step 3 will exercise the resolve-plugin
 	// path; the step-2 skeleton does not reach it, but the import is
 	// harmless and matches how cmd/cutting-garden/main.go wires it.
-	_ "github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugin_file"
+	_ "github.com/amarbel-llc/cutting-garden/plugins/file"
 )
 
 func makeUtility() command.Utility {

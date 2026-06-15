@@ -3,7 +3,7 @@ package cutting_garden_plugin_web
 import (
 	"context"
 
-	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
+	"github.com/amarbel-llc/cutting-garden/pkgs/cutting_garden_plugins"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 )
 

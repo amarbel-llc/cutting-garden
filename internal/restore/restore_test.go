@@ -10,8 +10,8 @@ import (
 	// (TestRestore_TwoArgs_*) walk the resolve-plugin path; without
 	// this the registry is empty and resolve fails before we exercise
 	// what the test actually targets.
-	_ "github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugin_file"
 	"github.com/amarbel-llc/cutting-garden/internal/restore"
+	_ "github.com/amarbel-llc/cutting-garden/plugins/file"
 )
 
 // makeUtility wires a fresh Utility with the restore cmd registered.
