@@ -437,6 +437,23 @@
             # only; generated `*_tommy.go` companions are committed, so
             # the package build needs no codegen at build time.
             tommy.packages.${system}.default
+            # dagnabit: the `dagnabit export` codegen binary that generates
+            # the public pkgs/ facades over internal/ packages
+            # (`//go:generate dagnabit export`). Built by purse-first's
+            # gomod.nix (cmd/dagnabit). Devshell-only; generated pkgs/
+            # facades are committed, so the package build needs no codegen
+            # at build time. Run via `just generate-dagnabit`; the drift
+            # gate is `generate-check-dagnabit`, wired into `test`
+            # (RFC 0009 §The public surface).
+            purse-first.packages.${system}.dagnabit
+            # conformist-tommy-codegen: dagnabit runs `conformist` as a
+            # post-generation repair pass, which initialises every lane in
+            # conformist.toml — including [linter.tommy-codegen], whose
+            # repair command this binary provides. It is in conformistTools
+            # (for conformistFmt / checks.formatting) but must ALSO be on
+            # the devshell PATH so dagnabit's conformist call can resolve it
+            # (otherwise `go generate -run dagnabit` exits nonzero).
+            tommy.packages.${system}.conformist-tommy-codegen
           ]
           # cdparanoia + ddrescue back the optical plugin
           # (internal/cutting_garden_plugin_optical), matching the wrap in

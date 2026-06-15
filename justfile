@@ -24,7 +24,7 @@ build-nix-check:
     nix flake check --show-trace
 
 [group('post-build')]
-test: generate-check test-go lint-go lint-fmt lint-go-analyzers test-bats
+test: generate-check generate-check-dagnabit test-go lint-go lint-fmt lint-go-analyzers test-bats
 
 [group('post-build')]
 test-go:
@@ -185,9 +185,9 @@ fmt:
 # generate` struct (config_common, plugin config sections, cgconfig). The
 # read-only drift gate is `generate-check`, wired into `test`.
 #
-# -run tommy scopes this to the tommy directives only: a bare
-# `go generate ./...` would also fire other generators (e.g. dagnabit's
-# pkgs/ facades), whose binaries are not in the devshell.
+# -run tommy scopes this to the tommy directives only, keeping the tommy
+# and dagnabit (`generate-dagnabit`) codegen lanes distinct so each has
+# its own drift gate.
 [group('codemod')]
 generate:
     nix develop --command go generate -run tommy ./...
@@ -206,6 +206,27 @@ generate-check: generate
       exit 1
     fi
     gum log --level info "generate-check: ok"
+
+# Regenerate the dagnabit pkgs/ facades (RFC 0009 plugin SDK). Run after
+# adding or changing a `//go:generate dagnabit export` directive
+# (internal/capture_plugin, internal/cutting_garden_plugins). dagnabit is
+# built by purse-first's gomod.nix and on the devshell PATH. The read-only
+# drift gate is `generate-check-dagnabit`, wired into `test`.
+#
+# -run dagnabit scopes this to the dagnabit directives, parallel to
+# `generate` (tommy).
+[group('codemod')]
+generate-dagnabit:
+    nix develop --command go generate -run dagnabit ./...
+
+# Assert the committed pkgs/ facades are current: dagnabit's native
+# drift check exports fresh into a temp dir and diffs against the
+# committed facades without writing, exiting nonzero on drift — a stale
+# or hand-edited facade, or a dagnabit version bump. The dagnabit
+# analogue of generate-check (tommy).
+[group('pre-build')]
+generate-check-dagnabit:
+    nix develop --command dagnabit export -check
 
 [group('debug')]
 debug-build-go:
