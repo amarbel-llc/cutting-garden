@@ -13,8 +13,8 @@ import (
 	// RegisteredPlugins() enumerates. The production binaries get these
 	// via cgapp's blank-imports.
 	_ "github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugin_caldav"
-	_ "github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugin_git"
 	_ "github.com/amarbel-llc/cutting-garden/plugins/file"
+	_ "github.com/amarbel-llc/cutting-garden/plugins/git"
 	_ "github.com/amarbel-llc/cutting-garden/plugins/googlephotos"
 	_ "github.com/amarbel-llc/cutting-garden/plugins/optical"
 	_ "github.com/amarbel-llc/cutting-garden/plugins/ytdlp"

@@ -11,8 +11,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
-	"github.com/amarbel-llc/cutting-garden/internal/gittestssh"
+	"github.com/amarbel-llc/cutting-garden/pkgs/cutting_garden_plugins"
+	"github.com/amarbel-llc/cutting-garden/plugins/git/gittestssh"
 	git "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"golang.org/x/crypto/ssh/agent"

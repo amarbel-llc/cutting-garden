@@ -1,6 +1,6 @@
 package cutting_garden_plugin_git
 
-import "github.com/amarbel-llc/cutting-garden/internal/capture_plugin"
+import "github.com/amarbel-llc/cutting-garden/pkgs/capture_plugin"
 
 // gitObjectTypes is the closed set of git object kinds the plugin stores
 // as payload leaves. Each maps to a registered leaf type so its

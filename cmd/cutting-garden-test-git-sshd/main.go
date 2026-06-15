@@ -20,7 +20,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/amarbel-llc/cutting-garden/internal/gittestssh"
+	"github.com/amarbel-llc/cutting-garden/plugins/git/gittestssh"
 )
 
 func main() {

@@ -288,7 +288,7 @@
         };
 
         # cutting-garden-test-git-sshd is a test-only git-over-ssh server
-        # (internal/gittestssh as a standalone binary) that backs the bats
+        # (plugins/git/gittestssh as a standalone binary) that backs the bats
         # ssh lane (zz-tests_bats/ssh.bats via lib/git_ssh.bash). Built as
         # its own derivation and NOT shipped — mirrors madder's
         # madder-test-sftp-server. It runs git's pack helpers, so the bats

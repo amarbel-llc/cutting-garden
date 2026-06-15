@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/amarbel-llc/cutting-garden/internal/capture_plugin"
-	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
+	"github.com/amarbel-llc/cutting-garden/pkgs/capture_plugin"
+	"github.com/amarbel-llc/cutting-garden/pkgs/cutting_garden_plugins"
 	git "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"

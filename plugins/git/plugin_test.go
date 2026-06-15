@@ -3,7 +3,7 @@ package cutting_garden_plugin_git
 import (
 	"testing"
 
-	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
+	"github.com/amarbel-llc/cutting-garden/pkgs/capture_receipt"
 )
 
 func TestPlugin_Schemes_TypeTag(t *testing.T) {

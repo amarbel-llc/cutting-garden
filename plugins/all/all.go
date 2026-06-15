@@ -18,10 +18,10 @@ package all
 
 import (
 	_ "github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugin_caldav"
-	_ "github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugin_git"
 
 	// Migrated out of internal/ (RFC 0009 §5); consume the pkgs/ SDK.
 	_ "github.com/amarbel-llc/cutting-garden/plugins/file"
+	_ "github.com/amarbel-llc/cutting-garden/plugins/git"
 	_ "github.com/amarbel-llc/cutting-garden/plugins/googlephotos"
 	_ "github.com/amarbel-llc/cutting-garden/plugins/optical"
 	_ "github.com/amarbel-llc/cutting-garden/plugins/web"
