@@ -18,11 +18,12 @@ manpage/completion generator `cutting-garden-gen`. Hidden subcommands
 implement `command.CommandHidden` so they stay dispatchable but are
 filtered out of usage, manpages, and completion. Capture/restore/diff
 backends are URI-scheme-keyed plugins (file, git, yt-dlp, caldav, web,
-optical, gphotos). These are being migrated out of
-`internal/cutting_garden_plugin_*` to `plugins/<scheme>/` so they consume
-the public plugin SDK (`pkgs/`, RFC 0009) like an out-of-tree plugin
-would — `file` has moved (`plugins/file/`), the rest still live under
-`internal/cutting_garden_plugin_*` pending migration. `serve` (`internal/serve/`) is a
+optical, gphotos), each living in `plugins/<scheme>/` and consuming the
+public plugin SDK (`pkgs/`, RFC 0009) exactly as an out-of-tree plugin
+would — none import `internal/` (the no-inversion guard,
+`internal/sdklayering`, enforces this). The in-repo binaries opt into the
+standard set via `plugins/all`, which their `cmd/` mains blank-import;
+`cgapp.Build()` is plugin-bare. `serve` (`internal/serve/`) is a
 long-lived LocalSend receiver bound to the host's Tailscale address:
 each incoming transfer lands as a normal fs-v1 capture receipt
 (FDR 0011). The original extraction design
@@ -37,14 +38,19 @@ no URI, aggregate every plugin's **roots** (the `RootProvider` capability)
 from the **config subsystem** (RFC 0007): a tommy-codegen'd
 `$XDG_CONFIG_HOME/cutting-garden/config.toml` of per-plugin named accounts
 (caldav) plus intrinsic roots (the file plugin's working directory). The
-config types live in `internal/config_common` (shared `Root`/`Account`
-base) and `internal/cgconfig` (`ConfigV0`, the delegated aggregator); the
-loader is `command_components.LoadConfig`. `*_tommy.go` files are
-generated — run `just generate` (or `just fmt`, which also regenerates
-them via conformist's `[linter.tommy-codegen]` repair lane) after editing
-a `//go:generate tommy generate` struct; `just`'s `generate-check` gate
-fails on drift. tommy is a flake-bridged dep (devshell binary + Go library
-at one rev; see `gomod.nix`).
+config types' source lives in `internal/config_common` (shared
+`Root`/`Account` base), exposed publicly at `pkgs/config_common` via
+dagnabit **copy mode** (`export -copy`, a real source copy, not an alias)
+so the relocated `plugins/caldav` consumes a non-`internal/` definition —
+tommy resolves a config field's type to its *defining* package, so an
+alias facade would make caldav's generated codec import `internal/`
+(RFC 0009 §5). The delegated aggregator is `internal/cgconfig`
+(`ConfigV0`); the loader is `command_components.LoadConfig`. `*_tommy.go`
+files are generated — run `just generate` (or `just fmt`, which also
+regenerates them via conformist's `[linter.tommy-codegen]` repair lane)
+after editing a `//go:generate tommy generate` struct; `just`'s
+`generate-check` gate fails on drift. tommy is a flake-bridged dep
+(devshell binary + Go library at one rev; see `gomod.nix`).
 
 Comments and TODOs frequently reference upstream dodder issues (#161, #183,
 …) and madder issues — check those before "fixing" what looks like a bug; some
