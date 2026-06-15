@@ -128,7 +128,17 @@
       tommy,
       ...
     }:
-    flake-utils.lib.eachDefaultSystem (
+    {
+      # System-independent module outputs. cutting-garden EXPORTS the modules;
+      # circus consumes them as a flake input and sets
+      # programs/services.cutting-garden (mirrors circus/nix-cache, whose
+      # producer flake exports nixosModules.default). `self` is threaded in so
+      # `package` self-defaults to this flake's cutting-garden. See
+      # docs/features/0019-nixos-home-manager-modules.md.
+      nixosModules.default = import ./nix/nixos-module.nix self;
+      homeManagerModules.default = import ./nix/home-manager-module.nix self;
+    }
+    // flake-utils.lib.eachDefaultSystem (
       system:
       let
         # The amarbel-llc/nixpkgs fork auto-applies the gomod2nix
@@ -511,6 +521,85 @@
             }
             ''
               conformist check -v --tree-root ${self} --config-file ${./conformist.toml}
+              touch "$out"
+            '';
+
+        # Eval-check for the exported NixOS/home-manager modules
+        # (docs/features/0019): render a sample config.toml via the shared
+        # renderer (nix/config.nix) and confirm the built binary loads it and
+        # surfaces the caldav account as a root. Network-free — `cutting-garden
+        # list` with no URI enumerates configured roots (caldav Roots() only
+        # url.Parse's the configured URLs) without connecting. Guards the
+        # nix → config.toml → binary path end to end; the full NixOS VM test is
+        # a deferred follow-up.
+        checks.modules-eval =
+          # The NixOS-module instantiation below is Linux-only (NixOS assumes
+          # Linux), so on darwin this check is a no-op — otherwise
+          # `nix flake check --all-systems` (or a darwin evaluator) would choke
+          # forcing igloo.lib.nixosSystem on a darwin system.
+          if !pkgs.stdenv.hostPlatform.isLinux then
+            pkgs.runCommand "cutting-garden-modules-eval-skipped" { } "touch \"$out\""
+          else
+            let
+              shared = import ./nix/config.nix {
+                inherit (pkgs) lib;
+                inherit pkgs;
+              };
+              sampleAccounts = [
+                {
+                  name = "personal";
+                  url = "caldav://dav.example/dav/me/";
+                  username = "me";
+                  passwordEnv = "CALDAV_PERSONAL_PASSWORD";
+                }
+              ];
+              sampleConfig = shared.renderConfigToml { caldav.accounts = sampleAccounts; };
+
+              # Instantiate the exported NixOS module through a minimal host so the
+              # module's option-merge + config block (not just the bare renderer)
+              # are exercised at flake-check time. The rendered /etc file MUST equal
+              # the renderer's direct output for the same accounts — a logic error
+              # in the module wrapper makes them diverge and fails the gate.
+              nixosEtc =
+                (igloo.lib.nixosSystem {
+                  inherit system;
+                  modules = [
+                    self.nixosModules.default
+                    {
+                      system.stateVersion = "25.11";
+                      services.cutting-garden = {
+                        enable = true;
+                        caldav.accounts = sampleAccounts;
+                      };
+                    }
+                  ];
+                }).config.environment.etc."cutting-garden/config.toml".source;
+            in
+            pkgs.runCommand "cutting-garden-modules-eval" { } ''
+              echo '--- rendered config.toml (nix/config.nix renderConfigToml) ---'
+              cat ${sampleConfig}
+
+              # Renderer mapped the typed options to RFC 0007 snake_case TOML.
+              grep -q 'name = "personal"' ${sampleConfig}
+              grep -q 'url = "caldav://dav.example/dav/me/"' ${sampleConfig}
+              grep -q 'username = "me"' ${sampleConfig}
+              grep -q 'password_env = "CALDAV_PERSONAL_PASSWORD"' ${sampleConfig}
+
+              # The NixOS module wires the shared renderer: its rendered /etc file
+              # must match the renderer's direct output for the same accounts.
+              echo '--- NixOS module-rendered environment.etc config.toml ---'
+              cat ${nixosEtc}
+              diff ${sampleConfig} ${nixosEtc}
+
+              # The real binary accepts the rendered file and surfaces the account
+              # as a root (XDG_CONFIG_HOME wiring matches the headless moxy child).
+              export HOME="$PWD"
+              export XDG_CONFIG_HOME="$PWD/xdg"
+              mkdir -p "$XDG_CONFIG_HOME/cutting-garden"
+              cp ${sampleConfig} "$XDG_CONFIG_HOME/cutting-garden/config.toml"
+              ${cuttingGarden}/bin/cutting-garden list | tee out.txt
+              grep -q 'caldav://dav.example/dav/me/' out.txt
+
               touch "$out"
             '';
       }
