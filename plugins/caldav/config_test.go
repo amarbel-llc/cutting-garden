@@ -1,4 +1,4 @@
-package cutting_garden_plugin_caldav
+package caldav
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/amarbel-llc/cutting-garden/internal/config_common"
+	"github.com/amarbel-llc/cutting-garden/pkgs/config_common"
 )
 
 func setAccounts(t *testing.T, accts ...config_common.Account) {

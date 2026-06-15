@@ -10,7 +10,7 @@
 package cgconfig
 
 import (
-	caldav "github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugin_caldav"
+	"github.com/amarbel-llc/cutting-garden/plugins/caldav"
 )
 
 // ConfigV0 is the top-level, horizontally-versioned config. Each plugin

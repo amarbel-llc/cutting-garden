@@ -1,6 +1,6 @@
 package cgconfig
 
-import caldav "github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugin_caldav"
+import "github.com/amarbel-llc/cutting-garden/plugins/caldav"
 
 // Inject wires each plugin's config section into that plugin's package
 // state (RFC 0007 § Package Layering), so a RootProvider's Roots and a

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugin_caldav"
+	"github.com/amarbel-llc/cutting-garden/plugins/caldav"
 	"github.com/amarbel-llc/tommy/pkg/cst"
 	"github.com/amarbel-llc/tommy/pkg/document"
 )
@@ -40,7 +40,7 @@ func DecodeConfigV0(input []byte) (*ConfigV0Document, error) {
 
 	if _vCaldav, _ok := model.Get("caldav"); _ok && _vCaldav.Kind == cst.VTable {
 		_vCaldav.MarkSeen()
-		if err := cutting_garden_plugin_caldav.DecodeAccountsConfigInto(&d.data.Caldav, _vCaldav); err != nil {
+		if err := caldav.DecodeAccountsConfigInto(&d.data.Caldav, _vCaldav); err != nil {
 			return nil, fmt.Errorf("caldav: %w", err)
 		}
 	}
@@ -60,7 +60,7 @@ func (d *ConfigV0Document) Encode() ([]byte, error) {
 	}
 	{
 		tableNode := cst.EnsureChildTable(d.cstDoc.Root(), d.cstDoc.Root(), "caldav")
-		if err := cutting_garden_plugin_caldav.EncodeAccountsConfigFrom(&d.data.Caldav, d.cstDoc, tableNode); err != nil {
+		if err := caldav.EncodeAccountsConfigFrom(&d.data.Caldav, d.cstDoc, tableNode); err != nil {
 			return nil, fmt.Errorf("caldav: %w", err)
 		}
 	}
@@ -93,7 +93,7 @@ func (d *ConfigV0Document) SetInlineComment(key, comment string) {
 func DecodeConfigV0Into(data *ConfigV0, sub *cst.Value) error {
 	if _vCaldav, _ok := sub.Get("caldav"); _ok && _vCaldav.Kind == cst.VTable {
 		_vCaldav.MarkSeen()
-		if err := cutting_garden_plugin_caldav.DecodeAccountsConfigInto(&data.Caldav, _vCaldav); err != nil {
+		if err := caldav.DecodeAccountsConfigInto(&data.Caldav, _vCaldav); err != nil {
 			return fmt.Errorf("caldav: %w", err)
 		}
 	}
@@ -109,7 +109,7 @@ func EncodeConfigV0From(data *ConfigV0, doc *document.Document, container *cst.N
 	}
 	{
 		tableNode := cst.EnsureChildTable(doc.Root(), container, "caldav")
-		if err := cutting_garden_plugin_caldav.EncodeAccountsConfigFrom(&data.Caldav, doc, tableNode); err != nil {
+		if err := caldav.EncodeAccountsConfigFrom(&data.Caldav, doc, tableNode); err != nil {
 			return fmt.Errorf("caldav: %w", err)
 		}
 	}

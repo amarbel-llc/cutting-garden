@@ -1,12 +1,12 @@
-package cutting_garden_plugin_caldav
+package caldav
 
 import (
 	"context"
 	"net/url"
 	"strings"
 
-	"github.com/amarbel-llc/cutting-garden/internal/config_common"
-	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
+	"github.com/amarbel-llc/cutting-garden/pkgs/config_common"
+	"github.com/amarbel-llc/cutting-garden/pkgs/cutting_garden_plugins"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 )
 

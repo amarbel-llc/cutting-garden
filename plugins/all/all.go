@@ -17,9 +17,9 @@
 package all
 
 import (
-	_ "github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugin_caldav"
-
-	// Migrated out of internal/ (RFC 0009 §5); consume the pkgs/ SDK.
+	// All plugins now live outside internal/ and consume the pkgs/ SDK
+	// (RFC 0009 §5 migration complete).
+	_ "github.com/amarbel-llc/cutting-garden/plugins/caldav"
 	_ "github.com/amarbel-llc/cutting-garden/plugins/file"
 	_ "github.com/amarbel-llc/cutting-garden/plugins/git"
 	_ "github.com/amarbel-llc/cutting-garden/plugins/googlephotos"

@@ -1,11 +1,11 @@
-package cutting_garden_plugin_caldav
+package caldav
 
 import (
 	"context"
 	"strings"
 
-	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
-	"github.com/amarbel-llc/cutting-garden/internal/plugin_blob_io"
+	"github.com/amarbel-llc/cutting-garden/pkgs/capture_receipt"
+	"github.com/amarbel-llc/cutting-garden/pkgs/plugin_blob_io"
 	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
 )
 

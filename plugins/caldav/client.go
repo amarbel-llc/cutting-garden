@@ -1,4 +1,4 @@
-package cutting_garden_plugin_caldav
+package caldav
 
 import (
 	"context"
