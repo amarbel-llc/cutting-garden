@@ -59,7 +59,7 @@ The caldav plugin populates the protocol-defined invocation body as:
 
 ## Plugin-defined environment
 
-Type: `!jcs-caldav-capture-environment-v1`. Body (JCS):
+Type: `!jcs-caldav-environment-v1`. Body (JCS):
 
 ```json
 {"components":["VEVENT","VTODO"]}
@@ -83,7 +83,7 @@ The receipt's single `payload` reference points at one payload node that
 owns the whole resource list, keeping the receipt small (same structure
 as the git binding).
 
-Type: `!jcs-caldav-capture-payload-v1`. The node is both bodied and
+Type: `!jcs-caldav-payload-v1`. The node is both bodied and
 reference-bearing.
 
 Body (JCS):
@@ -117,7 +117,7 @@ alias is the resource's **native identity**; the reference type is the
 caldav object leaf type:
 
 ```
-- <native-id> < @<digest> !caldav-capture-object-v1@<sig>
+- <native-id> < @<digest> !caldav-object-v1@<sig>
 ```
 
 ### Native identity (the reference alias)
@@ -140,7 +140,16 @@ and a restore host), only the protocol-native identity.
 
 ## Object leaves
 
-Type: `!caldav-capture-object-v1`.
+Type: `!caldav-object-v1`.
+
+This is the **same** type tag the traversal layer (`RootLister.Types()`,
+FDR 0014) declares for a caldav object node: the receipt-leaf and the
+traversal-node vocabularies are unified on one grammar — the first
+concrete realization of FDR 0018 (unified type namespace) directions #2
+(per-entry node types in receipts) and #4 (one tag grammar), unblocked
+once #79/RFC 0010 settled the versioning rules. The tag drops the
+`cutting_garden-` org prefix (mirroring the git binding's `<kind>-…-v1`
+leaves) and carries no `capture` infix.
 
 An object leaf is **not** a hyphence node — it is the verbatim
 `text/calendar` body of the resource (the server's `calendar-data`),
@@ -158,9 +167,9 @@ keys:
 | Type | `iana_media_type` | `payload_cardinality` |
 |---|---|---|
 | `cutting_garden-capture_receipt-caldav-v1` | `application/vnd.cutting-garden.capture-receipt-caldav+hyphence` | — |
-| `jcs-caldav-capture-payload-v1` | `application/vnd.cutting-garden.caldav-capture-payload+jcs` | `single` |
-| `jcs-caldav-capture-environment-v1` | `application/vnd.cutting-garden.caldav-capture-environment+jcs` | — |
-| `caldav-capture-object-v1` | `text/calendar` | — |
+| `jcs-caldav-payload-v1` | `application/vnd.cutting-garden.caldav-payload+jcs` | `single` |
+| `jcs-caldav-environment-v1` | `application/vnd.cutting-garden.caldav-environment+jcs` | — |
+| `caldav-object-v1` | `text/calendar` | — |
 
 These interim media-type/cardinality keys are documented here pending the
 FDR-0010 graduation noted in RFC 0002 §IANA Media Type Interface.
@@ -172,8 +181,8 @@ Per RFC 0002 §Stability Table, with caldav-specific notes:
 | Node                                  | Stable across…                                                         |
 |---------------------------------------|------------------------------------------------------------------------|
 | object leaf (`caldav-capture-object`) | every capture in which that resource's body is byte-identical — the body is the cross-capture handle; identical bytes ⇒ identical markl-id ⇒ stored once. (Independent of etag: a re-issued etag over identical bytes does not churn the leaf.) |
-| `jcs-caldav-capture-payload-v1`       | re-captures whose resource set AND etags are unchanged. (A new etag over identical content changes the payload body but **not** any leaf — the dedup of bodies still holds.) |
-| `jcs-caldav-capture-environment-v1`   | every capture with the same component set.                             |
+| `jcs-caldav-payload-v1`       | re-captures whose resource set AND etags are unchanged. (A new etag over identical content changes the payload body but **not** any leaf — the dedup of bodies still holds.) |
+| `jcs-caldav-environment-v1`   | every capture with the same component set.                             |
 
 ## Restore
 

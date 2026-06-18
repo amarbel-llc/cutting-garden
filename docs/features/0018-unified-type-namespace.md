@@ -104,6 +104,32 @@ Collected, not chosen:
    either reconcile the grammars or document the two families as
    sub-namespaces of one registry with one versioning rule.
 
+## First realization (caldav, RFC 0011)
+
+Directions #2 and #4 have their first concrete instance in the caldav
+RFC 0002 protocol migration (RFC 0011, `plugins/caldav/`). It became
+buildable once #79/RFC 0010 settled the versioning rules direction #2
+waited on. Specifically:
+
+- **#4 (one tag grammar):** caldav's traversal node type and its receipt
+  object-leaf type are now the **same tag** — `caldav-object-v1`
+  (container: `caldav-calendar-v1`). The traversal layer (`Types()`) and
+  the protocol receipt's payload refs both use it. The tag drops the
+  `cutting_garden-` org prefix and the `capture` infix, matching the git
+  binding's `<kind>-…-v1` leaf style.
+- **#2 (per-entry node types in receipts):** the caldav payload node
+  carries one typed ref per object (`!caldav-object-v1`), so the receipt
+  records that an entry is a caldav object, not merely a file — the piece
+  a foreign consumer's entry-level ingestion needs.
+
+This is a per-plugin realization, **not** the whole unification: there is
+still no cross-plugin registry (direction #1) and no data-form definitions
+blob for foreign consumers (direction #3). The flat `fs-v1` plugins still
+carry the untyped `EntryV1` shape. caldav is the worked example the
+broader unification can generalize from. A future `cutting_garden-capture`
+meta/wrapper namespace (and re-introducing a `capture` infix as a wrapper
+type) was considered and deferred — not shipped here.
+
 ## Open Questions
 
 - **Where do definitions live?** In-binary registry only (1), receipt-
