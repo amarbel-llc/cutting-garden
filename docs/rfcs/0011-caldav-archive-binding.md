@@ -225,10 +225,18 @@ filesystem path, and the etag probe avoids transferring unchanged bodies.
 
 ## Limitations / Non-Goals
 
-- **No iCalendar parsing.** Resources are opaque content-addressed
-  `text/calendar` blobs (carried forward from FDR 0013). The native
-  identity's `UID`/`component` come from the CalDAV protocol surface
-  (href + REPORT filter), not from parsing the body.
+- **Identity is parsed; the stored blob is not.** The native identity's
+  `UID` is read from the resource body via the re-homed iCalendar parser
+  (`plugins/caldav/ical/`); the `component` comes from the CalDAV REPORT
+  filter (the plugin queries per component). This supersedes FDR 0013's
+  original "no iCalendar parsing" Non-Goal: that stance assumed an
+  opaque-blob snapshot model with no need for structured access, but the
+  protocol receipt keys entries on `UID`, which lives only in the body.
+  **What stays opaque:** the captured *leaf blob* is the verbatim
+  `text/calendar` body, byte-for-byte — parsing is used to derive the
+  identity/sort key, never to rewrite or normalize the stored bytes. (The
+  parser also unblocks the CUD tools of FDR 0020, which need structured
+  create/update access.)
 - **VTODO/VEVENT only.** VJOURNAL and free/busy are out of scope
   (FDR 0013), so the component set is drawn from `{VEVENT, VTODO}`.
 - **No cross-family diff.** Diffing a caldav receipt against a
@@ -245,8 +253,9 @@ filesystem path, and the etag probe avoids transferring unchanged bodies.
 - [RFC 0010: Plugin Receipt Format Versioning](./0010-plugin-receipt-format-versioning.md)
   — the per-family contract and the #112 underscore prefix this debuts on.
 - [FDR 0013: CalDAV plugin](../features/0013-caldav-plugin.md) — the flat
-  `fs-v1` plugin this migrates; its "No live mutation tools" and "No
-  iCalendar parsing" Non-Goals carry forward.
+  `fs-v1` plugin this migrates; its "No live mutation tools" Non-Goal
+  carries forward, while its "No iCalendar parsing" Non-Goal is superseded
+  here (identity is parsed; the stored blob stays verbatim).
 - `docs/plans/2026-06-18-caldav-protocol-migration.md` — the migration
   plan this binding's schema feeds (Phase 1).
 - `internal/capture_plugin/` — the protocol emitter.
