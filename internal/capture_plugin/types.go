@@ -18,11 +18,33 @@ const (
 	TypeOutcome = "jcs-cutting_garden-capture-outcome-v1"
 )
 
+// frozenHyphenKinds are the protocol-receipt kinds shipped before the
+// #112 prefix convergence. Their receipts are immutable, so their
+// type-strings keep the legacy hyphen-separated `capture-receipt` prefix
+// forever — a kind in this set MUST render byte-identically to what it
+// emitted before #112. New kinds (and the next version of these) use the
+// converged underscore prefix; see ReceiptType.
+var frozenHyphenKinds = map[string]bool{
+	"git": true,
+	"web": true,
+}
+
 // ReceiptType returns the receipt type-string for a capture kind, e.g.
-// ReceiptType("git") == "cutting_garden-capture-receipt-git-v1". The
-// kind names what is captured (fs, web, git), not the plugin binary.
+// ReceiptType("caldav") == "cutting_garden-capture_receipt-caldav-v1".
+// The kind names what is captured (caldav, web, git), not the plugin
+// binary.
+//
+// Per #112 the canonical prefix is the underscore-bound `capture_receipt`
+// (the underscore binds `capture`+`receipt` into one compound noun, which
+// binds tighter than the hyphen segment separators). The pre-#112 kinds
+// in frozenHyphenKinds keep the legacy hyphen `capture-receipt` prefix so
+// their already-written, immutable receipts keep dispatching unchanged;
+// every other (new) kind gets the converged underscore form.
 func ReceiptType(kind string) string {
-	return "cutting_garden-capture-receipt-" + kind + "-v1"
+	if frozenHyphenKinds[kind] {
+		return "cutting_garden-capture-receipt-" + kind + "-v1"
+	}
+	return "cutting_garden-capture_receipt-" + kind + "-v1"
 }
 
 // init registers the protocol-defined node types into the build-time

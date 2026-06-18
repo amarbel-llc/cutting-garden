@@ -94,8 +94,14 @@ Two concrete code changes precede the caldav family:
    flat family (every other `…capture_receipt-<kind>-vN` is protocol). Add a
    read-compat test proving an old hyphen `…-git-v1` receipt still parses.
 
-dodder's FDR-0014 recognizer must accept the underscore form before this
-lands (amarbel-llc/dodder#279) — sequence that first.
+dodder's FDR-0014 recognizer keys on the receipt prefix, so it will need
+to accept the underscore form (amarbel-llc/dodder#279) — but that is a
+**forward-looking heads-up, not a gate on this work**. dodder is an
+unbuilt downstream consumer: nothing in cutting-garden imports or tests
+against it, and no dodder↔cutting-garden ingestion path exists yet. The
+recognizer only matters once that integration is actually built and a
+real underscore receipt could reach it; until then this migration lands on
+cutting-garden's own green tests.
 
 ### Phase 1 — define the caldav node schema (its FDR + RFC 0004-style binding)
 
@@ -171,8 +177,10 @@ missing collection before PUT) as a natural sub-step here.
 ## Open questions (resolve during execution, not now)
 
 1. **#112 prefix** — resolved (underscore, forward via version bumps). The
-   remaining work is mechanical (Phase 0 writer + discriminator changes) plus
-   sequencing dodder#279 before the wire change. No longer an open decision.
+   remaining work is mechanical (Phase 0 writer + discriminator changes).
+   dodder#279 is a forward-looking heads-up for the (unbuilt) dodder
+   ingestion integration, not a gate on this migration. No longer an open
+   decision.
 2. **Restore routing for schemeless dest** — RFC 0010 §Restore dispatch
    leaves "does a receipt family uniquely imply a restore plugin" to the
    plugin. caldav's `ProtocolKind() = "caldav"` implies the caldav restore
