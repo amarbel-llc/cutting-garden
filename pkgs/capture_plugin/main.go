@@ -76,13 +76,17 @@ var GatherHost = internal.GatherHost
 // documented on jcsMarshal applies.
 var JCS = internal.JCS
 
-// KindFromReceiptType extracts the capture kind from a receipt
-// type-string, e.g. "cutting_garden-capture-receipt-git-v1" → "git".
+// KindFromReceiptType extracts the capture kind from a protocol receipt
+// type-string, e.g. "cutting_garden-capture-receipt-git-v1" → "git" or
+// "cutting_garden-capture_receipt-caldav-v1" → "caldav". Both the legacy
+// hyphen prefix and the converged underscore prefix (#112) are
+// recognized.
+//
 // ok is false for any string that is not a protocol receipt type —
-// notably the underscored legacy fs tag
-// "cutting_garden-capture_receipt-fs-v1", which this deliberately does
-// not match, so callers can use it to discriminate protocol receipts
-// from fs-v1 receipts.
+// notably the flat fs tag "cutting_garden-capture_receipt-fs-v1", which
+// shares the underscore prefix but is a flat NDJSON receipt, not a
+// protocol merkle tree. Callers rely on that exclusion to discriminate
+// protocol receipts from the flat fs receipt.
 var KindFromReceiptType = internal.KindFromReceiptType
 
 // LockedRef builds a reference with its type-signature filled from the
@@ -135,8 +139,16 @@ var ParseNodeHeader = internal.ParseNodeHeader
 var ReadNode = internal.ReadNode
 
 // ReceiptType returns the receipt type-string for a capture kind, e.g.
-// ReceiptType("git") == "cutting_garden-capture-receipt-git-v1". The
-// kind names what is captured (fs, web, git), not the plugin binary.
+// ReceiptType("caldav") == "cutting_garden-capture_receipt-caldav-v1".
+// The kind names what is captured (caldav, web, git), not the plugin
+// binary.
+//
+// Per #112 the canonical prefix is the underscore-bound `capture_receipt`
+// (the underscore binds `capture`+`receipt` into one compound noun, which
+// binds tighter than the hyphen segment separators). The pre-#112 kinds
+// in frozenHyphenKinds keep the legacy hyphen `capture-receipt` prefix so
+// their already-written, immutable receipts keep dispatching unchanged;
+// every other (new) kind gets the converged underscore form.
 var ReceiptType = internal.ReceiptType
 
 // RegisterType installs def's type-blob and computes its signature.
