@@ -11,11 +11,20 @@ pre-merge = "just"
 # no extra commit, no amend). `--exit-zero-on-fix` maps the restage's exit-3
 # signal to 0 so a successful repair lets the commit proceed.
 #
-# NB: the canonical value is bare `conformist --staged --exit-zero-on-fix` (cf.
-# the conformist repo's own sweatfile), but cutting-garden hides the formatter
-# toolchain (gofumpt, goimports, nixfmt, …) inside the `conformist-fmt` devshell
-# wrapper (flake.nix `conformistFmt`, runtimeInputs = conformistTools) rather
-# than on the bare PATH. `conformist-fmt` execs `conformist "$@"`, so this
-# routes through the wrapper to get the full toolchain — bare `conformist`
-# would silently skip Go and nix formatting.
+# NB: this is an INTERIM value. conformist#51 established the blessed hook as
+# `conformist-pre-commit` — the config-specific, store-pinned wrapper a consumer
+# exposes from its own `eval.config.build.preCommit` (nix module) — and
+# explicitly documents bare `conformist --staged --exit-zero-on-fix` as a
+# silent-skip trap: it resolves formatters from PATH, so a shell missing
+# gofumpt/goimports/nixfmt quietly skips those file types. cutting-garden has
+# exactly that gap — it hides the formatter toolchain inside the `conformist-fmt`
+# devshell wrapper (flake.nix `conformistFmt`, runtimeInputs = conformistTools)
+# rather than on the bare PATH. `conformist-fmt` execs `conformist "$@"`, so
+# routing through the wrapper gets the full toolchain and avoids the silent skip
+# without the bare-`conformist` trap.
+#
+# The blessed fix is to adopt the conformist nix module and switch this to
+# `conformist-pre-commit` (cutting-garden#114 / conformist#51); until then the
+# wrapper is the working stand-in. shfmt's `-ci` (case-indent) must be preserved
+# in that migration — see conformist#52.
 pre-commit = "conformist-fmt --staged --exit-zero-on-fix"
