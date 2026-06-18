@@ -59,6 +59,16 @@ credential-free traversal roots for the `RootProvider` capability
   forthcoming CUD tools (FDR 0020) for structured create/update.
 - `url.go` — argument coercion (`baseURLFromArg`, `connectionFromArg`),
   origin extraction, and the server-relative `Path` key.
+- `Plugin.CaptureProtocol` (`protocol.go`) — the RFC 0011 protocol path:
+  stores each VTODO/VEVENT body as a `caldav-object-v1` leaf and wraps
+  them in a receipt merkle tree whose payload references each object by
+  **native identity** `<collection>/<component>/<UID>` (parsed via
+  `ical/`) with per-resource etag recorded for the diff freshness probe.
+  Emits `cutting_garden-capture_receipt-caldav-v1`.
+- `types_register.go` — registers the RFC 0011 binding node types into the
+  build-time type-signature registry. `caldav-object-v1` /
+  `caldav-calendar-v1` are the SAME tags the traversal layer declares
+  (`traversal.go`) — unified per FDR 0018.
 
 ## iCalendar parsing: identity only, stored bytes stay verbatim
 
@@ -74,15 +84,26 @@ byte-for-byte — parsing never rewrites or normalizes stored bytes. The
 parser is stdlib-only, so the package still adds no new dependency
 (`go-mcp`, `gomod2nix`/flake all unchanged).
 
-## TypeTag reuse
+## Two capture paths: flat fs-v1 and the RFC 0011 protocol
 
-`Plugin.TypeTag()` returns `capture_receipt.TypeTagV1`
-(`cutting_garden-capture_receipt-fs-v1`) rather than a `…-caldav-v1`
-variant — CalDAV resources are captured as regular file entries,
-byte-identical EntryV1 shape to fs captures. A receipt mixing fs and
-caldav roots carries one type-tag, and the captured `.ics` blobs restore
-cleanly through either this plugin (back to a server) or the filesystem
-plugin (to a local directory). Same rationale as the yt-dlp/git plugins.
+The plugin currently carries **both** capture paths (the migration lands
+the protocol path alongside the flat one; RFC 0010 immutability keeps old
+receipts readable):
+
+- **Flat `fs-v1`** (`CaptureRoot`/`ScanForDiff`/`Restore`, EntryV1).
+  `Plugin.TypeTag()` returns `capture_receipt.TypeTagV1`
+  (`cutting_garden-capture_receipt-fs-v1`): resources are captured as
+  regular file entries, byte-identical to fs captures, so a mixed fs+caldav
+  store-group receipt shares one tag and the `.ics` blobs restore through
+  either this plugin or the file plugin.
+- **RFC 0011 protocol** (`CaptureProtocol`, `protocol.go`). The orchestrator
+  resolves the plugin via the EntryV1 `CapturePlugin` registry and then
+  type-asserts `ProtocolCapturePlugin`, so `CaptureRoot` stays registered
+  (the vestigial-stub pattern git uses; dropping it is gated on #48). The
+  protocol receipt carries its own `cutting_garden-capture_receipt-caldav-v1`
+  kind with native identity — NOT the shared fs tag.
+
+Consolidating the two paths post-migration is tracked in #115.
 
 ## Round-trip fidelity
 
