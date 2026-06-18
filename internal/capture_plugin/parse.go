@@ -108,25 +108,85 @@ func parseRefLine(line string) (Ref, bool) {
 }
 
 const (
-	receiptTypePrefix = "cutting_garden-capture-receipt-"
-	receiptTypeSuffix = "-v1"
+	// receiptTypePrefixHyphen is the legacy protocol-receipt prefix
+	// (`capture-receipt`, hyphen-separated) carried by the git/web
+	// receipts shipped before #112. It stays recognized on read forever:
+	// those receipts are immutable and must keep dispatching.
+	receiptTypePrefixHyphen = "cutting_garden-capture-receipt-"
+	// receiptTypePrefixUnderscore is the converged prefix (#112):
+	// `capture_receipt`, with the underscore binding `capture`+`receipt`
+	// into one compound noun. New protocol families (caldav, …) and the
+	// next version of the existing ones write this form. It is also the
+	// prefix of the flat fs tag below, which is why flatFSTag must be
+	// excluded explicitly.
+	receiptTypePrefixUnderscore = "cutting_garden-capture_receipt-"
+
+	// flatFSTag is the one and only flat (non-protocol) receipt tag. It
+	// shares receiptTypePrefixUnderscore with new protocol families, so
+	// KindFromReceiptType excludes it explicitly: a flat fs receipt is an
+	// NDJSON store-group receipt (internal/capture_receipt), not a
+	// protocol merkle tree, and must NOT be reported as a protocol receipt
+	// of kind "fs". Kept as a literal here to avoid importing
+	// internal/capture_receipt (and a dependency cycle); the two are
+	// pinned equal by TestKindFromReceiptType.
+	flatFSTag = "cutting_garden-capture_receipt-fs-v1"
 )
 
-// KindFromReceiptType extracts the capture kind from a receipt
-// type-string, e.g. "cutting_garden-capture-receipt-git-v1" → "git".
+// KindFromReceiptType extracts the capture kind from a protocol receipt
+// type-string, e.g. "cutting_garden-capture-receipt-git-v1" → "git" or
+// "cutting_garden-capture_receipt-caldav-v1" → "caldav". Both the legacy
+// hyphen prefix and the converged underscore prefix (#112) are
+// recognized.
+//
 // ok is false for any string that is not a protocol receipt type —
-// notably the underscored legacy fs tag
-// "cutting_garden-capture_receipt-fs-v1", which this deliberately does
-// not match, so callers can use it to discriminate protocol receipts
-// from fs-v1 receipts.
+// notably the flat fs tag "cutting_garden-capture_receipt-fs-v1", which
+// shares the underscore prefix but is a flat NDJSON receipt, not a
+// protocol merkle tree. Callers rely on that exclusion to discriminate
+// protocol receipts from the flat fs receipt.
 func KindFromReceiptType(typeString string) (kind string, ok bool) {
-	if !strings.HasPrefix(typeString, receiptTypePrefix) ||
-		!strings.HasSuffix(typeString, receiptTypeSuffix) {
+	if typeString == flatFSTag {
 		return "", false
 	}
-	kind = strings.TrimSuffix(strings.TrimPrefix(typeString, receiptTypePrefix), receiptTypeSuffix)
-	if kind == "" {
+
+	var rest string
+	switch {
+	case strings.HasPrefix(typeString, receiptTypePrefixHyphen):
+		rest = strings.TrimPrefix(typeString, receiptTypePrefixHyphen)
+	case strings.HasPrefix(typeString, receiptTypePrefixUnderscore):
+		rest = strings.TrimPrefix(typeString, receiptTypePrefixUnderscore)
+	default:
+		return "", false
+	}
+
+	// rest is `<kind>-v<N>`; split off the trailing `-v<digits>` so any
+	// version is recognized, not just v1. (Whether a coder is registered
+	// for that (kind, version) is the reader's concern — see Dispatch in
+	// RFC 0010; this only classifies the type-string.)
+	kind, version, ok := splitKindVersion(rest)
+	if !ok || kind == "" || version == "" {
 		return "", false
 	}
 	return kind, true
+}
+
+// splitKindVersion splits a `<kind>-v<N>` tail into its kind and the
+// decimal version digits, requiring a non-empty kind and at least one
+// digit after `-v`. It scans from the end so a kind containing `-v…`
+// (none today, but the grammar allows hyphens in kinds) is not
+// mis-split.
+func splitKindVersion(s string) (kind, version string, ok bool) {
+	i := strings.LastIndex(s, "-v")
+	if i < 0 {
+		return "", "", false
+	}
+	digits := s[i+len("-v"):]
+	if digits == "" {
+		return "", "", false
+	}
+	for _, c := range digits {
+		if c < '0' || c > '9' {
+			return "", "", false
+		}
+	}
+	return s[:i], digits, true
 }

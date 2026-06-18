@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"io"
 	"testing"
+
+	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
 )
 
 func TestParseNode_RoundTripsBuildNode(t *testing.T) {
@@ -107,9 +109,16 @@ func TestKindFromReceiptType(t *testing.T) {
 		wantKind string
 		wantOK   bool
 	}{
+		// Legacy hyphen prefix (frozen git/web receipts) — read-compat:
+		// these must keep dispatching after the #112 convergence.
 		{"cutting_garden-capture-receipt-git-v1", "git", true},
 		{"cutting_garden-capture-receipt-web-v1", "web", true},
-		// Underscored legacy fs tag must NOT match (discriminator).
+		// Converged underscore prefix (#112) — new protocol families.
+		{"cutting_garden-capture_receipt-caldav-v1", "caldav", true},
+		{"cutting_garden-capture_receipt-git-v2", "git", true},
+		// The flat fs tag shares the underscore prefix but is NOT a
+		// protocol receipt — it must NOT match (the discriminator the
+		// orchestrator relies on to route flat vs protocol receipts).
 		{"cutting_garden-capture_receipt-fs-v1", "", false},
 		{"jcs-git-capture-payload-v1", "", false},
 		{"", "", false},
@@ -120,5 +129,46 @@ func TestKindFromReceiptType(t *testing.T) {
 			t.Errorf("KindFromReceiptType(%q) = (%q, %v), want (%q, %v)",
 				tc.in, kind, ok, tc.wantKind, tc.wantOK)
 		}
+	}
+}
+
+func TestReceiptType_PrefixByKind(t *testing.T) {
+	cases := []struct {
+		kind string
+		want string
+	}{
+		// Frozen pre-#112 kinds keep the legacy hyphen prefix so their
+		// immutable receipts stay byte-identical.
+		{"git", "cutting_garden-capture-receipt-git-v1"},
+		{"web", "cutting_garden-capture-receipt-web-v1"},
+		// New kinds get the converged underscore prefix (#112).
+		{"caldav", "cutting_garden-capture_receipt-caldav-v1"},
+	}
+	for _, tc := range cases {
+		if got := ReceiptType(tc.kind); got != tc.want {
+			t.Errorf("ReceiptType(%q) = %q, want %q", tc.kind, got, tc.want)
+		}
+	}
+
+	// Round-trip: every kind ReceiptType emits must parse back to that
+	// kind via KindFromReceiptType, regardless of which prefix it used.
+	for _, kind := range []string{"git", "web", "caldav"} {
+		ts := ReceiptType(kind)
+		got, ok := KindFromReceiptType(ts)
+		if !ok || got != kind {
+			t.Errorf("round-trip %q: KindFromReceiptType(%q) = (%q, %v)",
+				kind, ts, got, ok)
+		}
+	}
+}
+
+// TestFlatFSTag_MatchesCaptureReceipt pins the local flatFSTag literal to
+// the canonical flat tag defined in internal/capture_receipt. The literal
+// is duplicated (not imported) in production code to avoid a dependency
+// cycle; this test keeps the two from drifting.
+func TestFlatFSTag_MatchesCaptureReceipt(t *testing.T) {
+	if flatFSTag != capture_receipt.TypeTagV1 {
+		t.Errorf("flatFSTag = %q, want capture_receipt.TypeTagV1 = %q",
+			flatFSTag, capture_receipt.TypeTagV1)
 	}
 }
