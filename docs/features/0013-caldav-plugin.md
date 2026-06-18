@@ -114,10 +114,19 @@ directory). Same rationale as FDR 0003 (yt-dlp) and FDR 0006 (git).
 
 ## Non-Goals
 
-- **No iCalendar parsing.** Resources are opaque content-addressed
-  blobs. Bob's hand-rolled VTODO/VEVENT parser (and its tasks.org
-  field handling) stays in bob, where the MCP tools need structured
-  access.
+- ~~**No iCalendar parsing.**~~ **(superseded — see note below.)**
+  Originally: resources are opaque content-addressed blobs; bob's
+  hand-rolled VTODO/VEVENT parser stays in bob where the MCP tools need
+  structured access. **Superseded by the RFC 0011 protocol migration:**
+  the parser was re-homed into cutting-garden (`plugins/caldav/ical/`,
+  decoupling from bob) because the protocol receipt keys its entries on
+  the calendar's **native identity** (UID + component), which requires
+  reading those properties. The original rationale was "don't re-home a
+  whole structured parser for a snapshot model that stores opaque bytes"
+  — that calculus changed once native identity (RFC 0011) and the
+  forthcoming CUD tools (FDR 0020) both needed structured access. The
+  capture *blob* is still the verbatim `text/calendar` body; parsing is
+  used for identity and (future) mutation, not to alter stored bytes.
 - **No live mutation tools.** create/update/complete/delete are MCP
   concepts; capture/restore/diff snapshot and materialize state.
 - **No MKCALENDAR on restore.** Recreating collections (and their
