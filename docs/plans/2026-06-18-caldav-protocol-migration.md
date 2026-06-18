@@ -103,9 +103,10 @@ recognizer only matters once that integration is actually built and a
 real underscore receipt could reach it; until then this migration lands on
 cutting-garden's own green tests.
 
-### Phase 1 — define the caldav node schema (its FDR + RFC 0004-style binding)
+### Phase 1 — define the caldav node schema (RFC 0011 binding) — DONE
 
-Mirror what RFC 0004 (git-archive binding) does for git. Define:
+Specified in [RFC 0011: CalDAV-Archive Binding](../rfcs/0011-caldav-archive-binding.md),
+mirroring RFC 0004 (git) and RFC 0003 (web). Defines:
 
 - **payload node** `jcs-caldav-capture-payload-v1` — a metadata node
   referencing every stored `.ics` blob, plus a JCS body of capture
@@ -120,9 +121,13 @@ Mirror what RFC 0004 (git-archive binding) does for git. Define:
 - record etag per resource in the payload body (the freshness signal that
   fixes diff — see Phase 3).
 
-The concrete entry fields are owned by the caldav plugin and recorded in
-its FDR (FDR 0013 update, or a new FDR), per RFC 0010 §scope ("each
-family's struct is defined by its plugin").
+The concrete schema is pinned in RFC 0011 per RFC 0010 §scope ("each
+family's struct is defined by its plugin"). Key decisions made there:
+the reference alias is the native identity `<collection>/<component>/<UID>`
+(the `SortKey()`); etag lives in the payload body keyed by that id (a diff
+optimization, **not** identity-affecting, so a re-issued etag over
+identical bytes does not churn the receipt); the leaf type is
+`caldav-capture-object-v1` carrying the verbatim `text/calendar` body.
 
 ### Phase 2 — `CaptureProtocol`
 
