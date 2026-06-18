@@ -80,7 +80,7 @@ func TestProbe_CapabilitiesPerPlugin(t *testing.T) {
 	if !r.Capture || r.Restore != "yes" || !r.Diff {
 		t.Errorf("caldav caps = %+v", r)
 	}
-	if strings.Join(r.Traversal, ",") != "cutting_garden-caldav-calendar-v1,cutting_garden-caldav-object-v1" {
+	if strings.Join(r.Traversal, ",") != "caldav-calendar-v1,caldav-object-v1" {
 		t.Errorf("caldav traversal = %v, want the two declared node types", r.Traversal)
 	}
 }

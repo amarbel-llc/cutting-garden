@@ -91,6 +91,7 @@ type davPropStat struct {
 type davProp struct {
 	DisplayName  string           `xml:"DAV: displayname"`
 	CalendarData string           `xml:"urn:ietf:params:xml:ns:caldav calendar-data"`
+	Etag         string           `xml:"DAV: getetag"`
 	ResourceType *davResourceType `xml:"DAV: resourcetype"`
 }
 
@@ -106,9 +107,13 @@ type calendar struct {
 
 // resource is one raw iCalendar object (a VTODO or VEVENT resource):
 // data is the verbatim text/calendar body, keyed by its server href.
+// etag is the server's getetag value (empty when the server omitted it);
+// the RFC 0011 protocol capture records it as the per-resource freshness
+// signal, while the flat fs-v1 path ignores it.
 type resource struct {
 	href string
 	data string
+	etag string
 }
 
 const propfindCalendars = `<?xml version="1.0" encoding="utf-8" ?>
@@ -202,6 +207,7 @@ func (c *client) discoverCalendars(
 const calendarQuery = `<?xml version="1.0" encoding="utf-8" ?>
 <c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
   <d:prop>
+    <d:getetag />
     <c:calendar-data />
   </d:prop>
   <c:filter>
@@ -251,6 +257,7 @@ func (c *client) listResources(
 			resources = append(resources, resource{
 				href: r.Href,
 				data: ps.Prop.CalendarData,
+				etag: ps.Prop.Etag,
 			})
 		}
 	}

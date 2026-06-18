@@ -13,10 +13,14 @@ import (
 const (
 	// typeCalendar is a CalDAV calendar collection — a container whose
 	// children are its VTODO/VEVENT objects.
-	typeCalendar = "cutting_garden-caldav-calendar-v1"
-	// typeObject is a single VTODO/VEVENT resource — a leaf captured as
-	// one .ics file entry.
-	typeObject = "cutting_garden-caldav-object-v1"
+	typeCalendar = "caldav-calendar-v1"
+	// typeObject is a single VTODO/VEVENT resource — a leaf. The SAME tag
+	// names this node in traversal (RootLister/MCP) and the captured
+	// object leaf in the RFC 0011 protocol receipt: the two type-tag
+	// systems are unified on one grammar (FDR 0018 directions #2 + #4),
+	// unblocked now that #79/RFC 0010 settled the versioning rules. Mirrors
+	// the git binding's prefix-less `<kind>-…-v1` leaf convention.
+	typeObject = "caldav-object-v1"
 )
 
 var _ cutting_garden_plugins.RootLister = (*Plugin)(nil)
