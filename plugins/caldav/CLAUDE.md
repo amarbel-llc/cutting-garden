@@ -49,20 +49,30 @@ credential-free traversal roots for the `RootProvider` capability
   server-absolute path on the destination origin (`<dest-origin>/<path>`),
   unconditionally (create-or-overwrite). Non-file entries are skipped.
 - `client.go` — a minimal, context-aware CalDAV HTTP client
-  (PROPFIND / REPORT / PUT) with no iCalendar parser: resources are
-  opaque content-addressed blobs. Ported and trimmed from bob's
-  `internal/caldav/client.go`.
+  (PROPFIND / REPORT / PUT). The HTTP transport carries no iCalendar
+  knowledge; resources cross the wire as verbatim `text/calendar` bytes.
+  Ported and trimmed from bob's `internal/caldav/client.go`.
+- `ical/` — the re-homed iCalendar parser/serializer (VTODO/VEVENT,
+  `ParseVTODO`/`ParseVEVENT`/`*ToIcal`, RFC 5545 line unfolding). Ported
+  from bob; stdlib-only. Used to derive a resource's **native identity**
+  (UID + component) for the RFC 0011 protocol receipt, and by the
+  forthcoming CUD tools (FDR 0020) for structured create/update.
 - `url.go` — argument coercion (`baseURLFromArg`, `connectionFromArg`),
   origin extraction, and the server-relative `Path` key.
 
-## No iCalendar parser, no new dependencies
+## iCalendar parsing: identity only, stored bytes stay verbatim
 
-Bob's caldav carried a hand-rolled VTODO/VEVENT parser (for the MCP
-tools' structured fields). The plugin needs none of it: each resource is
-captured as its verbatim bytes, which is exactly the content-addressed
-shape the receipt machinery wants and the most faithful thing to restore.
-The package depends only on the stdlib plus the dewey/madder facades the
-other plugins already use — no `go-mcp`, no `gomod2nix`/flake change.
+Bob's caldav carried a hand-rolled VTODO/VEVENT parser for its MCP tools'
+structured fields. The original FDR 0013 stance was that the snapshot
+model needed none of it — resources are captured as opaque content-
+addressed bytes. The RFC 0011 protocol migration changed that calculus:
+the receipt keys each entry on the calendar's **native identity** (UID +
+component), and `UID` lives only inside the resource body. So the parser
+was re-homed into `ical/` (decoupling from bob) and is used to read the
+identity. The captured *blob* is still the verbatim `text/calendar` body,
+byte-for-byte — parsing never rewrites or normalizes stored bytes. The
+parser is stdlib-only, so the package still adds no new dependency
+(`go-mcp`, `gomod2nix`/flake all unchanged).
 
 ## TypeTag reuse
 
