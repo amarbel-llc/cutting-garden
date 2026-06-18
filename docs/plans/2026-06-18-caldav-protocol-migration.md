@@ -6,9 +6,10 @@ RFC 0010 reference migration called out in
 ("A reference migration — caldav … SHOULD go first").
 
 Related issues: #104 (parity audit), #79 (per-plugin family mechanism),
-#112 (type-string prefix reconciliation, **blocks the type-string choice
-below**), #77 (caldav MKCALENDAR on restore), #18 (cross-family diff),
-#48 (protocol-only plugin resolution — why the vestigial stubs stay).
+#112 (type-string prefix — **resolved**: caldav debuts on the converged
+underscore prefix at v1; see Phase 0), #77 (caldav MKCALENDAR on restore),
+#18 (cross-family diff), #48 (protocol-only plugin resolution — why the
+vestigial stubs stay). dodder-side recognizer heads-up: amarbel-llc/dodder#279.
 
 ## Goal
 
@@ -53,8 +54,10 @@ git (`plugins/git/`) is the worked example to mirror:
   Binary, PluginEnv, PayloadRefs})`.
 - `RestoreProtocol` / `DiffProtocol` key on `ProtocolKind()` (e.g.
   `"git"`) — restore routes by **receipt kind**, never by dest scheme.
-- The receipt kind renders as `cutting_garden-capture-receipt-git-v1`
-  (**hyphen** form — see #112).
+- git's existing receipt kind renders as `cutting_garden-capture-receipt-git-v1`
+  (**hyphen** form). Per #112 (resolved), that hyphen form is **frozen** for the
+  already-shipped git/web receipts; new families debut on the converged
+  **underscore** prefix, so caldav does NOT copy git's hyphen — see Phase 0.
 - **Vestigial `CaptureRoot`/`ScanForDiff` stubs stay** returning errors:
   the orchestrator resolves a source's plugin through the `EntryV1`
   `CapturePlugin` registry and *then* type-asserts `ProtocolCapturePlugin`
@@ -64,15 +67,35 @@ git (`plugins/git/`) is the worked example to mirror:
 
 ## Plan
 
-### Phase 0 — settle the type-string prefix (blocked on #112)
+### Phase 0 — type-string + discriminator (resolves #112)
 
-The caldav protocol receipt kind will be `caldav`, rendering (under git's
-current convention) as `cutting_garden-capture-receipt-caldav-v1`
-(hyphen). RFC 0010 standardized the **underscore** grammar for the flat
-families. Before writing the kind constant, #112 must decide whether the
-hyphen/underscore split is intentional (the prefix signals
-protocol-vs-flat) or should converge. **Do not hard-code the kind until
-#112 resolves** — it's a one-line constant but it's a wire commitment.
+#112 is settled: converge protocol receipts on the **underscore** prefix
+(`cutting_garden-capture_receipt-<kind>-vN`; underscore binds tighter than
+hyphen), applied **forward**. So:
+
+- caldav debuts at `cutting_garden-capture_receipt-caldav-v1` (underscore,
+  v1 — it has no legacy receipt to freeze).
+- The existing hyphen-form git/web receipts stay frozen and readable; they
+  converge to underscore only at their next version bump.
+
+Two concrete code changes precede the caldav family:
+
+1. **Writer (`internal/capture_plugin/types.go` `ReceiptType`)** — emit the
+   underscore prefix for new kinds. The existing git/web kind constants are
+   left on the hyphen string (frozen); only new families get underscore.
+   (Cleanest: a separate constructor or an explicit per-family constant, so
+   the frozen hyphen kinds are never re-rendered.)
+2. **Parser/discriminator (`internal/capture_plugin/parse.go`
+   `KindFromReceiptType`)** — today it keys protocol-vs-flat on the hyphen
+   prefix (it "deliberately does not match" `cutting_garden-capture_receipt-fs-v1`).
+   Under convergence, `fs-v1` and `caldav-v1` share the underscore prefix, so
+   the discriminator must change: recognize **both** prefixes, and treat the
+   single frozen string `cutting_garden-capture_receipt-fs-v1` as the lone
+   flat family (every other `…capture_receipt-<kind>-vN` is protocol). Add a
+   read-compat test proving an old hyphen `…-git-v1` receipt still parses.
+
+dodder's FDR-0014 recognizer must accept the underscore form before this
+lands (amarbel-llc/dodder#279) — sequence that first.
 
 ### Phase 1 — define the caldav node schema (its FDR + RFC 0004-style binding)
 
@@ -147,7 +170,9 @@ missing collection before PUT) as a natural sub-step here.
 
 ## Open questions (resolve during execution, not now)
 
-1. **#112 prefix** — gates the kind constant (Phase 0). Hard blocker.
+1. **#112 prefix** — resolved (underscore, forward via version bumps). The
+   remaining work is mechanical (Phase 0 writer + discriminator changes) plus
+   sequencing dodder#279 before the wire change. No longer an open decision.
 2. **Restore routing for schemeless dest** — RFC 0010 §Restore dispatch
    leaves "does a receipt family uniquely imply a restore plugin" to the
    plugin. caldav's `ProtocolKind() = "caldav"` implies the caldav restore
