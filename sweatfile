@@ -2,3 +2,20 @@
 
 [hooks]
 pre-merge = "just"
+
+# Per-commit repair: format the index-staged content at authoring time so every
+# commit is conformant in history (rather than catching drift later at `just
+# fmt` / merge). spinclass installs this as a per-worktree git pre-commit hook
+# at `sc start`/`sc resume` (spinclass-sweatfile(5)); it is best-effort,
+# non-blocking, and restages formatted blobs in place (lint-staged semantics —
+# no extra commit, no amend). `--exit-zero-on-fix` maps the restage's exit-3
+# signal to 0 so a successful repair lets the commit proceed.
+#
+# NB: the canonical value is bare `conformist --staged --exit-zero-on-fix` (cf.
+# the conformist repo's own sweatfile), but cutting-garden hides the formatter
+# toolchain (gofumpt, goimports, nixfmt, …) inside the `conformist-fmt` devshell
+# wrapper (flake.nix `conformistFmt`, runtimeInputs = conformistTools) rather
+# than on the bare PATH. `conformist-fmt` execs `conformist "$@"`, so this
+# routes through the wrapper to get the full toolchain — bare `conformist`
+# would silently skip Go and nix formatting.
+pre-commit = "conformist-fmt --staged --exit-zero-on-fix"
