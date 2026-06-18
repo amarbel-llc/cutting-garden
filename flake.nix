@@ -205,10 +205,22 @@
         # in repair mode (rewrites in place). `just fmt` is the alias;
         # `just lint-fmt` (conformist check) is the read-only
         # counterpart, and checks.formatting below is the sandboxed gate.
-        conformistFmt = pkgs.writeShellApplication {
+        # The same wrapper also backs the sweatfile `--staged` pre-commit
+        # hook, which is why the toolchain must be on PATH: conformist.toml's
+        # formatter commands are bare names resolved at run time, so a bare
+        # `conformist --staged` off a toolchain-less PATH would silently skip
+        # *.go/*.nix (the trap of conformist#51).
+        #
+        # conformist.lib.wrapWithToolchain is the blessed, recursion-safe form
+        # of the wrapper this repo used to hand-roll (it execs conformist by
+        # absolute store path with `tools` on PATH). Kept as `conformist-fmt`
+        # so `just fmt`/`lint-fmt` and the sweatfile hook are unchanged.
+        # cutting-garden#114 step 1; step 2 = the full nix-module migration to
+        # a store-pinned `conformist-pre-commit`, tracked in #114.
+        conformistFmt = conformist.lib.wrapWithToolchain pkgs {
+          conformist = conformist.packages.${system}.default;
+          tools = conformistTools;
           name = "conformist-fmt";
-          runtimeInputs = conformistTools;
-          text = ''exec conformist "$@"'';
         };
 
         # version.env at repo root is the single source of truth for the
