@@ -224,11 +224,14 @@
           projectRootFile = "flake.nix";
         };
 
-        # `nix fmt` / `just fmt` repair entrypoint and the read-only `just
-        # lint-fmt` counterpart (`conformist check`) both run this wrapper. The
-        # module names the binary `conformist` (config + toolchain store-pinned),
-        # so it lands on the devShell PATH as `conformist` — the justfile recipes
-        # call `conformist` / `conformist check` directly.
+        # The `nix fmt` / `just codemod-fmt` repair entrypoint: the module
+        # wrapper (config + toolchain store-pinned, hardcoded
+        # --tree-root-file=flake.nix). Exposed ONLY as the flake `formatter`
+        # output below — deliberately NOT on the devShell PATH, where the RAW
+        # `conformist` binary lives instead so dagnabit's `--tree-root` pass
+        # doesn't collide with the wrapper's `--tree-root-file` (purse-first#159).
+        # The read-only counterpart is the sandboxed `checks.formatting`
+        # (`just lint-fmt` / `just build-nix-check`).
         conformistFmt = conformistEval.config.build.wrapper;
 
         # version.env at repo root is the single source of truth for the
@@ -396,6 +399,12 @@
           # per-commit hook. `nix build .#conformist-pre-commit` forces it.
           conformist-pre-commit = conformistEval.config.build.preCommit;
 
+          # The generated PURE-lane config, pointed at by dagnabit's
+          # DAGNABIT_CONFORMIST_CONFIG (purse-first#159) so `dagnabit export
+          # -check` formats the generated facades with cutting-garden's REAL
+          # config — there is no conformist.toml on disk for dagnabit to find.
+          conformist-config = conformistEval.config.build.configFile;
+
           # The generated impure-lane config (git-state eng-convention checks),
           # consumed by `just lint-worktree` to run `conformist check` against
           # the working tree where .git/host tools are available.
@@ -501,15 +510,16 @@
             # absent), so `just test-go` exercises the real-git cross-checks
             # in the devshell rather than skipping them.
             pkgs.git
-            # conformist: the module's wrapper (binary `conformist`, config +
-            # formatter toolchain store-pinned) so `conformist` / `conformist
-            # check` run in the dev shell — how `just fmt` / `just lint-fmt`
-            # invoke it. The wrapper is self-contained (its formatter/linter
-            # toolchain is baked into the store-pinned config), so the raw tools
-            # need not be spliced onto the devShell PATH. The store-pinned
-            # `conformist-pre-commit` hook (build.preCommit) lands on PATH too,
-            # named by the sweatfile's `pre-commit` hook.
-            conformistFmt
+            # conformist: the RAW binary on PATH (not build.wrapper) — dagnabit's
+            # facade-format pass (libs/dewey .../exporter_treefmt.go runConformist)
+            # resolves `conformist` and passes `--tree-root`, which is mutually
+            # exclusive with the wrapper's hardcoded `--tree-root-file`. The
+            # wrapper is the flake `formatter` output (`nix fmt` / `just
+            # codemod-fmt`) instead; the read-only gate is the sandboxed
+            # `checks.formatting` (`just lint-fmt`). This mirrors purse-first's
+            # devShell (purse-first#159). The store-pinned `conformist-pre-commit`
+            # hook also lands on PATH, named by the sweatfile's `pre-commit` hook.
+            conformist.packages.${system}.default
             conformistEval.config.build.preCommit
             # tommy: the `tommy generate` codegen binary for RFC 0007's
             # config format (`//go:generate tommy generate`). Devshell-

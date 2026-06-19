@@ -37,17 +37,15 @@ lint-go:
 
 # Read-only formatting + lint gate via conformist (treefmt successor):
 # Go (goimports -> gofumpt), Nix (nixfmt), shell/bats (shfmt) + shellcheck,
-# TOML (tommy fmt), and the tommy-codegen drift guard. Config is the
-# nix-module-generated conformist.toml (./conformist.nix + the eng preset);
-# `just codemod-fmt` is the write mode. The sandboxed flake-check counterpart
-# is `just build-nix-check` (the pure eng lane); the git-state eng checks run
-# in `just lint-worktree`.
-#
-# Invokes `conformist` — the module's store-pinned wrapper (binary
-# `conformist`, config + formatter toolchain baked in), on the devShell PATH.
+# TOML (tommy fmt), the tommy-codegen drift guard, and the eng-convention
+# linters. Config is the nix-module-generated conformist.toml (./conformist.nix
+# + presets.eng); `just codemod-fmt` is the write mode. This builds the flake's
+# sandboxed PURE gate (checks.<sys>.formatting = build.check self) — the same
+# derivation `just build-nix-check` runs via `nix flake check`. The git-state
+# eng checks run in `just lint-worktree`.
 [group('pre-build')]
 lint-fmt:
-    nix develop --command conformist check
+    nix build ".#checks.$(nix eval --impure --raw --expr builtins.currentSystem).formatting" --no-link
     gum log --level info "lint-fmt: ok"
 
 # Non-sandbox lane: run the IMPURE git-state eng-convention checks
@@ -190,11 +188,11 @@ codemod: codemod-fmt codemod-generate codemod-generate-dagnabit
 # (goimports -> gofumpt), Nix (nixfmt), shell/bats (shfmt), TOML (tommy
 # fmt), and the tommy-codegen repair lane (regenerates *_tommy.go). Config
 # is the nix-module-generated conformist.toml (./conformist.nix + the eng
-# preset). The read-only counterpart is `lint-fmt`. Runs the module's
-# store-pinned `conformist` wrapper (config + toolchain baked in).
+# preset). The read-only counterpart is `lint-fmt`. Runs the flake `formatter`
+# output (conformistEval.config.build.wrapper, repair mode) via `nix fmt`.
 [group('codemod')]
 codemod-fmt:
-    nix develop --command conformist
+    nix fmt
 
 # Regenerate the tommy TOML-codegen companions (*_tommy.go) for the config
 # subsystem (RFC 0007). Run after editing any `//go:generate tommy
@@ -240,9 +238,22 @@ codemod-generate-dagnabit:
 # committed facades without writing, exiting nonzero on drift — a stale
 # or hand-edited facade, or a dagnabit version bump. The dagnabit
 # analogue of validate-generate (tommy).
+#
+# dagnabit formats the freshly-generated facades by running `conformist`
+# (the raw binary on the devShell PATH). Since the config is now
+# nix-module-generated (no conformist.toml on disk), point dagnabit at the
+# generated config via DAGNABIT_CONFORMIST_CONFIG (.#conformist-config) so it
+# formats with cutting-garden's REAL config instead of escalating to a stray
+# ancestor (purse-first#159); the CEILING var bounds any upward walk at the
+# worktree root.
 [group('pre-build')]
 validate-generate-dagnabit:
-    nix develop --command dagnabit export -check
+    #!/usr/bin/env bash
+    set -euo pipefail
+    config=$(nix build "{{ justfile_directory() }}#conformist-config" --no-link --print-out-paths)
+    DAGNABIT_CONFORMIST_CONFIG="$config" \
+      DAGNABIT_CEILING_DIRECTORIES="{{ justfile_directory() }}" \
+      nix develop --command dagnabit export -check
 
 # Fast `go build` of the CLI into .tmp/cutting-garden for the tight
 # debug dev-loop (skips the full nix build).
