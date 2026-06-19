@@ -44,6 +44,25 @@ func (f *fakeCalDAV) seed(href, component, body string) {
 	f.component[href] = component
 }
 
+// remove deletes a seeded resource — for exercising diff deletions.
+func (f *fakeCalDAV) remove(href string) {
+	delete(f.resources, href)
+	delete(f.component, href)
+}
+
+// fakeEtag derives a resource's etag from its body, so a body change moves
+// the etag (as a real server's would). A weak hash is fine: the test only
+// needs distinct etags for distinct bodies and a stable etag for an
+// unchanged body. Quoted per the getetag wire shape.
+func fakeEtag(body string) string {
+	var h uint32 = 2166136261
+	for i := 0; i < len(body); i++ {
+		h ^= uint32(body[i])
+		h *= 16777619
+	}
+	return fmt.Sprintf(`"%08x"`, h)
+}
+
 const calendarHref = "/dav/cal/"
 
 func (f *fakeCalDAV) handler() http.Handler {
@@ -53,6 +72,15 @@ func (f *fakeCalDAV) handler() http.Handler {
 			f.propfind(w, r)
 		case "REPORT":
 			f.report(w, r)
+		case "GET":
+			body, ok := f.resources[r.URL.Path]
+			if !ok {
+				http.Error(w, "not found", http.StatusNotFound)
+				return
+			}
+			w.Header().Set("Content-Type", "text/calendar; charset=utf-8")
+			w.WriteHeader(http.StatusOK)
+			_, _ = io.WriteString(w, body)
 		case "PUT":
 			body, _ := io.ReadAll(r.Body)
 			f.puts[r.URL.Path] = string(body)
@@ -114,13 +142,13 @@ func (f *fakeCalDAV) report(w http.ResponseWriter, r *http.Request) {
     <d:href>%s</d:href>
     <d:propstat>
       <d:prop>
-        <d:getetag>"etag-%s"</d:getetag>
+        <d:getetag>%s</d:getetag>
         <c:calendar-data>%s</c:calendar-data>
       </d:prop>
       <d:status>HTTP/1.1 200 OK</d:status>
     </d:propstat>
   </d:response>
-`, href, href, f.resources[href])
+`, href, fakeEtag(f.resources[href]), f.resources[href])
 	}
 	sb.WriteString(`</d:multistatus>`)
 

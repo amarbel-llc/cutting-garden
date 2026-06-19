@@ -89,14 +89,14 @@ reference-bearing.
 Body (JCS):
 
 ```json
-{"endpoint":"<string>","object_count":<int>,"resources":[{"id":"<string>","etag":"<string>"}]}
+{"endpoint":"<string>","object_count":<int>,"resources":[{"id":"<string>","href":"<string>","etag":"<string>"}]}
 ```
 
 | Field          | Required | Description                                                              |
 |----------------|----------|--------------------------------------------------------------------------|
 | `endpoint`     | yes      | The credential-free endpoint origin + base path captured.                |
 | `object_count` | yes      | Number of object references in this node (= `len(resources)`).           |
-| `resources`    | yes      | Per-resource freshness records, sorted by `id`: `{"id":<native-identity>,"etag":<server-etag>}`. The `id` matches a reference alias below; the `etag` is the server's getetag value at capture time. |
+| `resources`    | yes      | Per-resource records, sorted by `id`: `{"id":<native-identity>,"href":<server-relative-path>,"etag":<server-etag>}`. The `id` matches a reference alias below. The `href` is the resource's server-relative path — the key the diff freshness probe matches a live resource against (the cheap getetag probe yields hrefs, not native ids, so the receipt must record href to correlate without fetching bodies; see §Diff). The `etag` is the server's getetag value at capture time. |
 
 ### Why etag lives in the payload body
 
@@ -180,7 +180,7 @@ Per RFC 0002 §Stability Table, with caldav-specific notes:
 
 | Node                                  | Stable across…                                                         |
 |---------------------------------------|------------------------------------------------------------------------|
-| object leaf (`caldav-capture-object`) | every capture in which that resource's body is byte-identical — the body is the cross-capture handle; identical bytes ⇒ identical markl-id ⇒ stored once. (Independent of etag: a re-issued etag over identical bytes does not churn the leaf.) |
+| object leaf (`caldav-object-v1`) | every capture in which that resource's body is byte-identical — the body is the cross-capture handle; identical bytes ⇒ identical markl-id ⇒ stored once. (Independent of etag: a re-issued etag over identical bytes does not churn the leaf.) |
 | `jcs-caldav-payload-v1`       | re-captures whose resource set AND etags are unchanged. (A new etag over identical content changes the payload body but **not** any leaf — the dedup of bodies still holds.) |
 | `jcs-caldav-environment-v1`   | every capture with the same component set.                             |
 
@@ -212,19 +212,26 @@ identity, so a capture from one host restores cleanly to a different host.
 Diff compares a caldav receipt against a live `caldav:` source in two
 stages, mirroring git's tip probe at per-resource granularity.
 
-First a **freshness probe**: a getetag-only REPORT
-(`internal/cutting_garden_plugin_caldav` `listObjectHrefs` carries the
-etag) resolves the live etag of every resource and compares it to the
-payload body's `resources[].etag`. Resources whose etag is unchanged are
-clean — no body transfer.
+First a **freshness probe**: a getetag-only REPORT (`plugins/caldav`
+`listObjectEtags`) resolves each live resource's `(href, etag)` without
+transferring bodies. Each live `href` is matched against the payload's
+`resources[].href`; when both sides carry a non-empty, equal `etag` the
+resource is clean — no body transfer.
 
-For resources whose etag **moved** (or that are new/removed), diff
-re-fetches only those bodies and compares their markl-ids to the captured
-leaves, reporting `A`/`D`/`M` by native identity:
+Only the residue is re-fetched: a live href not in the receipt, a captured
+href not seen live, or a known href whose etag **moved** (or is absent on
+either side). For the fetched bodies, diff parses the UID to build the
+native id and hashes the body to a markl-id, reporting `A`/`D`/`M` by
+native identity:
 
-- `A <native-id>` — present live, absent in the receipt.
-- `D <native-id>` — present in the receipt, absent live.
-- `M <native-id>` — present in both, body markl-id differs.
+- `A <native-id>` — live href absent from the receipt (fetched to learn
+  its native id).
+- `D <native-id>` — receipt href not seen live (reported from the receipt
+  alone; no fetch).
+- `M <native-id>` — known href whose re-fetched body markl-id differs from
+  the captured leaf's. A moved etag over byte-identical content yields **no**
+  `M` (the digest gate), so a server that re-issues etags does not produce
+  spurious drift.
 
 This is the parity win over the flat `fs-v1` diff
 ([#104](https://github.com/amarbel-llc/cutting-garden/issues/104),

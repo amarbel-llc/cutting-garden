@@ -326,6 +326,59 @@ func (c *client) listObjectHrefs(
 	return hrefs, nil
 }
 
+// hrefEtag pairs a resource's server href with its current server etag —
+// the cheap freshness probe DiffProtocol matches against the receipt's
+// recorded {href, etag} records without transferring any bodies.
+type hrefEtag struct {
+	href string
+	etag string
+}
+
+// listObjectEtags issues the same getetag-only REPORT as listObjectHrefs
+// but also returns each resource's etag. It is the diff freshness probe:
+// no calendar-data crosses the wire, so comparing live etags to the
+// receipt's recorded etags costs one REPORT per (calendar, component) and
+// no body transfers.
+func (c *client) listObjectEtags(
+	ctx context.Context,
+	calendarHref, component string,
+) (objects []hrefEtag, err error) {
+	url := c.resolveHref(calendarHref)
+	body := fmt.Sprintf(calendarHrefQuery, component)
+	resp, err := c.do(ctx, "REPORT", url, body,
+		"application/xml; charset=utf-8", 1)
+	if err != nil {
+		return nil, errors.Wrapf(err, "REPORT %s (%s)", url, component)
+	}
+	defer errors.DeferredCloser(&err, resp.Body)
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, errors.Wrap(err)
+	}
+	if resp.StatusCode != http.StatusMultiStatus {
+		return nil, errors.ErrorWithStackf(
+			"REPORT %s (%s): status %d: %s",
+			url, component, resp.StatusCode, snippet(data),
+		)
+	}
+
+	var ms multistatusResponse
+	if err := xml.Unmarshal(data, &ms); err != nil {
+		return nil, errors.Wrapf(err, "parse multistatus from %s", url)
+	}
+
+	for _, r := range ms.Responses {
+		for _, ps := range r.PropStat {
+			if strings.Contains(ps.Status, "200") {
+				objects = append(objects, hrefEtag{href: r.Href, etag: ps.Prop.Etag})
+				break
+			}
+		}
+	}
+	return objects, nil
+}
+
 // putResource creates or overwrites the resource at href with icalData.
 // No conditional header is sent: restore is an unconditional
 // materialization of the captured bytes onto the destination.
@@ -347,6 +400,29 @@ func (c *client) putResource(ctx context.Context, href, icalData string) (err er
 		)
 	}
 	return nil
+}
+
+// getResource fetches a single resource's verbatim text/calendar body by
+// href. DiffProtocol uses it to re-fetch only the resources whose etag
+// moved (or is unknown), so unchanged resources cost no body transfer.
+func (c *client) getResource(ctx context.Context, href string) (body string, err error) {
+	url := c.resolveHref(href)
+	resp, err := c.do(ctx, "GET", url, "", "", -1)
+	if err != nil {
+		return "", errors.Wrapf(err, "GET %s", url)
+	}
+	defer errors.DeferredCloser(&err, resp.Body)
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", errors.Wrap(err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", errors.ErrorWithStackf(
+			"GET %s: status %d: %s", url, resp.StatusCode, snippet(data),
+		)
+	}
+	return string(data), nil
 }
 
 // resolveHref turns a possibly-relative href (as returned in a

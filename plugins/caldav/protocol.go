@@ -70,6 +70,7 @@ func (Plugin) CaptureProtocol(
 // payload node.
 type capturedObject struct {
 	id     string // <collection>/<component>/<UID>
+	href   string // server-relative resource path (the diff probe's key)
 	digest string
 	etag   string
 }
@@ -117,6 +118,7 @@ func storeObjects(
 
 				objects = append(objects, capturedObject{
 					id:     objectIdentity(collection, component, uid),
+					href:   serverPath(c.resolveHref(res.href)),
 					digest: digest,
 					etag:   res.etag,
 				})
@@ -151,6 +153,7 @@ func writeCaldavReceipt(
 		refs = append(refs, capture_plugin.LockedRef(o.id, o.digest, typeObject))
 		resourceRecords = append(resourceRecords, map[string]any{
 			"id":   o.id,
+			"href": o.href,
 			"etag": o.etag,
 		})
 	}
