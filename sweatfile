@@ -5,26 +5,20 @@ pre-merge = "just"
 
 # Per-commit repair: format the index-staged content at authoring time so every
 # commit is conformant in history (rather than catching drift later at `just
-# fmt` / merge). spinclass installs this as a per-worktree git pre-commit hook
-# at `sc start`/`sc resume` (spinclass-sweatfile(5)); it is best-effort,
-# non-blocking, and restages formatted blobs in place (lint-staged semantics —
-# no extra commit, no amend). `--exit-zero-on-fix` maps the restage's exit-3
-# signal to 0 so a successful repair lets the commit proceed.
+# codemod-fmt` / merge). spinclass installs this as a per-worktree git
+# pre-commit hook at `sc start`/`sc resume` (spinclass-sweatfile(5)); it is
+# best-effort, non-blocking, and restages formatted blobs in place (lint-staged
+# semantics — no extra commit, no amend).
 #
-# NB: this is an INTERIM value. conformist#51 established the blessed hook as
-# `conformist-pre-commit` — the config-specific, store-pinned wrapper a consumer
-# exposes from its own `eval.config.build.preCommit` (nix module) — and
-# explicitly documents bare `conformist --staged --exit-zero-on-fix` as a
-# silent-skip trap: it resolves formatters from PATH, so a shell missing
-# gofumpt/goimports/nixfmt quietly skips those file types. cutting-garden has
-# exactly that gap — it hides the formatter toolchain inside the `conformist-fmt`
-# devshell wrapper (flake.nix `conformistFmt`, runtimeInputs = conformistTools)
-# rather than on the bare PATH. `conformist-fmt` execs `conformist "$@"`, so
-# routing through the wrapper gets the full toolchain and avoids the silent skip
-# without the bare-`conformist` trap.
-#
-# The blessed fix is to adopt the conformist nix module and switch this to
-# `conformist-pre-commit` (cutting-garden#114 / conformist#51); until then the
-# wrapper is the working stand-in. shfmt's `-ci` (case-indent) must be preserved
-# in that migration — see conformist#52.
-pre-commit = "conformist-fmt --staged --exit-zero-on-fix"
+# `conformist-pre-commit` is the blessed (conformist#47/#51), config-specific,
+# store-pinned hook: cutting-garden's flake exposes it from its own
+# `conformistEval.config.build.preCommit` (the nix-module migration,
+# cutting-garden#114) and puts it on the devShell PATH. It wraps `conformist
+# --staged --exit-zero-on-fix` with this repo's generated store config, so the
+# staged repair formats *.go/*.nix/etc. with the SAME pinned toolchain as
+# `nix fmt` — no reliance on the formatters being on the author's PATH (the
+# silent-skip trap of a bare `conformist --staged`). `--exit-zero-on-fix` (baked
+# into the wrapper) maps the restage's exit-3 to 0 so a successful repair lets
+# the commit proceed. Requires the devShell active (direnv) so the hook is on
+# PATH.
+pre-commit = "conformist-pre-commit"

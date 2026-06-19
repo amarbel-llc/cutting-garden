@@ -3,10 +3,12 @@ default: build test
 [group('build')]
 build: build-gomod2nix build-nix build-nix-check
 
+# Regenerate gomod2nix.toml from go.mod/go.sum (the organic non-bridged deps).
 [group('build')]
 build-gomod2nix:
     nix develop --command gomod2nix
 
+# Build the default package (result/bin/cutting-garden) via the flake.
 [group('build')]
 build-nix:
     nix build --show-trace
@@ -20,12 +22,14 @@ build-nix-check:
     nix flake check --show-trace
 
 [group('post-build')]
-test: generate-check generate-check-dagnabit test-go lint-go lint-fmt lint-go-analyzers test-bats
+test: validate-generate validate-generate-dagnabit test-go lint-go lint-fmt lint-worktree lint-go-analyzers test-bats
 
+# Run the Go test suite across all packages.
 [group('post-build')]
 test-go:
     nix develop --command go test ./...
 
+# Vet the Go sources (the cheap pre-build static-analysis pass).
 [group('pre-build')]
 lint-go:
     nix develop --command go vet ./...
@@ -33,20 +37,31 @@ lint-go:
 
 # Read-only formatting + lint gate via conformist (treefmt successor):
 # Go (goimports -> gofumpt), Nix (nixfmt), shell/bats (shfmt) + shellcheck,
-# TOML (tommy fmt), and the tommy-codegen drift guard. Config in
-# ./conformist.toml. `just fmt` is the write mode. The sandboxed
-# flake-check counterpart is `just build-nix-check`.
+# TOML (tommy fmt), and the tommy-codegen drift guard. Config is the
+# nix-module-generated conformist.toml (./conformist.nix + the eng preset);
+# `just codemod-fmt` is the write mode. The sandboxed flake-check counterpart
+# is `just build-nix-check` (the pure eng lane); the git-state eng checks run
+# in `just lint-worktree`.
 #
-# Invokes `conformist-fmt` (the flake's hermetic wrapper, runtimeInputs =
-# conformistTools), NOT plain `conformist`: plain `conformist` resolves to
-# the home-manager profile binary, whose fixed eng toolchain can't see
-# repo-local tools like conformist-tommy-codegen (tommy v0.4.6). The
-# wrapper carries the repo's pinned toolchain. Generalizing this into the
-# eng convention is tracked in amarbel-llc/purse-first#155.
+# Invokes `conformist` — the module's store-pinned wrapper (binary
+# `conformist`, config + formatter toolchain baked in), on the devShell PATH.
 [group('pre-build')]
 lint-fmt:
-    nix develop --command conformist-fmt check
+    nix develop --command conformist check
     gum log --level info "lint-fmt: ok"
+
+# Non-sandbox lane: run the IMPURE git-state eng-convention checks
+# (git-remotes, agents-md, gomod2nix, ...) against the WORKING TREE, where
+# .git and host tools are available — they can't run in the sandboxed
+# checks.formatting. Builds the impure config (presets.eng-impure, exposed as
+# .#conformist-impure-config) and runs the raw conformist binary against it.
+[group('pre-build')]
+lint-worktree:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cfg=$(nix build --no-link --print-out-paths '.#conformist-impure-config')
+    nix run '.#conformist' -- check --config-file "$cfg" --tree-root .
+    gum log --level info "lint-worktree: ok"
 
 # Run one dewey analyzer (defererr, repool, seqerror) as a go vet -vettool.
 # Built ad-hoc into .tmp/analyzers/<name> from the module cache. See #30.
@@ -60,10 +75,10 @@ lint-go-analyzer name:
     nix develop --command go vet -vettool="$bin" ./...
     gum log --level info "lint-go-analyzer {{ name }}: ok"
 
-# Run all three dewey analyzers in sequence.
 [group('pre-build')]
 lint-go-analyzers: (lint-go-analyzer "seqerror") (lint-go-analyzer "repool") (lint-go-analyzer "defererr")
 
+# Run the hermetic bats integration suite (zz-tests_bats) as a nix build.
 [group('post-build')]
 test-bats:
     nix build .#bats-capture --show-trace
@@ -71,10 +86,12 @@ test-bats:
 [group('maintenance')]
 update: update-go update-nix
 
+# Tidy go.mod/go.sum, then regenerate gomod2nix.toml to match.
 [group('maintenance')]
 update-go: && build-gomod2nix
     nix develop --command go mod tidy
 
+# Update all flake inputs (flake.lock).
 [group('maintenance')]
 update-nix:
     nix flake update
@@ -166,26 +183,29 @@ release version:
     git push origin "$tag"
     gum log --level info "Pushed $tag"
 
+[group('codemod')]
+codemod: codemod-fmt codemod-generate codemod-generate-dagnabit
+
 # Format all source via conformist (the treefmt successor): Go
 # (goimports -> gofumpt), Nix (nixfmt), shell/bats (shfmt), TOML (tommy
 # fmt), and the tommy-codegen repair lane (regenerates *_tommy.go). Config
-# lives in ./conformist.toml. The read-only counterpart is `lint-fmt`.
-# Uses the hermetic `conformist-fmt` wrapper (not plain `conformist`) so
-# the repo's pinned toolchain is on PATH — see the lint-fmt comment.
+# is the nix-module-generated conformist.toml (./conformist.nix + the eng
+# preset). The read-only counterpart is `lint-fmt`. Runs the module's
+# store-pinned `conformist` wrapper (config + toolchain baked in).
 [group('codemod')]
-fmt:
-    nix develop --command conformist-fmt
+codemod-fmt:
+    nix develop --command conformist
 
 # Regenerate the tommy TOML-codegen companions (*_tommy.go) for the config
 # subsystem (RFC 0007). Run after editing any `//go:generate tommy
 # generate` struct (config_common, plugin config sections, cgconfig). The
-# read-only drift gate is `generate-check`, wired into `test`.
+# read-only drift gate is `validate-generate`, wired into `test`.
 #
 # -run tommy scopes this to the tommy directives only, keeping the tommy
-# and dagnabit (`generate-dagnabit`) codegen lanes distinct so each has
-# its own drift gate.
+# and dagnabit (`codemod-generate-dagnabit`) codegen lanes distinct so each
+# has its own drift gate.
 [group('codemod')]
-generate:
+codemod-generate:
     nix develop --command go generate -run tommy ./...
 
 # Assert the committed *_tommy.go companions are current: regenerate, then
@@ -193,41 +213,45 @@ generate:
 # version bump (the header stamps the producing tommy build). The
 # go-generate-then-clean-diff form tommy-generate(1) recommends for CI.
 [group('pre-build')]
-generate-check: generate
+validate-generate: codemod-generate
     #!/usr/bin/env bash
     set -euo pipefail
     if ! git diff --quiet -- '*_tommy.go'; then
       git --no-pager diff -- '*_tommy.go'
-      gum log --level error "generate-check: *_tommy.go out of date; run \`just generate\` and commit"
+      gum log --level error "validate-generate: *_tommy.go out of date; run \`just codemod-generate\` and commit"
       exit 1
     fi
-    gum log --level info "generate-check: ok"
+    gum log --level info "validate-generate: ok"
 
 # Regenerate the dagnabit pkgs/ facades (RFC 0009 plugin SDK). Run after
 # adding or changing a `//go:generate dagnabit export` directive
 # (internal/capture_plugin, internal/cutting_garden_plugins). dagnabit is
 # built by purse-first's gomod.nix and on the devshell PATH. The read-only
-# drift gate is `generate-check-dagnabit`, wired into `test`.
+# drift gate is `validate-generate-dagnabit`, wired into `test`.
 #
 # -run dagnabit scopes this to the dagnabit directives, parallel to
-# `generate` (tommy).
+# `codemod-generate` (tommy).
 [group('codemod')]
-generate-dagnabit:
+codemod-generate-dagnabit:
     nix develop --command go generate -run dagnabit ./...
 
 # Assert the committed pkgs/ facades are current: dagnabit's native
 # drift check exports fresh into a temp dir and diffs against the
 # committed facades without writing, exiting nonzero on drift — a stale
 # or hand-edited facade, or a dagnabit version bump. The dagnabit
-# analogue of generate-check (tommy).
+# analogue of validate-generate (tommy).
 [group('pre-build')]
-generate-check-dagnabit:
+validate-generate-dagnabit:
     nix develop --command dagnabit export -check
 
+# Fast `go build` of the CLI into .tmp/cutting-garden for the tight
+# debug dev-loop (skips the full nix build).
 [group('debug')]
 debug-build-go:
     nix develop --command go build -o .tmp/cutting-garden ./cmd/cutting-garden
 
+# Create a small two-file capture fixture tree under .tmp/cap-fixture for
+# the capture debug recipes to point at.
 [group('debug')]
 debug-make-fixture:
     rm -rf .tmp/cap-fixture
@@ -235,6 +259,8 @@ debug-make-fixture:
     printf 'hello cutting-garden\n' > .tmp/cap-fixture/hello.txt
     printf 'nested content\n'       > .tmp/cap-fixture/nested/inner.txt
 
+# Capture the fixture tree with the go-built binary — the tight capture
+# debug dev-loop.
 [group('debug')]
 debug-capture-fixture STORE='.default' FORMAT='auto': debug-build-go debug-make-fixture
     .tmp/cutting-garden capture -format={{ FORMAT }} {{ STORE }} .tmp/cap-fixture
@@ -247,14 +273,20 @@ debug-capture-fixture STORE='.default' FORMAT='auto': debug-build-go debug-make-
 debug-capture-fixture-progress STORE='.default': debug-build-go debug-make-fixture
     .tmp/cutting-garden capture -progress=always {{ STORE }} .tmp/cap-fixture
 
+# Capture the fixture tree with the nix-built binary (result/bin) — the
+# variant that exercises the release artifact rather than the go build.
 [group('debug')]
 debug-capture-fixture-nix STORE='.default' FORMAT='auto': build-nix debug-make-fixture
     ./result/bin/cutting-garden capture -format={{ FORMAT }} {{ STORE }} .tmp/cap-fixture
 
+# Initialise a throwaway madder store at STORE for ad-hoc capture/restore
+# probing.
 [group('debug')]
 debug-madder-init STORE='.test':
     nix develop --command madder init {{ STORE }}
 
+# Create a SECOND fixture tree (.tmp/cap-fixture-2) so the multiroot
+# capture recipe has two roots to walk.
 [group('debug')]
 debug-make-multiroot-fixture: debug-make-fixture
     rm -rf .tmp/cap-fixture-2
@@ -262,6 +294,8 @@ debug-make-multiroot-fixture: debug-make-fixture
     printf 'second root\n' > .tmp/cap-fixture-2/top.txt
     printf 'inner two\n'   > .tmp/cap-fixture-2/sub/inner.txt
 
+# Capture two fixture roots in one invocation — exercises the multiroot
+# capture path (one receipt per root).
 [group('debug')]
 debug-capture-multiroot STORE='.default' FORMAT='auto': debug-build-go debug-make-multiroot-fixture
     .tmp/cutting-garden capture -format={{ FORMAT }} {{ STORE }} .tmp/cap-fixture .tmp/cap-fixture-2

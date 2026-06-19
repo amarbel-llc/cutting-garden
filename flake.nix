@@ -19,11 +19,6 @@
     # overlay, so their closures hit cache instead of rebuilding.
     nixpkgs-master.url = "github:NixOS/nixpkgs/d233902339c02a9c334e7e593de68855ad26c4cb";
     flake-utils.url = "github:numtide/flake-utils";
-    gomod2nix = {
-      url = "github:nix-community/gomod2nix";
-      inputs.nixpkgs.follows = "igloo";
-      inputs.flake-utils.follows = "flake-utils";
-    };
     # Tracks the latest madder. The `madder` binary in the devshell
     # and the cutting-garden -> madder go.mod dep need to speak the
     # same wire format. flake.lock is the source of truth: the same
@@ -86,10 +81,12 @@
 
     # conformist: eng's treefmt-v2 successor — a formatter + linter
     # multiplexer that walks the tree and runs matched tools by glob.
-    # Config lives in ./conformist.toml. Wired below as the `nix fmt`
-    # formatter, a sandboxed `checks.formatting` gate, and (via the
-    # justfile) `just fmt` / `just lint-fmt`. See
-    # eng-design_patterns-conformist(7).
+    # Consumed as a nix module (conformist.lib.evalModule): config is defined
+    # in ./conformist.nix + the eng preset and GENERATED (not a hand-written
+    # conformist.toml). Wired below as the `nix fmt` formatter, the sandboxed
+    # `checks.formatting` gate, the `conformist-pre-commit` hook, and (via the
+    # justfile) `just fmt` / `just lint-fmt` / `just lint-worktree`. See
+    # eng-design_patterns-conformist(7), conformist-nix(7).
     conformist = {
       url = "github:amarbel-llc/conformist";
       inputs.igloo.follows = "igloo";
@@ -118,7 +115,6 @@
       igloo,
       nixpkgs-master,
       flake-utils,
-      gomod2nix,
       madder,
       tap,
       crap,
@@ -171,57 +167,69 @@
           inherit system;
         };
 
-        # conformist toolchain: the formatter/linter binaries
-        # ./conformist.toml drives, sourced from the SHA-pinned
-        # nixpkgs-master (pkgsUpstream) so output is byte-reproducible
-        # and not taken from the ambient environment
-        # (eng-design_patterns-conformist(7) §THE CWD-AWARE WRAPPER).
-        # goimports ships in gotools. A new formatter/linter in
-        # conformist.toml needs its binary added here.
-        conformistTools = [
-          conformist.packages.${system}.default
-          pkgsUpstream.gotools # goimports
-          pkgsUpstream.gofumpt
-          pkgsUpstream.nixfmt
-          pkgsUpstream.shfmt
-          pkgsUpstream.shellcheck
-          # just provides its own formatter (`just --unstable --fmt`);
-          # the [formatter.just] block in conformist.toml drives it.
-          pkgsUpstream.just
-          # tommy ships `tommy fmt`, driven by the [formatter.tommy] block
-          # in conformist.toml. Sourced from the pinned `tommy` flake input
-          # (not pkgsUpstream) so the formatter rev matches the `tommy
-          # generate` codegen binary already in the devshell.
-          tommy.packages.${system}.default
-          # conformist-tommy-codegen: tommy's driver that greps *.go for
-          # `//go:generate tommy generate` directives and regenerates the
-          # *_tommy.go companions. Drives the [linter.tommy-codegen] repair
-          # lane in conformist.toml — the automated form of `just generate`
-          # / the #159 codec-drift guard.
-          tommy.packages.${system}.conformist-tommy-codegen
-        ];
-
-        # `nix fmt` entrypoint: conformist with its toolchain on PATH,
-        # in repair mode (rewrites in place). `just fmt` is the alias;
-        # `just lint-fmt` (conformist check) is the read-only
-        # counterpart, and checks.formatting below is the sandboxed gate.
-        # The same wrapper also backs the sweatfile `--staged` pre-commit
-        # hook, which is why the toolchain must be on PATH: conformist.toml's
-        # formatter commands are bare names resolved at run time, so a bare
-        # `conformist --staged` off a toolchain-less PATH would silently skip
-        # *.go/*.nix (the trap of conformist#51).
+        # conformist config via its nix module (conformist#51/#114). The config
+        # lives in ./conformist.nix (registry programs + excludes) merged with
+        # the eng-convention preset; the generated conformist.toml is
+        # build.configFile, and the module derives the wrapper / check /
+        # pre-commit hook from it (all store-pinned, so the formatter toolchain
+        # need not be on the ambient PATH — the conformist#51 trap is gone).
         #
-        # conformist.lib.wrapWithToolchain is the blessed, recursion-safe form
-        # of the wrapper this repo used to hand-roll (it execs conformist by
-        # absolute store path with `tools` on PATH). Kept as `conformist-fmt`
-        # so `just fmt`/`lint-fmt` and the sweatfile hook are unchanged.
-        # cutting-garden#114 step 1; step 2 = the full nix-module migration to
-        # a store-pinned `conformist-pre-commit`, tracked in #114.
-        conformistFmt = conformist.lib.wrapWithToolchain pkgs {
-          conformist = conformist.packages.${system}.default;
-          tools = conformistTools;
-          name = "conformist-fmt";
+        # tommy + the tommy-codegen repair linter have no registry program, so
+        # they are inlined here as freeform blocks where the `tommy` flake input
+        # is in scope (a standalone ./conformist.nix can't see flake inputs).
+        # Both binaries are store-pinned with lib.getExe' (explicit binary
+        # name): the module's exeType would lib.getExe the `command`, but tommy
+        # lacks meta.mainProgram (deprecation warning) and — critically —
+        # `repair-command` is a FREEFORM field that is NOT coerced, so a bare
+        # derivation there serializes to the store DIRECTORY, not the binary.
+        # getExe' on both sidesteps both issues.
+        conformistTommyModule =
+          { ... }:
+          {
+            settings.formatter.tommy = {
+              command = pkgs.lib.getExe' tommy.packages.${system}.default "tommy";
+              options = [ "fmt" ];
+              includes = [ "*.toml" ];
+            };
+            settings.linter.tommy-codegen = {
+              command = "true";
+              "repair-command" =
+                pkgs.lib.getExe' tommy.packages.${system}.conformist-tommy-codegen
+                  "conformist-tommy-codegen";
+              includes = [ "*.go" ];
+              "passes-files" = false;
+            };
+          };
+
+        # Pure lane: the eng preset (sandboxed eng-convention linters) + this
+        # repo's formatters/excludes + the tommy blocks. Drives `nix fmt`
+        # (build.wrapper), the sandboxed `checks.formatting` (build.check), and
+        # the `conformist-pre-commit` hook (build.preCommit).
+        conformistEval = conformist.lib.evalModule pkgs {
+          imports = [
+            conformist.lib.presets.eng
+            ./conformist.nix
+            conformistTommyModule
+          ];
+          package = conformist.packages.${system}.default;
         };
+
+        # Impure lane: the git-state eng-convention checks (git-remotes,
+        # sweatfile, agents-md, gomod2nix). They need a live .git / host tools,
+        # so they run against the working tree via `just lint-worktree`, not the
+        # sandboxed check. Exposed as packages.conformist-impure-config below.
+        conformistImpureEval = conformist.lib.evalModule pkgs {
+          imports = [ conformist.lib.presets.eng-impure ];
+          package = conformist.packages.${system}.default;
+          projectRootFile = "flake.nix";
+        };
+
+        # `nix fmt` / `just fmt` repair entrypoint and the read-only `just
+        # lint-fmt` counterpart (`conformist check`) both run this wrapper. The
+        # module names the binary `conformist` (config + toolchain store-pinned),
+        # so it lands on the devShell PATH as `conformist` — the justfile recipes
+        # call `conformist` / `conformist check` directly.
+        conformistFmt = conformistEval.config.build.wrapper;
 
         # version.env at repo root is the single source of truth for the
         # release version (eng-versioning(7) §SINGLE VERSION SOURCE OF
@@ -382,6 +390,23 @@
           # Clown plugin closure for eng's mkCircus (cutting-garden#101).
           cutting-garden-clown-plugin = cuttingGardenClownPlugin;
 
+          # The store-pinned `conformist --staged --exit-zero-on-fix` hook from
+          # this repo's pure-lane config (conformist#47/#51). On the devShell
+          # PATH as `conformist-pre-commit`; the sweatfile names it as the
+          # per-commit hook. `nix build .#conformist-pre-commit` forces it.
+          conformist-pre-commit = conformistEval.config.build.preCommit;
+
+          # The generated impure-lane config (git-state eng-convention checks),
+          # consumed by `just lint-worktree` to run `conformist check` against
+          # the working tree where .git/host tools are available.
+          conformist-impure-config = conformistImpureEval.config.build.configFile;
+
+          # The raw conformist binary (NOT the --tree-root-file-pinned wrapper),
+          # so `just lint-worktree` can `nix run .#conformist -- check
+          # --config-file <impure> --tree-root .` — the wrapper would collide on
+          # --tree-root. Mirrors conformist's own lint-worktree recipe.
+          conformist = conformist.packages.${system}.default;
+
           # bats-capture is the hermetic Phase 2 step 9 test lane. It
           # builds a derivation whose only purpose is to run the bats
           # suite under zz-tests_bats/ against a pre-built
@@ -449,7 +474,13 @@
             # RELEASE RECIPES. Devshell-only — release machinery is
             # not in the package closure.
             pkgs.gum
-            gomod2nix.packages.${system}.default
+            # gomod2nix CLI for `just build-gomod2nix` / `just update-go`.
+            # Sourced from igloo (pkgs.gomod2nix = gomod2nix-1.0.0) so the
+            # `gomod2nix.toml` this regenerates byte-matches what conformist's
+            # `gomod2nix` drift linter produces (the linter also runs igloo's
+            # 1.0.0) — a separate gomod2nix flake input drifted on the
+            # `goVersion` fields the 1.0.0 emits (cutting-garden#114).
+            pkgs.gomod2nix
             madder.packages.${system}.madder
             # yt-dlp matches the wrap in the installed binary so
             # `go run ./cmd/cutting-garden capture ytdlp:…` from inside
@@ -470,10 +501,16 @@
             # absent), so `just test-go` exercises the real-git cross-checks
             # in the devshell rather than skipping them.
             pkgs.git
-            # conformist (+ its formatter toolchain) on PATH so
-            # `conformist` / `conformist check` run in the dev shell,
-            # which is how `just fmt` / `just lint-fmt` invoke it.
+            # conformist: the module's wrapper (binary `conformist`, config +
+            # formatter toolchain store-pinned) so `conformist` / `conformist
+            # check` run in the dev shell — how `just fmt` / `just lint-fmt`
+            # invoke it. The wrapper is self-contained (its formatter/linter
+            # toolchain is baked into the store-pinned config), so the raw tools
+            # need not be spliced onto the devShell PATH. The store-pinned
+            # `conformist-pre-commit` hook (build.preCommit) lands on PATH too,
+            # named by the sweatfile's `pre-commit` hook.
             conformistFmt
+            conformistEval.config.build.preCommit
             # tommy: the `tommy generate` codegen binary for RFC 0007's
             # config format (`//go:generate tommy generate`). Devshell-
             # only; generated `*_tommy.go` companions are committed, so
@@ -489,12 +526,12 @@
             # (RFC 0009 §The public surface).
             purse-first.packages.${system}.dagnabit
             # conformist-tommy-codegen: dagnabit runs `conformist` as a
-            # post-generation repair pass, which initialises every lane in
-            # conformist.toml — including [linter.tommy-codegen], whose
-            # repair command this binary provides. It is in conformistTools
-            # (for conformistFmt / checks.formatting) but must ALSO be on
-            # the devshell PATH so dagnabit's conformist call can resolve it
-            # (otherwise `go generate -run dagnabit` exits nonzero).
+            # post-generation repair pass, which initialises every lane in the
+            # generated config — including [linter.tommy-codegen], whose repair
+            # command this binary provides (the module store-pins it in the
+            # config, but dagnabit's own `conformist` invocation resolves it
+            # from PATH, so keep it here too — otherwise `go generate -run
+            # dagnabit` exits nonzero).
             tommy.packages.${system}.conformist-tommy-codegen
           ]
           # cdparanoia + ddrescue back the optical plugin
@@ -515,26 +552,16 @@
         # `nix fmt` runs conformist in repair mode (see conformistFmt).
         formatter = conformistFmt;
 
-        # Read-only formatting gate as a flake check: conformist
-        # sandbox-copies the tree, diffs against the formatter output,
-        # and exits non-zero on drift — it never writes the source.
-        # `nix flake check` (wired into the merge gate via the justfile's
-        # build-nix-check recipe) runs it.
-        #
-        # --tree-root ${self} is REQUIRED: conformist otherwise derives
-        # the tree root from --config-file's directory, which resolves to
-        # a bare /nix/store/<hash>-conformist.toml, so the walk would
-        # cover the entire /nix/store closure and run for tens of minutes
-        # (eng-design_patterns-conformist(7) §THE READ-ONLY CHECK).
-        checks.formatting =
-          pkgs.runCommand "cutting-garden-conformist-check"
-            {
-              nativeBuildInputs = conformistTools ++ [ pkgs.git ];
-            }
-            ''
-              conformist check -v --tree-root ${self} --config-file ${./conformist.toml}
-              touch "$out"
-            '';
+        # Read-only formatting gate as a flake check (build.check): conformist
+        # reads the generated store config and checks the read-only source tree
+        # (`self`), exiting non-zero on drift or linter findings — it never
+        # writes. The module passes the required explicit --tree-root (else
+        # conformist would derive it from the /nix/store config-file path and
+        # walk the whole store; eng-design_patterns-conformist(7) §THE READ-ONLY
+        # CHECK). This is the PURE lane (eng preset); the impure git-state
+        # checks run via `just lint-worktree` (see conformist-impure-config).
+        # `nix flake check` (the justfile's build-nix-check recipe) runs it.
+        checks.formatting = conformistEval.config.build.check self;
 
         # Eval-check for the exported NixOS/home-manager modules
         # (docs/features/0019): render a sample config.toml via the shared

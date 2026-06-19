@@ -259,8 +259,8 @@ absent from the facade is, by construction, unavailable to *any* plugin.
 This is the forcing function that grows the surface to completeness.
 
 Both rules MUST be enforced mechanically, not by convention. A build-time
-guard (a lint check, a `go vet`-style analyzer, or a generate-check step,
-run in the existing generate-check / conformist lane) MUST fail when:
+guard (a lint check, a `go vet`-style analyzer, or a codegen-drift step,
+run in the existing `validate-generate` / conformist lane) MUST fail when:
 
 - any package under `internal/` imports a `pkgs/` package; or
 - any package outside `internal/` that registers a plugin imports

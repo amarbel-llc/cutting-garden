@@ -434,22 +434,26 @@
     "gomod2nix_2": {
       "inputs": {
         "flake-utils": [
-          "flake-utils"
+          "madder",
+          "purse-first",
+          "utils"
         ],
-        "nixpkgs": [
-          "igloo"
+        "nixpkgs-master": [
+          "madder",
+          "purse-first",
+          "nixpkgs-master"
         ]
       },
       "locked": {
-        "lastModified": 1770585520,
-        "narHash": "sha256-yBz9Ozd5Wb56i3e3cHZ8WcbzCQ9RlVaiW18qDYA/AzA=",
-        "owner": "nix-community",
+        "lastModified": 1779583462,
+        "narHash": "sha256-E32c2DtK6w8oJ00RplIgXqY2c4UVobZVTxaLRIbXhEE=",
+        "owner": "amarbel-llc",
         "repo": "gomod2nix",
-        "rev": "1201ddd1279c35497754f016ef33d5e060f3da8d",
+        "rev": "2ae99ee109b3214305f098a4ebccd91b323a86b2",
         "type": "github"
       },
       "original": {
-        "owner": "nix-community",
+        "owner": "amarbel-llc",
         "repo": "gomod2nix",
         "type": "github"
       }
@@ -457,12 +461,10 @@
     "gomod2nix_3": {
       "inputs": {
         "flake-utils": [
-          "madder",
           "purse-first",
           "utils"
         ],
         "nixpkgs-master": [
-          "madder",
           "purse-first",
           "nixpkgs-master"
         ]
@@ -482,31 +484,6 @@
       }
     },
     "gomod2nix_4": {
-      "inputs": {
-        "flake-utils": [
-          "purse-first",
-          "utils"
-        ],
-        "nixpkgs-master": [
-          "purse-first",
-          "nixpkgs-master"
-        ]
-      },
-      "locked": {
-        "lastModified": 1779583462,
-        "narHash": "sha256-E32c2DtK6w8oJ00RplIgXqY2c4UVobZVTxaLRIbXhEE=",
-        "owner": "amarbel-llc",
-        "repo": "gomod2nix",
-        "rev": "2ae99ee109b3214305f098a4ebccd91b323a86b2",
-        "type": "github"
-      },
-      "original": {
-        "owner": "amarbel-llc",
-        "repo": "gomod2nix",
-        "type": "github"
-      }
-    },
-    "gomod2nix_5": {
       "inputs": {
         "flake-utils": "flake-utils_2",
         "nixpkgs-master": "nixpkgs-master_3"
@@ -664,7 +641,7 @@
     },
     "purse-first_2": {
       "inputs": {
-        "gomod2nix": "gomod2nix_3",
+        "gomod2nix": "gomod2nix_2",
         "igloo": [
           "madder",
           "igloo"
@@ -694,7 +671,7 @@
     },
     "purse-first_3": {
       "inputs": {
-        "gomod2nix": "gomod2nix_4",
+        "gomod2nix": "gomod2nix_3",
         "igloo": [
           "igloo"
         ],
@@ -758,7 +735,6 @@
         "conformist": "conformist",
         "crap": "crap",
         "flake-utils": "flake-utils",
-        "gomod2nix": "gomod2nix_2",
         "igloo": "igloo",
         "madder": "madder",
         "nixpkgs-master": "nixpkgs-master_2",
@@ -910,7 +886,7 @@
           "bats"
         ],
         "crane": "crane_2",
-        "gomod2nix": "gomod2nix_5",
+        "gomod2nix": "gomod2nix_4",
         "igloo": [
           "igloo"
         ],
