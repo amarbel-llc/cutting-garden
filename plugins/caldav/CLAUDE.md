@@ -65,6 +65,15 @@ credential-free traversal roots for the `RootProvider` capability
   **native identity** `<collection>/<component>/<UID>` (parsed via
   `ical/`) with per-resource etag recorded for the diff freshness probe.
   Emits `cutting_garden-capture_receipt-caldav-v1`.
+- `Plugin.DiffProtocol` (`diff_protocol.go`) — the RFC 0011 diff path:
+  a getetag-only REPORT (`listObjectEtags`) matches each live resource to
+  the receipt's `{href, etag}`; unchanged etags transfer no body, only the
+  new/moved/removed residue is re-fetched (UID → native id, body → digest)
+  and reported as `A`/`D`/`M` by native identity, with a digest gate so a
+  moved etag over identical bytes is not spurious drift.
+- `protocol_consume.go` — `loadReceiptPayload`: the consume side shared by
+  diff (and, next, restore) — validates the caldav kind, verifies the
+  FDR-0001 type locks, and decodes the payload `{id, href, etag}` records.
 - `types_register.go` — registers the RFC 0011 binding node types into the
   build-time type-signature registry. `caldav-object-v1` /
   `caldav-calendar-v1` are the SAME tags the traversal layer declares
