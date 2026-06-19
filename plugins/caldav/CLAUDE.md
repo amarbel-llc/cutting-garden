@@ -66,11 +66,23 @@ credential-free traversal roots for the `RootProvider` capability
   `ical/`) with per-resource etag recorded for the diff freshness probe.
   Emits `cutting_garden-capture_receipt-caldav-v1`.
 - `Plugin.DiffProtocol` (`diff_protocol.go`) — the RFC 0011 diff path:
-  a getetag-only REPORT (`listObjectEtags`) matches each live resource to
-  the receipt's `{href, etag}`; unchanged etags transfer no body, only the
-  new/moved/removed residue is re-fetched (UID → native id, body → digest)
-  and reported as `A`/`D`/`M` by native identity, with a digest gate so a
-  moved etag over identical bytes is not spurious drift.
+  the freshness probe (`listObjectEtags`) REPORTs getetag + a `calendar-data`
+  projection limited to UID (RFC 4791 §9.6), so each live resource's
+  `{etag, uid}` is learned without its body. Diff matches by **native
+  identity** (host-independent), so it is clean even when diffing a
+  different server than capture; unchanged etags transfer no body, the
+  new/moved/removed residue is re-fetched (body → digest) and reported as
+  `A`/`D`/`M` by native id, with a digest gate so a moved etag over
+  identical bytes is not spurious drift. A server that ignores the UID
+  projection → empty uid → that one resource falls back to a full fetch.
+- `Plugin.RestoreProtocol` (`restore_protocol.go`) — the RFC 0011 restore
+  path: PROPFIND the destination for its real collection layout (name →
+  href), then PUT each object at `<matched-collection-href>/<UID>.ics`
+  reconstructed from native identity — so a capture restores cleanly to a
+  *different* host. A collection absent on the destination errors
+  (MKCALENDAR is #77). Restores the tree natively by querying the
+  destination (the general principle in RFC 0011 §Restore; lifting it
+  generic is #116).
 - `protocol_consume.go` — `loadReceiptPayload`: the consume side shared by
   diff (and, next, restore) — validates the caldav kind, verifies the
   FDR-0001 type locks, and decodes the payload `{id, href, etag}` records.
@@ -105,12 +117,15 @@ receipts readable):
   regular file entries, byte-identical to fs captures, so a mixed fs+caldav
   store-group receipt shares one tag and the `.ics` blobs restore through
   either this plugin or the file plugin.
-- **RFC 0011 protocol** (`CaptureProtocol`, `protocol.go`). The orchestrator
-  resolves the plugin via the EntryV1 `CapturePlugin` registry and then
-  type-asserts `ProtocolCapturePlugin`, so `CaptureRoot` stays registered
-  (the vestigial-stub pattern git uses; dropping it is gated on #48). The
-  protocol receipt carries its own `cutting_garden-capture_receipt-caldav-v1`
-  kind with native identity — NOT the shared fs tag.
+- **RFC 0011 protocol** (`CaptureProtocol` + `DiffProtocol` +
+  `RestoreProtocol`). Capture is resolved via the EntryV1 `CapturePlugin`
+  registry and then type-asserts `ProtocolCapturePlugin`, so `CaptureRoot`
+  stays registered (the vestigial-stub pattern git uses; dropping it is
+  gated on #48); diff and restore route by receipt *kind* (`ProtocolKind`).
+  The protocol receipt carries its own
+  `cutting_garden-capture_receipt-caldav-v1` kind with native identity —
+  NOT the shared fs tag — and the whole capture/diff/restore triad keys on
+  host-independent native identity.
 
 Consolidating the two paths post-migration is tracked in #115.
 
