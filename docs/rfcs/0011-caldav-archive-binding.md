@@ -194,44 +194,85 @@ protocol-restore handler, independent of the destination URL's scheme.
 
 The procedure:
 
-1. Read the receipt, follow its `payload` ref to the payload node.
-2. For each object reference, parse the native-identity alias into
-   `<collection>/<component>/<UID>`.
-3. If the destination collection does not exist, `MKCALENDAR` it
-   ([#77](https://github.com/amarbel-llc/cutting-garden/issues/77)); then
-   `PUT` the leaf body at `<dest-origin>/<collection>/<UID>.ics`.
-4. The PUT is unconditional (create-or-overwrite); restore aborts on the
+1. **Discover the destination's layout.** PROPFIND the destination
+   endpoint for its calendar collections and map each collection's *name*
+   (its href's last path segment) to that collection's real href. The
+   native identity carries only the collection *name* (host-independent),
+   so restore must query the destination to learn where that collection
+   actually lives — a server may nest it (`/dav/<user>/<collection>/`)
+   differently from the source. Restoring "as natively as possible" makes
+   this query a natural consequence, not an accident (see the general
+   guidance referenced below).
+2. Read the receipt, follow its `payload` ref to the payload node.
+3. For each object reference, parse the native-identity alias into
+   `<collection>/<component>/<UID>`, resolve `<collection>` to the
+   discovered destination href, and `PUT` the leaf body at
+   `<that-href>/<UID>.ics`.
+4. A `<collection>` with no match on the destination is an error naming
+   it; creating a missing collection (`MKCALENDAR`, plus its metadata) is
+   a follow-up phase tracked in
+   [#77](https://github.com/amarbel-llc/cutting-garden/issues/77).
+5. The PUT is unconditional (create-or-overwrite); restore aborts on the
    first failure so a partial restore surfaces loudly.
 
 This supersedes FDR 0013's path-based restore (which PUT to the captured
 server-absolute path): the protocol restore reconstructs from native
-identity, so a capture from one host restores cleanly to a different host.
+identity against the destination's own discovered layout, so a capture
+from one host restores cleanly to a different host.
+
+### Design principle: restore the native tree, query the destination
+
+The collection-discovery step above is an instance of a general principle
+for tree-mutating plugins (it is not caldav-specific):
+
+> A plugin SHOULD restore the captured tree as **natively as possible** —
+> reconstructing each object at its source-native identity, not the
+> verbatim server path it happened to occupy at capture time. Because a
+> destination's concrete layout is not known from the receipt alone,
+> **querying the destination** for its real structure (here, a PROPFIND
+> for the destination's collections) is a *natural and expected*
+> consequence of native restore, not a workaround.
+
+The cost is per-restore destination round-trips. For protocols that do not
+expose tree mutation efficiently, a **caching layer** (memoizing the
+destination's layout, as many sync protocols do) is the intended future
+performance answer — and a deliberately accepted slow path until then.
+This principle wants a generic home spanning all bindings; lifting it out
+of this caldav binding is tracked separately (see References).
 
 ## Diff
 
-Diff compares a caldav receipt against a live `caldav:` source in two
-stages, mirroring git's tip probe at per-resource granularity.
+Diff compares a caldav receipt against a live `caldav:` source by
+**native identity** — so a receipt diffs cleanly against the source it was
+captured from *or* a different server holding the same logical objects
+(unlike an href-keyed diff, which would falsely report every object as
+changed across hosts).
 
-First a **freshness probe**: a getetag-only REPORT (`plugins/caldav`
-`listObjectEtags`) resolves each live resource's `(href, etag)` without
-transferring bodies. Each live `href` is matched against the payload's
-`resources[].href`; when both sides carry a non-empty, equal `etag` the
-resource is clean — no body transfer.
+First a **freshness probe**: a REPORT (`plugins/caldav` `listObjectEtags`)
+requesting `getetag` plus a `calendar-data` projection limited to the
+`UID` property (RFC 4791 §9.6 permits restricting `calendar-data` to named
+components/properties, so the body is *not* transferred — only the UID
+crosses the wire). This yields each live resource's `(etag, uid)`; the
+native id is `(collection, component, uid)`. A resource whose native id is
+in the receipt with a non-empty, equal `etag` is clean — no body transfer.
 
-Only the residue is re-fetched: a live href not in the receipt, a captured
-href not seen live, or a known href whose etag **moved** (or is absent on
-either side). For the fetched bodies, diff parses the UID to build the
-native id and hashes the body to a markl-id, reporting `A`/`D`/`M` by
-native identity:
+Only the residue is re-fetched: a live native id absent from the receipt,
+a receipt id not seen live, or a known id whose `etag` **moved** (or is
+absent on either side). Reporting `A`/`D`/`M` by native identity:
 
-- `A <native-id>` — live href absent from the receipt (fetched to learn
-  its native id).
-- `D <native-id>` — receipt href not seen live (reported from the receipt
-  alone; no fetch).
-- `M <native-id>` — known href whose re-fetched body markl-id differs from
-  the captured leaf's. A moved etag over byte-identical content yields **no**
-  `M` (the digest gate), so a server that re-issues etags does not produce
-  spurious drift.
+- `A <native-id>` — present live, absent from the receipt.
+- `D <native-id>` — present in the receipt, not seen live (no fetch).
+- `M <native-id>` — present in both, etag moved, AND the re-fetched body
+  markl-id differs from the captured leaf's. A moved etag over
+  byte-identical content yields **no** `M` (the digest gate), so a server
+  that re-issues etags does not produce spurious drift.
+
+A server that ignores the UID projection (returning `getetag` but no
+`calendar-data`) leaves the probe's `uid` empty; diff then falls back to a
+full body fetch for that one resource to learn its native id, so
+correctness never depends on the projection being honored — it is purely a
+performance optimization. The payload's `href` field is retained as
+fallback/diagnostic data for that path.
 
 This is the parity win over the flat `fs-v1` diff
 ([#104](https://github.com/amarbel-llc/cutting-garden/issues/104),
@@ -274,5 +315,12 @@ filesystem path, and the etag probe avoids transferring unchanged bodies.
   here (identity is parsed; the stored blob stays verbatim).
 - `docs/plans/2026-06-18-caldav-protocol-migration.md` — the migration
   plan this binding's schema feeds (Phase 1).
+- [#116](https://github.com/amarbel-llc/cutting-garden/issues/116) — lift
+  the "restore natively / query the destination / cache later" principle
+  (§Restore) into a generic cross-binding home.
+- [#77](https://github.com/amarbel-llc/cutting-garden/issues/77) — caldav
+  MKCALENDAR on restore (create a missing destination collection).
+- RFC 4791 §9.6 — the `calendar-data` property projection the diff
+  freshness probe relies on to fetch UIDs without bodies.
 - `internal/capture_plugin/` — the protocol emitter.
 - `plugins/caldav/` — the caldav binding implementation.

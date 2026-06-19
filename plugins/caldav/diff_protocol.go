@@ -18,14 +18,20 @@ var _ cutting_garden_plugins.ProtocolDiffPlugin = (*Plugin)(nil)
 func (Plugin) ProtocolKind() string { return captureKind }
 
 // DiffProtocol compares a caldav receipt against a live caldav source by
-// native identity (RFC 0011 §Diff). It runs the cheap freshness probe — a
-// getetag-only REPORT per (calendar, component) — and compares each live
-// etag to the receipt's recorded {href, etag}. Resources whose etag is
-// unchanged are clean and never have their bodies transferred. Only
-// new/moved resources are re-fetched (to compute their native id and
-// confirm a real body change by markl-id); removed resources are reported
-// from the receipt alone. Differences are A/D/M lines keyed by native
-// identity.
+// **native identity** (RFC 0011 §Diff) — host-independent, so a receipt
+// diffs cleanly against the source it was captured from OR a different
+// server holding the same logical objects.
+//
+// It runs the freshness probe (listObjectEtags): a REPORT requesting
+// getetag + a UID-only calendar-data projection, so each live resource's
+// {etag, uid} is learned without transferring its body. The native id is
+// (collection, component, uid). Resources whose native id is in the
+// receipt with an unchanged etag are clean — no body transfer. New/moved
+// resources are re-fetched only to confirm a real body change by markl-id;
+// removed ones are reported from the receipt. A server that ignores the
+// UID projection yields an empty uid; that single resource falls back to a
+// full fetch to learn its native id. Differences are A/D/M lines keyed by
+// native identity.
 func (Plugin) DiffProtocol(
 	req cutting_garden_plugins.ProtocolDiffRequest,
 ) (cutting_garden_plugins.ProtocolDiffResult, error) {
@@ -40,16 +46,15 @@ func (Plugin) DiffProtocol(
 		return cutting_garden_plugins.ProtocolDiffResult{}, err
 	}
 
-	// Index the captured records by href (the probe's match key) and the
-	// captured leaf digests by native id (from the payload's object refs),
-	// so a known-href etag move can be confirmed as a real body change.
-	capturedByHref := make(map[string]resourceRecord, len(meta.Resources))
+	// Captured state, keyed by native id: the etag (freshness) and the
+	// leaf digest (the real-change confirmation).
+	capturedEtag := make(map[string]string, len(meta.Resources))
 	for _, rec := range meta.Resources {
-		capturedByHref[rec.Href] = rec
+		capturedEtag[rec.ID] = rec.Etag
 	}
-	capturedDigestByID := make(map[string]string, len(payload.Refs))
+	capturedDigest := make(map[string]string, len(payload.Refs))
 	for _, ref := range payload.Refs {
-		capturedDigestByID[ref.Alias] = ref.Digest
+		capturedDigest[ref.Alias] = ref.Digest
 	}
 	seen := make(map[string]bool, len(meta.Resources))
 
@@ -68,36 +73,29 @@ func (Plugin) DiffProtocol(
 			}
 
 			for _, lo := range live {
-				href := serverPath(c.resolveHref(lo.href))
-				if href == "" {
-					continue
-				}
-				rec, known := capturedByHref[href]
-				if known {
-					seen[href] = true
-					// Unchanged when both sides carry a non-empty, equal etag
-					// — the freshness fast path, no body transfer.
-					if lo.etag != "" && rec.Etag != "" && lo.etag == rec.Etag {
-						continue
-					}
-				}
-
-				// New, or possibly-modified: fetch the body to compute the
-				// native id and the current markl-id.
-				id, digest, err := c.fetchIdentity(
-					req.Context, req.BlobStore, collection, component, lo.href,
+				id, knownEtag, isNew, err := c.resolveLiveIdentity(
+					req.Context, req.BlobStore, collection, component, lo, capturedEtag,
 				)
 				if err != nil {
 					return cutting_garden_plugins.ProtocolDiffResult{}, err
 				}
-				if !known {
+				seen[id] = true
+
+				if isNew {
 					added = append(added, "A "+id)
 					continue
 				}
-				// Known href whose etag moved (or was absent on either side):
-				// a real change only if the stored body digest differs from
-				// what the receipt captured for this id.
-				if digest != capturedDigestByID[rec.ID] {
+				// Known native id with an unchanged etag: clean, no fetch.
+				if lo.etag != "" && knownEtag != "" && lo.etag == knownEtag {
+					continue
+				}
+				// Etag moved (or absent on either side): confirm a real body
+				// change by digest before reporting M.
+				digest, err := c.fetchDigest(req.Context, req.BlobStore, lo.href)
+				if err != nil {
+					return cutting_garden_plugins.ProtocolDiffResult{}, err
+				}
+				if digest != capturedDigest[id] {
 					modified = append(modified, "M "+id)
 				}
 			}
@@ -106,7 +104,7 @@ func (Plugin) DiffProtocol(
 
 	var deleted []string
 	for _, rec := range meta.Resources {
-		if !seen[rec.Href] {
+		if !seen[rec.ID] {
 			deleted = append(deleted, "D "+rec.ID)
 		}
 	}
@@ -123,26 +121,51 @@ func (Plugin) DiffProtocol(
 	return cutting_garden_plugins.ProtocolDiffResult{Differences: differences}, nil
 }
 
-// fetchIdentity fetches one live resource's body, hashes it through the
-// caller's store to get its current markl-id, and parses its UID to build
-// the native identity. The body is content-addressed into the store (diff
-// shares capture's addressing), so a subsequent capture dedups it.
-func (c *client) fetchIdentity(
+// resolveLiveIdentity computes a live probed object's native id and reports
+// whether it is new (absent from the receipt). The probe usually carries
+// the UID (so the native id needs no fetch); when the server ignored the
+// projection (empty uid), it falls back to a full body fetch to learn the
+// UID. knownEtag is the captured etag for that native id (empty when new).
+func (c *client) resolveLiveIdentity(
 	ctx context.Context,
 	store blob_stores.BlobStoreInitialized,
-	collection, component, rawHref string,
-) (id, digest string, err error) {
+	collection, component string,
+	lo probedObject,
+	capturedEtag map[string]string,
+) (id, knownEtag string, isNew bool, err error) {
+	uid := lo.uid
+	if uid == "" {
+		// Server ignored the UID projection — fall back to a full fetch.
+		body, ferr := c.getResource(ctx, lo.href)
+		if ferr != nil {
+			return "", "", false, ferr
+		}
+		uid, ferr = uidOf(component, body)
+		if ferr != nil {
+			return "", "", false, errors.Wrapf(ferr, "caldav plugin: identity for %s", lo.href)
+		}
+	}
+	id = objectIdentity(collection, component, uid)
+	etag, known := capturedEtag[id]
+	return id, etag, !known, nil
+}
+
+// fetchDigest fetches one resource's body and hashes it through the store
+// to its current markl-id (the body is content-addressed into the store,
+// so a later capture dedups it). Used to confirm a real change when an
+// etag moved.
+func (c *client) fetchDigest(
+	ctx context.Context,
+	store blob_stores.BlobStoreInitialized,
+	rawHref string,
+) (string, error) {
 	body, err := c.getResource(ctx, rawHref)
 	if err != nil {
-		return "", "", err
-	}
-	uid, err := uidOf(component, body)
-	if err != nil {
-		return "", "", errors.Wrapf(err, "caldav plugin: identity for %s", rawHref)
+		return "", err
 	}
 	d, _, err := plugin_blob_io.WriteReaderBlob(ctx, store, strings.NewReader(body))
 	if err != nil {
-		return "", "", errors.Wrapf(err, "caldav plugin: hash %s", rawHref)
+		return "", errors.Wrapf(err, "caldav plugin: hash %s", rawHref)
 	}
-	return objectIdentity(collection, component, uid), d.String(), nil
+	return d.String(), nil
 }

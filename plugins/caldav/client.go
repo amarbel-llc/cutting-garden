@@ -279,6 +279,36 @@ const calendarHrefQuery = `<?xml version="1.0" encoding="utf-8" ?>
   </c:filter>
 </c:calendar-query>`
 
+// calendarEtagUIDQuery is the diff freshness probe: getetag plus a
+// calendar-data PROJECTION limited to the UID property (RFC 4791 §9.6
+// allows restricting calendar-data to named comp/prop, so the body is not
+// transferred — only the UID crosses the wire). The first %s is the
+// component name (the comp-filter), the second %s is the same component
+// (the calendar-data projection's inner <c:comp>). This yields {href,
+// etag, uid} so diff can correlate by host-independent native identity.
+//
+// A server MAY ignore the projection and return more (or omit
+// calendar-data); callers treat a missing UID as "fall back to a full
+// fetch", so correctness does not depend on the projection being honored.
+const calendarEtagUIDQuery = `<?xml version="1.0" encoding="utf-8" ?>
+<c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+  <d:prop>
+    <d:getetag />
+    <c:calendar-data>
+      <c:comp name="VCALENDAR">
+        <c:comp name="%s">
+          <c:prop name="UID" />
+        </c:comp>
+      </c:comp>
+    </c:calendar-data>
+  </d:prop>
+  <c:filter>
+    <c:comp-filter name="VCALENDAR">
+      <c:comp-filter name="%s" />
+    </c:comp-filter>
+  </c:filter>
+</c:calendar-query>`
+
 // listObjectHrefs issues a Depth:1 REPORT for one component type that
 // fetches only getetag, and returns the member resource hrefs without
 // their bodies. Traversal (ListRoots) uses it so enumerating a
@@ -326,25 +356,31 @@ func (c *client) listObjectHrefs(
 	return hrefs, nil
 }
 
-// hrefEtag pairs a resource's server href with its current server etag —
-// the cheap freshness probe DiffProtocol matches against the receipt's
-// recorded {href, etag} records without transferring any bodies.
-type hrefEtag struct {
+// probedObject is one resource as seen by the diff freshness probe: its
+// server href, current etag, and — when the server honored the UID
+// projection (RFC 4791 §9.6) — its iCalendar UID. uid is empty when the
+// server ignored the projection or returned no calendar-data; the caller
+// then falls back to a full body fetch to learn the UID. No full body is
+// transferred either way.
+type probedObject struct {
 	href string
 	etag string
+	uid  string
 }
 
-// listObjectEtags issues the same getetag-only REPORT as listObjectHrefs
-// but also returns each resource's etag. It is the diff freshness probe:
-// no calendar-data crosses the wire, so comparing live etags to the
-// receipt's recorded etags costs one REPORT per (calendar, component) and
-// no body transfers.
+// listObjectEtags is the diff freshness probe: a REPORT requesting getetag
+// plus a calendar-data projection limited to the UID property, so each
+// resource's {href, etag, uid} is learned without transferring its body.
+// The native identity (host-independent) is derivable from uid+component,
+// so diff correlates resources across hosts — not by the server-specific
+// href. uid is best-effort: a server that ignores the projection yields an
+// empty uid and the caller re-fetches that one body.
 func (c *client) listObjectEtags(
 	ctx context.Context,
 	calendarHref, component string,
-) (objects []hrefEtag, err error) {
+) (objects []probedObject, err error) {
 	url := c.resolveHref(calendarHref)
-	body := fmt.Sprintf(calendarHrefQuery, component)
+	body := fmt.Sprintf(calendarEtagUIDQuery, component, component)
 	resp, err := c.do(ctx, "REPORT", url, body,
 		"application/xml; charset=utf-8", 1)
 	if err != nil {
@@ -370,13 +406,33 @@ func (c *client) listObjectEtags(
 
 	for _, r := range ms.Responses {
 		for _, ps := range r.PropStat {
-			if strings.Contains(ps.Status, "200") {
-				objects = append(objects, hrefEtag{href: r.Href, etag: ps.Prop.Etag})
-				break
+			if !strings.Contains(ps.Status, "200") {
+				continue
 			}
+			// The projected calendar-data (if the server honored it) holds
+			// just the UID; parse it best-effort. An empty/ignored
+			// projection leaves uid empty for the caller to resolve.
+			uid := uidFromProjection(component, ps.Prop.CalendarData)
+			objects = append(objects, probedObject{href: r.Href, etag: ps.Prop.Etag, uid: uid})
+			break
 		}
 	}
 	return objects, nil
+}
+
+// uidFromProjection parses a UID-projected calendar-data fragment for its
+// UID, returning "" on any parse failure (the caller then falls back to a
+// full fetch). It tolerates a server returning more than the projection
+// asked for, since the parser reads only the UID.
+func uidFromProjection(component, calendarData string) string {
+	if calendarData == "" {
+		return ""
+	}
+	uid, err := uidOf(component, calendarData)
+	if err != nil {
+		return ""
+	}
+	return uid
 }
 
 // putResource creates or overwrites the resource at href with icalData.

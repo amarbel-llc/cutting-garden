@@ -84,6 +84,15 @@ func (f *fakeCalDAV) handler() http.Handler {
 		case "PUT":
 			body, _ := io.ReadAll(r.Body)
 			f.puts[r.URL.Path] = string(body)
+			// Register the PUT so a subsequent REPORT/GET sees it — this
+			// makes a restore→diff round-trip observable. Component is
+			// inferred from the body.
+			f.resources[r.URL.Path] = string(body)
+			if strings.Contains(string(body), "BEGIN:VEVENT") {
+				f.component[r.URL.Path] = "VEVENT"
+			} else {
+				f.component[r.URL.Path] = "VTODO"
+			}
 			w.WriteHeader(http.StatusCreated)
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -179,6 +188,17 @@ func startFake(t *testing.T) (*fakeCalDAV, string) {
 	srv := httptest.NewServer(f.handler())
 	t.Cleanup(srv.Close)
 
+	return f, "caldav:" + srv.URL + "/dav/"
+}
+
+// startFakeEmpty spins up a fake CalDAV server that advertises the same
+// calendar collection (so its collection name matches what a capture from
+// startFake recorded) but holds NO resources — a fresh restore target.
+func startFakeEmpty(t *testing.T) (*fakeCalDAV, string) {
+	t.Helper()
+	f := newFakeCalDAV()
+	srv := httptest.NewServer(f.handler())
+	t.Cleanup(srv.Close)
 	return f, "caldav:" + srv.URL + "/dav/"
 }
 
