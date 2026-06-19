@@ -339,6 +339,26 @@
           meta.mainProgram = "cutting-garden-test-git-sshd";
         };
 
+        # cutting-garden-caldav-testserver is a test-only in-memory CalDAV
+        # server (plugins/caldav/caldavtestserver as a standalone binary)
+        # that backs the bats caldav lane (zz-tests_bats/caldav.bats via
+        # lib/caldav.bash). Built as its own derivation and NOT shipped. It
+        # replaces Radicale, which cannot start under the nix sandbox
+        # (socket.socketpair(AF_UNIX); dodder#117) — this server is a pure
+        # net/http TCP listener, so it runs in-sandbox.
+        cuttingGardenCaldavTestServer = pkgs.buildGoApplication {
+          pname = "cutting-garden-caldav-testserver";
+          version = cgVersion;
+          src = ./.;
+          pwd = ./.;
+          modules = ./gomod2nix.toml;
+          inherit goFlakeInputs;
+          subPackages = [ "cmd/cutting-garden-caldav-testserver" ];
+          go = pkgs.go_1_26;
+          GOTOOLCHAIN = "local";
+          meta.mainProgram = "cutting-garden-caldav-testserver";
+        };
+
         # cutting-garden-clown-plugin stages a clown plugin (see
         # clown-plugin-protocol(7) / clown-json(5)) that exposes
         # cutting-garden's capturable trees as MCP resources via
@@ -446,6 +466,11 @@
               CG_TEST_GIT_SSHD = {
                 base = cuttingGardenTestGitSshd;
                 name = "cutting-garden-test-git-sshd";
+              };
+              # The test CalDAV server backing zz-tests_bats/caldav.bats.
+              CG_TEST_CALDAV = {
+                base = cuttingGardenCaldavTestServer;
+                name = "cutting-garden-caldav-testserver";
               };
             };
             batsLibPath = [ bats.packages.${system}.bats-libs.batsLibPath ];
