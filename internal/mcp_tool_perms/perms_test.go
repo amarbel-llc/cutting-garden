@@ -14,6 +14,16 @@ func TestClassify_CUDToolsAreDestructive(t *testing.T) {
 	}
 }
 
+func TestClassify_DescribeIsRead(t *testing.T) {
+	class, ok := Classify(ToolDescribeNodeTypes)
+	if !ok {
+		t.Fatalf("%q should be classified", ToolDescribeNodeTypes)
+	}
+	if class != ClassRead {
+		t.Errorf("%q class = %q, want %q", ToolDescribeNodeTypes, class, ClassRead)
+	}
+}
+
 func TestClassify_UnknownIsUnclassified(t *testing.T) {
 	if _, ok := Classify("resources_read"); ok {
 		t.Error("an unknown tool must be unclassified (ok=false)")

@@ -23,24 +23,27 @@ const (
 	ClassDestructive Class = "destructive"
 )
 
-// CUD tool names — the base tool names the `mcp` server registers, without
-// the clown `mcp__plugin_<plugin>__` prefix the hook strips before
-// classifying. Shared so the registration and the classification agree.
+// Tool names — the base tool names the `mcp` server registers, without the
+// clown `mcp__plugin_<plugin>__` prefix the hook strips before classifying.
+// Shared so the registration and the classification agree.
 const (
-	ToolCreateNode = "create_node"
-	ToolUpdateNode = "update_node"
-	ToolDeleteNode = "delete_node"
+	ToolCreateNode        = "create_node"
+	ToolUpdateNode        = "update_node"
+	ToolDeleteNode        = "delete_node"
+	ToolDescribeNodeTypes = "describe_node_types"
 )
 
 // Classify returns the permission class of a tool by its base name (no
 // plugin prefix), and whether the name is known. The three CUD write tools
-// are destructive; an unknown name is unclassified (ok=false) so the caller
-// applies its own default — the hook falls through to normal prompting
-// rather than inventing a decision.
+// are destructive; the schema-discovery tool is read-only; an unknown name
+// is unclassified (ok=false) so the caller applies its own default — the
+// hook falls through to normal prompting rather than inventing a decision.
 func Classify(toolName string) (Class, bool) {
 	switch toolName {
 	case ToolCreateNode, ToolUpdateNode, ToolDeleteNode:
 		return ClassDestructive, true
+	case ToolDescribeNodeTypes:
+		return ClassRead, true
 	default:
 		return "", false
 	}

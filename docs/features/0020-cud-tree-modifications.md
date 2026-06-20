@@ -121,9 +121,21 @@ plugins that implement `NodeMutator`. The mapping:
 
 | MCP tool | Maps to |
 |---|---|
+| `describe_node_types()` | `RootLister.Types` + `BodyDescriber.DescribeBodies` |
 | `create_node(uri, body, type)` | `NodeMutator.CreateNode` |
 | `update_node(uri, body)` | `NodeMutator.UpdateNode` |
 | `delete_node(uri)` | `NodeMutator.DeleteNode` |
+
+`describe_node_types` is read-only schema discovery: it answers "which
+plugin takes which node types and what their payloads are" so an agent can
+call `create_node` without guessing the type tag or body. It reports each
+scheme's node types (tag, container/leaf, mimetype, writable) and — for
+writable types — the accepted body formats plus a concrete **example**,
+via an optional `BodyDescriber` capability (caldav describes its object
+leaf: raw `.ics` or the `{component, event|task}` JSON, with a sample
+VEVENT). A formal per-type **JSON Schema** is a deliberate future addition
+(the example is the pragmatic first cut). It is always advertised (even
+without a mutator) and classifies read ⇒ `allow`.
 
 Each tool is annotated with its read/destructive classification from a
 shared `internal/mcp_tool_perms` classifier (the #102 ask, mirroring

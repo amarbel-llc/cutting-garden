@@ -29,18 +29,48 @@ teardown() {
 # bats file_tags=mcp
 
 # tools/list advertises exactly the three CUD write tools, each annotated
-# destructive (the hint a client gates on, mirrored by the #102 hook).
-function mcp_advertises_destructive_cud_tools { # @test
+# destructive (the hint a client gates on, mirrored by the #102 hook),
+# alongside the read-only describe_node_types discovery tool.
+function mcp_advertises_tools { # @test
   mcp_drive "$CALDAV_SOURCE" '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
 
   local names
   names="$(echo "$output" | jq -r 'select(.id==2) | (.result.tools | map(.name) | sort | join(","))')"
-  assert_equal "$names" "create_node,delete_node,update_node"
+  assert_equal "$names" "create_node,delete_node,describe_node_types,update_node"
 
-  local all_destructive
-  all_destructive="$(echo "$output" |
-    jq -r 'select(.id==2) | ([.result.tools[].annotations.destructiveHint] | all)')"
-  assert_equal "$all_destructive" "true"
+  # The CUD tools (create_node/update_node/delete_node end "_node";
+  # describe_node_types does not) are destructive; describe is read-only.
+  local cud_destructive
+  cud_destructive="$(echo "$output" | jq -r 'select(.id==2) |
+    ([.result.tools[] | select(.name | endswith("_node")) | .annotations.destructiveHint] | all)')"
+  assert_equal "$cud_destructive" "true"
+
+  local describe_readonly
+  describe_readonly="$(echo "$output" | jq -r 'select(.id==2) |
+    (.result.tools[] | select(.name=="describe_node_types") | .annotations.readOnlyHint)')"
+  assert_equal "$describe_readonly" "true"
+}
+
+# describe_node_types reports caldav's node types and which are writable, with
+# the body payload for the writable object leaf.
+function mcp_describe_node_types { # @test
+  mcp_drive "$CALDAV_SOURCE" "$(tools_call 3 describe_node_types '{}')"
+
+  local text
+  text="$(mcp_result_text "$output" 3)"
+
+  # The object leaf is writable, with both accepted body formats described.
+  echo "$text" | jq -e '
+    any(.[].types[]; .tag=="caldav-object-v1"
+        and .container==false and .writable==true
+        and (.body.accepts | length) >= 2)' >/dev/null ||
+    fail "describe missing a writable caldav-object-v1 with body: $text"
+
+  # The calendar container is present and NOT writable.
+  echo "$text" | jq -e '
+    any(.[].types[]; .tag=="caldav-calendar-v1"
+        and .container==true and .writable==false)' >/dev/null ||
+    fail "describe missing a non-writable caldav-calendar-v1 container: $text"
 }
 
 # create -> update -> delete round-trips one VEVENT through the server, each

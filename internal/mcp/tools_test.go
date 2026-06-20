@@ -9,6 +9,7 @@ import (
 
 	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
+	"github.com/amarbel-llc/purse-first/libs/go-mcp/protocol"
 )
 
 // fakeMutator is a registry-free NodeMutator for the tool tests. It records
@@ -71,52 +72,62 @@ func newFakeTools(t *testing.T, m *fakeMutator, rootStrs ...string) *Tools {
 	return &Tools{roots: roots, resolve: fakeMutatorResolve(m)}
 }
 
-func TestListToolsV1_AdvertisesDestructiveTools(t *testing.T) {
+func TestListToolsV1_AdvertisesToolsWithCorrectAnnotations(t *testing.T) {
 	tools := newFakeTools(t, &fakeMutator{}, "faketest://h/")
 
 	res, err := tools.ListToolsV1(context.Background(), "")
 	if err != nil {
 		t.Fatalf("ListToolsV1: %v", err)
 	}
-	if len(res.Tools) != 3 {
-		t.Fatalf("got %d tools, want 3: %+v", len(res.Tools), res.Tools)
+	// describe_node_types (read) + the 3 CUD tools (destructive).
+	if len(res.Tools) != 4 {
+		t.Fatalf("got %d tools, want 4: %+v", len(res.Tools), res.Tools)
 	}
-	names := map[string]bool{}
+	annByName := map[string]*protocol.ToolAnnotations{}
 	for _, tl := range res.Tools {
-		names[tl.Name] = true
-		if tl.Annotations == nil || tl.Annotations.DestructiveHint == nil || !*tl.Annotations.DestructiveHint {
-			t.Errorf("tool %q is not annotated destructive: %+v", tl.Name, tl.Annotations)
-		}
-		if tl.Annotations.ReadOnlyHint == nil || *tl.Annotations.ReadOnlyHint {
-			t.Errorf("tool %q must not be read-only: %+v", tl.Name, tl.Annotations)
+		annByName[tl.Name] = tl.Annotations
+	}
+	for _, want := range []string{"describe_node_types", "create_node", "update_node", "delete_node"} {
+		if annByName[want] == nil {
+			t.Fatalf("missing tool %q in %v", want, annByName)
 		}
 	}
-	for _, want := range []string{"create_node", "update_node", "delete_node"} {
-		if !names[want] {
-			t.Errorf("missing tool %q in %v", want, names)
+	// The CUD tools are destructive / not read-only.
+	for _, name := range []string{"create_node", "update_node", "delete_node"} {
+		a := annByName[name]
+		if a.DestructiveHint == nil || !*a.DestructiveHint || a.ReadOnlyHint == nil || *a.ReadOnlyHint {
+			t.Errorf("%q annotations = %+v, want destructive/non-readonly", name, a)
 		}
+	}
+	// describe_node_types is read-only / not destructive.
+	d := annByName["describe_node_types"]
+	if d.ReadOnlyHint == nil || !*d.ReadOnlyHint || d.DestructiveHint == nil || *d.DestructiveHint {
+		t.Errorf("describe_node_types annotations = %+v, want readonly/non-destructive", d)
 	}
 }
 
-func TestListTools_V0AdvertisesThree(t *testing.T) {
+func TestListTools_V0AdvertisesFour(t *testing.T) {
 	tools := newFakeTools(t, &fakeMutator{}, "faketest://h/")
 	list, err := tools.ListTools(context.Background())
 	if err != nil {
 		t.Fatalf("ListTools: %v", err)
 	}
-	if len(list) != 3 {
-		t.Fatalf("got %d tools, want 3", len(list))
+	if len(list) != 4 {
+		t.Fatalf("got %d tools, want 4 (describe + 3 CUD)", len(list))
 	}
 }
 
-func TestListTools_EmptyWithoutMutatorRoot(t *testing.T) {
-	// A root whose scheme has no mutator → the server advertises no tools.
+func TestListTools_DescribeAlwaysAdvertised(t *testing.T) {
+	// A root whose scheme has no mutator → no write tools, but the read-only
+	// describe_node_types is still advertised.
 	tools := newFakeTools(t, &fakeMutator{}, "bogus://h/")
-	if list, _ := tools.ListTools(context.Background()); len(list) != 0 {
-		t.Errorf("ListTools = %d, want 0 (no mutator root)", len(list))
+	list, _ := tools.ListTools(context.Background())
+	if len(list) != 1 || list[0].Name != "describe_node_types" {
+		t.Errorf("ListTools without a mutator = %+v, want only describe_node_types", list)
 	}
-	if v1, _ := tools.ListToolsV1(context.Background(), ""); len(v1.Tools) != 0 {
-		t.Errorf("ListToolsV1 = %d, want 0 (no mutator root)", len(v1.Tools))
+	v1, _ := tools.ListToolsV1(context.Background(), "")
+	if len(v1.Tools) != 1 || v1.Tools[0].Name != "describe_node_types" {
+		t.Errorf("ListToolsV1 without a mutator = %+v, want only describe_node_types", v1.Tools)
 	}
 }
 
@@ -189,5 +200,74 @@ func TestCallTool_UnknownToolIsError(t *testing.T) {
 	}
 	if !res.IsError {
 		t.Error("unknown tool must yield an IsError result")
+	}
+}
+
+// fakeSchemaPlugin is a RootLister (via fakeLister) that also describes its
+// writable type's body — exercising the describe_node_types collector.
+type fakeSchemaPlugin struct{ fakeLister }
+
+func (fakeSchemaPlugin) DescribeBodies() []cutting_garden_plugins.NodeTypeBody {
+	return []cutting_garden_plugins.NodeTypeBody{{
+		Tag:     "test-object-v1",
+		Accepts: []string{"text/calendar (raw)", "application/json (object)"},
+		Example: map[string]any{"summary": "example"},
+	}}
+}
+
+func TestCollectSchema_TypesAndWritability(t *testing.T) {
+	schemas := collectSchema([]cutting_garden_plugins.Plugin{fakeSchemaPlugin{}})
+	if len(schemas) != 1 {
+		t.Fatalf("got %d schemes, want 1: %+v", len(schemas), schemas)
+	}
+	if schemas[0].Scheme != "faketest" {
+		t.Errorf("scheme = %q, want faketest", schemas[0].Scheme)
+	}
+	byTag := map[string]typeSchema{}
+	for _, ts := range schemas[0].Types {
+		byTag[ts.Tag] = ts
+	}
+
+	// The container is not writable and carries no body.
+	if cal := byTag["test-calendar-v1"]; !cal.Container || cal.Writable || cal.Body != nil {
+		t.Errorf("calendar type = %+v, want container/non-writable/no-body", cal)
+	}
+	// The leaf with a described body is writable, with its mimetype + payload.
+	obj := byTag["test-object-v1"]
+	if obj.Container || !obj.Writable || obj.Body == nil {
+		t.Fatalf("object type = %+v, want leaf/writable/with-body", obj)
+	}
+	if obj.LeafMimeType != "text/calendar" {
+		t.Errorf("object leafMimeType = %q, want text/calendar", obj.LeafMimeType)
+	}
+	if len(obj.Body.Accepts) != 2 || obj.Body.Example == nil {
+		t.Errorf("object body = %+v, want accepts+example", obj.Body)
+	}
+}
+
+func TestCollectSchema_SkipsNonRootListers(t *testing.T) {
+	// A plugin with no traversal (here a bare NodeMutator) contributes no
+	// type catalogue.
+	if s := collectSchema([]cutting_garden_plugins.Plugin{&fakeMutator{}}); len(s) != 0 {
+		t.Errorf("got %d schemes from a non-RootLister, want 0", len(s))
+	}
+}
+
+// TestCallTool_DescribeReturnsJSON exercises the describe_node_types dispatch:
+// it returns a non-error result whose text is a JSON array (empty in the test
+// binary, where no plugins are registered — the dispatch + marshal are what's
+// under test).
+func TestCallTool_DescribeReturnsJSON(t *testing.T) {
+	tools := newFakeTools(t, &fakeMutator{}, "faketest://h/")
+	res, err := tools.CallTool(context.Background(), "describe_node_types", json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("transport error: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("describe_node_types errored: %+v", res.Content)
+	}
+	var arr []any
+	if err := json.Unmarshal([]byte(res.Content[0].Text), &arr); err != nil {
+		t.Fatalf("describe output is not a JSON array: %v (%q)", err, res.Content[0].Text)
 	}
 }

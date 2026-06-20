@@ -22,11 +22,12 @@ type mutatorResolveFunc func(
 	uriStr string,
 ) (*url.URL, cutting_garden_plugins.NodeMutator, error)
 
-// Tools implements go-mcp's ToolProviderV1, exposing the NodeMutator write
-// capability (FDR 0020) as the create_node / update_node / delete_node MCP
-// tools. Each mutation targets the same node URI resources/read surfaces, so
-// the read and write axes share one address space. The tools are advertised
-// only when at least one configured root's plugin implements NodeMutator.
+// Tools implements go-mcp's ToolProviderV1. It always advertises the
+// read-only describe_node_types schema-discovery tool, and adds the
+// create_node / update_node / delete_node write tools (FDR 0020) when a
+// configured root's plugin implements NodeMutator. A mutation targets the
+// same node URI resources/read surfaces, so the read and write axes share
+// one address space.
 type Tools struct {
 	roots   []*url.URL
 	resolve mutatorResolveFunc
@@ -66,12 +67,38 @@ const (
 		`"body":{"type":"string","description":"the new object as raw iCalendar or {component,event|task} JSON"}}}`
 	deleteNodeSchema = `{"type":"object","required":["uri"],` +
 		`"properties":{"uri":{"type":"string","description":"the node URI to delete"}}}`
+	describeNodeTypesSchema = `{"type":"object","properties":{}}`
 )
 
-// toolDefs is the V1 tool catalogue: name, input schema, and the permission
-// annotation derived from mcp_tool_perms (the single classifier shared with
-// the clown hook).
-func toolDefs() []protocol.ToolV1 {
+// toolDefs is the V1 tool catalogue this server advertises: the read-only
+// schema-discovery tool always, plus the CUD write tools when a configured
+// root can mutate. Names, schemas, and permission annotations come from
+// mcp_tool_perms (the single classifier shared with the clown hook).
+func (t *Tools) toolDefs() []protocol.ToolV1 {
+	defs := []protocol.ToolV1{describeToolDef()}
+	if t.hasMutator() {
+		defs = append(defs, cudToolDefs()...)
+	}
+	return defs
+}
+
+// describeToolDef is the read-only schema-discovery tool: it tells an agent
+// which node types each scheme exposes and what body the write tools accept,
+// so create_node can be called without guessing the type tag or payload.
+func describeToolDef() protocol.ToolV1 {
+	return protocol.ToolV1{
+		Name: mcp_tool_perms.ToolDescribeNodeTypes,
+		Description: "List the node types each scheme exposes (tag, container vs " +
+			"leaf, mimetype) and, for writable types, the body payload create_node/" +
+			"update_node accept, with a concrete example. Read-only; call it first " +
+			"to learn a type tag and body shape before create_node.",
+		InputSchema: json.RawMessage(describeNodeTypesSchema),
+		Annotations: annotationFor(mcp_tool_perms.ToolDescribeNodeTypes),
+	}
+}
+
+// cudToolDefs is the create/update/delete write-tool catalogue.
+func cudToolDefs() []protocol.ToolV1 {
 	return []protocol.ToolV1{
 		{
 			Name: mcp_tool_perms.ToolCreateNode,
@@ -108,12 +135,9 @@ func annotationFor(tool string) *protocol.ToolAnnotations {
 	}
 }
 
-// ListTools (V0) advertises the write tools without annotations.
+// ListTools (V0) advertises the catalogue without annotations.
 func (t *Tools) ListTools(context.Context) ([]protocol.Tool, error) {
-	if !t.hasMutator() {
-		return nil, nil
-	}
-	defs := toolDefs()
+	defs := t.toolDefs()
 	out := make([]protocol.Tool, len(defs))
 	for i, d := range defs {
 		out[i] = protocol.Tool{
@@ -125,14 +149,11 @@ func (t *Tools) ListTools(context.Context) ([]protocol.Tool, error) {
 	return out, nil
 }
 
-// ListToolsV1 advertises the write tools with their permission annotations.
+// ListToolsV1 advertises the catalogue with permission annotations.
 func (t *Tools) ListToolsV1(
 	context.Context, string,
 ) (*protocol.ToolsListResultV1, error) {
-	if !t.hasMutator() {
-		return &protocol.ToolsListResultV1{}, nil
-	}
-	return &protocol.ToolsListResultV1{Tools: toolDefs()}, nil
+	return &protocol.ToolsListResultV1{Tools: t.toolDefs()}, nil
 }
 
 // CallTool dispatches a V0 tool call.
@@ -220,7 +241,89 @@ func (t *Tools) call(
 		}
 		return "deleted " + in.URI, nil
 
+	case mcp_tool_perms.ToolDescribeNodeTypes:
+		body, err := json.MarshalIndent(
+			collectSchema(cutting_garden_plugins.RegisteredPlugins()), "", "  ",
+		)
+		if err != nil {
+			return "", errors.Wrap(err)
+		}
+		return string(body), nil
+
 	default:
 		return "", errors.ErrorWithStackf("unknown tool %q", name)
 	}
+}
+
+// schemeSchema is one scheme's node-type catalogue in the describe_node_types
+// output.
+type schemeSchema struct {
+	Scheme string       `json:"scheme"`
+	Types  []typeSchema `json:"types"`
+}
+
+// typeSchema describes one node type: its tag, whether it is a container or a
+// leaf, a leaf's body mimetype, and — for writable types — the accepted
+// create/update payload.
+type typeSchema struct {
+	Tag          string      `json:"tag"`
+	Container    bool        `json:"container"`
+	LeafMimeType string      `json:"leafMimeType,omitempty"`
+	Writable     bool        `json:"writable"`
+	Body         *bodySchema `json:"body,omitempty"`
+}
+
+// bodySchema is the create/update payload description for a writable type: the
+// accepted formats and a concrete example. A formal JSON Schema per type is a
+// future addition (cutting-garden FDR 0020).
+type bodySchema struct {
+	Accepts []string `json:"accepts"`
+	Example any      `json:"example,omitempty"`
+}
+
+// collectSchema builds the describe_node_types catalogue from the registered
+// plugins: every RootLister contributes its node types, and a BodyDescriber
+// adds the writable types' payload detail. Plugins without traversal (the
+// file plugin) contribute nothing.
+func collectSchema(plugins []cutting_garden_plugins.Plugin) []schemeSchema {
+	out := make([]schemeSchema, 0, len(plugins))
+	for _, p := range plugins {
+		rl, ok := p.(cutting_garden_plugins.RootLister)
+		if !ok {
+			continue
+		}
+		bodies := map[string]cutting_garden_plugins.NodeTypeBody{}
+		if bd, ok := p.(cutting_garden_plugins.BodyDescriber); ok {
+			for _, b := range bd.DescribeBodies() {
+				bodies[b.Tag] = b
+			}
+		}
+		nts := rl.Types()
+		types := make([]typeSchema, 0, len(nts))
+		for _, nt := range nts {
+			ts := typeSchema{
+				Tag:          nt.Tag,
+				Container:    nt.Container,
+				LeafMimeType: nt.BodyMimeType(),
+			}
+			if b, ok := bodies[nt.Tag]; ok {
+				ts.Writable = true
+				ts.Body = &bodySchema{Accepts: b.Accepts, Example: b.Example}
+			}
+			types = append(types, ts)
+		}
+		out = append(out, schemeSchema{Scheme: firstScheme(p), Types: types})
+	}
+	return out
+}
+
+// firstScheme is the plugin's first non-empty scheme — the name a user types
+// — or "(schemeless)" for the default plugin.
+func firstScheme(p cutting_garden_plugins.Plugin) string {
+	for _, s := range p.Schemes() {
+		if s != "" {
+			return s
+		}
+	}
+	return "(schemeless)"
 }
