@@ -85,6 +85,8 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		s.get(w, r)
 	case "PUT":
 		s.put(w, r)
+	case "DELETE":
+		s.delete(w, r)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
@@ -197,8 +199,22 @@ func (s *Server) get(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) put(w http.ResponseWriter, r *http.Request) {
-	body, _ := io.ReadAll(r.Body)
 	s.mu.Lock()
+	_, exists := s.resources[r.URL.Path]
+	// Honor the strict create/update preconditions (RFC 7232): If-None-Match:
+	// * fails on an existing resource (create), If-Match: * on a missing one
+	// (update).
+	if r.Header.Get("If-None-Match") == "*" && exists {
+		s.mu.Unlock()
+		http.Error(w, "exists", http.StatusPreconditionFailed)
+		return
+	}
+	if r.Header.Get("If-Match") == "*" && !exists {
+		s.mu.Unlock()
+		http.Error(w, "absent", http.StatusPreconditionFailed)
+		return
+	}
+	body, _ := io.ReadAll(r.Body)
 	s.resources[r.URL.Path] = string(body)
 	if strings.Contains(string(body), "BEGIN:VEVENT") {
 		s.component[r.URL.Path] = "VEVENT"
@@ -207,6 +223,21 @@ func (s *Server) put(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mu.Unlock()
 	w.WriteHeader(http.StatusCreated)
+}
+
+func (s *Server) delete(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	_, ok := s.resources[r.URL.Path]
+	if ok {
+		delete(s.resources, r.URL.Path)
+		delete(s.component, r.URL.Path)
+	}
+	s.mu.Unlock()
+	if !ok {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // Etag derives a resource's etag from its body, so a body change moves the

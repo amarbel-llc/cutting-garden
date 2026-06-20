@@ -82,6 +82,18 @@ func (f *fakeCalDAV) handler() http.Handler {
 			w.WriteHeader(http.StatusOK)
 			_, _ = io.WriteString(w, body)
 		case "PUT":
+			_, exists := f.resources[r.URL.Path]
+			// Honor the strict create/update preconditions (RFC 7232):
+			// If-None-Match: * fails on an existing resource (create),
+			// If-Match: * fails on a missing one (update).
+			if r.Header.Get("If-None-Match") == "*" && exists {
+				http.Error(w, "exists", http.StatusPreconditionFailed)
+				return
+			}
+			if r.Header.Get("If-Match") == "*" && !exists {
+				http.Error(w, "absent", http.StatusPreconditionFailed)
+				return
+			}
 			body, _ := io.ReadAll(r.Body)
 			f.puts[r.URL.Path] = string(body)
 			// Register the PUT so a subsequent REPORT/GET sees it — this
@@ -94,6 +106,14 @@ func (f *fakeCalDAV) handler() http.Handler {
 				f.component[r.URL.Path] = "VTODO"
 			}
 			w.WriteHeader(http.StatusCreated)
+		case "DELETE":
+			if _, ok := f.resources[r.URL.Path]; !ok {
+				http.Error(w, "not found", http.StatusNotFound)
+				return
+			}
+			delete(f.resources, r.URL.Path)
+			delete(f.component, r.URL.Path)
+			w.WriteHeader(http.StatusNoContent)
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}

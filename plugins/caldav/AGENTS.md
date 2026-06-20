@@ -99,6 +99,15 @@ credential-free traversal roots for the `RootProvider` capability
   its parsed `ical` event/task (`objectView`) and the verbatim `.ics`
   bytes. Consulted only when `ListRoots` reports no children, so a
   populated calendar is never mistaken for a leaf.
+- `Plugin.CreateNode` / `UpdateNode` / `DeleteNode` (`mutate.go`) — the
+  `NodeMutator` write capability (FDR 0020), the write-side sibling of
+  `ReadLeaf`. Strict create (`If-None-Match: *`, errors on collision) and
+  strict update (`If-Match: *`, errors if absent) via the conditional PUTs
+  in `client.go` (`createResource`/`updateResource`/`deleteResource`).
+  Bodies are accepted as raw `.ics` OR the `objectView` JSON (symmetric with
+  `ReadLeaf`), normalized to iCalendar via the `ical` writers
+  (`normalizeObjectBody`). Creating a calendar *container* is rejected until
+  MKCALENDAR (#77) lands; leaf objects only.
 
 ## iCalendar parsing: identity only, stored bytes stay verbatim
 

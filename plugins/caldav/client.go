@@ -47,6 +47,19 @@ func (c *client) do(
 	method, url, body, contentType string,
 	depth int,
 ) (*http.Response, error) {
+	return c.doWithHeaders(ctx, method, url, body, contentType, depth, nil)
+}
+
+// doWithHeaders is do plus a set of extra request headers, for the WebDAV
+// conditional PUTs (If-None-Match / If-Match) that enforce strict
+// create-vs-update semantics. do delegates here with no extras, so existing
+// callers are unchanged.
+func (c *client) doWithHeaders(
+	ctx context.Context,
+	method, url, body, contentType string,
+	depth int,
+	extra map[string]string,
+) (*http.Response, error) {
 	var reader io.Reader
 	if body != "" {
 		reader = strings.NewReader(body)
@@ -63,6 +76,9 @@ func (c *client) do(
 	}
 	if depth >= 0 {
 		req.Header.Set("Depth", fmt.Sprintf("%d", depth))
+	}
+	for k, v := range extra {
+		req.Header.Set(k, v)
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
@@ -435,24 +451,93 @@ func uidFromProjection(component, calendarData string) string {
 	return uid
 }
 
-// putResource creates or overwrites the resource at href with icalData.
-// No conditional header is sent: restore is an unconditional
-// materialization of the captured bytes onto the destination.
-func (c *client) putResource(ctx context.Context, href, icalData string) (err error) {
+// putResourceCond PUTs icalData at href. extra carries an optional WebDAV
+// precondition header (If-None-Match / If-Match). On 412 Precondition Failed
+// it returns precondErr (the strict create/update message); any other non-2xx
+// is a generic error. The shared core of putResource/createResource/
+// updateResource so the status handling lives once.
+func (c *client) putResourceCond(
+	ctx context.Context,
+	href, icalData string,
+	extra map[string]string,
+	precondErr error,
+) (err error) {
 	url := c.resolveHref(href)
-	resp, err := c.do(ctx, "PUT", url, icalData,
-		"text/calendar; charset=utf-8", -1)
+	resp, err := c.doWithHeaders(ctx, "PUT", url, icalData,
+		"text/calendar; charset=utf-8", -1, extra)
 	if err != nil {
 		return errors.Wrapf(err, "PUT %s", url)
 	}
 	defer errors.DeferredCloser(&err, resp.Body)
 
+	if precondErr != nil && resp.StatusCode == http.StatusPreconditionFailed {
+		return precondErr
+	}
 	if resp.StatusCode != http.StatusCreated &&
 		resp.StatusCode != http.StatusNoContent &&
 		resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		return errors.ErrorWithStackf(
 			"PUT %s: status %d: %s", url, resp.StatusCode, snippet(body),
+		)
+	}
+	return nil
+}
+
+// putResource creates or overwrites the resource at href with icalData.
+// No conditional header is sent: restore is an unconditional
+// materialization of the captured bytes onto the destination.
+func (c *client) putResource(ctx context.Context, href, icalData string) error {
+	return c.putResourceCond(ctx, href, icalData, nil, nil)
+}
+
+// createResource strictly creates the resource at href: an If-None-Match: *
+// precondition makes the server reject (412) an already-present resource, so
+// create is not an upsert (NodeMutator.CreateNode semantics). A 412 surfaces
+// as an "already exists" error.
+func (c *client) createResource(ctx context.Context, href, icalData string) error {
+	return c.putResourceCond(
+		ctx, href, icalData,
+		map[string]string{"If-None-Match": "*"},
+		errors.BadRequestf(
+			"caldav plugin: object already exists at %s "+
+				"(create is strict; use update to overwrite)", href,
+		),
+	)
+}
+
+// updateResource strictly overwrites an existing resource at href: an
+// If-Match: * precondition makes the server reject (412) a missing resource,
+// so update is not a create (NodeMutator.UpdateNode semantics). A 412
+// surfaces as a "does not exist" error.
+func (c *client) updateResource(ctx context.Context, href, icalData string) error {
+	return c.putResourceCond(
+		ctx, href, icalData,
+		map[string]string{"If-Match": "*"},
+		errors.BadRequestf(
+			"caldav plugin: no object to update at %s "+
+				"(use create to make a new object)", href,
+		),
+	)
+}
+
+// deleteResource removes the resource at href (NodeMutator.DeleteNode). A
+// 404 is reported as an error: deleting a nonexistent node is a failure the
+// caller surfaces, matching the strict create/update posture.
+func (c *client) deleteResource(ctx context.Context, href string) (err error) {
+	url := c.resolveHref(href)
+	resp, err := c.do(ctx, "DELETE", url, "", "", -1)
+	if err != nil {
+		return errors.Wrapf(err, "DELETE %s", url)
+	}
+	defer errors.DeferredCloser(&err, resp.Body)
+
+	if resp.StatusCode != http.StatusOK &&
+		resp.StatusCode != http.StatusNoContent &&
+		resp.StatusCode != http.StatusAccepted {
+		body, _ := io.ReadAll(resp.Body)
+		return errors.ErrorWithStackf(
+			"DELETE %s: status %d: %s", url, resp.StatusCode, snippet(body),
 		)
 	}
 	return nil

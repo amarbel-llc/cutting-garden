@@ -61,6 +61,19 @@ type LeafReader = internal.LeafReader
 // tree, as returned by ListRoots.
 type Node = internal.Node
 
+// NodeMutator is the OPTIONAL write capability: create, update, or delete a
+// single addressable node in a plugin's tree — the write-side sibling of
+// RootLister (FDR 0014/0020). It is probed by type assertion on an
+// already-resolved plugin, exactly as RootLister / LeafReader / RootProvider
+// are; a plugin whose scheme has no meaningful write surface simply omits it.
+//
+// Node addressing reuses the RootLister URI space verbatim: a mutation
+// targets the same *url.URL a ListRoots / resources/read walk surfaces, so
+// the read and write axes share one address space. CUD is NOT receipt-based —
+// it mutates one live node, with no blob store and no capture receipt
+// (capturing the post-mutation state is a separate `capture` invocation).
+type NodeMutator = internal.NodeMutator
+
 // NodeType is one entry in a RootLister plugin's declared type list. It
 // is the unit of self-description for the traversal tree: a Node names
 // its type by Tag, and a consumer resolves that Tag against the
