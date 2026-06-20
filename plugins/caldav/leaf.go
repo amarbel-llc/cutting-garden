@@ -17,17 +17,21 @@ const mimeICalendar = "text/calendar"
 var _ cutting_garden_plugins.LeafReader = (*Plugin)(nil)
 
 // objectView is the structured JSON projection of a single CalDAV object
-// for resources/read: a component discriminator plus the parsed event or
-// task. Exactly one of Event/Task is set — the one matching Component. It
-// is the rich, agent-readable form (summary, dtstart, location, status,
-// categories, …) the raw .ics UID alone does not expose (#85).
+// for resources/read: a component discriminator plus the parsed event,
+// task, or journal. Exactly one of Event/Task/Journal is set — the one
+// matching Component. It is the rich, agent-readable form (summary,
+// dtstart, location, status, categories, …) the raw .ics UID alone does
+// not expose (#85).
 type objectView struct {
-	// Component is the iCalendar component kind, "VEVENT" or "VTODO".
+	// Component is the iCalendar component kind: "VEVENT", "VTODO", or
+	// "VJOURNAL".
 	Component string `json:"component"`
-	// Event is the parsed VEVENT; nil for a VTODO.
+	// Event is the parsed VEVENT; nil otherwise.
 	Event *ical.Event `json:"event,omitempty"`
-	// Task is the parsed VTODO; nil for a VEVENT.
+	// Task is the parsed VTODO; nil otherwise.
 	Task *ical.Task `json:"task,omitempty"`
+	// Journal is the parsed VJOURNAL; nil otherwise.
+	Journal *ical.Journal `json:"journal,omitempty"`
 }
 
 // ReadLeaf fetches one CalDAV object's body and returns it as both a
@@ -78,8 +82,8 @@ func (Plugin) ReadLeaf(
 
 // parseObjectView parses a raw iCalendar body into the structured object
 // view, dispatching on the component it contains. ok is false when the body
-// is neither a VEVENT nor a VTODO, or fails to parse — the caller treats
-// that as "not a readable leaf".
+// is none of VEVENT / VTODO / VJOURNAL, or fails to parse — the caller
+// treats that as "not a readable leaf".
 func parseObjectView(body string) (objectView, bool) {
 	switch {
 	case strings.Contains(body, "BEGIN:VEVENT"):
@@ -94,6 +98,12 @@ func parseObjectView(body string) (objectView, bool) {
 			return objectView{}, false
 		}
 		return objectView{Component: "VTODO", Task: t}, true
+	case strings.Contains(body, "BEGIN:VJOURNAL"):
+		j, err := ical.ParseVJOURNAL(body)
+		if err != nil {
+			return objectView{}, false
+		}
+		return objectView{Component: "VJOURNAL", Journal: j}, true
 	default:
 		return objectView{}, false
 	}

@@ -11,10 +11,10 @@ import (
 )
 
 // capturedComponents is the set of iCalendar component types the plugin
-// fetches from each calendar. Tasks (VTODO) and events (VEVENT) cover
-// the surface the bob caldav tool managed; journals (VJOURNAL) and
-// free/busy are out of scope until a use case appears.
-var capturedComponents = []string{"VTODO", "VEVENT"}
+// fetches from each calendar: tasks (VTODO), events (VEVENT), and journal
+// notes (VJOURNAL). Free/busy (VFREEBUSY) is out of scope until a use case
+// appears.
+var capturedComponents = []string{"VTODO", "VEVENT", "VJOURNAL"}
 
 // CaptureRoot discovers every calendar under the source endpoint, fetches
 // each VTODO/VEVENT resource as raw text/calendar, and streams each body

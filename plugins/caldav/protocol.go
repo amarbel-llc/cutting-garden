@@ -240,6 +240,12 @@ func uidOf(component, data string) (string, error) {
 			return "", err
 		}
 		return e.UID, nil
+	case "VJOURNAL":
+		j, err := ical.ParseVJOURNAL(data)
+		if err != nil {
+			return "", err
+		}
+		return j.UID, nil
 	default:
 		return "", errors.ErrorWithStackf("caldav plugin: unsupported component %q", component)
 	}

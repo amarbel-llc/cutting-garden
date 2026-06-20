@@ -52,11 +52,14 @@ credential-free traversal roots for the `RootProvider` capability
   (PROPFIND / REPORT / PUT). The HTTP transport carries no iCalendar
   knowledge; resources cross the wire as verbatim `text/calendar` bytes.
   Ported and trimmed from bob's `internal/caldav/client.go`.
-- `ical/` — the re-homed iCalendar parser/serializer (VTODO/VEVENT,
-  `ParseVTODO`/`ParseVEVENT`/`*ToIcal`, RFC 5545 line unfolding). Ported
-  from bob; stdlib-only. Used to derive a resource's **native identity**
-  (UID + component) for the RFC 0011 protocol receipt, and by the
-  forthcoming CUD tools (FDR 0020) for structured create/update.
+- `ical/` — the re-homed iCalendar parser/serializer (VTODO/VEVENT/VJOURNAL,
+  `ParseVTODO`/`ParseVEVENT`/`ParseVJOURNAL`/`*ToIcal`, RFC 5545 line
+  unfolding). Ported from bob; stdlib-only. Used to derive a resource's
+  **native identity** (UID + component) for the RFC 0011 protocol receipt,
+  and by the CUD tools (FDR 0020) for structured create/update. The captured
+  component set is `capturedComponents` (capture.go); adding a component
+  means adding its parse/serialize here plus a case in `uidOf` (protocol.go)
+  and `parseObjectView`/`icalFromObjectView` (leaf.go/mutate.go).
 - `url.go` — argument coercion (`baseURLFromArg`, `connectionFromArg`),
   origin extraction, and the server-relative `Path` key.
 - `Plugin.CaptureProtocol` (`protocol.go`) — the RFC 0011 protocol path:

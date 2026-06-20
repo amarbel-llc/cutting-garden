@@ -100,9 +100,12 @@ func (f *fakeCalDAV) handler() http.Handler {
 			// makes a restore→diff round-trip observable. Component is
 			// inferred from the body.
 			f.resources[r.URL.Path] = string(body)
-			if strings.Contains(string(body), "BEGIN:VEVENT") {
+			switch {
+			case strings.Contains(string(body), "BEGIN:VEVENT"):
 				f.component[r.URL.Path] = "VEVENT"
-			} else {
+			case strings.Contains(string(body), "BEGIN:VJOURNAL"):
+				f.component[r.URL.Path] = "VJOURNAL"
+			default:
 				f.component[r.URL.Path] = "VTODO"
 			}
 			w.WriteHeader(http.StatusCreated)
@@ -168,8 +171,11 @@ func (f *fakeCalDAV) propfind(w http.ResponseWriter, r *http.Request) {
 func (f *fakeCalDAV) report(w http.ResponseWriter, r *http.Request) {
 	body, _ := io.ReadAll(r.Body)
 	want := "VTODO"
-	if strings.Contains(string(body), `name="VEVENT"`) {
+	switch {
+	case strings.Contains(string(body), `name="VEVENT"`):
 		want = "VEVENT"
+	case strings.Contains(string(body), `name="VJOURNAL"`):
+		want = "VJOURNAL"
 	}
 
 	if f.failComponent != "" && want == f.failComponent {

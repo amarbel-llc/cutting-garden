@@ -144,8 +144,11 @@ func (s *Server) propfind(w http.ResponseWriter, r *http.Request) {
 func (s *Server) report(w http.ResponseWriter, r *http.Request) {
 	reqBody, _ := io.ReadAll(r.Body)
 	want := "VTODO"
-	if strings.Contains(string(reqBody), `name="VEVENT"`) {
+	switch {
+	case strings.Contains(string(reqBody), `name="VEVENT"`):
 		want = "VEVENT"
+	case strings.Contains(string(reqBody), `name="VJOURNAL"`):
+		want = "VJOURNAL"
 	}
 
 	s.mu.Lock()
@@ -216,9 +219,12 @@ func (s *Server) put(w http.ResponseWriter, r *http.Request) {
 	}
 	body, _ := io.ReadAll(r.Body)
 	s.resources[r.URL.Path] = string(body)
-	if strings.Contains(string(body), "BEGIN:VEVENT") {
+	switch {
+	case strings.Contains(string(body), "BEGIN:VEVENT"):
 		s.component[r.URL.Path] = "VEVENT"
-	} else {
+	case strings.Contains(string(body), "BEGIN:VJOURNAL"):
+		s.component[r.URL.Path] = "VJOURNAL"
+	default:
 		s.component[r.URL.Path] = "VTODO"
 	}
 	s.mu.Unlock()

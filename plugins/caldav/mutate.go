@@ -156,9 +156,14 @@ func icalFromObjectView(data []byte) (string, error) {
 			return "", errors.BadRequestf("caldav plugin: VTODO object JSON is missing \"task\"")
 		}
 		return ical.TaskToIcal(v.Task), nil
+	case "VJOURNAL":
+		if v.Journal == nil {
+			return "", errors.BadRequestf("caldav plugin: VJOURNAL object JSON is missing \"journal\"")
+		}
+		return ical.JournalToIcal(v.Journal), nil
 	default:
 		return "", errors.BadRequestf(
-			"caldav plugin: object JSON has unknown component %q (want VEVENT or VTODO)",
+			"caldav plugin: object JSON has unknown component %q (want VEVENT, VTODO, or VJOURNAL)",
 			v.Component,
 		)
 	}
