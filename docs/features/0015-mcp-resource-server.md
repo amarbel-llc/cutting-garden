@@ -9,8 +9,7 @@ promotion-criteria: |
   `accepted` once a real MCP client (Claude Code, via the bundled clown
   plugin) has driven the server against a live configured endpoint and the
   read-descends-a-container contract has gone two weeks without a lever
-  moving — in particular, without the raw-leaf-bytes blob link being folded
-  in (see Non-Goals).
+  moving.
 ---
 
 # MCP resource-traversal server
@@ -21,9 +20,9 @@ promotion-criteria: |
 > traversal primitive — the one that doc names "MCP resource traversal
 > (future)" — and the first consumer of the config subsystem (RFC 0007).
 > It exposes the tree *structure*, and — for a leaf its plugin can fetch —
-> the object's parsed fields (#85). Surfacing the verbatim bytes as a
-> content-addressed blob link, and the `--split`-style frontier, remain
-> out of scope (see Non-Goals).
+> the object's parsed fields plus an optional content-addressed
+> `madder://blobs/<digest>` link to its verbatim bytes (#85). The
+> `--split`-style frontier remains out of scope (see Non-Goals).
 
 ## Problem Statement
 
@@ -79,9 +78,14 @@ returns the parsed object as a JSON body (caldav surfaces an
 `{component, event|task}` view — summary, dtstart, location, status,
 categories, …, the rich `ical` types). A plugin without `LeafReader`, or
 a node it does not recognize as a leaf, still reads as an empty array.
-The verbatim source bytes (the `.ics`) are carried on `LeafContent.Raw`
-for a future content-addressed blob link but are not yet surfaced
-(below).
+
+The verbatim source bytes (the `.ics`) ride along on `LeafContent.Raw`.
+When the server has a blob store (below), it writes those bytes and
+appends a **second, link-only content entry** —
+`{uri: "madder://blobs/<digest>", mimeType: "text/calendar"}` with no
+inlined text — so a client fetches the exact source out-of-band by
+digest. The structured fields stay the primary content; the link is a
+fidelity add-on that is simply absent when no store is configured.
 
 ### Roots come from config, not argv
 
@@ -104,8 +108,11 @@ credential-free.
 re-resolves the plugin from the requested URI — mirroring the stateless
 RootLister contract — so `resources/read` works for any listable URI a
 client has discovered. A leaf read fetches the object body live (a single
-caldav GET) and returns its parsed fields; no blob store is touched and
-nothing is captured.
+caldav GET) and returns its parsed fields. The one write is
+content-addressed and optional: when a default madder blob store is
+configured, the leaf's verbatim bytes are written so they can be linked by
+digest; with no store the read is purely structural. Nothing is captured —
+no receipt, no tree, just a deduplicating blob put.
 
 ### Clown plugin packaging
 
@@ -128,21 +135,26 @@ working-directory tree as MCP resources out of the box.
     #          "name":"event1.ics","type":"caldav-object-v1",
     #          "container":false}, ... ]
     #   resources/read caldav://dav.host/dav/me/work/event1.ics   (a leaf)
-    #     → {"component":"VEVENT",
-    #        "event":{"uid":"...","summary":"Standup",
-    #                 "dtstart":"20260224T150000Z","location":"...", ...}}
+    #     → contents: [
+    #         {"uri":"caldav://.../event1.ics","mimeType":"application/json",
+    #          "text":"{\"component\":\"VEVENT\",\"event\":{\"summary\":
+    #                   \"Standup\",\"dtstart\":\"20260224T150000Z\", ...}}"},
+    #         {"uri":"madder://blobs/blake2b256-…",        # raw .ics, by digest
+    #          "mimeType":"text/calendar"} ]               # link only, no bytes
+    #     (the second entry is present only when a blob store is configured)
 
     # override the config: serve one explicit endpoint
     $ cutting-garden mcp caldav://dav.host/dav/me/
 
 ## Limitations / Non-Goals
 
-- **Structured leaf read, no raw-byte link yet.** A leaf read returns the
-  object's *parsed* fields (caldav: the `ical` event/task) via the
-  `LeafReader` capability (#85). The verbatim source bytes are fetched and
-  held on `LeafContent.Raw` but not yet surfaced as a content-addressed
-  `madder://blobs/<digest>` link — that needs the read-only server to gain
-  a writable blob store (open question below).
+- **Raw bytes need a store + a resolver.** The `madder://blobs/<digest>`
+  link beside a leaf's parsed fields is only emitted when the server's host
+  has a default blob store configured (it is absent-safe otherwise). And
+  the link is a *reference*: a client only gets the bytes if it can resolve
+  a `madder://` URI against that store — for the claude.ai-over-a-tunnel
+  consumer (circus), that resolution is the client/proxy's concern, not
+  this server's.
 - **No tools.** The server advertises resources only — no
   capture/restore mutation tools. A read-only window onto the tree.
 - **No `--split` frontier.** The receipt-fanout selector grammar (FDR
@@ -152,11 +164,11 @@ working-directory tree as MCP resources out of the box.
 
 ## Open Questions
 
-- **Raw leaf bytes as a blob link.** A leaf read now returns the *parsed*
-  object (#85); the verbatim `.ics` is fetched onto `LeafContent.Raw` but
-  not surfaced. Exposing it as a related `madder://blobs/<digest>` link
-  requires giving the read-only server an (optional) writable madder blob
-  store and writing the raw bytes on read. Tracked at #85.
+- **Body-fetch beyond caldav text.** Leaf body-fetch is implemented for
+  caldav (text/calendar → parsed `ical` view + raw blob link). Other leaf
+  schemes (file `application/octet-stream`, gphotos media) would need their
+  own `LeafReader` and a base64 `blob` rather than a `text` rendering;
+  deferred. Tracked at #85.
 - **Pagination / huge trees.** An endpoint with thousands of children
   returns one enormous `resources/list`. The `go-mcp` V1 cursor exists;
   wiring it is deferred. Tracked at #86.

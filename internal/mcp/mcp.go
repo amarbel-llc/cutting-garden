@@ -19,13 +19,18 @@
 //   - resources/list — the immediate children of every root (one
 //     ListRoots call per root).
 //   - resources/read — the immediate children of the read URI, letting a
-//     client descend a container lazily, one level per read.
+//     client descend a container lazily, one level per read; a childless
+//     leaf instead reads as the object's parsed fields (#85).
 //
-// Read-only: no blob store is touched and nothing is captured (FDR
-// 0014's body-fetch path stays with `capture`). The server runs until
-// the client closes the connection or it is interrupted
-// (SIGINT/SIGTERM/SIGHUP). Exit 0 on a clean shutdown, 64 on a malformed
-// config or unresolvable endpoint argument, 2 on a transport error.
+// Discovery is read-only and captures nothing. The one write is
+// content-addressed and optional: a leaf read of an object whose plugin
+// implements LeafReader stores the verbatim bytes in the host's default
+// madder blob store (when one is configured) and links them by digest
+// beside the parsed fields. With no store configured the read returns
+// the parsed fields alone. The server runs until the client closes the
+// connection or it is interrupted (SIGINT/SIGTERM/SIGHUP). Exit 0 on a
+// clean shutdown, 64 on a malformed config or unresolvable endpoint
+// argument, 2 on a transport error.
 package mcp
 
 import (
@@ -34,6 +39,7 @@ import (
 	"os"
 
 	"github.com/amarbel-llc/cutting-garden/internal/buildinfo"
+	"github.com/amarbel-llc/cutting-garden/internal/capture_plugin"
 	"github.com/amarbel-llc/cutting-garden/internal/command"
 	"github.com/amarbel-llc/cutting-garden/internal/command_components"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
@@ -49,7 +55,9 @@ const serverName = "cutting-garden"
 const instructions = "Resources are the capturable trees of cutting-garden " +
 	"plugin endpoints. resources/list returns each endpoint's immediate " +
 	"children; reading a container resource returns its children as a JSON " +
-	"array, so you descend the tree one level per read. Discovery is " +
+	"array, so you descend the tree one level per read. Reading a leaf " +
+	"object returns its parsed fields as JSON, plus (when available) a " +
+	"madder://blobs/<digest> link to its verbatim bytes. Discovery is " +
 	"read-only — nothing is captured."
 
 // MCP is the value registered for the `mcp` subcommand. It carries no
@@ -71,8 +79,10 @@ func (*MCP) GetDescription() command.Description {
 			"endpoint's immediate children; reading a container resource " +
 			"returns that node's children, so a client descends lazily one " +
 			"level per read \\(em the same RootLister traversal `list` and " +
-			"capture share. Read-only; no blob store is touched and nothing " +
-			"is captured. Launched by an MCP client, not run interactively; " +
+			"capture share. Reading a leaf object returns its parsed fields " +
+			"as JSON, plus a content-addressed madder blob link to its " +
+			"verbatim bytes when a store is configured. Discovery captures " +
+			"nothing. Launched by an MCP client, not run interactively; " +
 			"runs until the client disconnects or it is interrupted.",
 	}
 }
@@ -89,7 +99,7 @@ func (cmd *MCP) Run(req command.Request) {
 		return
 	}
 
-	provider := newResources(roots)
+	provider := newResources(roots, mcpBlobWriter(ctx))
 
 	// The MCP protocol owns stdout (JSON-RPC frames), so diagnostics must
 	// never leak there; the server itself writes only protocol frames.
@@ -157,4 +167,21 @@ func resolveRoots(args []string) ([]*url.URL, error) {
 		roots = append(roots, u)
 	}
 	return roots, nil
+}
+
+// mcpBlobWriter returns the sink a leaf read persists verbatim object bytes
+// to, so they can be surfaced as a `madder://blobs/<digest>` link (#85). It
+// resolves the host's default madder blob store; when no store is
+// configured it returns nil and the server serves structured-only reads
+// (no raw-bytes link). Store resolution is best-effort: it never blocks the
+// server from starting, since the structured read does not depend on it.
+func mcpBlobWriter(ctx errors.Context) capture_plugin.Writer {
+	env := command_components.MakeBlobStoreEnv(ctx)
+	// GetDefaultBlobStore panics when no stores are initialized, so gate on
+	// a configured store first — an absent store is a normal deployment,
+	// not an error.
+	if len(env.GetBlobStores()) == 0 {
+		return nil
+	}
+	return capture_plugin.NewBlobStoreWriter(env.GetDefaultBlobStore())
 }

@@ -1,17 +1,24 @@
 package mcp
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/url"
 
+	"github.com/amarbel-llc/cutting-garden/internal/capture_plugin"
 	"github.com/amarbel-llc/cutting-garden/internal/command_components"
 	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 	"github.com/amarbel-llc/purse-first/libs/go-mcp/protocol"
 	"github.com/amarbel-llc/purse-first/libs/go-mcp/server"
 )
+
+// madderBlobScheme prefixes a content-addressed blob URI: the verbatim
+// source bytes of a leaf, written to the server's madder store and linked
+// by digest so a client fetches them out-of-band (#85).
+const madderBlobScheme = "madder://blobs/"
 
 // mimeListing is the content type of a container's child listing: a JSON
 // array of node views. Containers advertise it so a client knows a
@@ -46,22 +53,30 @@ type resolveFunc func(uriStr string) (
 // The provider holds no per-node cursor: every read re-resolves the
 // plugin from the requested URI, mirroring the stateless RootLister
 // contract (a node is always addressed by URI, never a server-held
-// position). It never captures or writes a blob store: a leaf read fetches
-// the object's body live and returns its parsed fields, but persisting the
-// raw bytes (and linking them by digest) is out of scope here.
+// position). Discovery is read-only; the one write it performs is
+// content-addressed and optional: when writer is non-nil, a leaf read
+// stores the object's verbatim bytes and adds a `madder://blobs/<digest>`
+// link beside the parsed fields (#85). A nil writer (no store configured)
+// degrades cleanly to structured-only reads.
 type Resources struct {
 	roots   []*url.URL
 	resolve resolveFunc
+	// writer persists a leaf's verbatim bytes so they can be linked by
+	// digest. Optional: nil means no store is configured and a leaf read
+	// returns its parsed fields without a raw-bytes link.
+	writer capture_plugin.Writer
 }
 
 var _ server.ResourceProvider = (*Resources)(nil)
 
 // newResources builds a provider over the given root endpoints, wired to
-// the real plugin registry.
-func newResources(roots []*url.URL) *Resources {
+// the real plugin registry. writer is the optional blob sink for raw leaf
+// bytes (nil when no store is configured).
+func newResources(roots []*url.URL, writer capture_plugin.Writer) *Resources {
 	return &Resources{
 		roots:   roots,
 		resolve: command_components.ResolveRootListerPlugin,
+		writer:  writer,
 	}
 }
 
@@ -177,13 +192,43 @@ func (r *Resources) readLeaf(
 	if err != nil {
 		return nil, false, errors.Wrap(err)
 	}
-	return &protocol.ResourceReadResult{
-		Contents: []protocol.ResourceContent{{
-			URI:      uri,
-			MimeType: mimeObject,
-			Text:     string(body),
-		}},
-	}, true, nil
+
+	contents := []protocol.ResourceContent{{
+		URI:      uri,
+		MimeType: mimeObject,
+		Text:     string(body),
+	}}
+	// Add the verbatim source as a content-addressed blob link beside the
+	// parsed fields, when a store is configured to hold it. The bytes are
+	// written, not inlined: the client fetches them by digest.
+	if link := r.rawBlobLink(ctx, content); link != nil {
+		contents = append(contents, *link)
+	}
+
+	return &protocol.ResourceReadResult{Contents: contents}, true, nil
+}
+
+// rawBlobLink stores a leaf's verbatim bytes and returns a link-only
+// content entry addressing them by digest (`madder://blobs/<digest>`,
+// no inlined text). It returns nil — no link, the structured fields
+// stand alone — when no store is configured, the leaf has no raw form,
+// or the write fails: persisting the source bytes is a best-effort
+// enrichment that must never fail the read of the parsed object.
+func (r *Resources) rawBlobLink(
+	ctx context.Context,
+	content cutting_garden_plugins.LeafContent,
+) *protocol.ResourceContent {
+	if r.writer == nil || len(content.Raw) == 0 {
+		return nil
+	}
+	digest, _, err := r.writer.WriteBlob(ctx, bytes.NewReader(content.Raw))
+	if err != nil {
+		return nil
+	}
+	return &protocol.ResourceContent{
+		URI:      madderBlobScheme + digest,
+		MimeType: content.RawMimeType,
+	}
 }
 
 // ListResourceTemplates returns no templates: cutting-garden resources

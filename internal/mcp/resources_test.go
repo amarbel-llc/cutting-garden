@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/url"
 	"strings"
 	"testing"
@@ -281,6 +282,63 @@ func TestReadResource_ResolveErrorSurfaces(t *testing.T) {
 	r := newFakeResources(t, "faketest://h/")
 	if _, err := r.ReadResource(context.Background(), "bogus://x"); err == nil {
 		t.Fatal("ReadResource on unresolvable uri: want error, got nil")
+	}
+}
+
+// fakeWriter is a capture_plugin.Writer that records the bytes it is given
+// and returns a fixed digest, so a leaf read's raw-bytes write is testable
+// without a real blob store.
+type fakeWriter struct {
+	digest  string
+	written []byte
+}
+
+func (w *fakeWriter) WriteBlob(_ context.Context, r io.Reader) (string, int64, error) {
+	b, err := io.ReadAll(r)
+	if err != nil {
+		return "", 0, err
+	}
+	w.written = b
+	return w.digest, int64(len(b)), nil
+}
+
+// TestReadResource_LeafAppendsRawBlobLink is the Phase B path (#85): with a
+// store configured, a leaf read writes the verbatim bytes and appends a
+// link-only second content entry addressing them by digest — no inlined
+// bytes.
+func TestReadResource_LeafAppendsRawBlobLink(t *testing.T) {
+	r := newFakeLeafResources(t, "faketest://h/")
+	w := &fakeWriter{digest: "blake2b256-deadbeef"}
+	r.writer = w
+
+	got, err := r.ReadResource(context.Background(), "faketest://h/work/task1.ics")
+	if err != nil {
+		t.Fatalf("ReadResource: %v", err)
+	}
+	if len(got.Contents) != 2 {
+		t.Fatalf("got %d contents, want 2 (structured + blob link)", len(got.Contents))
+	}
+
+	// [0] is the structured JSON object (unchanged from the no-store path).
+	if got.Contents[0].MimeType != mimeObject {
+		t.Errorf("content[0] mimetype = %q, want %q", got.Contents[0].MimeType, mimeObject)
+	}
+
+	// [1] is the link-only madder blob reference: a URI + mimetype, no bytes.
+	link := got.Contents[1]
+	if link.URI != "madder://blobs/blake2b256-deadbeef" {
+		t.Errorf("link URI = %q, want madder://blobs/blake2b256-deadbeef", link.URI)
+	}
+	if link.MimeType != "text/calendar" {
+		t.Errorf("link mimetype = %q, want text/calendar", link.MimeType)
+	}
+	if link.Text != "" || link.Blob != "" {
+		t.Errorf("link must be link-only: text=%q blob=%q", link.Text, link.Blob)
+	}
+
+	// The verbatim source bytes are what was written to the store.
+	if !strings.Contains(string(w.written), "BEGIN:VTODO") {
+		t.Errorf("writer received %q, want the verbatim .ics body", w.written)
 	}
 }
 
