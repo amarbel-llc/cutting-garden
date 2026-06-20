@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/amarbel-llc/cutting-garden/internal/mcp_tool_perms"
 )
 
 func TestRun_MalformedJSON_Errors(t *testing.T) {
@@ -39,18 +41,44 @@ func TestRun_ForeignTool_NoOutput(t *testing.T) {
 	}
 }
 
-// cutting-garden's MCP server exposes no tools yet, so even a correctly
-// namespaced PreToolUse event falls through with no decision. This locks
-// the current no-op-scaffold baseline; when CUD tools land (cutting-garden#102)
-// this test gains a sibling asserting the allow/ask decision.
-func TestRun_CuttingGardenTool_NoDecisionYet(t *testing.T) {
+// A correctly namespaced cutting-garden tool that is not one of the
+// classified CUD tools falls through with no decision — the hook never
+// invents one.
+func TestRun_UnclassifiedTool_NoDecision(t *testing.T) {
 	var out bytes.Buffer
-	in := `{"hook_event_name":"PreToolUse","tool_name":"` + toolNamePrefix + `some_future_tool"}`
+	in := `{"hook_event_name":"PreToolUse","tool_name":"` + toolNamePrefix + `some_other_tool"}`
 	if err := Run(strings.NewReader(in), &out); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
 	if out.Len() != 0 {
-		t.Fatalf("expected no decision (no tools yet), got %q", out.String())
+		t.Fatalf("expected no decision for an unclassified tool, got %q", out.String())
+	}
+}
+
+// Each CUD write tool is destructive, so its PreToolUse event is gated with
+// `ask` — the #102 enforcement.
+func TestRun_CUDTools_Ask(t *testing.T) {
+	for _, tool := range []string{
+		mcp_tool_perms.ToolCreateNode,
+		mcp_tool_perms.ToolUpdateNode,
+		mcp_tool_perms.ToolDeleteNode,
+	} {
+		var out bytes.Buffer
+		in := `{"hook_event_name":"PreToolUse","tool_name":"` + toolNamePrefix + tool + `"}`
+		if err := Run(strings.NewReader(in), &out); err != nil {
+			t.Fatalf("Run(%s): %v", tool, err)
+		}
+		var got struct {
+			HookSpecificOutput struct {
+				PermissionDecision string `json:"permissionDecision"`
+			} `json:"hookSpecificOutput"`
+		}
+		if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+			t.Fatalf("unmarshal %s: %v (out=%q)", tool, err, out.String())
+		}
+		if got.HookSpecificOutput.PermissionDecision != "ask" {
+			t.Errorf("%s decision = %q, want ask", tool, got.HookSpecificOutput.PermissionDecision)
+		}
 	}
 }
 

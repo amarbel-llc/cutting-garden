@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: experimental
 date: 2026-06-18
 promotion-criteria: |
   Promote to `experimental` once the prototype CUD capability interface
@@ -17,12 +17,23 @@ promotion-criteria: |
 
 # CUD tree modifications (plugin write capability + MCP tool binding)
 
-> **Proposed / pre-RFC.** This FDR scopes the *write* axis of plugin
+> **Experimental / pre-RFC.** This FDR scopes the *write* axis of plugin
 > trees: creating, updating, and deleting an addressable node, plus the
-> MCP tools that expose those mutations to an agent. The Go interface
-> sketched below is **pre-RFC and subject to change** — its purpose is to
-> shake out the capability shape on a prototype plugin (caldav) before it
-> is lifted into a normative RFC. No code exists yet.
+> MCP tools that expose those mutations to an agent. The Go interface is
+> still **pre-RFC and subject to change** — its purpose is to shake out the
+> capability shape on a prototype plugin (caldav) before it is lifted into
+> a normative RFC.
+>
+> **Landed (all three layers, unit-tested):** the `NodeMutator` SDK
+> capability (`internal/cutting_garden_plugins`), caldav's implementation
+> (`plugins/caldav/mutate.go` — strict create/update, delete, dual-format
+> body), the MCP `create_node`/`update_node`/`delete_node` tools
+> (`internal/mcp/tools.go`), and the shared `mcp_tool_perms` classifier
+> feeding both the tools' destructive annotations and the #102 clown
+> PreToolUse hook (`internal/claude_hooks`, gates them `ask`). **Remaining
+> verification:** a single end-to-end create→update→delete round-trip
+> driven through `cutting-garden mcp` (a bats lane) — the layers are each
+> covered, but not yet in one e2e exercise.
 
 ## Problem Statement
 
@@ -209,18 +220,37 @@ approval before the mutation reaches the live server.
 | delete on non-empty container | open (refuse vs. recurse) | unsettled — see Open Questions | the prototype's first non-empty-collection delete forces the call |
 | batching | one node per call | simplest prototype surface; matches one MCP tool call = one mutation | agents issue many sequential single-node calls where one batch tool would cut round-trips |
 
+## Settled (prototype decisions)
+
+- **Create vs. upsert → strict.** `create_node` errors if the node exists
+  (caldav PUT `If-None-Match: *`); `update_node` is the explicit overwrite
+  and errors if the node is absent (`If-Match: *`). Atomic preconditions, no
+  racy GET-precheck. (Tuning lever if upsert friction shows up.)
+- **Body typing → validate, dual-format.** caldav accepts both raw
+  iCalendar AND the `objectView` JSON `resources/read` returns (symmetric
+  read/write round-trip), normalized to `.ics` via the `ical` writers and
+  rejected if it parses as neither. (Diverges from capture's opaque-blob
+  stance, FDR 0013 — CUD is live mutation, not snapshotting.)
+- **Scope → leaf-first.** caldav-object leaves only; creating a
+  `caldav-calendar-v1` container errors (MKCALENDAR, #77). Containers are on
+  the v1 docket — the interface already carries `typ` so container create
+  slots in when #77 lands.
+
 ## Open Questions
 
-- **Delete recursion.** Does `DeleteNode` on a container refuse when
-  non-empty (safe) or remove the subtree (convenient)? The prototype's
-  first collection-delete forces the decision.
-- **Create vs. upsert.** Strict create (error if the node exists) vs.
-  upsert. The sketch above chooses strict, splitting create/update; bob's
-  tools and WebDAV PUT lean upsert. Settle on the prototype.
-- **Body typing.** `CreateNode` takes a `NodeType.Tag` + raw body. Whether
-  the plugin validates the body against the declared type (e.g. parse the
-  `.ics`) or treats it as opaque bytes (consistent with capture's
-  opaque-blob stance, FDR 0013 Non-Goals "No iCalendar parsing") is open.
+- **Delete recursion.** Does `DeleteNode` on a *container* refuse when
+  non-empty (safe) or remove the subtree (convenient)? Unforced until
+  container delete lands (leaf delete is unaffected).
+- **End-to-end verification.** Each layer is unit-tested, but a single
+  create→update→delete round-trip driven through `cutting-garden mcp` (a
+  bats lane spinning the caldav testserver and speaking tools/call over the
+  stdio transport) is the remaining experimental-promotion exercise.
+- **MCP tool prefix.** #102's must-verify: the exact MCP tool prefix clown
+  gives a hyphenated plugin name
+  (`mcp__plugin_cutting-garden_cutting-garden__…`, assumed, unverified)
+  must be pinned against a live clown session — the hook is now live, so a
+  prefix mismatch silently disables the `ask` gate (the MCP destructive
+  annotation is an independent fallback, but verify this).
 - **Where the RFC line falls.** This FDR + the caldav prototype are
   pre-RFC. The RFC (when the file plugin joins) must decide whether CUD
   is a standalone interface or folds into a broader "tree mutation"
