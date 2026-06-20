@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/url"
+	"path"
 	"strings"
 
 	"github.com/amarbel-llc/cutting-garden/internal/command_components"
@@ -23,13 +24,12 @@ type mutatorResolveFunc func(
 ) (*url.URL, cutting_garden_plugins.NodeMutator, error)
 
 // resourceReader is the read surface the read_node / list_nodes tools wrap —
-// the same ReadResource / ListResources the resources/read and resources/list
-// MCP methods serve (*Resources satisfies it). Exposing the read tree as
-// tools makes it reachable from clients that render only tools, not MCP
-// resources (the claude.ai web UI; circus#29).
+// the ReadResource the resources/read MCP method serves (*Resources
+// satisfies it). Exposing the read tree as tools makes it reachable from
+// clients that render only tools, not MCP resources (the claude.ai web UI;
+// circus#29).
 type resourceReader interface {
 	ReadResource(ctx context.Context, uri string) (*protocol.ResourceReadResult, error)
-	ListResources(ctx context.Context) ([]protocol.Resource, error)
 }
 
 // Tools implements go-mcp's ToolProviderV1. It always advertises the
@@ -83,7 +83,7 @@ const (
 	readNodeSchema          = `{"type":"object","required":["uri"],` +
 		`"properties":{"uri":{"type":"string","description":"the node URI to read (a leaf returns its parsed fields + a raw-bytes link; a container returns its child listing)"}}}`
 	listNodesSchema = `{"type":"object","properties":{` +
-		`"uri":{"type":"string","description":"the container/prefix to list children of; omit to list the configured roots' children (the entry points)"}}}`
+		`"uri":{"type":"string","description":"the container/prefix to list children of; omit to list the configured roots (the entry points)"}}}`
 )
 
 // toolDefs is the V1 tool catalogue this server advertises: the read-only
@@ -116,8 +116,8 @@ func readToolDefs() []protocol.ToolV1 {
 		{
 			Name: mcp_tool_perms.ToolListNodes,
 			Description: "Browse the tree: list the child nodes under a container URI " +
-				"(or, with no uri, the configured roots' children — the entry points). " +
-				"Each child carries its uri, so you descend by listing deeper or read a " +
+				"(or, with no uri, the configured roots — the entry points). " +
+				"Each node carries its uri, so you descend by listing deeper or read a " +
 				"leaf with read_node.",
 			InputSchema: json.RawMessage(listNodesSchema),
 			Annotations: annotationFor(mcp_tool_perms.ToolListNodes),
@@ -307,15 +307,24 @@ func (t *Tools) call(
 		if err := json.Unmarshal(args, &in); err != nil {
 			return "", errors.Wrap(err)
 		}
-		// No uri: the configured roots' children (the browse entry points,
-		// = resources/list). A uri: that container's children (= reading the
-		// container, which yields its child listing).
+		// No uri: the configured roots themselves are the browse entry points
+		// (a root is a container you descend into), mirroring the `list`
+		// command's no-arg listing. This deliberately differs from
+		// resources/list, which returns the roots' children: when a root is
+		// itself a calendar (a per-calendar account), listing its children
+		// flattens every event into the entry-point listing (circus#29). A
+		// uri lists that container's children (= reading the container, which
+		// yields its child listing).
 		if in.URI == "" {
-			resources, err := t.reader.ListResources(ctx)
-			if err != nil {
-				return "", err
+			views := make([]nodeView, 0, len(t.roots))
+			for _, root := range t.roots {
+				views = append(views, nodeView{
+					URI:       root.String(),
+					Name:      rootLabel(root),
+					Container: true,
+				})
 			}
-			body, err := json.MarshalIndent(resources, "", "  ")
+			body, err := json.MarshalIndent(views, "", "  ")
 			if err != nil {
 				return "", errors.Wrap(err)
 			}
@@ -417,6 +426,21 @@ func collectSchema(plugins []cutting_garden_plugins.Plugin) []schemeSchema {
 		out = append(out, schemeSchema{Scheme: firstScheme(p), Types: types})
 	}
 	return out
+}
+
+// rootLabel derives a short display name for a root URI: the last path
+// segment, else the host, else the full URI. Mirrors list.rootLabel so the
+// `list` command and the list_nodes tool label the entry points the same
+// way. A friendlier per-calendar label (the server displayname or the
+// configured account name) is a follow-up (#120).
+func rootLabel(u *url.URL) string {
+	if trimmed := strings.TrimRight(u.Path, "/"); trimmed != "" {
+		return path.Base(trimmed)
+	}
+	if u.Host != "" {
+		return u.Host
+	}
+	return u.String()
 }
 
 // firstScheme is the plugin's first non-empty scheme — the name a user types

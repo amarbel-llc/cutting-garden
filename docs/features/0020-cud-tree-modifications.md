@@ -122,19 +122,25 @@ plugins that implement `NodeMutator`. The mapping:
 | MCP tool | Maps to |
 |---|---|
 | `describe_node_types()` | `RootLister.Types` + `BodyDescriber.DescribeBodies` |
-| `list_nodes(uri?)` | `resources/list` (no uri) / `resources/read` container (uri) |
+| `list_nodes(uri?)` | the configured roots (no uri) / `resources/read` container (uri) |
 | `read_node(uri)` | `resources/read` (#85) |
 | `create_node(uri, body, type)` | `NodeMutator.CreateNode` |
 | `update_node(uri, body)` | `NodeMutator.UpdateNode` |
 | `delete_node(uri)` | `NodeMutator.DeleteNode` |
 
-`list_nodes` and `read_node` mirror the `resources/list` + `resources/read`
-methods as **tools**, because a client may render only tools, not MCP
-resources (the claude.ai web UI; circus#29). They make the read tree
-browsable there — `list_nodes()` for the entry points, `list_nodes(uri)` to
-descend, `read_node(uri)` to read a leaf — so a human can discover the node
-URI the write tools need. Both are read-only ⇒ `allow`; they are thin
-wrappers over the same `Resources` handlers (no new plugin calls).
+`list_nodes` and `read_node` expose the read tree as **tools**, because a
+client may render only tools, not MCP resources (the claude.ai web UI;
+circus#29). They make the tree browsable there — `list_nodes()` for the
+entry points, `list_nodes(uri)` to descend, `read_node(uri)` to read a leaf
+— so a human can discover the node URI the write tools need. `list_nodes()`
+with no uri surfaces the configured **roots themselves** (each a container
+to descend into), mirroring the `list` command's no-arg listing. This
+deliberately differs from `resources/list`, which returns the roots'
+*children*: when a root is itself a calendar (a per-calendar account),
+listing its children would flatten every event into the entry-point listing
+(circus#29). `read_node` and `list_nodes(uri)` are thin
+wrappers over the `Resources.ReadResource` handler; the no-uri `list_nodes`
+renders the roots directly (no plugin call). All read-only ⇒ `allow`.
 
 `describe_node_types` is read-only schema discovery: it answers "which
 plugin takes which node types and what their payloads are" so an agent can

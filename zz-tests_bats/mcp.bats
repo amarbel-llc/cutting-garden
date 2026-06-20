@@ -72,16 +72,31 @@ function mcp_describe_node_types { # @test
     fail "describe missing a non-writable caldav-calendar-v1 container: $text"
 }
 
-# list_nodes (browse) surfaces the root's children, then read_node returns a
-# seeded object's parsed fields — the read half of the claude.ai-UI surface
-# (circus#29), wrapping resources/list + resources/read as tools.
+# list_nodes (browse) surfaces the configured ROOTS as the entry points — a
+# root is a container you descend into, NOT its flattened children (that is
+# resources/list; a per-calendar root would otherwise dump every event into
+# the entry-point listing, circus#29). Descending the root yields its calendars,
+# then read_node returns a seeded object's parsed fields — the read half of
+# the claude.ai-UI surface (circus#29), wrapping the RootLister traversal as
+# tools.
 function mcp_browse_and_read { # @test
-  # No uri: the configured root's children — the testserver's one calendar.
+  # No uri: the configured root itself, as a single container entry point
+  # (mirrors `list` with no arg) — not the calendar/objects one level down.
   mcp_drive "$CALDAV_SOURCE" "$(tools_call 3 list_nodes '{}')"
-  local roots
+  local roots rooturi
   roots="$(mcp_result_text "$output" 3)"
-  echo "$roots" | jq -e 'any(.[]; .name=="Personal")' >/dev/null ||
-    fail "list_nodes() missing the Personal calendar: $roots"
+  echo "$roots" | jq -e \
+    'length==1 and .[0].container==true and (.[0].uri | contains("/dav/"))' >/dev/null ||
+    fail "list_nodes() root entry-point wrong: $roots"
+
+  # Descend the root (using the uri it reported) → its calendars: the
+  # testserver's one calendar, Personal.
+  rooturi="$(echo "$roots" | jq -r '.[0].uri')"
+  mcp_drive "$CALDAV_SOURCE" "$(tools_call 3 list_nodes "$(jq -nc --arg u "$rooturi" '{uri:$u}')")"
+  local cals
+  cals="$(mcp_result_text "$output" 3)"
+  echo "$cals" | jq -e 'any(.[]; .name=="Personal")' >/dev/null ||
+    fail "list_nodes(root) missing the Personal calendar: $cals"
 
   # read_node a seeded VTODO → its parsed task fields. grep (not jq) since a
   # leaf read may append a raw-bytes link line after the JSON.

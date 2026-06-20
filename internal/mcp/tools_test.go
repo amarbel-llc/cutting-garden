@@ -276,19 +276,15 @@ func TestCallTool_DescribeReturnsJSON(t *testing.T) {
 	}
 }
 
-// fakeReader is a resourceReader returning fixed read/list results, so the
-// read_node / list_nodes dispatch can be tested without the plugin registry.
+// fakeReader is a resourceReader returning a fixed read result, so the
+// read_node / list_nodes(uri) dispatch can be tested without the plugin
+// registry.
 type fakeReader struct {
 	read *protocol.ResourceReadResult
-	list []protocol.Resource
 }
 
 func (f fakeReader) ReadResource(context.Context, string) (*protocol.ResourceReadResult, error) {
 	return f.read, nil
-}
-
-func (f fakeReader) ListResources(context.Context) ([]protocol.Resource, error) {
-	return f.list, nil
 }
 
 func TestCallTool_ReadNodeReturnsContentAndBlobLink(t *testing.T) {
@@ -316,15 +312,33 @@ func TestCallTool_ReadNodeReturnsContentAndBlobLink(t *testing.T) {
 }
 
 func TestCallTool_ListNodesRootsAndContainer(t *testing.T) {
-	// No uri → the roots' children (ListResources).
-	roots := newFakeTools(t, &fakeMutator{}, "faketest://h/")
-	roots.reader = fakeReader{list: []protocol.Resource{{URI: "faketest://h/work", Name: "Work"}}}
+	// No uri → the configured roots THEMSELVES, as container entry points
+	// (not their children): mirrors the `list` command and avoids flattening
+	// a per-calendar root's events into the entry-point listing (#15).
+	roots := newFakeTools(t, &fakeMutator{}, "faketest://h/cal-a/", "faketest://h/cal-b/")
 	res, err := roots.CallTool(context.Background(), "list_nodes", json.RawMessage(`{}`))
 	if err != nil {
 		t.Fatalf("transport error: %v", err)
 	}
-	if res.IsError || !strings.Contains(res.Content[0].Text, "faketest://h/work") {
-		t.Errorf("list_nodes() roots = %+v, want the root child", res.Content)
+	if res.IsError {
+		t.Fatalf("list_nodes() errored: %+v", res.Content)
+	}
+	var views []nodeView
+	if err := json.Unmarshal([]byte(res.Content[0].Text), &views); err != nil {
+		t.Fatalf("list_nodes() output is not a node-view array: %v (%q)", err, res.Content[0].Text)
+	}
+	if len(views) != 2 {
+		t.Fatalf("list_nodes() = %d nodes, want the 2 configured roots: %+v", len(views), views)
+	}
+	byURI := map[string]nodeView{}
+	for _, v := range views {
+		byURI[v.URI] = v
+	}
+	if a, ok := byURI["faketest://h/cal-a/"]; !ok || !a.Container || a.Name != "cal-a" {
+		t.Errorf("root cal-a = %+v (present=%v), want a container named cal-a", a, ok)
+	}
+	if b, ok := byURI["faketest://h/cal-b/"]; !ok || !b.Container || b.Name != "cal-b" {
+		t.Errorf("root cal-b = %+v (present=%v), want a container named cal-b", b, ok)
 	}
 
 	// A uri → that container's child listing (ReadResource).
