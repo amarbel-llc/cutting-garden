@@ -39,14 +39,14 @@ type hookInput struct {
 // mcp__plugin_cutting-garden_cutting-garden__<tool>. Stripping it yields
 // the bare tool name a future decision table classifies.
 //
-// NB: the separator treatment of the hyphenated plugin name is assumed
-// here (hyphen preserved, matching how clown surfaces other hyphenated
-// names) and MUST STILL be confirmed against a live clown session now that
-// the CUD tools ship — this path is live. The hooks.json matcher is written
-// hyphen/underscore-tolerant so the handler still fires regardless of the
-// real separator; a prefix miss here merely yields no decision (safe
-// fall-through to normal prompting), and the MCP-level destructive
-// annotation is an independent gate, so a miss degrades safely. See
+// The hyphen in the plugin name is PRESERVED in clown's tool namespace —
+// confirmed against clown's live naming scheme, where a hyphenated plugin
+// keeps its hyphens (e.g. `mcp__plugin_clown-builtin-jobs_jobs__chat_send`).
+// With cutting-garden's plugin name and stdio-server name both
+// "cutting-garden" (plugin.json / clown.json), the prefix below is correct.
+// The hooks.json matcher is still written hyphen/underscore-tolerant as a
+// belt, and the MCP-level destructive annotation is an independent gate, so
+// even a prefix miss degrades safely (no decision -> normal prompting). See
 // cutting-garden#102.
 const toolNamePrefix = "mcp__plugin_cutting-garden_cutting-garden__"
 

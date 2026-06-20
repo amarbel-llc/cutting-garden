@@ -1,6 +1,6 @@
 {
   "name": "cutting-garden",
-  "description": "Browse cutting-garden's capturable trees as MCP resources — configured CalDAV accounts and the working directory — via `cutting-garden mcp`. Read-only discovery; capture stays a separate explicit step.",
+  "description": "Browse cutting-garden's capturable trees as MCP resources — configured CalDAV accounts and the working directory — and create/update/delete nodes (e.g. calendar events) via `cutting-garden mcp`. Reads are discovery-only; the write tools are gated for approval. Capture stays a separate explicit step.",
   "version": "@version@",
   "keywords": [
     "cutting-garden",

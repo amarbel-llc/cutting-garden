@@ -24,16 +24,17 @@ promotion-criteria: |
 > capability shape on a prototype plugin (caldav) before it is lifted into
 > a normative RFC.
 >
-> **Landed (all three layers, unit-tested):** the `NodeMutator` SDK
+> **Landed (every layer, unit- AND e2e-tested):** the `NodeMutator` SDK
 > capability (`internal/cutting_garden_plugins`), caldav's implementation
 > (`plugins/caldav/mutate.go` — strict create/update, delete, dual-format
 > body), the MCP `create_node`/`update_node`/`delete_node` tools
 > (`internal/mcp/tools.go`), and the shared `mcp_tool_perms` classifier
 > feeding both the tools' destructive annotations and the #102 clown
-> PreToolUse hook (`internal/claude_hooks`, gates them `ask`). **Remaining
-> verification:** a single end-to-end create→update→delete round-trip
-> driven through `cutting-garden mcp` (a bats lane) — the layers are each
-> covered, but not yet in one e2e exercise.
+> PreToolUse hook (`internal/claude_hooks`, gates them `ask`). The
+> end-to-end exercise — create→update→delete driven through
+> `cutting-garden mcp` over the stdio transport against the caldav
+> testserver — runs in `zz-tests_bats/mcp.bats`, alongside the hook gating
+> a CUD tool `ask`.
 
 ## Problem Statement
 
@@ -235,31 +236,27 @@ approval before the mutation reaches the live server.
   `caldav-calendar-v1` container errors (MKCALENDAR, #77). Containers are on
   the v1 docket — the interface already carries `typ` so container create
   slots in when #77 lands.
+- **End-to-end → covered.** `zz-tests_bats/mcp.bats` drives create→update→
+  delete through `cutting-garden mcp` over the stdio transport against the
+  caldav testserver (dependent mutations serialized as one tool call per
+  invocation, since a single connection's requests dispatch concurrently),
+  plus the hook gating a CUD tool `ask`.
+- **MCP tool prefix → confirmed.** clown preserves the hyphen in a plugin
+  name (observed live: `mcp__plugin_clown-builtin-jobs_jobs__…`), and
+  cutting-garden's plugin and stdio-server names are both "cutting-garden",
+  so the hook's `mcp__plugin_cutting-garden_cutting-garden__` prefix is
+  correct. (The matcher tolerance + the destructive annotation remain as
+  independent fallbacks.)
 
 ## Open Questions
 
 - **Delete recursion.** Does `DeleteNode` on a *container* refuse when
   non-empty (safe) or remove the subtree (convenient)? Unforced until
   container delete lands (leaf delete is unaffected).
-- **End-to-end verification.** Each layer is unit-tested, but a single
-  create→update→delete round-trip driven through `cutting-garden mcp` (a
-  bats lane spinning the caldav testserver and speaking tools/call over the
-  stdio transport) is the remaining experimental-promotion exercise.
-- **MCP tool prefix.** #102's must-verify: the exact MCP tool prefix clown
-  gives a hyphenated plugin name
-  (`mcp__plugin_cutting-garden_cutting-garden__…`, assumed, unverified)
-  must be pinned against a live clown session — the hook is now live, so a
-  prefix mismatch silently disables the `ask` gate (the MCP destructive
-  annotation is an independent fallback, but verify this).
 - **Where the RFC line falls.** This FDR + the caldav prototype are
   pre-RFC. The RFC (when the file plugin joins) must decide whether CUD
   is a standalone interface or folds into a broader "tree mutation"
   protocol alongside the capture protocol (RFC 0002).
-- **MCP tool prefix.** #102's must-verify: the exact MCP tool prefix clown
-  gives a hyphenated plugin name
-  (`mcp__plugin_cutting-garden_cutting-garden__…`, assumed, unverified)
-  must be pinned against a live clown session before the hook decision
-  table goes live.
 
 ## More Information
 
