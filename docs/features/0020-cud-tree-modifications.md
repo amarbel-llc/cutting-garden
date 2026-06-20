@@ -122,9 +122,19 @@ plugins that implement `NodeMutator`. The mapping:
 | MCP tool | Maps to |
 |---|---|
 | `describe_node_types()` | `RootLister.Types` + `BodyDescriber.DescribeBodies` |
+| `list_nodes(uri?)` | `resources/list` (no uri) / `resources/read` container (uri) |
+| `read_node(uri)` | `resources/read` (#85) |
 | `create_node(uri, body, type)` | `NodeMutator.CreateNode` |
 | `update_node(uri, body)` | `NodeMutator.UpdateNode` |
 | `delete_node(uri)` | `NodeMutator.DeleteNode` |
+
+`list_nodes` and `read_node` mirror the `resources/list` + `resources/read`
+methods as **tools**, because a client may render only tools, not MCP
+resources (the claude.ai web UI; circus#29). They make the read tree
+browsable there — `list_nodes()` for the entry points, `list_nodes(uri)` to
+descend, `read_node(uri)` to read a leaf — so a human can discover the node
+URI the write tools need. Both are read-only ⇒ `allow`; they are thin
+wrappers over the same `Resources` handlers (no new plugin calls).
 
 `describe_node_types` is read-only schema discovery: it answers "which
 plugin takes which node types and what their payloads are" so an agent can

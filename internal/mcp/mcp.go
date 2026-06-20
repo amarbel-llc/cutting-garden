@@ -21,14 +21,15 @@
 //   - resources/read — the immediate children of the read URI, letting a
 //     client descend a container lazily, one level per read; a childless
 //     leaf instead reads as the object's parsed fields (#85).
-//   - tools/call — describe_node_types (read-only schema discovery: which
-//     types each scheme exposes and what body the write tools accept) plus
-//     create_node / update_node / delete_node, the CUD write tools (FDR
-//     0020) for plugins that implement NodeMutator (caldav). The write
-//     tools mutate the same node URIs resources/read surfaces, are
-//     advertised only when a configured root supports mutation, and are
-//     annotated destructive so a client gates them (and the clown PreToolUse
-//     hook classifies them `ask`, #102).
+//   - tools/call — the same tree as tools, for clients that render only
+//     tools, not resources (the claude.ai web UI; circus#29). Read-only:
+//     list_nodes (browse children; omit uri for the roots), read_node
+//     (read one node, = resources/read), describe_node_types (schema
+//     discovery). Write (FDR 0020, plugins implementing NodeMutator):
+//     create_node / update_node / delete_node, advertised only when a
+//     configured root supports mutation and annotated destructive so a
+//     client gates them (and the clown PreToolUse hook classifies them
+//     `ask`, #102).
 //
 // Discovery (resources) is read-only and captures nothing; the write tools
 // mutate live nodes directly, with no blob store or receipt. (One
@@ -65,11 +66,13 @@ const instructions = "Resources are the capturable trees of cutting-garden " +
 	"children; reading a container resource returns its children as a JSON " +
 	"array, so you descend the tree one level per read. Reading a leaf " +
 	"object returns its parsed fields as JSON, plus (when available) a " +
-	"madder://blobs/<digest> link to its verbatim bytes. Call " +
-	"describe_node_types to learn which node types each scheme exposes and " +
-	"what body create_node accepts. The create_node / update_node / " +
-	"delete_node tools mutate a node at its URI (e.g. create a calendar " +
-	"event); they are destructive and require user approval."
+	"madder://blobs/<digest> link to its verbatim bytes. The same surface " +
+	"is also exposed as tools (for clients that render only tools): " +
+	"list_nodes browses children (omit the uri for the entry points), " +
+	"read_node reads one node, and describe_node_types reports each scheme's " +
+	"node types and what body create_node accepts. The create_node / " +
+	"update_node / delete_node tools mutate a node at its URI (e.g. create a " +
+	"calendar event); they are destructive and require user approval."
 
 // MCP is the value registered for the `mcp` subcommand. It carries no
 // flags; endpoints come from the config, or from optional positional args
@@ -114,7 +117,7 @@ func (cmd *MCP) Run(req command.Request) {
 	}
 
 	provider := newResources(roots, mcpBlobWriter(ctx))
-	tools := newTools(roots)
+	tools := newTools(roots, provider)
 
 	// The MCP protocol owns stdout (JSON-RPC frames), so diagnostics must
 	// never leak there; the server itself writes only protocol frames.

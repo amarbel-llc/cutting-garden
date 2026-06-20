@@ -31,18 +31,20 @@ const (
 	ToolUpdateNode        = "update_node"
 	ToolDeleteNode        = "delete_node"
 	ToolDescribeNodeTypes = "describe_node_types"
+	ToolReadNode          = "read_node"
+	ToolListNodes         = "list_nodes"
 )
 
 // Classify returns the permission class of a tool by its base name (no
-// plugin prefix), and whether the name is known. The three CUD write tools
-// are destructive; the schema-discovery tool is read-only; an unknown name
-// is unclassified (ok=false) so the caller applies its own default — the
-// hook falls through to normal prompting rather than inventing a decision.
+// plugin prefix), and whether the name is known. The CUD write tools are
+// destructive; the read/list/schema tools are read-only; an unknown name is
+// unclassified (ok=false) so the caller applies its own default — the hook
+// falls through to normal prompting rather than inventing a decision.
 func Classify(toolName string) (Class, bool) {
 	switch toolName {
 	case ToolCreateNode, ToolUpdateNode, ToolDeleteNode:
 		return ClassDestructive, true
-	case ToolDescribeNodeTypes:
+	case ToolDescribeNodeTypes, ToolReadNode, ToolListNodes:
 		return ClassRead, true
 	default:
 		return "", false

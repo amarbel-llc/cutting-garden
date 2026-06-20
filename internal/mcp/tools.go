@@ -22,25 +22,37 @@ type mutatorResolveFunc func(
 	uriStr string,
 ) (*url.URL, cutting_garden_plugins.NodeMutator, error)
 
+// resourceReader is the read surface the read_node / list_nodes tools wrap —
+// the same ReadResource / ListResources the resources/read and resources/list
+// MCP methods serve (*Resources satisfies it). Exposing the read tree as
+// tools makes it reachable from clients that render only tools, not MCP
+// resources (the claude.ai web UI; circus#29).
+type resourceReader interface {
+	ReadResource(ctx context.Context, uri string) (*protocol.ResourceReadResult, error)
+	ListResources(ctx context.Context) ([]protocol.Resource, error)
+}
+
 // Tools implements go-mcp's ToolProviderV1. It always advertises the
-// read-only describe_node_types schema-discovery tool, and adds the
-// create_node / update_node / delete_node write tools (FDR 0020) when a
-// configured root's plugin implements NodeMutator. A mutation targets the
-// same node URI resources/read surfaces, so the read and write axes share
-// one address space.
+// read-only schema/read/list discovery tools (describe_node_types, read_node,
+// list_nodes), and adds the create_node / update_node / delete_node write
+// tools (FDR 0020) when a configured root's plugin implements NodeMutator. A
+// mutation targets the same node URI read_node/list_nodes surface, so the
+// read and write axes share one address space.
 type Tools struct {
 	roots   []*url.URL
 	resolve mutatorResolveFunc
+	reader  resourceReader
 }
 
 var _ server.ToolProviderV1 = (*Tools)(nil)
 
 // newTools builds a tool provider over the given roots, wired to the real
-// plugin registry.
-func newTools(roots []*url.URL) *Tools {
+// plugin registry and the resource read surface the read/list tools wrap.
+func newTools(roots []*url.URL, reader resourceReader) *Tools {
 	return &Tools{
 		roots:   roots,
 		resolve: command_components.ResolveNodeMutatorPlugin,
+		reader:  reader,
 	}
 }
 
@@ -68,32 +80,57 @@ const (
 	deleteNodeSchema = `{"type":"object","required":["uri"],` +
 		`"properties":{"uri":{"type":"string","description":"the node URI to delete"}}}`
 	describeNodeTypesSchema = `{"type":"object","properties":{}}`
+	readNodeSchema          = `{"type":"object","required":["uri"],` +
+		`"properties":{"uri":{"type":"string","description":"the node URI to read (a leaf returns its parsed fields + a raw-bytes link; a container returns its child listing)"}}}`
+	listNodesSchema = `{"type":"object","properties":{` +
+		`"uri":{"type":"string","description":"the container/prefix to list children of; omit to list the configured roots' children (the entry points)"}}}`
 )
 
 // toolDefs is the V1 tool catalogue this server advertises: the read-only
-// schema-discovery tool always, plus the CUD write tools when a configured
-// root can mutate. Names, schemas, and permission annotations come from
-// mcp_tool_perms (the single classifier shared with the clown hook).
+// discovery tools (describe_node_types / read_node / list_nodes) always, plus
+// the CUD write tools when a configured root can mutate. Names, schemas, and
+// permission annotations come from mcp_tool_perms (the single classifier
+// shared with the clown hook).
 func (t *Tools) toolDefs() []protocol.ToolV1 {
-	defs := []protocol.ToolV1{describeToolDef()}
+	defs := readToolDefs()
 	if t.hasMutator() {
 		defs = append(defs, cudToolDefs()...)
 	}
 	return defs
 }
 
-// describeToolDef is the read-only schema-discovery tool: it tells an agent
-// which node types each scheme exposes and what body the write tools accept,
-// so create_node can be called without guessing the type tag or payload.
-func describeToolDef() protocol.ToolV1 {
-	return protocol.ToolV1{
-		Name: mcp_tool_perms.ToolDescribeNodeTypes,
-		Description: "List the node types each scheme exposes (tag, container vs " +
-			"leaf, mimetype) and, for writable types, the body payload create_node/" +
-			"update_node accept, with a concrete example. Read-only; call it first " +
-			"to learn a type tag and body shape before create_node.",
-		InputSchema: json.RawMessage(describeNodeTypesSchema),
-		Annotations: annotationFor(mcp_tool_perms.ToolDescribeNodeTypes),
+// readToolDefs is the read-only catalogue: schema discovery plus read_node /
+// list_nodes, which mirror resources/read + resources/list as tools so the
+// tree is reachable from a tools-only client (circus#29).
+func readToolDefs() []protocol.ToolV1 {
+	return []protocol.ToolV1{
+		{
+			Name: mcp_tool_perms.ToolDescribeNodeTypes,
+			Description: "List the node types each scheme exposes (tag, container vs " +
+				"leaf, mimetype) and, for writable types, the body payload create_node/" +
+				"update_node accept, with a concrete example. Read-only; call it first " +
+				"to learn a type tag and body shape before create_node.",
+			InputSchema: json.RawMessage(describeNodeTypesSchema),
+			Annotations: annotationFor(mcp_tool_perms.ToolDescribeNodeTypes),
+		},
+		{
+			Name: mcp_tool_perms.ToolListNodes,
+			Description: "Browse the tree: list the child nodes under a container URI " +
+				"(or, with no uri, the configured roots' children — the entry points). " +
+				"Each child carries its uri, so you descend by listing deeper or read a " +
+				"leaf with read_node.",
+			InputSchema: json.RawMessage(listNodesSchema),
+			Annotations: annotationFor(mcp_tool_perms.ToolListNodes),
+		},
+		{
+			Name: mcp_tool_perms.ToolReadNode,
+			Description: "Read one node by URI: a leaf returns its parsed fields (e.g. a " +
+				"calendar event's {component,event|task} JSON) plus a raw-bytes link; a " +
+				"container returns its child listing. The read sibling of create/update/" +
+				"delete_node.",
+			InputSchema: json.RawMessage(readNodeSchema),
+			Annotations: annotationFor(mcp_tool_perms.ToolReadNode),
+		},
 	}
 }
 
@@ -250,9 +287,74 @@ func (t *Tools) call(
 		}
 		return string(body), nil
 
+	case mcp_tool_perms.ToolReadNode:
+		var in struct {
+			URI string `json:"uri"`
+		}
+		if err := json.Unmarshal(args, &in); err != nil {
+			return "", errors.Wrap(err)
+		}
+		res, err := t.reader.ReadResource(ctx, in.URI)
+		if err != nil {
+			return "", err
+		}
+		return renderContents(res.Contents), nil
+
+	case mcp_tool_perms.ToolListNodes:
+		var in struct {
+			URI string `json:"uri"`
+		}
+		if err := json.Unmarshal(args, &in); err != nil {
+			return "", errors.Wrap(err)
+		}
+		// No uri: the configured roots' children (the browse entry points,
+		// = resources/list). A uri: that container's children (= reading the
+		// container, which yields its child listing).
+		if in.URI == "" {
+			resources, err := t.reader.ListResources(ctx)
+			if err != nil {
+				return "", err
+			}
+			body, err := json.MarshalIndent(resources, "", "  ")
+			if err != nil {
+				return "", errors.Wrap(err)
+			}
+			return string(body), nil
+		}
+		res, err := t.reader.ReadResource(ctx, in.URI)
+		if err != nil {
+			return "", err
+		}
+		return renderContents(res.Contents), nil
+
 	default:
 		return "", errors.ErrorWithStackf("unknown tool %q", name)
 	}
+}
+
+// renderContents flattens a resources/read result into tool text: each
+// content's text in order, and a one-line note for a link-only content (a
+// raw-bytes madder blob, which carries a URI + mimetype but no inline text).
+func renderContents(contents []protocol.ResourceContent) string {
+	var b strings.Builder
+	for _, c := range contents {
+		switch {
+		case c.Text != "":
+			if b.Len() > 0 {
+				b.WriteByte('\n')
+			}
+			b.WriteString(c.Text)
+		case c.URI != "":
+			if b.Len() > 0 {
+				b.WriteByte('\n')
+			}
+			b.WriteString("raw bytes: " + c.URI)
+			if c.MimeType != "" {
+				b.WriteString(" (" + c.MimeType + ")")
+			}
+		}
+	}
+	return b.String()
 }
 
 // schemeSchema is one scheme's node-type catalogue in the describe_node_types

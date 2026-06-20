@@ -14,13 +14,15 @@ func TestClassify_CUDToolsAreDestructive(t *testing.T) {
 	}
 }
 
-func TestClassify_DescribeIsRead(t *testing.T) {
-	class, ok := Classify(ToolDescribeNodeTypes)
-	if !ok {
-		t.Fatalf("%q should be classified", ToolDescribeNodeTypes)
-	}
-	if class != ClassRead {
-		t.Errorf("%q class = %q, want %q", ToolDescribeNodeTypes, class, ClassRead)
+func TestClassify_ReadToolsAreRead(t *testing.T) {
+	for _, tool := range []string{ToolDescribeNodeTypes, ToolReadNode, ToolListNodes} {
+		class, ok := Classify(tool)
+		if !ok {
+			t.Fatalf("%q should be classified", tool)
+		}
+		if class != ClassRead {
+			t.Errorf("%q class = %q, want %q", tool, class, ClassRead)
+		}
 	}
 }
 

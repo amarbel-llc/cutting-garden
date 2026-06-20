@@ -28,27 +28,26 @@ teardown() {
 
 # bats file_tags=mcp
 
-# tools/list advertises exactly the three CUD write tools, each annotated
-# destructive (the hint a client gates on, mirrored by the #102 hook),
-# alongside the read-only describe_node_types discovery tool.
+# tools/list advertises the three read tools (describe/list/read) and the
+# three CUD write tools, with the right destructive vs read-only annotations
+# (the hint a client gates on, mirrored by the #102 hook).
 function mcp_advertises_tools { # @test
   mcp_drive "$CALDAV_SOURCE" '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
 
   local names
   names="$(echo "$output" | jq -r 'select(.id==2) | (.result.tools | map(.name) | sort | join(","))')"
-  assert_equal "$names" "create_node,delete_node,describe_node_types,update_node"
+  assert_equal "$names" "create_node,delete_node,describe_node_types,list_nodes,read_node,update_node"
 
-  # The CUD tools (create_node/update_node/delete_node end "_node";
-  # describe_node_types does not) are destructive; describe is read-only.
-  local cud_destructive
-  cud_destructive="$(echo "$output" | jq -r 'select(.id==2) |
-    ([.result.tools[] | select(.name | endswith("_node")) | .annotations.destructiveHint] | all)')"
-  assert_equal "$cud_destructive" "true"
+  # The CUD write tools carry destructiveHint=true; the read tools don't.
+  local destructive
+  destructive="$(echo "$output" | jq -r 'select(.id==2) |
+    ([.result.tools[] | select(.annotations.destructiveHint==true) | .name] | sort | join(","))')"
+  assert_equal "$destructive" "create_node,delete_node,update_node"
 
-  local describe_readonly
-  describe_readonly="$(echo "$output" | jq -r 'select(.id==2) |
-    (.result.tools[] | select(.name=="describe_node_types") | .annotations.readOnlyHint)')"
-  assert_equal "$describe_readonly" "true"
+  local readonly_tools
+  readonly_tools="$(echo "$output" | jq -r 'select(.id==2) |
+    ([.result.tools[] | select(.annotations.readOnlyHint==true) | .name] | sort | join(","))')"
+  assert_equal "$readonly_tools" "describe_node_types,list_nodes,read_node"
 }
 
 # describe_node_types reports caldav's node types and which are writable, with
@@ -71,6 +70,31 @@ function mcp_describe_node_types { # @test
     any(.[].types[]; .tag=="caldav-calendar-v1"
         and .container==true and .writable==false)' >/dev/null ||
     fail "describe missing a non-writable caldav-calendar-v1 container: $text"
+}
+
+# list_nodes (browse) surfaces the root's children, then read_node returns a
+# seeded object's parsed fields — the read half of the claude.ai-UI surface
+# (circus#29), wrapping resources/list + resources/read as tools.
+function mcp_browse_and_read { # @test
+  # No uri: the configured root's children — the testserver's one calendar.
+  mcp_drive "$CALDAV_SOURCE" "$(tools_call 3 list_nodes '{}')"
+  local roots
+  roots="$(mcp_result_text "$output" 3)"
+  echo "$roots" | jq -e 'any(.[]; .name=="Personal")' >/dev/null ||
+    fail "list_nodes() missing the Personal calendar: $roots"
+
+  # read_node a seeded VTODO → its parsed task fields. grep (not jq) since a
+  # leaf read may append a raw-bytes link line after the JSON.
+  local obj read
+  obj="$(caldav_object_uri task1.ics)"
+  mcp_drive "$CALDAV_SOURCE" "$(tools_call 3 read_node "$(jq -nc --arg u "$obj" '{uri:$u}')")"
+  read="$(mcp_result_text "$output" 3)"
+  # MarshalIndent emits "key": "value" (space after the colon); grep the
+  # line so a trailing raw-bytes link (when a store is configured) is fine.
+  echo "$read" | grep -q '"component": "VTODO"' ||
+    fail "read_node(task1) component: $read"
+  echo "$read" | grep -q '"summary": "Buy milk"' ||
+    fail "read_node(task1) summary: $read"
 }
 
 # create -> update -> delete round-trips one VEVENT through the server, each

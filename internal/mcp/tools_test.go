@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
@@ -79,55 +80,58 @@ func TestListToolsV1_AdvertisesToolsWithCorrectAnnotations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListToolsV1: %v", err)
 	}
-	// describe_node_types (read) + the 3 CUD tools (destructive).
-	if len(res.Tools) != 4 {
-		t.Fatalf("got %d tools, want 4: %+v", len(res.Tools), res.Tools)
+	// 3 read tools (describe/read/list) + 3 CUD tools (destructive).
+	if len(res.Tools) != 6 {
+		t.Fatalf("got %d tools, want 6: %+v", len(res.Tools), res.Tools)
 	}
 	annByName := map[string]*protocol.ToolAnnotations{}
 	for _, tl := range res.Tools {
 		annByName[tl.Name] = tl.Annotations
 	}
-	for _, want := range []string{"describe_node_types", "create_node", "update_node", "delete_node"} {
-		if annByName[want] == nil {
-			t.Fatalf("missing tool %q in %v", want, annByName)
-		}
-	}
 	// The CUD tools are destructive / not read-only.
 	for _, name := range []string{"create_node", "update_node", "delete_node"} {
 		a := annByName[name]
+		if a == nil {
+			t.Fatalf("missing tool %q in %v", name, annByName)
+		}
 		if a.DestructiveHint == nil || !*a.DestructiveHint || a.ReadOnlyHint == nil || *a.ReadOnlyHint {
 			t.Errorf("%q annotations = %+v, want destructive/non-readonly", name, a)
 		}
 	}
-	// describe_node_types is read-only / not destructive.
-	d := annByName["describe_node_types"]
-	if d.ReadOnlyHint == nil || !*d.ReadOnlyHint || d.DestructiveHint == nil || *d.DestructiveHint {
-		t.Errorf("describe_node_types annotations = %+v, want readonly/non-destructive", d)
+	// The read tools are read-only / not destructive.
+	for _, name := range []string{"describe_node_types", "read_node", "list_nodes"} {
+		a := annByName[name]
+		if a == nil {
+			t.Fatalf("missing tool %q in %v", name, annByName)
+		}
+		if a.ReadOnlyHint == nil || !*a.ReadOnlyHint || a.DestructiveHint == nil || *a.DestructiveHint {
+			t.Errorf("%q annotations = %+v, want readonly/non-destructive", name, a)
+		}
 	}
 }
 
-func TestListTools_V0AdvertisesFour(t *testing.T) {
+func TestListTools_V0AdvertisesAll(t *testing.T) {
 	tools := newFakeTools(t, &fakeMutator{}, "faketest://h/")
 	list, err := tools.ListTools(context.Background())
 	if err != nil {
 		t.Fatalf("ListTools: %v", err)
 	}
-	if len(list) != 4 {
-		t.Fatalf("got %d tools, want 4 (describe + 3 CUD)", len(list))
+	if len(list) != 6 {
+		t.Fatalf("got %d tools, want 6 (3 read + 3 CUD)", len(list))
 	}
 }
 
-func TestListTools_DescribeAlwaysAdvertised(t *testing.T) {
+func TestListTools_ReadToolsAlwaysAdvertised(t *testing.T) {
 	// A root whose scheme has no mutator → no write tools, but the read-only
-	// describe_node_types is still advertised.
+	// discovery tools are still advertised.
 	tools := newFakeTools(t, &fakeMutator{}, "bogus://h/")
+	names := map[string]bool{}
 	list, _ := tools.ListTools(context.Background())
-	if len(list) != 1 || list[0].Name != "describe_node_types" {
-		t.Errorf("ListTools without a mutator = %+v, want only describe_node_types", list)
+	for _, tl := range list {
+		names[tl.Name] = true
 	}
-	v1, _ := tools.ListToolsV1(context.Background(), "")
-	if len(v1.Tools) != 1 || v1.Tools[0].Name != "describe_node_types" {
-		t.Errorf("ListToolsV1 without a mutator = %+v, want only describe_node_types", v1.Tools)
+	if len(list) != 3 || !names["describe_node_types"] || !names["read_node"] || !names["list_nodes"] {
+		t.Errorf("ListTools without a mutator = %+v, want only the 3 read tools", list)
 	}
 }
 
@@ -269,5 +273,71 @@ func TestCallTool_DescribeReturnsJSON(t *testing.T) {
 	var arr []any
 	if err := json.Unmarshal([]byte(res.Content[0].Text), &arr); err != nil {
 		t.Fatalf("describe output is not a JSON array: %v (%q)", err, res.Content[0].Text)
+	}
+}
+
+// fakeReader is a resourceReader returning fixed read/list results, so the
+// read_node / list_nodes dispatch can be tested without the plugin registry.
+type fakeReader struct {
+	read *protocol.ResourceReadResult
+	list []protocol.Resource
+}
+
+func (f fakeReader) ReadResource(context.Context, string) (*protocol.ResourceReadResult, error) {
+	return f.read, nil
+}
+
+func (f fakeReader) ListResources(context.Context) ([]protocol.Resource, error) {
+	return f.list, nil
+}
+
+func TestCallTool_ReadNodeReturnsContentAndBlobLink(t *testing.T) {
+	tools := newFakeTools(t, &fakeMutator{}, "faketest://h/")
+	tools.reader = fakeReader{read: &protocol.ResourceReadResult{Contents: []protocol.ResourceContent{
+		{URI: "faketest://h/x.ics", MimeType: "application/json", Text: `{"summary":"S"}`},
+		{URI: "madder://blobs/abc", MimeType: "text/calendar"},
+	}}}
+
+	res, err := tools.CallTool(context.Background(), "read_node",
+		json.RawMessage(`{"uri":"faketest://h/x.ics"}`))
+	if err != nil {
+		t.Fatalf("transport error: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("read_node errored: %+v", res.Content)
+	}
+	text := res.Content[0].Text
+	if !strings.Contains(text, `"summary":"S"`) {
+		t.Errorf("read_node missing the object JSON: %q", text)
+	}
+	if !strings.Contains(text, "raw bytes: madder://blobs/abc") {
+		t.Errorf("read_node missing the blob link note: %q", text)
+	}
+}
+
+func TestCallTool_ListNodesRootsAndContainer(t *testing.T) {
+	// No uri → the roots' children (ListResources).
+	roots := newFakeTools(t, &fakeMutator{}, "faketest://h/")
+	roots.reader = fakeReader{list: []protocol.Resource{{URI: "faketest://h/work", Name: "Work"}}}
+	res, err := roots.CallTool(context.Background(), "list_nodes", json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("transport error: %v", err)
+	}
+	if res.IsError || !strings.Contains(res.Content[0].Text, "faketest://h/work") {
+		t.Errorf("list_nodes() roots = %+v, want the root child", res.Content)
+	}
+
+	// A uri → that container's child listing (ReadResource).
+	sub := newFakeTools(t, &fakeMutator{}, "faketest://h/")
+	sub.reader = fakeReader{read: &protocol.ResourceReadResult{Contents: []protocol.ResourceContent{
+		{URI: "faketest://h/work", MimeType: "application/json", Text: `[{"uri":"faketest://h/work/a.ics"}]`},
+	}}}
+	res, err = sub.CallTool(context.Background(), "list_nodes",
+		json.RawMessage(`{"uri":"faketest://h/work"}`))
+	if err != nil {
+		t.Fatalf("transport error: %v", err)
+	}
+	if res.IsError || !strings.Contains(res.Content[0].Text, "faketest://h/work/a.ics") {
+		t.Errorf("list_nodes(uri) = %+v, want the container's child", res.Content)
 	}
 }
