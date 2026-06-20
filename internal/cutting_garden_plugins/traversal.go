@@ -159,3 +159,48 @@ type RootProvider interface {
 	// plugin has no roots to offer.
 	Roots(ctx context.Context) ([]*url.URL, error)
 }
+
+// LeafContent is one leaf node's fetched content, returned by ReadLeaf. It
+// carries two views of the same object: a structured, JSON-marshalable
+// projection a client reads (the parsed fields), and the verbatim source
+// bytes (the content-addressable original).
+type LeafContent struct {
+	// Structured is the parsed, JSON-marshalable projection of the leaf —
+	// what an MCP client reads (e.g. a caldav Event/Task). The consumer
+	// marshals it to JSON. nil means the plugin offers no structured view,
+	// in which case the consumer surfaces Raw directly.
+	Structured any
+	// Raw is the leaf's verbatim source bytes (e.g. the .ics body) — the
+	// exact content-addressable form, suitable for storing as a blob and
+	// linking by digest. May be nil when the plugin has no raw form to
+	// offer.
+	Raw []byte
+	// RawMimeType is Raw's IANA content type (e.g. "text/calendar"). Empty
+	// when Raw is nil.
+	RawMimeType string
+}
+
+// LeafReader is the OPTIONAL capability a RootLister implements to fetch a
+// single leaf node's content on demand — the per-object body-fetch backing
+// MCP resources/read (cutting-garden#85). It is probed by type assertion on
+// an already-resolved plugin, exactly as RootProvider is; a plugin whose
+// scheme has no individually-fetchable objects omits it, and consumers fall
+// back to the structure-only listing.
+//
+// ReadLeaf is consulted only after ListRoots reports a node has no children
+// (a leaf or an empty container), so it never has to re-derive that a
+// populated container is not a leaf. It is read-only: it never mutates the
+// source and never writes to a blob store.
+type LeafReader interface {
+	RootLister
+
+	// ReadLeaf fetches the content of leaf node, identified by URI. ok is
+	// false when node is not a fetchable leaf — an empty container, or a
+	// URI whose body is not retrievable or not parsable — so the consumer
+	// falls back to the (empty) child listing rather than erroring. A
+	// non-nil error is reserved for an unexpected failure the consumer
+	// should surface. node MUST be non-nil.
+	ReadLeaf(
+		ctx context.Context, node *url.URL,
+	) (content LeafContent, ok bool, err error)
+}

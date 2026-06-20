@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
@@ -173,6 +174,9 @@ func TestReadResource_ContainerYieldsChildren(t *testing.T) {
 	}
 }
 
+// TestReadResource_LeafYieldsEmptyListing covers a plugin WITHOUT the
+// LeafReader capability (fakeLister): a childless node still reads as an
+// empty array, the pre-#85 behavior.
 func TestReadResource_LeafYieldsEmptyListing(t *testing.T) {
 	r := newFakeResources(t, "faketest://h/")
 
@@ -188,6 +192,88 @@ func TestReadResource_LeafYieldsEmptyListing(t *testing.T) {
 	}
 	if len(views) != 0 {
 		t.Errorf("leaf read yielded %d children, want 0: %+v", len(views), views)
+	}
+}
+
+// fakeLeafLister is a fakeLister that also implements LeafReader: it treats
+// any ".ics" leaf as a fetchable object with a structured body and declines
+// anything else, so both the leaf-body and the fall-back-to-empty paths are
+// exercised.
+type fakeLeafLister struct{ fakeLister }
+
+func (fakeLeafLister) ReadLeaf(
+	_ context.Context, node *url.URL,
+) (cutting_garden_plugins.LeafContent, bool, error) {
+	if !strings.HasSuffix(node.Path, ".ics") {
+		return cutting_garden_plugins.LeafContent{}, false, nil
+	}
+	return cutting_garden_plugins.LeafContent{
+		Structured:  map[string]any{"component": "VTODO", "summary": "Task One"},
+		Raw:         []byte("BEGIN:VCALENDAR\nBEGIN:VTODO\nEND:VTODO\nEND:VCALENDAR\n"),
+		RawMimeType: "text/calendar",
+	}, true, nil
+}
+
+func newFakeLeafResources(t *testing.T, rootStrs ...string) *Resources {
+	t.Helper()
+	r := newFakeResources(t, rootStrs...)
+	r.resolve = func(uriStr string) (*url.URL, cutting_garden_plugins.RootLister, error) {
+		u, _, err := fakeResolve(uriStr)
+		if err != nil {
+			return nil, nil, err
+		}
+		return u, fakeLeafLister{}, nil
+	}
+	return r
+}
+
+// TestReadResource_LeafYieldsStructuredBody is the #85 path: a childless
+// node whose plugin can fetch it reads as the object's structured JSON
+// fields (a JSON object), not the empty array a listing yields.
+func TestReadResource_LeafYieldsStructuredBody(t *testing.T) {
+	r := newFakeLeafResources(t, "faketest://h/")
+
+	got, err := r.ReadResource(context.Background(), "faketest://h/work/task1.ics")
+	if err != nil {
+		t.Fatalf("ReadResource: %v", err)
+	}
+	if len(got.Contents) != 1 {
+		t.Fatalf("got %d content blocks, want 1", len(got.Contents))
+	}
+	c := got.Contents[0]
+	if c.MimeType != mimeObject {
+		t.Errorf("content mimetype = %q, want %q", c.MimeType, mimeObject)
+	}
+	// A JSON object (the parsed fields), not the array a listing would emit:
+	// decoding into a map fails on an array, so this also pins object-ness.
+	var obj map[string]any
+	if err := json.Unmarshal([]byte(c.Text), &obj); err != nil {
+		t.Fatalf("decode object %q: %v", c.Text, err)
+	}
+	if obj["summary"] != "Task One" {
+		t.Errorf("summary = %v, want Task One; body=%s", obj["summary"], c.Text)
+	}
+}
+
+// TestReadResource_LeafReaderDeclineFallsBackToEmpty pins that a LeafReader
+// reporting ok=false (not a leaf) yields the empty listing, not an error.
+func TestReadResource_LeafReaderDeclineFallsBackToEmpty(t *testing.T) {
+	r := newFakeLeafResources(t, "faketest://h/")
+
+	got, err := r.ReadResource(context.Background(), "faketest://h/empty")
+	if err != nil {
+		t.Fatalf("ReadResource: %v", err)
+	}
+	if got.Contents[0].MimeType != mimeListing {
+		t.Errorf("declined-leaf mimetype = %q, want listing %q",
+			got.Contents[0].MimeType, mimeListing)
+	}
+	var views []nodeView
+	if err := json.Unmarshal([]byte(got.Contents[0].Text), &views); err != nil {
+		t.Fatalf("decode listing: %v", err)
+	}
+	if len(views) != 0 {
+		t.Errorf("declined leaf yielded %d children, want 0: %+v", len(views), views)
 	}
 }
 

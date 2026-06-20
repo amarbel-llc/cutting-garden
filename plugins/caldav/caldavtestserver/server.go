@@ -78,7 +78,7 @@ func (s *Server) Remove(href string) {
 func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case "PROPFIND":
-		s.propfind(w)
+		s.propfind(w, r)
 	case "REPORT":
 		s.report(w, r)
 	case "GET":
@@ -90,9 +90,36 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) propfind(w http.ResponseWriter) {
+func (s *Server) propfind(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	_, isObject := s.resources[r.URL.Path]
+	s.mu.Unlock()
+
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 	w.WriteHeader(http.StatusMultiStatus)
+
+	if isObject {
+		// A PROPFIND on a seeded object path describes a single
+		// non-collection resource (no <d:collection/>, no <c:calendar/>),
+		// so discoverCalendars finds no calendar here and traversal
+		// classifies it as a leaf — matching a real server's reply for an
+		// individual .ics resource (vs the always-calendar reply a coarser
+		// fake would give).
+		fmt.Fprintf(w, `<?xml version="1.0" encoding="utf-8"?>
+<d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+  <d:response>
+    <d:href>%s</d:href>
+    <d:propstat>
+      <d:prop>
+        <d:resourcetype/>
+      </d:prop>
+      <d:status>HTTP/1.1 200 OK</d:status>
+    </d:propstat>
+  </d:response>
+</d:multistatus>`, r.URL.Path)
+		return
+	}
+
 	fmt.Fprintf(w, `<?xml version="1.0" encoding="utf-8"?>
 <d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
   <d:response>

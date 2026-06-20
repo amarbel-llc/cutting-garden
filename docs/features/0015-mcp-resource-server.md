@@ -9,8 +9,8 @@ promotion-criteria: |
   `accepted` once a real MCP client (Claude Code, via the bundled clown
   plugin) has driven the server against a live configured endpoint and the
   read-descends-a-container contract has gone two weeks without a lever
-  moving — in particular, without leaf body-fetch being folded in (see
-  Non-Goals).
+  moving — in particular, without the raw-leaf-bytes blob link being folded
+  in (see Non-Goals).
 ---
 
 # MCP resource-traversal server
@@ -20,8 +20,10 @@ promotion-criteria: |
 > the Model Context Protocol. It is the fourth consumer of the FDR 0014
 > traversal primitive — the one that doc names "MCP resource traversal
 > (future)" — and the first consumer of the config subsystem (RFC 0007).
-> Leaf body-fetch and the `--split`-style frontier are deliberately out of
-> scope (see Non-Goals); this server exposes *structure*, not object bytes.
+> It exposes the tree *structure*, and — for a leaf its plugin can fetch —
+> the object's parsed fields (#85). Surfacing the verbatim bytes as a
+> content-addressed blob link, and the `--split`-style frontier, remain
+> out of scope (see Non-Goals).
 
 ## Problem Statement
 
@@ -58,7 +60,7 @@ by `internal/mcp/Resources`, a `go-mcp` `server.ResourceProvider`:
 | MCP method | Mapping |
 |---|---|
 | `resources/list` | The immediate children of every root — one `ListRoots(root)` call each. The roots are the configured/intrinsic entry points; their children are the discoverable resources. |
-| `resources/read <uri>` | `ListRoots(uri)` rendered as a JSON array of node views (`uri`, `name`, `type`, `container`, `mimeType`). A client descends a container lazily by reading successively deeper URIs. |
+| `resources/read <uri>` | `ListRoots(uri)` rendered as a JSON array of node views (`uri`, `name`, `type`, `container`, `mimeType`). A client descends a container lazily by reading successively deeper URIs. A childless URI whose plugin implements `LeafReader` instead reads as the object's **structured JSON body** (the parsed fields), not an empty array (#85). |
 | `resources/templates/list` | Empty — cutting-garden resources are enumerated, not URI-template parameterized. |
 
 A node's `container` flag and body mimetype are resolved from the
@@ -68,9 +70,18 @@ plugin's declared `Types()`, never hardcoded against tag strings (FDR
 structure; a leaf advertises its declared `NodeType.MimeType` (e.g.
 `text/calendar` for a CalDAV object), defaulting to
 `application/octet-stream` when the plugin declares none — what the
-object's bytes *are*, even though `resources/read` does not fetch them
-yet (the leaf body-fetch open question below). A leaf reads as an empty
-array.
+object's bytes *are*.
+
+When a `resources/read` enumerates no children, the node is a leaf or an
+empty container. The resolved plugin is then probed for the optional
+`LeafReader` capability (#85): if it can fetch the object, the read
+returns the parsed object as a JSON body (caldav surfaces an
+`{component, event|task}` view — summary, dtstart, location, status,
+categories, …, the rich `ical` types). A plugin without `LeafReader`, or
+a node it does not recognize as a leaf, still reads as an empty array.
+The verbatim source bytes (the `.ics`) are carried on `LeafContent.Raw`
+for a future content-addressed blob link but are not yet surfaced
+(below).
 
 ### Roots come from config, not argv
 
@@ -92,7 +103,9 @@ credential-free.
 `Resources` holds nothing per node beyond its configured roots. Every read
 re-resolves the plugin from the requested URI — mirroring the stateless
 RootLister contract — so `resources/read` works for any listable URI a
-client has discovered. No blob store is touched and nothing is captured.
+client has discovered. A leaf read fetches the object body live (a single
+caldav GET) and returns its parsed fields; no blob store is touched and
+nothing is captured.
 
 ### Clown plugin packaging
 
@@ -110,19 +123,26 @@ working-directory tree as MCP resources out of the box.
     $ cutting-garden mcp
     #   resources/list → the working directory's entries + each CalDAV
     #     account's calendars
-    #   resources/read caldav://dav.host/dav/me/work/
+    #   resources/read caldav://dav.host/dav/me/work/   (a container)
     #     → [ {"uri":"caldav://dav.host/dav/me/work/event1.ics",
     #          "name":"event1.ics","type":"caldav-object-v1",
     #          "container":false}, ... ]
+    #   resources/read caldav://dav.host/dav/me/work/event1.ics   (a leaf)
+    #     → {"component":"VEVENT",
+    #        "event":{"uid":"...","summary":"Standup",
+    #                 "dtstart":"20260224T150000Z","location":"...", ...}}
 
     # override the config: serve one explicit endpoint
     $ cutting-garden mcp caldav://dav.host/dav/me/
 
 ## Limitations / Non-Goals
 
-- **No leaf body-fetch.** Reading a leaf returns an empty child listing,
-  not the object's bytes (FDR 0014 separates structure-only enumeration
-  from the body-fetch path, which is capture's job). Tracked at #85.
+- **Structured leaf read, no raw-byte link yet.** A leaf read returns the
+  object's *parsed* fields (caldav: the `ical` event/task) via the
+  `LeafReader` capability (#85). The verbatim source bytes are fetched and
+  held on `LeafContent.Raw` but not yet surfaced as a content-addressed
+  `madder://blobs/<digest>` link — that needs the read-only server to gain
+  a writable blob store (open question below).
 - **No tools.** The server advertises resources only — no
   capture/restore mutation tools. A read-only window onto the tree.
 - **No `--split` frontier.** The receipt-fanout selector grammar (FDR
@@ -132,9 +152,11 @@ working-directory tree as MCP resources out of the box.
 
 ## Open Questions
 
-- **Leaf content.** When (and whether) `resources/read` on a leaf should
-  fetch the object body and return it as resource content. Tied to FDR
-  0014's body-fetch open question. Tracked at #85.
+- **Raw leaf bytes as a blob link.** A leaf read now returns the *parsed*
+  object (#85); the verbatim `.ics` is fetched onto `LeafContent.Raw` but
+  not surfaced. Exposing it as a related `madder://blobs/<digest>` link
+  requires giving the read-only server an (optional) writable madder blob
+  store and writing the raw bytes on read. Tracked at #85.
 - **Pagination / huge trees.** An endpoint with thousands of children
   returns one enormous `resources/list`. The `go-mcp` V1 cursor exists;
   wiring it is deferred. Tracked at #86.

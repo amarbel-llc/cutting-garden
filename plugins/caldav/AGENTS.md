@@ -90,6 +90,15 @@ credential-free traversal roots for the `RootProvider` capability
   build-time type-signature registry. `caldav-object-v1` /
   `caldav-calendar-v1` are the SAME tags the traversal layer declares
   (`traversal.go`) — unified per FDR 0018.
+- `Plugin.ListRoots` / `Plugin.Types` (`traversal.go`) — the FDR 0014
+  `RootLister` capability: lazily enumerate a node's children (endpoint →
+  calendars → objects) so `list` and the `mcp` server can descend the tree
+  without capturing it. An object enumerates to no children (it is a leaf).
+- `Plugin.ReadLeaf` (`leaf.go`) — the `LeafReader` capability backing MCP
+  `resources/read` on a leaf (#85): GET one object's body and return both
+  its parsed `ical` event/task (`objectView`) and the verbatim `.ics`
+  bytes. Consulted only when `ListRoots` reports no children, so a
+  populated calendar is never mistaken for a leaf.
 
 ## iCalendar parsing: identity only, stored bytes stay verbatim
 

@@ -100,9 +100,32 @@ func (f *fakeCalDAV) handler() http.Handler {
 	})
 }
 
-func (f *fakeCalDAV) propfind(w http.ResponseWriter, _ *http.Request) {
+func (f *fakeCalDAV) propfind(w http.ResponseWriter, r *http.Request) {
+	_, isObject := f.resources[r.URL.Path]
+
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 	w.WriteHeader(http.StatusMultiStatus)
+
+	if isObject {
+		// A PROPFIND on a seeded object path is a single non-collection
+		// resource, so discoverCalendars finds no calendar and traversal
+		// classifies the node as a leaf — matching a real server's reply
+		// for one .ics resource.
+		fmt.Fprintf(w, `<?xml version="1.0" encoding="utf-8"?>
+<d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+  <d:response>
+    <d:href>%s</d:href>
+    <d:propstat>
+      <d:prop>
+        <d:resourcetype/>
+      </d:prop>
+      <d:status>HTTP/1.1 200 OK</d:status>
+    </d:propstat>
+  </d:response>
+</d:multistatus>`, r.URL.Path)
+		return
+	}
+
 	fmt.Fprintf(w, `<?xml version="1.0" encoding="utf-8"?>
 <d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
   <d:response>

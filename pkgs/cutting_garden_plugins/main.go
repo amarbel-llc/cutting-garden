@@ -38,6 +38,25 @@ type DiffPlugin = internal.DiffPlugin
 // atomic.
 type DiffScanRequest = internal.DiffScanRequest
 
+// LeafContent is one leaf node's fetched content, returned by ReadLeaf. It
+// carries two views of the same object: a structured, JSON-marshalable
+// projection a client reads (the parsed fields), and the verbatim source
+// bytes (the content-addressable original).
+type LeafContent = internal.LeafContent
+
+// LeafReader is the OPTIONAL capability a RootLister implements to fetch a
+// single leaf node's content on demand — the per-object body-fetch backing
+// MCP resources/read (cutting-garden#85). It is probed by type assertion on
+// an already-resolved plugin, exactly as RootProvider is; a plugin whose
+// scheme has no individually-fetchable objects omits it, and consumers fall
+// back to the structure-only listing.
+//
+// ReadLeaf is consulted only after ListRoots reports a node has no children
+// (a leaf or an empty container), so it never has to re-derive that a
+// populated container is not a leaf. It is read-only: it never mutates the
+// source and never writes to a blob store.
+type LeafReader = internal.LeafReader
+
 // Node is one addressable point in a RootLister plugin's capturable
 // tree, as returned by ListRoots.
 type Node = internal.Node
