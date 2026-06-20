@@ -14,23 +14,29 @@
 // endpoints (each scheme's plugin must support traversal). The server
 // speaks newline-delimited JSON-RPC over stdin/stdout — the MCP stdio
 // transport — so it is launched by a client, not run interactively. It
-// advertises only resource capabilities:
+// advertises resource and tool capabilities:
 //
 //   - resources/list — the immediate children of every root (one
 //     ListRoots call per root).
 //   - resources/read — the immediate children of the read URI, letting a
 //     client descend a container lazily, one level per read; a childless
 //     leaf instead reads as the object's parsed fields (#85).
+//   - tools/call — create_node / update_node / delete_node, the CUD write
+//     tools (FDR 0020) for plugins that implement NodeMutator (caldav).
+//     They mutate the same node URIs resources/read surfaces and are
+//     advertised only when a configured root supports mutation. Each is
+//     annotated destructive so a client gates it (and the clown PreToolUse
+//     hook classifies it `ask`, #102).
 //
-// Discovery is read-only and captures nothing. The one write is
-// content-addressed and optional: a leaf read of an object whose plugin
-// implements LeafReader stores the verbatim bytes in the host's default
-// madder blob store (when one is configured) and links them by digest
-// beside the parsed fields. With no store configured the read returns
-// the parsed fields alone. The server runs until the client closes the
-// connection or it is interrupted (SIGINT/SIGTERM/SIGHUP). Exit 0 on a
-// clean shutdown, 64 on a malformed config or unresolvable endpoint
-// argument, 2 on a transport error.
+// Discovery (resources) is read-only and captures nothing; the write tools
+// mutate live nodes directly, with no blob store or receipt. (One
+// content-addressed write remains on the read side: a leaf read of a
+// LeafReader object stores the verbatim bytes in the host's default madder
+// blob store, when configured, and links them by digest beside the parsed
+// fields, #85.) The server runs until the client closes the connection or
+// it is interrupted (SIGINT/SIGTERM/SIGHUP). Exit 0 on a clean shutdown,
+// 64 on a malformed config or unresolvable endpoint argument, 2 on a
+// transport error.
 package mcp
 
 import (
@@ -57,8 +63,9 @@ const instructions = "Resources are the capturable trees of cutting-garden " +
 	"children; reading a container resource returns its children as a JSON " +
 	"array, so you descend the tree one level per read. Reading a leaf " +
 	"object returns its parsed fields as JSON, plus (when available) a " +
-	"madder://blobs/<digest> link to its verbatim bytes. Discovery is " +
-	"read-only — nothing is captured."
+	"madder://blobs/<digest> link to its verbatim bytes. The create_node / " +
+	"update_node / delete_node tools mutate a node at its URI (e.g. create a " +
+	"calendar event); they are destructive and require user approval."
 
 // MCP is the value registered for the `mcp` subcommand. It carries no
 // flags; endpoints come from the config, or from optional positional args
@@ -81,9 +88,12 @@ func (*MCP) GetDescription() command.Description {
 			"level per read \\(em the same RootLister traversal `list` and " +
 			"capture share. Reading a leaf object returns its parsed fields " +
 			"as JSON, plus a content-addressed madder blob link to its " +
-			"verbatim bytes when a store is configured. Discovery captures " +
-			"nothing. Launched by an MCP client, not run interactively; " +
-			"runs until the client disconnects or it is interrupted.",
+			"verbatim bytes when a store is configured. It also exposes " +
+			"create_node/update_node/delete_node write tools (FDR 0020) for " +
+			"plugins that support mutation (caldav); these are annotated " +
+			"destructive and gated by the clown PreToolUse hook. Launched by " +
+			"an MCP client, not run interactively; runs until the client " +
+			"disconnects or it is interrupted.",
 	}
 }
 
@@ -100,6 +110,7 @@ func (cmd *MCP) Run(req command.Request) {
 	}
 
 	provider := newResources(roots, mcpBlobWriter(ctx))
+	tools := newTools(roots)
 
 	// The MCP protocol owns stdout (JSON-RPC frames), so diagnostics must
 	// never leak there; the server itself writes only protocol frames.
@@ -116,6 +127,7 @@ func (cmd *MCP) Run(req command.Request) {
 			ServerVersion:     buildinfo.Version,
 			Instructions:      instructions,
 			Resources:         provider,
+			Tools:             tools,
 			PreferV1Providers: true,
 		},
 	)

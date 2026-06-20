@@ -78,6 +78,33 @@ func ResolveRootListerPlugin(
 	return u, lister, nil
 }
 
+// ResolveNodeMutatorPlugin parses uriStr as a URL and returns the
+// NodeMutator registered for its scheme — the write capability the `mcp`
+// server's CUD tools consume (FDR 0020). Like ResolveRootListerPlugin,
+// resolution goes through the capture registry (every plugin registers
+// there). Errors if the scheme is unknown or its plugin does not implement
+// NodeMutator (e.g. the file plugin, which has no live-mutation surface).
+func ResolveNodeMutatorPlugin(
+	uriStr string,
+) (*url.URL, cutting_garden_plugins.NodeMutator, error) {
+	u, err := url.Parse(uriStr)
+	if err != nil {
+		return nil, nil, errors.Wrapf(err, "parse uri %q", uriStr)
+	}
+	plugin, err := cutting_garden_plugins.ResolveCapture(u.Scheme)
+	if err != nil {
+		return nil, nil, err
+	}
+	mutator, ok := plugin.(cutting_garden_plugins.NodeMutator)
+	if !ok {
+		return nil, nil, errors.ErrorWithStackf(
+			"scheme %q does not support mutation (its plugin exposes no "+
+				"write capability)", u.Scheme,
+		)
+	}
+	return u, mutator, nil
+}
+
 // ReadReceiptBlob fetches and parses the receipt blob.
 //
 // With storeOverride non-empty: resolve that store, read directly.
