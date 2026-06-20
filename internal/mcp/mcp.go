@@ -191,16 +191,58 @@ func resolveRoots(args []string) ([]*url.URL, error) {
 // mcpBlobWriter returns the sink a leaf read persists verbatim object bytes
 // to, so they can be surfaced as a `madder://blobs/<digest>` link (#85). It
 // resolves the host's default madder blob store; when no store is
-// configured it returns nil and the server serves structured-only reads
-// (no raw-bytes link). Store resolution is best-effort: it never blocks the
-// server from starting, since the structured read does not depend on it.
+// configured — or the store cannot be acquired — it returns nil and the
+// server serves structured-only reads (no raw-bytes link). Store resolution
+// is best-effort: it never blocks the server from starting, since the
+// structured read does not depend on it.
+//
+// Acquisition runs on a throwaway errors.Context, never the command's ctx
+// (#121). MakeBlobStoreEnv eagerly creates dirs under the cache root
+// (env_dir.initializeXDG mkdir's <cache>/tmp-<pid>; store init mkdir's the
+// store's blob dir). On a read-only CWD that mkdir fails, and madder's
+// errors.Context.Cancel panics via ContextContinueOrPanic — which, were the
+// command's ctx passed here, would unwind up and crash the server before the
+// transport ever opens. acquireBlobWriter confines that cancel-panic to a
+// private context (and recovers it): a failure leaves the writer nil and the
+// server starts.
+//
+// The private context is deliberately NOT Run: env_dir registers its temp-dir
+// teardown (resetTempOnExit, which os.RemoveAll's <cache>/tmp-<pid>) as an
+// After hook that fires on Run completion — running it would delete the temp
+// dir the moment acquisition returns, leaving the long-lived writer pointing
+// at a removed dir so its writes silently fail. Instead the temp dir's cleanup
+// is re-registered on the command ctx, which fires it at server shutdown
+// (matching the pre-#121 lifetime).
 func mcpBlobWriter(ctx errors.Context) capture_plugin.Writer {
-	env := command_components.MakeBlobStoreEnv(ctx)
-	// GetDefaultBlobStore panics when no stores are initialized, so gate on
-	// a configured store first — an absent store is a normal deployment,
-	// not an error.
-	if len(env.GetBlobStores()) == 0 {
-		return nil
+	writer, tempDir := acquireBlobWriter()
+	if tempDir != "" {
+		ctx.After(errors.MakeFuncContextFromFuncErr(func() error {
+			return os.RemoveAll(tempDir)
+		}))
 	}
-	return capture_plugin.NewBlobStoreWriter(env.GetDefaultBlobStore())
+	return writer
+}
+
+// acquireBlobWriter resolves the default-blob-store writer on a throwaway,
+// never-Run errors.Context, recovering the Cancel-panic an eager mkdir raises
+// on a read-only cache (#121) so a failure yields a nil writer instead of
+// crashing the server. It returns the env's temp-dir path (empty when there is
+// no writer) so the caller can schedule its cleanup on a longer-lived context
+// — the acquisition context must not be Run, since its completion would delete
+// that very temp dir out from under the writer.
+func acquireBlobWriter() (writer capture_plugin.Writer, tempDir string) {
+	// Any failure acquiring the store (read-only cache mkdir cancel-panic,
+	// store-init error) degrades to structured-only reads. The blob link is a
+	// best-effort enrichment; it must never take the server down.
+	defer func() { _ = recover() }()
+
+	env := command_components.MakeBlobStoreEnv(errors.MakeContextDefault())
+	// GetDefaultBlobStore panics when no stores are initialized, so gate on a
+	// configured store first — an absent store is a normal deployment, not an
+	// error.
+	if len(env.GetBlobStores()) == 0 {
+		return nil, ""
+	}
+	return capture_plugin.NewBlobStoreWriter(env.GetDefaultBlobStore()),
+		env.GetTempLocal().BasePath
 }

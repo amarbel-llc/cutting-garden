@@ -112,6 +112,57 @@ function mcp_browse_and_read { # @test
     fail "read_node(task1) summary: $read"
 }
 
+# A read-only cache root must not crash the server at startup (#121). The
+# Phase-B blob writer eagerly inits the madder store, which mkdir's
+# <cache>/tmp-<pid>; on an unwritable cache that mkdir fails and madder
+# Cancel-panics. Acquisition is isolated to its own context, so the failure
+# degrades to structured-only reads — the server still comes up and serves.
+function mcp_starts_on_readonly_cache { # @test
+  local rocache="$BATS_TEST_TMPDIR/ro-cache"
+  mkdir -p "$rocache"
+  chmod 0500 "$rocache"
+
+  # Force standard XDG-from-env (disable the cwd walk-up override) so the
+  # cache resolves under our read-only XDG_CACHE_HOME, reproducing the
+  # unwritable-cache mkdir the krone systemd unit hit.
+  export XDG_CACHE_HOME="$rocache"
+  export MADDER_XDG_USER_LOCATION_ONLY=1
+
+  mcp_drive "$CALDAV_SOURCE" "$(tools_call 3 list_nodes '{}')"
+
+  # Restore write so bats can clean the tmpdir.
+  chmod -R u+w "$rocache"
+
+  # The server served list_nodes (the configured root entry-point) rather
+  # than crashing at startup. Post-0bec098, no-uri list_nodes returns the
+  # root container, not its flattened calendars — asserting it came back at
+  # all is the "server started" signal we need here.
+  local roots
+  roots="$(mcp_result_text "$output" 3)"
+  echo "$roots" | jq -e \
+    'length==1 and .[0].container==true and (.[0].uri | contains("/dav/"))' >/dev/null ||
+    fail "server did not serve list_nodes on a read-only cache: $output"
+}
+
+# The isolation in #121 must not break the writer on the normal (writable)
+# deployment: with a store configured, a leaf read still emits the raw-bytes
+# madder://blobs link beside the parsed fields (the #85 Phase-B enrichment).
+function mcp_emits_blob_link_with_writable_store { # @test
+  init_store
+
+  local obj read
+  obj="$(caldav_object_uri task1.ics)"
+  mcp_drive "$CALDAV_SOURCE" "$(tools_call 3 read_node "$(jq -nc --arg u "$obj" '{uri:$u}')")"
+  read="$(mcp_result_text "$output" 3)"
+
+  echo "$read" | grep -q '"summary": "Buy milk"' ||
+    fail "read_node(task1) summary: $output"
+  # renderContents appends 'raw bytes: madder://blobs/<digest> (...)' for the
+  # link-only content entry when a store is configured.
+  echo "$read" | grep -q 'raw bytes: madder://blobs/' ||
+    fail "expected a madder://blobs raw-bytes link with a writable store: $output"
+}
+
 # create -> update -> delete round-trips one VEVENT through the server, each
 # mutation a separate invocation against the persistent testserver.
 function mcp_cud_round_trips { # @test
