@@ -33,7 +33,11 @@ docs live in this repo under `docs/{rfcs,features,plans}/`.
 
 `list` and `mcp` are the read-only consumers of the plugin **traversal**
 primitive (`RootLister`, FDR 0014): `list` prints a node's child nodes,
-`mcp` serves them over the Model Context Protocol (FDR 0015). Both, with
+`mcp` serves them over the Model Context Protocol (FDR 0015). A plugin MAY
+also declare **facets** (RFC 0012, FDR 0021) — grouped-count summaries the
+framework computes over a node type's children, surfaced by `list --facets`,
+the `mcp` container read's `facets` block, and `describe_node_types`; caldav
+is the reference (`FacetDescriber` + a one-shot `FacetCounter`). Both, with
 no URI, aggregate every plugin's **roots** (the `RootProvider` capability)
 from the **config subsystem** (RFC 0007): a tommy-codegen'd
 `$XDG_CONFIG_HOME/cutting-garden/config.toml` of per-plugin named accounts
@@ -68,6 +72,11 @@ divergences from dodder are intentional carry-forwards.
       lockstep.
     - **Organic gomod2nix** (`gomod2nix.toml`): everything else. Read from
       `gomod2nix.toml`, **not** `go.sum`.
+  cutting-garden also **produces** `go-pkgs` / `go-pkgs-test` flake outputs
+  (RFC 0009 §2, the out-of-tree-consumer surface): a plugin in its own repo
+  bridges `github.com/amarbel-llc/cutting-garden` onto `go-pkgs` to import the
+  `pkgs/` facades. Regenerate the facades with `just codemod-generate-dagnabit`
+  (hermetic — resolves formatters from the store-pinned conformist config).
 - `go test ./...` — runs the test suite (no external deps).
 - `go test ./internal/command -run TestUtility_Run_DispatchesToRegisteredCmd`
   — single-test pattern.

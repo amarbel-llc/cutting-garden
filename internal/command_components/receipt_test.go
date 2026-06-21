@@ -1,6 +1,7 @@
 package command_components
 
 import (
+	"context"
 	"net/url"
 	"strings"
 	"testing"
@@ -146,5 +147,48 @@ func TestCheckReceiptTypeTag_RefusesUnknownReceiptTag(t *testing.T) {
 
 	if err := CheckReceiptTypeTag(&rid, forged, plugin, destURL, "restore"); err == nil {
 		t.Fatal("expected refusal on unknown receipt tag, got nil")
+	}
+}
+
+// ---------------------------------------------------------------------
+// ResolveRootListerPlugin scheme-registry fallback (RFC 0009 §3)
+// ---------------------------------------------------------------------
+
+// schemeOnlyLister is a RootLister registered ONLY via MustRegisterScheme —
+// no capture/restore/diff — the out-of-tree traversal-plugin shape (e.g.
+// nebulous's newsblur, the nix_store motivating consumer). It exercises
+// ResolveRootListerPlugin's fallback from the capture registry to the base
+// scheme registry: without it, list/mcp reject a scheme-only plugin even
+// though health (RegisteredPlugins) enumerates it.
+type schemeOnlyLister struct{}
+
+func (schemeOnlyLister) Schemes() []string { return []string{"schemeonlytest"} }
+func (schemeOnlyLister) TypeTag() string   { return "cutting_garden-schemeonlytest-v1" }
+
+func (schemeOnlyLister) Types() []cutting_garden_plugins.NodeType {
+	return []cutting_garden_plugins.NodeType{
+		{Tag: "schemeonlytest-root-v1", Container: true},
+	}
+}
+
+func (schemeOnlyLister) ListRoots(
+	context.Context, *url.URL,
+) ([]cutting_garden_plugins.Node, error) {
+	return nil, nil
+}
+
+func init() { cutting_garden_plugins.MustRegisterScheme(schemeOnlyLister{}) }
+
+func TestResolveRootListerPlugin_FallsBackToSchemeRegistry(t *testing.T) {
+	u, lister, err := ResolveRootListerPlugin("schemeonlytest://endpoint/")
+	if err != nil {
+		t.Fatalf("a MustRegisterScheme-only RootLister must resolve via the "+
+			"scheme-registry fallback (RFC 0009 §3): %v", err)
+	}
+	if u.Scheme != "schemeonlytest" {
+		t.Errorf("scheme = %q, want schemeonlytest", u.Scheme)
+	}
+	if lister == nil {
+		t.Fatal("nil lister")
 	}
 }

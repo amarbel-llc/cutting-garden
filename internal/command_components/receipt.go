@@ -50,12 +50,29 @@ func ResolveDiffPlugin(
 	return u, plugin, nil
 }
 
+// resolvePluginForScheme resolves the plugin registered for scheme,
+// preferring the capture registry and falling back to the base scheme
+// registry. The fallback is what makes a traversal-only plugin registered
+// solely via MustRegisterScheme (no capture/restore/diff — e.g. an
+// out-of-tree RootProvider) resolvable by `list`/`mcp`, not merely
+// enumerable by `health` via RegisteredPlugins (RFC 0009 §3). Capture-first
+// keeps the common path (every in-repo capture plugin) unchanged.
+func resolvePluginForScheme(
+	scheme string,
+) (cutting_garden_plugins.Plugin, error) {
+	if plugin, err := cutting_garden_plugins.ResolveCapture(scheme); err == nil {
+		return plugin, nil
+	}
+	return cutting_garden_plugins.ResolveScheme(scheme)
+}
+
 // ResolveRootListerPlugin parses uriStr as a URL and returns the
 // RootLister registered for its scheme — the read-only traversal
-// capability the `list` command consumes. Resolution goes through the
-// capture registry because every RootLister plugin is also a capture
-// plugin. Errors if the scheme is unknown or its plugin does not
-// implement RootLister (e.g. the file plugin, which has no
+// capability the `list` and `mcp` commands consume. Resolution prefers the
+// capture registry, then falls back to the base scheme registry
+// (resolvePluginForScheme), so a traversal-only plugin is drivable, not just
+// health-visible (RFC 0009 §3). Errors if the scheme is unknown or its
+// plugin does not implement RootLister (e.g. the file plugin, which has no
 // sub-structure to enumerate). Sibling to ResolveDiffPlugin.
 func ResolveRootListerPlugin(
 	uriStr string,
@@ -64,7 +81,7 @@ func ResolveRootListerPlugin(
 	if err != nil {
 		return nil, nil, errors.Wrapf(err, "parse uri %q", uriStr)
 	}
-	plugin, err := cutting_garden_plugins.ResolveCapture(u.Scheme)
+	plugin, err := resolvePluginForScheme(u.Scheme)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -80,10 +97,12 @@ func ResolveRootListerPlugin(
 
 // ResolveNodeMutatorPlugin parses uriStr as a URL and returns the
 // NodeMutator registered for its scheme — the write capability the `mcp`
-// server's CUD tools consume (FDR 0020). Like ResolveRootListerPlugin,
-// resolution goes through the capture registry (every plugin registers
-// there). Errors if the scheme is unknown or its plugin does not implement
-// NodeMutator (e.g. the file plugin, which has no live-mutation surface).
+// server's CUD tools consume (FDR 0020). Like ResolveRootListerPlugin, it
+// resolves capture-first then falls back to the base scheme registry
+// (resolvePluginForScheme), so a MustRegisterScheme-only plugin's mutation
+// surface is reachable too. Errors if the scheme is unknown or its plugin
+// does not implement NodeMutator (e.g. the file plugin, which has no
+// live-mutation surface).
 func ResolveNodeMutatorPlugin(
 	uriStr string,
 ) (*url.URL, cutting_garden_plugins.NodeMutator, error) {
@@ -91,7 +110,7 @@ func ResolveNodeMutatorPlugin(
 	if err != nil {
 		return nil, nil, errors.Wrapf(err, "parse uri %q", uriStr)
 	}
-	plugin, err := cutting_garden_plugins.ResolveCapture(u.Scheme)
+	plugin, err := resolvePluginForScheme(u.Scheme)
 	if err != nil {
 		return nil, nil, err
 	}
