@@ -229,9 +229,22 @@ validate-generate: codemod-generate
 #
 # -run dagnabit scopes this to the dagnabit directives, parallel to
 # `codemod-generate` (tommy).
+#
+# DAGNABIT_CONFORMIST_CONFIG points dagnabit's post-generation format pass at
+# the store-pinned `.#conformist-config`, exactly as `validate-generate-dagnabit`
+# does for the check — so the formatter toolchain resolves from the nix closure
+# rather than $PATH. Without it, dagnabit's conformist pass fails in a devshell
+# that lacks the full formatter roster (nixfmt/goimports/…), leaving the facades
+# UNFORMATTED and drifting from the hermetic check. The CEILING var bounds any
+# upward config walk at the worktree root.
 [group('codemod')]
 codemod-generate-dagnabit:
-    nix develop --command go generate -run dagnabit ./...
+    #!/usr/bin/env bash
+    set -euo pipefail
+    config=$(nix build "{{ justfile_directory() }}#conformist-config" --no-link --print-out-paths)
+    DAGNABIT_CONFORMIST_CONFIG="$config" \
+      DAGNABIT_CEILING_DIRECTORIES="{{ justfile_directory() }}" \
+      nix develop --command go generate -run dagnabit ./...
 
 # Assert the committed pkgs/ facades are current: dagnabit's native
 # drift check exports fresh into a temp dir and diffs against the

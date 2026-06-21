@@ -92,7 +92,10 @@ type FacetPredicate = internal.FacetPredicate
 type FacetResult = internal.FacetResult
 
 // FacetSummary is the aggregate of all dimensions over a node set, keyed by
-// FacetDimension.Key. See RFC 0012 §3.
+// FacetDimension.Key. See RFC 0012 §3. The commutative, associative merge that
+// hoists leaf summaries into a container summary (RFC 0012 §3–§4.2) arrives
+// with the framework-fold consumer; the one-shot FacetCounter path builds its
+// summary directly, so no merge helper is published yet.
 type FacetSummary = internal.FacetSummary
 
 // FacetValue is one node's membership in one bucket of one dimension — the
