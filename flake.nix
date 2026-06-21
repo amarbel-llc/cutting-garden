@@ -158,6 +158,22 @@
             ;
         };
 
+        # Producer half of the flake-input-go_mod protocol (RFC 0001) and the
+        # out-of-tree-consumer surface of the plugin SDK (RFC 0009 §2): publish
+        # go-pkgs / go-pkgs-test so a plugin in its own repo can bridge
+        # github.com/amarbel-llc/cutting-garden onto this filtered source tree
+        # — e.g. chrest importing pkgs/capture_plugin to emit RFC 0002 receipts,
+        # or a traversal plugin importing pkgs/cgapp / pkgs/cutting_garden_plugins.
+        # cutting-garden's Go module is at the repo root, so the producer filters
+        # the whole repo (no go/ subdir to scope to). goFlakeInputs is threaded
+        # so go-pkgs carries passthru.goFlakeInputs, letting a downstream
+        # consumer inherit cutting-garden's own bridges (madder, dewey, tap, …)
+        # at depth-1 rather than re-declaring them.
+        goPkgs = pkgs.mkGoPkgs {
+          src = ./.;
+          inherit goFlakeInputs;
+        };
+
         # pkgsUpstream is the bare Hydra-blessed nixpkgs (no overlays)
         # used to source upstream packages whose closures we want
         # served from cache.nixos.org rather than rebuilt locally
@@ -409,6 +425,13 @@
       {
         packages = {
           default = cuttingGarden;
+
+          # Producer outputs for out-of-tree Go consumers (RFC 0001 producer,
+          # RFC 0009 §2): a plugin in its own repo bridges
+          # github.com/amarbel-llc/cutting-garden onto go-pkgs via its gomod.nix.
+          # go-pkgs-test additionally carries *_test.go for a consumer that runs
+          # cutting-garden's tests. Mirrors madder/flake.nix.
+          inherit (goPkgs) go-pkgs go-pkgs-test;
 
           # Clown plugin closure for eng's mkCircus (cutting-garden#101).
           cutting-garden-clown-plugin = cuttingGardenClownPlugin;
