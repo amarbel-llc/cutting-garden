@@ -344,9 +344,18 @@ func (t *Tools) call(
 // renderContents flattens a resources/read result into tool text: each
 // content's text in order, and a one-line note for a link-only content (a
 // raw-bytes madder blob, which carries a URI + mimetype but no inline text).
+//
+// A container's facet-summary block (mimeFacets) is skipped: the tool text is
+// consumed as a single JSON value (the child listing array or a leaf object),
+// and appending a second JSON object would break that. Facets ride on the
+// resources/read method's Contents[] for MCP resource clients; a structured
+// facet surface for tools-only clients is a separate follow-up.
 func renderContents(contents []protocol.ResourceContent) string {
 	var b strings.Builder
 	for _, c := range contents {
+		if c.MimeType == mimeFacets {
+			continue
+		}
 		switch {
 		case c.Text != "":
 			if b.Len() > 0 {

@@ -8,7 +8,27 @@ import (
 	"testing"
 
 	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
+	"github.com/amarbel-llc/purse-first/libs/go-mcp/protocol"
 )
+
+// TestRenderContents_SkipsFacetBlock guards the read_node/list_nodes tool
+// output: it is consumed as a single JSON value (the listing array or a leaf
+// object), so the container facet-summary block must not be flattened in
+// beside it (a second JSON object breaks downstream jq).
+func TestRenderContents_SkipsFacetBlock(t *testing.T) {
+	listing := `[{"name":"Personal","container":true}]`
+	contents := []protocol.ResourceContent{
+		{URI: "caldav://h/dav/", MimeType: mimeListing, Text: listing},
+		{
+			URI:      "caldav://h/dav/",
+			MimeType: mimeFacets,
+			Text:     `{"facets":{"status":{"CONFIRMED":2}},"complete":true}`,
+		},
+	}
+	if got := renderContents(contents); got != listing {
+		t.Errorf("renderContents = %q, want the listing only (facets skipped)", got)
+	}
+}
 
 // fakeFacetLister is a fakeLister that also declares facets and answers a
 // one-shot FacetCounter — the RFC 0012 surface the mcp server exposes over
