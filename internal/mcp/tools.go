@@ -377,11 +377,12 @@ type schemeSchema struct {
 // leaf, a leaf's body mimetype, and — for writable types — the accepted
 // create/update payload.
 type typeSchema struct {
-	Tag          string      `json:"tag"`
-	Container    bool        `json:"container"`
-	LeafMimeType string      `json:"leafMimeType,omitempty"`
-	Writable     bool        `json:"writable"`
-	Body         *bodySchema `json:"body,omitempty"`
+	Tag          string           `json:"tag"`
+	Container    bool             `json:"container"`
+	LeafMimeType string           `json:"leafMimeType,omitempty"`
+	Writable     bool             `json:"writable"`
+	Body         *bodySchema      `json:"body,omitempty"`
+	Facets       []facetDimSchema `json:"facets,omitempty"`
 }
 
 // bodySchema is the create/update payload description for a writable type: the
@@ -390,6 +391,36 @@ type typeSchema struct {
 type bodySchema struct {
 	Accepts []string `json:"accepts"`
 	Example any      `json:"example,omitempty"`
+}
+
+// facetDimSchema describes one declared facet dimension of a node type, for
+// the describe_node_types tool: its key, display label, value-shape kind,
+// whether a node may carry several values, and whether its value domain is
+// closed (known up front). See RFC 0012 §2.
+type facetDimSchema struct {
+	Key    string `json:"key"`
+	Label  string `json:"label,omitempty"`
+	Kind   string `json:"kind"`
+	Multi  bool   `json:"multi,omitempty"`
+	Closed bool   `json:"closed,omitempty"`
+}
+
+// facetDimSchemas projects a plugin's declared FacetDimensions into their
+// describe_node_types view. A non-nil Values list marks a closed domain.
+func facetDimSchemas(
+	dims []cutting_garden_plugins.FacetDimension,
+) []facetDimSchema {
+	out := make([]facetDimSchema, 0, len(dims))
+	for _, d := range dims {
+		out = append(out, facetDimSchema{
+			Key:    d.Key,
+			Label:  d.Label,
+			Kind:   string(d.Kind),
+			Multi:  d.Multi,
+			Closed: d.Values != nil,
+		})
+	}
+	return out
 }
 
 // collectSchema builds the describe_node_types catalogue from the registered
@@ -409,6 +440,12 @@ func collectSchema(plugins []cutting_garden_plugins.Plugin) []schemeSchema {
 				bodies[b.Tag] = b
 			}
 		}
+		facets := map[string][]cutting_garden_plugins.FacetDimension{}
+		if fd, ok := p.(cutting_garden_plugins.FacetDescriber); ok {
+			for _, ntf := range fd.DescribeFacets() {
+				facets[ntf.Tag] = ntf.Dimensions
+			}
+		}
 		nts := rl.Types()
 		types := make([]typeSchema, 0, len(nts))
 		for _, nt := range nts {
@@ -420,6 +457,9 @@ func collectSchema(plugins []cutting_garden_plugins.Plugin) []schemeSchema {
 			if b, ok := bodies[nt.Tag]; ok {
 				ts.Writable = true
 				ts.Body = &bodySchema{Accepts: b.Accepts, Example: b.Example}
+			}
+			if dims, ok := facets[nt.Tag]; ok {
+				ts.Facets = facetDimSchemas(dims)
 			}
 			types = append(types, ts)
 		}

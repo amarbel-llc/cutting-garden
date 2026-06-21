@@ -21,6 +21,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"sort"
 	"strings"
 	"text/tabwriter"
 
@@ -42,6 +43,12 @@ const (
 // New, a buffer in tests).
 type List struct {
 	Format string
+	// Facets, when set, prints the node's hoisted facet summary (via the
+	// plugin's FacetCounter) instead of its child listing (RFC 0012, FDR 0021).
+	Facets bool
+	// Filter is an optional comma-separated set of dimension=value predicates,
+	// AND-composed, that narrows a --facets summary.
+	Filter string
 	output io.Writer
 }
 
@@ -81,6 +88,18 @@ func (cmd *List) SetFlagDefinitions(flagSet interfaces.CLIFlagDefinitions) {
 		formatText,
 		"output format: text (aligned table) or json (one object per node)",
 	)
+	flagSet.BoolVar(
+		&cmd.Facets,
+		"facets",
+		false,
+		"print the node's hoisted facet summary instead of its child listing",
+	)
+	flagSet.StringVar(
+		&cmd.Filter,
+		"filter",
+		"",
+		"comma-separated dimension=value predicates (AND-composed) narrowing --facets",
+	)
 }
 
 func (cmd *List) Run(req command.Request) {
@@ -96,6 +115,13 @@ func (cmd *List) Run(req command.Request) {
 	args := req.PeekArgs()
 	switch {
 	case len(args) == 0:
+		if cmd.Facets {
+			// A summary is computed over a specific node's subtree; there is no
+			// cross-plugin aggregate facet view (FDR 0021).
+			errors.ContextCancelWithBadRequestf(ctx,
+				"list --facets requires a <uri>")
+			return
+		}
 		// No URI: list every configured and intrinsic root across all
 		// plugins (RFC 0007) — the entry points to descend into.
 		if err := cmd.runRoots(ctx); err != nil {
@@ -106,7 +132,11 @@ func (cmd *List) Run(req command.Request) {
 			"too many positional arguments; list takes at most one (<uri>), "+
 				"trailing: %v", args[1:])
 	default:
-		if err := cmd.runList(ctx, args[0]); err != nil {
+		run := cmd.runList
+		if cmd.Facets {
+			run = cmd.runFacets
+		}
+		if err := run(ctx, args[0]); err != nil {
 			errors.ContextCancelWithError(ctx, err)
 		}
 	}
@@ -211,6 +241,144 @@ func writeJSON(w io.Writer, nodes []cutting_garden_plugins.Node) error {
 		}); err != nil {
 			return errors.Wrap(err)
 		}
+	}
+	return nil
+}
+
+// runFacets resolves the FacetCounter for uriStr, computes the node's
+// hoisted facet summary (narrowed by --filter), and renders it. The tracer
+// consumes only the one-shot FacetCounter path (RFC 0012 §4.1); a plugin
+// that does not implement it reports that facets are unavailable.
+func (cmd *List) runFacets(ctx errors.Context, uriStr string) error {
+	u, lister, err := command_components.ResolveRootListerPlugin(uriStr)
+	if err != nil {
+		return err
+	}
+
+	counter, ok := lister.(cutting_garden_plugins.FacetCounter)
+	if !ok {
+		return errors.ErrorWithStackf(
+			"list --facets %s: plugin does not support facets", uriStr,
+		)
+	}
+
+	filter, err := parseFacetFilter(cmd.Filter)
+	if err != nil {
+		return err
+	}
+
+	result, ok, err := counter.FacetCounts(ctx, u, filter)
+	if err != nil {
+		return errors.Wrapf(err, "list --facets %s", uriStr)
+	}
+	if !ok {
+		return errors.ErrorWithStackf(
+			"list --facets %s: no facet summary available at this node", uriStr,
+		)
+	}
+
+	if cmd.Format == formatJSON {
+		return writeFacetsJSON(cmd.output, result)
+	}
+	return writeFacetsText(cmd.output, result)
+}
+
+// parseFacetFilter parses "dim=val,dim2=val2" into an AND-composed
+// FacetFilter. The empty string is no filter.
+func parseFacetFilter(raw string) (cutting_garden_plugins.FacetFilter, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	var filter cutting_garden_plugins.FacetFilter
+	for _, part := range strings.Split(raw, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		dim, val, found := strings.Cut(part, "=")
+		dim, val = strings.TrimSpace(dim), strings.TrimSpace(val)
+		if !found || dim == "" || val == "" {
+			return nil, errors.ErrorWithStackf(
+				"invalid -filter predicate %q; expected dimension=value", part,
+			)
+		}
+		filter = append(filter, cutting_garden_plugins.FacetPredicate{
+			Dimension: dim,
+			Value:     val,
+		})
+	}
+	return filter, nil
+}
+
+// writeFacetsText renders the summary as one aligned row per dimension,
+// values ordered by descending count then key, with a trailing marker when
+// the summary is partial.
+func writeFacetsText(w io.Writer, result cutting_garden_plugins.FacetResult) error {
+	dims := make([]string, 0, len(result.Summary))
+	for dim := range result.Summary {
+		dims = append(dims, dim)
+	}
+	sort.Strings(dims)
+
+	var buf strings.Builder
+	tw := tabwriter.NewWriter(&buf, 0, 2, 2, ' ', 0)
+	for _, dim := range dims {
+		fmt.Fprintf(tw, "%s\t%s\n", dim, formatHistogram(result.Summary[dim]))
+	}
+	if err := tw.Flush(); err != nil {
+		return errors.Wrap(err)
+	}
+	if !result.Complete {
+		buf.WriteString("(partial \\(em summary does not cover the whole subtree)\n")
+	}
+
+	if _, err := io.WriteString(w, buf.String()); err != nil {
+		return errors.Wrap(err)
+	}
+	return nil
+}
+
+// formatHistogram renders one dimension's "key count  key count" line,
+// ordered by descending count then key for a stable display.
+func formatHistogram(hist cutting_garden_plugins.FacetHistogram) string {
+	type bucket struct {
+		key   string
+		count int64
+	}
+	buckets := make([]bucket, 0, len(hist))
+	for key, count := range hist {
+		buckets = append(buckets, bucket{key, count})
+	}
+	sort.Slice(buckets, func(i, j int) bool {
+		if buckets[i].count != buckets[j].count {
+			return buckets[i].count > buckets[j].count
+		}
+		return buckets[i].key < buckets[j].key
+	})
+
+	parts := make([]string, 0, len(buckets))
+	for _, b := range buckets {
+		parts = append(parts, fmt.Sprintf("%s %d", b.key, b.count))
+	}
+	return strings.Join(parts, "  ")
+}
+
+// facetView is the json projection of a facet summary: the per-dimension
+// histograms plus whether the summary is complete.
+type facetView struct {
+	Facets   cutting_garden_plugins.FacetSummary `json:"facets"`
+	Complete bool                                `json:"complete"`
+}
+
+// writeFacetsJSON emits the summary as a single JSON object for jq.
+func writeFacetsJSON(w io.Writer, result cutting_garden_plugins.FacetResult) error {
+	enc := json.NewEncoder(w)
+	if err := enc.Encode(facetView{
+		Facets:   result.Summary,
+		Complete: result.Complete,
+	}); err != nil {
+		return errors.Wrap(err)
 	}
 	return nil
 }

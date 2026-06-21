@@ -189,3 +189,8 @@ working-directory tree as MCP resources out of the box.
 - `github.com/amarbel-llc/purse-first/libs/go-mcp` — the MCP server library
   (`server.ResourceProvider`, stdio transport), bridged into the build like
   dewey (see `gomod.nix`).
+- [FDR 0021](0021-faceted-progressive-disclosure.md) — faceted progressive
+  disclosure; extends this server's container `resources/read` with a hoisted
+  `facets` block and a `dimension=value` narrowing parameter.
+- [RFC 0012](../rfcs/0012-plugin-facet-contract.md) — the facet contract
+  whose §7 binds to this server's `resources/read` and `describe_node_types`.

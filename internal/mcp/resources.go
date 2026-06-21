@@ -31,6 +31,11 @@ const mimeListing = "application/json"
 // JSON array of child views only by content, not media type.
 const mimeObject = "application/json"
 
+// mimeFacets marks the facet-summary content block a container read carries
+// beside its child listing (RFC 0012 §7), so a client can tell the summary
+// from the listing itself rather than by position.
+const mimeFacets = "application/vnd.cutting-garden.facets+json"
+
 // resolveFunc resolves a URI string to its parsed URL and the RootLister
 // plugin registered for its scheme. It has the shape of
 // command_components.ResolveRootListerPlugin and is a field on Resources
@@ -156,13 +161,24 @@ func (r *Resources) ReadResource(
 		return nil, errors.Wrap(err)
 	}
 
-	return &protocol.ResourceReadResult{
-		Contents: []protocol.ResourceContent{{
-			URI:      uri,
-			MimeType: mimeListing,
-			Text:     string(body),
-		}},
-	}, nil
+	contents := []protocol.ResourceContent{{
+		URI:      uri,
+		MimeType: mimeListing,
+		Text:     string(body),
+	}}
+	// A container carries the hoisted facet summary of its subtree beside the
+	// child listing, when its plugin can summarize it (RFC 0012 §7).
+	if len(nodes) > 0 {
+		facets, ferr := r.facetContent(ctx, lister, uri, u)
+		if ferr != nil {
+			return nil, ferr
+		}
+		if facets != nil {
+			contents = append(contents, *facets)
+		}
+	}
+
+	return &protocol.ResourceReadResult{Contents: contents}, nil
 }
 
 // readLeaf returns the structured body of a leaf object when lister can
@@ -229,6 +245,50 @@ func (r *Resources) rawBlobLink(
 		URI:      madderBlobScheme + digest,
 		MimeType: content.RawMimeType,
 	}
+}
+
+// facetView is the JSON projection of a container's hoisted facet summary: the
+// per-dimension histograms plus whether the summary covers the whole subtree.
+type facetView struct {
+	Facets   cutting_garden_plugins.FacetSummary `json:"facets"`
+	Complete bool                                `json:"complete"`
+}
+
+// facetContent computes a container's hoisted facet summary via the plugin's
+// FacetCounter and renders it as a facet content block (RFC 0012 §7). It
+// returns nil when the plugin is not a FacetCounter or declines to summarize
+// this node (ok=false). A FacetCounts error is fatal to the read (RFC 0012
+// §9): a declared facet surface that errors is surfaced, not silently dropped.
+func (r *Resources) facetContent(
+	ctx context.Context,
+	lister cutting_garden_plugins.RootLister,
+	uri string,
+	u *url.URL,
+) (*protocol.ResourceContent, error) {
+	counter, ok := lister.(cutting_garden_plugins.FacetCounter)
+	if !ok {
+		return nil, nil
+	}
+	result, ok, err := counter.FacetCounts(ctx, u, nil)
+	if err != nil {
+		return nil, errors.Wrapf(err, "facet summary for %s", uri)
+	}
+	if !ok {
+		return nil, nil
+	}
+
+	body, err := json.MarshalIndent(facetView{
+		Facets:   result.Summary,
+		Complete: result.Complete,
+	}, "", "  ")
+	if err != nil {
+		return nil, errors.Wrap(err)
+	}
+	return &protocol.ResourceContent{
+		URI:      uri,
+		MimeType: mimeFacets,
+		Text:     string(body),
+	}, nil
 }
 
 // ListResourceTemplates returns no templates: cutting-garden resources

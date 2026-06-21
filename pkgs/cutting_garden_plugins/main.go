@@ -50,6 +50,56 @@ type DiffPlugin = internal.DiffPlugin
 // atomic.
 type DiffScanRequest = internal.DiffScanRequest
 
+// FacetCounter is the OPTIONAL capability that returns a node's hoisted facet
+// summary in one operation, without the framework walking the subtree — the
+// PREFERRED path, size-agnostic (an atomic listing, an in-memory index, or a
+// backend GROUP BY). A plugin that can only walk its tree lazily omits it and
+// the framework folds Node.Facets over ListRoots instead. See RFC 0012 §4–§5.
+type FacetCounter = internal.FacetCounter
+
+// FacetDescriber is the OPTIONAL capability that declares a plugin's facet
+// schema, symmetric with BodyDescriber. Probed by type assertion on an
+// already-resolved plugin. See RFC 0012 §2.
+type FacetDescriber = internal.FacetDescriber
+
+// FacetDimension declares one aggregation axis of a node type. See RFC 0012 §2.
+type FacetDimension = internal.FacetDimension
+
+// FacetFilter is a set of predicates, AND-composed. The empty filter matches
+// everything; a node matches the filter iff it matches EVERY predicate. See
+// RFC 0012 §6.
+type FacetFilter = internal.FacetFilter
+
+// FacetHistogram is one dimension's aggregate: a count per value Key.
+// See RFC 0012 §3.
+type FacetHistogram = internal.FacetHistogram
+
+// FacetKind classifies a dimension's VALUE SHAPE. Cardinality (one vs. many
+// values per node) is the separate FacetDimension.Multi flag. See RFC 0012 §2.
+type FacetKind = internal.FacetKind
+
+// FacetLabeler is the OPTIONAL capability that resolves a labelled dimension's
+// opaque value keys to human display names, in batch and presentation-only.
+// See RFC 0012 §7.
+type FacetLabeler = internal.FacetLabeler
+
+// FacetPredicate is one equality constraint: a node matches when its
+// Facets[Dimension] contains a FacetValue whose Key == Value. See RFC 0012 §6.
+type FacetPredicate = internal.FacetPredicate
+
+// FacetResult is a hoisted summary plus whether it covers the whole subtree.
+// See RFC 0012 §5.
+type FacetResult = internal.FacetResult
+
+// FacetSummary is the aggregate of all dimensions over a node set, keyed by
+// FacetDimension.Key. See RFC 0012 §3.
+type FacetSummary = internal.FacetSummary
+
+// FacetValue is one node's membership in one bucket of one dimension — the
+// unit a plugin attaches to Node.Facets and the framework counts. See
+// RFC 0012 §1.
+type FacetValue = internal.FacetValue
+
 // LeafContent is one leaf node's fetched content, returned by ReadLeaf. It
 // carries two views of the same object: a structured, JSON-marshalable
 // projection a client reads (the parsed fields), and the verbatim source
@@ -110,6 +160,10 @@ type NodeType = internal.NodeType
 // describe_node_types tool, so an agent can construct a valid body without
 // guessing or reading an existing node first.
 type NodeTypeBody = internal.NodeTypeBody
+
+// NodeTypeFacets binds a set of facet dimensions to one node type. See
+// RFC 0012 §2.
+type NodeTypeFacets = internal.NodeTypeFacets
 
 // NopReporter is the no-op Stream.
 type NopReporter = internal.NopReporter
@@ -309,6 +363,17 @@ var ResolveRestore = internal.ResolveRestore
 // ResolveScheme looks up the base plugin registered under scheme via
 // MustRegisterScheme. Returns an error wrapping ErrUnknownScheme on miss.
 var ResolveScheme = internal.ResolveScheme
+
+// FacetCategorical is a plain discrete bucket (status, state, domain).
+const FacetCategorical = internal.FacetCategorical
+
+// FacetLabelled is an opaque stable key whose human name is resolved out
+// of band via FacetLabeler (a feed id, an account id).
+const FacetLabelled = internal.FacetLabelled
+
+// FacetNumericBucket is a number quantized to an ordered bucket; values
+// carry FacetValue.Order (year, month, size band).
+const FacetNumericBucket = internal.FacetNumericBucket
 
 // MimeTypeDefault is the mimetype a leaf NodeType speaks when its
 // declaration leaves MimeType empty: opaque bytes, dodder's null-type

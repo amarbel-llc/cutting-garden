@@ -84,6 +84,13 @@ type Node struct {
 	// Type is a Tag from this plugin's Types(); resolve it there for
 	// descendability and format version.
 	Type string
+	// Facets is the node's facet membership, keyed by FacetDimension.Key — the
+	// cheap, declared values a plugin attaches during ListRoots (from data
+	// already in hand, never a per-node re-fetch) so the framework can fold
+	// them into a container's summary (RFC 0012 §1). nil/empty means the node
+	// contributes nothing to any facet; several values under one key is a
+	// multi-valued contribution. MUST be free of credentials or secrets.
+	Facets map[string][]FacetValue
 }
 
 // URIString renders the node's URI, tolerating a nil URL (rendered as

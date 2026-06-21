@@ -253,3 +253,8 @@ receipts (personal, work); `--split '//caldav-object-v1'` yields three
   receipt, not source.
 - [FDR 0013](0013-caldav-plugin.md) — first `RootLister` implementer;
   its in-`CaptureRoot` discovery moves into `ListRoots`.
+- [FDR 0021](0021-faceted-progressive-disclosure.md) — facets ride on this
+  traversal's enumeration (`Node`) and hoist over its tree for progressive
+  disclosure.
+- [RFC 0012](../rfcs/0012-plugin-facet-contract.md) — the facet contract
+  built atop `Node` / `NodeType` / `RootLister`.
