@@ -530,3 +530,19 @@ debug-mcp-init: build-nix
     echo '--- serverInfo ---'
     echo "$resp" | jq -c '.result.serverInfo' 2>/dev/null \
       || echo '(no serverInfo in response)'
+
+# Run the store-pinned gofumpt (the exact binary the conformist config
+# names) over FILE and show the diff it wants, without modifying FILE.
+# Diagnoses the dagnabit-0.4.0 ungrouped-const vs gofumpt-grouped-const
+# drift: dagnabit's format pass applies goimports but not gofumpt, so its
+# pkgs/ facades land gofumpt-dirty (purse-first#167). pkgs/** is excluded
+# from conformist as the workaround; this recipe confirms when the upstream
+# fix lets the exclusion be dropped.
+[group('debug')]
+debug-gofumpt-diff FILE:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    config=$(nix build "{{ justfile_directory() }}#conformist-config" --no-link --print-out-paths)
+    gofumpt=$(grep -A1 '\[formatter.gofumpt\]' "$config" | grep command | sed 's/.*= "//; s/"$//')
+    echo "gofumpt: $gofumpt"
+    "$gofumpt" -d "{{ FILE }}"

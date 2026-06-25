@@ -65,5 +65,26 @@
     # tommy codegen output (RFC 0007): `tommy generate` owns its formatting and
     # stamps a version header; gofumpt would fight `just generate-check`.
     "*_tommy.go"
+    # dagnabit pkgs/ facades (RFC 0009): `dagnabit export` owns its formatting
+    # via its own conformist pass, and the drift gate (`validate-generate-dagnabit`
+    # = `dagnabit export -check`) byte-compares the committed facades against a
+    # fresh export run through that same pass. Letting conformist's gofumpt lane
+    # rewrite the facades here makes them diverge from dagnabit's output and
+    # phantom-fails the drift check — the same generator-owns-formatting tension
+    # as *_tommy.go above. Exact trigger: dagnabit's own format pass applies
+    # goimports but not the priority-2 gofumpt lane, so its facades land
+    # gofumpt-dirty (purse-first#167). Every .go under pkgs/ is generated (these
+    # facades + the tommy file above), so excluding the whole tree is safe. Drop
+    # this when purse-first#167 lands and the dagnabit input is bumped.
+    #
+    # Both globs are required: the on-disk facades are `pkgs/**`, but the drift
+    # gate (`dagnabit export -check`) regenerates into a temp dir and formats
+    # `<tmp>/pkgs/**` before byte-comparing — so the temp copy must be excluded
+    # too, else conformist gofumpt-groups the temp side while the committed side
+    # stays ungrouped and the check phantom-fails. `**/pkgs/**` covers the temp
+    # path; `pkgs/**` covers the real one (in case `**/` does not match zero
+    # leading segments).
+    "pkgs/**"
+    "**/pkgs/**"
   ];
 }
