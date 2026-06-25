@@ -86,13 +86,11 @@ var WriteV1WithHint = internal.WriteV1WithHint
 // in every v1 receipt when no StoreHint is present. Derived from the
 // hyphence boundary + type-tag line; exposed for tests that strip it
 // to inspect just the body.
-const (
-	HeaderV1    = internal.HeaderV1
-	TypeDir     = internal.TypeDir
-	TypeFile    = internal.TypeFile
-	TypeOther   = internal.TypeOther
-	TypeSymlink = internal.TypeSymlink
-)
+const HeaderV1 = internal.HeaderV1
+const TypeDir = internal.TypeDir
+const TypeFile = internal.TypeFile
+const TypeOther = internal.TypeOther
+const TypeSymlink = internal.TypeSymlink
 
 // TypeTagV1 is the hyphence `! type-string` written at the top of
 // every v1 receipt.

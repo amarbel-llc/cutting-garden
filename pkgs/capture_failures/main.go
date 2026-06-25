@@ -45,14 +45,12 @@ var WriteV1 = internal.WriteV1
 // string. Mirrors capture_receipt.WriteV1ToStore.
 var WriteV1ToStore = internal.WriteV1ToStore
 
-const (
-	OpBlobWrite    = internal.OpBlobWrite
-	OpPlugin       = internal.OpPlugin
-	OpReadlink     = internal.OpReadlink
-	OpReceiptWrite = internal.OpReceiptWrite
-	OpStat         = internal.OpStat
-	OpWalk         = internal.OpWalk
-)
+const OpBlobWrite = internal.OpBlobWrite
+const OpPlugin = internal.OpPlugin
+const OpReadlink = internal.OpReadlink
+const OpReceiptWrite = internal.OpReceiptWrite
+const OpStat = internal.OpStat
+const OpWalk = internal.OpWalk
 
 // OutcomeAborted: a signal cut the run short (failures, if any,
 // are still listed). Aborted wins when both apply.
