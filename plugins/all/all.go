@@ -23,6 +23,7 @@ import (
 	_ "github.com/amarbel-llc/cutting-garden/plugins/file"
 	_ "github.com/amarbel-llc/cutting-garden/plugins/git"
 	_ "github.com/amarbel-llc/cutting-garden/plugins/googlephotos"
+	_ "github.com/amarbel-llc/cutting-garden/plugins/jira"
 	_ "github.com/amarbel-llc/cutting-garden/plugins/optical"
 	_ "github.com/amarbel-llc/cutting-garden/plugins/web"
 	_ "github.com/amarbel-llc/cutting-garden/plugins/ytdlp"

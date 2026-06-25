@@ -1,6 +1,9 @@
 package cgconfig
 
-import "github.com/amarbel-llc/cutting-garden/plugins/caldav"
+import (
+	"github.com/amarbel-llc/cutting-garden/plugins/caldav"
+	"github.com/amarbel-llc/cutting-garden/plugins/jira"
+)
 
 // Inject wires each plugin's config section into that plugin's package
 // state (RFC 0007 § Package Layering), so a RootProvider's Roots and a
@@ -14,4 +17,5 @@ import "github.com/amarbel-llc/cutting-garden/plugins/caldav"
 // that keeps the loader out of this package.
 func Inject(cfg *ConfigV0) {
 	caldav.SetConfiguredAccounts(cfg.Caldav.Accounts)
+	jira.SetConfiguredAccounts(cfg.Jira.Accounts)
 }

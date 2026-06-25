@@ -11,6 +11,7 @@ package cgconfig
 
 import (
 	"github.com/amarbel-llc/cutting-garden/plugins/caldav"
+	"github.com/amarbel-llc/cutting-garden/plugins/jira"
 )
 
 // ConfigV0 is the top-level, horizontally-versioned config. Each plugin
@@ -21,11 +22,15 @@ import (
 //go:generate tommy generate
 type ConfigV0 struct {
 	Caldav caldav.AccountsConfig `toml:"caldav,omitempty"`
+	Jira   jira.AccountsConfig   `toml:"jira,omitempty"`
 }
 
 // Validate runs each plugin section's validation. tommy's generated
 // DecodeConfigV0 invokes it after decoding, so a malformed account aborts
 // the load (surfaced as EX_USAGE by the loader).
 func (c ConfigV0) Validate() error {
-	return c.Caldav.Validate()
+	if err := c.Caldav.Validate(); err != nil {
+		return err
+	}
+	return c.Jira.Validate()
 }

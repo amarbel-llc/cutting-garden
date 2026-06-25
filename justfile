@@ -309,6 +309,34 @@ debug-capture-fixture-nix STORE='.default' FORMAT='auto': build-nix debug-make-f
 debug-madder-init STORE='.test':
     nix develop --command madder init {{ STORE }}
 
+# Capture a live jira: NODE (READ-ONLY) into a throwaway store, emitting the
+# RFC 0002 merkle receipt — the FDR 0019 protocol-capture smoke loop (#110).
+# NODE is the in-jira path under $JIRA_URL's host (e.g. PROJ or PROJ/PROJ-1).
+[group('debug')]
+debug-capture-jira NODE='PROJ' STORE='.jira': debug-build-go
+    #!/usr/bin/env bash
+    set -euo pipefail
+    host="${JIRA_URL#https://}"
+    host="${host#http://}"
+    nix develop --command madder init {{ STORE }} >/dev/null 2>&1 || true
+    .tmp/cutting-garden capture {{ STORE }} "jira://${host}/{{ NODE }}"
+
+# Cat one node blob from the jira store by digest, to walk the merkle tree by
+# hand. Usage: just debug-jira-cat blake2b256-….
+[group('debug')]
+debug-jira-cat DIGEST STORE='.jira':
+    nix develop --command madder cat {{ STORE }} {{ DIGEST }}
+
+# Diff a captured RECEIPT against the live jira: NODE (READ-ONLY) — exit 0
+# clean, 1 drift (A/M/D lines on stdout). The FDR 0019 protocol-diff loop.
+[group('debug')]
+debug-diff-jira RECEIPT NODE='PROJ' STORE='.jira': debug-build-go
+    #!/usr/bin/env bash
+    set -euo pipefail
+    host="${JIRA_URL#https://}"
+    host="${host#http://}"
+    .tmp/cutting-garden diff -store={{ STORE }} {{ RECEIPT }} "jira://${host}/{{ NODE }}"
+
 # Create a SECOND fixture tree (.tmp/cap-fixture-2) so the multiroot
 # capture recipe has two roots to walk.
 [group('debug')]

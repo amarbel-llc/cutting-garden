@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/amarbel-llc/cutting-garden/plugins/caldav"
+	"github.com/amarbel-llc/cutting-garden/plugins/jira"
 	"github.com/amarbel-llc/tommy/pkg/cst"
 	"github.com/amarbel-llc/tommy/pkg/document"
 )
@@ -44,6 +45,12 @@ func DecodeConfigV0(input []byte) (*ConfigV0Document, error) {
 			return nil, fmt.Errorf("caldav: %w", err)
 		}
 	}
+	if _vJira, _ok := model.Get("jira"); _ok && _vJira.Kind == cst.VTable {
+		_vJira.MarkSeen()
+		if err := jira.DecodeAccountsConfigInto(&d.data.Jira, _vJira); err != nil {
+			return nil, fmt.Errorf("jira: %w", err)
+		}
+	}
 	if err := d.data.Validate(); err != nil {
 		return nil, fmt.Errorf("validation failed: %w", err)
 	}
@@ -62,6 +69,12 @@ func (d *ConfigV0Document) Encode() ([]byte, error) {
 		tableNode := cst.EnsureChildTable(d.cstDoc.Root(), d.cstDoc.Root(), "caldav")
 		if err := caldav.EncodeAccountsConfigFrom(&d.data.Caldav, d.cstDoc, tableNode); err != nil {
 			return nil, fmt.Errorf("caldav: %w", err)
+		}
+	}
+	{
+		tableNode := cst.EnsureChildTable(d.cstDoc.Root(), d.cstDoc.Root(), "jira")
+		if err := jira.EncodeAccountsConfigFrom(&d.data.Jira, d.cstDoc, tableNode); err != nil {
+			return nil, fmt.Errorf("jira: %w", err)
 		}
 	}
 	return d.cstDoc.Bytes(), nil
@@ -97,6 +110,12 @@ func DecodeConfigV0Into(data *ConfigV0, sub *cst.Value) error {
 			return fmt.Errorf("caldav: %w", err)
 		}
 	}
+	if _vJira, _ok := sub.Get("jira"); _ok && _vJira.Kind == cst.VTable {
+		_vJira.MarkSeen()
+		if err := jira.DecodeAccountsConfigInto(&data.Jira, _vJira); err != nil {
+			return fmt.Errorf("jira: %w", err)
+		}
+	}
 	if err := data.Validate(); err != nil {
 		return fmt.Errorf("validation failed: %w", err)
 	}
@@ -111,6 +130,12 @@ func EncodeConfigV0From(data *ConfigV0, doc *document.Document, container *cst.N
 		tableNode := cst.EnsureChildTable(doc.Root(), container, "caldav")
 		if err := caldav.EncodeAccountsConfigFrom(&data.Caldav, doc, tableNode); err != nil {
 			return fmt.Errorf("caldav: %w", err)
+		}
+	}
+	{
+		tableNode := cst.EnsureChildTable(doc.Root(), container, "jira")
+		if err := jira.EncodeAccountsConfigFrom(&data.Jira, doc, tableNode); err != nil {
+			return fmt.Errorf("jira: %w", err)
 		}
 	}
 	return nil

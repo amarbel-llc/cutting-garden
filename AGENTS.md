@@ -18,7 +18,7 @@ manpage/completion generator `cutting-garden-gen`. Hidden subcommands
 implement `command.CommandHidden` so they stay dispatchable but are
 filtered out of usage, manpages, and completion. Capture/restore/diff
 backends are URI-scheme-keyed plugins (file, git, yt-dlp, caldav, web,
-optical, gphotos), each living in `plugins/<scheme>/` and consuming the
+optical, gphotos, jira), each living in `plugins/<scheme>/` and consuming the
 public plugin SDK (`pkgs/`, RFC 0009) exactly as an out-of-tree plugin
 would — none import `internal/` (the no-inversion guard,
 `internal/sdklayering`, enforces this). The in-repo binaries opt into the
