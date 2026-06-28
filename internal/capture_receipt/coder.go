@@ -18,13 +18,27 @@ import (
 	"bufio"
 	"strings"
 
+	"github.com/amarbel-llc/hyphence/go/hyphence"
 	"github.com/amarbel-llc/madder/go/pkgs/domain_interfaces"
-	"github.com/amarbel-llc/madder/go/pkgs/hyphence"
 	"github.com/amarbel-llc/madder/go/pkgs/ids"
+	"github.com/amarbel-llc/madder/go/pkgs/markl"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/format"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/interfaces"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/ohio"
+)
+
+// The canonical hyphence TypedBlob is generic over the type-tag and digest
+// types; we bind those to madder's native ids.TypeStruct / markl.Id so the
+// existing ids.MustTypeStruct / `==` / StringSansOp call sites keep working
+// unchanged and the store-hint hyphenceBlob[blob_store_configs.Config]
+// (store_hint_compute.go) unifies with madder's blob_store_configs.Coder.
+// markl.Id's zero value is null, so a receipt that sets no digest still omits
+// the `@` line — wire output is unchanged from the pre-extraction facade.
+type (
+	hyphenceBlob[BLOB any]       = hyphence.TypedBlob[ids.TypeStruct, *ids.TypeStruct, markl.Id, *markl.Id, BLOB]
+	hyphenceCoder[BLOB any]      = hyphence.CoderToTypedBlob[ids.TypeStruct, *ids.TypeStruct, markl.Id, *markl.Id, BLOB]
+	hyphenceBlobCoders[BLOB any] = hyphence.CoderTypeMapWithoutType[ids.TypeStruct, *ids.TypeStruct, markl.Id, *markl.Id, BLOB]
 )
 
 // TypeStructV1 is the wire type-id that appears on the `! ` line of a
@@ -36,10 +50,10 @@ var TypeStructV1 = ids.MustTypeStruct(TypeTagV1)
 // supported version. The metadata coder populates the typed-blob's
 // Type and Hint; the Blob CoderTypeMapWithoutType then dispatches by
 // Type to a version-specific body coder.
-var Coder = hyphence.CoderToTypedBlob[Blob]{
+var Coder = hyphenceCoder[Blob]{
 	RequireMetadata: true,
 	Metadata:        receiptMetadataCoder{},
-	Blob: hyphence.CoderTypeMapWithoutType[Blob]{
+	Blob: hyphenceBlobCoders[Blob]{
 		TypeStructV1.String(): v1BodyCoder{},
 	},
 }
@@ -58,7 +72,7 @@ func Read(
 
 	defer errors.DeferredCloser(&err, reader)
 
-	tb := &hyphence.TypedBlob[Blob]{}
+	tb := &hyphenceBlob[Blob]{}
 
 	if _, err = Coder.DecodeFrom(tb, reader); err != nil {
 		return nil, tb.Type, errors.Wrap(err)
@@ -74,10 +88,10 @@ func Read(
 // output.
 type receiptMetadataCoder struct{}
 
-var _ interfaces.CoderBufferedReadWriter[*hyphence.TypedBlob[Blob]] = receiptMetadataCoder{}
+var _ interfaces.CoderBufferedReadWriter[*hyphenceBlob[Blob]] = receiptMetadataCoder{}
 
 func (receiptMetadataCoder) DecodeFrom(
-	typedBlob *hyphence.TypedBlob[Blob],
+	typedBlob *hyphenceBlob[Blob],
 	bufferedReader *bufio.Reader,
 ) (n int64, err error) {
 	var hint *StoreHint
@@ -132,7 +146,7 @@ func (receiptMetadataCoder) DecodeFrom(
 }
 
 func (receiptMetadataCoder) EncodeTo(
-	typedBlob *hyphence.TypedBlob[Blob],
+	typedBlob *hyphenceBlob[Blob],
 	bufferedWriter *bufio.Writer,
 ) (n int64, err error) {
 	var hint *StoreHint

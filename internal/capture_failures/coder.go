@@ -20,8 +20,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/amarbel-llc/madder/go/pkgs/hyphence"
+	"github.com/amarbel-llc/hyphence/go/hyphence"
 	"github.com/amarbel-llc/madder/go/pkgs/ids"
+	"github.com/amarbel-llc/madder/go/pkgs/markl"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/format"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/interfaces"
@@ -33,6 +34,18 @@ import (
 // preserving wrapped-error chains.
 const maxErrorBytes = 1024
 
+// The canonical hyphence TypedBlob is generic over the type-tag and digest
+// types; we bind those to madder's native ids.TypeStruct / markl.Id so the
+// existing ids.MustTypeStruct / `==` / StringSansOp call sites keep working
+// unchanged. markl.Id's zero value is null, so a failure receipt (which never
+// sets a digest) still omits the `@` line — wire output is unchanged from the
+// pre-extraction facade.
+type (
+	hyphenceBlob[BLOB any]       = hyphence.TypedBlob[ids.TypeStruct, *ids.TypeStruct, markl.Id, *markl.Id, BLOB]
+	hyphenceCoder[BLOB any]      = hyphence.CoderToTypedBlob[ids.TypeStruct, *ids.TypeStruct, markl.Id, *markl.Id, BLOB]
+	hyphenceBlobCoders[BLOB any] = hyphence.CoderTypeMapWithoutType[ids.TypeStruct, *ids.TypeStruct, markl.Id, *markl.Id, BLOB]
+)
+
 // TypeStructV1 is the wire type-id that appears on the `! ` line of a
 // v1 failure receipt. Stored as ids.TypeStruct so it can compare
 // directly with typedBlob.Type at dispatch time.
@@ -42,10 +55,10 @@ var TypeStructV1 = ids.MustTypeStruct(TypeTagV1)
 // supported version. The metadata coder populates the typed-blob's
 // Type and Meta; the Blob CoderTypeMapWithoutType then dispatches by
 // Type to a version-specific body coder.
-var Coder = hyphence.CoderToTypedBlob[Blob]{
+var Coder = hyphenceCoder[Blob]{
 	RequireMetadata: true,
 	Metadata:        failuresMetadataCoder{},
-	Blob: hyphence.CoderTypeMapWithoutType[Blob]{
+	Blob: hyphenceBlobCoders[Blob]{
 		TypeStructV1.String(): v1BodyCoder{},
 	},
 }
@@ -56,10 +69,10 @@ var Coder = hyphence.CoderToTypedBlob[Blob]{
 // Meta so the version-specific body coder can stream into it.
 type failuresMetadataCoder struct{}
 
-var _ interfaces.CoderBufferedReadWriter[*hyphence.TypedBlob[Blob]] = failuresMetadataCoder{}
+var _ interfaces.CoderBufferedReadWriter[*hyphenceBlob[Blob]] = failuresMetadataCoder{}
 
 func (failuresMetadataCoder) DecodeFrom(
-	typedBlob *hyphence.TypedBlob[Blob],
+	typedBlob *hyphenceBlob[Blob],
 	bufferedReader *bufio.Reader,
 ) (n int64, err error) {
 	var meta Meta
@@ -127,7 +140,7 @@ func (failuresMetadataCoder) DecodeFrom(
 }
 
 func (failuresMetadataCoder) EncodeTo(
-	typedBlob *hyphence.TypedBlob[Blob],
+	typedBlob *hyphenceBlob[Blob],
 	bufferedWriter *bufio.Writer,
 ) (n int64, err error) {
 	v1, ok := typedBlob.Blob.(*V1)

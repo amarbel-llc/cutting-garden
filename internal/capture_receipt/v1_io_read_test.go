@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"strings"
 	"testing"
-
-	"github.com/amarbel-llc/madder/go/pkgs/hyphence"
 )
 
 func TestCoder_DecodeFrom_RoundTripNoHint(t *testing.T) {
@@ -25,7 +23,7 @@ func TestCoder_DecodeFrom_RoundTripNoHint(t *testing.T) {
 		t.Fatalf("WriteV1: %v", err)
 	}
 
-	tb := &hyphence.TypedBlob[Blob]{}
+	tb := &hyphenceBlob[Blob]{}
 	if _, err := Coder.DecodeFrom(tb, &buf); err != nil {
 		t.Fatalf("Coder.DecodeFrom: %v", err)
 	}
@@ -67,7 +65,7 @@ func TestCoder_DecodeFrom_RoundTripWithHint(t *testing.T) {
 		t.Fatalf("WriteV1WithHint: %v", err)
 	}
 
-	tb := &hyphence.TypedBlob[Blob]{}
+	tb := &hyphenceBlob[Blob]{}
 	if _, err := Coder.DecodeFrom(tb, &buf); err != nil {
 		t.Fatalf("Coder.DecodeFrom: %v", err)
 	}
@@ -91,7 +89,7 @@ func TestCoder_DecodeFrom_RoundTripWithHint(t *testing.T) {
 func TestCoder_DecodeFrom_RejectsUnknownTypeTag(t *testing.T) {
 	receipt := "---\n! cutting_garden-capture_receipt-fs-v999\n---\n\n"
 
-	tb := &hyphence.TypedBlob[Blob]{}
+	tb := &hyphenceBlob[Blob]{}
 	if _, err := Coder.DecodeFrom(tb, strings.NewReader(receipt)); err == nil {
 		t.Fatal("expected error for unknown type-tag, got nil")
 	}
@@ -108,7 +106,7 @@ func TestCoder_DecodeFrom_TolerantOfUnknownDashKey(t *testing.T) {
 		"---\n\n" +
 		`{"path":"a","root":".","type":"file","mode":"0644","size":1,"blob_id":"x"}` + "\n"
 
-	tb := &hyphence.TypedBlob[Blob]{}
+	tb := &hyphenceBlob[Blob]{}
 	if _, err := Coder.DecodeFrom(tb, strings.NewReader(receipt)); err != nil {
 		t.Fatalf("Coder.DecodeFrom: %v", err)
 	}

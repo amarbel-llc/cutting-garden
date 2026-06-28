@@ -56,6 +56,23 @@
       inputs.bats.follows = "bats";
     };
 
+    # The canonical hyphence (`---`-fenced metadata+body document format)
+    # library — extracted from madder in madder#253. Sourced via gomod.nix's
+    # `goFlakeInputs` to bridge github.com/amarbel-llc/hyphence/go the same way
+    # madder/tap/crap are bridged, so a bump is a flake.lock-only edit.
+    # cutting-garden's capture-receipt/failure coders consume the canonical
+    # library directly, not madder's (now-deleted) pkgs/hyphence re-export. The
+    # `follows` wiring dedupes the nodes hyphence shares with this flake.
+    hyphence = {
+      url = "github:amarbel-llc/hyphence";
+      inputs.igloo.follows = "igloo";
+      inputs.nixpkgs-master.follows = "nixpkgs-master";
+      inputs.utils.follows = "flake-utils";
+      inputs.bats.follows = "bats";
+      inputs.purse-first.follows = "purse-first";
+      inputs.conformist.follows = "conformist";
+    };
+
     # Sourced via gomod.nix's `goFlakeInputs` to bridge dewey
     # (libs/dewey within the purse-first workspace) the same way
     # madder + tap are bridged. purse-first's go-pkgs is the whole
@@ -116,6 +133,7 @@
       nixpkgs-master,
       flake-utils,
       madder,
+      hyphence,
       tap,
       crap,
       purse-first,
@@ -150,6 +168,7 @@
         goFlakeInputs = import ./gomod.nix {
           inherit
             madder
+            hyphence
             tap
             crap
             purse-first

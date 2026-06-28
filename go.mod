@@ -4,11 +4,12 @@ go 1.26
 
 require (
 	github.com/amarbel-llc/crap/go-crap/v2 v2.2.2
-	github.com/amarbel-llc/madder/go v0.3.36
-	github.com/amarbel-llc/purse-first/libs/dewey v0.3.0
+	github.com/amarbel-llc/hyphence/go v0.2.0
+	github.com/amarbel-llc/madder/go v0.3.45-0.20260628135029-4fe7b0b1dcc4
+	github.com/amarbel-llc/purse-first/libs/dewey v0.3.2
 	github.com/amarbel-llc/purse-first/libs/go-mcp v0.3.1
 	github.com/amarbel-llc/tap/go v0.1.11
-	github.com/charmbracelet/bubbles v1.0.0
+	github.com/amarbel-llc/tommy v0.4.2
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/go-git/go-billy/v5 v5.9.0
@@ -25,7 +26,6 @@ require (
 	github.com/DataDog/zstd v1.5.7 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/ProtonMail/go-crypto v1.1.6 // indirect
-	github.com/amarbel-llc/tommy v0.4.2 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.41.7 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.10 // indirect
@@ -48,6 +48,7 @@ require (
 	github.com/aymanbagabas/go-osc52/v2 v2.0.1 // indirect
 	github.com/brandondube/tai v0.1.0 // indirect
 	github.com/catppuccin/go v0.3.0 // indirect
+	github.com/charmbracelet/bubbles v1.0.0 // indirect
 	github.com/charmbracelet/colorprofile v0.4.1 // indirect
 	github.com/charmbracelet/harmonica v0.2.0 // indirect
 	github.com/charmbracelet/huh v1.0.0 // indirect

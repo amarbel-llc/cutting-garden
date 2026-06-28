@@ -11,6 +11,7 @@
 # Add an entry when its upstream flake exposes `go-pkgs`.
 {
   madder,
+  hyphence,
   tap,
   crap,
   purse-first,
@@ -26,6 +27,13 @@
   # slice into `libs/dewey`.
   "github.com/amarbel-llc/madder/go" = {
     src = madder.packages.${system}.go-pkgs;
+  };
+  # hyphence.go-pkgs is already scoped to its `go/` subdir (the producer
+  # slices upstream, like madder), so no subPath here. The canonical
+  # hyphence library extracted in madder#253; cutting-garden consumes it
+  # directly rather than through madder's deleted re-export.
+  "github.com/amarbel-llc/hyphence/go" = {
+    src = hyphence.packages.${system}.go-pkgs;
   };
   "github.com/amarbel-llc/tap/go" = {
     src = tap.packages.${system}.go-pkgs;

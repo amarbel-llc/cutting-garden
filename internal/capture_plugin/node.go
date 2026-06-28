@@ -3,7 +3,7 @@ package capture_plugin
 import (
 	"strings"
 
-	"github.com/amarbel-llc/madder/go/pkgs/hyphence"
+	"github.com/amarbel-llc/hyphence/go/hyphence"
 )
 
 // Ref is one FDR-0001 typed blob reference: a named slot pointing at a

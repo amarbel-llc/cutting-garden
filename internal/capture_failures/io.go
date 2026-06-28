@@ -5,14 +5,13 @@ import (
 
 	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
 	"github.com/amarbel-llc/madder/go/pkgs/domain_interfaces"
-	"github.com/amarbel-llc/madder/go/pkgs/hyphence"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 )
 
 // WriteV1 serializes v as a hyphence-wrapped failures-v1 blob to w
 // via the package's Coder.
 func WriteV1(w io.Writer, v *V1) (int64, error) {
-	tb := &hyphence.TypedBlob[Blob]{
+	tb := &hyphenceBlob[Blob]{
 		Type: TypeStructV1,
 		Blob: v,
 	}
@@ -27,7 +26,7 @@ func WriteV1(w io.Writer, v *V1) (int64, error) {
 
 // ReadV1 parses a failures-v1 blob from r.
 func ReadV1(r io.Reader) (*V1, error) {
-	tb := &hyphence.TypedBlob[Blob]{}
+	tb := &hyphenceBlob[Blob]{}
 
 	if _, err := Coder.DecodeFrom(tb, r); err != nil {
 		return nil, errors.Wrap(err)

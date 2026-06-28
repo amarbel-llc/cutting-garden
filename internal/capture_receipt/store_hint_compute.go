@@ -3,7 +3,6 @@ package capture_receipt
 import (
 	"github.com/amarbel-llc/madder/go/pkgs/blob_store_configs"
 	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
-	"github.com/amarbel-llc/madder/go/pkgs/hyphence"
 	"github.com/amarbel-llc/madder/go/pkgs/markl_io"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 )
@@ -47,7 +46,7 @@ func ComputeStoreHint(
 	digester, repoolDigester := markl_io.MakeWriterWithRepool(hash, nil)
 	defer repoolDigester()
 
-	typedCfg := &hyphence.TypedBlob[blob_store_configs.Config]{
+	typedCfg := &hyphenceBlob[blob_store_configs.Config]{
 		Type: blob_store_configs.TypeStructForConfig(cfg),
 		Blob: cfg,
 	}

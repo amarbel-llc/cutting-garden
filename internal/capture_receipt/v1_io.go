@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/amarbel-llc/madder/go/pkgs/hyphence"
+	"github.com/amarbel-llc/hyphence/go/hyphence"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/interfaces"
 )
@@ -33,7 +33,7 @@ func WriteV1(w io.Writer, entries []EntryV1) (int64, error) {
 // metadata line per RFC 0001 §Producer Rules §Receipt Metadata: Store
 // Hint.
 func WriteV1WithHint(w io.Writer, entries []EntryV1, hint *StoreHint) (int64, error) {
-	tb := &hyphence.TypedBlob[Blob]{
+	tb := &hyphenceBlob[Blob]{
 		Type: TypeStructV1,
 		Blob: &V1{Hint: hint, Entries: entries},
 	}
