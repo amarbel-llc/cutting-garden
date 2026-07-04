@@ -475,6 +475,18 @@
           # per-commit hook. `nix build .#conformist-pre-commit` forces it.
           conformist-pre-commit = conformistEval.config.build.preCommit;
 
+          # The `--commit --amend` sibling (build.repair), on the devShell PATH
+          # as `conformist-repair` — the spinclass merge-repair phase resolves
+          # it from there. Without this the eng-sweatfile `repair` hook falls
+          # through to eng's cwd-aware wrapper and formats with ENG's catch-all
+          # config (this repo's module config is invisible to it, eng#222):
+          # during the 2026-07-04 nixpkgs cascade that fallback re-grouped the
+          # dagnabit pkgs/ facades in the repair amend, which
+          # validate-generate-dagnabit then rejected — an unresolvable
+          # repair-vs-gate loop. This repo's own config excludes pkgs/**, so
+          # the hermetic repair and the drift gate agree.
+          conformist-repair = conformistEval.config.build.repair;
+
           # The generated PURE-lane config, pointed at by dagnabit's
           # DAGNABIT_CONFORMIST_CONFIG (purse-first#159) so `dagnabit export
           # -check` formats the generated facades with cutting-garden's REAL
@@ -602,6 +614,10 @@
             # hook also lands on PATH, named by the sweatfile's `pre-commit` hook.
             conformist.packages.${system}.default
             conformistEval.config.build.preCommit
+            # conformist-repair: the merge-repair hook (see packages above) —
+            # on the devShell PATH so spinclass's repair phase resolves the
+            # hermetic, this-config hook instead of eng's fallback wrapper.
+            conformistEval.config.build.repair
             # tommy: the `tommy generate` codegen binary for RFC 0007's
             # config format (`//go:generate tommy generate`). Devshell-
             # only; generated `*_tommy.go` companions are committed, so
