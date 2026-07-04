@@ -220,9 +220,11 @@ type ProtocolRestorePlugin = internal.ProtocolRestorePlugin
 // receipt (and its referenced blobs), the receipt's markl id, and the
 // parsed destination. Routing is by receipt *kind*, not dest scheme —
 // the receipt knows how it was captured.
-type ProtocolRestoreRequest = internal.ProtocolRestoreRequest
-type ReportPlan = internal.ReportPlan
-type ReportProgress = internal.ReportProgress
+type (
+	ProtocolRestoreRequest = internal.ProtocolRestoreRequest
+	ReportPlan             = internal.ReportPlan
+	ReportProgress         = internal.ReportProgress
+)
 
 // Reporter is the unified capture-events stream. The historical name is
 // kept as an alias so request structs and plugin call sites read

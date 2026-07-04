@@ -38,5 +38,7 @@ type Verdict = internal.Verdict
 // OrNop returns s, or a Nop when s is nil.
 var OrNop = internal.OrNop
 
-const DirectiveSkip = internal.DirectiveSkip
-const DirectiveTodo = internal.DirectiveTodo
+const (
+	DirectiveSkip = internal.DirectiveSkip
+	DirectiveTodo = internal.DirectiveTodo
+)

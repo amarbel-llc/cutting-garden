@@ -124,6 +124,20 @@
       inputs.bats.follows = "bats";
       inputs.tap.follows = "tap";
     };
+    madder.inputs.bats.follows = "bats";
+    igloo.inputs.treefmt-nix.follows = "bats/treefmt-nix";
+    tap.inputs.treefmt-nix.follows = "bats/treefmt-nix";
+    crap.inputs.conformist.follows = "conformist";
+    madder.inputs.conformist.follows = "conformist";
+    madder.inputs.crap.follows = "crap";
+    igloo.inputs.systems.follows = "flake-utils/systems";
+    madder.inputs.hyphence.follows = "hyphence";
+    madder.inputs.doppelgang.follows = "hyphence/doppelgang";
+    igloo.inputs.nixpkgs-master.follows = "nixpkgs-master";
+    madder.inputs.purse-first.follows = "purse-first";
+    tap.inputs.purse-first.follows = "purse-first";
+    tap.inputs.gomod2nix.follows = "purse-first/gomod2nix";
+    madder.inputs.tap.follows = "tap";
   };
 
   outputs =
