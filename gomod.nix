@@ -15,6 +15,7 @@
   tap,
   crap,
   purse-first,
+  piggy,
   tommy,
   system,
 }:
@@ -34,6 +35,16 @@
   # directly rather than through madder's deleted re-export.
   "github.com/amarbel-llc/hyphence/go" = {
     src = hyphence.packages.${system}.go-pkgs;
+  };
+  # piggy owns the markl-id framework (piggy#183 ownership inversion); madder
+  # deleted its go/pkgs/markl re-export, so cutting-garden imports piggy's
+  # pkgs/markl directly. piggy's go-pkgs producer is scoped to `go/` (the
+  # module root — module path is github.com/amarbel-llc/piggy/go), so no
+  # subPath. piggy's passthru bridges dewey for consumers that need it, but
+  # cutting-garden already bridges dewey via purse-first above, so no extra
+  # entry here. Mirrors madder's consumer (madder master 0063d39).
+  "github.com/amarbel-llc/piggy/go" = {
+    src = piggy.packages.${system}.go-pkgs;
   };
   "github.com/amarbel-llc/tap/go" = {
     src = tap.packages.${system}.go-pkgs;

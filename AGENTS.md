@@ -68,10 +68,13 @@ divergences from dodder are intentional carry-forwards.
       canonical `---`-fenced metadata+body document format, extracted from
       madder in madder#253 — cutting-garden's capture-receipt/failure coders
       consume it directly), tap, crap (`go-crap`, the shared CRAP-2 viewport
-      + ndjson-crap), and dewey (`libs/dewey` within the purse-first
-      workspace) are sourced from sibling flakes via `goFlakeInputs`
-      (RFC 0001). Bumping any of them is a `flake.lock`-only edit; no
-      `go get` + `gomod2nix generate` lockstep.
+      + ndjson-crap), dewey (`libs/dewey` within the purse-first
+      workspace), and piggy (`piggy/go`, the markl-id framework home —
+      madder deleted its `pkgs/markl` re-export in piggy#183, so
+      cutting-garden imports `piggy/go/pkgs/markl` directly) are sourced
+      from sibling flakes via `goFlakeInputs` (RFC 0001). Bumping any of
+      them is a `flake.lock`-only edit; no `go get` + `gomod2nix generate`
+      lockstep.
     - **Organic gomod2nix** (`gomod2nix.toml`): everything else. Read from
       `gomod2nix.toml`, **not** `go.sum`.
   cutting-garden also **produces** `go-pkgs` / `go-pkgs-test` flake outputs
@@ -103,9 +106,9 @@ never let go fetch a different toolchain.
 
 Two cases:
 
-1. **A bridged dep (madder, hyphence, tap, crap, dewey)** — bump the flake input:
+1. **A bridged dep (madder, hyphence, tap, crap, dewey, piggy)** — bump the flake input:
    ```sh
-   nix flake update madder   # or hyphence, tap, crap, or purse-first (dewey lives there)
+   nix flake update madder   # or hyphence, tap, crap, piggy, or purse-first (dewey lives there)
    ```
    `flake.lock` is the source of truth; `go.mod` keeps its real `require`
    line (the bridge merges over it at eval time). No `gomod2nix generate`

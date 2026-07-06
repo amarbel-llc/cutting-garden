@@ -5,7 +5,8 @@ go 1.26
 require (
 	github.com/amarbel-llc/crap/go-crap/v2 v2.2.2
 	github.com/amarbel-llc/hyphence/go v0.2.0
-	github.com/amarbel-llc/madder/go v0.3.45-0.20260628135029-4fe7b0b1dcc4
+	github.com/amarbel-llc/madder/go v0.4.1-0.20260706024145-0063d397ab40
+	github.com/amarbel-llc/piggy/go v0.0.0-20260706021717-a08ad5ae28b3
 	github.com/amarbel-llc/purse-first/libs/dewey v0.3.2
 	github.com/amarbel-llc/purse-first/libs/go-mcp v0.3.1
 	github.com/amarbel-llc/tap/go v0.1.11

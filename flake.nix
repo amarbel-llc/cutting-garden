@@ -84,6 +84,25 @@
       inputs.utils.follows = "flake-utils";
     };
 
+    # The markl-id framework home (piggy#183 ownership inversion) — madder
+    # deleted its go/pkgs/markl re-export, so cutting-garden imports piggy's
+    # markl (pkgs/markl etc.) directly. Sourced via gomod.nix's
+    # `goFlakeInputs` so a piggy bump only touches flake.lock — no go.mod /
+    # gomod2nix.toml lockstep edits. piggy's go-pkgs producer is scoped to
+    # go/ (no subPath) and carries a passthru dewey bridge; cutting-garden's
+    # own dewey dep stays on its purse-first bridge, so no extra entry is
+    # needed. follows wiring mirrors madder's consumer (madder master
+    # 0063d39) so shared lock nodes dedupe.
+    piggy = {
+      url = "github:amarbel-llc/piggy";
+      inputs.igloo.follows = "igloo";
+      inputs.nixpkgs-master.follows = "nixpkgs-master";
+      inputs.utils.follows = "flake-utils";
+      inputs.bats.follows = "bats";
+      inputs.purse-first.follows = "purse-first";
+      inputs.conformist.follows = "conformist";
+    };
+
     # amarbel-llc/bats — provides `lib.batsLane`, the nix-sandbox bats
     # test-runner builder. Consumed by the `bats-capture` package
     # output (Phase 2 step 9). Only the sandbox lane uses bats; the
@@ -151,6 +170,7 @@
       tap,
       crap,
       purse-first,
+      piggy,
       bats,
       conformist,
       tommy,
@@ -186,6 +206,7 @@
             tap
             crap
             purse-first
+            piggy
             tommy
             system
             ;

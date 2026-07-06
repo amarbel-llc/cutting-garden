@@ -5,7 +5,7 @@ import (
 
 	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
 	"github.com/amarbel-llc/madder/go/pkgs/domain_interfaces"
-	"github.com/amarbel-llc/madder/go/pkgs/markl"
+	"github.com/amarbel-llc/piggy/go/pkgs/markl"
 )
 
 // blobProber is the narrow surface probeMissingBlobs consumes from

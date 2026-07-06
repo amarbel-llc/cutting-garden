@@ -13,7 +13,7 @@ import (
 	"github.com/amarbel-llc/cutting-garden/pkgs/capture_receipt"
 	"github.com/amarbel-llc/cutting-garden/pkgs/cutting_garden_plugins"
 	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
-	"github.com/amarbel-llc/madder/go/pkgs/markl"
+	"github.com/amarbel-llc/piggy/go/pkgs/markl"
 )
 
 // recordingStream captures Stream events for assertions, mirroring the
