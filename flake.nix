@@ -157,6 +157,16 @@
     tap.inputs.purse-first.follows = "purse-first";
     tap.inputs.gomod2nix.follows = "purse-first/gomod2nix";
     madder.inputs.tap.follows = "tap";
+    # piggy + tommy align madder's view of each module with ours: their
+    # gomod.nix bridge entries were dropped in favor of madder's
+    # passthru re-exports (igloo depth-N inheritance, cutting-garden#134),
+    # so the passthru rev IS the rev we compile — these follows make that
+    # alignment structural instead of a lock-dedup coincidence. tommy
+    # especially: the devshell `tommy generate` binary comes from OUR
+    # tag-pinned input and must match the bridged library rev
+    # (`--check` fails on stamp skew).
+    madder.inputs.piggy.follows = "piggy";
+    madder.inputs.tommy.follows = "tommy";
   };
 
   outputs =
@@ -202,12 +212,7 @@
         goFlakeInputs = import ./gomod.nix {
           inherit
             madder
-            hyphence
-            tap
-            crap
             purse-first
-            piggy
-            tommy
             system
             ;
         };
