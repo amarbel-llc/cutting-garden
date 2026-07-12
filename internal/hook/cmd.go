@@ -9,8 +9,8 @@ package hook
 import (
 	"os"
 
-	"github.com/amarbel-llc/cutting-garden/internal/claude_hooks"
-	"github.com/amarbel-llc/cutting-garden/internal/command"
+	"code.linenisgreat.com/cutting-garden/internal/claude_hooks"
+	"code.linenisgreat.com/cutting-garden/internal/command"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 )
 

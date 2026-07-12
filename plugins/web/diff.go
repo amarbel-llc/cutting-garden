@@ -3,8 +3,8 @@ package cutting_garden_plugin_web
 import (
 	"fmt"
 
-	"github.com/amarbel-llc/cutting-garden/pkgs/capture_plugin"
-	"github.com/amarbel-llc/cutting-garden/pkgs/cutting_garden_plugins"
+	"code.linenisgreat.com/cutting-garden/pkgs/capture_plugin"
+	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
 )
 
 // DiffProtocol compares a captured web receipt against the live URL by

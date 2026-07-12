@@ -7,8 +7,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/amarbel-llc/cutting-garden/internal/capture_failures"
-	"github.com/amarbel-llc/cutting-garden/internal/capture_log"
+	"code.linenisgreat.com/cutting-garden/internal/capture_failures"
+	"code.linenisgreat.com/cutting-garden/internal/capture_log"
 	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
 	"github.com/amarbel-llc/madder/go/pkgs/domain_interfaces"
 	_ "github.com/amarbel-llc/madder/go/pkgs/markl_registrations"

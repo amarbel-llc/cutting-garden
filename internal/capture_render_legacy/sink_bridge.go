@@ -8,9 +8,9 @@
 package capture_render_legacy
 
 import (
-	"github.com/amarbel-llc/cutting-garden/internal/capture_events"
-	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
-	"github.com/amarbel-llc/cutting-garden/internal/capture_sink"
+	"code.linenisgreat.com/cutting-garden/internal/capture_events"
+	"code.linenisgreat.com/cutting-garden/internal/capture_receipt"
+	"code.linenisgreat.com/cutting-garden/internal/capture_sink"
 )
 
 // SinkBridge forwards the Stream's per-entry events (Entry, Failure)

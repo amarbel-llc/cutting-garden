@@ -1,7 +1,7 @@
 package cutting_garden_plugin_web
 
 import (
-	"github.com/amarbel-llc/cutting-garden/pkgs/cutting_garden_plugins"
+	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
 )
 
 func init() {

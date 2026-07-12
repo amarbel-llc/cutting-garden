@@ -2,7 +2,7 @@
 
 package capture_serve
 
-import internal "github.com/amarbel-llc/cutting-garden/internal/capture_serve"
+import internal "code.linenisgreat.com/cutting-garden/internal/capture_serve"
 
 // BatchDefaults mirrors the RFC 0002 Batch Input defaults block: values
 // applied to every capture unless overridden per-capture.

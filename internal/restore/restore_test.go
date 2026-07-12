@@ -4,14 +4,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/amarbel-llc/cutting-garden/internal/command"
+	"code.linenisgreat.com/cutting-garden/internal/command"
 	// Blank-import the file plugin so its init() registers under the
 	// "" and "file" restore schemes. Tests past the arg-parse stage
 	// (TestRestore_TwoArgs_*) walk the resolve-plugin path; without
 	// this the registry is empty and resolve fails before we exercise
 	// what the test actually targets.
-	"github.com/amarbel-llc/cutting-garden/internal/restore"
-	_ "github.com/amarbel-llc/cutting-garden/plugins/file"
+	"code.linenisgreat.com/cutting-garden/internal/restore"
+	_ "code.linenisgreat.com/cutting-garden/plugins/file"
 )
 
 // makeUtility wires a fresh Utility with the restore cmd registered.

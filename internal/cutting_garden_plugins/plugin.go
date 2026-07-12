@@ -15,8 +15,8 @@ import (
 	"context"
 	"net/url"
 
-	"github.com/amarbel-llc/cutting-garden/internal/capture_failures"
-	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
+	"code.linenisgreat.com/cutting-garden/internal/capture_failures"
+	"code.linenisgreat.com/cutting-garden/internal/capture_receipt"
 	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
 )
 

@@ -18,9 +18,9 @@ package main
 import (
 	"os"
 
-	cgapp "github.com/amarbel-llc/cutting-garden/pkgs/cgapp"
+	cgapp "code.linenisgreat.com/cutting-garden/pkgs/cgapp"
 
-	_ "github.com/amarbel-llc/cutting-garden/examples/nixstore"
+	_ "code.linenisgreat.com/cutting-garden/examples/nixstore"
 )
 
 func main() {

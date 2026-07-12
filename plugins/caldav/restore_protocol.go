@@ -3,7 +3,7 @@ package caldav
 import (
 	"strings"
 
-	"github.com/amarbel-llc/cutting-garden/pkgs/cutting_garden_plugins"
+	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 )
 

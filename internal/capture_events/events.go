@@ -12,7 +12,7 @@
 package capture_events
 
 import (
-	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
+	"code.linenisgreat.com/cutting-garden/internal/capture_receipt"
 )
 
 // Directive kinds mirror tap-ndjson's directive.kind values.

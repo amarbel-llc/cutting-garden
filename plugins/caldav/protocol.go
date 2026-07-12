@@ -7,10 +7,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/amarbel-llc/cutting-garden/pkgs/capture_events"
-	"github.com/amarbel-llc/cutting-garden/pkgs/capture_plugin"
-	"github.com/amarbel-llc/cutting-garden/pkgs/cutting_garden_plugins"
-	"github.com/amarbel-llc/cutting-garden/plugins/caldav/ical"
+	"code.linenisgreat.com/cutting-garden/pkgs/capture_events"
+	"code.linenisgreat.com/cutting-garden/pkgs/capture_plugin"
+	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
+	"code.linenisgreat.com/cutting-garden/plugins/caldav/ical"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 )
 

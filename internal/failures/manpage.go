@@ -1,6 +1,6 @@
 package failures
 
-import "github.com/amarbel-llc/cutting-garden/internal/command"
+import "code.linenisgreat.com/cutting-garden/internal/command"
 
 var (
 	_ command.CommandWithArgs     = (*Failures)(nil)

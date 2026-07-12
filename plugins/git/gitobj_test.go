@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/amarbel-llc/cutting-garden/pkgs/capture_plugin"
+	"code.linenisgreat.com/cutting-garden/pkgs/capture_plugin"
 	"github.com/go-git/go-git/v5/plumbing"
 )
 

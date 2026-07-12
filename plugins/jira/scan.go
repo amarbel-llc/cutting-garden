@@ -5,8 +5,8 @@ import (
 	"context"
 	"strings"
 
-	"github.com/amarbel-llc/cutting-garden/pkgs/capture_receipt"
-	"github.com/amarbel-llc/cutting-garden/pkgs/plugin_blob_io"
+	"code.linenisgreat.com/cutting-garden/pkgs/capture_receipt"
+	"code.linenisgreat.com/cutting-garden/pkgs/plugin_blob_io"
 	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
 )
 

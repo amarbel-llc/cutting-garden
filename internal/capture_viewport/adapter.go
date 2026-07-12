@@ -6,9 +6,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/amarbel-llc/cutting-garden/internal/capture_events"
-	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
-	cgp "github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
+	"code.linenisgreat.com/cutting-garden/internal/capture_events"
+	"code.linenisgreat.com/cutting-garden/internal/capture_receipt"
+	cgp "code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
 )
 
 // sender is the subset of *tea.Program the adapter uses, narrowed so tests

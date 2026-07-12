@@ -6,18 +6,18 @@
 package cgapp
 
 import (
-	"github.com/amarbel-llc/cutting-garden/internal/blob_writer"
-	"github.com/amarbel-llc/cutting-garden/internal/capture"
-	"github.com/amarbel-llc/cutting-garden/internal/command"
-	"github.com/amarbel-llc/cutting-garden/internal/diff"
-	"github.com/amarbel-llc/cutting-garden/internal/failures"
-	"github.com/amarbel-llc/cutting-garden/internal/health"
-	"github.com/amarbel-llc/cutting-garden/internal/hook"
-	"github.com/amarbel-llc/cutting-garden/internal/list"
-	"github.com/amarbel-llc/cutting-garden/internal/mcp"
-	"github.com/amarbel-llc/cutting-garden/internal/restore"
-	"github.com/amarbel-llc/cutting-garden/internal/serve"
-	"github.com/amarbel-llc/cutting-garden/internal/version"
+	"code.linenisgreat.com/cutting-garden/internal/blob_writer"
+	"code.linenisgreat.com/cutting-garden/internal/capture"
+	"code.linenisgreat.com/cutting-garden/internal/command"
+	"code.linenisgreat.com/cutting-garden/internal/diff"
+	"code.linenisgreat.com/cutting-garden/internal/failures"
+	"code.linenisgreat.com/cutting-garden/internal/health"
+	"code.linenisgreat.com/cutting-garden/internal/hook"
+	"code.linenisgreat.com/cutting-garden/internal/list"
+	"code.linenisgreat.com/cutting-garden/internal/mcp"
+	"code.linenisgreat.com/cutting-garden/internal/restore"
+	"code.linenisgreat.com/cutting-garden/internal/serve"
+	"code.linenisgreat.com/cutting-garden/internal/version"
 
 	// markl-id purpose registrations (the blech32 purpose lookups that
 	// fire when blob_store_env discovers an encrypted store config). Not a

@@ -4,10 +4,10 @@ import (
 	"path"
 	"strings"
 
-	"github.com/amarbel-llc/cutting-garden/pkgs/capture_events"
-	"github.com/amarbel-llc/cutting-garden/pkgs/capture_failures"
-	"github.com/amarbel-llc/cutting-garden/pkgs/capture_receipt"
-	"github.com/amarbel-llc/cutting-garden/pkgs/cutting_garden_plugins"
+	"code.linenisgreat.com/cutting-garden/pkgs/capture_events"
+	"code.linenisgreat.com/cutting-garden/pkgs/capture_failures"
+	"code.linenisgreat.com/cutting-garden/pkgs/capture_receipt"
+	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
 )
 
 // capturedComponents is the set of iCalendar component types the plugin

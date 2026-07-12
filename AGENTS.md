@@ -83,7 +83,7 @@ divergences from dodder are intentional carry-forwards.
       `gomod2nix.toml`, **not** `go.sum`.
   cutting-garden also **produces** `go-pkgs` / `go-pkgs-test` flake outputs
   (RFC 0009 §2, the out-of-tree-consumer surface): a plugin in its own repo
-  bridges `github.com/amarbel-llc/cutting-garden` onto `go-pkgs` to import the
+  bridges `code.linenisgreat.com/cutting-garden` onto `go-pkgs` to import the
   `pkgs/` facades. Regenerate the facades with `just codemod-generate-dagnabit`
   (hermetic — resolves formatters from the store-pinned conformist config).
 - `go test ./...` — runs the test suite (no external deps).

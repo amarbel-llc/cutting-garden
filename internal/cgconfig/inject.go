@@ -1,8 +1,8 @@
 package cgconfig
 
 import (
-	"github.com/amarbel-llc/cutting-garden/plugins/caldav"
-	"github.com/amarbel-llc/cutting-garden/plugins/jira"
+	"code.linenisgreat.com/cutting-garden/plugins/caldav"
+	"code.linenisgreat.com/cutting-garden/plugins/jira"
 )
 
 // Inject wires each plugin's config section into that plugin's package

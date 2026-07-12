@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
+	"code.linenisgreat.com/cutting-garden/internal/capture_receipt"
 )
 
 // compareEntries computes the per-path symmetric difference between

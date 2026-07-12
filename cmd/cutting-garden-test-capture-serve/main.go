@@ -9,7 +9,7 @@ package main
 import (
 	"os"
 
-	testpeer "github.com/amarbel-llc/cutting-garden/internal/capture_serve_testpeer"
+	testpeer "code.linenisgreat.com/cutting-garden/internal/capture_serve_testpeer"
 )
 
 func main() { os.Exit(testpeer.Main()) }

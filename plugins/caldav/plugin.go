@@ -22,8 +22,8 @@ package caldav
 import (
 	"net/url"
 
-	"github.com/amarbel-llc/cutting-garden/pkgs/capture_receipt"
-	"github.com/amarbel-llc/cutting-garden/pkgs/cutting_garden_plugins"
+	"code.linenisgreat.com/cutting-garden/pkgs/capture_receipt"
+	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
 )
 
 // schemeCalDAV is the single URI scheme this plugin claims.

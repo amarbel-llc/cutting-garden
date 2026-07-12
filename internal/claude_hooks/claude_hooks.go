@@ -22,7 +22,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/amarbel-llc/cutting-garden/internal/mcp_tool_perms"
+	"code.linenisgreat.com/cutting-garden/internal/mcp_tool_perms"
 )
 
 // hookInput carries the subset of Claude Code's hook-event payload the

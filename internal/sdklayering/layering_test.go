@@ -7,7 +7,7 @@ import (
 )
 
 const (
-	modulePath     = "github.com/amarbel-llc/cutting-garden"
+	modulePath     = "code.linenisgreat.com/cutting-garden"
 	pkgsPrefix     = modulePath + "/pkgs/"
 	internalPrefix = modulePath + "/internal/"
 	// pluginAggregator legitimately blank-imports not-yet-migrated

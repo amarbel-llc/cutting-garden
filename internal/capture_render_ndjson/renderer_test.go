@@ -9,8 +9,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/amarbel-llc/cutting-garden/internal/capture_events"
-	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
+	"code.linenisgreat.com/cutting-garden/internal/capture_events"
+	"code.linenisgreat.com/cutting-garden/internal/capture_receipt"
 	"github.com/amarbel-llc/tap/go/pkgs/ndjson"
 )
 

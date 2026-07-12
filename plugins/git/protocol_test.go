@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/amarbel-llc/cutting-garden/pkgs/capture_plugin"
-	"github.com/amarbel-llc/cutting-garden/pkgs/cutting_garden_plugins"
+	"code.linenisgreat.com/cutting-garden/pkgs/capture_plugin"
+	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
 )
 
 // memWriter is a content-addressed in-memory capture_plugin.Writer for

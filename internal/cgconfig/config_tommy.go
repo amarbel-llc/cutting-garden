@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/amarbel-llc/cutting-garden/plugins/caldav"
-	"github.com/amarbel-llc/cutting-garden/plugins/jira"
+	"code.linenisgreat.com/cutting-garden/plugins/caldav"
+	"code.linenisgreat.com/cutting-garden/plugins/jira"
 	"github.com/amarbel-llc/tommy/pkg/cst"
 	"github.com/amarbel-llc/tommy/pkg/document"
 )

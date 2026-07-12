@@ -1,6 +1,6 @@
 package jira
 
-import "github.com/amarbel-llc/cutting-garden/pkgs/capture_plugin"
+import "code.linenisgreat.com/cutting-garden/pkgs/capture_plugin"
 
 // Protocol-defined node type-strings for the jira RFC 0002 binding. These
 // are the merkle-tree node types CaptureProtocol emits and DiffProtocol

@@ -3,7 +3,7 @@ package caldav
 import (
 	"testing"
 
-	"github.com/amarbel-llc/cutting-garden/pkgs/cutting_garden_plugins"
+	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
 )
 
 // TestProtocolRegistration guards the registry wiring the unit tests

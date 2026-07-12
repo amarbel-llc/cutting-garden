@@ -1,4 +1,4 @@
-module github.com/amarbel-llc/cutting-garden
+module code.linenisgreat.com/cutting-garden
 
 go 1.26
 

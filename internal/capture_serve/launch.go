@@ -8,7 +8,7 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/amarbel-llc/cutting-garden/internal/capture_plugin"
+	"code.linenisgreat.com/cutting-garden/internal/capture_plugin"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 )
 

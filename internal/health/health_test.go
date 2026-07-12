@@ -7,17 +7,17 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/amarbel-llc/cutting-garden/internal/command"
+	"code.linenisgreat.com/cutting-garden/internal/command"
 
 	// Blank-import the plugins so their init() populates the registries
 	// RegisteredPlugins() enumerates. The production binaries get these
 	// via cgapp's blank-imports.
-	_ "github.com/amarbel-llc/cutting-garden/plugins/caldav"
-	_ "github.com/amarbel-llc/cutting-garden/plugins/file"
-	_ "github.com/amarbel-llc/cutting-garden/plugins/git"
-	_ "github.com/amarbel-llc/cutting-garden/plugins/googlephotos"
-	_ "github.com/amarbel-llc/cutting-garden/plugins/optical"
-	_ "github.com/amarbel-llc/cutting-garden/plugins/ytdlp"
+	_ "code.linenisgreat.com/cutting-garden/plugins/caldav"
+	_ "code.linenisgreat.com/cutting-garden/plugins/file"
+	_ "code.linenisgreat.com/cutting-garden/plugins/git"
+	_ "code.linenisgreat.com/cutting-garden/plugins/googlephotos"
+	_ "code.linenisgreat.com/cutting-garden/plugins/optical"
+	_ "code.linenisgreat.com/cutting-garden/plugins/ytdlp"
 )
 
 // driveHealth dispatches the health subcommand through a fresh Utility

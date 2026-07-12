@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/amarbel-llc/cutting-garden/internal/mcp_tool_perms"
+	"code.linenisgreat.com/cutting-garden/internal/mcp_tool_perms"
 )
 
 func TestRun_MalformedJSON_Errors(t *testing.T) {

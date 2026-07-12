@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"net/url"
 
-	"github.com/amarbel-llc/cutting-garden/internal/capture_plugin"
-	"github.com/amarbel-llc/cutting-garden/internal/command_components"
-	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
+	"code.linenisgreat.com/cutting-garden/internal/capture_plugin"
+	"code.linenisgreat.com/cutting-garden/internal/command_components"
+	"code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 	"github.com/amarbel-llc/purse-first/libs/go-mcp/protocol"
 	"github.com/amarbel-llc/purse-first/libs/go-mcp/server"

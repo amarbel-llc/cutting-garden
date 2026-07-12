@@ -9,12 +9,12 @@ package main
 import (
 	"os"
 
-	"github.com/amarbel-llc/cutting-garden/internal/buildinfo"
-	"github.com/amarbel-llc/cutting-garden/internal/cgapp"
+	"code.linenisgreat.com/cutting-garden/internal/buildinfo"
+	"code.linenisgreat.com/cutting-garden/internal/cgapp"
 
 	// Register the standard in-repo plugin set. cgapp.Build() is
 	// plugin-bare (RFC 0009 §5 step 3); the in-repo binaries opt in here.
-	_ "github.com/amarbel-llc/cutting-garden/plugins/all"
+	_ "code.linenisgreat.com/cutting-garden/plugins/all"
 )
 
 // Populated at link time via `-X main.version` / `-X main.commit` (see

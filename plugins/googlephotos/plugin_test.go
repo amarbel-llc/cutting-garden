@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/amarbel-llc/cutting-garden/pkgs/capture_events"
-	"github.com/amarbel-llc/cutting-garden/pkgs/capture_receipt"
-	"github.com/amarbel-llc/cutting-garden/pkgs/cutting_garden_plugins"
+	"code.linenisgreat.com/cutting-garden/pkgs/capture_events"
+	"code.linenisgreat.com/cutting-garden/pkgs/capture_receipt"
+	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
 	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
 	"github.com/amarbel-llc/piggy/go/pkgs/markl"
 )

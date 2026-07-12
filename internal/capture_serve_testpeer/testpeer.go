@@ -20,8 +20,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/amarbel-llc/cutting-garden/internal/capture_plugin"
-	"github.com/amarbel-llc/cutting-garden/internal/capture_serve"
+	"code.linenisgreat.com/cutting-garden/internal/capture_plugin"
+	"code.linenisgreat.com/cutting-garden/internal/capture_serve"
 )
 
 // FixedPayload is the single payload blob of the fixed receipt tree.

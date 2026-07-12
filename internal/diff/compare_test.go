@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
+	"code.linenisgreat.com/cutting-garden/internal/capture_receipt"
 )
 
 // Helpers — build EntryV1 values without ceremony.

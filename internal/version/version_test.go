@@ -5,8 +5,8 @@ import (
 	"io"
 	"testing"
 
-	"github.com/amarbel-llc/cutting-garden/internal/buildinfo"
-	"github.com/amarbel-llc/cutting-garden/internal/command"
+	"code.linenisgreat.com/cutting-garden/internal/buildinfo"
+	"code.linenisgreat.com/cutting-garden/internal/command"
 )
 
 // driveVersion dispatches the version subcommand through a fresh Utility

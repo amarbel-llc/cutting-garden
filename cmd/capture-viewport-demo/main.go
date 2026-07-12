@@ -11,8 +11,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/amarbel-llc/cutting-garden/internal/capture_viewport"
-	cgp "github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
+	"code.linenisgreat.com/cutting-garden/internal/capture_viewport"
+	cgp "code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
 )
 
 func main() {

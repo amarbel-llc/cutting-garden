@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"os"
 
-	"github.com/amarbel-llc/cutting-garden/internal/capture_log"
+	"code.linenisgreat.com/cutting-garden/internal/capture_log"
 	"github.com/amarbel-llc/madder/go/pkgs/env_dir"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/files"
 )

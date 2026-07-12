@@ -3,7 +3,7 @@ package diff
 import (
 	"path/filepath"
 
-	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
+	"code.linenisgreat.com/cutting-garden/internal/capture_receipt"
 	"github.com/amarbel-llc/madder/go/pkgs/domain_interfaces"
 	"github.com/amarbel-llc/piggy/go/pkgs/markl"
 )

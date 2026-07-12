@@ -215,7 +215,7 @@
         # Producer half of the flake-input-go_mod protocol (RFC 0001) and the
         # out-of-tree-consumer surface of the plugin SDK (RFC 0009 §2): publish
         # go-pkgs / go-pkgs-test so a plugin in its own repo can bridge
-        # github.com/amarbel-llc/cutting-garden onto this filtered source tree
+        # code.linenisgreat.com/cutting-garden onto this filtered source tree
         # — e.g. chrest importing pkgs/capture_plugin to emit RFC 0002 receipts,
         # or a traversal plugin importing pkgs/cgapp / pkgs/cutting_garden_plugins.
         # cutting-garden's Go module is at the repo root, so the producer filters
@@ -559,7 +559,7 @@
 
           # Producer outputs for out-of-tree Go consumers (RFC 0001 producer,
           # RFC 0009 §2): a plugin in its own repo bridges
-          # github.com/amarbel-llc/cutting-garden onto go-pkgs via its gomod.nix.
+          # code.linenisgreat.com/cutting-garden onto go-pkgs via its gomod.nix.
           # go-pkgs-test additionally carries *_test.go for a consumer that runs
           # cutting-garden's tests. Mirrors madder/flake.nix.
           inherit (goPkgs) go-pkgs go-pkgs-test;

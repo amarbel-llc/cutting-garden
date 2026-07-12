@@ -2,7 +2,7 @@
 
 package capture_failures
 
-import internal "github.com/amarbel-llc/cutting-garden/internal/capture_failures"
+import internal "code.linenisgreat.com/cutting-garden/internal/capture_failures"
 
 // Blob is the lowest-common-denominator return type for a parsed
 // failure receipt across all wire versions. A successful parse returns

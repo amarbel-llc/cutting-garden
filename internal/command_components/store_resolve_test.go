@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
+	"code.linenisgreat.com/cutting-garden/internal/capture_receipt"
 	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
 )
 

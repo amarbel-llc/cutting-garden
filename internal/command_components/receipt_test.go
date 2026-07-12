@@ -6,14 +6,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
-	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
+	"code.linenisgreat.com/cutting-garden/internal/capture_receipt"
+	"code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
 
 	// Blank-import the file plugin so its init() registers under
 	// "", "file" restore schemes. Without it,
 	// cutting_garden_plugins.ResolveRestore returns an empty-registry
 	// error before ResolveRestorePlugin can dispatch.
-	_ "github.com/amarbel-llc/cutting-garden/plugins/file"
+	_ "code.linenisgreat.com/cutting-garden/plugins/file"
 	"github.com/amarbel-llc/madder/go/pkgs/ids"
 	"github.com/amarbel-llc/piggy/go/pkgs/markl"
 )

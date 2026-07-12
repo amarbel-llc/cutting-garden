@@ -3,7 +3,7 @@ package caldav
 import (
 	"testing"
 
-	"github.com/amarbel-llc/cutting-garden/pkgs/capture_receipt"
+	"code.linenisgreat.com/cutting-garden/pkgs/capture_receipt"
 )
 
 func TestPlugin_Schemes_TypeTag(t *testing.T) {

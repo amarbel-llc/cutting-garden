@@ -7,9 +7,9 @@ import (
 	"path"
 	"strings"
 
-	"github.com/amarbel-llc/cutting-garden/internal/command_components"
-	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
-	"github.com/amarbel-llc/cutting-garden/internal/mcp_tool_perms"
+	"code.linenisgreat.com/cutting-garden/internal/command_components"
+	"code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
+	"code.linenisgreat.com/cutting-garden/internal/mcp_tool_perms"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 	"github.com/amarbel-llc/purse-first/libs/go-mcp/protocol"
 	"github.com/amarbel-llc/purse-first/libs/go-mcp/server"

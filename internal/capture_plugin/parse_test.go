@@ -5,7 +5,7 @@ import (
 	"io"
 	"testing"
 
-	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
+	"code.linenisgreat.com/cutting-garden/internal/capture_receipt"
 )
 
 func TestParseNode_RoundTripsBuildNode(t *testing.T) {

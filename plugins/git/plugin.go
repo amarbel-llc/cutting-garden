@@ -25,8 +25,8 @@ package cutting_garden_plugin_git
 import (
 	"net/url"
 
-	"github.com/amarbel-llc/cutting-garden/pkgs/capture_receipt"
-	"github.com/amarbel-llc/cutting-garden/pkgs/cutting_garden_plugins"
+	"code.linenisgreat.com/cutting-garden/pkgs/capture_receipt"
+	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
 )
 
 // Plugin is the git capture/diff backend.

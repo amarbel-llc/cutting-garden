@@ -15,9 +15,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/amarbel-llc/cutting-garden/internal/command"
-	"github.com/amarbel-llc/cutting-garden/internal/command_components"
-	"github.com/amarbel-llc/cutting-garden/internal/plugin_blob_io"
+	"code.linenisgreat.com/cutting-garden/internal/command"
+	"code.linenisgreat.com/cutting-garden/internal/command_components"
+	"code.linenisgreat.com/cutting-garden/internal/plugin_blob_io"
 	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/interfaces"

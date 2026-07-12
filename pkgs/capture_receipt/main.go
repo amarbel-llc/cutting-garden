@@ -2,7 +2,7 @@
 
 package capture_receipt
 
-import internal "github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
+import internal "code.linenisgreat.com/cutting-garden/internal/capture_receipt"
 
 // Blob is the lowest-common-denominator return type for a parsed
 // receipt across all wire versions. A successful parse returns a

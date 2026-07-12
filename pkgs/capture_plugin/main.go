@@ -2,7 +2,7 @@
 
 package capture_plugin
 
-import internal "github.com/amarbel-llc/cutting-garden/internal/capture_plugin"
+import internal "code.linenisgreat.com/cutting-garden/internal/capture_plugin"
 
 // BinaryInfo identifies the plugin binary that produced a capture. Name
 // and Version are required; Digest (markl id of the binary itself) is

@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amarbel-llc/cutting-garden/pkgs/capture_plugin"
-	"github.com/amarbel-llc/cutting-garden/pkgs/cutting_garden_plugins"
+	"code.linenisgreat.com/cutting-garden/pkgs/capture_plugin"
+	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
 	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
 	git "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"

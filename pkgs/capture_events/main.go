@@ -2,7 +2,7 @@
 
 package capture_events
 
-import internal "github.com/amarbel-llc/cutting-garden/internal/capture_events"
+import internal "code.linenisgreat.com/cutting-garden/internal/capture_events"
 
 // Directive mirrors the tap-ndjson directive object {kind, reason}.
 type Directive = internal.Directive

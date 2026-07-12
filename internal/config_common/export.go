@@ -1,7 +1,7 @@
 package config_common
 
 // The public facade for this package lives at
-// github.com/amarbel-llc/cutting-garden/pkgs/config_common. Exported in
+// code.linenisgreat.com/cutting-garden/pkgs/config_common. Exported in
 // COPY mode (real source copied into pkgs/, not thin aliases) so the
 // type definitions live in a non-internal package: tommy resolves a
 // config struct's field types to their DEFINING package, so caldav's
@@ -10,4 +10,4 @@ package config_common
 // package arg scopes copy mode to THIS package; the registry/interface
 // facades stay alias-mode (their identity is load-bearing).
 //
-//go:generate dagnabit export -copy github.com/amarbel-llc/cutting-garden/internal/config_common
+//go:generate dagnabit export -copy code.linenisgreat.com/cutting-garden/internal/config_common

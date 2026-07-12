@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amarbel-llc/cutting-garden/internal/capture_serve"
-	testpeer "github.com/amarbel-llc/cutting-garden/internal/capture_serve_testpeer"
+	"code.linenisgreat.com/cutting-garden/internal/capture_serve"
+	testpeer "code.linenisgreat.com/cutting-garden/internal/capture_serve_testpeer"
 )
 
 // testPeerModeEnv re-execs THIS test binary as the launched plugin: when

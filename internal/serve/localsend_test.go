@@ -16,8 +16,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/amarbel-llc/cutting-garden/internal/capture_log"
-	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
+	"code.linenisgreat.com/cutting-garden/internal/capture_log"
+	"code.linenisgreat.com/cutting-garden/internal/capture_receipt"
 )
 
 // testServer wires a server with in-memory blob/receipt hooks plus a

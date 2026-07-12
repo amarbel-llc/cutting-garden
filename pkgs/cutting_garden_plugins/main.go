@@ -2,7 +2,7 @@
 
 package cutting_garden_plugins
 
-import internal "github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
+import internal "code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
 
 // BodyDescriber is the OPTIONAL capability a write-capable plugin implements
 // to describe the create/update payloads of its writable node types, for the

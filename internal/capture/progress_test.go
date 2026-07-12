@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amarbel-llc/cutting-garden/internal/capture_events"
-	"github.com/amarbel-llc/cutting-garden/internal/capture_render_legacy"
-	"github.com/amarbel-llc/cutting-garden/internal/capture_render_ndjson"
-	"github.com/amarbel-llc/cutting-garden/internal/capture_render_tap"
+	"code.linenisgreat.com/cutting-garden/internal/capture_events"
+	"code.linenisgreat.com/cutting-garden/internal/capture_render_legacy"
+	"code.linenisgreat.com/cutting-garden/internal/capture_render_ndjson"
+	"code.linenisgreat.com/cutting-garden/internal/capture_render_tap"
 )
 
 func TestValidateProgress(t *testing.T) {

@@ -2,7 +2,7 @@
 
 package cgapp
 
-import internal "github.com/amarbel-llc/cutting-garden/internal/cgapp"
+import internal "code.linenisgreat.com/cutting-garden/internal/cgapp"
 
 // Build returns a fully-configured cutting-garden Utility with the
 // canonical name "cutting-garden", the "cg" alias, the hidden

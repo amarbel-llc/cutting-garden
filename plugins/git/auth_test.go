@@ -51,7 +51,7 @@ func TestAuthMethod_HTTPToken(t *testing.T) {
 // so assert only that it is not (nil, nil).
 func TestAuthMethod_SSHNeverAnonymous(t *testing.T) {
 	for _, remote := range []string{
-		"ssh://git@github.com/amarbel-llc/cutting-garden.git",
+		"ssh://git@code.linenisgreat.com/cutting-garden.git",
 		"git@github.com:amarbel-llc/cutting-garden.git",
 	} {
 		auth, err := authMethod(remote)

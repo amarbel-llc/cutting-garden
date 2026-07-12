@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/amarbel-llc/cutting-garden/pkgs/config_common"
+	"code.linenisgreat.com/cutting-garden/pkgs/config_common"
 	"github.com/amarbel-llc/tommy/pkg/cst"
 	"github.com/amarbel-llc/tommy/pkg/document"
 )

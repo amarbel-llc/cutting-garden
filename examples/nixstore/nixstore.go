@@ -5,7 +5,7 @@
 // References parse into closure-DAG edges, and the named GC roots are the
 // RootProvider roots.
 //
-// It imports ONLY github.com/amarbel-llc/cutting-garden/pkgs/* — never
+// It imports ONLY code.linenisgreat.com/cutting-garden/pkgs/* — never
 // internal/ — so its mere compilation proves the SDK is sufficient for an
 // external consumer (the self-consumption forcing function, RFC 0009 §4).
 // The method bodies are skeletons: they show the shape the real plugin
@@ -19,7 +19,7 @@ import (
 	"context"
 	"net/url"
 
-	cg "github.com/amarbel-llc/cutting-garden/pkgs/cutting_garden_plugins"
+	cg "code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
 )
 
 // narinfoTypeTag is the leaf node type: one .narinfo record, stored

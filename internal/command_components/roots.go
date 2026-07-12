@@ -5,8 +5,8 @@ import (
 	"io"
 	"net/url"
 
-	"github.com/amarbel-llc/cutting-garden/internal/cgconfig"
-	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
+	"code.linenisgreat.com/cutting-garden/internal/cgconfig"
+	"code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
 )
 
 // LoadAndInjectConfig loads the default config (a missing file is empty)

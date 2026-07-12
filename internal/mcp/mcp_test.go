@@ -4,8 +4,8 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/amarbel-llc/cutting-garden/internal/command"
-	"github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
+	"code.linenisgreat.com/cutting-garden/internal/command"
+	"code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
 )
 
 // captureOnlyFake claims a scheme but is NOT a RootLister, so an `mcp`

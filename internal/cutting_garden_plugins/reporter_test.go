@@ -3,7 +3,7 @@ package cutting_garden_plugins
 import (
 	"testing"
 
-	"github.com/amarbel-llc/cutting-garden/internal/capture_events"
+	"code.linenisgreat.com/cutting-garden/internal/capture_events"
 )
 
 // recordingReporter is a pointer-identity-comparable Reporter for tests.

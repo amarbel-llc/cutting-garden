@@ -7,7 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/amarbel-llc/cutting-garden/internal/cgconfig"
+	"code.linenisgreat.com/cutting-garden/internal/cgconfig"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 )
 

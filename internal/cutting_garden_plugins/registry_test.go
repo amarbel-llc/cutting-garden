@@ -5,7 +5,7 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/amarbel-llc/cutting-garden/internal/capture_receipt"
+	"code.linenisgreat.com/cutting-garden/internal/capture_receipt"
 )
 
 type stubPlugin struct{ schemes []string }

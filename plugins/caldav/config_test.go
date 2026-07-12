@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/amarbel-llc/cutting-garden/pkgs/config_common"
+	"code.linenisgreat.com/cutting-garden/pkgs/config_common"
 )
 
 func setAccounts(t *testing.T, accts ...config_common.Account) {

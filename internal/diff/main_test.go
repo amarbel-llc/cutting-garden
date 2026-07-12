@@ -4,14 +4,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/amarbel-llc/cutting-garden/internal/command"
-	"github.com/amarbel-llc/cutting-garden/internal/diff"
+	"code.linenisgreat.com/cutting-garden/internal/command"
+	"code.linenisgreat.com/cutting-garden/internal/diff"
 
 	// Blank-import the file plugin so its init() registers under the
 	// "", "file" diff schemes. Step 3 will exercise the resolve-plugin
 	// path; the step-2 skeleton does not reach it, but the import is
 	// harmless and matches how cmd/cutting-garden/main.go wires it.
-	_ "github.com/amarbel-llc/cutting-garden/plugins/file"
+	_ "code.linenisgreat.com/cutting-garden/plugins/file"
 )
 
 func makeUtility() command.Utility {

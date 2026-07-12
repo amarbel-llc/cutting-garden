@@ -19,12 +19,12 @@ package all
 import (
 	// All plugins now live outside internal/ and consume the pkgs/ SDK
 	// (RFC 0009 §5 migration complete).
-	_ "github.com/amarbel-llc/cutting-garden/plugins/caldav"
-	_ "github.com/amarbel-llc/cutting-garden/plugins/file"
-	_ "github.com/amarbel-llc/cutting-garden/plugins/git"
-	_ "github.com/amarbel-llc/cutting-garden/plugins/googlephotos"
-	_ "github.com/amarbel-llc/cutting-garden/plugins/jira"
-	_ "github.com/amarbel-llc/cutting-garden/plugins/optical"
-	_ "github.com/amarbel-llc/cutting-garden/plugins/web"
-	_ "github.com/amarbel-llc/cutting-garden/plugins/ytdlp"
+	_ "code.linenisgreat.com/cutting-garden/plugins/caldav"
+	_ "code.linenisgreat.com/cutting-garden/plugins/file"
+	_ "code.linenisgreat.com/cutting-garden/plugins/git"
+	_ "code.linenisgreat.com/cutting-garden/plugins/googlephotos"
+	_ "code.linenisgreat.com/cutting-garden/plugins/jira"
+	_ "code.linenisgreat.com/cutting-garden/plugins/optical"
+	_ "code.linenisgreat.com/cutting-garden/plugins/web"
+	_ "code.linenisgreat.com/cutting-garden/plugins/ytdlp"
 )

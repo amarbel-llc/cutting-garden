@@ -1,6 +1,6 @@
 package cutting_garden_plugins
 
-import "github.com/amarbel-llc/cutting-garden/internal/capture_events"
+import "code.linenisgreat.com/cutting-garden/internal/capture_events"
 
 // Reporter is the unified capture-events stream. The historical name is
 // kept as an alias so request structs and plugin call sites read

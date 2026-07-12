@@ -6,8 +6,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/amarbel-llc/cutting-garden/internal/capture_events"
-	cgp "github.com/amarbel-llc/cutting-garden/internal/cutting_garden_plugins"
+	"code.linenisgreat.com/cutting-garden/internal/capture_events"
+	cgp "code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
 )
 
 // fakeSender captures messages without a running tea.Program.

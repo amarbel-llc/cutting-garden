@@ -1,6 +1,6 @@
 package caldav
 
-import "github.com/amarbel-llc/cutting-garden/pkgs/capture_plugin"
+import "code.linenisgreat.com/cutting-garden/pkgs/capture_plugin"
 
 // Protocol-defined node type-strings for the caldav RFC 0011 binding.
 const (
