@@ -18,6 +18,7 @@ const (
 	facetComponent = "component" // VEVENT / VTODO / VJOURNAL
 	facetStatus    = "status"    // the object's STATUS property
 	facetYear      = "year"      // the year bucket of DTSTART (DUE for a task)
+	facetMonth     = "month"     // the YYYY-MM bucket of the same date
 )
 
 var (
@@ -49,6 +50,11 @@ func (Plugin) DescribeFacets() []cutting_garden_plugins.NodeTypeFacets {
 				{
 					Key:   facetYear,
 					Label: "Year",
+					Kind:  cutting_garden_plugins.FacetNumericBucket,
+				},
+				{
+					Key:   facetMonth,
+					Label: "Month",
 					Kind:  cutting_garden_plugins.FacetNumericBucket,
 				},
 			},
@@ -211,6 +217,9 @@ func objectFacets(raw string) map[string][]cutting_garden_plugins.FacetValue {
 		order, _ := strconv.ParseInt(year, 10, 64)
 		facets[facetYear] = []cutting_garden_plugins.FacetValue{{Key: year, Order: order}}
 	}
+	if key, order := monthOf(date); key != "" {
+		facets[facetMonth] = []cutting_garden_plugins.FacetValue{{Key: key, Order: order}}
+	}
 	return facets
 }
 
@@ -230,6 +239,40 @@ func liftFacets(
 			hist[v.Key]++
 		}
 	}
+}
+
+// monthOf extracts the year-month bucket prefixing an iCalendar date-time
+// (e.g. "20260224T150000Z" or "2026-02-24" → key "2026-02", order 202602).
+// Empty key when the value has no leading YYYYMM. The YYYY-MM key with a
+// YYYYMM order sorts months chronologically across year boundaries —
+// answering "summarize June" class queries directly from the summary.
+func monthOf(date string) (key string, order int64) {
+	var digits strings.Builder
+scan:
+	for _, r := range date {
+		switch {
+		case r >= '0' && r <= '9':
+			digits.WriteRune(r)
+			if digits.Len() == 6 {
+				break scan
+			}
+		case r == '-':
+			// tolerate a hyphenated date prefix
+		default:
+			// stop at the first non-date rune (T, Z, …)
+			break scan
+		}
+	}
+	if digits.Len() < 6 {
+		return "", 0
+	}
+	s := digits.String()
+	month := s[4:6]
+	if month < "01" || month > "12" {
+		return "", 0
+	}
+	order, _ = strconv.ParseInt(s, 10, 64)
+	return s[:4] + "-" + month, order
 }
 
 // yearOf extracts the four-digit year prefixing an iCalendar date-time

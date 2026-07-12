@@ -506,7 +506,12 @@ is the reference implementer).
   `FacetLabeler`, `FacetDescriber`, and §11's `FacetVersioner` are separate),
   never by adding methods to an existing one within a major version.
 - **Schema versioning rides the node type.** A change to a type's facet
-  dimensions is versioned by its `NodeType.Tag` `-vN` (FDR 0014, #79).
+  dimensions is versioned by its `NodeType.Tag` `-vN` (FDR 0014, #79) — for
+  changes that alter an EXISTING dimension's meaning (re-keying, kind
+  change, removal). ADDING a dimension is additive and does not bump the
+  tag: consumers render declared dimensions and ignore undeclared keys, so
+  a new dimension simply appears (caldav's `month` beside `year` is the
+  precedent).
 - **SDK facade.** These types are re-exported under
   `pkgs/cutting_garden_plugins` by the dagnabit facade (RFC 0009) via the
   alias-identity guarantee, so an out-of-tree plugin implements the contract

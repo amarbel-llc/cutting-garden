@@ -100,6 +100,35 @@ func TestDescribeFacets_DeclaresObjectDimensions(t *testing.T) {
 	if dims[facetYear] != cutting_garden_plugins.FacetNumericBucket {
 		t.Errorf("year kind = %q, want numeric-bucket", dims[facetYear])
 	}
+	if dims[facetMonth] != cutting_garden_plugins.FacetNumericBucket {
+		t.Errorf("month kind = %q, want numeric-bucket", dims[facetMonth])
+	}
+}
+
+// TestMonthOf pins the YYYY-MM bucket derivation across the iCalendar
+// date shapes the parser sees, including the chronological Order and the
+// reject paths (short values, out-of-range months).
+func TestMonthOf(t *testing.T) {
+	cases := []struct {
+		in    string
+		key   string
+		order int64
+	}{
+		{"20260224T150000Z", "2026-02", 202602},
+		{"2026-06-13", "2026-06", 202606},
+		{"20251231", "2025-12", 202512},
+		{"2026", "", 0},
+		{"20261324T000000Z", "", 0}, // month 13: reject
+		{"", "", 0},
+		{"garbage", "", 0},
+	}
+	for _, c := range cases {
+		key, order := monthOf(c.in)
+		if key != c.key || order != c.order {
+			t.Errorf("monthOf(%q) = (%q, %d), want (%q, %d)",
+				c.in, key, order, c.key, c.order)
+		}
+	}
 }
 
 func TestFacetCounts_AggregatesAcrossComponents(t *testing.T) {
@@ -125,6 +154,9 @@ func TestFacetCounts_AggregatesAcrossComponents(t *testing.T) {
 	assertCount(t, result.Summary, facetStatus, "NEEDS-ACTION", 1)
 	assertCount(t, result.Summary, facetYear, "2026", 2)
 	assertCount(t, result.Summary, facetYear, "2025", 1)
+	assertCount(t, result.Summary, facetMonth, "2026-02", 1)
+	assertCount(t, result.Summary, facetMonth, "2026-01", 1)
+	assertCount(t, result.Summary, facetMonth, "2025-01", 1)
 }
 
 func TestFacetCounts_FilterNarrowsListingAndSummary(t *testing.T) {
