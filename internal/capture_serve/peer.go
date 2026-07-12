@@ -89,7 +89,28 @@ type Peer struct {
 	done chan struct{}
 	err  error
 
+	// serveDone closes when the serve loop has drained every request
+	// queued before the read loop exited — the "all notifications
+	// delivered" point Serve consults to tell a graceful shutdown from a
+	// dropped socket.
+	serveDone chan struct{}
+
 	closeOnce sync.Once
+}
+
+// Done closes once the peer's read loop has exited (the socket closed or
+// errored); Err then reports why. Before that point Err returns nil.
+func (p *Peer) Done() <-chan struct{} { return p.done }
+
+// Err reports the read loop's terminal error, nil while the peer is
+// still live.
+func (p *Peer) Err() error {
+	select {
+	case <-p.done:
+		return p.err
+	default:
+		return nil
+	}
 }
 
 // NewPeer wraps conn as an RFC 0008 peer and starts its read and serve
@@ -101,13 +122,14 @@ func NewPeer(
 ) *Peer {
 	ctx, cancel := context.WithCancel(ctx)
 	p := &Peer{
-		conn:     conn,
-		handler:  handler,
-		ctx:      ctx,
-		cancel:   cancel,
-		pending:  make(map[string]chan incoming),
-		requests: make(chan incoming, requestQueueDepth),
-		done:     make(chan struct{}),
+		conn:      conn,
+		handler:   handler,
+		ctx:       ctx,
+		cancel:    cancel,
+		pending:   make(map[string]chan incoming),
+		requests:  make(chan incoming, requestQueueDepth),
+		done:      make(chan struct{}),
+		serveDone: make(chan struct{}),
 	}
 	go p.readLoop()
 	go p.serveLoop()
@@ -311,6 +333,7 @@ func (p *Peer) terminate(err error) {
 // time in arrival order — the peer-level realization of the
 // blob_concurrency=1 sequential invariant.
 func (p *Peer) serveLoop() {
+	defer close(p.serveDone)
 	for inc := range p.requests {
 		p.serveOne(inc)
 	}

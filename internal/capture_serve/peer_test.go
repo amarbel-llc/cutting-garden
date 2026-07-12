@@ -17,13 +17,11 @@ import (
 	"github.com/amarbel-llc/purse-first/libs/go-mcp/jsonrpc"
 )
 
-// peerPair connects two Peers over an in-process unixpacket socket and
-// registers cleanup. The socket binds under /tmp with a short name —
-// sun_path is ~108 bytes and the devshell's deep $TMPDIR overflows it
-// (the Phase 0 spike's design finding).
-func peerPair(
-	t *testing.T, orchHandler, pluginHandler Handler,
-) (orch, plugin *Peer) {
+// connPair yields the two ends of an in-process unixpacket connection
+// with cleanup registered. The socket binds under /tmp with a short
+// name — sun_path is ~108 bytes and the devshell's deep $TMPDIR
+// overflows it (the Phase 0 spike's design finding).
+func connPair(t *testing.T) (accept, dial *net.UnixConn) {
 	t.Helper()
 
 	if _, err := net.ResolveUnixAddr("unixpacket", "probe"); err != nil {
@@ -57,16 +55,28 @@ func peerPair(
 	if err != nil {
 		t.Fatalf("dial unixpacket: %v", err)
 	}
-	orchConn, ok := <-accepted
+	acceptConn, ok := <-accepted
 	if !ok {
 		dialed.Close()
 		t.Fatal("accept failed")
 	}
+	t.Cleanup(func() {
+		acceptConn.Close()
+		dialed.Close()
+	})
+	return acceptConn, dialed.(*net.UnixConn)
+}
 
+// peerPair connects two Peers over an in-process unixpacket socket and
+// registers cleanup.
+func peerPair(
+	t *testing.T, orchHandler, pluginHandler Handler,
+) (orch, plugin *Peer) {
+	t.Helper()
+
+	orchConn, pluginConn := connPair(t)
 	orch = NewPeer(context.Background(), orchConn, orchHandler)
-	plugin = NewPeer(
-		context.Background(), dialed.(*net.UnixConn), pluginHandler,
-	)
+	plugin = NewPeer(context.Background(), pluginConn, pluginHandler)
 	t.Cleanup(func() {
 		orch.Close()
 		plugin.Close()
