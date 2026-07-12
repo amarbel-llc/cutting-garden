@@ -330,7 +330,7 @@ func writeFacetsText(w io.Writer, result cutting_garden_plugins.FacetResult) err
 		return errors.Wrap(err)
 	}
 	if !result.Complete {
-		buf.WriteString("(partial \\(em summary does not cover the whole subtree)\n")
+		buf.WriteString("(partial — summary does not cover the whole subtree)\n")
 	}
 
 	if _, err := io.WriteString(w, buf.String()); err != nil {
