@@ -122,7 +122,13 @@ After the announce line, stdin/stdout/stderr are NOT part of the
 protocol. stderr MAY carry human-readable diagnostics at any time;
 stdout MUST carry nothing but the single announce line. stdin is a
 lifecycle signal: the plugin MUST treat stdin EOF as a shutdown request
-(equivalent to the `shutdown` notification).
+(equivalent to the `shutdown` notification) — **including while still
+blocked waiting to accept**. A bare accept does not observe the
+lifecycle on its own; implementations close the rendezvous listener
+when the lifecycle signal fires to unblock a pending accept, and treat
+that unblock as a clean exit (0), not a bring-up failure. (Both
+reference implementations initially missed this and would hang forever
+if the orchestrator died before dialing.)
 
 > Design note: an earlier draft passed an inherited `socketpair` end via
 > `CAPTURE_PLUGIN_CONTROL_FD`. The announce/dial revision replaces it —
