@@ -156,6 +156,27 @@ type FacetCounter interface {
 	) (result FacetResult, ok bool, err error)
 }
 
+// FacetVersioner is the OPTIONAL capability that cheaply reports whether a
+// node's subtree may have changed, so the framework's summary memoization
+// (RFC 0012 §11) recomputes only when something moved instead of on every
+// read. Probed by type assertion, like the other facet capabilities.
+type FacetVersioner interface {
+	RootLister
+
+	// FacetVersion returns an opaque token that MUST change whenever the
+	// node's subtree could have changed facet-relevant content, and SHOULD be
+	// stable when it has not. Obtaining it MUST be substantially cheaper than
+	// FacetCounts — one round trip, not an enumeration (a CalDAV collection
+	// ctag, a feed's updated timestamp, a hash of a window set). ok == false
+	// means no token is available for this node; the framework then falls
+	// back to a TTL. A spuriously-changing token is safe (extra
+	// recomputation); a token that misses real change serves stale summaries
+	// until the next recompute.
+	FacetVersion(
+		ctx context.Context, node *url.URL,
+	) (token string, ok bool, err error)
+}
+
 // FacetLabeler is the OPTIONAL capability that resolves a labelled dimension's
 // opaque value keys to human display names, in batch and presentation-only.
 // See RFC 0012 §7.

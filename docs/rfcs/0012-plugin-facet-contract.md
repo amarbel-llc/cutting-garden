@@ -360,9 +360,9 @@ Fail-fast is scoped by **who asked**:
 - **Implicit facet surfaces** (the summary a container `resources/read`
   carries beside its child listing, §7 of FDR 0021) MUST NOT fail the
   enclosing read on a facet error. The facets block degrades: serve the
-  last-good memoized summary marked stale (§11) if one exists, else omit the
-  block with an error notation. Plain tree browsing is never blocked by the
-  facet path (#133's failure coupling).
+  last-good memoized summary marked stale (§11) if one exists, else serve an
+  error-only facets block (no counts, the failure noted). Plain tree
+  browsing is never blocked by the facet path (#133's failure coupling).
 
 `ResolveFacetLabels` is non-fatal everywhere — a label error degrades to keys
 (§7). A node simply having no values for a declared dimension is NOT an error

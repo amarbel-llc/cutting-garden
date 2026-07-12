@@ -3,8 +3,10 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 
 	"code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
@@ -137,6 +139,203 @@ func TestReadResource_LeafHasNoFacets(t *testing.T) {
 			t.Errorf("leaf read carried a facet block, want none: %+v", c)
 		}
 	}
+}
+
+// countingFacetLister counts FacetCounts invocations and serves a movable
+// change token — the fixture for the RFC 0012 §11 memoization tests.
+type countingFacetLister struct {
+	fakeLister
+	mu       sync.Mutex
+	computes int
+	token    string
+	fail     bool
+}
+
+func (l *countingFacetLister) FacetCounts(
+	context.Context, *url.URL, cutting_garden_plugins.FacetFilter,
+) (cutting_garden_plugins.FacetResult, bool, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.fail {
+		return cutting_garden_plugins.FacetResult{}, false,
+			fmt.Errorf("backend unavailable")
+	}
+	l.computes++
+	return cutting_garden_plugins.FacetResult{
+		Summary: cutting_garden_plugins.FacetSummary{
+			"status": {"CONFIRMED": int64(l.computes)},
+		},
+		Complete: true,
+	}, true, nil
+}
+
+func (l *countingFacetLister) FacetVersion(
+	context.Context, *url.URL,
+) (string, bool, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.token, l.token != "", nil
+}
+
+func (l *countingFacetLister) set(fn func(*countingFacetLister)) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	fn(l)
+}
+
+func (l *countingFacetLister) computeCount() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.computes
+}
+
+func newCountingResources(
+	t *testing.T, lister *countingFacetLister,
+) *Resources {
+	t.Helper()
+	r := newFakeResources(t, "faketest://h/")
+	r.resolve = func(uriStr string) (*url.URL, cutting_garden_plugins.RootLister, error) {
+		u, _, err := fakeResolve(uriStr)
+		if err != nil {
+			return nil, nil, err
+		}
+		return u, lister, nil
+	}
+	return r
+}
+
+// TestFacetCache_ReadsServeMemoized pins §11.2's serving rule: the second
+// read serves the cached summary without recomputing.
+func TestFacetCache_ReadsServeMemoized(t *testing.T) {
+	lister := &countingFacetLister{token: "t1"}
+	r := newCountingResources(t, lister)
+
+	for range 3 {
+		if _, err := r.ReadResource(
+			context.Background(), "faketest://h/work",
+		); err != nil {
+			t.Fatalf("ReadResource: %v", err)
+		}
+	}
+	if got := lister.computeCount(); got != 1 {
+		t.Errorf("FacetCounts ran %d times across 3 reads, want 1", got)
+	}
+}
+
+// TestFacetCache_TokenGatedRefresh pins the refresher's two paths: an
+// unmoved token re-verifies without recomputation; a moved token
+// recomputes and the next read serves the new summary as fresh.
+func TestFacetCache_TokenGatedRefresh(t *testing.T) {
+	lister := &countingFacetLister{token: "t1"}
+	r := newCountingResources(t, lister)
+	ctx := context.Background()
+	const uri = "faketest://h/work"
+
+	if _, err := r.ReadResource(ctx, uri); err != nil {
+		t.Fatalf("first read: %v", err)
+	}
+
+	// Unmoved token: verification only.
+	r.facets.refreshOne(ctx, r.resolve, uri)
+	if got := lister.computeCount(); got != 1 {
+		t.Fatalf("refresh with unmoved token recomputed (computes=%d)", got)
+	}
+
+	// Moved token: recompute; the served summary changes.
+	lister.set(func(l *countingFacetLister) { l.token = "t2" })
+	r.facets.refreshOne(ctx, r.resolve, uri)
+	if got := lister.computeCount(); got != 2 {
+		t.Fatalf("refresh with moved token did not recompute (computes=%d)", got)
+	}
+
+	got, err := r.ReadResource(ctx, uri)
+	if err != nil {
+		t.Fatalf("read after refresh: %v", err)
+	}
+	fv := facetBlockOf(t, got.Contents)
+	if fv.Freshness != freshnessFresh {
+		t.Errorf("freshness = %q, want %q", fv.Freshness, freshnessFresh)
+	}
+	if fv.Facets["status"]["CONFIRMED"] != 2 {
+		t.Errorf("served summary is not the recomputed one: %+v", fv.Facets)
+	}
+}
+
+// TestFacetCache_RefreshFailureServesLastGoodStale pins §9's degrade with
+// a cache: a failing refresh keeps the last good summary, served stale
+// with the error noted — and the read itself succeeds.
+func TestFacetCache_RefreshFailureServesLastGoodStale(t *testing.T) {
+	lister := &countingFacetLister{token: "t1"}
+	r := newCountingResources(t, lister)
+	ctx := context.Background()
+	const uri = "faketest://h/work"
+
+	if _, err := r.ReadResource(ctx, uri); err != nil {
+		t.Fatalf("first read: %v", err)
+	}
+
+	lister.set(func(l *countingFacetLister) {
+		l.token = "t2" // moved, so the refresher tries to recompute
+		l.fail = true  // ... and the recompute fails
+	})
+	r.facets.refreshOne(ctx, r.resolve, uri)
+
+	got, err := r.ReadResource(ctx, uri)
+	if err != nil {
+		t.Fatalf("read after failed refresh: %v", err)
+	}
+	fv := facetBlockOf(t, got.Contents)
+	if fv.Freshness != freshnessStale {
+		t.Errorf("freshness = %q, want %q", fv.Freshness, freshnessStale)
+	}
+	if fv.Error == "" {
+		t.Error("stale summary carries no error notation")
+	}
+	if fv.Facets["status"]["CONFIRMED"] != 1 {
+		t.Errorf("stale serve is not the last good summary: %+v", fv.Facets)
+	}
+}
+
+// TestReadResource_FacetErrorDoesNotFailRead pins §9's degrade without a
+// cache: a first-touch facet failure yields an error-only facets block and
+// the child listing is untouched.
+func TestReadResource_FacetErrorDoesNotFailRead(t *testing.T) {
+	lister := &countingFacetLister{fail: true}
+	r := newCountingResources(t, lister)
+
+	got, err := r.ReadResource(context.Background(), "faketest://h/work")
+	if err != nil {
+		t.Fatalf("ReadResource must not fail on a facet error: %v", err)
+	}
+	if got.Contents[0].MimeType != mimeListing {
+		t.Fatalf("child listing missing: %+v", got.Contents)
+	}
+	fv := facetBlockOf(t, got.Contents)
+	if fv.Error == "" || fv.Freshness != freshnessStale {
+		t.Errorf("error-only block wrong: %+v", fv)
+	}
+	if len(fv.Facets) != 0 {
+		t.Errorf("error-only block carries counts: %+v", fv.Facets)
+	}
+}
+
+// facetBlockOf finds and decodes the facets content block.
+func facetBlockOf(
+	t *testing.T, contents []protocol.ResourceContent,
+) facetView {
+	t.Helper()
+	for _, c := range contents {
+		if c.MimeType != mimeFacets {
+			continue
+		}
+		var fv facetView
+		if err := json.Unmarshal([]byte(c.Text), &fv); err != nil {
+			t.Fatalf("decode facets %q: %v", c.Text, err)
+		}
+		return fv
+	}
+	t.Fatal("no facets block in contents")
+	return facetView{}
 }
 
 // TestCollectSchema_IncludesFacetDimensions is the describe_node_types facet

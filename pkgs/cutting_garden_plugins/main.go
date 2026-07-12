@@ -103,6 +103,12 @@ type FacetSummary = internal.FacetSummary
 // RFC 0012 §1.
 type FacetValue = internal.FacetValue
 
+// FacetVersioner is the OPTIONAL capability that cheaply reports whether a
+// node's subtree may have changed, so the framework's summary memoization
+// (RFC 0012 §11) recomputes only when something moved instead of on every
+// read. Probed by type assertion, like the other facet capabilities.
+type FacetVersioner = internal.FacetVersioner
+
 // LeafContent is one leaf node's fetched content, returned by ReadLeaf. It
 // carries two views of the same object: a structured, JSON-marshalable
 // projection a client reads (the parsed fields), and the verbatim source

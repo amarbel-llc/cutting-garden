@@ -108,6 +108,7 @@ type davProp struct {
 	DisplayName  string           `xml:"DAV: displayname"`
 	CalendarData string           `xml:"urn:ietf:params:xml:ns:caldav calendar-data"`
 	Etag         string           `xml:"DAV: getetag"`
+	Ctag         string           `xml:"http://calendarserver.org/ns/ getctag"`
 	ResourceType *davResourceType `xml:"DAV: resourcetype"`
 }
 
@@ -115,10 +116,13 @@ type davResourceType struct {
 	Calendar *struct{} `xml:"urn:ietf:params:xml:ns:caldav calendar"`
 }
 
-// calendar is a discovered CalDAV calendar collection.
+// calendar is a discovered CalDAV calendar collection. ctag is the
+// calendarserver-namespace collection change token (empty when the server
+// does not advertise one); it backs FacetVersion (RFC 0012 §11).
 type calendar struct {
 	href        string
 	displayName string
+	ctag        string
 }
 
 // resource is one raw iCalendar object (a VTODO or VEVENT resource):
@@ -132,11 +136,17 @@ type resource struct {
 	etag string
 }
 
+// propfindCalendars also requests the calendarserver-namespace getctag —
+// the collection change token FacetVersion (RFC 0012 §11) rides on. A
+// server that does not support it returns the prop in a 404 propstat (or
+// omits it); discovery is unaffected and the token path degrades to
+// ok=false.
 const propfindCalendars = `<?xml version="1.0" encoding="utf-8" ?>
-<d:propfind xmlns:d="DAV:">
+<d:propfind xmlns:d="DAV:" xmlns:cs="http://calendarserver.org/ns/">
   <d:prop>
     <d:displayname />
     <d:resourcetype />
+    <cs:getctag />
   </d:prop>
 </d:propfind>`
 
@@ -184,7 +194,11 @@ func calendarFromResponse(r davResponse) (calendar, bool) {
 		if ps.Prop.ResourceType == nil || ps.Prop.ResourceType.Calendar == nil {
 			continue
 		}
-		return calendar{href: r.Href, displayName: ps.Prop.DisplayName}, true
+		return calendar{
+			href:        r.Href,
+			displayName: ps.Prop.DisplayName,
+			ctag:        ps.Prop.Ctag,
+		}, true
 	}
 	return calendar{}, false
 }

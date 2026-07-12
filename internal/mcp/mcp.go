@@ -119,6 +119,10 @@ func (cmd *MCP) Run(req command.Request) {
 	provider := newResources(roots, mcpBlobWriter(ctx))
 	tools := newTools(roots, provider)
 
+	// Warm the facet cache with the configured roots and keep summaries
+	// fresh in the background (RFC 0012 §11.2); ends with ctx.
+	go provider.startFacetMaintenance(ctx)
+
 	// The MCP protocol owns stdout (JSON-RPC frames), so diagnostics must
 	// never leak there; the server itself writes only protocol frames.
 	srv, err := server.New(

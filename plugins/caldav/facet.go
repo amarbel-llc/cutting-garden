@@ -3,6 +3,7 @@ package caldav
 import (
 	"context"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -22,6 +23,7 @@ const (
 var (
 	_ cutting_garden_plugins.FacetDescriber = (*Plugin)(nil)
 	_ cutting_garden_plugins.FacetCounter   = (*Plugin)(nil)
+	_ cutting_garden_plugins.FacetVersioner = (*Plugin)(nil)
 )
 
 // DescribeFacets declares the facet dimensions of a caldav object leaf — the
@@ -102,6 +104,56 @@ func (Plugin) FacetCounts(
 	}
 
 	return cutting_garden_plugins.FacetResult{Summary: summary, Complete: true}, true, nil
+}
+
+// FacetVersion is caldav's change token (RFC 0012 §11): the
+// calendarserver-namespace collection ctag, which conforming servers bump
+// whenever a member object changes. One Depth:1 PROPFIND — the same request
+// discovery issues, and strictly cheaper than FacetCounts's per-component
+// full-data REPORTs. For a calendar the token is its own ctag; for a
+// calendar-home it is the sorted join of every member calendar's href+ctag,
+// so any calendar changing (or appearing/disappearing) moves the token.
+// ok == false when the server advertises no ctag anywhere — the framework
+// then falls back to its TTL.
+func (Plugin) FacetVersion(
+	ctx context.Context, node *url.URL,
+) (string, bool, error) {
+	if node == nil {
+		return "", false, errors.ErrorWithStackf(
+			"caldav plugin: FacetVersion requires a node URI",
+		)
+	}
+
+	base, username, password, err := connectionFromArg(node)
+	if err != nil {
+		return "", false, err
+	}
+	c := newClient(base, username, password)
+
+	selfIsCalendar, calendars, err := c.discoverCalendars(ctx)
+	if err != nil {
+		return "", false, err
+	}
+
+	if selfIsCalendar {
+		if calendars[0].ctag == "" {
+			return "", false, nil
+		}
+		return calendars[0].ctag, true, nil
+	}
+
+	parts := make([]string, 0, len(calendars))
+	for _, cal := range calendars {
+		if cal.ctag == "" {
+			continue
+		}
+		parts = append(parts, cal.href+"="+cal.ctag)
+	}
+	if len(parts) == 0 {
+		return "", false, nil
+	}
+	sort.Strings(parts)
+	return strings.Join(parts, ";"), true, nil
 }
 
 // foldCalendarFacets REPORTs each component's objects (with full

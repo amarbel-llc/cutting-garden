@@ -70,6 +70,9 @@ type Resources struct {
 	// digest. Optional: nil means no store is configured and a leaf read
 	// returns its parsed fields without a raw-bytes link.
 	writer capture_plugin.Writer
+	// facets memoizes container facet summaries (RFC 0012 §11) so reads
+	// serve cached counts instead of recomputing per read.
+	facets *facetCache
 }
 
 var _ server.ResourceProvider = (*Resources)(nil)
@@ -82,7 +85,25 @@ func newResources(roots []*url.URL, writer capture_plugin.Writer) *Resources {
 		roots:   roots,
 		resolve: command_components.ResolveRootListerPlugin,
 		writer:  writer,
+		facets:  newFacetCache(),
 	}
+}
+
+// startFacetMaintenance warms the facet cache with the configured roots
+// (so first reads hit warm cache) and runs the eager refresher until ctx
+// is done (RFC 0012 §11.2). Warmup is best-effort: an endpoint that fails
+// or declines simply stays cold and computes on first touch.
+func (r *Resources) startFacetMaintenance(ctx context.Context) {
+	for _, root := range r.roots {
+		if ctx.Err() != nil {
+			return
+		}
+		uri := root.String()
+		if u, lister, err := r.resolve(uri); err == nil {
+			_, _ = r.facets.serve(ctx, lister, uri, u)
+		}
+	}
+	r.facets.maintain(ctx, r.resolve, facetRefreshInterval)
 }
 
 // ListResources enumerates the immediate children of every configured
@@ -247,40 +268,43 @@ func (r *Resources) rawBlobLink(
 	}
 }
 
-// facetView is the JSON projection of a container's hoisted facet summary: the
-// per-dimension histograms plus whether the summary covers the whole subtree.
+// facetView is the JSON projection of a container's hoisted facet summary:
+// the per-dimension histograms, whether the summary covers the whole
+// subtree, and the memoization layer's freshness metadata (RFC 0012 §11.2).
 type facetView struct {
 	Facets   cutting_garden_plugins.FacetSummary `json:"facets"`
 	Complete bool                                `json:"complete"`
+	// ComputedAt is when the served summary was computed (RFC 3339).
+	ComputedAt string `json:"computedAt,omitempty"`
+	// Freshness is fresh | unverified | stale (facet_cache.go).
+	Freshness string `json:"freshness,omitempty"`
+	// Error carries the last refresh/compute failure when the served
+	// summary is stale (or, with no facets at all, why none is available).
+	Error string `json:"error,omitempty"`
 }
 
-// facetContent computes a container's hoisted facet summary via the plugin's
-// FacetCounter and renders it as a facet content block (RFC 0012 §7). It
-// returns nil when the plugin is not a FacetCounter or declines to summarize
-// this node (ok=false). A FacetCounts error is fatal to the read (RFC 0012
-// §9): a declared facet surface that errors is surfaced, not silently dropped.
+// facetContent serves a container's hoisted facet summary as a facet
+// content block (RFC 0012 §7), from the memoization layer (§11): cached
+// summaries are served as-is, a first touch computes once. It returns nil
+// when the plugin is not a FacetCounter or declines this node. Per the §9
+// implicit-surface rule a facet failure never fails the enclosing read:
+// with no cached summary to fall back on, the block degrades to an
+// error-only notation (stale-with-error serving is the cache's job).
 func (r *Resources) facetContent(
 	ctx context.Context,
 	lister cutting_garden_plugins.RootLister,
 	uri string,
 	u *url.URL,
 ) (*protocol.ResourceContent, error) {
-	counter, ok := lister.(cutting_garden_plugins.FacetCounter)
-	if !ok {
-		return nil, nil
-	}
-	result, ok, err := counter.FacetCounts(ctx, u, nil)
+	view, err := r.facets.serve(ctx, lister, uri, u)
 	if err != nil {
-		return nil, errors.Wrapf(err, "facet summary for %s", uri)
+		view = &facetView{Freshness: freshnessStale, Error: err.Error()}
 	}
-	if !ok {
+	if view == nil {
 		return nil, nil
 	}
 
-	body, err := json.MarshalIndent(facetView{
-		Facets:   result.Summary,
-		Complete: result.Complete,
-	}, "", "  ")
+	body, err := json.MarshalIndent(view, "", "  ")
 	if err != nil {
 		return nil, errors.Wrap(err)
 	}

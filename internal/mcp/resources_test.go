@@ -88,7 +88,11 @@ func newFakeResources(t *testing.T, rootStrs ...string) *Resources {
 		}
 		roots = append(roots, u)
 	}
-	return &Resources{roots: roots, resolve: fakeResolve}
+	return &Resources{
+		roots:   roots,
+		resolve: fakeResolve,
+		facets:  newFacetCache(),
+	}
 }
 
 func TestListResources_ChildrenOfRoots(t *testing.T) {

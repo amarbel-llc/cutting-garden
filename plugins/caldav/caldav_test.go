@@ -29,6 +29,9 @@ type fakeCalDAV struct {
 	// failComponent, when set, makes the REPORT for that component
 	// ("VTODO"/"VEVENT") answer 500 — for exercising per-entry failures.
 	failComponent string
+	// ctag, when non-empty, is emitted as the collection's
+	// calendarserver-namespace getctag — the FacetVersion token source.
+	ctag string
 }
 
 func newFakeCalDAV() *fakeCalDAV {
@@ -149,14 +152,19 @@ func (f *fakeCalDAV) propfind(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	ctagProp := ""
+	if f.ctag != "" {
+		ctagProp = "<cs:getctag>" + f.ctag + "</cs:getctag>"
+	}
 	fmt.Fprintf(w, `<?xml version="1.0" encoding="utf-8"?>
-<d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+<d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav" xmlns:cs="http://calendarserver.org/ns/">
   <d:response>
     <d:href>%s</d:href>
     <d:propstat>
       <d:prop>
         <d:displayname>Personal</d:displayname>
         <d:resourcetype><d:collection/><c:calendar/></d:resourcetype>
+        %s
         <c:supported-calendar-component-set>
           <c:comp name="VTODO"/>
           <c:comp name="VEVENT"/>
@@ -165,7 +173,7 @@ func (f *fakeCalDAV) propfind(w http.ResponseWriter, r *http.Request) {
       <d:status>HTTP/1.1 200 OK</d:status>
     </d:propstat>
   </d:response>
-</d:multistatus>`, calendarHref)
+</d:multistatus>`, calendarHref, ctagProp)
 }
 
 func (f *fakeCalDAV) report(w http.ResponseWriter, r *http.Request) {

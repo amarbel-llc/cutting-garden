@@ -38,6 +38,45 @@ func startFakeFaceted(t *testing.T) (*fakeCalDAV, string) {
 	return f, "caldav:" + srv.URL + "/dav/"
 }
 
+// TestFacetVersion_CtagBackedToken pins caldav's RFC 0012 §11 change token:
+// the collection ctag from the same Depth:1 PROPFIND discovery issues. The
+// token is stable while the ctag is, moves when it moves, and degrades to
+// ok=false against a server that advertises no ctag.
+func TestFacetVersion_CtagBackedToken(t *testing.T) {
+	f, arg := startFakeFaceted(t)
+	node := mustParseURL(t, arg)
+	ctx := context.Background()
+
+	// No ctag advertised: no token, not an error.
+	if _, ok, err := (Plugin{}).FacetVersion(ctx, node); err != nil {
+		t.Fatalf("FacetVersion without ctag: %v", err)
+	} else if ok {
+		t.Fatal("ok = true against a server with no ctag, want false")
+	}
+
+	f.ctag = "sync-001"
+	tok1, ok, err := Plugin{}.FacetVersion(ctx, node)
+	if err != nil || !ok {
+		t.Fatalf("FacetVersion: ok=%v err=%v", ok, err)
+	}
+	tok1Again, _, err := Plugin{}.FacetVersion(ctx, node)
+	if err != nil {
+		t.Fatalf("FacetVersion repeat: %v", err)
+	}
+	if tok1 != tok1Again {
+		t.Errorf("token unstable across unchanged ctag: %q vs %q", tok1, tok1Again)
+	}
+
+	f.ctag = "sync-002"
+	tok2, ok, err := Plugin{}.FacetVersion(ctx, node)
+	if err != nil || !ok {
+		t.Fatalf("FacetVersion after ctag move: ok=%v err=%v", ok, err)
+	}
+	if tok2 == tok1 {
+		t.Errorf("token did not move with the ctag: %q", tok2)
+	}
+}
+
 func TestDescribeFacets_DeclaresObjectDimensions(t *testing.T) {
 	var dims map[string]cutting_garden_plugins.FacetKind
 	for _, ntf := range (Plugin{}).DescribeFacets() {
