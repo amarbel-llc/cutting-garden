@@ -1,6 +1,8 @@
 ---
 status: proposed
 date: 2026-06-20
+revised: 2026-07-12 (§9 fail-fast rescoped to explicit requests; new §11
+  summary memoization, change tokens, and eager refresh — resolves #133)
 ---
 
 # cutting-garden Plugin Facet Contract
@@ -349,10 +351,20 @@ a feed bucket with the newest story's title instead of the feed's name.
 
 ### 9. Error handling
 
-A facet read is fail-fast on the operations that produce the counts: an error
-from `FacetCounts` or from an underlying `ListRoots` during a fold MUST abort
-the read rather than return a silently partial summary. `ResolveFacetLabels`
-is the explicit exception — a label error is non-fatal and degrades to keys
+Fail-fast is scoped by **who asked**:
+
+- **Explicit facet requests** (`list --facets`, a facets-specific parameter on
+  a read) are fail-fast on the operations that produce the counts: an error
+  from `FacetCounts` or from an underlying `ListRoots` during a fold MUST
+  abort that request rather than return a silently partial summary.
+- **Implicit facet surfaces** (the summary a container `resources/read`
+  carries beside its child listing, §7 of FDR 0021) MUST NOT fail the
+  enclosing read on a facet error. The facets block degrades: serve the
+  last-good memoized summary marked stale (§11) if one exists, else omit the
+  block with an error notation. Plain tree browsing is never blocked by the
+  facet path (#133's failure coupling).
+
+`ResolveFacetLabels` is non-fatal everywhere — a label error degrades to keys
 (§7). A node simply having no values for a declared dimension is NOT an error
 (an empty or absent histogram for that node).
 
@@ -363,7 +375,83 @@ The contract does not guarantee a stable tree across reads. Over live sources
 loop, so a multi-step loop is not atomic and successive summaries may differ.
 A `FacetCounter` over live state SHOULD compute a whole summary from a single
 snapshot so that individual summary is internally consistent, even though
-consecutive reads are not.
+consecutive reads are not. §11 defines how live summaries are memoized and
+kept fresh without recomputing on every read.
+
+### 11. Summary memoization, change tokens, and eager refresh
+
+Facets are the progressive-disclosure lifeline (FDR 0021): the implicit
+summary on every container read is what lets an agent orient in a large tree
+without enumerating it, so it MUST stay present by default. What makes that
+affordable is that a summary is a **pure function of the subtree it
+summarizes** and the aggregate is a **monoid** (§3) — so summaries are
+memoizable, and incrementally so. This section makes computation cost a
+once-per-change cost instead of a per-read cost (#133's cost coupling).
+
+#### 11.1 Two cache keys
+
+- **Content-addressed (captured trees).** A subtree reached through a capture
+  receipt is identified by its markl digest, and a summary over it is valid
+  forever under the key `(subtree digest, contract version)`. The framework
+  SHOULD persist such summaries as content-addressed blobs (a
+  `facet-summary` type family per RFC 0010), and SHOULD store per-subtree
+  **partial** summaries so a later capture sharing subtrees recomputes only
+  the changed paths and re-merges (§3's laws make the fold order-free) —
+  the merkle dividend: incremental cost proportional to drift, not size.
+- **Token-gated (live trees).** A live node has no digest; its cache key is
+  `(node URI, change token)` where the token comes from the OPTIONAL
+  `FacetVersioner` capability:
+
+  ```go
+  // FacetVersioner cheaply reports whether a node's subtree may have
+  // changed. OPTIONAL; probed by type assertion.
+  type FacetVersioner interface {
+      RootLister
+
+      // FacetVersion returns an opaque token that MUST change whenever
+      // the node's subtree could have changed facet-relevant content, and
+      // SHOULD be stable when it has not. Obtaining it MUST be
+      // substantially cheaper than FacetCounts (one round trip, not an
+      // enumeration): a CalDAV collection ctag, a feed's updated
+      // timestamp, a hash of a window/tab set. ok == false means no token
+      // is available for this node — the cache then falls back to a
+      // framework-chosen TTL.
+      FacetVersion(
+          ctx context.Context, node *url.URL,
+      ) (token string, ok bool, err error)
+  }
+  ```
+
+  A spuriously-changing token is safe (extra recomputation); a token that
+  fails to change on real change serves stale summaries until the next
+  recompute — the plugin owns that tradeoff and SHOULD document it.
+
+#### 11.2 Serving and refresh
+
+- **Reads serve the cache.** An implicit facet surface (§9) MUST serve a
+  memoized summary when one exists for the node, without recomputing inline.
+  On a cache miss the framework MAY compute inline (first touch pays once) or
+  defer to the refresher; it MUST NOT recompute inline when a cached summary
+  exists merely because its token is unverified.
+- **Eager refresh.** A long-lived server (the `mcp` process) SHOULD run a
+  refresher: on a configurable interval, for each container it has served or
+  been configured with, obtain `FacetVersion` (cheap) and recompute the
+  summary only when the token moved (or the TTL lapsed, for tokenless
+  plugins). It SHOULD pre-evaluate configured roots at startup so first
+  reads hit warm cache.
+- **Freshness is surfaced, not hidden.** A served summary carries freshness
+  metadata on the wire — when it was computed and whether it is known
+  current (`fresh`: token verified since computation), unverified, or stale
+  (a newer token is known but recomputation hasn't finished, or the last
+  refresh failed and this is the last-good summary per §9). Freshness is
+  produced by the memoization layer, not by plugins: `FacetResult` is
+  unchanged, and one-shot CLI paths (`list --facets`) that compute directly
+  are implicitly fresh.
+
+Note the layering: `FacetCounter` remains the only way summaries are
+*computed*; §11 only governs when computation happens and how results are
+reused. A plugin needs no changes to benefit beyond (optionally)
+implementing `FacetVersioner`.
 
 ## Security Considerations
 
@@ -415,8 +503,8 @@ is the reference implementer).
   a new field whose zero value (nil) means "no facets".
 - **Growth by new interfaces, not widening.** Per RFC 0009's stability policy,
   capabilities grow by adding narrow interfaces (`FacetCounter`,
-  `FacetLabeler`, `FacetDescriber` are separate), never by adding methods to an
-  existing one within a major version.
+  `FacetLabeler`, `FacetDescriber`, and §11's `FacetVersioner` are separate),
+  never by adding methods to an existing one within a major version.
 - **Schema versioning rides the node type.** A change to a type's facet
   dimensions is versioned by its `NodeType.Tag` `-vN` (FDR 0014, #79).
 - **SDK facade.** These types are re-exported under
