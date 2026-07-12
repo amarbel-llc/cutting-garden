@@ -153,8 +153,11 @@ func ParseAnnounceLine(line, wantCookie string) (Handshake, error) {
 func ReadAnnounce(stdout io.Reader, wantCookie string) (Handshake, error) {
 	line, err := bufio.NewReader(stdout).ReadString('\n')
 	if err != nil {
-		return Handshake{}, errors.Wrapf(
-			err, "read announce line (child exited before announcing?)",
+		// A fresh error, not a wrap: the usual failure here is io.EOF (the
+		// child exited before announcing), which dewey's errors refuses to
+		// wrap by policy.
+		return Handshake{}, errors.ErrorWithStackf(
+			"read announce line (child exited before announcing?): %s", err,
 		)
 	}
 	return ParseAnnounceLine(line, wantCookie)

@@ -69,8 +69,10 @@ func Serve(
 			return nil
 		default:
 		}
-		return errors.Wrapf(
-			peer.Err(), "control socket closed without shutdown",
+		// %s, not a wrap: a clean orchestrator close reads as bare
+		// io.EOF, which dewey's errors refuses to wrap.
+		return errors.ErrorWithStackf(
+			"control socket closed without shutdown: %s", peer.Err(),
 		)
 	}
 }

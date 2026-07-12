@@ -217,7 +217,11 @@ func (p *Peer) call(
 	case <-ctx.Done():
 		return nil, errors.Wrapf(ctx.Err(), "call %s", method)
 	case <-p.done:
-		return nil, errors.Wrapf(p.err, "call %s: peer closed", method)
+		// %s, not a wrap: a clean remote close terminates the read loop
+		// with bare io.EOF, which dewey's errors refuses to wrap.
+		return nil, errors.ErrorWithStackf(
+			"call %s: peer closed: %s", method, p.err,
+		)
 	case inc := <-ch:
 		if inc.msg.Error != nil {
 			return inc.files, inc.msg.Error
