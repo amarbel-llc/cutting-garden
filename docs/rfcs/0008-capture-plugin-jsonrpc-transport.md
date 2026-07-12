@@ -390,6 +390,23 @@ A v2 plugin is conformant iff, for any well-formed `initialize` +
 The byte-identity requirement ties v2 back to RFC 0002's conformance: the
 transport is correct iff it is invisible in the stored bytes.
 
+How the comparison is evaluated in practice: byte identity is judged
+with the plugin's per-run inputs **pinned** where the plugin allows
+(cutting-garden's test peer pins `ReceiptParams.Now` and every identity
+field, achieving strict whole-tree equality). Where a plugin cannot pin
+an input, fields that legitimately vary per run — the outcome node's
+`datetime`, and any plugin field the plugin *documents* as per-run —
+are excluded from the node-by-node comparison; the requirement is that
+the **transport adds zero delta beyond those documented exclusions**.
+A volatile field discovered during comparison that is NOT documented
+per-run — especially one in an identity-affecting node, where it
+defeats RFC 0002's identity/dedup model — is a plugin conformance
+finding under RFC 0002/0003 to be filed and fixed there, not an allowed
+transport delta. (Found in the wild: a browser plugin's
+`environment.plugin.browser.command_line` embedding a per-launch temp
+profile path; two identical v1 captures already disagreed on it, so it
+says nothing about the transport.)
+
 ## Security
 
 - The passed FD is a single pipe write end with no ambient authority; the
