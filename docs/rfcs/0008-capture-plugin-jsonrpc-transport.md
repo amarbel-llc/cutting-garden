@@ -4,14 +4,22 @@
 > protocol-only plugin resolution, and 0007 was independently claimed by
 > the config subsystem, which has the wider reference footprint.
 
-- Status: **proposed** — cutting-garden's orchestrator side and the
-  shared `capture_serve` library (peer, handshake, launch, plugin-side
-  `Serve`) are implemented and ratify this text: byte identity between
-  the in-process form and a spawned v2 session is pinned by
-  `internal/capture_serve`'s conformance tests, and the packaged test
-  peer runs under the nix-sandbox bats lane. Flips to **accepted** when
-  a second implementation (chrest's `capture-serve`) passes the same
-  §Conformance bar cross-process.
+- Status: **accepted** (2026-07-12) — ratified by two independent
+  implementations. cutting-garden's orchestrator side and the shared
+  `capture_serve` library (peer, handshake, launch, plugin-side `Serve`)
+  pin strict whole-tree byte identity between the in-process form and a
+  spawned v2 session (`internal/capture_serve` conformance tests, with
+  every per-run input pinned), and the packaged test peer runs under
+  the nix-sandbox bats lane. chrest's `capture-serve` then passed the
+  §Conformance comparison discipline on a real capture: the same
+  target/format driven through both real subcommands, every written
+  node parsed and diffed post-order, byte-equal except the two
+  documented per-run exclusions (outcome `datetime`;
+  `environment.browser`, whose `command_line` instability predates v2
+  and was filed as a plugin identity finding, chrest#102). Both peers
+  share one receipt-assembly path by construction. chrest's
+  implementation merges once the module-resolution path to post-freeze
+  cutting-garden lands (cutting-garden#125 / igloo#54).
 - Date: 2026-06-03 (transport handshake revised 2026-07-12: inherited
   socketpair replaced by the go-plugin-style announce/dial launch, per
   the madder RFC 0001 pattern; see §Launch)
