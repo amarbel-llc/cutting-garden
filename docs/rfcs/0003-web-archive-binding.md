@@ -1,6 +1,8 @@
 ---
 status: proposed
 date: 2026-05-25
+revised: 2026-07-12 (environment/outcome node v2 — `command_line` moved
+  from identity to outcome; see § Compatibility)
 ---
 
 # Web-Archive Binding
@@ -108,13 +110,17 @@ produced these bytes. Currently:
 
 Future implementations slot in by populating `binary.name` with
 their own identifier and emitting plugin nodes under their own
-prefix (`!jcs-<their-name>-capture-environment-v1`, etc.).
+prefix (`!jcs-<their-name>-capture-environment-v2`, etc.).
 
 ### Identity Tree — `plugin` Slot
 
 The identity tree's plugin slot
 (`identity → environment → plugin`) MUST be a hyphence node of
-type `!jcs-<plugin>-capture-environment-v1`.
+type `!jcs-<plugin>-capture-environment-v2`.
+
+> `-v1` carried a `browser.command_line` field here; it moved to the
+> outcome tree in v2 (see [§ Compatibility](#compatibility)). Readers
+> for `-v1` are retained per RFC 0010; new captures MUST write `-v2`.
 
 Body: JCS-canonical JSON.
 
@@ -126,7 +132,6 @@ Body: JCS-canonical JSON.
     "user_agent":   "<string>",
     "js_engine":    "<string>",
     "platform":     "<string>",
-    "command_line": ["<string>", "..."],
     "prefs":        { "<key>": "<value>" }
   },
   "dns":        { /* see § DNS Configuration */ },
@@ -144,7 +149,6 @@ Body: JCS-canonical JSON.
 | `browser.user_agent`   | yes      | yes                | User-agent string.                                                                                                                            |
 | `browser.js_engine`    | no       | yes                | JS engine name (`V8`, `SpiderMonkey`).                                                                                                       |
 | `browser.platform`     | yes      | yes                | Browser-reported platform string (e.g. `Linux x86_64`).                                                                                       |
-| `browser.command_line` | no       | yes                | Browser process argv. Array of strings, in the order passed.                                                                                  |
 | `browser.prefs`        | no       | yes                | Object of rendering-affecting browser preferences. Omitted if not gathered; `{}` means "gathered, none rendering-relevant".                  |
 | `dns`                  | no       | yes                | Resolved DNS configuration (see [§ DNS Configuration](#dns-configuration)).                                                                   |
 | `extensions`           | yes      | yes                | Array of extension descriptors (see [§ Browser Extensions](#browser-extensions)). MUST be `[]` if none.                                       |
@@ -153,6 +157,18 @@ Body: JCS-canonical JSON.
 All listed fields are identity-affecting; changing any changes the
 plugin-node markl-id, which changes the environment markl-id, which
 changes the identity markl-id.
+
+Every identity field MUST be **stable under re-run**: if re-running
+the identical capture request with identical configuration could
+yield a different value, the field belongs in the outcome tree, not
+here. (This is why v2 removed `browser.command_line`: real argv
+embeds per-launch values — temp profile paths, ports — so no two
+launches shared an identity markl-id, defeating the identity/dedup
+model.) Corollary: a launch parameter that IS config-derived and
+rendering-affecting MUST be surfaced as a structured, stable field
+in this schema (as `prefs`, `isolation`, `dns`, and `extensions`
+are) — never smuggled in via raw argv. Raw argv is an observation
+of what ran, and lives in the outcome tree.
 
 The plugin MUST ensure each `browser.prefs` entry actually
 participates in rendering. The chrest reference implementation
@@ -163,7 +179,11 @@ identity is not polluted with user-preference noise.
 ### Outcome Tree — `plugin` Slot
 
 The outcome tree's plugin slot (`outcome → plugin`) MUST be a
-hyphence node of type `!jcs-<plugin>-capture-outcome-v1`.
+hyphence node of type `!jcs-<plugin>-capture-outcome-v2`.
+
+> `-v1` had no `process` object (`command_line` lived in the identity
+> tree; see [§ Compatibility](#compatibility)). Readers for `-v1` are
+> retained per RFC 0010; new captures MUST write `-v2`.
 
 Body: JCS-canonical JSON.
 
@@ -177,6 +197,9 @@ Body: JCS-canonical JSON.
     ],
     "timing_ms":   { "dns": <int>, "tcp": <int>, "tls": <int>, "ttfb": <int>, "load": <int> },
     "resolved_ip": "<string>"
+  },
+  "process": {
+    "command_line": ["<string>", "..."]
   }
 }
 ```
@@ -188,6 +211,12 @@ Body: JCS-canonical JSON.
 | `http.headers`         | yes         | HTTP response headers as an **array** of `{name, value}` objects. Names MUST be lowercased. Order MUST be preserved as observed on the wire. Duplicate names (e.g. multiple `set-cookie`) are preserved as separate array entries — using a map shape would silently lose multiplicity and order. |
 | `http.timing_ms`       | no          | Network timing observations in milliseconds. All sub-keys (`dns`, `tcp`, `tls`, `ttfb`, `load`) are OPTIONAL; plugins emit whichever subset their transport exposes. A plugin restricted to overall load time only (e.g. W3C WebDriver BiDi `network.responseCompleted`) emits `{"load": <int>}`. The object form is canonical; bare-integer is NOT permitted. |
 | `http.resolved_ip`     | no          | IP (IPv4 or IPv6) the browser used for the top-level fetch. Plugins that cannot obtain this (e.g. W3C WebDriver BiDi `network.ResponseData` lacks the field) MUST omit. |
+| `process.command_line` | no          | The browser process argv **as observed** — verbatim, in the order passed, including per-launch values (temp profile paths, ports). An observation of what ran, NOT an identity claim; two captures of the same request legitimately differ here. Plugins that launch a browser process SHOULD emit it. |
+
+The `http.*` fields are REQUIRED as a group when the transport
+observed the top-level fetch (see the preview rule below); `process`
+is independent of `http` and SHOULD be present on essentially every
+capture that spawns a browser.
 
 The body MAY include additional plugin-specific keys (e.g. chrest's
 internal trace counters) under sibling top-level objects. Consumers
@@ -200,12 +229,18 @@ Plugins whose transport stack cannot populate `http.{status,headers}`
 event-loop refactor) MUST emit the outcome-plugin node with type:
 
 ```
-!jcs-<plugin>-capture-outcome-v1-preview
+!jcs-<plugin>-capture-outcome-v2-preview
 ```
 
-Strict consumers MUST reject `-v1-preview` typed outcomes. Tolerant
-consumers MAY opt in. A plugin SHOULD bump the type to `-v1` (drop
-`-preview`) once it can populate the required `http.*` fields.
+carrying whatever it DID observe — in practice at least
+`process.command_line`, which is available on essentially every
+capture that spawns a browser. The `-preview` marker signals only
+that the REQUIRED `http.*` group is missing; the presence of
+`process.*` neither requires nor lifts it.
+
+Strict consumers MUST reject `-preview` typed outcomes. Tolerant
+consumers MAY opt in. A plugin SHOULD drop `-preview` once it can
+populate the required `http.*` fields.
 
 ### Capabilities Artifact
 
@@ -558,6 +593,30 @@ to new `normalize=true`; old `split=false` maps to new
 artifact is now always emitted (RFC 0002 §Architecture Overview);
 `normalize` controls only payload normalization, not envelope
 emission.
+
+### Environment/outcome node v2 — `command_line` relocation (2026-07-12)
+
+`browser.command_line` moved from the identity tree's plugin node to
+the outcome tree's plugin node (`process.command_line`), bumping both
+type-strings per RFC 0010's horizontal-versioning rules:
+
+| Node                                | v1                                     | v2 (current)                            |
+|-------------------------------------|-----------------------------------------|------------------------------------------|
+| `identity → environment → plugin`   | `!jcs-<plugin>-capture-environment-v1` (has `browser.command_line`) | `!jcs-<plugin>-capture-environment-v2` (field removed) |
+| `outcome → plugin`                  | `!jcs-<plugin>-capture-outcome-v1` (no `process`) | `!jcs-<plugin>-capture-outcome-v2` (+ `process.command_line`) |
+
+Rationale: real argv embeds per-launch values (a randomly generated
+temp profile directory, discovery ports), so under v1 two
+functionally identical captures **never** shared an identity
+markl-id — defeating the identity/dedup model (found via chrest#102
+during RFC 0008 conformance work). Identity fields must be stable
+under re-run; argv is an observation of what ran. The configuration
+signal argv was standing in for is carried by the structured
+identity fields (`prefs`, `isolation`, `dns`, `extensions`).
+
+Per RFC 0010: implementations MUST retain readers for both `-v1`
+node types (published receipts referencing them are immutable), and
+new captures MUST write `-v2`. No stored receipt is rewritten.
 
 ### Forward Compatibility
 
