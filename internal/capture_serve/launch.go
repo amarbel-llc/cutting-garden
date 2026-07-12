@@ -141,9 +141,10 @@ func (s *Session) Close() error {
 
 // Run is the whole v2 client path: launch argv, drive one batch, tear
 // the session down. Node blobs land in dest; the receipt tree is
-// byte-identical to the in-process RFC 0002 form. A Launch error or an
-// initialize error carrying CodeUnsupportedVersion is the caller's
-// fall-back-to-v1 signal; the batch result and any batch error pass
+// byte-identical to the in-process RFC 0002 form. A Launch failure comes
+// back as a *BringUpError; that, or an initialize refusal carrying
+// CodeUnsupportedVersion, satisfies IsFallbackSignal — the caller's
+// fall-back-to-v1 test. The batch result and any batch error pass
 // through from RunBatch.
 func Run(
 	ctx context.Context,
@@ -154,7 +155,7 @@ func Run(
 ) (BatchResult, error) {
 	sess, err := Launch(ctx, name, args...)
 	if err != nil {
-		return BatchResult{}, err
+		return BatchResult{}, &BringUpError{Err: err}
 	}
 
 	result, err := RunBatch(ctx, sess.Conn, dest, batch)

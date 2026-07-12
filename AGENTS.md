@@ -10,7 +10,11 @@ dodder's command-dispatch framework. Nine user-facing subcommands —
 `capture`, `restore`, `diff`, `serve`, `failures`, `health`, `list`,
 `mcp`, `version` — plus three hidden ones (`complete` for shell completion,
 `__write-blob`, the RFC 0002 writer-protocol sink chrest pipes node blobs
-into, and `hook`, the clown-plugin PreToolUse sink — inert until the MCP
+into — now the v1 FALLBACK: the web plugin always attempts the RFC 0008
+persistent JSON-RPC/SCM_RIGHTS transport first (`chrest capture-serve`
+via `internal/capture_serve`, exported at `pkgs/capture_serve` for the
+plugin side; `capture_serve.IsFallbackSignal` gates the drop to v1) —
+and `hook`, the clown-plugin PreToolUse sink — inert until the MCP
 server grows write tools, cutting-garden#102) are registered in
 `internal/cgapp.Build()`, the single factory
 shared by the `cutting-garden` binary, its `cg` alias, and the

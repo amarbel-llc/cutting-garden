@@ -42,7 +42,7 @@ func (Plugin) DiffProtocol(
 		return cutting_garden_plugins.ProtocolDiffResult{}, err
 	}
 
-	liveReceipt, err := capture(req.Context, req.StoreName, target, format)
+	liveReceipt, err := capture(req.Context, req.BlobStore, req.StoreName, target, format)
 	if err != nil {
 		return cutting_garden_plugins.ProtocolDiffResult{}, err
 	}

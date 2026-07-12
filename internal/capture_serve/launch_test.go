@@ -1,4 +1,4 @@
-package capture_serve
+package capture_serve_test
 
 import (
 	"context"
@@ -6,13 +6,16 @@ import (
 	"os"
 	"testing"
 	"time"
+
+	"github.com/amarbel-llc/cutting-garden/internal/capture_serve"
+	testpeer "github.com/amarbel-llc/cutting-garden/internal/capture_serve_testpeer"
 )
 
 // testPeerModeEnv re-execs THIS test binary as the launched plugin: when
 // set, TestMain runs a peer behavior instead of the test suite. The
-// two-process launch tests exercise the real spawn → announce → dial →
-// serve path without a separately built binary (the packaged
-// cutting-garden-test-capture-serve + bats lane covers that form).
+// "serve" mode is the real packaged peer (capture_serve_testpeer.Main,
+// the same code cutting-garden-test-capture-serve ships); the failure
+// modes exercise Launch's bring-up guards.
 const testPeerModeEnv = "CG_CAPTURE_SERVE_TESTPEER"
 
 func TestMain(m *testing.M) {
@@ -20,7 +23,7 @@ func TestMain(m *testing.M) {
 	case "":
 		os.Exit(m.Run())
 	case "serve":
-		os.Exit(testPeerServe())
+		os.Exit(testpeer.Main())
 	case "exit2":
 		// A binary without the capture-serve subcommand: immediate
 		// nonzero exit, nothing on stdout.
@@ -38,59 +41,17 @@ func TestMain(m *testing.M) {
 	}
 }
 
-// testPeerServe is the launched plugin side: the full out-of-tree
-// bring-up sequence (cookie guard → rendezvous listen → announce →
-// accept → Serve) around the fixed-receipt batch fixture.
-func testPeerServe() int {
-	cookie, err := CookieFromEnv()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	ln, sock, cleanup, err := ListenRendezvous()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	defer cleanup()
-
-	line, err := AnnounceLine(cookie, Handshake{
-		Version: SchemaV2,
-		Network: HandshakeNetwork,
-		Address: sock,
-	})
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	if _, err := os.Stdout.WriteString(line); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-
-	conn, err := ln.AcceptUnix()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	if err := Serve(context.Background(), conn, testServeConfig()); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
-	}
-	return 0
-}
-
 // TestLaunch_TwoProcessByteIdentity is the spawned-process form of the
 // conformance bar: Run launches the re-exec'd test peer as a real child
 // process, the whole handshake and blob protocol cross a process
 // boundary, and the resulting tree must equal the in-process reference —
-// digests and stored bytes both.
+// digests and stored-blob counts both.
 func TestLaunch_TwoProcessByteIdentity(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	refStore := newFakeStore()
-	wantDigest, _, err := emitFixedReceipt(ctx, refStore)
+	refStore := testpeer.NewMemStore()
+	wantDigest, _, err := testpeer.EmitFixedReceipt(ctx, refStore)
 	if err != nil {
 		t.Fatalf("reference emit: %v", err)
 	}
@@ -101,10 +62,12 @@ func TestLaunch_TwoProcessByteIdentity(t *testing.T) {
 	}
 	t.Setenv(testPeerModeEnv, "serve")
 
-	gotStore := newFakeStore()
-	result, err := Run(ctx, gotStore, BatchParams{
-		Target:   "test://fixture",
-		Captures: []CaptureSpec{{Name: "cg", Format: "fixed"}},
+	gotStore := testpeer.NewMemStore()
+	result, err := capture_serve.Run(ctx, gotStore, capture_serve.BatchParams{
+		Target: "test://fixture",
+		Captures: []capture_serve.CaptureSpec{
+			{Name: "cg", Format: "fixed"},
+		},
 	}, self)
 	if err != nil {
 		t.Fatalf("Run: %v", err)
@@ -116,9 +79,8 @@ func TestLaunch_TwoProcessByteIdentity(t *testing.T) {
 	if got := result.Captures[0].Receipt.ID; got != wantDigest {
 		t.Errorf("receipt id = %s, want %s", got, wantDigest)
 	}
-	if len(gotStore.blobs) != len(refStore.blobs) {
-		t.Errorf("stored %d blobs, want %d",
-			len(gotStore.blobs), len(refStore.blobs))
+	if got, want := len(gotStore.Snapshot()), len(refStore.Snapshot()); got != want {
+		t.Errorf("stored %d blobs, want %d", got, want)
 	}
 }
 
@@ -137,13 +99,25 @@ func TestLaunch_MissingSubcommandFailsFast(t *testing.T) {
 	t.Setenv(testPeerModeEnv, "exit2")
 
 	start := time.Now()
-	_, err = Launch(ctx, self)
+	_, err = capture_serve.Launch(ctx, self)
 	elapsed := time.Since(start)
 	if err == nil {
 		t.Fatal("expected launch failure, got session")
 	}
 	if elapsed > 5*time.Second {
 		t.Errorf("bring-up failure took %s; must be fast for the v2→v1 fallback", elapsed)
+	}
+
+	// Through Run, the same failure classifies as a fallback signal.
+	_, err = capture_serve.Run(ctx, testpeer.NewMemStore(),
+		capture_serve.BatchParams{
+			Captures: []capture_serve.CaptureSpec{{Name: "cg", Format: "fixed"}},
+		}, self)
+	if err == nil {
+		t.Fatal("expected Run bring-up failure, got nil")
+	}
+	if !capture_serve.IsFallbackSignal(err) {
+		t.Error("a bring-up failure through Run must satisfy IsFallbackSignal")
 	}
 }
 
@@ -161,7 +135,7 @@ func TestLaunch_PollutedStdoutRejectedAndKilled(t *testing.T) {
 	t.Setenv(testPeerModeEnv, "pollute")
 
 	start := time.Now()
-	_, err = Launch(ctx, self)
+	_, err = capture_serve.Launch(ctx, self)
 	elapsed := time.Since(start)
 	if err == nil {
 		t.Fatal("expected launch rejection on polluted stdout, got session")
@@ -170,5 +144,33 @@ func TestLaunch_PollutedStdoutRejectedAndKilled(t *testing.T) {
 	// and reaped it rather than waiting it out.
 	if elapsed > 10*time.Second {
 		t.Errorf("polluted launch took %s; child was not killed promptly", elapsed)
+	}
+}
+
+// TestLaunch_NoBatchTeardownReapsChild pins that abandoning a session
+// right after bring-up (no batch, no shutdown notification) still reaps
+// the child promptly instead of hanging. The child's exit code is
+// deliberately NOT asserted: conn-close and stdin-EOF race, and a
+// close-without-shutdown is cancellation, which may exit nonzero. The
+// deterministic stdin-EOF-exits-0 form (no connection at all) is the
+// bats bring-up smoke's job.
+func TestLaunch_NoBatchTeardownReapsChild(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatalf("os.Executable: %v", err)
+	}
+	t.Setenv(testPeerModeEnv, "serve")
+
+	sess, err := capture_serve.Launch(ctx, self)
+	if err != nil {
+		t.Fatalf("Launch: %v", err)
+	}
+	start := time.Now()
+	_ = sess.Close()
+	if elapsed := time.Since(start); elapsed > 10*time.Second {
+		t.Errorf("teardown took %s; child was not reaped promptly", elapsed)
 	}
 }

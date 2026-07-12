@@ -487,6 +487,25 @@
           meta.mainProgram = "cutting-garden-caldav-testserver";
         };
 
+        # cutting-garden-test-capture-serve is the RFC 0008 test plugin
+        # (internal/capture_serve_testpeer as a standalone binary): a
+        # deterministic capture-serve peer backing the bats bring-up
+        # smoke (zz-tests_bats/capture_serve.bats), which also proves
+        # SOCK_SEQPACKET listen works under the nix sandbox. Built as its
+        # own derivation and NOT shipped.
+        cuttingGardenTestCaptureServe = pkgs.buildGoApplication {
+          pname = "cutting-garden-test-capture-serve";
+          version = cgVersion;
+          src = ./.;
+          pwd = ./.;
+          modules = ./gomod2nix.toml;
+          inherit goFlakeInputs;
+          subPackages = [ "cmd/cutting-garden-test-capture-serve" ];
+          go = pkgs.go_1_26;
+          GOTOOLCHAIN = "local";
+          meta.mainProgram = "cutting-garden-test-capture-serve";
+        };
+
         # cutting-garden-clown-plugin stages a clown plugin (see
         # clown-plugin-protocol(7) / clown-json(5)) that exposes
         # cutting-garden's capturable trees as MCP resources via
@@ -622,6 +641,11 @@
               CG_TEST_CALDAV = {
                 base = cuttingGardenCaldavTestServer;
                 name = "cutting-garden-caldav-testserver";
+              };
+              # The RFC 0008 test peer backing zz-tests_bats/capture_serve.bats.
+              CG_TEST_CAPTURE_SERVE = {
+                base = cuttingGardenTestCaptureServe;
+                name = "cutting-garden-test-capture-serve";
               };
             };
             batsLibPath = [ bats.packages.${system}.bats-libs.batsLibPath ];

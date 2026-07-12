@@ -13,6 +13,11 @@ const (
 	// batchSchema is the RFC 0002 subprocess input/output schema token.
 	batchSchema = "capture-plugin/v1"
 
+	// serveSubcommand is chrest's RFC 0008 persistent-session entry
+	// point, always attempted before falling back to `capture-batch`
+	// (v1). A chrest without it exits fast, which IS the fallback signal.
+	serveSubcommand = "capture-serve"
+
 	// defaultFormat is captured when CUTTING_GARDEN_WEB_FORMAT is unset.
 	// pdf is functional on the Firefox/BiDi backend and normalizable.
 	defaultFormat = "pdf"

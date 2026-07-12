@@ -4,8 +4,17 @@
 > protocol-only plugin resolution, and 0007 was independently claimed by
 > the config subsystem, which has the wider reference footprint.
 
-- Status: **proposed**
-- Date: 2026-06-03
+- Status: **proposed** — cutting-garden's orchestrator side and the
+  shared `capture_serve` library (peer, handshake, launch, plugin-side
+  `Serve`) are implemented and ratify this text: byte identity between
+  the in-process form and a spawned v2 session is pinned by
+  `internal/capture_serve`'s conformance tests, and the packaged test
+  peer runs under the nix-sandbox bats lane. Flips to **accepted** when
+  a second implementation (chrest's `capture-serve`) passes the same
+  §Conformance bar cross-process.
+- Date: 2026-06-03 (transport handshake revised 2026-07-12: inherited
+  socketpair replaced by the go-plugin-style announce/dial launch, per
+  the madder RFC 0001 pattern; see §Launch)
 - Supersedes: RFC 0002 §Subprocess vs In-Process Plugins (subprocess
   half), §Writer Protocol, §Capture Plugin Protocol (the stdin/stdout
   batch invocation). The merkle-tree shape, node framing, type system,
@@ -68,19 +77,38 @@ move — not *what* gets stored.
 
 ### Launch and the control socket
 
-The orchestrator MUST create an `AF_UNIX` **`SOCK_SEQPACKET`** socket
-pair before spawning the plugin and pass one end to the plugin as an
-inherited file descriptor:
+Launch follows the magic-cookie announce/dial pattern this workspace
+already standardizes on (HashiCorp go-plugin; normatively established
+for madder plugins by madder RFC 0001):
 
-1. `socketpair(AF_UNIX, SOCK_SEQPACKET, 0)` → `(ctrlOrch, ctrlPlugin)`.
-2. The orchestrator `exec`s the plugin's transport subcommand
-   (SHOULD be named `capture-serve`), passing `ctrlPlugin` as an
-   inherited fd and announcing its number in the environment variable
-   **`CAPTURE_PLUGIN_CONTROL_FD`** (decimal). The orchestrator MUST close
-   its copy of `ctrlPlugin` after spawn.
-3. The plugin MUST read `CAPTURE_PLUGIN_CONTROL_FD`, adopt that fd as its
-   control connection, and speak JSON-RPC on it. If the variable is
-   absent the plugin MUST exit non-zero with a diagnostic on stderr.
+1. The orchestrator generates a fresh random cookie per launch and
+   `exec`s the plugin's transport subcommand (SHOULD be named
+   `capture-serve`) with the environment variable
+   **`CAPTURE_PLUGIN_COOKIE`** set to it. A plugin invoked without the
+   cookie MUST exit non-zero with a diagnostic on stderr and MUST NOT
+   write to stdout — the guard against accidental direct invocation.
+2. The plugin binds an `AF_UNIX` **`SOCK_SEQPACKET`** ("unixpacket")
+   rendezvous listener at a **short** path inside a fresh mode-0700
+   directory (`$XDG_RUNTIME_DIR` or `/tmp`; `sun_path` is ~108 bytes, so
+   a deeply nested temp dir MUST NOT be used), then prints exactly ONE
+   line on stdout and nothing else:
+
+   ```
+   <cookie>|capture-plugin/v2|unixpacket|<socket-path>|<metadata>|capture-plugin
+   ```
+
+   Six `|`-separated fields: the echoed cookie, the protocol version
+   token, the network, the socket path, free-form metadata (MAY be
+   empty; MUST NOT contain `|` or newlines), and the fixed subprotocol
+   token `capture-plugin`.
+3. The orchestrator reads the plugin's FIRST stdout line under a
+   bring-up deadline, validates the cookie echo and field shape, and
+   dials the announced socket. ANY other first line — a log line, a
+   wrong field count, a cookie or subprotocol mismatch — rejects the
+   handshake: the orchestrator kills the child and treats the launch as
+   a bring-up failure (see §Migration: that is the fall-back-to-v1
+   signal). The plugin unlinks the socket (removes its directory) on
+   exit.
 
 `SOCK_SEQPACKET` is chosen because it is **message-oriented** (one
 `sendmsg` = one `recvmsg`), so an `SCM_RIGHTS` FD is unambiguously
@@ -90,9 +118,19 @@ ancillary data with a byte offset; SEQPACKET removes both problems. The
 tradeoff is a per-message size bound (the socket send buffer); control
 messages are small (see §Message size).
 
-stdin/stdout/stderr are NOT part of the protocol under this RFC. stderr
-MAY carry human-readable diagnostics; stdout MUST NOT be used for
-protocol data.
+After the announce line, stdin/stdout/stderr are NOT part of the
+protocol. stderr MAY carry human-readable diagnostics at any time;
+stdout MUST carry nothing but the single announce line. stdin is a
+lifecycle signal: the plugin MUST treat stdin EOF as a shutdown request
+(equivalent to the `shutdown` notification).
+
+> Design note: an earlier draft passed an inherited `socketpair` end via
+> `CAPTURE_PLUGIN_CONTROL_FD`. The announce/dial revision replaces it —
+> same SEQPACKET data path, but the launch matches the established
+> go-plugin/madder-RFC-0001 shape (cookie guard, stdout-pollution
+> rejection, version visible in the announce), costs one filesystem
+> rendezvous (see §Security), and keeps the child's fd table free of
+> magic inherited descriptors.
 
 ### JSON-RPC 2.0, peer-to-peer
 
@@ -255,23 +293,18 @@ transport for very large control messages; it is out of scope here.
 
 ## Go mechanics (informative)
 
-Orchestrator side:
+The reference implementation is cutting-garden's `capture_serve` package
+(exported for out-of-tree plugins as `pkgs/capture_serve`). Orchestrator
+side:
 
 ```go
-fds, _ := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_SEQPACKET, 0)
-ctrlOrch := os.NewFile(uintptr(fds[0]), "control-orch")
-ctrlPlugin := os.NewFile(uintptr(fds[1]), "control-plugin")
-
-cmd := exec.CommandContext(ctx, pluginBin, "capture-serve")
-cmd.ExtraFiles = []*os.File{ctrlPlugin}              // becomes fd 3 in child
-cmd.Env = append(os.Environ(), "CAPTURE_PLUGIN_CONTROL_FD=3")
-cmd.Start()
-ctrlPlugin.Close()                                   // orchestrator drops its copy
-
-conn, _ := net.FileConn(ctrlOrch)                    // *net.UnixConn (unixpacket)
-uc := conn.(*net.UnixConn)
-
-// On blob.begin: pass the pipe write end out of band.
+// Launch: cookie → spawn → ReadAnnounce(stdout) → DialAnnounced.
+sess, err := capture_serve.Launch(ctx, pluginBin, "capture-serve")
+result, err := capture_serve.RunBatch(ctx, sess.Conn, dest, batch)
+// dest is any capture_plugin.Writer (NewBlobStoreWriter in production);
+// RunBatch serves blob.begin/blob.finish while calling
+// initialize/capture.batch, then notifies shutdown.
+// capture_serve.Run composes the two. On blob.begin the orchestrator:
 r, w, _ := os.Pipe()
 oob := syscall.UnixRights(int(w.Fd()))
 uc.WriteMsgUnix(responseJSON, oob, nil)              // FD travels with this datagram
@@ -279,43 +312,56 @@ w.Close()                                            // keep only the read end
 id, size := digestAndStore(r)                        // io.Copy(digester, r) → EOF
 ```
 
-Plugin side:
+Plugin side (`capture-serve` subcommand bring-up):
 
 ```go
-fd, _ := strconv.Atoi(os.Getenv("CAPTURE_PLUGIN_CONTROL_FD"))
-conn, _ := net.FileConn(os.NewFile(uintptr(fd), "control"))
-uc := conn.(*net.UnixConn)
-
-buf := make([]byte, 64<<10)
-oob := make([]byte, syscall.CmsgSpace(4)) // room for one fd
-n, oobn, _, _, _ := uc.ReadMsgUnix(buf, oob)
-// parse buf[:n] as the blob.begin response; parse oob[:oobn]:
-scms, _ := syscall.ParseSocketControlMessage(oob[:oobn])
-gotFDs, _ := syscall.ParseUnixRights(&scms[0])
-blobW := os.NewFile(uintptr(gotFDs[0]), "blob")
-blobW.Write(nodeBytes)
-blobW.Close()                                        // EOF → orchestrator finalizes
-// then send blob.finish{blob}; read {id,size}.
+cookie, _ := capture_serve.CookieFromEnv()           // exit 1, no stdout, if unset
+ln, sock, cleanup, _ := capture_serve.ListenRendezvous()
+line, _ := capture_serve.AnnounceLine(cookie, capture_serve.Handshake{
+    Version: capture_serve.SchemaV2,
+    Network: capture_serve.HandshakeNetwork,
+    Address: sock,
+})
+os.Stdout.WriteString(line)
+conn, _ := ln.AcceptUnix()
+err := capture_serve.Serve(ctx, conn, capture_serve.ServeConfig{
+    Plugin: capture_serve.PluginInfo{Name: "chrest", Version: v},
+    Batch:  batchFunc, // gets a capture_plugin.Writer speaking the blob protocol
+})
+cleanup()
 ```
 
-A small JSON-RPC peer (request/response correlation by id, concurrent
-in/out) wraps `uc.WriteMsgUnix`/`uc.ReadMsgUnix`. `capture_plugin.Writer`
-(the in-process interface) is implemented on the plugin side by a type
-whose `WriteBlob(ctx, io.Reader)` does `blob.begin` → copy into the passed
-fd → close → `blob.finish` → return the id, so `WriteReceipt` is reused
-unchanged.
+A small JSON-RPC peer (one message per datagram, request/response
+correlation by id, concurrent in/out, `SCM_RIGHTS` attach/extract) wraps
+`WriteMsgUnix`/`ReadMsgUnix`. `capture_plugin.Writer` (the in-process
+interface) is implemented on the plugin side by a type whose
+`WriteBlob(ctx, io.Reader)` does `blob.begin` → copy into the passed fd →
+close → `blob.finish` → return the id, so `WriteReceipt` is reused
+unchanged. One implementation gotcha the reference hit: a clean remote
+close reads as bare `io.EOF`, which dewey's errors package refuses to
+wrap — build fresh errors on EOF paths.
 
 ## Migration from `capture-plugin/v1`
 
 - The batch-input `writer.cmd` field is **removed**; the FD channel
   replaces it. Orchestrators MUST NOT send it under v2; plugins MUST
   ignore it if present.
-- The plugin grows a `capture-serve` subcommand (the JSON-RPC server). The
-  v1 `capture-batch` (stdin/stdout) MAY be retained for compatibility but
-  is deprecated; an orchestrator selects v2 by launching `capture-serve`
-  with `CAPTURE_PLUGIN_CONTROL_FD` set.
-- `cutting-garden __write-blob` (the v1 writer subprocess) is retired once
-  v2 lands; the orchestrator writes blobs in-process from the passed pipe.
+- The plugin grows a `capture-serve` subcommand (the JSON-RPC server).
+  The v1 `capture-batch` (stdin/stdout) MAY be retained for
+  compatibility but is deprecated. Version selection is
+  **always-try-v2-then-fall-back**: the orchestrator launches
+  `capture-serve` (§Launch) first on every capture; a *bring-up
+  failure* (missing subcommand, handshake rejection, announce deadline,
+  failed dial) or an `initialize` refusal with `-32000`
+  unsupported-version falls back to `capture-batch`. Bring-up MUST fail
+  fast and unambiguously — a plugin without the subcommand exits
+  nonzero in milliseconds, never hangs. Any failure AFTER a successful
+  `initialize` is a real capture failure and MUST NOT silently retry on
+  v1. (Reference: `capture_serve.IsFallbackSignal`.)
+- `cutting-garden __write-blob` (the v1 writer subprocess) is retired
+  once the fallback path is no longer exercised (chrest ships
+  `capture-serve`); the orchestrator writes blobs in-process from the
+  passed pipe.
 - The in-process binding (git) is unaffected.
 - All blob bytes, markl ids, and receipt shapes are identical across v1
   and v2 for the same input — v2 is a pure transport change, so existing
@@ -342,8 +388,18 @@ transport is correct iff it is invisible in the stored bytes.
 
 - The passed FD is a single pipe write end with no ambient authority; the
   plugin can only append bytes to one blob the orchestrator is reading.
-- The control socket is an inherited `socketpair`, not a filesystem path —
-  no rendezvous, no unrelated process can connect.
+- The control socket is a filesystem rendezvous, mitigated in layers:
+  the socket lives in a fresh mode-0700 directory (only the same user
+  can connect), exists only for the session's lifetime (unlinked on
+  exit), and a connecting party learns its path only via the announce
+  line. The per-launch magic cookie authenticates the *plugin* to the
+  orchestrator (a polluted or forged announce is rejected before any
+  dial); it is not a secret capability for the socket itself — same-user
+  processes are inside the trust boundary, as with any `AF_UNIX`
+  service.
+- The rendezvous path MUST be short (`sun_path` ~108 bytes): binding
+  under a deeply nested temp dir fails with `EINVAL`. Implementations
+  bind under `$XDG_RUNTIME_DIR` or `/tmp`.
 - `target`, `options`, and node bytes remain untrusted external data
   (RFC 0002 §Security); FD passing does not widen that surface.
 

@@ -42,6 +42,13 @@ type BlobFinishParams = internal.BlobFinishParams
 // contract the RFC 0002 Writer Protocol printed on stdout.
 type BlobFinishResult = internal.BlobFinishResult
 
+// BringUpError marks a launch that never reached a usable session:
+// spawn failure, a child that exited or polluted stdout before
+// announcing, a cookie/version/network mismatch, the announce deadline,
+// or a failed dial. Run wraps every Launch failure in one so callers can
+// distinguish "v2 is not available here" from a real capture failure.
+type BringUpError = internal.BringUpError
+
 // CaptureResult is one capture's outcome: exactly one of Receipt or Error
 // is set. Per-capture failures land here; only transport- or batch-fatal
 // conditions surface as a JSON-RPC error response to capture.batch.
@@ -103,6 +110,10 @@ type ReceiptRef = internal.ReceiptRef
 // ServeConfig configures the plugin side of one capture-serve session.
 type ServeConfig = internal.ServeConfig
 
+// Session is a launched capture-serve plugin: the dialed control
+// connection plus the child process whose lifecycle Close manages.
+type Session = internal.Session
+
 // AnnounceLine renders the single stdout line a plugin prints once its
 // rendezvous socket is listening (newline included).
 var AnnounceLine = internal.AnnounceLine
@@ -114,6 +125,26 @@ var CookieFromEnv = internal.CookieFromEnv
 
 // DialAnnounced connects to the socket a validated announce named.
 var DialAnnounced = internal.DialAnnounced
+
+// IsFallbackSignal reports whether err is one of the RFC 0008 §Migration
+// v2→v1 fallback conditions: a bring-up failure (the plugin binary has
+// no working capture-serve) or an initialize refusal carrying
+// CodeUnsupportedVersion (it has one, but not this protocol version).
+// Anything after a successful initialize — a batch error, a blob
+// failure, a dropped session — is a REAL capture failure and MUST NOT
+// silently retry on v1.
+var IsFallbackSignal = internal.IsFallbackSignal
+
+// Launch spawns argv as a capture-serve plugin and completes the RFC
+// 0008 launch handshake: export a fresh cookie, read the announce line
+// from the child's stdout, validate, dial. Any failure — the subcommand
+// missing (immediate exit, stdout EOF), stdout pollution, a cookie or
+// version mismatch, or the announce deadline — kills the child and
+// returns an error; every Launch error is a bring-up failure the caller
+// MAY treat as "fall back to capture-plugin/v1". The child's stderr
+// passes through for diagnostics; its stdin is held open (EOF on it is
+// the child's shutdown signal, sent by Close).
+var Launch = internal.Launch
 
 // ListenRendezvous binds a fresh unixpacket rendezvous socket in a new
 // 0700 temp directory at a path short enough for sun_path. It prefers
@@ -145,6 +176,15 @@ var ParseAnnounceLine = internal.ParseAnnounceLine
 // the caller's job (kill the child on timeout); this blocks until a line
 // or EOF arrives.
 var ReadAnnounce = internal.ReadAnnounce
+
+// Run is the whole v2 client path: launch argv, drive one batch, tear
+// the session down. Node blobs land in dest; the receipt tree is
+// byte-identical to the in-process RFC 0002 form. A Launch failure comes
+// back as a *BringUpError; that, or an initialize refusal carrying
+// CodeUnsupportedVersion, satisfies IsFallbackSignal — the caller's
+// fall-back-to-v1 test. The batch result and any batch error pass
+// through from RunBatch.
+var Run = internal.Run
 
 // RunBatch drives one capture batch over an established RFC 0008 control
 // connection: initialize (offering SchemaV2), capture.batch, then a

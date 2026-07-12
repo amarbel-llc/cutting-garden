@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/amarbel-llc/cutting-garden/pkgs/cutting_garden_plugins"
+	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 )
 
@@ -26,7 +27,7 @@ func (Plugin) CaptureProtocol(
 		)
 	}
 
-	receiptID, err := capture(req.Context, req.StoreName, target, format)
+	receiptID, err := capture(req.Context, req.BlobStore, req.StoreName, target, format)
 	if err != nil {
 		return cutting_garden_plugins.ProtocolCaptureResult{}, err
 	}
@@ -37,13 +38,26 @@ func (Plugin) CaptureProtocol(
 	}, nil
 }
 
-// capture runs a single-format chrest capture-batch and returns the
-// resulting receipt's markl id. Shared by CaptureProtocol and the diff
-// re-capture path.
+// capture runs a single-format chrest capture and returns the resulting
+// receipt's markl id. Shared by CaptureProtocol and the diff re-capture
+// path. The RFC 0008 persistent session (`chrest capture-serve`, v2) is
+// ALWAYS attempted first; a bring-up failure or unsupported-version
+// refusal — a chrest without a working capture-serve — falls back to the
+// one-shot `capture-batch` (v1) below. Any failure after a successful
+// v2 handshake is a real capture failure and does NOT retry on v1.
 func capture(
 	ctx context.Context,
+	store blob_stores.BlobStoreInitialized,
 	storeName, target, format string,
 ) (string, error) {
+	receiptID, usedV2, err := captureServeV2(ctx, store, target, format)
+	if err != nil {
+		return "", err
+	}
+	if usedV2 {
+		return receiptID, nil
+	}
+
 	writerCmd, err := writerArgv(storeName)
 	if err != nil {
 		return "", err

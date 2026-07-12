@@ -1,20 +1,18 @@
-package capture_serve
+package capture_serve_test
 
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"io"
+	"net"
 	"os"
-	"strings"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/amarbel-llc/cutting-garden/internal/capture_plugin"
+	"github.com/amarbel-llc/cutting-garden/internal/capture_serve"
+	testpeer "github.com/amarbel-llc/cutting-garden/internal/capture_serve_testpeer"
 	"github.com/amarbel-llc/purse-first/libs/go-mcp/jsonrpc"
 )
 
@@ -22,125 +20,22 @@ import (
 // pushed once through the in-process capture_plugin.Writer path and once
 // through Serve/RunBatch over a live SEQPACKET session, MUST yield the
 // same root receipt digest and the same stored-blob set — the transport
-// changes, the bytes do not.
+// changes, the bytes do not. The fixture (fixed receipt, MemStore,
+// ServeConfig) is shared with the packaged test-peer binary via
+// internal/capture_serve_testpeer.
 
-const fixedPayload = "fixed payload bytes for the capture-serve tracer\n"
-
-// fakeStore is a capture_plugin.Writer over an in-memory map, digesting
-// with sha256 so ids are deterministic without a madder store. Both the
-// reference and transport runs use it, so digests are comparable.
-type fakeStore struct {
-	mu    sync.Mutex
-	blobs map[string][]byte
-}
-
-func newFakeStore() *fakeStore {
-	return &fakeStore{blobs: map[string][]byte{}}
-}
-
-func (s *fakeStore) WriteBlob(
-	_ context.Context, r io.Reader,
-) (string, int64, error) {
-	data, err := io.ReadAll(r)
+// connPair adapts testpeer.ConnPair to test-harness ergonomics.
+func connPair(t *testing.T) (accept, dial *net.UnixConn) {
+	t.Helper()
+	if _, err := net.ResolveUnixAddr("unixpacket", "probe"); err != nil {
+		t.Skipf("unixpacket unsupported on this platform: %v", err)
+	}
+	a, d, cleanup, err := testpeer.ConnPair()
 	if err != nil {
-		return "", 0, err
+		t.Fatalf("ConnPair: %v", err)
 	}
-	sum := sha256.Sum256(data)
-	id := "sha256-" + hex.EncodeToString(sum[:])
-	s.mu.Lock()
-	s.blobs[id] = data
-	s.mu.Unlock()
-	return id, int64(len(data)), nil
-}
-
-// recordingWriter remembers the last written blob's size: WriteReceipt
-// writes the receipt node last and returns only its digest, but the
-// batch result's ReceiptRef wants {id, size}.
-type recordingWriter struct {
-	inner    capture_plugin.Writer
-	lastSize int64
-}
-
-func (w *recordingWriter) WriteBlob(
-	ctx context.Context, r io.Reader,
-) (string, int64, error) {
-	digest, size, err := w.inner.WriteBlob(ctx, r)
-	w.lastSize = size
-	return digest, size, err
-}
-
-// emitFixedReceipt writes the tracer's single deterministic receipt tree
-// through w — payload first, then capture_plugin.WriteReceipt UNCHANGED,
-// exactly as a real plugin binding does. Every identity input is pinned
-// so the tree's digests are a pure function of the Writer.
-func emitFixedReceipt(
-	ctx context.Context, w capture_plugin.Writer,
-) (digest string, size int64, err error) {
-	payloadDigest, _, err := w.WriteBlob(ctx, strings.NewReader(fixedPayload))
-	if err != nil {
-		return "", 0, err
-	}
-
-	rec := &recordingWriter{inner: w}
-	digest, err = capture_plugin.WriteReceipt(ctx, rec, capture_plugin.ReceiptParams{
-		Kind: "test",
-		Invocation: capture_plugin.Invocation{
-			Target:    "test://fixture",
-			Format:    "fixed",
-			Normalize: true,
-		},
-		Host: capture_plugin.HostInfo{
-			OS: "linux", Kernel: "0.0", Arch: "amd64", Libc: "unknown",
-		},
-		Binary: capture_plugin.BinaryInfo{
-			Name: "cg-test-capture-serve", Version: "0.0.0",
-		},
-		PluginEnv: capture_plugin.PluginEnv{
-			TypeString: "jcs-test-capture-environment-v1",
-			Body:       map[string]any{"fixture": "v1"},
-		},
-		PayloadRefs: []capture_plugin.Ref{{
-			Alias:      "payload",
-			Digest:     payloadDigest,
-			TypeString: "test-payload-v1",
-		}},
-		Now: func() time.Time {
-			return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
-		},
-	})
-	if err != nil {
-		return "", 0, err
-	}
-	return digest, rec.lastSize, nil
-}
-
-func testServeConfig() ServeConfig {
-	return ServeConfig{
-		Plugin:  PluginInfo{Name: "cg-test-capture-serve", Version: "0.0.0"},
-		Formats: []string{"fixed"},
-		Batch: func(
-			ctx context.Context, params BatchParams, w capture_plugin.Writer,
-		) (BatchResult, error) {
-			if len(params.Captures) != 1 {
-				return BatchResult{}, fmt.Errorf(
-					"want exactly one capture, got %d", len(params.Captures),
-				)
-			}
-			digest, size, err := emitFixedReceipt(ctx, w)
-			if err != nil {
-				return BatchResult{}, err
-			}
-			return BatchResult{
-				Schema: SchemaV2,
-				Plugin: PluginInfo{Name: "cg-test-capture-serve", Version: "0.0.0"},
-				Errors: []ProtocolError{},
-				Captures: []CaptureResult{{
-					Name:    params.Captures[0].Name,
-					Receipt: &ReceiptRef{ID: digest, Size: size},
-				}},
-			}, nil
-		},
-	}
+	t.Cleanup(cleanup)
+	return a, d
 }
 
 // TestEndToEnd_TransportMatchesInProcess is the byte-identity gate: the
@@ -152,8 +47,8 @@ func TestEndToEnd_TransportMatchesInProcess(t *testing.T) {
 	defer cancel()
 
 	// Reference run: in-process, no transport.
-	refStore := newFakeStore()
-	wantDigest, wantSize, err := emitFixedReceipt(ctx, refStore)
+	refStore := testpeer.NewMemStore()
+	wantDigest, wantSize, err := testpeer.EmitFixedReceipt(ctx, refStore)
 	if err != nil {
 		t.Fatalf("reference emit: %v", err)
 	}
@@ -162,20 +57,24 @@ func TestEndToEnd_TransportMatchesInProcess(t *testing.T) {
 	orchConn, pluginConn := connPair(t)
 	serveErr := make(chan error, 1)
 	go func() {
-		serveErr <- Serve(ctx, pluginConn, testServeConfig())
+		serveErr <- capture_serve.Serve(ctx, pluginConn, testpeer.Config())
 	}()
 
-	gotStore := newFakeStore()
-	result, err := RunBatch(ctx, orchConn, gotStore, BatchParams{
-		Target:   "test://fixture",
-		Captures: []CaptureSpec{{Name: "cg", Format: "fixed"}},
-	})
+	gotStore := testpeer.NewMemStore()
+	result, err := capture_serve.RunBatch(ctx, orchConn, gotStore,
+		capture_serve.BatchParams{
+			Target: "test://fixture",
+			Captures: []capture_serve.CaptureSpec{
+				{Name: "cg", Format: "fixed"},
+			},
+		})
 	if err != nil {
 		t.Fatalf("RunBatch: %v", err)
 	}
 
-	if result.Schema != SchemaV2 {
-		t.Errorf("result schema = %q, want %q", result.Schema, SchemaV2)
+	if result.Schema != capture_serve.SchemaV2 {
+		t.Errorf("result schema = %q, want %q",
+			result.Schema, capture_serve.SchemaV2)
 	}
 	if len(result.Captures) != 1 {
 		t.Fatalf("captures = %d, want 1", len(result.Captures))
@@ -196,17 +95,18 @@ func TestEndToEnd_TransportMatchesInProcess(t *testing.T) {
 	}
 
 	// The stored sets must match blob-for-blob, not just at the root.
-	if len(gotStore.blobs) != len(refStore.blobs) {
-		t.Errorf("stored %d blobs, want %d",
-			len(gotStore.blobs), len(refStore.blobs))
+	want := refStore.Snapshot()
+	gotBlobs := gotStore.Snapshot()
+	if len(gotBlobs) != len(want) {
+		t.Errorf("stored %d blobs, want %d", len(gotBlobs), len(want))
 	}
-	for id, want := range refStore.blobs {
-		gotBytes, ok := gotStore.blobs[id]
+	for id, wantBytes := range want {
+		gotBytes, ok := gotBlobs[id]
 		if !ok {
 			t.Errorf("blob %s missing from transport store", id)
 			continue
 		}
-		if !bytes.Equal(gotBytes, want) {
+		if !bytes.Equal(gotBytes, wantBytes) {
 			t.Errorf("blob %s bytes differ across transports", id)
 		}
 	}
@@ -230,29 +130,68 @@ func TestRunBatch_UnsupportedVersionSurfacesCode(t *testing.T) {
 	defer cancel()
 
 	orchConn, pluginConn := connPair(t)
-	refusing := NewPeer(ctx, pluginConn, HandlerFunc(func(
-		context.Context, string, json.RawMessage,
-	) (any, *os.File, error) {
-		return nil, nil, &jsonrpc.Error{
-			Code:    CodeUnsupportedVersion,
-			Message: "unsupported-version",
-		}
-	}))
+	refusing := capture_serve.NewPeer(ctx, pluginConn,
+		capture_serve.HandlerFunc(func(
+			context.Context, string, json.RawMessage,
+		) (any, *os.File, error) {
+			return nil, nil, &jsonrpc.Error{
+				Code:    capture_serve.CodeUnsupportedVersion,
+				Message: "unsupported-version",
+			}
+		}))
 	defer func() { _ = refusing.Close() }()
 
-	_, err := RunBatch(ctx, orchConn, newFakeStore(), BatchParams{
-		Target:   "test://fixture",
-		Captures: []CaptureSpec{{Name: "cg", Format: "fixed"}},
-	})
+	_, err := capture_serve.RunBatch(ctx, orchConn, testpeer.NewMemStore(),
+		capture_serve.BatchParams{
+			Target: "test://fixture",
+			Captures: []capture_serve.CaptureSpec{
+				{Name: "cg", Format: "fixed"},
+			},
+		})
 	if err == nil {
 		t.Fatal("expected unsupported-version error, got nil")
 	}
 	var jerr *jsonrpc.Error
-	if !asJSONRPCError(err, &jerr) {
+	if !asJSONRPCErrorExt(err, &jerr) {
 		t.Fatalf("error is %T, want *jsonrpc.Error in chain: %v", err, err)
 	}
-	if jerr.Code != CodeUnsupportedVersion {
-		t.Errorf("code = %d, want %d", jerr.Code, CodeUnsupportedVersion)
+	if jerr.Code != capture_serve.CodeUnsupportedVersion {
+		t.Errorf("code = %d, want %d",
+			jerr.Code, capture_serve.CodeUnsupportedVersion)
+	}
+	if !capture_serve.IsFallbackSignal(err) {
+		t.Error("unsupported-version must satisfy IsFallbackSignal")
+	}
+}
+
+// TestRunBatch_BatchErrorIsNotFallback pins the other half of the
+// migration policy: a failure AFTER a successful initialize is a real
+// capture failure and must not read as "retry on v1".
+func TestRunBatch_BatchErrorIsNotFallback(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	orchConn, pluginConn := connPair(t)
+	cfg := testpeer.Config()
+	cfg.Batch = func(
+		context.Context, capture_serve.BatchParams, capture_plugin.Writer,
+	) (capture_serve.BatchResult, error) {
+		return capture_serve.BatchResult{}, fmt.Errorf("browser crashed")
+	}
+	go func() { _ = capture_serve.Serve(ctx, pluginConn, cfg) }()
+
+	_, err := capture_serve.RunBatch(ctx, orchConn, testpeer.NewMemStore(),
+		capture_serve.BatchParams{
+			Target: "test://fixture",
+			Captures: []capture_serve.CaptureSpec{
+				{Name: "cg", Format: "fixed"},
+			},
+		})
+	if err == nil {
+		t.Fatal("expected batch error, got nil")
+	}
+	if capture_serve.IsFallbackSignal(err) {
+		t.Error("a post-handshake batch error must NOT satisfy IsFallbackSignal")
 	}
 }
 
@@ -266,10 +205,10 @@ func TestServe_SocketCloseWithoutShutdownErrors(t *testing.T) {
 	orchConn, pluginConn := connPair(t)
 	serveErr := make(chan error, 1)
 	go func() {
-		serveErr <- Serve(ctx, pluginConn, testServeConfig())
+		serveErr <- capture_serve.Serve(ctx, pluginConn, testpeer.Config())
 	}()
 
-	orchConn.Close()
+	_ = orchConn.Close()
 
 	select {
 	case err := <-serveErr:
@@ -279,4 +218,21 @@ func TestServe_SocketCloseWithoutShutdownErrors(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Error("Serve did not return after socket close")
 	}
+}
+
+// asJSONRPCErrorExt mirrors the in-package asJSONRPCError helper for the
+// external test package (in-package identifiers are not visible here).
+func asJSONRPCErrorExt(err error, target **jsonrpc.Error) bool {
+	for err != nil {
+		if je, ok := err.(*jsonrpc.Error); ok {
+			*target = je
+			return true
+		}
+		u, ok := err.(interface{ Unwrap() error })
+		if !ok {
+			return false
+		}
+		err = u.Unwrap()
+	}
+	return false
 }
