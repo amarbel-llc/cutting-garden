@@ -171,7 +171,7 @@ func TestHandshake_ListenAnnounceDial(t *testing.T) {
 			accepted <- aerr
 			return
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 		buf := make([]byte, 16)
 		n, rerr := conn.Read(buf)
 		if rerr != nil {
@@ -189,7 +189,7 @@ func TestHandshake_ListenAnnounceDial(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DialAnnounced: %v", err)
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 	if _, err := conn.Write([]byte("ping")); err != nil {
 		t.Fatalf("write over dialed conn: %v", err)
 	}

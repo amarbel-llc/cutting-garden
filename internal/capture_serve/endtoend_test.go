@@ -238,7 +238,7 @@ func TestRunBatch_UnsupportedVersionSurfacesCode(t *testing.T) {
 			Message: "unsupported-version",
 		}
 	}))
-	defer refusing.Close()
+	defer func() { _ = refusing.Close() }()
 
 	_, err := RunBatch(ctx, orchConn, newFakeStore(), BatchParams{
 		Target:   "test://fixture",

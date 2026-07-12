@@ -38,14 +38,14 @@ func TestSpike_SCMRightsOverUnixpacket(t *testing.T) {
 	if err != nil {
 		t.Fatalf("mkdir temp: %v", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 	sockPath := filepath.Join(tmpDir, "s.sock")
 
 	ln, err := net.Listen("unixpacket", sockPath)
 	if err != nil {
 		t.Fatalf("listen unixpacket: %v", err)
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 
 	// A multi-blob sequence proves the datagram<->fd association holds across
 	// successive messages (the blob_concurrency=1 sequential invariant).
@@ -68,7 +68,7 @@ func TestSpike_SCMRightsOverUnixpacket(t *testing.T) {
 			orchErr = aerr
 			return
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 		uc := conn.(*net.UnixConn)
 
 		for i := range blobs {

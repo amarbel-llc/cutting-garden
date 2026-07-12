@@ -29,9 +29,9 @@ func RunBatch(
 	conn *net.UnixConn,
 	dest capture_plugin.Writer,
 	batch BatchParams,
-) (BatchResult, error) {
+) (result BatchResult, err error) {
 	peer := NewPeer(ctx, conn, newOrchBlobHandler(dest))
-	defer peer.Close()
+	defer errors.DeferredCloser(&err, peer)
 
 	var init InitializeResult
 	if err := peer.Call(ctx, MethodInitialize, InitializeParams{
@@ -47,7 +47,6 @@ func RunBatch(
 	}
 
 	batch.Schema = SchemaV2
-	var result BatchResult
 	if err := peer.Call(ctx, MethodCaptureBatch, batch, &result); err != nil {
 		return BatchResult{}, errors.Wrapf(err, "capture.batch")
 	}

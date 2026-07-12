@@ -48,11 +48,11 @@ type ServeConfig struct {
 // Serve, then cleanup.
 func Serve(
 	ctx context.Context, conn *net.UnixConn, cfg ServeConfig,
-) error {
+) (err error) {
 	h := &serverHandler{cfg: cfg, shutdown: make(chan struct{})}
 	peer := NewPeer(ctx, conn, h)
 	h.peer.Store(peer)
-	defer peer.Close()
+	defer errors.DeferredCloser(&err, peer)
 
 	select {
 	case <-h.shutdown:
