@@ -225,6 +225,12 @@ const CookieEnv = internal.CookieEnv
 // HandshakeNetwork is the announce line's network field: the
 // rendezvous socket is always SOCK_SEQPACKET ("unixpacket"), so one
 // SCM_RIGHTS fd associates unambiguously with one JSON-RPC datagram.
+//
+// Darwin/XNU never implemented AF_UNIX SOCK_SEQPACKET — ListenRendezvous
+// fails there with EPROTONOSUPPORT, so v2 bring-up always fails and
+// Launch's caller always falls back to v1 on that platform (a graceful,
+// intentional degradation — see RFC 0008 §Open questions and
+// cutting-garden#137). Not a bug to "fix" without a wire-protocol change.
 const HandshakeNetwork = internal.HandshakeNetwork
 
 // HandshakeSubprotocol terminates the announce line, naming the

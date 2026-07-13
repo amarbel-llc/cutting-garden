@@ -380,6 +380,16 @@ wrap — build fresh errors on EOF paths.
 - All blob bytes, markl ids, and receipt shapes are identical across v1
   and v2 for the same input — v2 is a pure transport change, so existing
   archives and cross-form byte-equivalence conformance still hold.
+- **Because Darwin can never negotiate v2** (§Open questions), v1 and v2
+  MUST be kept at feature parity: any capability added to the v2 wire
+  protocol that isn't also available under v1 is a silent Darwin
+  regression, since that platform always falls back to v1 and has no way
+  to opt back in. The one documented exception is non-identity
+  observability (live progress/plan/log streaming,
+  `docs/plans/2026-06-05-capture-progress-protocol-design.md`), which by
+  design never touches stored bytes and is allowed to ship as v2-only
+  telemetry — a Darwin capture is silent for longer, not incorrect or
+  incomplete.
 
 ## Conformance
 
@@ -445,3 +455,18 @@ says nothing about the transport.)
   loopback-TCP + length-prefixed bytes fallback) is a separate RFC.
 - **`SOCK_STREAM` fallback** for control messages exceeding the datagram
   bound (very large capture lists) — deferred.
+- **Darwin has no `AF_UNIX SOCK_SEQPACKET` at all** (confirmed empirically
+  and via Go stdlib's own `platform_test.go`, which excludes darwin/ios
+  from `unixpacket` support — see chrest#105 and cutting-garden#137).
+  This is a permanent kernel gap, not a sandbox or environment artifact:
+  `net.Listen("unixpacket", …)` returns `EPROTONOSUPPORT` on every Darwin
+  host. `ListenRendezvous` therefore always fails to bring up v2 there,
+  and every capture on Darwin runs v1 (§Migration's
+  always-try-v2-then-fall-back policy handles this gracefully today — it
+  is not a crash). A real fix would need a second wire mode over
+  `SOCK_STREAM` with explicit message-length framing and careful
+  `SCM_RIGHTS`-to-message correlation (the association `SOCK_SEQPACKET`
+  gives for free) — a materially different, harder transport, not a
+  one-line change, and not yet scoped as its own RFC. Until then, Darwin
+  support is preserved only by holding v1/v2 to feature parity per
+  §Migration above.
