@@ -159,11 +159,11 @@
         "rev": "84565f1bea5e1c713f2373df66f19cb84bcf8cd3",
         "revCount": 68,
         "type": "git",
-        "url": "https://code.linenisgreat.com/doppelgang.git"
+        "url": "https://github.com/amarbel-llc/doppelgang.git"
       },
       "original": {
         "type": "git",
-        "url": "https://code.linenisgreat.com/doppelgang.git"
+        "url": "https://github.com/amarbel-llc/doppelgang.git"
       }
     },
     "flake-parts": {
@@ -253,11 +253,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1784040900,
-        "narHash": "sha256-vrRY3T7Z0J/+bfoqcBgRKAQ8A9BReM+Gmwdp03P/iys=",
+        "lastModified": 1784058622,
+        "narHash": "sha256-CbbQJw0JxHdbOzlIQtc2rDkJFflqxstb/AtAOAxQ3Rw=",
         "ref": "refs/heads/master",
-        "rev": "c0885d44799faafe7f79f5cf5a863d77be0d5184",
-        "revCount": 21,
+        "rev": "db4afe4c6afe1c879385d1d5d2fd89ce5a3a27a3",
+        "revCount": 22,
         "type": "git",
         "url": "https://github.com/amarbel-llc/hyphence.git"
       },
@@ -353,11 +353,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1784041409,
-        "narHash": "sha256-KRLgTPGbWywli5XOtt7pzzinJA8cJwcV7UpRXd/FqgY=",
+        "lastModified": 1784058832,
+        "narHash": "sha256-SPNa8kyH9kAv5nKwFRWAPxIf6Moh9k5i7m412GnEc6Q=",
         "ref": "refs/heads/master",
-        "rev": "531a6576749516a3c253d892500de1612618bed8",
-        "revCount": 742,
+        "rev": "a08476568b7ea5fccbe11211485c857198e53374",
+        "revCount": 743,
         "type": "git",
         "url": "https://github.com/amarbel-llc/madder.git"
       },
@@ -423,11 +423,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1784040481,
-        "narHash": "sha256-cgpJj1aErS5sz3rYy4pfDIdENKZpHZo4x7qPoEbzRvU=",
+        "lastModified": 1784058284,
+        "narHash": "sha256-RdGbgnCawDBZd8DaiiCB9d0Jo+exVA4TFpYLRmAr4P4=",
         "ref": "refs/heads/master",
-        "rev": "b762fd1979ff27dd0f173ac19bbeb5e54e747be9",
-        "revCount": 1033,
+        "rev": "20e2bcdbdeef6a4bcb04e565925e5ba6b89fdc77",
+        "revCount": 1034,
         "type": "git",
         "url": "https://code.linenisgreat.com/piggy.git"
       },
