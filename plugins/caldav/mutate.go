@@ -55,17 +55,17 @@ func (Plugin) CreateNode(
 	return c.createResource(ctx, href, icalData)
 }
 
-// UpdateNode strictly overwrites an existing CalDAV object at the node URI.
-// The body is normalized to iCalendar (raw .ics or objectView JSON) and PUT
-// with an If-Match precondition, so a missing object is reported rather than
-// silently created.
-func (Plugin) UpdateNode(
+// PutNode strictly overwrites an existing CalDAV object at the node URI
+// (full-replace semantics). The body is normalized to iCalendar (raw .ics or
+// objectView JSON) and PUT with an If-Match precondition, so a missing object
+// is reported rather than silently created.
+func (Plugin) PutNode(
 	ctx context.Context,
 	node *url.URL,
 	body io.Reader,
 ) error {
 	if node == nil {
-		return errors.ErrorWithStackf("caldav plugin: UpdateNode requires a node URI")
+		return errors.ErrorWithStackf("caldav plugin: PutNode requires a node URI")
 	}
 	c, href, err := clientForNode(node)
 	if err != nil {
@@ -76,6 +76,216 @@ func (Plugin) UpdateNode(
 		return err
 	}
 	return c.updateResource(ctx, href, icalData)
+}
+
+// objectPatchBody is the PatchNode body: a discriminated union carrying only
+// the fields the caller wants to change. Using map[string]json.RawMessage for
+// the inner object lets the apply functions distinguish "field present in JSON"
+// from "field absent" — which a plain struct unmarshal into string fields
+// cannot, since json.Unmarshal zeroes missing fields.
+type objectPatchBody struct {
+	Component string                     `json:"component"`
+	Event     map[string]json.RawMessage `json:"event"`
+	Task      map[string]json.RawMessage `json:"task"`
+	Journal   map[string]json.RawMessage `json:"journal"`
+}
+
+// PatchNode partially updates an existing CalDAV object at the node URI. The
+// body MUST be objectView JSON (raw iCalendar is rejected — it cannot express
+// "absent field = unchanged"). Only the fields present in the JSON are written;
+// absent fields are left untouched. Unknown fields are silently ignored. An
+// empty or whitespace-only body is a bad-request error. A valid component with
+// zero patchable fields succeeds as a no-op without issuing a PUT.
+//
+// Supported patch fields: VEVENT — summary, description, status, dtstart,
+// dtend; VTODO — summary, description, status, dtstart, due; VJOURNAL —
+// summary, description, status, dtstart.
+func (Plugin) PatchNode(
+	ctx context.Context,
+	node *url.URL,
+	body io.Reader,
+) error {
+	if node == nil {
+		return errors.ErrorWithStackf("caldav plugin: PatchNode requires a node URI")
+	}
+
+	raw, err := io.ReadAll(body)
+	if err != nil {
+		return errors.Wrap(err)
+	}
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 {
+		return errors.BadRequestf("caldav plugin: PatchNode body must be objectView JSON; got empty body")
+	}
+
+	var patch objectPatchBody
+	if err := json.Unmarshal(trimmed, &patch); err != nil {
+		return errors.BadRequestf("caldav plugin: invalid patch JSON: %s", err)
+	}
+
+	var fields map[string]json.RawMessage
+	switch patch.Component {
+	case "VEVENT":
+		fields = patch.Event
+	case "VTODO":
+		fields = patch.Task
+	case "VJOURNAL":
+		fields = patch.Journal
+	default:
+		return errors.BadRequestf(
+			"caldav plugin: patch JSON has unknown component %q (want VEVENT, VTODO, or VJOURNAL)",
+			patch.Component,
+		)
+	}
+
+	// No fields to patch → no-op success (skip the GET/PUT round-trip).
+	if len(fields) == 0 {
+		return nil
+	}
+
+	c, href, err := clientForNode(node)
+	if err != nil {
+		return err
+	}
+
+	currentBody, err := c.getResource(ctx, href)
+	if err != nil {
+		return err
+	}
+
+	currentView, ok := parseObjectView(currentBody)
+	if !ok {
+		return errors.ErrorWithStackf(
+			"caldav plugin: node at %s is not a recognized CalDAV object (VEVENT/VTODO/VJOURNAL)",
+			node,
+		)
+	}
+
+	var newBody string
+	switch patch.Component {
+	case "VEVENT":
+		if currentView.Event == nil {
+			return errors.ErrorWithStackf(
+				"caldav plugin: PatchNode component mismatch: requested VEVENT but node at %s is %s",
+				node, currentView.Component,
+			)
+		}
+		if err := applyEventPatch(currentView.Event, fields); err != nil {
+			return err
+		}
+		newBody = ical.EventToIcal(currentView.Event)
+	case "VTODO":
+		if currentView.Task == nil {
+			return errors.ErrorWithStackf(
+				"caldav plugin: PatchNode component mismatch: requested VTODO but node at %s is %s",
+				node, currentView.Component,
+			)
+		}
+		if err := applyTaskPatch(currentView.Task, fields); err != nil {
+			return err
+		}
+		newBody = ical.TaskToIcal(currentView.Task)
+	case "VJOURNAL":
+		if currentView.Journal == nil {
+			return errors.ErrorWithStackf(
+				"caldav plugin: PatchNode component mismatch: requested VJOURNAL but node at %s is %s",
+				node, currentView.Component,
+			)
+		}
+		if err := applyJournalPatch(currentView.Journal, fields); err != nil {
+			return err
+		}
+		newBody = ical.JournalToIcal(currentView.Journal)
+	}
+
+	return c.updateResource(ctx, href, newBody)
+}
+
+// applyEventPatch overlays patch fields onto e. Only keys present in the map
+// are applied; unknown keys are silently ignored per PatchNode contract.
+// Supported: summary, description, status, dtstart, dtend.
+func applyEventPatch(e *ical.Event, fields map[string]json.RawMessage) error {
+	for k, v := range fields {
+		switch k {
+		case "summary":
+			if err := json.Unmarshal(v, &e.Summary); err != nil {
+				return errors.BadRequestf("caldav plugin: patch field %q: %s", k, err)
+			}
+		case "description":
+			if err := json.Unmarshal(v, &e.Description); err != nil {
+				return errors.BadRequestf("caldav plugin: patch field %q: %s", k, err)
+			}
+		case "status":
+			if err := json.Unmarshal(v, &e.Status); err != nil {
+				return errors.BadRequestf("caldav plugin: patch field %q: %s", k, err)
+			}
+		case "dtstart":
+			if err := json.Unmarshal(v, &e.DtStart); err != nil {
+				return errors.BadRequestf("caldav plugin: patch field %q: %s", k, err)
+			}
+		case "dtend":
+			if err := json.Unmarshal(v, &e.DtEnd); err != nil {
+				return errors.BadRequestf("caldav plugin: patch field %q: %s", k, err)
+			}
+		}
+	}
+	return nil
+}
+
+// applyTaskPatch overlays patch fields onto t. Unknown keys silently ignored.
+// Supported: summary, description, status, dtstart, due.
+func applyTaskPatch(t *ical.Task, fields map[string]json.RawMessage) error {
+	for k, v := range fields {
+		switch k {
+		case "summary":
+			if err := json.Unmarshal(v, &t.Summary); err != nil {
+				return errors.BadRequestf("caldav plugin: patch field %q: %s", k, err)
+			}
+		case "description":
+			if err := json.Unmarshal(v, &t.Description); err != nil {
+				return errors.BadRequestf("caldav plugin: patch field %q: %s", k, err)
+			}
+		case "status":
+			if err := json.Unmarshal(v, &t.Status); err != nil {
+				return errors.BadRequestf("caldav plugin: patch field %q: %s", k, err)
+			}
+		case "dtstart":
+			if err := json.Unmarshal(v, &t.DtStart); err != nil {
+				return errors.BadRequestf("caldav plugin: patch field %q: %s", k, err)
+			}
+		case "due":
+			if err := json.Unmarshal(v, &t.Due); err != nil {
+				return errors.BadRequestf("caldav plugin: patch field %q: %s", k, err)
+			}
+		}
+	}
+	return nil
+}
+
+// applyJournalPatch overlays patch fields onto j. Unknown keys silently
+// ignored. Supported: summary, description, status, dtstart.
+func applyJournalPatch(j *ical.Journal, fields map[string]json.RawMessage) error {
+	for k, v := range fields {
+		switch k {
+		case "summary":
+			if err := json.Unmarshal(v, &j.Summary); err != nil {
+				return errors.BadRequestf("caldav plugin: patch field %q: %s", k, err)
+			}
+		case "description":
+			if err := json.Unmarshal(v, &j.Description); err != nil {
+				return errors.BadRequestf("caldav plugin: patch field %q: %s", k, err)
+			}
+		case "status":
+			if err := json.Unmarshal(v, &j.Status); err != nil {
+				return errors.BadRequestf("caldav plugin: patch field %q: %s", k, err)
+			}
+		case "dtstart":
+			if err := json.Unmarshal(v, &j.DtStart); err != nil {
+				return errors.BadRequestf("caldav plugin: patch field %q: %s", k, err)
+			}
+		}
+	}
+	return nil
 }
 
 // DeleteNode removes the CalDAV object at the node URI.

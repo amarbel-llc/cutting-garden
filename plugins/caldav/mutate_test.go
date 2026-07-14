@@ -74,32 +74,32 @@ func TestCreateNode_ContainerTypeErrors(t *testing.T) {
 	}
 }
 
-func TestUpdateNode_OverwritesExisting(t *testing.T) {
+func TestPutNode_OverwritesExisting(t *testing.T) {
 	f, home := startFake(t) // task1.ics exists ("Buy milk")
 	arg := objectArg(home, "/dav/cal/task1.ics")
 
-	err := Plugin{}.UpdateNode(
+	err := Plugin{}.PutNode(
 		context.Background(), mustParseURL(t, arg),
 		strings.NewReader(vtodo("task1", "Buy oat milk")),
 	)
 	if err != nil {
-		t.Fatalf("UpdateNode: %v", err)
+		t.Fatalf("PutNode: %v", err)
 	}
 	if got := f.resources["/dav/cal/task1.ics"]; !strings.Contains(got, "Buy oat milk") {
-		t.Errorf("update did not overwrite the body: %q", got)
+		t.Errorf("put did not overwrite the body: %q", got)
 	}
 }
 
-func TestUpdateNode_MissingErrors(t *testing.T) {
+func TestPutNode_MissingErrors(t *testing.T) {
 	_, home := startFakeEmpty(t)
 	arg := objectArg(home, "/dav/cal/ghost.ics")
 
-	err := Plugin{}.UpdateNode(
+	err := Plugin{}.PutNode(
 		context.Background(), mustParseURL(t, arg),
 		strings.NewReader(vtodo("ghost", "nope")),
 	)
 	if err == nil {
-		t.Fatal("UpdateNode on a missing object must error (strict update)")
+		t.Fatal("PutNode on a missing object must error (strict update)")
 	}
 }
 
@@ -137,17 +137,118 @@ func TestMutate_RoundTrip(t *testing.T) {
 	if got := f.resources["/dav/cal/rt.ics"]; !strings.Contains(got, "SUMMARY:v1") {
 		t.Fatalf("after create: %q", got)
 	}
-	if err := (Plugin{}).UpdateNode(ctx, node, strings.NewReader(vevent("rt", "v2"))); err != nil {
-		t.Fatalf("update: %v", err)
+	if err := (Plugin{}).PutNode(ctx, node, strings.NewReader(vevent("rt", "v2"))); err != nil {
+		t.Fatalf("put: %v", err)
 	}
 	if got := f.resources["/dav/cal/rt.ics"]; !strings.Contains(got, "SUMMARY:v2") {
-		t.Fatalf("after update: %q", got)
+		t.Fatalf("after put: %q", got)
 	}
 	if err := (Plugin{}).DeleteNode(ctx, node); err != nil {
 		t.Fatalf("delete: %v", err)
 	}
 	if _, ok := f.resources["/dav/cal/rt.ics"]; ok {
 		t.Fatal("object survived delete")
+	}
+}
+
+func TestPatchNode_PartialFieldChange(t *testing.T) {
+	// task1.ics exists with UID=task1, SUMMARY="Buy milk"
+	f, home := startFake(t)
+	arg := objectArg(home, "/dav/cal/task1.ics")
+
+	err := Plugin{}.PatchNode(
+		context.Background(), mustParseURL(t, arg),
+		strings.NewReader(`{"component":"VTODO","task":{"summary":"Buy oat milk"}}`),
+	)
+	if err != nil {
+		t.Fatalf("PatchNode: %v", err)
+	}
+	got := f.resources["/dav/cal/task1.ics"]
+	if !strings.Contains(got, "SUMMARY:Buy oat milk") {
+		t.Errorf("patched field not updated in stored body: %q", got)
+	}
+	// UID was not in the patch — it must survive unchanged.
+	if !strings.Contains(got, "UID:task1") {
+		t.Errorf("unpatched field UID was cleared: %q", got)
+	}
+}
+
+func TestPatchNode_UnknownFieldsIgnored(t *testing.T) {
+	_, home := startFake(t)
+	arg := objectArg(home, "/dav/cal/task1.ics")
+
+	// "color" and "priority_emoji" are not recognized caldav fields — must not error.
+	err := Plugin{}.PatchNode(
+		context.Background(), mustParseURL(t, arg),
+		strings.NewReader(`{"component":"VTODO","task":{"summary":"ok","color":"red","priority_emoji":"rocket"}}`),
+	)
+	if err != nil {
+		t.Fatalf("PatchNode with unknown fields must succeed: %v", err)
+	}
+}
+
+func TestPatchNode_EmptyFieldsIsNoOp(t *testing.T) {
+	f, home := startFake(t)
+	arg := objectArg(home, "/dav/cal/task1.ics")
+
+	err := Plugin{}.PatchNode(
+		context.Background(), mustParseURL(t, arg),
+		strings.NewReader(`{"component":"VTODO","task":{}}`),
+	)
+	if err != nil {
+		t.Fatalf("PatchNode with empty fields must succeed (no-op): %v", err)
+	}
+	// No PUT should have been issued — the fake's puts map is empty.
+	if len(f.puts) != 0 {
+		t.Errorf("no-op patch must not issue a PUT; puts=%v", f.puts)
+	}
+}
+
+func TestPatchNode_MissingErrors(t *testing.T) {
+	_, home := startFakeEmpty(t)
+	arg := objectArg(home, "/dav/cal/ghost.ics")
+
+	err := Plugin{}.PatchNode(
+		context.Background(), mustParseURL(t, arg),
+		strings.NewReader(`{"component":"VTODO","task":{"summary":"ghost"}}`),
+	)
+	if err == nil {
+		t.Fatal("PatchNode on a missing object must error")
+	}
+}
+
+func TestPatchNode_EmptyBodyErrors(t *testing.T) {
+	_, home := startFake(t)
+	arg := objectArg(home, "/dav/cal/task1.ics")
+
+	err := Plugin{}.PatchNode(
+		context.Background(), mustParseURL(t, arg),
+		strings.NewReader(""),
+	)
+	if err == nil {
+		t.Fatal("PatchNode with empty body must error")
+	}
+}
+
+func TestPatchNode_RoundTrip(t *testing.T) {
+	f, home := startFakeEmpty(t)
+	arg := objectArg(home, "/dav/cal/rtp.ics")
+	node := mustParseURL(t, arg)
+	ctx := context.Background()
+
+	if err := (Plugin{}).CreateNode(ctx, node, strings.NewReader(vtodo("rtp", "v1")), typeObject); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := (Plugin{}).PatchNode(ctx, node,
+		strings.NewReader(`{"component":"VTODO","task":{"summary":"v2"}}`)); err != nil {
+		t.Fatalf("patch: %v", err)
+	}
+	got := f.resources["/dav/cal/rtp.ics"]
+	if !strings.Contains(got, "SUMMARY:v2") {
+		t.Errorf("after patch: summary not updated: %q", got)
+	}
+	if !strings.Contains(got, "UID:rtp") {
+		t.Errorf("after patch: UID was cleared: %q", got)
 	}
 }
 
