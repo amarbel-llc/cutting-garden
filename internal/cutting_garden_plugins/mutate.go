@@ -6,9 +6,9 @@ import (
 	"net/url"
 )
 
-// NodeMutator is the OPTIONAL write capability: create, update, or delete a
-// single addressable node in a plugin's tree — the write-side sibling of
-// RootLister (FDR 0014/0020). It is probed by type assertion on an
+// NodeMutator is the OPTIONAL write capability: create, replace, patch, or
+// delete a single addressable node in a plugin's tree — the write-side
+// sibling of RootLister (FDR 0014/0020). It is probed by type assertion on an
 // already-resolved plugin, exactly as RootLister / LeafReader / RootProvider
 // are; a plugin whose scheme has no meaningful write surface simply omits it.
 //
@@ -23,14 +23,24 @@ type NodeMutator interface {
 	// CreateNode creates a new node at uri from body. typ is a NodeType.Tag
 	// from the plugin's declared Types() (FDR 0014) — the plugin validates it
 	// can create a node of that type. Create is STRICT, not upsert: it is an
-	// error if uri already exists (use UpdateNode to overwrite). For a leaf,
+	// error if uri already exists (use PutNode to overwrite). For a leaf,
 	// body is the object bytes; for a container type body MAY be empty.
 	CreateNode(ctx context.Context, uri *url.URL, body io.Reader, typ string) error
 
-	// UpdateNode replaces the body of an existing leaf at uri. It is an error
-	// if uri does NOT exist (use CreateNode to create). Containers are not
-	// updated as a unit — their children are mutated individually.
-	UpdateNode(ctx context.Context, uri *url.URL, body io.Reader) error
+	// PutNode replaces the body of an existing leaf at uri (full-replace
+	// semantics). It is an error if uri does NOT exist (use CreateNode to
+	// create). Containers are not updated as a unit — their children are
+	// mutated individually. The body must represent the complete desired state.
+	PutNode(ctx context.Context, uri *url.URL, body io.Reader) error
+
+	// PatchNode applies a partial-field update to an existing node at uri.
+	// body contains only the fields the caller wants to change; absent fields
+	// MUST be left untouched. Implementations MUST NOT error on an absent or
+	// unrecognized field — the whole point of PatchNode is "only touch what is
+	// explicitly named in the body," in contrast to PutNode which requires the
+	// body to represent the complete desired state. An empty body is a
+	// bad-request error. The body format is plugin-defined.
+	PatchNode(ctx context.Context, uri *url.URL, body io.Reader) error
 
 	// DeleteNode removes the node at uri. node MUST be non-nil.
 	DeleteNode(ctx context.Context, uri *url.URL) error

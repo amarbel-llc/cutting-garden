@@ -132,9 +132,9 @@ type LeafReader = internal.LeafReader
 // tree, as returned by ListRoots.
 type Node = internal.Node
 
-// NodeMutator is the OPTIONAL write capability: create, update, or delete a
-// single addressable node in a plugin's tree — the write-side sibling of
-// RootLister (FDR 0014/0020). It is probed by type assertion on an
+// NodeMutator is the OPTIONAL write capability: create, replace, patch, or
+// delete a single addressable node in a plugin's tree — the write-side
+// sibling of RootLister (FDR 0014/0020). It is probed by type assertion on an
 // already-resolved plugin, exactly as RootLister / LeafReader / RootProvider
 // are; a plugin whose scheme has no meaningful write surface simply omits it.
 //

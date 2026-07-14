@@ -28,7 +28,8 @@ const (
 // Shared so the registration and the classification agree.
 const (
 	ToolCreateNode        = "create_node"
-	ToolUpdateNode        = "update_node"
+	ToolPutNode           = "put_node"
+	ToolPatchNode         = "patch_node"
 	ToolDeleteNode        = "delete_node"
 	ToolDescribeNodeTypes = "describe_node_types"
 	ToolReadNode          = "read_node"
@@ -42,7 +43,7 @@ const (
 // falls through to normal prompting rather than inventing a decision.
 func Classify(toolName string) (Class, bool) {
 	switch toolName {
-	case ToolCreateNode, ToolUpdateNode, ToolDeleteNode:
+	case ToolCreateNode, ToolPutNode, ToolPatchNode, ToolDeleteNode:
 		return ClassDestructive, true
 	case ToolDescribeNodeTypes, ToolReadNode, ToolListNodes:
 		return ClassRead, true
