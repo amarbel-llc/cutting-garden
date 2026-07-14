@@ -167,6 +167,7 @@
     # (`--check` fails on stamp skew).
     madder.inputs.piggy.follows = "piggy";
     madder.inputs.tommy.follows = "tommy";
+    purse-first.inputs.conformist.follows = "conformist";
   };
 
   outputs =
