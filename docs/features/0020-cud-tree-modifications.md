@@ -26,15 +26,20 @@ promotion-criteria: |
 >
 > **Landed (every layer, unit- AND e2e-tested):** the `NodeMutator` SDK
 > capability (`internal/cutting_garden_plugins`), caldav's implementation
-> (`plugins/caldav/mutate.go` — strict create/update, delete, dual-format
-> body), the MCP `create_node`/`update_node`/`delete_node` tools
+> (`plugins/caldav/mutate.go` — strict create/put, patch, delete, dual-format
+> body), the MCP `create_node`/`put_node`/`patch_node`/`delete_node` tools
 > (`internal/mcp/tools.go`), and the shared `mcp_tool_perms` classifier
 > feeding both the tools' destructive annotations and the #102 clown
 > PreToolUse hook (`internal/claude_hooks`, gates them `ask`). The
-> end-to-end exercise — create→update→delete driven through
+> end-to-end exercise — create→put→delete driven through
 > `cutting-garden mcp` over the stdio transport against the caldav
 > testserver — runs in `zz-tests_bats/mcp.bats`, alongside the hook gating
 > a CUD tool `ask`.
+>
+> **2026-07-14 amendment:** `UpdateNode` was split into `PutNode` (full
+> replace, identical semantics, renamed) and `PatchNode` (partial-field
+> update). The MCP tools `update_node` → `put_node` and new `patch_node`
+> reflect this. See the "Settled" section for the rationale.
 
 ## Problem Statement
 
@@ -77,28 +82,36 @@ simply don't implement it. **This signature is illustrative, not
 normative** — the prototype exists to settle it:
 
 ```go
-// NodeMutator is the optional write capability: create, update, or
-// delete a single addressable node in the plugin's tree. The read-side
-// sibling is RootLister (FDR 0014). A plugin implements it only when its
-// scheme supports mutation; the file plugin (write/mkdir/rm) and caldav
-// (PUT/MKCALENDAR/DELETE) are the first candidates.
+// NodeMutator is the optional write capability: create, replace, patch,
+// or delete a single addressable node in the plugin's tree. The
+// read-side sibling is RootLister (FDR 0014). A plugin implements it
+// only when its scheme supports mutation; the file plugin
+// (write/mkdir/rm) and caldav (PUT/MKCALENDAR/DELETE) are the first
+// candidates.
 type NodeMutator interface {
     Plugin
 
     // CreateNode creates a new node at uri with the given body. For a
     // container type the body MAY be empty (mkdir / MKCALENDAR); for a
     // leaf it is the object bytes (an .ics, a file's content). It is an
-    // error if uri already exists (create is not upsert — see UpdateNode).
+    // error if uri already exists (create is not upsert — see PutNode).
     CreateNode(ctx context.Context, uri *url.URL, body io.Reader, typ string) error
 
-    // UpdateNode replaces the body of an existing leaf at uri. It is an
-    // error if uri does not exist. Containers are not "updated" (their
-    // children are mutated individually).
-    UpdateNode(ctx context.Context, uri *url.URL, body io.Reader) error
+    // PutNode replaces the body of an existing leaf at uri (full-replace
+    // semantics). It is an error if uri does not exist. Containers are
+    // not "put" (their children are mutated individually).
+    PutNode(ctx context.Context, uri *url.URL, body io.Reader) error
 
-    // DeleteNode removes the node at uri. Deleting a container removes its
-    // subtree (the plugin decides whether that is recursive or refused on
-    // non-empty — an open question below).
+    // PatchNode applies a partial-field update to an existing leaf at
+    // uri. body contains only the fields to change; absent fields MUST be
+    // left untouched. Implementations MUST NOT error on an absent or
+    // unrecognized field. An empty body is a bad-request error. The body
+    // format is plugin-defined.
+    PatchNode(ctx context.Context, uri *url.URL, body io.Reader) error
+
+    // DeleteNode removes the node at uri. Deleting a container removes
+    // its subtree (the plugin decides whether that is recursive or
+    // refused on non-empty — an open question below).
     DeleteNode(ctx context.Context, uri *url.URL) error
 }
 ```
@@ -125,7 +138,8 @@ plugins that implement `NodeMutator`. The mapping:
 | `list_nodes(uri?)` | the configured roots (no uri) / `resources/read` container (uri) |
 | `read_node(uri)` | `resources/read` (#85) |
 | `create_node(uri, body, type)` | `NodeMutator.CreateNode` |
-| `update_node(uri, body)` | `NodeMutator.UpdateNode` |
+| `put_node(uri, body)` | `NodeMutator.PutNode` (full replace; renamed from `update_node`) |
+| `patch_node(uri, body)` | `NodeMutator.PatchNode` (partial-field update; body JSON) |
 | `delete_node(uri)` | `NodeMutator.DeleteNode` |
 
 `list_nodes` and `read_node` expose the read tree as **tools**, because a
@@ -157,7 +171,7 @@ Each tool is annotated with its read/destructive classification from a
 shared `internal/mcp_tool_perms` classifier (the #102 ask, mirroring
 dodder's `mcp_tool_perms` single-source-of-truth). The **same**
 classifier feeds the clown PreToolUse hook decision table
-(`internal/claude_hooks`): the three CUD tools classify as **destructive
+(`internal/claude_hooks`): the four CUD tools classify as **destructive
 ⇒ `ask`** (all mutate live state), while the existing
 `resources/list`/`read` stay read-only ⇒ `allow`. This is the trigger
 condition #102 was scaffolded for — adding the decision table becomes a
@@ -208,17 +222,23 @@ deferred to when the pre-RFC API is lifted into the RFC.
       body = "BEGIN:VCALENDAR…BEGIN:VEVENT…END:VEVENT…END:VCALENDAR",
     )
 
-    # update its body
-    update_node(
+    # full-replace its body
+    put_node(
       uri  = "caldav://dav.host/dav/me/work/new-standup.ics",
       body = "BEGIN:VCALENDAR… (revised) …END:VCALENDAR",
+    )
+
+    # or patch just the summary — other fields are left untouched
+    patch_node(
+      uri  = "caldav://dav.host/dav/me/work/new-standup.ics",
+      body = '{"component":"VEVENT","event":{"summary":"Standup (rescheduled)"}}',
     )
 
     # delete it
     delete_node(uri = "caldav://dav.host/dav/me/work/new-standup.ics")
 
 Each tool call surfaces to the clown PreToolUse hook, which classifies
-all three as destructive and emits `ask` — the agent must get user
+all four as destructive and emits `ask` — the agent must get user
 approval before the mutation reaches the live server.
 
 ## Limitations
@@ -251,8 +271,28 @@ approval before the mutation reaches the live server.
 
 ## Settled (prototype decisions)
 
+- **`UpdateNode` split into `PutNode` + `PatchNode` (2026-07-14).** The
+  original three-method surface (`CreateNode`/`UpdateNode`/`DeleteNode`) has
+  been extended to four by splitting `UpdateNode`:
+  - `PutNode` — direct rename of `UpdateNode`; full-replace semantics
+    unchanged; MCP tool renamed `update_node` → `put_node`.
+  - `PatchNode` — new; partial-field update; body contains only the fields to
+    change; absent fields MUST be left untouched; MUST NOT error on an absent
+    or unrecognized field. MCP tool: `patch_node`.
+
+  **Motivation:** a consumer (`nebulous`, nebulous#40) needs to flip single
+  booleans (mark a story read) or rename individual fields without reading and
+  re-sending the entire object. A read-modify-write dance on every single-field
+  change is wasteful (one extra RTT per mutation) and error-prone (stale caller
+  data can silently clobber unrelated fields). `PatchNode` closes that gap
+  without removing the strict-replace guarantee that `PutNode` callers depend
+  on. The caldav implementation uses an explicit `component` discriminator in
+  the patch body and per-field `map[string]json.RawMessage` dispatch — unknown
+  fields are silently ignored per the contract, and an empty field map skips
+  the GET+PUT round-trip as a no-op.
+
 - **Create vs. upsert → strict.** `create_node` errors if the node exists
-  (caldav PUT `If-None-Match: *`); `update_node` is the explicit overwrite
+  (caldav PUT `If-None-Match: *`); `put_node` is the explicit overwrite
   and errors if the node is absent (`If-Match: *`). Atomic preconditions, no
   racy GET-precheck. (Tuning lever if upsert friction shows up.)
 - **Body typing → validate, dual-format.** caldav accepts both raw
@@ -264,7 +304,7 @@ approval before the mutation reaches the live server.
   `caldav-calendar-v1` container errors (MKCALENDAR, #77). Containers are on
   the v1 docket — the interface already carries `typ` so container create
   slots in when #77 lands.
-- **End-to-end → covered.** `zz-tests_bats/mcp.bats` drives create→update→
+- **End-to-end → covered.** `zz-tests_bats/mcp.bats` drives create→put→
   delete through `cutting-garden mcp` over the stdio transport against the
   caldav testserver (dependent mutations serialized as one tool call per
   invocation, since a single connection's requests dispatch concurrently),
