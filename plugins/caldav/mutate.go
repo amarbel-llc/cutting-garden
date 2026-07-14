@@ -341,7 +341,7 @@ func normalizeObjectBody(r io.Reader) (string, error) {
 	s := string(raw)
 	if _, ok := parseObjectView(s); !ok {
 		return "", errors.BadRequestf(
-			"caldav plugin: body is neither valid iCalendar (a VEVENT or VTODO) " +
+			"caldav plugin: body is neither valid iCalendar (a VEVENT, VTODO, or VJOURNAL) " +
 				"nor an object JSON ({\"component\":…})",
 		)
 	}
