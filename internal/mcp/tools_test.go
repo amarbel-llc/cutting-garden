@@ -16,8 +16,8 @@ import (
 // fakeMutator is a registry-free NodeMutator for the tool tests. It records
 // the URIs it was asked to mutate and can be made to fail.
 type fakeMutator struct {
-	created, updated, deleted []string
-	failCreate                bool
+	created, put, patched, deleted []string
+	failCreate                     bool
 }
 
 func (*fakeMutator) Schemes() []string                     { return []string{"faketest"} }
@@ -37,8 +37,13 @@ func (f *fakeMutator) CreateNode(_ context.Context, u *url.URL, _ io.Reader, _ s
 	return nil
 }
 
-func (f *fakeMutator) UpdateNode(_ context.Context, u *url.URL, _ io.Reader) error {
-	f.updated = append(f.updated, u.String())
+func (f *fakeMutator) PutNode(_ context.Context, u *url.URL, _ io.Reader) error {
+	f.put = append(f.put, u.String())
+	return nil
+}
+
+func (f *fakeMutator) PatchNode(_ context.Context, u *url.URL, _ io.Reader) error {
+	f.patched = append(f.patched, u.String())
 	return nil
 }
 
@@ -80,16 +85,16 @@ func TestListToolsV1_AdvertisesToolsWithCorrectAnnotations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListToolsV1: %v", err)
 	}
-	// 3 read tools (describe/read/list) + 3 CUD tools (destructive).
-	if len(res.Tools) != 6 {
-		t.Fatalf("got %d tools, want 6: %+v", len(res.Tools), res.Tools)
+	// 3 read tools (describe/read/list) + 4 CUD tools (destructive).
+	if len(res.Tools) != 7 {
+		t.Fatalf("got %d tools, want 7: %+v", len(res.Tools), res.Tools)
 	}
 	annByName := map[string]*protocol.ToolAnnotations{}
 	for _, tl := range res.Tools {
 		annByName[tl.Name] = tl.Annotations
 	}
 	// The CUD tools are destructive / not read-only.
-	for _, name := range []string{"create_node", "update_node", "delete_node"} {
+	for _, name := range []string{"create_node", "put_node", "patch_node", "delete_node"} {
 		a := annByName[name]
 		if a == nil {
 			t.Fatalf("missing tool %q in %v", name, annByName)
@@ -116,8 +121,8 @@ func TestListTools_V0AdvertisesAll(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTools: %v", err)
 	}
-	if len(list) != 6 {
-		t.Fatalf("got %d tools, want 6 (3 read + 3 CUD)", len(list))
+	if len(list) != 7 {
+		t.Fatalf("got %d tools, want 7 (3 read + 4 CUD)", len(list))
 	}
 }
 
@@ -166,6 +171,40 @@ func TestCallToolV1_DeleteDispatches(t *testing.T) {
 	}
 	if len(m.deleted) != 1 {
 		t.Errorf("DeleteNode not dispatched: deleted=%v", m.deleted)
+	}
+}
+
+func TestCallTool_PutDispatches(t *testing.T) {
+	m := &fakeMutator{}
+	tools := newFakeTools(t, m, "faketest://h/")
+	args := json.RawMessage(`{"uri":"faketest://h/x.ics","body":"BEGIN:VEVENT"}`)
+
+	res, err := tools.CallTool(context.Background(), "put_node", args)
+	if err != nil {
+		t.Fatalf("CallTool transport error: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("unexpected tool error: %+v", res.Content)
+	}
+	if len(m.put) != 1 || m.put[0] != "faketest://h/x.ics" {
+		t.Errorf("PutNode not dispatched: put=%v", m.put)
+	}
+}
+
+func TestCallTool_PatchDispatches(t *testing.T) {
+	m := &fakeMutator{}
+	tools := newFakeTools(t, m, "faketest://h/")
+	args := json.RawMessage(`{"uri":"faketest://h/x.ics","body":"{\"component\":\"VTODO\",\"task\":{\"summary\":\"new\"}}"}`)
+
+	res, err := tools.CallTool(context.Background(), "patch_node", args)
+	if err != nil {
+		t.Fatalf("CallTool transport error: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("unexpected tool error: %+v", res.Content)
+	}
+	if len(m.patched) != 1 || m.patched[0] != "faketest://h/x.ics" {
+		t.Errorf("PatchNode not dispatched: patched=%v", m.patched)
 	}
 }
 

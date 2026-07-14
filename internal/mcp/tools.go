@@ -34,10 +34,10 @@ type resourceReader interface {
 
 // Tools implements go-mcp's ToolProviderV1. It always advertises the
 // read-only schema/read/list discovery tools (describe_node_types, read_node,
-// list_nodes), and adds the create_node / update_node / delete_node write
-// tools (FDR 0020) when a configured root's plugin implements NodeMutator. A
-// mutation targets the same node URI read_node/list_nodes surface, so the
-// read and write axes share one address space.
+// list_nodes), and adds the create_node / put_node / patch_node / delete_node
+// write tools (FDR 0020) when a configured root's plugin implements
+// NodeMutator. A mutation targets the same node URI read_node/list_nodes
+// surface, so the read and write axes share one address space.
 type Tools struct {
 	roots   []*url.URL
 	resolve mutatorResolveFunc
@@ -73,10 +73,14 @@ const (
 		`"uri":{"type":"string","description":"the node URI to create (e.g. caldav://host/cal/x.ics)"},` +
 		`"body":{"type":"string","description":"the object as raw iCalendar (.ics) or the {component,event|task} JSON resources/read returns"},` +
 		`"type":{"type":"string","description":"the node type tag, e.g. caldav-object-v1"}}}`
-	updateNodeSchema = `{"type":"object","required":["uri","body"],` +
+	putNodeSchema = `{"type":"object","required":["uri","body"],` +
 		`"properties":{` +
-		`"uri":{"type":"string","description":"the existing node URI to overwrite"},` +
+		`"uri":{"type":"string","description":"the existing node URI to overwrite (full replace)"},` +
 		`"body":{"type":"string","description":"the new object as raw iCalendar or {component,event|task} JSON"}}}`
+	patchNodeSchema = `{"type":"object","required":["uri","body"],` +
+		`"properties":{` +
+		`"uri":{"type":"string","description":"the existing node URI to patch"},` +
+		`"body":{"type":"string","description":"a JSON object with only the fields to change; absent fields are left untouched"}}}`
 	deleteNodeSchema = `{"type":"object","required":["uri"],` +
 		`"properties":{"uri":{"type":"string","description":"the node URI to delete"}}}`
 	describeNodeTypesSchema = `{"type":"object","properties":{}}`
@@ -108,7 +112,7 @@ func readToolDefs() []protocol.ToolV1 {
 			Name: mcp_tool_perms.ToolDescribeNodeTypes,
 			Description: "List the node types each scheme exposes (tag, container vs " +
 				"leaf, mimetype) and, for writable types, the body payload create_node/" +
-				"update_node accept, with a concrete example. Read-only; call it first " +
+				"put_node accept, with a concrete example. Read-only; call it first " +
 				"to learn a type tag and body shape before create_node.",
 			InputSchema: json.RawMessage(describeNodeTypesSchema),
 			Annotations: annotationFor(mcp_tool_perms.ToolDescribeNodeTypes),
@@ -134,22 +138,31 @@ func readToolDefs() []protocol.ToolV1 {
 	}
 }
 
-// cudToolDefs is the create/update/delete write-tool catalogue.
+// cudToolDefs is the create/put/patch/delete write-tool catalogue.
 func cudToolDefs() []protocol.ToolV1 {
 	return []protocol.ToolV1{
 		{
 			Name: mcp_tool_perms.ToolCreateNode,
 			Description: "Create a new node (e.g. a calendar event or task) at a node URI. " +
-				"Strict: errors if the node already exists (use update_node to overwrite).",
+				"Strict: errors if the node already exists (use put_node to overwrite).",
 			InputSchema: json.RawMessage(createNodeSchema),
 			Annotations: annotationFor(mcp_tool_perms.ToolCreateNode),
 		},
 		{
-			Name: mcp_tool_perms.ToolUpdateNode,
-			Description: "Overwrite an existing node's body at a node URI. " +
+			Name: mcp_tool_perms.ToolPutNode,
+			Description: "Overwrite an existing node's body at a node URI (full replace). " +
 				"Strict: errors if the node does not exist (use create_node).",
-			InputSchema: json.RawMessage(updateNodeSchema),
-			Annotations: annotationFor(mcp_tool_perms.ToolUpdateNode),
+			InputSchema: json.RawMessage(putNodeSchema),
+			Annotations: annotationFor(mcp_tool_perms.ToolPutNode),
+		},
+		{
+			Name: mcp_tool_perms.ToolPatchNode,
+			Description: "Partially update an existing node: body is a JSON object " +
+				"containing only the fields to change; absent fields are left untouched. " +
+				"Use instead of put_node when you only want to change one field " +
+				"without reading and re-sending the entire object.",
+			InputSchema: json.RawMessage(patchNodeSchema),
+			Annotations: annotationFor(mcp_tool_perms.ToolPatchNode),
 		},
 		{
 			Name:        mcp_tool_perms.ToolDeleteNode,
@@ -245,7 +258,7 @@ func (t *Tools) call(
 		}
 		return "created " + in.URI, nil
 
-	case mcp_tool_perms.ToolUpdateNode:
+	case mcp_tool_perms.ToolPutNode:
 		var in struct {
 			URI  string `json:"uri"`
 			Body string `json:"body"`
@@ -257,10 +270,27 @@ func (t *Tools) call(
 		if err != nil {
 			return "", err
 		}
-		if err := m.UpdateNode(ctx, u, strings.NewReader(in.Body)); err != nil {
+		if err := m.PutNode(ctx, u, strings.NewReader(in.Body)); err != nil {
 			return "", err
 		}
-		return "updated " + in.URI, nil
+		return "put " + in.URI, nil
+
+	case mcp_tool_perms.ToolPatchNode:
+		var in struct {
+			URI  string `json:"uri"`
+			Body string `json:"body"`
+		}
+		if err := json.Unmarshal(args, &in); err != nil {
+			return "", errors.Wrap(err)
+		}
+		u, m, err := t.resolve(in.URI)
+		if err != nil {
+			return "", err
+		}
+		if err := m.PatchNode(ctx, u, strings.NewReader(in.Body)); err != nil {
+			return "", err
+		}
+		return "patched " + in.URI, nil
 
 	case mcp_tool_perms.ToolDeleteNode:
 		var in struct {
