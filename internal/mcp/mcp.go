@@ -26,10 +26,10 @@
 //     list_nodes (browse children; omit uri for the roots), read_node
 //     (read one node, = resources/read), describe_node_types (schema
 //     discovery). Write (FDR 0020, plugins implementing NodeMutator):
-//     create_node / update_node / delete_node, advertised only when a
-//     configured root supports mutation and annotated destructive so a
-//     client gates them (and the clown PreToolUse hook classifies them
-//     `ask`, #102).
+//     create_node / put_node / patch_node / delete_node, advertised
+//     only when a configured root supports mutation and annotated
+//     destructive so a client gates them (and the clown PreToolUse
+//     hook classifies them `ask`, #102).
 //
 // Discovery (resources) is read-only and captures nothing; the write tools
 // mutate live nodes directly, with no blob store or receipt. (One
@@ -71,8 +71,8 @@ const instructions = "Resources are the capturable trees of cutting-garden " +
 	"list_nodes browses children (omit the uri for the entry points), " +
 	"read_node reads one node, and describe_node_types reports each scheme's " +
 	"node types and what body create_node accepts. The create_node / " +
-	"update_node / delete_node tools mutate a node at its URI (e.g. create a " +
-	"calendar event); they are destructive and require user approval."
+	"put_node / patch_node / delete_node tools mutate a node at its URI " +
+	"(e.g. create a calendar event); they are destructive and require user approval."
 
 // MCP is the value registered for the `mcp` subcommand. It carries no
 // flags; endpoints come from the config, or from optional positional args
@@ -96,7 +96,7 @@ func (*MCP) GetDescription() command.Description {
 			"capture share. Reading a leaf object returns its parsed fields " +
 			"as JSON, plus a content-addressed madder blob link to its " +
 			"verbatim bytes when a store is configured. It also exposes " +
-			"create_node/update_node/delete_node write tools (FDR 0020) for " +
+			"create_node/put_node/patch_node/delete_node write tools (FDR 0020) for " +
 			"plugins that support mutation (caldav); these are annotated " +
 			"destructive and gated by the clown PreToolUse hook. Launched by " +
 			"an MCP client, not run interactively; runs until the client " +

@@ -7,7 +7,7 @@ package cutting_garden_plugins
 type NodeTypeBody struct {
 	// Tag is the NodeType.Tag this describes (e.g. "caldav-object-v1").
 	Tag string
-	// Accepts names the body formats the create_node/update_node tools take
+	// Accepts names the body formats the create_node/put_node tools take
 	// for this type, human-readable and ordered most-preferred first (e.g.
 	// "application/json (the {component,event|task} object)",
 	// "text/calendar (raw iCalendar)").

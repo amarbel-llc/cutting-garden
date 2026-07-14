@@ -522,7 +522,7 @@ func (c *client) createResource(ctx context.Context, href, icalData string) erro
 
 // updateResource strictly overwrites an existing resource at href: an
 // If-Match: * precondition makes the server reject (412) a missing resource,
-// so update is not a create (NodeMutator.UpdateNode semantics). A 412
+// so update is not a create (NodeMutator.PutNode / PatchNode semantics). A 412
 // surfaces as a "does not exist" error.
 func (c *client) updateResource(ctx context.Context, href, icalData string) error {
 	return c.putResourceCond(

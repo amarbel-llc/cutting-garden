@@ -156,10 +156,12 @@ working-directory tree as MCP resources out of the box.
   consumer (circus), that resolution is the client/proxy's concern, not
   this server's.
 - **Write tools are CUD, not capture/restore.** The server grew
-  `create_node`/`update_node`/`delete_node` write tools (FDR 0020) for
-  plugins implementing `NodeMutator` — so this is no longer a read-only
-  window. But those mutate one live node directly; there are still no
-  capture/restore/diff *receipt* tools (those stay CLI subcommands).
+  `create_node`/`put_node`/`patch_node`/`delete_node` write tools (FDR 0020)
+  for plugins implementing `NodeMutator` — so this is no longer a read-only
+  window. `put_node` is a full replace; `patch_node` is a partial-field update
+  (body contains only the fields to change; absent fields left untouched). Both
+  mutate one live node directly; there are still no capture/restore/diff
+  *receipt* tools (those stay CLI subcommands).
 - **No `--split` frontier.** The receipt-fanout selector grammar (FDR
   0014) is a planner concern; it does not surface here.
 - **Fail-fast aggregation.** A resolution or traversal error on any root

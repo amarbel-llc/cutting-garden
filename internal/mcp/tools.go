@@ -130,8 +130,8 @@ func readToolDefs() []protocol.ToolV1 {
 			Name: mcp_tool_perms.ToolReadNode,
 			Description: "Read one node by URI: a leaf returns its parsed fields (e.g. a " +
 				"calendar event's {component,event|task} JSON) plus a raw-bytes link; a " +
-				"container returns its child listing. The read sibling of create/update/" +
-				"delete_node.",
+				"container returns its child listing. The read sibling of create/put/" +
+				"patch/delete_node.",
 			InputSchema: json.RawMessage(readNodeSchema),
 			Annotations: annotationFor(mcp_tool_perms.ToolReadNode),
 		},

@@ -264,7 +264,7 @@ approval before the mutation reaches the live server.
 
 | Lever | Current | Rationale | Change signal |
 |---|---|---|---|
-| CUD permission class | all three destructive ⇒ `ask` | every verb mutates live state; safe default is to gate all | a verb proves reliably non-destructive (e.g. idempotent create against an empty target) and the `ask` friction is unwanted |
+| CUD permission class | all four destructive ⇒ `ask` | every verb mutates live state; safe default is to gate all | a verb proves reliably non-destructive (e.g. idempotent create against an empty target) and the `ask` friction is unwanted |
 | create semantics | strict create (error if exists) | distinguishes create from update; matches WebDAV `If-None-Match` intent | callers routinely want upsert and the create/update split adds friction |
 | delete on non-empty container | open (refuse vs. recurse) | unsettled — see Open Questions | the prototype's first non-empty-collection delete forces the call |
 | batching | one node per call | simplest prototype surface; matches one MCP tool call = one mutation | agents issue many sequential single-node calls where one batch tool would cut round-trips |
@@ -304,7 +304,7 @@ approval before the mutation reaches the live server.
   `caldav-calendar-v1` container errors (MKCALENDAR, #77). Containers are on
   the v1 docket — the interface already carries `typ` so container create
   slots in when #77 lands.
-- **End-to-end → covered.** `zz-tests_bats/mcp.bats` drives create→put→
+- **End-to-end → covered.** `zz-tests_bats/mcp.bats` drives create→put→patch→
   delete through `cutting-garden mcp` over the stdio transport against the
   caldav testserver (dependent mutations serialized as one tool call per
   invocation, since a single connection's requests dispatch concurrently),

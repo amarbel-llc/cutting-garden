@@ -60,7 +60,8 @@ func TestRun_UnclassifiedTool_NoDecision(t *testing.T) {
 func TestRun_CUDTools_Ask(t *testing.T) {
 	for _, tool := range []string{
 		mcp_tool_perms.ToolCreateNode,
-		mcp_tool_perms.ToolUpdateNode,
+		mcp_tool_perms.ToolPutNode,
+		mcp_tool_perms.ToolPatchNode,
 		mcp_tool_perms.ToolDeleteNode,
 	} {
 		var out bytes.Buffer

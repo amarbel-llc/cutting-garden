@@ -2,7 +2,7 @@
 
 # The CUD write-tools end-to-end lane (FDR 0020): drive `cutting-garden mcp`
 # over its stdio JSON-RPC transport against the caldav testserver and exercise
-# create_node -> update_node -> delete_node end to end, plus the #102 clown
+# create_node -> put_node -> patch_node -> delete_node end to end, plus the #102 clown
 # PreToolUse hook gating those tools as `ask`. This is the e2e exercise the
 # per-layer Go unit tests (caldav mutate, mcp tools, claude_hooks) do not
 # cover in one path.
@@ -29,20 +29,20 @@ teardown() {
 # bats file_tags=mcp
 
 # tools/list advertises the three read tools (describe/list/read) and the
-# three CUD write tools, with the right destructive vs read-only annotations
-# (the hint a client gates on, mirrored by the #102 hook).
+# four CUD write tools (create/put/patch/delete), with the right destructive
+# vs read-only annotations (the hint a client gates on, mirrored by the #102 hook).
 function mcp_advertises_tools { # @test
   mcp_drive "$CALDAV_SOURCE" '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
 
   local names
   names="$(echo "$output" | jq -r 'select(.id==2) | (.result.tools | map(.name) | sort | join(","))')"
-  assert_equal "$names" "create_node,delete_node,describe_node_types,list_nodes,read_node,update_node"
+  assert_equal "$names" "create_node,delete_node,describe_node_types,list_nodes,patch_node,put_node,read_node"
 
   # The CUD write tools carry destructiveHint=true; the read tools don't.
   local destructive
   destructive="$(echo "$output" | jq -r 'select(.id==2) |
     ([.result.tools[] | select(.annotations.destructiveHint==true) | .name] | sort | join(","))')"
-  assert_equal "$destructive" "create_node,delete_node,update_node"
+  assert_equal "$destructive" "create_node,delete_node,patch_node,put_node"
 
   local readonly_tools
   readonly_tools="$(echo "$output" | jq -r 'select(.id==2) |
@@ -163,8 +163,8 @@ function mcp_emits_blob_link_with_writable_store { # @test
     fail "expected a madder://blobs raw-bytes link with a writable store: $output"
 }
 
-# create -> update -> delete round-trips one VEVENT through the server, each
-# mutation a separate invocation against the persistent testserver.
+# create -> put -> patch -> delete round-trips one VEVENT through the server,
+# each mutation a separate invocation against the persistent testserver.
 function mcp_cud_round_trips { # @test
   local obj v1 v2
   obj="$(caldav_object_uri e2e.ics)"
@@ -175,9 +175,13 @@ function mcp_cud_round_trips { # @test
   assert_equal "$(mcp_is_error "$output" 3)" "false"
   [[ "$(mcp_result_text "$output" 3)" == created* ]] || fail "create: $(mcp_result_text "$output" 3)"
 
-  mcp_call update_node "$(jq -nc --arg u "$obj" --arg b "$v2" '{uri:$u,body:$b}')"
+  mcp_call put_node "$(jq -nc --arg u "$obj" --arg b "$v2" '{uri:$u,body:$b}')"
   assert_equal "$(mcp_is_error "$output" 3)" "false"
-  [[ "$(mcp_result_text "$output" 3)" == updated* ]] || fail "update: $(mcp_result_text "$output" 3)"
+  [[ "$(mcp_result_text "$output" 3)" == put* ]] || fail "put: $(mcp_result_text "$output" 3)"
+
+  mcp_call patch_node "$(jq -nc --arg u "$obj" '{uri:$u,body:"{\"component\":\"VEVENT\",\"event\":{\"summary\":\"E2E patched\"}}"}')"
+  assert_equal "$(mcp_is_error "$output" 3)" "false"
+  [[ "$(mcp_result_text "$output" 3)" == patched* ]] || fail "patch: $(mcp_result_text "$output" 3)"
 
   mcp_call delete_node "$(jq -nc --arg u "$obj" '{uri:$u}')"
   assert_equal "$(mcp_is_error "$output" 3)" "false"
@@ -200,15 +204,15 @@ function mcp_create_is_strict { # @test
   assert_equal "$(mcp_is_error "$output" 3)" "true"
 }
 
-# update on a missing object is strict too: an error result, not a create.
-function mcp_update_missing_errors { # @test
+# put on a missing object is strict too: an error result, not a create.
+function mcp_put_missing_errors { # @test
   local obj args
   obj="$(caldav_object_uri ghost.ics)"
   args="$(jq -nc --arg u "$obj" \
     --arg b "$(printf 'BEGIN:VCALENDAR\nBEGIN:VTODO\nUID:ghost\nSUMMARY:ghost\nEND:VTODO\nEND:VCALENDAR\n')" \
     '{uri:$u,body:$b}')"
 
-  mcp_call update_node "$args"
+  mcp_call put_node "$args"
   assert_equal "$(mcp_is_error "$output" 3)" "true"
 }
 

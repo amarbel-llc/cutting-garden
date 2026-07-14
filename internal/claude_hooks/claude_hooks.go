@@ -5,7 +5,7 @@
 // Run.
 //
 // cutting-garden's MCP server (internal/mcp) now exposes the CUD write
-// tools (create_node/update_node/delete_node, FDR 0020). Run classifies a
+// tools (create_node/put_node/patch_node/delete_node, FDR 0020). Run classifies a
 // PreToolUse event for one of them through mcp_tool_perms — the SAME
 // classifier that sets the tools' MCP annotations, so the hint a client
 // sees and the decision here cannot drift (the #102 parity ask): a
