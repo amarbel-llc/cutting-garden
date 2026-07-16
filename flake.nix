@@ -7,7 +7,7 @@
     # the base pkgs set, so downstream flake consumers don't need to
     # apply the overlay themselves. Aligning here means our build
     # environment and madder's are the same closure (cutting-garden#2).
-    igloo.url = "git+https://github.com/amarbel-llc/igloo.git";
+    igloo.url = "git+https://code.linenisgreat.com/igloo.git";
     # nixpkgs-master is the SHA-pinned upstream anchor that eng's
     # update-nix-repos recipe cascades. Without this input the cascade
     # falls through to `nix flake update` on the floating `nixpkgs`
@@ -27,7 +27,7 @@
     # madder is therefore a flake.lock-only edit; no `go get` +
     # `gomod2nix generate` lockstep required.
     madder = {
-      url = "git+https://github.com/amarbel-llc/madder.git";
+      url = "git+https://code.linenisgreat.com/madder.git";
       inputs.igloo.follows = "igloo";
       inputs.nixpkgs-master.follows = "nixpkgs-master";
       inputs.utils.follows = "flake-utils";
@@ -49,7 +49,7 @@
     # bridged. crap is polyglot, so its go-pkgs is sliced with
     # subPath = "go-crap".
     crap = {
-      url = "git+https://github.com/amarbel-llc/crap.git";
+      url = "git+https://code.linenisgreat.com/crap.git";
       inputs.igloo.follows = "igloo";
       inputs.nixpkgs-master.follows = "nixpkgs-master";
       inputs.utils.follows = "flake-utils";
@@ -64,7 +64,7 @@
     # library directly, not madder's (now-deleted) pkgs/hyphence re-export. The
     # `follows` wiring dedupes the nodes hyphence shares with this flake.
     hyphence = {
-      url = "git+https://github.com/amarbel-llc/hyphence.git";
+      url = "git+https://code.linenisgreat.com/hyphence.git";
       inputs.igloo.follows = "igloo";
       inputs.nixpkgs-master.follows = "nixpkgs-master";
       inputs.utils.follows = "flake-utils";
@@ -78,7 +78,7 @@
     # madder + tap are bridged. purse-first's go-pkgs is the whole
     # workspace, so we slice with subPath = "libs/dewey".
     purse-first = {
-      url = "git+https://github.com/amarbel-llc/purse-first.git";
+      url = "git+https://code.linenisgreat.com/purse-first.git";
       inputs.igloo.follows = "igloo";
       inputs.nixpkgs-master.follows = "nixpkgs-master";
       inputs.utils.follows = "flake-utils";
@@ -124,7 +124,7 @@
     # justfile) `just fmt` / `just lint-fmt` / `just lint-worktree`. See
     # eng-design_patterns-conformist(7), conformist-nix(7).
     conformist = {
-      url = "git+https://github.com/amarbel-llc/conformist.git";
+      url = "git+https://code.linenisgreat.com/conformist.git";
       inputs.igloo.follows = "igloo";
       inputs.nixpkgs-master.follows = "nixpkgs-master";
       inputs.utils.follows = "flake-utils";
@@ -136,7 +136,7 @@
     # one rev — tommy stamps its version into generated files and
     # `tommy generate --check` fails on binary/library skew.
     tommy = {
-      url = "git+https://github.com/amarbel-llc/tommy.git";
+      url = "git+https://code.linenisgreat.com/tommy.git";
       inputs.igloo.follows = "igloo";
       inputs.nixpkgs-master.follows = "nixpkgs-master";
       inputs.utils.follows = "flake-utils";
