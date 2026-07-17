@@ -159,6 +159,15 @@ type PluginInfo = internal.PluginInfo
 // dependency.
 type PluginSpec = internal.PluginSpec
 
+// PluginStanza is one `[[traversal_plugins]]` stanza of the
+// cutting-garden config (RFC 0013 §Host integration): the declaration
+// that a wire plugin serves some schemes via a spawned command. The
+// aggregator (cgconfig.ConfigV0) embeds a slice of these at the top
+// level; tommy's generated codec for that field delegates to this
+// type's generated DecodePluginStanzaInto.
+type PluginStanza = internal.PluginStanza
+type PluginStanzaDocument = internal.PluginStanzaDocument
+
 // PredicateView is the wire form of
 // cutting_garden_plugins.FacetPredicate: one equality constraint of a
 // facets.counts filter.
@@ -209,6 +218,9 @@ var CodeOf = internal.CodeOf
 // announce line. Absence means the process was not launched by a host:
 // the caller MUST exit non-zero without touching stdout.
 var CookieFromEnv = internal.CookieFromEnv
+var DecodePluginStanza = internal.DecodePluginStanza
+var DecodePluginStanzaInto = internal.DecodePluginStanzaInto
+var EncodePluginStanzaFrom = internal.EncodePluginStanzaFrom
 
 // FacetDimensionViewFrom projects a declared dimension onto the wire.
 var FacetDimensionViewFrom = internal.FacetDimensionViewFrom
@@ -271,6 +283,23 @@ var NodeViewFrom = internal.NodeViewFrom
 // absent filter — both mean matches-everything (RFC 0012 §6).
 var PredicateViewsFrom = internal.PredicateViewsFrom
 
+// SectionTOML extracts one named top-level section from the raw config
+// file bytes, WRAPPER-STRIPPED per RFC 0013 §initialize: the returned
+// text's keys are section-relative — `[fj]` scalars become top-level
+// keys, `[[fj.roots]]` becomes `[[roots]]`, `[fj.sub.x]` becomes
+// `[sub.x]` — so the plugin never sees its own section name, mirroring
+// what the in-process config decoder hands a linked plugin. An absent
+// section returns ("", nil).
+//
+// The extraction is line-based over TOML's header grammar (headers are
+// single physical lines), with quote-aware scanning so quoted keys
+// containing '.', ']', or '#' cannot confuse it. section MUST be a bare
+// TOML key (PluginStanza.Validate enforces the same grammar); a
+// top-level `[[section]]` array-of-tables cannot be represented
+// wrapper-stripped and is rejected — a plugin wanting repeated tables
+// uses a sub-array (`[[section.roots]]`).
+var SectionTOML = internal.SectionTOML
+
 // Serve runs one RFC 0013 session over rw. It builds the initialize
 // declaration once from cfg.Plugin, then serves the §Method set until
 // the session ends. Returns nil for a graceful end — the shutdown
@@ -279,6 +308,12 @@ var PredicateViewsFrom = internal.PredicateViewsFrom
 // before shutdown (host death is cancellation, §Session lifecycle), or
 // a stream error.
 var Serve = internal.Serve
+
+// ValidateStanzas enforces the cross-stanza invariants the aggregated
+// config's Validate delegates here: unique names, unique schemes.
+// (Scheme clashes against LINKED plugins surface at registration, which
+// consults the live registry.)
+var ValidateStanzas = internal.ValidateStanzas
 
 // WithHandler makes the peer serve incoming requests — the plugin role.
 // Without it the peer is client-only (the host role: the sole request

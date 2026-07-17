@@ -328,6 +328,15 @@ var MustRegisterScheme = internal.MustRegisterScheme
 // the leaf default.
 var NodeTypeFor = internal.NodeTypeFor
 
+// RegisterScheme installs p under every scheme it declares, returning an
+// error (wrapping ErrAlreadyRegistered) on a clash instead of panicking —
+// the config-driven registration path for wire plugins (RFC 0013 §Host
+// integration), where a scheme collision is user misconfiguration
+// (EX_USAGE), not a programming error. On a clash, schemes registered
+// before the colliding one remain registered; callers treat the error as
+// fatal to startup, so the partial registration is never served.
+var RegisterScheme = internal.RegisterScheme
+
 // RegisteredPlugins returns every plugin registered in the scheme,
 // capture, restore, or diff registry, deduplicated and sorted by scheme
 // set. It is the read surface the `health`, `list`, and `mcp` commands use

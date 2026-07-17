@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"code.linenisgreat.com/cutting-garden/internal/traversal_serve"
 	"code.linenisgreat.com/cutting-garden/plugins/caldav"
 	"code.linenisgreat.com/cutting-garden/plugins/jira"
 	"github.com/amarbel-llc/tommy/pkg/cst"
@@ -51,6 +52,21 @@ func DecodeConfigV0(input []byte) (*ConfigV0Document, error) {
 			return nil, fmt.Errorf("jira: %w", err)
 		}
 	}
+	if _vTraversalPlugins, _ok := model.Get("traversal_plugins"); _ok && _vTraversalPlugins.Kind == cst.VArray {
+		_vTraversalPlugins.MarkSeen()
+		d.data.TraversalPlugins = make([]traversal_serve.PluginStanza, len(_vTraversalPlugins.Items))
+		for i := range _vTraversalPlugins.Items {
+			_eTraversalPlugins := &_vTraversalPlugins.Items[i]
+			_eTraversalPlugins.MarkSeen()
+			if err := traversal_serve.DecodePluginStanzaInto(&d.data.TraversalPlugins[i], _eTraversalPlugins); err != nil {
+				return nil, fmt.Errorf("traversal_plugins[%d]: %w", i, err)
+			}
+		}
+	}
+	if _eaTraversalPlugins, _eaok := model.Get("traversal_plugins"); _eaok && _eaTraversalPlugins.IsEmptyArray() {
+		_eaTraversalPlugins.MarkConsumed()
+		d.data.TraversalPlugins = []traversal_serve.PluginStanza{}
+	}
 	if err := d.data.Validate(); err != nil {
 		return nil, fmt.Errorf("validation failed: %w", err)
 	}
@@ -75,6 +91,20 @@ func (d *ConfigV0Document) Encode() ([]byte, error) {
 		tableNode := cst.EnsureChildTable(d.cstDoc.Root(), d.cstDoc.Root(), "jira")
 		if err := jira.EncodeAccountsConfigFrom(&d.data.Jira, d.cstDoc, tableNode); err != nil {
 			return nil, fmt.Errorf("jira: %w", err)
+		}
+	}
+	{
+		_existTraversalPlugins := cst.FindArrayTableNodes(d.cstDoc.Root(), "traversal_plugins")
+		for i := range d.data.TraversalPlugins {
+			var container *cst.Node
+			if i < len(_existTraversalPlugins) {
+				container = _existTraversalPlugins[i]
+			} else {
+				container = cst.AppendArrayTableEntryAfter(d.cstDoc.Root(), "traversal_plugins")
+			}
+			if err := traversal_serve.EncodePluginStanzaFrom(&d.data.TraversalPlugins[i], d.cstDoc, container); err != nil {
+				return nil, fmt.Errorf("traversal_plugins[%d]: %w", i, err)
+			}
 		}
 	}
 	return d.cstDoc.Bytes(), nil
@@ -116,6 +146,21 @@ func DecodeConfigV0Into(data *ConfigV0, sub *cst.Value) error {
 			return fmt.Errorf("jira: %w", err)
 		}
 	}
+	if _vTraversalPlugins, _ok := sub.Get("traversal_plugins"); _ok && _vTraversalPlugins.Kind == cst.VArray {
+		_vTraversalPlugins.MarkSeen()
+		data.TraversalPlugins = make([]traversal_serve.PluginStanza, len(_vTraversalPlugins.Items))
+		for i := range _vTraversalPlugins.Items {
+			_eTraversalPlugins := &_vTraversalPlugins.Items[i]
+			_eTraversalPlugins.MarkSeen()
+			if err := traversal_serve.DecodePluginStanzaInto(&data.TraversalPlugins[i], _eTraversalPlugins); err != nil {
+				return fmt.Errorf("traversal_plugins[%d]: %w", i, err)
+			}
+		}
+	}
+	if _eaTraversalPlugins, _eaok := sub.Get("traversal_plugins"); _eaok && _eaTraversalPlugins.IsEmptyArray() {
+		_eaTraversalPlugins.MarkConsumed()
+		data.TraversalPlugins = []traversal_serve.PluginStanza{}
+	}
 	if err := data.Validate(); err != nil {
 		return fmt.Errorf("validation failed: %w", err)
 	}
@@ -136,6 +181,21 @@ func EncodeConfigV0From(data *ConfigV0, doc *document.Document, container *cst.N
 		tableNode := cst.EnsureChildTable(doc.Root(), container, "jira")
 		if err := jira.EncodeAccountsConfigFrom(&data.Jira, doc, tableNode); err != nil {
 			return fmt.Errorf("jira: %w", err)
+		}
+	}
+	{
+		_apTraversalPlugins := container
+		_existTraversalPlugins := cst.FindChildArrayTableNodes(doc.Root(), _apTraversalPlugins, "traversal_plugins")
+		for i := range data.TraversalPlugins {
+			var container *cst.Node
+			if i < len(_existTraversalPlugins) {
+				container = _existTraversalPlugins[i]
+			} else {
+				container = cst.AppendChildArrayTableEntry(doc.Root(), _apTraversalPlugins, "traversal_plugins")
+			}
+			if err := traversal_serve.EncodePluginStanzaFrom(&data.TraversalPlugins[i], doc, container); err != nil {
+				return fmt.Errorf("traversal_plugins[%d]: %w", i, err)
+			}
 		}
 	}
 	return nil

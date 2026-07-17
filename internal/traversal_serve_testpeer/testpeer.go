@@ -188,14 +188,27 @@ func Config() traversal_serve.ServeConfig {
 	}
 }
 
+// ConfigOutEnv, when set in the peer's environment, names a file
+// ApplyConfigTOML writes the received config_toml to — the passthrough
+// probe for consumers that only see the peer as a subprocess (the
+// registration integration test, the bats lane).
+const ConfigOutEnv = "CG_TESTPEER_CONFIG_OUT"
+
 // ApplyConfigTOML records the initialize config passthrough
-// (ServeConfig.ConfigApply).
+// (ServeConfig.ConfigApply), and mirrors it to $CG_TESTPEER_CONFIG_OUT
+// when set (see ConfigOutEnv).
 func (p *TreePlugin) ApplyConfigTOML(configTOML string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
 	p.configTOML = configTOML
 	p.configApplied = true
+
+	if out := os.Getenv(ConfigOutEnv); out != "" {
+		if err := os.WriteFile(out, []byte(configTOML), 0o600); err != nil {
+			return errors.Wrap(err)
+		}
+	}
 
 	return nil
 }

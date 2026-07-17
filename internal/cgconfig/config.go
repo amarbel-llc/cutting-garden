@@ -10,6 +10,7 @@
 package cgconfig
 
 import (
+	"code.linenisgreat.com/cutting-garden/internal/traversal_serve"
 	"code.linenisgreat.com/cutting-garden/plugins/caldav"
 	"code.linenisgreat.com/cutting-garden/plugins/jira"
 )
@@ -17,12 +18,18 @@ import (
 // ConfigV0 is the top-level, horizontally-versioned config. Each plugin
 // section is an OPTIONAL delegated field keyed by the plugin's scheme; a
 // new format version adds a ConfigV1 beside this rather than mutating it
-// (RFC 0007 § Top-Level Structure).
+// (RFC 0007 § Top-Level Structure). TraversalPlugins is the one
+// non-section field: the top-level `[[traversal_plugins]]` stanzas
+// declaring out-of-process wire plugins (RFC 0013 §Host integration) —
+// the sections THOSE name are consumed raw by SectionTOML, not decoded
+// here.
 //
 //go:generate tommy generate
 type ConfigV0 struct {
 	Caldav caldav.AccountsConfig `toml:"caldav,omitempty"`
 	Jira   jira.AccountsConfig   `toml:"jira,omitempty"`
+
+	TraversalPlugins []traversal_serve.PluginStanza `toml:"traversal_plugins,omitempty"`
 }
 
 // Validate runs each plugin section's validation. tommy's generated
@@ -32,5 +39,8 @@ func (c ConfigV0) Validate() error {
 	if err := c.Caldav.Validate(); err != nil {
 		return err
 	}
-	return c.Jira.Validate()
+	if err := c.Jira.Validate(); err != nil {
+		return err
+	}
+	return traversal_serve.ValidateStanzas(c.TraversalPlugins)
 }
