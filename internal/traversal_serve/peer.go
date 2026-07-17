@@ -172,6 +172,13 @@ func (p *Peer) Close() error {
 // or errored); Err then reports why. Before that point Err returns nil.
 func (p *Peer) Done() <-chan struct{} { return p.done }
 
+// ServeDone closes once the serve loop has drained every request queued
+// before the read loop exited — the "all queued requests answered"
+// point the plugin-side Serve (server.go) waits on before returning, so
+// a graceful shutdown never abandons a pipelined request (RFC 0013
+// §Session lifecycle).
+func (p *Peer) ServeDone() <-chan struct{} { return p.serveDone }
+
 // Err reports the read loop's terminal error, nil while the peer is
 // still live.
 func (p *Peer) Err() error {
