@@ -60,6 +60,23 @@ lane) after editing a `//go:generate tommy generate` struct; `just`'s
 `validate-generate` gate fails on drift. tommy is a flake-bridged dep
 (devshell binary + Go library at one rev; see `gomod.nix`).
 
+Traversal plugins need not be linked Go code: RFC 0013 defines an
+**out-of-process wire transport** (JSON-RPC 2.0, one message per NDJSON
+line, over an `AF_UNIX` stream socket with the RFC 0008-style
+cookie+announce launch). A `[[traversal_plugins]]` config stanza
+(name/command/schemes/config_section) registers a lazily-spawned
+`traversal_serve.WirePlugin` beside the linked plugins; the named config
+section crosses `initialize` wrapper-stripped (`SectionTOML`), and the
+plugin's capabilities (roots, leaf-read, facets, mutate) are advertised
+in its `initialize` result — consumers cannot distinguish a wire plugin
+from a linked one (the RFC's conformance bar, pinned by the
+indistinguishability e2e in `internal/traversal_serve_testpeer` and the
+`zz-tests_bats/traversal_serve.bats` lane, whose `portable`-tagged cases
+any non-Go implementation runs via `CG_TEST_TRAVERSAL_SERVE`
+substitution). Go peers implement the plugin side via
+`pkgs/traversal_serve`; the first external consumer is forgejo-cli's
+`fj-cg` (Rust, cutting-garden#140).
+
 Comments and TODOs frequently reference upstream dodder issues (#161, #183,
 …) and madder issues — check those before "fixing" what looks like a bug; some
 divergences from dodder are intentional carry-forwards.
