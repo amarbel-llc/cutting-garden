@@ -7,7 +7,7 @@
     # the base pkgs set, so downstream flake consumers don't need to
     # apply the overlay themselves. Aligning here means our build
     # environment and madder's are the same closure (cutting-garden#2).
-    igloo.url = "git+https://code.linenisgreat.com/igloo.git";
+    igloo.url = "https://code.linenisgreat.com/igloo/archive/master.tar.gz";
     # nixpkgs-master is the SHA-pinned upstream anchor that eng's
     # update-nix-repos recipe cascades. Without this input the cascade
     # falls through to `nix flake update` on the floating `nixpkgs`
@@ -27,7 +27,7 @@
     # madder is therefore a flake.lock-only edit; no `go get` +
     # `gomod2nix generate` lockstep required.
     madder = {
-      url = "git+https://code.linenisgreat.com/madder.git";
+      url = "https://code.linenisgreat.com/madder/archive/master.tar.gz";
       inputs.igloo.follows = "igloo";
       inputs.nixpkgs-master.follows = "nixpkgs-master";
       inputs.utils.follows = "flake-utils";
@@ -37,7 +37,7 @@
     # touches flake.lock — no go.mod / gomod2nix.toml lockstep edits
     # (RFC 0001 §Consumer interface).
     tap = {
-      url = "git+https://code.linenisgreat.com/tap.git";
+      url = "https://code.linenisgreat.com/tap/archive/master.tar.gz";
       inputs.igloo.follows = "igloo";
       inputs.nixpkgs-master.follows = "nixpkgs-master";
       inputs.utils.follows = "flake-utils";
@@ -49,7 +49,7 @@
     # bridged. crap is polyglot, so its go-pkgs is sliced with
     # subPath = "go-crap".
     crap = {
-      url = "git+https://code.linenisgreat.com/crap.git";
+      url = "https://code.linenisgreat.com/crap/archive/master.tar.gz";
       inputs.igloo.follows = "igloo";
       inputs.nixpkgs-master.follows = "nixpkgs-master";
       inputs.utils.follows = "flake-utils";
@@ -64,7 +64,7 @@
     # library directly, not madder's (now-deleted) pkgs/hyphence re-export. The
     # `follows` wiring dedupes the nodes hyphence shares with this flake.
     hyphence = {
-      url = "git+https://code.linenisgreat.com/hyphence.git";
+      url = "https://code.linenisgreat.com/hyphence/archive/master.tar.gz";
       inputs.igloo.follows = "igloo";
       inputs.nixpkgs-master.follows = "nixpkgs-master";
       inputs.utils.follows = "flake-utils";
@@ -78,7 +78,7 @@
     # madder + tap are bridged. purse-first's go-pkgs is the whole
     # workspace, so we slice with subPath = "libs/dewey".
     purse-first = {
-      url = "git+https://code.linenisgreat.com/purse-first.git";
+      url = "https://code.linenisgreat.com/purse-first/archive/master.tar.gz";
       inputs.igloo.follows = "igloo";
       inputs.nixpkgs-master.follows = "nixpkgs-master";
       inputs.utils.follows = "flake-utils";
@@ -94,7 +94,7 @@
     # needed. follows wiring mirrors madder's consumer (madder master
     # 0063d39) so shared lock nodes dedupe.
     piggy = {
-      url = "git+https://code.linenisgreat.com/piggy.git";
+      url = "https://code.linenisgreat.com/piggy/archive/master.tar.gz";
       inputs.igloo.follows = "igloo";
       inputs.nixpkgs-master.follows = "nixpkgs-master";
       inputs.utils.follows = "flake-utils";
@@ -109,7 +109,7 @@
     # devshell intentionally does NOT include bats binaries, so local
     # iteration goes through `nix build .#bats-capture`.
     bats = {
-      url = "git+https://code.linenisgreat.com/bats.git";
+      url = "https://code.linenisgreat.com/bats/archive/master.tar.gz";
       inputs.igloo.follows = "igloo";
       inputs.nixpkgs-master.follows = "nixpkgs-master";
       inputs.utils.follows = "flake-utils";
@@ -124,7 +124,7 @@
     # justfile) `just fmt` / `just lint-fmt` / `just lint-worktree`. See
     # eng-design_patterns-conformist(7), conformist-nix(7).
     conformist = {
-      url = "git+https://code.linenisgreat.com/conformist.git";
+      url = "https://code.linenisgreat.com/conformist/archive/master.tar.gz";
       inputs.igloo.follows = "igloo";
       inputs.nixpkgs-master.follows = "nixpkgs-master";
       inputs.utils.follows = "flake-utils";
@@ -136,7 +136,7 @@
     # one rev — tommy stamps its version into generated files and
     # `tommy generate --check` fails on binary/library skew.
     tommy = {
-      url = "git+https://code.linenisgreat.com/tommy.git";
+      url = "https://code.linenisgreat.com/tommy/archive/master.tar.gz";
       inputs.igloo.follows = "igloo";
       inputs.nixpkgs-master.follows = "nixpkgs-master";
       inputs.utils.follows = "flake-utils";
