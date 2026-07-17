@@ -264,12 +264,18 @@ value is `{ "key": <non-empty string>, "order": <int64, omit when 0> }`.
 
 **NodeType**: `{ "tag": string, "container": bool, "mime_type": string? }`.
 An absent/empty `mime_type` on a leaf means unspecified — the HOST
-applies the `application/octet-stream` default (the plugin does not
-send the default).
+applies the `application/octet-stream` default (the plugin SHOULD NOT
+send the default; a host receiving an explicit
+`"application/octet-stream"` on a leaf MUST tolerate it and treat it
+identically to absent).
 
 **FacetDimension**: `{ "key": string, "label": string?, "kind":
 "categorical"|"numeric-bucket"|"labelled", "multi": bool?, "values":
 [FacetValue]? }` — `values` present ≙ a CLOSED domain (RFC 0012 §2).
+A closed domain MUST declare at least one value; a plugin MUST NOT emit
+an empty `values` array (on the wire it is indistinguishable from an
+open domain, so a zero-value closed domain is unrepresentable and
+non-conformant).
 
 **FacetSummary**: `{ "<dimension>": { "<value-key>": <int64 count> } }`.
 
@@ -317,6 +323,11 @@ result `{ "ok": bool, "summary": FacetSummary?, "complete": bool? }`.
 `ok: false` means "I do not summarize this node; fall back to the
 framework fold over `nodes.list`" (RFC 0012 §4–§5). Every dimension key
 in `summary` MUST be declared in the `initialize` `facets` block.
+An absent `complete` means `false` (partial, RFC 0012 §5): a plugin
+reporting a summary that covers the whole subtree MUST send
+`"complete": true` explicitly. (Absent-means-partial matches the
+conservative default and lets a false value be omitted; receivers MUST
+NOT read absence as exhaustive.)
 
 `facets.version` params `{ "uri": string }` → result
 `{ "ok": bool, "token": string? }`. The RFC 0012 §11 change token:
