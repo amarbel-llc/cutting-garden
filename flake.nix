@@ -512,6 +512,26 @@
           meta.mainProgram = "cutting-garden-test-capture-serve";
         };
 
+        # cutting-garden-test-traversal-serve is the RFC 0013 test plugin
+        # (internal/traversal_serve_testpeer as a standalone binary): a
+        # deterministic traversal peer serving the fixed cgtest tree,
+        # backing the bats conformance lane
+        # (zz-tests_bats/traversal_serve.bats) — the cross-implementation
+        # launch-pattern gate a substituted non-Go peer runs unmodified.
+        # Built as its own derivation and NOT shipped.
+        cuttingGardenTestTraversalServe = pkgs.buildGoApplication {
+          pname = "cutting-garden-test-traversal-serve";
+          version = cgVersion;
+          src = ./.;
+          pwd = ./.;
+          modules = ./gomod2nix.toml;
+          inherit goFlakeInputs;
+          subPackages = [ "cmd/cutting-garden-test-traversal-serve" ];
+          go = pkgs.go_1_26;
+          GOTOOLCHAIN = "local";
+          meta.mainProgram = "cutting-garden-test-traversal-serve";
+        };
+
         # cutting-garden-clown-plugin stages a clown plugin (see
         # clown-plugin-protocol(7) / clown-json(5)) that exposes
         # cutting-garden's capturable trees as MCP resources via
@@ -652,6 +672,11 @@
               CG_TEST_CAPTURE_SERVE = {
                 base = cuttingGardenTestCaptureServe;
                 name = "cutting-garden-test-capture-serve";
+              };
+              # The RFC 0013 test peer backing zz-tests_bats/traversal_serve.bats.
+              CG_TEST_TRAVERSAL_SERVE = {
+                base = cuttingGardenTestTraversalServe;
+                name = "cutting-garden-test-traversal-serve";
               };
             };
             batsLibPath = [ bats.packages.${system}.bats-libs.batsLibPath ];
