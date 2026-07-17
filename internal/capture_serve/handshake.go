@@ -1,17 +1,10 @@
 package capture_serve
 
 import (
-	"bufio"
-	"crypto/rand"
-	"encoding/hex"
-	"fmt"
 	"io"
 	"net"
-	"os"
-	"path/filepath"
-	"strings"
 
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
+	"code.linenisgreat.com/cutting-garden/internal/plugin_handshake"
 )
 
 // The RFC 0008 launch handshake, go-plugin style (the pattern established
@@ -20,6 +13,9 @@ import (
 // rendezvous socket and announces it as ONE stdout line the orchestrator
 // parses, cookie-validates, and dials. stdout carries nothing else;
 // stdin EOF / a shutdown notification / SIGTERM end the session.
+//
+// The protocol-independent logic lives in plugin_handshake; this file
+// pins RFC 0008's launch identity and delegates.
 const (
 	// CookieEnv is the magic-cookie environment variable. A plugin
 	// invoked without it MUST exit non-zero without printing to stdout —
@@ -52,64 +48,35 @@ const (
 	sunPathMax = 100
 )
 
+// proto is RFC 0008's launch identity, driving the shared handshake
+// logic in plugin_handshake.
+var proto = plugin_handshake.Protocol{
+	CookieEnv:    CookieEnv,
+	Network:      HandshakeNetwork,
+	Subprotocol:  HandshakeSubprotocol,
+	SocketPrefix: "cg-serve-",
+}
+
 // Handshake is the parsed announce line — everything the orchestrator
 // needs to dial the plugin's rendezvous socket.
-type Handshake struct {
-	// Version is the protocol token the plugin speaks (SchemaV2 today).
-	Version string
-	// Network is the socket family; MUST be HandshakeNetwork.
-	Network string
-	// Address is the rendezvous socket path.
-	Address string
-	// Metadata is free-form plugin metadata; MAY be empty. MUST NOT
-	// contain '|' or newlines.
-	Metadata string
-}
+type Handshake = plugin_handshake.Handshake
 
 // NewCookie returns a fresh random magic cookie for one plugin launch.
 func NewCookie() (string, error) {
-	var raw [16]byte
-	if _, err := rand.Read(raw[:]); err != nil {
-		return "", errors.Wrap(err)
-	}
-	return hex.EncodeToString(raw[:]), nil
+	return proto.NewCookie()
 }
 
 // CookieFromEnv reads the launch cookie a plugin must echo on its
 // announce line. Absence means the process was not launched by an
 // orchestrator: the caller MUST exit non-zero without touching stdout.
 func CookieFromEnv() (string, error) {
-	cookie := os.Getenv(CookieEnv)
-	if cookie == "" {
-		return "", errors.ErrorWithStackf(
-			"%s is not set: not launched by a capture orchestrator",
-			CookieEnv,
-		)
-	}
-	return cookie, nil
+	return proto.CookieFromEnv()
 }
 
 // AnnounceLine renders the single stdout line a plugin prints once its
 // rendezvous socket is listening (newline included).
 func AnnounceLine(cookie string, h Handshake) (string, error) {
-	for name, field := range map[string]string{
-		"cookie":   cookie,
-		"version":  h.Version,
-		"network":  h.Network,
-		"address":  h.Address,
-		"metadata": h.Metadata,
-	} {
-		if strings.ContainsAny(field, "|\n") {
-			return "", errors.ErrorWithStackf(
-				"announce %s field %q contains a delimiter", name, field,
-			)
-		}
-	}
-	return fmt.Sprintf(
-		"%s|%s|%s|%s|%s|%s\n",
-		cookie, h.Version, h.Network, h.Address, h.Metadata,
-		HandshakeSubprotocol,
-	), nil
+	return proto.AnnounceLine(cookie, h)
 }
 
 // ParseAnnounceLine validates one stdout line against the launch cookie
@@ -117,37 +84,7 @@ func AnnounceLine(cookie string, h Handshake) (string, error) {
 // cookie — a log line, a wrong field count, a foreign subprotocol — is a
 // rejected handshake: the orchestrator kills the child and falls back.
 func ParseAnnounceLine(line, wantCookie string) (Handshake, error) {
-	line = strings.TrimSuffix(line, "\n")
-	fields := strings.Split(line, "|")
-	if len(fields) != announceFields {
-		return Handshake{}, errors.ErrorWithStackf(
-			"announce line has %d fields, want %d (stdout pollution?)",
-			len(fields), announceFields,
-		)
-	}
-	if fields[0] != wantCookie {
-		return Handshake{}, errors.ErrorWithStackf(
-			"announce cookie mismatch",
-		)
-	}
-	if fields[5] != HandshakeSubprotocol {
-		return Handshake{}, errors.ErrorWithStackf(
-			"announce subprotocol %q, want %q",
-			fields[5], HandshakeSubprotocol,
-		)
-	}
-	h := Handshake{
-		Version:  fields[1],
-		Network:  fields[2],
-		Address:  fields[3],
-		Metadata: fields[4],
-	}
-	if h.Version == "" || h.Network == "" || h.Address == "" {
-		return Handshake{}, errors.ErrorWithStackf(
-			"announce line has empty version/network/address",
-		)
-	}
-	return h, nil
+	return proto.ParseAnnounceLine(line, wantCookie)
 }
 
 // ReadAnnounce reads the plugin's FIRST stdout line and parses it as the
@@ -155,18 +92,11 @@ func ParseAnnounceLine(line, wantCookie string) (Handshake, error) {
 // stdout is protocol-only under RFC 0008, so pollution is a bring-up
 // failure (which the caller treats as "fall back to v1"). Deadlines are
 // the caller's job (kill the child on timeout); this blocks until a line
-// or EOF arrives.
+// or EOF arrives. (The underlying read reports the usual io.EOF failure
+// as a fresh error, not a wrap — dewey's errors refuses to wrap bare
+// io.EOF by policy.)
 func ReadAnnounce(stdout io.Reader, wantCookie string) (Handshake, error) {
-	line, err := bufio.NewReader(stdout).ReadString('\n')
-	if err != nil {
-		// A fresh error, not a wrap: the usual failure here is io.EOF (the
-		// child exited before announcing), which dewey's errors refuses to
-		// wrap by policy.
-		return Handshake{}, errors.ErrorWithStackf(
-			"read announce line (child exited before announcing?): %s", err,
-		)
-	}
-	return ParseAnnounceLine(line, wantCookie)
+	return proto.ReadAnnounce(stdout, wantCookie)
 }
 
 // ListenRendezvous binds a fresh unixpacket rendezvous socket in a new
@@ -178,52 +108,10 @@ func ReadAnnounce(stdout io.Reader, wantCookie string) (Handshake, error) {
 func ListenRendezvous() (
 	ln *net.UnixListener, socketPath string, cleanup func(), err error,
 ) {
-	bases := []string{os.Getenv("XDG_RUNTIME_DIR"), "/tmp"}
-	var lastErr error
-	for _, base := range bases {
-		if base == "" {
-			continue
-		}
-		dir, derr := os.MkdirTemp(base, "cg-serve-")
-		if derr != nil {
-			lastErr = derr
-			continue
-		}
-		sock := filepath.Join(dir, "s")
-		if len(sock) > sunPathMax {
-			os.RemoveAll(dir)
-			lastErr = errors.ErrorWithStackf(
-				"rendezvous path %q exceeds sun_path bound", sock,
-			)
-			continue
-		}
-		l, lerr := net.Listen(HandshakeNetwork, sock)
-		if lerr != nil {
-			os.RemoveAll(dir)
-			lastErr = lerr
-			continue
-		}
-		unixLn := l.(*net.UnixListener)
-		return unixLn, sock, func() {
-			unixLn.Close()
-			os.RemoveAll(dir)
-		}, nil
-	}
-	return nil, "", nil, errors.Wrapf(
-		lastErr, "no usable rendezvous socket base",
-	)
+	return proto.ListenRendezvous()
 }
 
 // DialAnnounced connects to the socket a validated announce named.
 func DialAnnounced(h Handshake) (*net.UnixConn, error) {
-	if h.Network != HandshakeNetwork {
-		return nil, errors.ErrorWithStackf(
-			"announce network %q, want %q", h.Network, HandshakeNetwork,
-		)
-	}
-	conn, err := net.Dial(h.Network, h.Address)
-	if err != nil {
-		return nil, errors.Wrapf(err, "dial announced socket %s", h.Address)
-	}
-	return conn.(*net.UnixConn), nil
+	return proto.DialAnnounced(h)
 }
