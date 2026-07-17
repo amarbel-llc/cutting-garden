@@ -174,7 +174,9 @@ var ParseAnnounceLine = internal.ParseAnnounceLine
 // stdout is protocol-only under RFC 0008, so pollution is a bring-up
 // failure (which the caller treats as "fall back to v1"). Deadlines are
 // the caller's job (kill the child on timeout); this blocks until a line
-// or EOF arrives.
+// or EOF arrives. (The underlying read reports the usual io.EOF failure
+// as a fresh error, not a wrap — dewey's errors refuses to wrap bare
+// io.EOF by policy.)
 var ReadAnnounce = internal.ReadAnnounce
 
 // Run is the whole v2 client path: launch argv, drive one batch, tear
