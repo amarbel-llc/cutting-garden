@@ -144,8 +144,7 @@
       inputs.tap.follows = "tap";
     };
     madder.inputs.bats.follows = "bats";
-    igloo.inputs.treefmt-nix.follows = "bats/treefmt-nix";
-    tap.inputs.treefmt-nix.follows = "bats/treefmt-nix";
+    tap.inputs.treefmt-nix.follows = "igloo/treefmt-nix";
     crap.inputs.conformist.follows = "conformist";
     madder.inputs.conformist.follows = "conformist";
     madder.inputs.crap.follows = "crap";
