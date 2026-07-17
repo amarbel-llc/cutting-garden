@@ -196,8 +196,17 @@ func (s *Session) teardown() error {
 	// Best-effort: on a dead stream the notification write fails and
 	// the remaining signals (stdin EOF, stream close) carry shutdown.
 	_ = s.peer.Notify(MethodShutdown, struct{}{})
-	_ = s.stdin.Close()
+	if s.stdin != nil {
+		_ = s.stdin.Close()
+	}
 	_ = s.peer.Close()
+
+	// An in-process session (adapter tests construct Session around a
+	// peer with no child process) has nothing to reap: the peer close
+	// above was the whole teardown.
+	if s.cmd == nil {
+		return nil
+	}
 
 	done := make(chan error, 1)
 	go func() { done <- s.cmd.Wait() }()
