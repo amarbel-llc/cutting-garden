@@ -308,11 +308,17 @@ func (s *server) Handle(
 		}
 		return s.handleNodeCreate(ctx, params)
 
-	case MethodNodeUpdate:
+	case MethodNodePut:
 		if s.mutator == nil {
 			return nil, methodNotAdvertised(method)
 		}
-		return s.handleNodeUpdate(ctx, params)
+		return s.handleNodePut(ctx, params)
+
+	case MethodNodePatch:
+		if s.mutator == nil {
+			return nil, methodNotAdvertised(method)
+		}
+		return s.handleNodePatch(ctx, params)
 
 	case MethodNodeDelete:
 		if s.mutator == nil {
@@ -565,27 +571,60 @@ func (s *server) handleNodeCreate(
 	return struct{}{}, nil
 }
 
-func (s *server) handleNodeUpdate(
+func (s *server) handleNodePut(
 	ctx context.Context, params json.RawMessage,
 ) (any, error) {
-	var updateParams NodeUpdateParams
-	if rpcErr := unmarshalParams(params, &updateParams); rpcErr != nil {
+	var putParams NodePutParams
+	if rpcErr := unmarshalParams(params, &putParams); rpcErr != nil {
 		return nil, rpcErr
 	}
 
-	uri, rpcErr := parseURIParam(updateParams.URI)
+	uri, rpcErr := parseURIParam(putParams.URI)
 	if rpcErr != nil {
 		return nil, rpcErr
 	}
 
-	body, rpcErr := decodeBodyBase64(updateParams.BodyBase64)
+	body, rpcErr := decodeBodyBase64(putParams.BodyBase64)
 	if rpcErr != nil {
 		return nil, rpcErr
 	}
 
-	// node.update maps to PutNode — full-replace of an existing leaf's
-	// body (FDR 0020; the RFC's method table names it UpdateNode).
 	if err := s.mutator.PutNode(ctx, uri, bytes.NewReader(body)); err != nil {
+		return nil, err
+	}
+
+	return struct{}{}, nil
+}
+
+func (s *server) handleNodePatch(
+	ctx context.Context, params json.RawMessage,
+) (any, error) {
+	var patchParams NodePatchParams
+	if rpcErr := unmarshalParams(params, &patchParams); rpcErr != nil {
+		return nil, rpcErr
+	}
+
+	uri, rpcErr := parseURIParam(patchParams.URI)
+	if rpcErr != nil {
+		return nil, rpcErr
+	}
+
+	body, rpcErr := decodeBodyBase64(patchParams.BodyBase64)
+	if rpcErr != nil {
+		return nil, rpcErr
+	}
+
+	// An empty patch body is a bad request by the NodeMutator contract
+	// ("only touch what is explicitly named in the body" — an empty body
+	// names nothing), enforced here uniformly for every wire plugin.
+	if len(body) == 0 {
+		return nil, &RPCError{
+			Code:    CodeInvalidParams,
+			Message: "node.patch requires a non-empty body",
+		}
+	}
+
+	if err := s.mutator.PatchNode(ctx, uri, bytes.NewReader(body)); err != nil {
 		return nil, err
 	}
 

@@ -27,7 +27,8 @@ func TestSchemaAndTokens(t *testing.T) {
 		{MethodFacetVersion, "facets.version"},
 		{MethodLabelsResolve, "labels.resolve"},
 		{MethodNodeCreate, "node.create"},
-		{MethodNodeUpdate, "node.update"},
+		{MethodNodePut, "node.put"},
+		{MethodNodePatch, "node.patch"},
 		{MethodNodeDelete, "node.delete"},
 		{CapRoots, "roots"},
 		{CapLeafRead, "leaf-read"},
@@ -532,7 +533,7 @@ func TestMutationParamEncodings(t *testing.T) {
 		t.Errorf("json = %s, want %s", raw, want)
 	}
 
-	if raw, err = json.Marshal(NodeUpdateParams{
+	if raw, err = json.Marshal(NodePutParams{
 		URI:        "fj://forge.example/x",
 		BodyBase64: "SGVsbG8=",
 	}); err != nil {

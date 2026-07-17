@@ -44,7 +44,8 @@ const (
 	MethodFacetVersion  = "facets.version"
 	MethodLabelsResolve = "labels.resolve"
 	MethodNodeCreate    = "node.create"
-	MethodNodeUpdate    = "node.update"
+	MethodNodePut       = "node.put"
+	MethodNodePatch     = "node.patch"
 	MethodNodeDelete    = "node.delete"
 )
 
@@ -235,10 +236,20 @@ type NodeCreateParams struct {
 	BodyBase64 string `json:"body_base64,omitempty"`
 }
 
-// NodeUpdateParams is the node.update request payload: replace an
-// existing leaf's body. A non-existent URI is an error. The result is
-// empty.
-type NodeUpdateParams struct {
+// NodePutParams is the node.put request payload: full-replace an
+// existing leaf's body (NodeMutator.PutNode — the body represents the
+// complete desired state). A non-existent URI is an error. The result
+// is empty.
+type NodePutParams struct {
+	URI        string `json:"uri"`
+	BodyBase64 string `json:"body_base64"`
+}
+
+// NodePatchParams is the node.patch request payload: a partial-field
+// update of an existing node (NodeMutator.PatchNode — only the fields
+// named in the body change; the body format is plugin-defined). An
+// empty body is a bad-request error. The result is empty.
+type NodePatchParams struct {
 	URI        string `json:"uri"`
 	BodyBase64 string `json:"body_base64"`
 }

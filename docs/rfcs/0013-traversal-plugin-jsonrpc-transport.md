@@ -139,7 +139,8 @@ arrival order.
 | `facets.version`  | request      | `facet-version`            | `FacetVersioner.FacetVersion` |
 | `labels.resolve`  | request      | `facet-labels`             | `FacetLabeler.ResolveFacetLabels` |
 | `node.create`     | request      | `mutate`                   | `NodeMutator.CreateNode`   |
-| `node.update`     | request      | `mutate`                   | `NodeMutator.UpdateNode`   |
+| `node.put`        | request      | `mutate`                   | `NodeMutator.PutNode`      |
+| `node.patch`      | request      | `mutate`                   | `NodeMutator.PatchNode`    |
 | `node.delete`     | request      | `mutate`                   | `NodeMutator.DeleteNode`   |
 
 A plugin MUST implement `initialize`, `shutdown`, and `nodes.list`
@@ -167,12 +168,16 @@ Params:
 - `protocol_versions` — the versions the host speaks. If none is
   acceptable the plugin MUST fail the request with error code `-32000`
   (`unsupported-version`) and SHOULD exit after responding.
-- `config_toml` — OPTIONAL. The raw TOML text of the plugin's own
-  section of the cutting-garden config (RFC 0007 § Plugin-Owned
-  Sections), verbatim; absent when no section is configured. The host
-  does not interpret this text; the plugin parses and validates it with
-  its own decoder and MUST fail `initialize` (code `-32002`,
-  `invalid-config`) on a section it cannot accept. Secrets follow the
+- `config_toml` — OPTIONAL. The TOML text of the plugin's own section
+  of the cutting-garden config (RFC 0007 § Plugin-Owned Sections),
+  **with the section wrapper stripped**: keys are section-relative,
+  mirroring how the in-process config decoder hands a linked plugin its
+  sub-table. A config containing `[fj]` with `[[fj.roots]]` entries
+  arrives as `[[roots]]\n…` — the plugin never sees its own section
+  name. Absent when no section is configured. The host does not
+  interpret this text; the plugin parses and validates it with its own
+  decoder and MUST fail `initialize` (code `-32002`, `invalid-config`)
+  on a section it cannot accept. Secrets follow the
   RFC 0007 posture: config carries indirections (e.g. a `password_env`
   variable NAME); the plugin resolves them from its own environment,
   which it inherits from the host. Credential material MUST NOT appear
@@ -340,17 +345,26 @@ back to its TTL.
 result `{ "labels": { "<key>": "<label>" } }`. Presentation-only, pure,
 non-fatal (RFC 0012 §7): the host degrades to showing keys on error.
 
-### Mutation — `node.create`, `node.update`, `node.delete`
+### Mutation — `node.create`, `node.put`, `node.patch`, `node.delete`
 
-Gated on `mutate`; semantics are FDR 0020's verbatim (strict create,
-no upsert; update replaces an existing leaf's body; addressing reuses
-the traversal URI space; no blob store, no receipts):
+Gated on `mutate`; semantics are FDR 0020's / `NodeMutator`'s verbatim
+(strict create, no upsert; put is full-replace; patch is
+partial-field; addressing reuses the traversal URI space; no blob
+store, no receipts). A plugin advertising `mutate` MUST serve all four
+(exactly as a linked `NodeMutator` implements all four methods); a verb
+its backend genuinely cannot perform fails with a domain error, as it
+would in process:
 
 - `node.create` params `{ "uri": string, "type": string,
   "body_base64": string? }` → result `{}`. `type` MUST be a declared
   `node_types` tag; existing `uri` is an error.
-- `node.update` params `{ "uri": string, "body_base64": string }` →
-  result `{}`. Non-existent `uri` is an error.
+- `node.put` params `{ "uri": string, "body_base64": string }` →
+  result `{}`. Full-replace: the body is the complete desired state.
+  Non-existent `uri` is an error.
+- `node.patch` params `{ "uri": string, "body_base64": string }` →
+  result `{}`. Partial-field update: only fields named in the body
+  change; the body format is plugin-defined. An empty body is an error
+  (`-32602`).
 - `node.delete` params `{ "uri": string }` → result `{}`.
 
 ### Errors

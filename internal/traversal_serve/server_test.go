@@ -35,6 +35,8 @@ type fakeFullPlugin struct {
 	createdURI  string
 	createdType string
 	createdBody []byte
+	putBody     []byte
+	patchBody   []byte
 }
 
 var (
@@ -186,15 +188,31 @@ func (p *fakeFullPlugin) CreateNode(
 func (p *fakeFullPlugin) PutNode(
 	_ context.Context, _ *url.URL, body io.Reader,
 ) error {
-	_, err := io.ReadAll(body)
-	return err
+	data, err := io.ReadAll(body)
+	if err != nil {
+		return err
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.putBody = data
+
+	return nil
 }
 
 func (p *fakeFullPlugin) PatchNode(
 	_ context.Context, _ *url.URL, body io.Reader,
 ) error {
-	_, err := io.ReadAll(body)
-	return err
+	data, err := io.ReadAll(body)
+	if err != nil {
+		return err
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.patchBody = data
+
+	return nil
 }
 
 func (p *fakeFullPlugin) DeleteNode(
@@ -677,6 +695,64 @@ func TestServeNodeCreateDecodesBody(t *testing.T) {
 
 	if string(plugin.createdBody) != string(body) {
 		t.Errorf("created body = %q, want %q", plugin.createdBody, body)
+	}
+}
+
+// TestServeNodePutAndPatch pins the two remaining mutation verbs: put
+// full-replaces via PutNode, patch partial-updates via PatchNode, and
+// an empty patch body is rejected as CodeInvalidParams before the
+// plugin is consulted (the NodeMutator empty-body contract).
+func TestServeNodePutAndPatch(t *testing.T) {
+	plugin := &fakeFullPlugin{}
+	client, _ := startServe(t, fullPluginConfig(plugin))
+	mustInitialize(t, client)
+
+	putBody := []byte("full replacement")
+	if err := client.Call(
+		context.Background(),
+		MethodNodePut,
+		NodePutParams{
+			URI:        fakeLeafA,
+			BodyBase64: base64.StdEncoding.EncodeToString(putBody),
+		},
+		nil,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	patchBody := []byte(`{"state":"closed"}`)
+	if err := client.Call(
+		context.Background(),
+		MethodNodePatch,
+		NodePatchParams{
+			URI:        fakeLeafA,
+			BodyBase64: base64.StdEncoding.EncodeToString(patchBody),
+		},
+		nil,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	err := client.Call(
+		context.Background(),
+		MethodNodePatch,
+		NodePatchParams{URI: fakeLeafA},
+		nil,
+	)
+	if code, ok := CodeOf(err); !ok || code != CodeInvalidParams {
+		t.Errorf("empty patch body: CodeOf = %d, %t, want %d, true",
+			code, ok, CodeInvalidParams)
+	}
+
+	plugin.mu.Lock()
+	defer plugin.mu.Unlock()
+
+	if string(plugin.putBody) != string(putBody) {
+		t.Errorf("put body = %q, want %q", plugin.putBody, putBody)
+	}
+
+	if string(plugin.patchBody) != string(patchBody) {
+		t.Errorf("patch body = %q, want %q", plugin.patchBody, patchBody)
 	}
 }
 
