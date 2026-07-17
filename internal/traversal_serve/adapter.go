@@ -285,6 +285,17 @@ func (w *WirePlugin) ListRoots(
 		if nodes[i], err = view.ToNode(); err != nil {
 			return nil, errors.Wrapf(err, "wire plugin %q", w.spec.Name)
 		}
+
+		// RFC 0007/0013 §Security: every traversal-emitted URI is
+		// credential-free, and the host enforces it on plugin output
+		// rather than trusting it — same check Roots applies.
+		if nodes[i].URI != nil && nodes[i].URI.User != nil {
+			return nil, errors.ErrorWithStackf(
+				"wire plugin %q: child %q carries userinfo — traversal"+
+					" URIs MUST be credential-free",
+				w.spec.Name, nodes[i].URI.Redacted(),
+			)
+		}
 	}
 
 	return nodes, nil

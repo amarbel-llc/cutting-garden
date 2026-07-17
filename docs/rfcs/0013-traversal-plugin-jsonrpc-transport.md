@@ -393,6 +393,11 @@ MUST NOT depend on it in v1.
   configured plugin) — and SHOULD keep the session alive for the host
   process's lifetime; long-lived consumers (the `mcp` server and its
   facet maintenance loop, RFC 0012 §11) amortize bring-up this way.
+  Because the session outlives the operation that first needed it, the
+  host MUST NOT tie the child's lifetime to that operation's
+  cancellation context: bring-up runs under the host's own lifetime,
+  bounded by the launch deadlines, and a caller abandoning the
+  triggering operation abandons its response — not the session.
 - Graceful shutdown: `shutdown` notification, then stdin close; the
   plugin SHOULD exit 0 after any in-flight request resolves. The host
   SHOULD SIGKILL after a grace period.

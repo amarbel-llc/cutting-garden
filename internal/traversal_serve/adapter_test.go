@@ -12,6 +12,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
 )
 
 // --- in-process session plumbing ------------------------------------
@@ -544,5 +546,62 @@ func TestWirePluginDeclarationsServedFromCachedInit(t *testing.T) {
 	}
 	if got := dialer.dialCount(); got != 1 {
 		t.Errorf("dials = %d, want 1", got)
+	}
+}
+
+// credentialLeakPlugin emits a child URI carrying userinfo — the
+// invariant violation the adapter must reject rather than surface
+// (RFC 0007/0013 §Security: enforce on plugin output, don't trust).
+type credentialLeakPlugin struct{}
+
+func (credentialLeakPlugin) Schemes() []string { return []string{"leak"} }
+
+func (credentialLeakPlugin) TypeTag() string {
+	return "cutting_garden-capture_receipt-leak-v1"
+}
+
+func (credentialLeakPlugin) Types() []cutting_garden_plugins.NodeType {
+	return []cutting_garden_plugins.NodeType{{Tag: "leak-obj-v1"}}
+}
+
+func (credentialLeakPlugin) ListRoots(
+	_ context.Context, _ *url.URL,
+) ([]cutting_garden_plugins.Node, error) {
+	uri, err := url.Parse("leak://user:hunter2@host/x")
+	if err != nil {
+		return nil, err
+	}
+
+	return []cutting_garden_plugins.Node{
+		{URI: uri, Name: "x", Type: "leak-obj-v1"},
+	}, nil
+}
+
+// TestWirePluginListRootsRejectsCredentialedChildURI pins the host-side
+// §Security enforcement on nodes.list output: a userinfo-bearing child
+// URI is an error, not a passthrough, and the password never appears in
+// the message.
+func TestWirePluginListRootsRejectsCredentialedChildURI(t *testing.T) {
+	spec := PluginSpec{
+		Name:    "fake-leak",
+		Command: []string{"unused-in-process"},
+		Schemes: []string{"leak"},
+	}
+	adapter, _ := newTestWirePlugin(t, spec, ServeConfig{
+		Plugin: credentialLeakPlugin{},
+		Info:   PluginInfo{Name: "fake-leak", Version: "0"},
+	})
+
+	_, err := adapter.ListRoots(
+		context.Background(), mustParseURL(t, "leak://host/"),
+	)
+	if err == nil {
+		t.Fatal("expected a credential-free violation error")
+	}
+	if !strings.Contains(err.Error(), "credential-free") {
+		t.Errorf("error %q does not cite the invariant", err)
+	}
+	if strings.Contains(err.Error(), "hunter2") {
+		t.Errorf("error %q leaks the credential", err)
 	}
 }
