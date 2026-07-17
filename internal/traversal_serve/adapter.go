@@ -79,6 +79,24 @@ func newWirePluginWithDialer(
 	return &WirePlugin{spec: spec, dial: dial}
 }
 
+// Close tears down the cached session, if any — the graceful shutdown
+// sequence plus child reap of Session.Close. It does not disable the
+// adapter: a later operation lazily respawns. Callers that own the
+// plugin's lifetime (host shutdown, test teardown) use it to avoid
+// leaking the child until process exit.
+func (w *WirePlugin) Close() error {
+	w.mu.Lock()
+	sess := w.session
+	w.session = nil
+	w.mu.Unlock()
+
+	if sess == nil {
+		return nil
+	}
+
+	return sess.Close()
+}
+
 // liveSession returns the cached session, replacing a dead one (its
 // Done channel closed) with at most one fresh launch — the
 // respawn-once-per-operation allowance of RFC 0013 §Session lifecycle.
