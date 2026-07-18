@@ -52,6 +52,21 @@ func DecodeConfigV0(input []byte) (*ConfigV0Document, error) {
 			return nil, fmt.Errorf("jira: %w", err)
 		}
 	}
+	if _vPlugins, _ok := model.Get("plugins"); _ok && _vPlugins.Kind == cst.VArray {
+		_vPlugins.MarkSeen()
+		d.data.Plugins = make([]traversal_serve.PluginStanza, len(_vPlugins.Items))
+		for i := range _vPlugins.Items {
+			_ePlugins := &_vPlugins.Items[i]
+			_ePlugins.MarkSeen()
+			if err := traversal_serve.DecodePluginStanzaInto(&d.data.Plugins[i], _ePlugins); err != nil {
+				return nil, fmt.Errorf("plugins[%d]: %w", i, err)
+			}
+		}
+	}
+	if _eaPlugins, _eaok := model.Get("plugins"); _eaok && _eaPlugins.IsEmptyArray() {
+		_eaPlugins.MarkConsumed()
+		d.data.Plugins = []traversal_serve.PluginStanza{}
+	}
 	if _vTraversalPlugins, _ok := model.Get("traversal_plugins"); _ok && _vTraversalPlugins.Kind == cst.VArray {
 		_vTraversalPlugins.MarkSeen()
 		d.data.TraversalPlugins = make([]traversal_serve.PluginStanza, len(_vTraversalPlugins.Items))
@@ -91,6 +106,20 @@ func (d *ConfigV0Document) Encode() ([]byte, error) {
 		tableNode := cst.EnsureChildTable(d.cstDoc.Root(), d.cstDoc.Root(), "jira")
 		if err := jira.EncodeAccountsConfigFrom(&d.data.Jira, d.cstDoc, tableNode); err != nil {
 			return nil, fmt.Errorf("jira: %w", err)
+		}
+	}
+	{
+		_existPlugins := cst.FindArrayTableNodes(d.cstDoc.Root(), "plugins")
+		for i := range d.data.Plugins {
+			var container *cst.Node
+			if i < len(_existPlugins) {
+				container = _existPlugins[i]
+			} else {
+				container = cst.AppendArrayTableEntryAfter(d.cstDoc.Root(), "plugins")
+			}
+			if err := traversal_serve.EncodePluginStanzaFrom(&d.data.Plugins[i], d.cstDoc, container); err != nil {
+				return nil, fmt.Errorf("plugins[%d]: %w", i, err)
+			}
 		}
 	}
 	{
@@ -146,6 +175,21 @@ func DecodeConfigV0Into(data *ConfigV0, sub *cst.Value) error {
 			return fmt.Errorf("jira: %w", err)
 		}
 	}
+	if _vPlugins, _ok := sub.Get("plugins"); _ok && _vPlugins.Kind == cst.VArray {
+		_vPlugins.MarkSeen()
+		data.Plugins = make([]traversal_serve.PluginStanza, len(_vPlugins.Items))
+		for i := range _vPlugins.Items {
+			_ePlugins := &_vPlugins.Items[i]
+			_ePlugins.MarkSeen()
+			if err := traversal_serve.DecodePluginStanzaInto(&data.Plugins[i], _ePlugins); err != nil {
+				return fmt.Errorf("plugins[%d]: %w", i, err)
+			}
+		}
+	}
+	if _eaPlugins, _eaok := sub.Get("plugins"); _eaok && _eaPlugins.IsEmptyArray() {
+		_eaPlugins.MarkConsumed()
+		data.Plugins = []traversal_serve.PluginStanza{}
+	}
 	if _vTraversalPlugins, _ok := sub.Get("traversal_plugins"); _ok && _vTraversalPlugins.Kind == cst.VArray {
 		_vTraversalPlugins.MarkSeen()
 		data.TraversalPlugins = make([]traversal_serve.PluginStanza, len(_vTraversalPlugins.Items))
@@ -181,6 +225,21 @@ func EncodeConfigV0From(data *ConfigV0, doc *document.Document, container *cst.N
 		tableNode := cst.EnsureChildTable(doc.Root(), container, "jira")
 		if err := jira.EncodeAccountsConfigFrom(&data.Jira, doc, tableNode); err != nil {
 			return fmt.Errorf("jira: %w", err)
+		}
+	}
+	{
+		_apPlugins := container
+		_existPlugins := cst.FindChildArrayTableNodes(doc.Root(), _apPlugins, "plugins")
+		for i := range data.Plugins {
+			var container *cst.Node
+			if i < len(_existPlugins) {
+				container = _existPlugins[i]
+			} else {
+				container = cst.AppendChildArrayTableEntry(doc.Root(), _apPlugins, "plugins")
+			}
+			if err := traversal_serve.EncodePluginStanzaFrom(&data.Plugins[i], doc, container); err != nil {
+				return fmt.Errorf("plugins[%d]: %w", i, err)
+			}
 		}
 	}
 	{

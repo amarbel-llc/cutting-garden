@@ -67,6 +67,15 @@ func DecodePluginStanza(input []byte) (*PluginStanzaDocument, error) {
 			_vConfigSection.MarkConsumed()
 		}
 	}
+	if _vProtocols, _ok := model.Get("protocols"); _ok && _vProtocols.Kind == cst.VLeaf {
+		if _x, _xok := cst.ExtractStringSlice(_vProtocols.Leaf); _xok {
+			d.data.Protocols = _x
+			if d.data.Protocols == nil {
+				d.data.Protocols = []string{}
+			}
+			_vProtocols.MarkConsumed()
+		}
+	}
 	if err := d.data.Validate(); err != nil {
 		return nil, fmt.Errorf("validation failed: %w", err)
 	}
@@ -106,6 +115,13 @@ func (d *PluginStanzaDocument) Encode() ([]byte, error) {
 		}
 	} else {
 		cst.DeleteValue(d.cstDoc.Root(), "config_section")
+	}
+	{
+		if len(d.data.Protocols) > 0 || cst.HasValue(d.cstDoc.Root(), "protocols") {
+			if err := cst.SetAny(d.cstDoc.Root(), "protocols", d.data.Protocols); err != nil {
+				return nil, fmt.Errorf("%w", err)
+			}
+		}
 	}
 	return d.cstDoc.Bytes(), nil
 }
@@ -164,6 +180,15 @@ func DecodePluginStanzaInto(data *PluginStanza, sub *cst.Value) error {
 			_vConfigSection.MarkConsumed()
 		}
 	}
+	if _vProtocols, _ok := sub.Get("protocols"); _ok && _vProtocols.Kind == cst.VLeaf {
+		if _x, _xok := cst.ExtractStringSlice(_vProtocols.Leaf); _xok {
+			data.Protocols = _x
+			if data.Protocols == nil {
+				data.Protocols = []string{}
+			}
+			_vProtocols.MarkConsumed()
+		}
+	}
 	if err := data.Validate(); err != nil {
 		return fmt.Errorf("validation failed: %w", err)
 	}
@@ -199,6 +224,13 @@ func EncodePluginStanzaFrom(data *PluginStanza, doc *document.Document, containe
 		}
 	} else {
 		cst.DeleteValue(container, "config_section")
+	}
+	{
+		if len(data.Protocols) > 0 || cst.HasValue(container, "protocols") {
+			if err := cst.SetAny(container, "protocols", data.Protocols); err != nil {
+				return fmt.Errorf("%w", err)
+			}
+		}
 	}
 	return nil
 }

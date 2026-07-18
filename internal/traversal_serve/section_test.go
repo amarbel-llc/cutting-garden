@@ -108,8 +108,11 @@ func TestValidateStanzas(t *testing.T) {
 		Schemes: []string{"fj"},
 	}
 
-	if err := ValidateStanzas([]PluginStanza{valid}); err != nil {
+	if err := ValidateStanzas(nil, []PluginStanza{valid}); err != nil {
 		t.Fatalf("valid stanza rejected: %v", err)
+	}
+	if err := ValidateStanzas([]PluginStanza{valid}, nil); err != nil {
+		t.Fatalf("valid stanza (general table) rejected: %v", err)
 	}
 
 	cases := []struct {
@@ -155,10 +158,18 @@ func TestValidateStanzas(t *testing.T) {
 			},
 			"claimed by both",
 		},
+		{
+			"unknown protocol",
+			[]PluginStanza{{
+				Name: "a", Command: []string{"x"}, Schemes: []string{"s"},
+				Protocols: []string{"bogus"},
+			}},
+			"unknown protocol",
+		},
 	}
 
 	for _, c := range cases {
-		err := ValidateStanzas(c.stanzas)
+		err := ValidateStanzas(nil, c.stanzas)
 		if err == nil {
 			t.Errorf("%s: no error", c.name)
 			continue
@@ -166,6 +177,62 @@ func TestValidateStanzas(t *testing.T) {
 		if !strings.Contains(err.Error(), c.wantSub) {
 			t.Errorf("%s: error %q missing %q", c.name, err, c.wantSub)
 		}
+	}
+}
+
+// TestValidateStanzas_CrossTableCollision pins cutting-garden#146
+// decision 2: a name or scheme collision is caught even when the two
+// stanzas come from different tables (the general `[[plugins]]` slice
+// vs the legacy `[[traversal_plugins]]` alias slice) — the combined
+// namespace, not two independent ones.
+func TestValidateStanzas_CrossTableCollision(t *testing.T) {
+	general := []PluginStanza{
+		{Name: "fj", Command: []string{"fj-cg"}, Schemes: []string{"fj"}},
+	}
+	legacyNameClash := []PluginStanza{
+		{Name: "fj", Command: []string{"other"}, Schemes: []string{"other"}},
+	}
+	if err := ValidateStanzas(general, legacyNameClash); err == nil ||
+		!strings.Contains(err.Error(), "duplicate name") {
+		t.Fatalf("cross-table name clash: got %v, want duplicate name error", err)
+	}
+
+	legacySchemeClash := []PluginStanza{
+		{Name: "other", Command: []string{"other"}, Schemes: []string{"fj"}},
+	}
+	if err := ValidateStanzas(general, legacySchemeClash); err == nil ||
+		!strings.Contains(err.Error(), "claimed by both") {
+		t.Fatalf("cross-table scheme clash: got %v, want claimed-by-both error", err)
+	}
+}
+
+// TestPluginStanzaEffectiveProtocols pins the default-to-traversal
+// behavior (cutting-garden#146 decision 2): an empty Protocols acts as
+// [ProtocolTraversal], which is how a [[traversal_plugins]]
+// compatibility-alias stanza is always treated.
+func TestPluginStanzaEffectiveProtocols(t *testing.T) {
+	var s PluginStanza
+	if got := s.EffectiveProtocols(); len(got) != 1 || got[0] != ProtocolTraversal {
+		t.Errorf("EffectiveProtocols() with none declared = %v, want [%s]", got, ProtocolTraversal)
+	}
+	if !s.HasProtocol(ProtocolTraversal) {
+		t.Error("HasProtocol(traversal) = false for a stanza with no protocols declared")
+	}
+	if s.HasProtocol(ProtocolCapture) {
+		t.Error("HasProtocol(capture) = true for a stanza with no protocols declared")
+	}
+
+	s.Protocols = []string{ProtocolCapture}
+	if got := s.EffectiveProtocols(); len(got) != 1 || got[0] != ProtocolCapture {
+		t.Errorf("EffectiveProtocols() with explicit capture = %v, want [%s]", got, ProtocolCapture)
+	}
+	if s.HasProtocol(ProtocolTraversal) {
+		t.Error("HasProtocol(traversal) = true for a capture-only stanza")
+	}
+
+	s.Protocols = []string{ProtocolCapture, ProtocolTraversal}
+	if !s.HasProtocol(ProtocolCapture) || !s.HasProtocol(ProtocolTraversal) {
+		t.Error("HasProtocol should report true for both declared protocols")
 	}
 }
 

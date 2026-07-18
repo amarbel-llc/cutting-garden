@@ -59,7 +59,7 @@ schemes = ["cgtest"]
 		t.Fatalf("stanzas = %+v, want 1", cfg.TraversalPlugins)
 	}
 
-	if err := registerTraversalPlugins(cfg, raw); err != nil {
+	if err := registerPlugins(cfg, raw); err != nil {
 		t.Fatal(err)
 	}
 
@@ -131,9 +131,84 @@ schemes = ["cc-clash-test"]
 		t.Fatal(err)
 	}
 
-	err = registerTraversalPlugins(doc.Data(), raw)
+	err = registerPlugins(doc.Data(), raw)
 	if err == nil {
 		t.Fatal("scheme clash must error")
+	}
+	if !errors.Is400BadRequest(err) {
+		t.Errorf("want EX_USAGE (400 bad request), got %v", err)
+	}
+}
+
+// TestRegisterPlugins_GeneralTableTraversalStanza pins
+// cutting-garden#146 slice 2's generalization: a [[plugins]] stanza
+// declaring protocols = ["traversal"] registers a traversal WirePlugin
+// under its configured scheme exactly like a [[traversal_plugins]]
+// compatibility-alias stanza does, with Command treated as the base
+// binary invocation (the host appends "traversal-serve"). This checks
+// registration bookkeeping only (WirePlugin.Schemes returns the
+// configured claim without spawning); the live wire-call path — the
+// schemes echo validated against the peer's real advertisement — is
+// already covered end-to-end by TestRegisterTraversalPlugins_EndToEnd
+// against the "cgtest" scheme that test claims first in this same
+// process-global registry.
+func TestRegisterPlugins_GeneralTableTraversalStanza(t *testing.T) {
+	path := writeTempConfig(t, `
+[[plugins]]
+name = "cgtest2"
+command = ["`+os.Args[0]+`"]
+schemes = ["cgtest2"]
+protocols = ["traversal"]
+`)
+
+	var warn nullWriter
+	raw, cfg, err := loadConfigWithRaw(path, warn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Plugins) != 1 {
+		t.Fatalf("stanzas = %+v, want 1", cfg.Plugins)
+	}
+
+	if err := registerPlugins(cfg, raw); err != nil {
+		t.Fatal(err)
+	}
+
+	plugin, err := cutting_garden_plugins.ResolveScheme("cgtest2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire, ok := plugin.(*traversal_serve.WirePlugin)
+	if !ok {
+		t.Fatalf("registered plugin is %T, want *WirePlugin", plugin)
+	}
+	t.Cleanup(func() { _ = wire.Close() })
+
+	if got := wire.Schemes(); len(got) != 1 || got[0] != "cgtest2" {
+		t.Fatalf("Schemes() = %v, want [cgtest2]", got)
+	}
+}
+
+// TestRegisterPlugins_CapturePlugin_NotYetImplemented pins the phase-1
+// intermediate state (cutting-garden#146 slice 2): a [[plugins]] stanza
+// declaring the capture protocol is a clear configuration error, not a
+// silent no-op, until phase 2 wires the capture-side launcher.
+func TestRegisterPlugins_CapturePlugin_NotYetImplemented(t *testing.T) {
+	raw := []byte(`
+[[plugins]]
+name = "chrest"
+command = ["chrest"]
+schemes = ["web"]
+protocols = ["capture"]
+`)
+	doc, err := cgconfig.DecodeConfigV0(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = registerPlugins(doc.Data(), raw)
+	if err == nil {
+		t.Fatal("capture-protocol stanza must error before phase 2 lands")
 	}
 	if !errors.Is400BadRequest(err) {
 		t.Errorf("want EX_USAGE (400 bad request), got %v", err)

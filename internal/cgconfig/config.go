@@ -18,17 +18,30 @@ import (
 // ConfigV0 is the top-level, horizontally-versioned config. Each plugin
 // section is an OPTIONAL delegated field keyed by the plugin's scheme; a
 // new format version adds a ConfigV1 beside this rather than mutating it
-// (RFC 0007 § Top-Level Structure). TraversalPlugins is the one
-// non-section field: the top-level `[[traversal_plugins]]` stanzas
-// declaring out-of-process wire plugins (RFC 0013 §Host integration) —
-// the sections THOSE name are consumed raw by SectionTOML, not decoded
-// here.
+// (RFC 0007 § Top-Level Structure). Plugins and TraversalPlugins are the
+// two non-section fields: the top-level `[[plugins]]` / `[[traversal_
+// plugins]]` stanzas declaring out-of-process wire plugins (RFC 0013
+// §Host integration, generalized by cutting-garden#146 slice 2) — the
+// sections THOSE name are consumed raw by SectionTOML, not decoded here.
 //
 //go:generate tommy generate
 type ConfigV0 struct {
 	Caldav caldav.AccountsConfig `toml:"caldav,omitempty"`
 	Jira   jira.AccountsConfig   `toml:"jira,omitempty"`
 
+	// Plugins is the generalized `[[plugins]]` stanza (cutting-garden#146
+	// slice 2): one entry per plugin binary, declaring which wire
+	// protocol(s) it speaks via PluginStanza.Protocols — the host
+	// launches a capture-serve and/or traversal-serve session per
+	// stanza as needed.
+	Plugins []traversal_serve.PluginStanza `toml:"plugins,omitempty"`
+
+	// TraversalPlugins is the pre-generalization `[[traversal_plugins]]`
+	// compatibility alias (cutting-garden#146 decision 2): an entry here
+	// decodes into the same PluginStanza shape as Plugins and is always
+	// treated as protocols = [traversal_serve.ProtocolTraversal]
+	// (PluginStanza.EffectiveProtocols), regardless of any protocols key
+	// present. Existing configs keep working unmodified.
 	TraversalPlugins []traversal_serve.PluginStanza `toml:"traversal_plugins,omitempty"`
 }
 
@@ -42,5 +55,5 @@ func (c ConfigV0) Validate() error {
 	if err := c.Jira.Validate(); err != nil {
 		return err
 	}
-	return traversal_serve.ValidateStanzas(c.TraversalPlugins)
+	return traversal_serve.ValidateStanzas(c.Plugins, c.TraversalPlugins)
 }
