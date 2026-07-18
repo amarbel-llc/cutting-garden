@@ -51,7 +51,8 @@ BasicTerm    <- Group
               / FieldPred
               / TypeTerm Sigil?
               / DigestTerm Sigil?
-              / QuotedRef Sigil?
+              / MarklTerm Sigil?     // before QuotedRef/Ident: `a@b` and `"a b"@c`
+              / QuotedRef Sigil?     // are markl terms, not identifier + dangling @
               / Ident Sigil?
               / Sigil                 // bare sigil: empty predicate (doddish `:`)
 QuotedRef    <- String
@@ -116,7 +117,7 @@ FieldOp      <- '*=' / '^=' / '$=' / '!=' / '<=' / '>=' / '~=' / '=' / '<' / '>'
 // are the query-side spelling of reference-valued fields / typed edges
 // (`_mother=@blake2b256-…`, `_base=@…`) and of edge-target matching.
 ValueList    <- '[' SP? Value (SP? ',' SP? Value)* SP? ']'
-Value        <- String / DigestTerm / Bareword
+Value        <- MarklTerm / String / DigestTerm / Bareword
 
 // ---- combinators: typed-arrow traversal ----------------------------------
 
@@ -152,18 +153,22 @@ TypedBack    <- '<-[' SP? ConjRun SP? ']-'
 // `[:+.?]+` run is always the sigil suffix. Identifiers whose CONTENT
 // ends in a sigil rune (a tag named `c++`) must be quoted (QuotedRef).
 //
-// THE SAME POSITIONAL RULE EXTENDS TO `@` (amended 2026-07-18, ruled in
-// hyphence#6): term-initial `@` is the DigestTerm sigil (payload-only
-// markl id); interior `@` — followed by an identifier rune — is
-// identifier content. A purpose-full markl id (`[purpose@]format-data`,
-// markl-id(7) / piggy RFC 0002) is therefore ONE opaque identifier in
-// its existing wire spelling: `piggy-piv_auth-v1@ssh_…`,
-// `one/uno@blake2b256-…` (a fully-contained object-at-version
-// identifier). Resolution of the purpose is type-system-side like every
-// identifier. The wire form carries no spaces; presentation layers MAY
-// insert spacing or elide/abbreviate digest payloads for display.
+// MARKL IDS ARE STRUCTURED TWO-SLOT TERMS (revised 2026-07-18, second
+// amendment — supersedes the earlier interior-@ IdentRune rule): a
+// purpose-full markl id (`[purpose@]format-data`, markl-id(7) / madder
+// RFC 0002) decomposes at the grammar level as MarklTerm — a
+// purpose slot (bare identifier or quoted string) joined by `@` to a
+// digest slot. The digest is ALWAYS structurally visible (never
+// trapped inside string quoting): pinning an object whose id needs
+// quoting is spelled `"my thing"@blake2b256-…`, never
+// `"my thing@blake2b256-…"`. Purposes containing `@` are spelled by
+// quoting the purpose (`"a@b"@fmt-x`). Resolution of the purpose slot
+// is type-system-side like every identifier; the wire form carries no
+// spaces; presentation layers MAY insert spacing or elide/abbreviate
+// digest payloads (trie abbreviations) for display.
+MarklTerm    <- (String / Ident) '@' Ident
 Ident        <- IdentRune+
-IdentRune    <- '-' / '/' / (SigilRune &IdentRune) / ('@' &IdentRune) / (!Reserved !SP1 .)
+IdentRune    <- '-' / '/' / (SigilRune &IdentRune) / (!Reserved !SP1 .)
 Reserved     <- [\[\]^=,!@<>*$~%#"'] / SigilRune
 
 // Doddish quoting rules verbatim: double or single quotes; backslash
@@ -212,8 +217,14 @@ EOF          <- !.
 //     — digest-valued field predicate (typed-edge target match; Value
 //       amendment 2026-07-18)
 //   piggy-piv_auth-v1@ssh_ecdsa_nistp256_pub-qqxyz
-//     — purpose-full markl id as ONE opaque identifier (interior-@ rule)
+//     — purpose-full markl id: MarklTerm (structured two-slot, digest visible)
 //   one/uno@blake2b256-9ft3x
-//     — fully-contained object-at-version identifier (same rule)
+//     — fully-contained object-at-version identifier (MarklTerm)
+//   "my thing"@blake2b256-9ft3x
+//     — quoted purpose slot; the digest is NEVER inside the quotes
 //   blocks=task/other@blake2b256-9ft3x
-//     — typed edge, pinned: field value is one atomic markl id
+//     — typed edge, pinned: field value is one MarklTerm
+//   due = "2026-08-01"
+//     — spaced field operator: ONE field predicate (greedy FieldPred),
+//       never identifier `due` + exact-match term; per-medium canonical
+//       spacing (spaced in hyphence lines, unspaced in box interiors)

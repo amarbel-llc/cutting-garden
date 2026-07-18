@@ -68,6 +68,15 @@ record carries the shape, the per-substrate findings, and the ledgers.
   this FDR): drop comma headings, adopt `_base`, migrate
   `% dry-run:true` → `_dry-run=true`, reconcile organize-text(7)'s
   removal-semantics documentation.
+- **Field residence** (dodder design issue, ruled 2026-07-18): every
+  field key has one type-declared authored home — body-resident
+  (extracted from the typed body) or metadata-resident (hyphence field
+  lines; the default for undeclared and `_`-framework keys) — with the
+  index unifying both for residence-blind querying and loud
+  bidirectional collision errors. The mapping capability's write-through
+  targets the residence (body-resident ⇒ the apply engine edits the
+  typed body through the type). Node types want the same residence bit
+  (FDR 0018 unified namespace).
 - Adjacent: cutting-garden#142 (root tags) — filter-mode
   `cg capture --organize` composes with tagged roots.
 
