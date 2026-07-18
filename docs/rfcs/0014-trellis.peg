@@ -151,8 +151,19 @@ TypedBack    <- '<-[' SP? ConjRun SP? ']-'
 // identifiers, while `todo:` is identifier + sigil and a trailing
 // `[:+.?]+` run is always the sigil suffix. Identifiers whose CONTENT
 // ends in a sigil rune (a tag named `c++`) must be quoted (QuotedRef).
+//
+// THE SAME POSITIONAL RULE EXTENDS TO `@` (amended 2026-07-18, ruled in
+// hyphence#6): term-initial `@` is the DigestTerm sigil (payload-only
+// markl id); interior `@` — followed by an identifier rune — is
+// identifier content. A purpose-full markl id (`[purpose@]format-data`,
+// markl-id(7) / piggy RFC 0002) is therefore ONE opaque identifier in
+// its existing wire spelling: `piggy-piv_auth-v1@ssh_…`,
+// `one/uno@blake2b256-…` (a fully-contained object-at-version
+// identifier). Resolution of the purpose is type-system-side like every
+// identifier. The wire form carries no spaces; presentation layers MAY
+// insert spacing or elide/abbreviate digest payloads for display.
 Ident        <- IdentRune+
-IdentRune    <- '-' / '/' / (SigilRune &IdentRune) / (!Reserved !SP1 .)
+IdentRune    <- '-' / '/' / (SigilRune &IdentRune) / ('@' &IdentRune) / (!Reserved !SP1 .)
 Reserved     <- [\[\]^=,!@<>*$~%#"'] / SigilRune
 
 // Doddish quoting rules verbatim: double or single quotes; backslash
@@ -200,3 +211,9 @@ EOF          <- !.
 //   _mother=@blake2b256-9ft3x
 //     — digest-valued field predicate (typed-edge target match; Value
 //       amendment 2026-07-18)
+//   piggy-piv_auth-v1@ssh_ecdsa_nistp256_pub-qqxyz
+//     — purpose-full markl id as ONE opaque identifier (interior-@ rule)
+//   one/uno@blake2b256-9ft3x
+//     — fully-contained object-at-version identifier (same rule)
+//   blocks=task/other@blake2b256-9ft3x
+//     — typed edge, pinned: field value is one atomic markl id
