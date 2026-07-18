@@ -2,7 +2,9 @@ package cutting_garden_plugins
 
 import (
 	"context"
+	"fmt"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -151,6 +153,33 @@ func containsFacetValue(values []FacetValue, key string) bool {
 		}
 	}
 	return false
+}
+
+// ParseFacetFilter parses "dim=val,dim2=val2" into an AND-composed
+// FacetFilter (RFC 0012 §6) — the shared grammar behind `list --filter` and
+// the mcp read_facets tool's optional filter parameter, so the two surfaces
+// never drift. The empty string (after trimming) is no filter (nil, nil).
+func ParseFacetFilter(raw string) (FacetFilter, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, nil
+	}
+	var filter FacetFilter
+	for _, part := range strings.Split(raw, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		dim, val, found := strings.Cut(part, "=")
+		dim, val = strings.TrimSpace(dim), strings.TrimSpace(val)
+		if !found || dim == "" || val == "" {
+			return nil, fmt.Errorf(
+				"invalid filter predicate %q; expected dimension=value", part,
+			)
+		}
+		filter = append(filter, FacetPredicate{Dimension: dim, Value: val})
+	}
+	return filter, nil
 }
 
 // FacetCounter is the OPTIONAL capability that returns a node's hoisted facet

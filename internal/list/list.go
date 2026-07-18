@@ -271,9 +271,9 @@ func (cmd *List) runFacets(ctx errors.Context, uriStr string) error {
 		)
 	}
 
-	filter, err := parseFacetFilter(cmd.Filter)
+	filter, err := cutting_garden_plugins.ParseFacetFilter(cmd.Filter)
 	if err != nil {
-		return err
+		return errors.Wrap(err)
 	}
 
 	result, ok, err := counter.FacetCounts(ctx, u, filter)
@@ -290,34 +290,6 @@ func (cmd *List) runFacets(ctx errors.Context, uriStr string) error {
 		return writeFacetsJSON(cmd.output, result)
 	}
 	return writeFacetsText(cmd.output, result)
-}
-
-// parseFacetFilter parses "dim=val,dim2=val2" into an AND-composed
-// FacetFilter. The empty string is no filter.
-func parseFacetFilter(raw string) (cutting_garden_plugins.FacetFilter, error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return nil, nil
-	}
-	var filter cutting_garden_plugins.FacetFilter
-	for _, part := range strings.Split(raw, ",") {
-		part = strings.TrimSpace(part)
-		if part == "" {
-			continue
-		}
-		dim, val, found := strings.Cut(part, "=")
-		dim, val = strings.TrimSpace(dim), strings.TrimSpace(val)
-		if !found || dim == "" || val == "" {
-			return nil, errors.ErrorWithStackf(
-				"invalid -filter predicate %q; expected dimension=value", part,
-			)
-		}
-		filter = append(filter, cutting_garden_plugins.FacetPredicate{
-			Dimension: dim,
-			Value:     val,
-		})
-	}
-	return filter, nil
 }
 
 // writeFacetsText renders the summary as one aligned row per dimension,

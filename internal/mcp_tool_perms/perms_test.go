@@ -15,7 +15,7 @@ func TestClassify_CUDToolsAreDestructive(t *testing.T) {
 }
 
 func TestClassify_ReadToolsAreRead(t *testing.T) {
-	for _, tool := range []string{ToolDescribeNodeTypes, ToolReadNode, ToolListNodes} {
+	for _, tool := range []string{ToolDescribeNodeTypes, ToolReadNode, ToolListNodes, ToolReadFacets} {
 		class, ok := Classify(tool)
 		if !ok {
 			t.Fatalf("%q should be classified", tool)

@@ -28,15 +28,16 @@ teardown() {
 
 # bats file_tags=mcp
 
-# tools/list advertises the three read tools (describe/list/read) and the
-# four CUD write tools (create/put/patch/delete), with the right destructive
-# vs read-only annotations (the hint a client gates on, mirrored by the #102 hook).
+# tools/list advertises the four read tools (describe/list/read/read_facets)
+# and the four CUD write tools (create/put/patch/delete), with the right
+# destructive vs read-only annotations (the hint a client gates on, mirrored
+# by the #102 hook).
 function mcp_advertises_tools { # @test
   mcp_drive "$CALDAV_SOURCE" '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
 
   local names
   names="$(echo "$output" | jq -r 'select(.id==2) | (.result.tools | map(.name) | sort | join(","))')"
-  assert_equal "$names" "create_node,delete_node,describe_node_types,list_nodes,patch_node,put_node,read_node"
+  assert_equal "$names" "create_node,delete_node,describe_node_types,list_nodes,patch_node,put_node,read_facets,read_node"
 
   # The CUD write tools carry destructiveHint=true; the read tools don't.
   local destructive
@@ -47,7 +48,29 @@ function mcp_advertises_tools { # @test
   local readonly_tools
   readonly_tools="$(echo "$output" | jq -r 'select(.id==2) |
     ([.result.tools[] | select(.annotations.readOnlyHint==true) | .name] | sort | join(","))')"
-  assert_equal "$readonly_tools" "describe_node_types,list_nodes,read_node"
+  assert_equal "$readonly_tools" "describe_node_types,list_nodes,read_facets,read_node"
+}
+
+# read_facets on the calendar-home root serves the memoized summary
+# (cutting-garden#151): the same status histogram `list --facets` would
+# compute, reachable from a tools-only client. A filter narrows it directly
+# (RFC 0012 §6/§9).
+function mcp_read_facets { # @test
+  mcp_drive "$CALDAV_SOURCE" "$(tools_call 3 read_facets "$(jq -nc --arg u "$CALDAV_SOURCE" '{uri:$u}')")"
+  local text
+  text="$(mcp_result_text "$output" 3)"
+
+  echo "$text" | jq -e '.facets.component.VTODO >= 1' >/dev/null ||
+    fail "read_facets summary missing component.VTODO: $text"
+  echo "$text" | jq -e '.complete == true' >/dev/null ||
+    fail "read_facets summary not complete: $text"
+
+  # A filter narrows the summary directly (bypasses the memoized cache) and
+  # is reported fresh.
+  mcp_drive "$CALDAV_SOURCE" "$(tools_call 3 read_facets "$(jq -nc --arg u "$CALDAV_SOURCE" '{uri:$u,filter:"component=VTODO"}')")"
+  text="$(mcp_result_text "$output" 3)"
+  echo "$text" | jq -e '.freshness == "fresh"' >/dev/null ||
+    fail "filtered read_facets not reported fresh: $text"
 }
 
 # describe_node_types reports caldav's node types and which are writable, with

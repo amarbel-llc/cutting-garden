@@ -32,6 +32,22 @@ type resourceReader interface {
 	ReadResource(ctx context.Context, uri string) (*protocol.ResourceReadResult, error)
 }
 
+// facetReader is the read_facets tool's read surface — Resources.ReadFacets,
+// the facet-view counterpart to resourceReader's ReadResource
+// (cutting-garden#151, RFC 0012 §7/§9). *Resources satisfies it.
+type facetReader interface {
+	ReadFacets(
+		ctx context.Context, uri string, filter cutting_garden_plugins.FacetFilter,
+	) (*facetView, error)
+}
+
+// readSurface is the combined read tree the discovery tools wrap; *Resources
+// satisfies both halves, so newTools takes one provider for both fields.
+type readSurface interface {
+	resourceReader
+	facetReader
+}
+
 // Tools implements go-mcp's ToolProviderV1. It always advertises the
 // read-only schema/read/list discovery tools (describe_node_types, read_node,
 // list_nodes), and adds the create_node / put_node / patch_node / delete_node
@@ -46,6 +62,8 @@ type Tools struct {
 	// types the plugin declares ServerAssignedIdentity.
 	resolveCreator creatorResolveFunc
 	reader         resourceReader
+	// facets is the read_facets tool's read surface (cutting-garden#151).
+	facets facetReader
 }
 
 // creatorResolveFunc mirrors mutatorResolveFunc for the
@@ -57,13 +75,15 @@ type creatorResolveFunc func(
 var _ server.ToolProviderV1 = (*Tools)(nil)
 
 // newTools builds a tool provider over the given roots, wired to the real
-// plugin registry and the resource read surface the read/list tools wrap.
-func newTools(roots []*url.URL, reader resourceReader) *Tools {
+// plugin registry and the resource read surface the read/list/facets tools
+// wrap.
+func newTools(roots []*url.URL, reader readSurface) *Tools {
 	return &Tools{
 		roots:          roots,
 		resolve:        command_components.ResolveNodeMutatorPlugin,
 		resolveCreator: command_components.ResolveContainerCreatorPlugin,
 		reader:         reader,
+		facets:         reader,
 	}
 }
 
@@ -105,6 +125,10 @@ const (
 		`"properties":{"uri":{"type":"string","description":"the node URI to read (a leaf returns its parsed fields + a raw-bytes link; a container returns its child listing)"}}}`
 	listNodesSchema = `{"type":"object","properties":{` +
 		`"uri":{"type":"string","description":"the container/prefix to list children of; omit to list the configured roots (the entry points)"}}}`
+	readFacetsSchema = `{"type":"object","required":["uri"],` +
+		`"properties":{` +
+		`"uri":{"type":"string","description":"the container node URI to summarize"},` +
+		`"filter":{"type":"string","description":"optional comma-separated dimension=value predicates (AND-composed, same grammar as list --filter) narrowing the summary, e.g. \"read=false\" or \"status=CONFIRMED,year=2026\""}}}`
 )
 
 // toolDefs is the V1 tool catalogue this server advertises: the read-only
@@ -151,6 +175,22 @@ func readToolDefs() []protocol.ToolV1 {
 				"patch/delete_node.",
 			InputSchema: json.RawMessage(readNodeSchema),
 			Annotations: annotationFor(mcp_tool_perms.ToolReadNode),
+		},
+		{
+			Name: mcp_tool_perms.ToolReadFacets,
+			Description: "Summarize a container's children by its declared facet " +
+				"dimensions (counts per value — status, category, read/unread, …) " +
+				"WITHOUT enumerating them. Call this on a container BEFORE listing " +
+				"its children: it orients you on size and shape (how many, of what " +
+				"kind) cheaply, and a filter lets you narrow the counts to a slice " +
+				"you care about before deciding whether/how to browse further. With " +
+				"no filter, serves the memoized summary (see describe_node_types for " +
+				"a scheme's declared dimensions); filter is the same comma-separated " +
+				"dimension=value grammar as `list --filter` (e.g. \"read=false\"), " +
+				"AND-composed, and computes a fresh narrowed summary directly. " +
+				"Errors when the URI's scheme declares no facets.",
+			InputSchema: json.RawMessage(readFacetsSchema),
+			Annotations: annotationFor(mcp_tool_perms.ToolReadFacets),
 		},
 	}
 }
@@ -444,6 +484,28 @@ func (t *Tools) call(
 			return "", err
 		}
 		return renderContents(res.Contents), nil
+
+	case mcp_tool_perms.ToolReadFacets:
+		var in struct {
+			URI    string `json:"uri"`
+			Filter string `json:"filter"`
+		}
+		if err := json.Unmarshal(args, &in); err != nil {
+			return "", errors.Wrap(err)
+		}
+		filter, err := cutting_garden_plugins.ParseFacetFilter(in.Filter)
+		if err != nil {
+			return "", err
+		}
+		view, err := t.facets.ReadFacets(ctx, in.URI, filter)
+		if err != nil {
+			return "", err
+		}
+		body, err := json.MarshalIndent(view, "", "  ")
+		if err != nil {
+			return "", errors.Wrap(err)
+		}
+		return string(body), nil
 
 	default:
 		return "", errors.ErrorWithStackf("unknown tool %q", name)

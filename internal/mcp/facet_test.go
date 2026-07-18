@@ -339,6 +339,118 @@ func facetBlockOf(
 	return facetView{}
 }
 
+// TestResourcesReadFacets_NilFilterServesMemoizedSummary pins the read_facets
+// tool's nil-filter path (cutting-garden#151): it serves the SAME memoized
+// summary a container's resources/read facets block would.
+func TestResourcesReadFacets_NilFilterServesMemoizedSummary(t *testing.T) {
+	r := newFakeFacetResources(t, "faketest://h/")
+
+	view, err := r.ReadFacets(context.Background(), "faketest://h/work", nil)
+	if err != nil {
+		t.Fatalf("ReadFacets: %v", err)
+	}
+	if !view.Complete {
+		t.Error("complete = false, want true")
+	}
+	if got := view.Facets["status"]["CONFIRMED"]; got != 2 {
+		t.Errorf("status[CONFIRMED] = %d, want 2", got)
+	}
+}
+
+// TestResourcesReadFacets_NonFacetCounterErrors pins the "facets unavailable
+// for this scheme" error path: a plugin with no FacetCounter capability.
+func TestResourcesReadFacets_NonFacetCounterErrors(t *testing.T) {
+	r := newFakeResources(t, "faketest://h/")
+	if _, err := r.ReadFacets(
+		context.Background(), "faketest://h/work", nil,
+	); err == nil {
+		t.Fatal("ReadFacets on a non-FacetCounter plugin: want error, got nil")
+	}
+}
+
+// TestResourcesReadFacets_FilterComputesDirectlyAndBypassesCache pins RFC
+// 0012 §9's explicit-request path: a non-empty filter computes FRESH via
+// FacetCounts directly, without touching (or being served by) the memoized
+// cache a nil-filter call uses.
+func TestResourcesReadFacets_FilterComputesDirectlyAndBypassesCache(t *testing.T) {
+	lister := &countingFacetLister{token: "t1"}
+	r := newCountingResources(t, lister)
+	ctx := context.Background()
+	const uri = "faketest://h/work"
+
+	// Warm the cache via a nil-filter read (computes=1).
+	if _, err := r.ReadFacets(ctx, uri, nil); err != nil {
+		t.Fatalf("nil-filter ReadFacets: %v", err)
+	}
+	if got := lister.computeCount(); got != 1 {
+		t.Fatalf("computes after nil-filter read = %d, want 1", got)
+	}
+
+	// A filtered read computes directly (computes=2): fresh, and NOT served
+	// from (or stored into) the cache entry the nil-filter read populated.
+	view, err := r.ReadFacets(ctx, uri, cutting_garden_plugins.FacetFilter{
+		{Dimension: "status", Value: "CONFIRMED"},
+	})
+	if err != nil {
+		t.Fatalf("filtered ReadFacets: %v", err)
+	}
+	if got := lister.computeCount(); got != 2 {
+		t.Fatalf("computes after filtered read = %d, want 2 (direct compute)", got)
+	}
+	if view.Freshness != freshnessFresh {
+		t.Errorf("filtered view freshness = %q, want %q", view.Freshness, freshnessFresh)
+	}
+	if view.Facets["status"]["CONFIRMED"] != 2 {
+		t.Errorf("filtered view summary = %+v, want the direct compute", view.Facets)
+	}
+
+	// The cache entry is untouched by the filtered call: a subsequent
+	// nil-filter read still serves the ORIGINAL memoized summary.
+	view, err = r.ReadFacets(ctx, uri, nil)
+	if err != nil {
+		t.Fatalf("nil-filter ReadFacets (2nd): %v", err)
+	}
+	if got := lister.computeCount(); got != 2 {
+		t.Errorf("nil-filter read after a filtered call recomputed (computes=%d)", got)
+	}
+	if view.Facets["status"]["CONFIRMED"] != 1 {
+		t.Errorf("nil-filter view = %+v, want the ORIGINAL cached summary (CONFIRMED=1)", view.Facets)
+	}
+}
+
+// TestResourcesReadFacets_FilterErrorIsFailFast pins RFC 0012 §9: an explicit
+// (filtered) facet request's compute error MUST surface, never degrade.
+func TestResourcesReadFacets_FilterErrorIsFailFast(t *testing.T) {
+	lister := &countingFacetLister{fail: true}
+	r := newCountingResources(t, lister)
+
+	_, err := r.ReadFacets(
+		context.Background(), "faketest://h/work",
+		cutting_garden_plugins.FacetFilter{{Dimension: "status", Value: "x"}},
+	)
+	if err == nil {
+		t.Fatal("a filtered ReadFacets compute failure must surface as an " +
+			"error (RFC 0012 §9 fail-fast), got nil")
+	}
+}
+
+// TestResourcesReadFacets_NilFilterComputeFailureDegrades pins that the
+// nil-filter (implicit-surface-mirroring) path degrades a cold-cache compute
+// failure to a stale, error-noted view rather than failing the call — the
+// SAME §9 implicit-surface degrade resources/read uses.
+func TestResourcesReadFacets_NilFilterComputeFailureDegrades(t *testing.T) {
+	lister := &countingFacetLister{fail: true}
+	r := newCountingResources(t, lister)
+
+	view, err := r.ReadFacets(context.Background(), "faketest://h/work", nil)
+	if err != nil {
+		t.Fatalf("nil-filter ReadFacets must degrade, not fail: %v", err)
+	}
+	if view.Freshness != freshnessStale || view.Error == "" {
+		t.Errorf("degraded view = %+v, want stale with an error note", view)
+	}
+}
+
 // TestCollectSchema_IncludesFacetDimensions is the describe_node_types facet
 // surface: a FacetDescriber's dimensions appear on its node type, with the
 // closed-domain flag derived from a non-nil Values list.

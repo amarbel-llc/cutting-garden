@@ -85,9 +85,9 @@ func TestListToolsV1_AdvertisesToolsWithCorrectAnnotations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListToolsV1: %v", err)
 	}
-	// 3 read tools (describe/read/list) + 4 CUD tools (destructive).
-	if len(res.Tools) != 7 {
-		t.Fatalf("got %d tools, want 7: %+v", len(res.Tools), res.Tools)
+	// 4 read tools (describe/read/list/read_facets) + 4 CUD tools (destructive).
+	if len(res.Tools) != 8 {
+		t.Fatalf("got %d tools, want 8: %+v", len(res.Tools), res.Tools)
 	}
 	annByName := map[string]*protocol.ToolAnnotations{}
 	for _, tl := range res.Tools {
@@ -104,7 +104,7 @@ func TestListToolsV1_AdvertisesToolsWithCorrectAnnotations(t *testing.T) {
 		}
 	}
 	// The read tools are read-only / not destructive.
-	for _, name := range []string{"describe_node_types", "read_node", "list_nodes"} {
+	for _, name := range []string{"describe_node_types", "read_node", "list_nodes", "read_facets"} {
 		a := annByName[name]
 		if a == nil {
 			t.Fatalf("missing tool %q in %v", name, annByName)
@@ -121,8 +121,8 @@ func TestListTools_V0AdvertisesAll(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTools: %v", err)
 	}
-	if len(list) != 7 {
-		t.Fatalf("got %d tools, want 7 (3 read + 4 CUD)", len(list))
+	if len(list) != 8 {
+		t.Fatalf("got %d tools, want 8 (4 read + 4 CUD)", len(list))
 	}
 }
 
@@ -135,8 +135,9 @@ func TestListTools_ReadToolsAlwaysAdvertised(t *testing.T) {
 	for _, tl := range list {
 		names[tl.Name] = true
 	}
-	if len(list) != 3 || !names["describe_node_types"] || !names["read_node"] || !names["list_nodes"] {
-		t.Errorf("ListTools without a mutator = %+v, want only the 3 read tools", list)
+	if len(list) != 4 || !names["describe_node_types"] || !names["read_node"] ||
+		!names["list_nodes"] || !names["read_facets"] {
+		t.Errorf("ListTools without a mutator = %+v, want only the 4 read tools", list)
 	}
 }
 
@@ -411,6 +412,113 @@ func TestCallTool_ReadNodeReturnsContentAndBlobLink(t *testing.T) {
 	}
 	if !strings.Contains(text, "raw bytes: madder://blobs/abc") {
 		t.Errorf("read_node missing the blob link note: %q", text)
+	}
+}
+
+// fakeFacetReader is a facetReader recording the last call and returning a
+// fixed view or error, so the read_facets tool dispatch can be tested
+// without the plugin registry / facet cache.
+type fakeFacetReader struct {
+	view      *facetView
+	err       error
+	gotURI    string
+	gotFilter cutting_garden_plugins.FacetFilter
+}
+
+func (f *fakeFacetReader) ReadFacets(
+	_ context.Context, uri string, filter cutting_garden_plugins.FacetFilter,
+) (*facetView, error) {
+	f.gotURI = uri
+	f.gotFilter = filter
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.view, nil
+}
+
+func TestCallTool_ReadFacetsDispatches(t *testing.T) {
+	tools := newFakeTools(t, &fakeMutator{}, "faketest://h/")
+	fr := &fakeFacetReader{view: &facetView{
+		Facets:    cutting_garden_plugins.FacetSummary{"status": {"CONFIRMED": 2}},
+		Complete:  true,
+		Freshness: freshnessFresh,
+	}}
+	tools.facets = fr
+
+	res, err := tools.CallTool(context.Background(), "read_facets",
+		json.RawMessage(`{"uri":"faketest://h/work"}`))
+	if err != nil {
+		t.Fatalf("transport error: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("read_facets errored: %+v", res.Content)
+	}
+	if fr.gotURI != "faketest://h/work" {
+		t.Errorf("ReadFacets called with uri=%q", fr.gotURI)
+	}
+	if len(fr.gotFilter) != 0 {
+		t.Errorf("no-filter call passed a non-empty filter: %v", fr.gotFilter)
+	}
+	if !strings.Contains(res.Content[0].Text, `"CONFIRMED": 2`) {
+		t.Errorf("read_facets output missing the summary: %q", res.Content[0].Text)
+	}
+}
+
+// TestCallTool_ReadFacetsParsesFilter pins that the tool's filter string
+// parses through the SAME grammar `list --filter` uses (dimension=value,
+// comma-separated, AND-composed) via cutting_garden_plugins.ParseFacetFilter.
+func TestCallTool_ReadFacetsParsesFilter(t *testing.T) {
+	tools := newFakeTools(t, &fakeMutator{}, "faketest://h/")
+	fr := &fakeFacetReader{view: &facetView{Complete: true}}
+	tools.facets = fr
+
+	res, err := tools.CallTool(context.Background(), "read_facets",
+		json.RawMessage(`{"uri":"faketest://h/work","filter":"read=false,status=CONFIRMED"}`))
+	if err != nil {
+		t.Fatalf("transport error: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("read_facets errored: %+v", res.Content)
+	}
+	want := cutting_garden_plugins.FacetFilter{
+		{Dimension: "read", Value: "false"},
+		{Dimension: "status", Value: "CONFIRMED"},
+	}
+	if len(fr.gotFilter) != len(want) {
+		t.Fatalf("filter = %+v, want %+v", fr.gotFilter, want)
+	}
+	for i := range want {
+		if fr.gotFilter[i] != want[i] {
+			t.Errorf("filter[%d] = %+v, want %+v", i, fr.gotFilter[i], want[i])
+		}
+	}
+}
+
+func TestCallTool_ReadFacetsInvalidFilterIsToolError(t *testing.T) {
+	tools := newFakeTools(t, &fakeMutator{}, "faketest://h/")
+	tools.facets = &fakeFacetReader{}
+
+	res, err := tools.CallTool(context.Background(), "read_facets",
+		json.RawMessage(`{"uri":"faketest://h/work","filter":"bogus"}`))
+	if err != nil {
+		t.Fatalf("transport error: %v", err)
+	}
+	if !res.IsError {
+		t.Error("an invalid filter predicate must be an IsError tool result")
+	}
+}
+
+func TestCallTool_ReadFacetsUnavailableIsToolError(t *testing.T) {
+	tools := newFakeTools(t, &fakeMutator{}, "faketest://h/")
+	tools.facets = &fakeFacetReader{err: errors.ErrorWithStackf("facets not available")}
+
+	res, err := tools.CallTool(context.Background(), "read_facets",
+		json.RawMessage(`{"uri":"faketest://h/work"}`))
+	if err != nil {
+		t.Fatalf("transport error: %v", err)
+	}
+	if !res.IsError {
+		t.Error("a ReadFacets error must be an IsError tool result, not a transport error")
 	}
 }
 

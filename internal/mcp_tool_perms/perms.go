@@ -34,6 +34,11 @@ const (
 	ToolDescribeNodeTypes = "describe_node_types"
 	ToolReadNode          = "read_node"
 	ToolListNodes         = "list_nodes"
+	// ToolReadFacets is the RFC 0012 facet-summary read tool
+	// (cutting-garden#151): a container's hoisted facet summary, the
+	// progressive-disclosure surface `resources/read` carries beside its
+	// child listing but tools-only clients could not reach before it.
+	ToolReadFacets = "read_facets"
 )
 
 // Classify returns the permission class of a tool by its base name (no
@@ -45,7 +50,7 @@ func Classify(toolName string) (Class, bool) {
 	switch toolName {
 	case ToolCreateNode, ToolPutNode, ToolPatchNode, ToolDeleteNode:
 		return ClassDestructive, true
-	case ToolDescribeNodeTypes, ToolReadNode, ToolListNodes:
+	case ToolDescribeNodeTypes, ToolReadNode, ToolListNodes, ToolReadFacets:
 		return ClassRead, true
 	default:
 		return "", false

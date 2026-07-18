@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"time"
 
 	"code.linenisgreat.com/cutting-garden/internal/capture_plugin"
 	"code.linenisgreat.com/cutting-garden/internal/command_components"
@@ -317,6 +318,69 @@ func (r *Resources) facetContent(
 		URI:      uri,
 		MimeType: mimeFacets,
 		Text:     string(body),
+	}, nil
+}
+
+// ReadFacets returns the facet view for uri — the read_facets tool's read
+// surface (cutting-garden#151), the same facetView shape a container's
+// resources/read carries beside its child listing but reachable from a
+// tools-only client. Two paths per the phase-1 design:
+//
+//   - Nil/empty filter serves the MEMOIZED summary via the same facetCache
+//     `resources/read` uses (RFC 0012 §11.2): an implicit-surface read,
+//     degrading a compute failure to a stale, error-noted view rather than
+//     failing the call (§9).
+//   - A non-empty filter is an EXPLICIT facet request (RFC 0012 §9):
+//     it computes directly via FacetCounts(filter), bypassing the cache
+//     entirely, and is fail-fast — an error surfaces to the caller — and
+//     implicitly fresh (a direct compute is always current).
+//
+// Returns an error when the resolved plugin does not implement
+// FacetCounter: facets are simply unavailable for that scheme.
+func (r *Resources) ReadFacets(
+	ctx context.Context,
+	uri string,
+	filter cutting_garden_plugins.FacetFilter,
+) (*facetView, error) {
+	u, lister, err := r.resolve(uri)
+	if err != nil {
+		return nil, errors.Wrapf(err, "read facets %s", uri)
+	}
+	counter, ok := lister.(cutting_garden_plugins.FacetCounter)
+	if !ok {
+		return nil, errors.ErrorWithStackf(
+			"read_facets %s: facets are not available for scheme %q "+
+				"(plugin does not implement FacetCounter)", uri, u.Scheme,
+		)
+	}
+
+	if len(filter) == 0 {
+		view, ferr := r.facets.serve(ctx, lister, uri, u)
+		if ferr != nil {
+			view = &facetView{Freshness: freshnessStale, Error: ferr.Error()}
+		}
+		if view == nil {
+			return nil, errors.ErrorWithStackf(
+				"read_facets %s: no facet summary available at this node", uri,
+			)
+		}
+		return view, nil
+	}
+
+	result, ok, err := counter.FacetCounts(ctx, u, filter)
+	if err != nil {
+		return nil, errors.Wrapf(err, "read facets %s (filtered)", uri)
+	}
+	if !ok {
+		return nil, errors.ErrorWithStackf(
+			"read_facets %s: no facet summary available at this node", uri,
+		)
+	}
+	return &facetView{
+		Facets:     result.Summary,
+		Complete:   result.Complete,
+		ComputedAt: time.Now().UTC().Format(time.RFC3339),
+		Freshness:  freshnessFresh,
 	}, nil
 }
 
