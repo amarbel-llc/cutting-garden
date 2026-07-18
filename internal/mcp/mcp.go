@@ -46,12 +46,14 @@ import (
 	"context"
 	"net/url"
 	"os"
+	"strings"
 
 	"code.linenisgreat.com/cutting-garden/internal/buildinfo"
 	"code.linenisgreat.com/cutting-garden/internal/capture_plugin"
 	"code.linenisgreat.com/cutting-garden/internal/command"
 	"code.linenisgreat.com/cutting-garden/internal/command_components"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
+	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/interfaces"
 	"github.com/amarbel-llc/purse-first/libs/go-mcp/server"
 	"github.com/amarbel-llc/purse-first/libs/go-mcp/transport"
 )
@@ -74,15 +76,60 @@ const instructions = "Resources are the capturable trees of cutting-garden " +
 	"put_node / patch_node / delete_node tools mutate a node at its URI " +
 	"(e.g. create a calendar event); they are destructive and require user approval."
 
-// MCP is the value registered for the `mcp` subcommand. It carries no
-// flags; endpoints come from the config, or from optional positional args
-// that override it.
-type MCP struct{}
+// MCP is the value registered for the `mcp` subcommand. Endpoints come from
+// the config, or from optional positional args that override it;
+// ExcludeSchemes (the -exclude-scheme flag) additionally suppresses a
+// scheme's contribution to both paths (cutting-garden#148).
+type MCP struct {
+	// ExcludeSchemes accumulates one entry per -exclude-scheme occurrence
+	// (a repeatable flag; see excludeSchemesFlag). A deployment that wants
+	// to run the file plugin's traversal but not expose it to an MCP
+	// client (krone invokes `cutting-garden mcp` directly with no
+	// interactive user to consent through the write-tool gate) passes
+	// -exclude-scheme=file. Matched against Node/root URI Scheme values
+	// exactly as each plugin sets them (e.g. "file", never the schemeless
+	// "" a bare relative path would parse to).
+	ExcludeSchemes []string
+}
 
-var _ command.Cmd = (*MCP)(nil)
+var (
+	_ command.Cmd                       = (*MCP)(nil)
+	_ interfaces.CommandComponentWriter = (*MCP)(nil)
+)
 
 // New constructs an MCP command.
 func New() *MCP { return &MCP{} }
+
+// excludeSchemesFlag is a repeatable string flag: flagSet.Var calls Set
+// once per -exclude-scheme occurrence on argv (the dewey/stdlib flag.Value
+// contract), so -exclude-scheme=file -exclude-scheme=web accumulates both
+// rather than the last one winning (StringVar's overwrite semantics).
+type excludeSchemesFlag struct{ values *[]string }
+
+func (f excludeSchemesFlag) String() string {
+	if f.values == nil {
+		return ""
+	}
+	return strings.Join(*f.values, ",")
+}
+
+func (f excludeSchemesFlag) Set(value string) error {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return errors.ErrorWithStackf("-exclude-scheme: value must not be empty")
+	}
+	*f.values = append(*f.values, value)
+	return nil
+}
+
+func (cmd *MCP) SetFlagDefinitions(flagSet interfaces.CLIFlagDefinitions) {
+	flagSet.Var(
+		excludeSchemesFlag{values: &cmd.ExcludeSchemes},
+		"exclude-scheme",
+		"URI scheme to exclude from both aggregated and explicit roots "+
+			"(repeatable, e.g. -exclude-scheme=file)",
+	)
+}
 
 func (*MCP) GetDescription() command.Description {
 	return command.Description{
@@ -107,7 +154,7 @@ func (*MCP) GetDescription() command.Description {
 func (cmd *MCP) Run(req command.Request) {
 	ctx := req.Context.(errors.Context)
 
-	roots, err := mcpRoots(ctx, req.PopArgs())
+	roots, err := mcpRoots(ctx, req.PopArgs(), cmd.ExcludeSchemes)
 	if err != nil {
 		// A bad endpoint or malformed config is a usage error: the client
 		// misconfigured the server. Fail fast (EX_USAGE) before the
@@ -163,7 +210,20 @@ func (cmd *MCP) Run(req command.Request) {
 // configured/intrinsic roots — the default "surface all plugins from
 // their roots" behavior. A malformed config is EX_USAGE; an empty config
 // still yields the file plugin's working-directory root.
-func mcpRoots(ctx context.Context, args []string) ([]*url.URL, error) {
+//
+// excludeSchemes (cutting-garden#148) applies to both branches: an
+// aggregated root whose Scheme is excluded is dropped silently (it simply
+// does not appear, exactly as a plugin with no roots at all would not);
+// an EXPLICIT argument naming an excluded scheme is instead rejected as a
+// usage error — a deliberate defense-in-depth choice, since an explicit
+// endpoint argument is otherwise this server's escape hatch past the file
+// plugin's PWD scoping (RFC 0001 §Producer Rules §Root Scoping), and
+// silently dropping it would either produce a confusing empty listing or
+// (worse) look like the flag has no effect on the one path an operator is
+// most likely to test by hand.
+func mcpRoots(
+	ctx context.Context, args []string, excludeSchemes []string,
+) ([]*url.URL, error) {
 	// Config load precedes BOTH branches: explicit root args still
 	// resolve through the scheme registry, and a [[traversal_plugins]]
 	// wire plugin exists there only after registration (RFC 0013 §Host
@@ -171,29 +231,70 @@ func mcpRoots(ctx context.Context, args []string) ([]*url.URL, error) {
 	if err := command_components.LoadAndInjectConfig(os.Stderr); err != nil {
 		return nil, err
 	}
+	excluded := excludedSchemeSet(excludeSchemes)
 	if len(args) > 0 {
-		roots, err := resolveRoots(args)
+		roots, err := resolveRoots(args, excluded)
 		if err != nil {
 			return nil, errors.BadRequestf("%s", err.Error())
 		}
 		return roots, nil
 	}
-	return command_components.AggregateRoots(ctx)
+	roots, err := command_components.AggregateRoots(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return filterExcludedSchemes(roots, excluded), nil
 }
 
 // resolveRoots parses each endpoint argument and verifies its scheme has
 // a RootLister plugin, so a non-traversable or unknown scheme is rejected
-// up front rather than producing an empty listing at runtime.
-func resolveRoots(args []string) ([]*url.URL, error) {
+// up front rather than producing an empty listing at runtime. An argument
+// whose scheme is in excluded is rejected too (see mcpRoots).
+func resolveRoots(
+	args []string, excluded map[string]bool,
+) ([]*url.URL, error) {
 	roots := make([]*url.URL, 0, len(args))
 	for _, arg := range args {
 		u, _, err := command_components.ResolveRootListerPlugin(arg)
 		if err != nil {
 			return nil, err
 		}
+		if excluded[u.Scheme] {
+			return nil, errors.ErrorWithStackf(
+				"%s: scheme %q is excluded by -exclude-scheme", arg, u.Scheme,
+			)
+		}
 		roots = append(roots, u)
 	}
 	return roots, nil
+}
+
+// excludedSchemeSet builds a lookup set from the repeatable
+// -exclude-scheme flag's accumulated values. Empty/nil input yields an
+// empty (non-nil) map so callers can index it unconditionally.
+func excludedSchemeSet(schemes []string) map[string]bool {
+	set := make(map[string]bool, len(schemes))
+	for _, s := range schemes {
+		set[s] = true
+	}
+	return set
+}
+
+// filterExcludedSchemes drops every root whose URI Scheme is in excluded,
+// preserving order. Returns roots unmodified (same slice) when excluded is
+// empty, so the common no-flag case allocates nothing extra.
+func filterExcludedSchemes(roots []*url.URL, excluded map[string]bool) []*url.URL {
+	if len(excluded) == 0 {
+		return roots
+	}
+	out := make([]*url.URL, 0, len(roots))
+	for _, r := range roots {
+		if excluded[r.Scheme] {
+			continue
+		}
+		out = append(out, r)
+	}
+	return out
 }
 
 // mcpBlobWriter returns the sink a leaf read persists verbatim object bytes

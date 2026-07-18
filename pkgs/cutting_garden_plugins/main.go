@@ -294,6 +294,18 @@ type RootLister = internal.RootLister
 // in the aggregated listing.
 type RootProvider = internal.RootProvider
 
+// SourceValidator is the OPTIONAL narrow capability (RFC 0005 §Source
+// validation) that lets a capture source be validated even when the
+// resolved plugin does not (also) satisfy the full CapturePlugin
+// interface — notably a plugin resolved via the scheme-registry fallback
+// (RFC 0005 §Resolution) that implements only ProtocolCapturePlugin. Its
+// signature is identical to CapturePlugin.ValidateSource, so every
+// existing CapturePlugin already satisfies it with no changes. The
+// orchestrator probes for this interface by type assertion and skips
+// validation (not an error) when a resolved plugin implements neither
+// it nor CapturePlugin.
+type SourceValidator = internal.SourceValidator
+
 // ErrAlreadyRegistered is returned by registry.Register when a
 // scheme is already registered for the given direction (capture
 // or restore).

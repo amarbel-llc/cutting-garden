@@ -37,6 +37,12 @@ func (*MCP) GetExamples() []command.Example {
 			Description: "Override the config: serve one explicit endpoint.",
 			Command:     "cutting-garden mcp caldav://dav.host/dav/me/",
 		},
+		{
+			Description: "Suppress the file plugin's PWD root and scheme " +
+				"exposure entirely (e.g. a krone deployment that only wants " +
+				"caldav/jira surfaced).",
+			Command: "cutting-garden mcp -exclude-scheme=file",
+		},
 	}
 }
 
