@@ -141,6 +141,14 @@ type FacetDimension struct {
     // (tags, domains). Closed dimensions enable informative zeros (§3) and are
     // exempt from degenerate suppression (§8).
     Values []FacetValue
+    // RevalidateAfter, when nonzero, marks the dimension VOLATILE: its
+    // bucketing is a function of (data, now) — overdue, upcoming, age
+    // bands — so a memoized summary containing it expires after this
+    // duration even with an unmoved change token (§11.3). Zero (the
+    // default) means pure: bucketing is a function of data alone, and
+    // token/digest invalidation fully governs (§11.1). Volatile
+    // dimensions MUST declare a CLOSED domain (see §11.3).
+    RevalidateAfter time.Duration
 }
 
 // NodeTypeFacets binds dimensions to one node type.
@@ -453,6 +461,72 @@ Note the layering: `FacetCounter` remains the only way summaries are
 reused. A plugin needs no changes to benefit beyond (optionally)
 implementing `FacetVersioner`.
 
+#### 11.3 Volatile dimensions — functions of (data, now)
+
+§11.1's model assumes bucketing is a pure function of subtree data. Some
+genuinely useful dimensions are functions of **(data, now)** — `overdue`
+/ due bands for tasks, horizon buckets for events, age bands for
+anything timestamped — and cross buckets with **no data change and no
+token movement**. Absolute buckets (a `month` dimension) remain the
+RECOMMENDED default; a plugin declares a volatile dimension only when a
+query irreducibly wants now-relative grouping.
+
+- **Declaration.** `FacetDimension.RevalidateAfter > 0` (§2). A volatile
+  dimension MUST declare a CLOSED domain (`Values` non-nil — a
+  now-relative band set is inherently fixed), and a plugin MUST emit the
+  dimension — informative zeros included — whenever the summarized
+  subtree contains any node of the dimension's type. This emission rule
+  is load-bearing: it makes the dimension's *presence in a summary* a
+  correct expiry trigger (an empty bucket that will fill as time passes
+  is visible as a zero; a wholly absent node type can only start
+  contributing via a data change, which the token already catches).
+- **Expiry.** A memoized summary containing one or more volatile
+  dimensions expires `min(RevalidateAfter)` (over the volatile
+  dimensions present in it) after computation, regardless of token
+  state: token verification alone no longer proves freshness.
+  Recomputation is whole-summary — `FacetCounts` is atomic per node, so
+  per-dimension recomputation is not expressible without growing the
+  plugin contract for no plugin-side savings. Entries whose summaries
+  contain no volatile dimension are unaffected (pure semantics, §11.1).
+- **Staleness bound.** An item crosses buckets at most
+  `RevalidateAfter + refresh interval` late. This is the documented
+  contract, mirroring the token contract's missed-change bound; past the
+  window without recomputation the summary is served as `stale`
+  (last-good, §9), and the wire freshness metadata gains a `validUntil`
+  alongside `computedAt`. `validUntil` bounds only the volatile
+  dimensions' currency — pure dimensions in the same summary remain
+  token-fresh past it.
+- **Evaluation-instant quantization (cross-entry consistency).**
+  Summaries are memoized per node with independent computation instants,
+  so two entries (a container and its parent) evaluate *now* at
+  different times — with instant-anchored bucketing they would disagree
+  in steady state with unchanged data. A volatile dimension SHOULD
+  therefore evaluate against the current **step** — the coarsest
+  quantization of *now* that preserves its semantics (for day-granular
+  bands: the current day's start in the dimension's anchoring zone) —
+  not the instant. Entries computed at different times within one step
+  then agree exactly; the residual skew window is entries straddling a
+  step boundary. Consumers MUST NOT assume snapshot semantics across
+  entries regardless: `computedAt`/`validUntil` are the wire-visible
+  evidence, and cross-entry arithmetic (summing children against a
+  parent) is exact only within a step with no intervening data change.
+- **Time anchoring.** The zone that defines a day-granular dimension's
+  step boundaries is part of its semantics, not its presentation. A
+  plugin SHOULD anchor each object in that object's own declared zone
+  (an event's TZID, a calendar's timezone) and fall back to host-local
+  time, and MUST surface enough zone information through its ordinary
+  read surfaces (structured node views, or a pure zone-valued dimension)
+  for a consumer to reconcile bucket boundaries against host-local time.
+- **Degradation.** A consumer unaware of `RevalidateAfter` (an older
+  host reading a newer wire plugin's declaration) treats the dimension
+  as pure: the summary stays token-gated and the volatile buckets go
+  stale until the next data change. Bounded, visible via `computedAt`,
+  and accepted — the declaration is additive (§Compatibility).
+- **No unmemoized mode.** Reads never recompute inline once a summary
+  is cached (§11.2); a per-read dimension would break that design, and
+  its effective floor is the refresh interval anyway. Direct-compute
+  surfaces (`list --facets`) are always current by construction.
+
 ## Security Considerations
 
 - **Untrusted aggregate data.** Facet keys and resolved labels derive from
@@ -511,7 +585,10 @@ is the reference implementer).
   change, removal). ADDING a dimension is additive and does not bump the
   tag: consumers render declared dimensions and ignore undeclared keys, so
   a new dimension simply appears (caldav's `month` beside `year` is the
-  precedent).
+  precedent). Adding a FIELD to the declaration structs is likewise
+  additive when its zero value preserves prior behavior
+  (`FacetDimension.RevalidateAfter` is the precedent: zero = pure,
+  §11.3's degradation contract covers consumers that predate it).
 - **SDK facade.** These types are re-exported under
   `pkgs/cutting_garden_plugins` by the dagnabit facade (RFC 0009) via the
   alias-identity guarantee, so an out-of-tree plugin implements the contract

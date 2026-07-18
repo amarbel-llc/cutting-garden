@@ -276,6 +276,11 @@ type facetView struct {
 	Complete bool                                `json:"complete"`
 	// ComputedAt is when the served summary was computed (RFC 3339).
 	ComputedAt string `json:"computedAt,omitempty"`
+	// ValidUntil, present when the summary contains volatile dimensions
+	// (RFC 0012 §11.3), is computedAt plus the volatile window: the
+	// bound on the VOLATILE dimensions' currency (pure dimensions in the
+	// same summary remain token-fresh past it). RFC 3339.
+	ValidUntil string `json:"validUntil,omitempty"`
 	// Freshness is fresh | unverified | stale (facet_cache.go).
 	Freshness string `json:"freshness,omitempty"`
 	// Error carries the last refresh/compute failure when the served

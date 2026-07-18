@@ -19,6 +19,7 @@ package traversal_serve
 import (
 	"encoding/json"
 	"net/url"
+	"time"
 
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 
@@ -420,36 +421,43 @@ func (v NodeTypeView) ToNodeType() cutting_garden_plugins.NodeType {
 
 // FacetDimensionView is the wire form of
 // cutting_garden_plugins.FacetDimension (RFC 0013 §Wire encodings):
-// Values present ≙ a CLOSED domain (RFC 0012 §2).
+// Values present ≙ a CLOSED domain (RFC 0012 §2);
+// revalidate_after_seconds (absent ≙ 0) marks a VOLATILE dimension
+// (RFC 0012 §11.3) — the additive-field precedent of RFC 0013
+// §Compatibility.
 type FacetDimensionView struct {
-	Key    string           `json:"key"`
-	Label  string           `json:"label,omitempty"`
-	Kind   string           `json:"kind"`
-	Multi  bool             `json:"multi,omitempty"`
-	Values []FacetValueView `json:"values,omitempty"`
+	Key                    string           `json:"key"`
+	Label                  string           `json:"label,omitempty"`
+	Kind                   string           `json:"kind"`
+	Multi                  bool             `json:"multi,omitempty"`
+	Values                 []FacetValueView `json:"values,omitempty"`
+	RevalidateAfterSeconds int64            `json:"revalidate_after_seconds,omitempty"`
 }
 
 // FacetDimensionViewFrom projects a declared dimension onto the wire.
+// RevalidateAfter is truncated to whole seconds (the wire unit).
 func FacetDimensionViewFrom(
 	dimension cutting_garden_plugins.FacetDimension,
 ) FacetDimensionView {
 	return FacetDimensionView{
-		Key:    dimension.Key,
-		Label:  dimension.Label,
-		Kind:   string(dimension.Kind),
-		Multi:  dimension.Multi,
-		Values: facetValueViewsFrom(dimension.Values),
+		Key:                    dimension.Key,
+		Label:                  dimension.Label,
+		Kind:                   string(dimension.Kind),
+		Multi:                  dimension.Multi,
+		Values:                 facetValueViewsFrom(dimension.Values),
+		RevalidateAfterSeconds: int64(dimension.RevalidateAfter / time.Second),
 	}
 }
 
 // ToFacetDimension is the inverse of FacetDimensionViewFrom.
 func (v FacetDimensionView) ToFacetDimension() cutting_garden_plugins.FacetDimension {
 	return cutting_garden_plugins.FacetDimension{
-		Key:    v.Key,
-		Label:  v.Label,
-		Kind:   cutting_garden_plugins.FacetKind(v.Kind),
-		Multi:  v.Multi,
-		Values: facetValuesFrom(v.Values),
+		Key:             v.Key,
+		Label:           v.Label,
+		Kind:            cutting_garden_plugins.FacetKind(v.Kind),
+		Multi:           v.Multi,
+		Values:          facetValuesFrom(v.Values),
+		RevalidateAfter: time.Duration(v.RevalidateAfterSeconds) * time.Second,
 	}
 }
 

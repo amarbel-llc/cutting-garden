@@ -276,11 +276,15 @@ identically to absent).
 
 **FacetDimension**: `{ "key": string, "label": string?, "kind":
 "categorical"|"numeric-bucket"|"labelled", "multi": bool?, "values":
-[FacetValue]? }` — `values` present ≙ a CLOSED domain (RFC 0012 §2).
-A closed domain MUST declare at least one value; a plugin MUST NOT emit
-an empty `values` array (on the wire it is indistinguishable from an
-open domain, so a zero-value closed domain is unrepresentable and
-non-conformant).
+[FacetValue]?, "revalidate_after_seconds": int? }` — `values` present ≙
+a CLOSED domain (RFC 0012 §2). A closed domain MUST declare at least
+one value; a plugin MUST NOT emit an empty `values` array (on the wire
+it is indistinguishable from an open domain, so a zero-value closed
+domain is unrepresentable and non-conformant).
+`revalidate_after_seconds` (absent ≙ 0) carries
+`FacetDimension.RevalidateAfter` (RFC 0012 §11.3, volatile dimensions);
+a volatile dimension MUST also declare its closed domain, per that
+section.
 
 **FacetSummary**: `{ "<dimension>": { "<value-key>": <int64 count> } }`.
 
@@ -514,6 +518,14 @@ cross-implementation ratification gate (RFC 0008 precedent).
   (unknown tokens ignored); a breaking change to an existing method or
   encoding mints `traversal-plugin/v2`, negotiated in `initialize`
   exactly as RFC 0008 §Migration negotiates its versions.
+- **Additive fields within a version**: a receiver MUST ignore unknown
+  members in any received JSON object (params, results, and the view
+  encodings), and new OPTIONAL fields whose absence preserves prior
+  behavior MAY be added within a schema version without a bump
+  (`revalidate_after_seconds` on FacetDimension is the precedent; its
+  degradation contract is RFC 0012 §11.3's). Senders MUST NOT emit
+  fields this specification does not define — extension happens here,
+  not ad hoc.
 
 ## References
 

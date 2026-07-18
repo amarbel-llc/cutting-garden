@@ -41,11 +41,30 @@ type facetCacheEntry struct {
 	verifiedAt time.Time
 	dirty      bool
 	lastErr    string
+
+	// revalidateAfter, when nonzero, is the volatile window (RFC 0012
+	// §11.3): the min RevalidateAfter over the volatile dimensions
+	// PRESENT in result.Summary. Past computedAt+revalidateAfter the
+	// entry expires regardless of token state — token verification alone
+	// no longer proves freshness for a (data, now) summary.
+	revalidateAfter time.Duration
 }
 
-func (e *facetCacheEntry) freshness() string {
+// windowExpired reports whether the entry's volatile window has lapsed
+// at now. Always false for pure entries (revalidateAfter == 0).
+func (e *facetCacheEntry) windowExpired(now time.Time) bool {
+	return e.revalidateAfter > 0 &&
+		!now.Before(e.computedAt.Add(e.revalidateAfter))
+}
+
+func (e *facetCacheEntry) freshness(now time.Time) string {
 	switch {
 	case e.lastErr != "" || e.dirty:
+		return freshnessStale
+	case e.windowExpired(now):
+		// Volatile window lapsed without recomputation: the served
+		// summary is last-good by definition (RFC 0012 §11.3's
+		// staleness bound) until the refresher replaces it.
 		return freshnessStale
 	case e.hasToken && !e.verifiedAt.Before(e.computedAt):
 		return freshnessFresh
@@ -126,17 +145,56 @@ func (fc *facetCache) computeAndStore(
 
 	now := fc.now()
 	entry := &facetCacheEntry{
-		result:     result,
-		token:      token,
-		hasToken:   hasToken,
-		computedAt: now,
-		verifiedAt: now,
+		result:          result,
+		token:           token,
+		hasToken:        hasToken,
+		computedAt:      now,
+		verifiedAt:      now,
+		revalidateAfter: volatileWindowFor(lister, result.Summary),
 	}
 	fc.mu.Lock()
 	fc.entries[uri] = entry
 	view := fc.viewLocked(entry)
 	fc.mu.Unlock()
 	return view, nil
+}
+
+// volatileWindowFor derives an entry's volatile window (RFC 0012 §11.3):
+// the minimum RevalidateAfter over the plugin's declared volatile
+// dimensions that are PRESENT in the summary. Presence is a correct
+// trigger because §11.3 obliges plugins to emit a volatile dimension
+// (informative zeros included) whenever the subtree contains its node
+// type — so an empty-but-fillable bucket set is visible, and a wholly
+// absent type can only start contributing via a data change the token
+// already catches. Zero means the summary is pure and token/TTL
+// semantics govern unchanged.
+func volatileWindowFor(
+	lister cutting_garden_plugins.RootLister,
+	summary cutting_garden_plugins.FacetSummary,
+) time.Duration {
+	if len(summary) == 0 {
+		return 0
+	}
+	describer, ok := lister.(cutting_garden_plugins.FacetDescriber)
+	if !ok {
+		return 0
+	}
+
+	var window time.Duration
+	for _, typeFacets := range describer.DescribeFacets() {
+		for _, dimension := range typeFacets.Dimensions {
+			if dimension.RevalidateAfter <= 0 {
+				continue
+			}
+			if _, present := summary[dimension.Key]; !present {
+				continue
+			}
+			if window == 0 || dimension.RevalidateAfter < window {
+				window = dimension.RevalidateAfter
+			}
+		}
+	}
+	return window
 }
 
 // tokenFor obtains the node's change token when the plugin offers one.
@@ -160,13 +218,21 @@ func (fc *facetCache) tokenFor(
 
 // viewLocked projects an entry onto the wire shape. Caller holds fc.mu.
 func (fc *facetCache) viewLocked(e *facetCacheEntry) *facetView {
-	return &facetView{
+	view := &facetView{
 		Facets:     e.result.Summary,
 		Complete:   e.result.Complete,
 		ComputedAt: e.computedAt.UTC().Format(time.RFC3339),
-		Freshness:  e.freshness(),
+		Freshness:  e.freshness(fc.now()),
 		Error:      e.lastErr,
 	}
+	if e.revalidateAfter > 0 {
+		// validUntil bounds only the volatile dimensions' currency
+		// (RFC 0012 §11.3); pure dimensions in the same summary remain
+		// token-fresh past it.
+		view.ValidUntil = e.computedAt.Add(e.revalidateAfter).
+			UTC().Format(time.RFC3339)
+	}
+	return view
 }
 
 // uris snapshots the cached node set for a refresh pass.
@@ -222,6 +288,7 @@ func (fc *facetCache) refreshOne(
 	}
 	prevToken, hadToken := entry.token, entry.hasToken
 	computedAt := entry.computedAt
+	windowExpired := entry.windowExpired(fc.now())
 	fc.mu.Unlock()
 
 	u, lister, err := resolve(uri)
@@ -235,25 +302,32 @@ func (fc *facetCache) refreshOne(
 		return
 	}
 
-	// Cheap path: an unmoved token re-verifies the entry with one round
-	// trip and no recomputation.
-	if hadToken {
-		if versioner, ok := lister.(cutting_garden_plugins.FacetVersioner); ok {
-			token, tokenOK, verr := versioner.FacetVersion(ctx, u)
-			if verr != nil {
-				fc.markError(uri, verr)
-				return
+	// A lapsed volatile window (RFC 0012 §11.3) forces recomputation
+	// unconditionally: the summary is a function of (data, now), so an
+	// unmoved token no longer proves freshness. Pure entries keep the
+	// original two paths.
+	if !windowExpired {
+		// Cheap path: an unmoved token re-verifies the entry with one
+		// round trip and no recomputation.
+		if hadToken {
+			if versioner, ok := lister.(cutting_garden_plugins.FacetVersioner); ok {
+				token, tokenOK, verr := versioner.FacetVersion(ctx, u)
+				if verr != nil {
+					fc.markError(uri, verr)
+					return
+				}
+				if tokenOK && token == prevToken {
+					fc.markVerified(uri)
+					return
+				}
 			}
-			if tokenOK && token == prevToken {
-				fc.markVerified(uri)
-				return
-			}
+		} else if fc.now().Sub(computedAt) < facetTTL {
+			return
 		}
-	} else if fc.now().Sub(computedAt) < facetTTL {
-		return
 	}
 
-	// Token moved (or TTL lapsed): recompute and replace.
+	// Token moved, TTL lapsed, or volatile window lapsed: recompute and
+	// replace.
 	token, hasToken := fc.tokenFor(ctx, lister, u)
 	result, ok, err := counter.FacetCounts(ctx, u, nil)
 	if err != nil {
@@ -267,11 +341,12 @@ func (fc *facetCache) refreshOne(
 	now := fc.now()
 	fc.mu.Lock()
 	fc.entries[uri] = &facetCacheEntry{
-		result:     result,
-		token:      token,
-		hasToken:   hasToken,
-		computedAt: now,
-		verifiedAt: now,
+		result:          result,
+		token:           token,
+		hasToken:        hasToken,
+		computedAt:      now,
+		verifiedAt:      now,
+		revalidateAfter: volatileWindowFor(lister, result.Summary),
 	}
 	fc.mu.Unlock()
 }

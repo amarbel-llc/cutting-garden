@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
 	"github.com/amarbel-llc/purse-first/libs/go-mcp/protocol"
@@ -368,5 +369,223 @@ func TestCollectSchema_IncludesFacetDimensions(t *testing.T) {
 	}
 	if !byKey["read"].Closed {
 		t.Error("read declares Values; Closed must be true")
+	}
+}
+
+// volatileFacetLister adds a VOLATILE "due" dimension (RFC 0012 §11.3:
+// closed domain, informative zeros, RevalidateAfter) beside the pure
+// counting "status", plus a declared-but-never-emitted volatile "age" —
+// the presence-based window derivation must ignore the latter.
+type volatileFacetLister struct {
+	countingFacetLister
+}
+
+const testVolatileWindow = 10 * time.Minute
+
+func (l *volatileFacetLister) DescribeFacets() []cutting_garden_plugins.NodeTypeFacets {
+	return []cutting_garden_plugins.NodeTypeFacets{{
+		Tag: "test-object-v1",
+		Dimensions: []cutting_garden_plugins.FacetDimension{
+			{
+				Key:  "status",
+				Kind: cutting_garden_plugins.FacetCategorical,
+			},
+			{
+				Key:  "due",
+				Kind: cutting_garden_plugins.FacetNumericBucket,
+				Values: []cutting_garden_plugins.FacetValue{
+					{Key: "overdue"}, {Key: "today"}, {Key: "later"},
+				},
+				RevalidateAfter: testVolatileWindow,
+			},
+			{
+				Key:  "age",
+				Kind: cutting_garden_plugins.FacetNumericBucket,
+				Values: []cutting_garden_plugins.FacetValue{
+					{Key: "old"}, {Key: "new"},
+				},
+				RevalidateAfter: time.Minute,
+			},
+		},
+	}}
+}
+
+func (l *volatileFacetLister) FacetCounts(
+	ctx context.Context,
+	u *url.URL,
+	filter cutting_garden_plugins.FacetFilter,
+) (cutting_garden_plugins.FacetResult, bool, error) {
+	result, ok, err := l.countingFacetLister.FacetCounts(ctx, u, filter)
+	if err != nil || !ok {
+		return result, ok, err
+	}
+	// The volatile dimension rides every summary with informative zeros
+	// (§11.3's emission rule); "age" is deliberately never emitted.
+	result.Summary["due"] = cutting_garden_plugins.FacetHistogram{
+		"overdue": 0, "today": 1, "later": 2,
+	}
+	return result, true, nil
+}
+
+// fakeClock is an injectable, advanceable now() for the cache.
+type fakeClock struct {
+	mu sync.Mutex
+	t  time.Time
+}
+
+func (c *fakeClock) now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.t
+}
+
+func (c *fakeClock) advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.t = c.t.Add(d)
+}
+
+func newVolatileResources(
+	t *testing.T, lister *volatileFacetLister,
+) (*Resources, *fakeClock) {
+	t.Helper()
+	r := newFakeResources(t, "faketest://h/")
+	r.resolve = func(uriStr string) (*url.URL, cutting_garden_plugins.RootLister, error) {
+		u, _, err := fakeResolve(uriStr)
+		if err != nil {
+			return nil, nil, err
+		}
+		return u, lister, nil
+	}
+	clock := &fakeClock{t: time.Now()}
+	r.facets.now = clock.now
+	return r, clock
+}
+
+// TestFacetCache_VolatileWindowForcesRecompute pins RFC 0012 §11.3's
+// expiry rule: inside the window an unmoved token re-verifies without
+// recomputation (volatile presence changes nothing early); past the
+// window the refresher recomputes DESPITE the unmoved token. The window
+// derives from the volatile dimension present in the summary — the
+// declared-but-absent "age" (1m) must not shrink it.
+func TestFacetCache_VolatileWindowForcesRecompute(t *testing.T) {
+	lister := &volatileFacetLister{
+		countingFacetLister: countingFacetLister{token: "t1"},
+	}
+	r, clock := newVolatileResources(t, lister)
+	ctx := context.Background()
+	const uri = "faketest://h/work"
+
+	if _, err := r.ReadResource(ctx, uri); err != nil {
+		t.Fatalf("first read: %v", err)
+	}
+	if got := lister.computeCount(); got != 1 {
+		t.Fatalf("computes after first read = %d, want 1", got)
+	}
+
+	// Inside the window ("age"'s 1m must not apply — it is absent from
+	// the summary): unmoved token re-verifies only.
+	clock.advance(5 * time.Minute)
+	r.facets.refreshOne(ctx, r.resolve, uri)
+	if got := lister.computeCount(); got != 1 {
+		t.Fatalf("in-window refresh recomputed (computes=%d)", got)
+	}
+
+	// Past the window: recompute despite the unmoved token.
+	clock.advance(6 * time.Minute)
+	r.facets.refreshOne(ctx, r.resolve, uri)
+	if got := lister.computeCount(); got != 2 {
+		t.Fatalf("post-window refresh did not recompute (computes=%d)", got)
+	}
+}
+
+// TestFacetCache_VolatileFreshnessAndValidUntil pins the wire metadata:
+// a volatile summary carries validUntil = computedAt + window, serves
+// fresh inside the window (token verified at compute), degrades to
+// stale once the window lapses without recomputation, and returns to
+// fresh after the refresher recomputes.
+func TestFacetCache_VolatileFreshnessAndValidUntil(t *testing.T) {
+	lister := &volatileFacetLister{
+		countingFacetLister: countingFacetLister{token: "t1"},
+	}
+	r, clock := newVolatileResources(t, lister)
+	ctx := context.Background()
+	const uri = "faketest://h/work"
+
+	got, err := r.ReadResource(ctx, uri)
+	if err != nil {
+		t.Fatalf("first read: %v", err)
+	}
+	fv := facetBlockOf(t, got.Contents)
+	if fv.ValidUntil == "" {
+		t.Fatal("volatile summary carries no validUntil")
+	}
+	computed, err := time.Parse(time.RFC3339, fv.ComputedAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	until, err := time.Parse(time.RFC3339, fv.ValidUntil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := computed.Add(testVolatileWindow); !until.Equal(want) {
+		t.Errorf("validUntil = %v, want computedAt+%v = %v",
+			until, testVolatileWindow, want)
+	}
+
+	// Window lapsed, no refresh yet: last-good served stale.
+	clock.advance(testVolatileWindow + time.Minute)
+	got, err = r.ReadResource(ctx, uri)
+	if err != nil {
+		t.Fatalf("post-window read: %v", err)
+	}
+	if fv := facetBlockOf(t, got.Contents); fv.Freshness != freshnessStale {
+		t.Errorf("post-window freshness = %q, want %q",
+			fv.Freshness, freshnessStale)
+	}
+
+	// The refresher recomputes; fresh again.
+	r.facets.refreshOne(ctx, r.resolve, uri)
+	got, err = r.ReadResource(ctx, uri)
+	if err != nil {
+		t.Fatalf("post-refresh read: %v", err)
+	}
+	if fv := facetBlockOf(t, got.Contents); fv.Freshness != freshnessFresh {
+		t.Errorf("post-refresh freshness = %q, want %q",
+			fv.Freshness, freshnessFresh)
+	}
+}
+
+// TestFacetCache_PureSummariesUnaffectedByClock guards the pure path
+// against the volatile machinery: a summary with no volatile dimension
+// carries no validUntil, and hours of clock advance neither expire it
+// nor force recomputation while its token is unmoved.
+func TestFacetCache_PureSummariesUnaffectedByClock(t *testing.T) {
+	lister := &countingFacetLister{token: "t1"}
+	r := newCountingResources(t, lister)
+	clock := &fakeClock{t: time.Now()}
+	r.facets.now = clock.now
+	ctx := context.Background()
+	const uri = "faketest://h/work"
+
+	got, err := r.ReadResource(ctx, uri)
+	if err != nil {
+		t.Fatalf("first read: %v", err)
+	}
+	if fv := facetBlockOf(t, got.Contents); fv.ValidUntil != "" {
+		t.Errorf("pure summary carries validUntil %q", fv.ValidUntil)
+	}
+
+	clock.advance(6 * time.Hour)
+	r.facets.refreshOne(ctx, r.resolve, uri)
+	if got := lister.computeCount(); got != 1 {
+		t.Errorf("pure entry recomputed on clock advance (computes=%d)", got)
+	}
+	got, err = r.ReadResource(ctx, uri)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	if fv := facetBlockOf(t, got.Contents); fv.Freshness != freshnessFresh {
+		t.Errorf("freshness = %q, want %q", fv.Freshness, freshnessFresh)
 	}
 }

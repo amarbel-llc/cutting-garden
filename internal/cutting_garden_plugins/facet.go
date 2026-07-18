@@ -3,6 +3,7 @@ package cutting_garden_plugins
 import (
 	"context"
 	"net/url"
+	"time"
 )
 
 // FacetValue is one node's membership in one bucket of one dimension — the
@@ -57,6 +58,20 @@ type FacetDimension struct {
 	// (tags, domains). Closed dimensions enable informative zeros and are
 	// exempt from degenerate suppression (RFC 0012 §3, §8).
 	Values []FacetValue
+	// RevalidateAfter, when nonzero, marks the dimension VOLATILE: its
+	// bucketing is a function of (data, now) — overdue, upcoming, age
+	// bands — so a memoized summary containing it expires after this
+	// duration even with an unmoved change token (RFC 0012 §11.3). Zero
+	// (the default) means pure: token/digest invalidation fully governs.
+	// A volatile dimension MUST declare a CLOSED domain and MUST be
+	// emitted (informative zeros included) whenever the summarized
+	// subtree contains any node of its type — that emission rule is what
+	// makes the dimension's presence in a summary a correct expiry
+	// trigger. Bucketing SHOULD evaluate against the current step (e.g.
+	// the current day's start in the object's anchoring zone), not the
+	// instant, so independently-memoized summaries agree within a step
+	// (§11.3 evaluation-instant quantization).
+	RevalidateAfter time.Duration
 }
 
 // NodeTypeFacets binds a set of facet dimensions to one node type. See
