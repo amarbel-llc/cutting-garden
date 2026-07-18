@@ -6,13 +6,70 @@ import (
 	"encoding/json"
 	"io"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"code.linenisgreat.com/cutting-garden/internal/command"
 	"code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
+	"code.linenisgreat.com/cutting-garden/internal/traversal_serve_testpeer"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 )
+
+// testpeerMainEnv re-execs this test binary as the RFC 0013 test peer:
+// the wire plugin's Launch spawns os.Args[0], the child inherits the
+// environment, and TestMain diverts to the peer before any test runs.
+const testpeerMainEnv = "CG_LIST_TESTPEER_MAIN"
+
+func TestMain(m *testing.M) {
+	if os.Getenv(testpeerMainEnv) == "1" {
+		os.Exit(traversal_serve_testpeer.Main())
+	}
+	os.Exit(m.Run())
+}
+
+// TestRun_WirePluginDirectURI is the regression fj-cg's live conformance
+// run found (#140): `list <uri>` in a fresh process must load config and
+// register [[traversal_plugins]] schemes BEFORE resolving. Without the
+// Run-level config load this failed with `unknown scheme` while the
+// no-arg root listing worked.
+func TestRun_WirePluginDirectURI(t *testing.T) {
+	t.Setenv(testpeerMainEnv, "1")
+
+	xdg := t.TempDir()
+	configDir := filepath.Join(xdg, "cutting-garden")
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	config := "[[traversal_plugins]]\n" +
+		"name = \"cgtest\"\n" +
+		"command = [\"" + os.Args[0] + "\"]\n" +
+		"schemes = [\"cgtest\"]\n"
+	if err := os.WriteFile(
+		filepath.Join(configDir, "config.toml"), []byte(config), 0o644,
+	); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("XDG_CONFIG_HOME", xdg)
+
+	var buf bytes.Buffer
+	u := command.MakeUtility("cg-test", nil)
+	u.AddCmd("list", newWithOutput(&buf))
+	code := u.Run([]string{
+		"cg-test", "list", traversal_serve_testpeer.RootBox,
+	})
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0; output:\n%s", code, buf.String())
+	}
+
+	out := buf.String()
+	for _, child := range []string{"alpha", "beta", "nested"} {
+		if !strings.Contains(out, child) {
+			t.Errorf("listing lacks child %q:\n%s", child, out)
+		}
+	}
+}
 
 // listFake is a capture plugin that also implements RootLister, so the
 // list command can be exercised without a live CalDAV server. It claims
@@ -72,8 +129,13 @@ func init() {
 
 // driveList dispatches the list subcommand through a fresh Utility (flag
 // parsing included) with output routed to out, returning the exit code.
+// Config is isolated to an empty XDG home: Run loads config on every
+// path (the #140 wire-plugin fix), and tests must never read the
+// developer's real one. A test that needs a config fixture builds its
+// own utility (see TestRun_WirePluginDirectURI).
 func driveList(t *testing.T, out io.Writer, args ...string) int {
 	t.Helper()
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	u := command.MakeUtility("cg-test", nil)
 	u.AddCmd("list", newWithOutput(out))
 	return u.Run(append([]string{"cg-test", "list"}, args...))

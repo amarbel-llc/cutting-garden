@@ -110,6 +110,18 @@ func (cmd *List) Run(req command.Request) {
 		return
 	}
 
+	// Config load precedes EVERY path, not just the no-arg root
+	// aggregation: the direct-URI paths resolve through the scheme
+	// registry, and a [[traversal_plugins]] wire plugin exists there
+	// only after registration (RFC 0013 §Host integration). Without
+	// this, `list fj://…` in a fresh process failed with "unknown
+	// scheme" while the no-arg listing worked — found by fj-cg's live
+	// conformance run (#140).
+	if err := command_components.LoadAndInjectConfig(os.Stderr); err != nil {
+		errors.ContextCancelWithError(ctx, err)
+		return
+	}
+
 	// The URI is optional: PeekArgs rather than PopArg, which would poison
 	// the context with a "missing argument" usage error on the no-arg path.
 	args := req.PeekArgs()
@@ -142,13 +154,10 @@ func (cmd *List) Run(req command.Request) {
 	}
 }
 
-// runRoots loads the config, injects it into the plugins, and renders the
-// aggregated top-level roots — each a URI the user can then pass back to
-// `list` to descend one level.
+// runRoots renders the aggregated top-level roots — each a URI the user
+// can then pass back to `list` to descend one level. Config is already
+// loaded and injected by Run.
 func (cmd *List) runRoots(ctx errors.Context) error {
-	if err := command_components.LoadAndInjectConfig(os.Stderr); err != nil {
-		return err
-	}
 	roots, err := command_components.AggregateRoots(ctx)
 	if err != nil {
 		return err

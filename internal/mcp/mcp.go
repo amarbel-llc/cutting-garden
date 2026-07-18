@@ -164,15 +164,19 @@ func (cmd *MCP) Run(req command.Request) {
 // their roots" behavior. A malformed config is EX_USAGE; an empty config
 // still yields the file plugin's working-directory root.
 func mcpRoots(ctx context.Context, args []string) ([]*url.URL, error) {
+	// Config load precedes BOTH branches: explicit root args still
+	// resolve through the scheme registry, and a [[traversal_plugins]]
+	// wire plugin exists there only after registration (RFC 0013 §Host
+	// integration; the same gap `list <uri>` had, found via #140).
+	if err := command_components.LoadAndInjectConfig(os.Stderr); err != nil {
+		return nil, err
+	}
 	if len(args) > 0 {
 		roots, err := resolveRoots(args)
 		if err != nil {
 			return nil, errors.BadRequestf("%s", err.Error())
 		}
 		return roots, nil
-	}
-	if err := command_components.LoadAndInjectConfig(os.Stderr); err != nil {
-		return nil, err
 	}
 	return command_components.AggregateRoots(ctx)
 }
