@@ -1,0 +1,208 @@
+---
+status: proposed
+date: 2026-07-18
+---
+
+# The organize document dialect
+
+## Abstract
+
+An organize document is a **base-pinned set transaction rendered as text**:
+a trellis query's result set, grouped into facet buckets, serialized as an
+espalier dialect, edited by a human or agent, and interpreted as a
+structural delta whose writes flow through each substrate's declared
+mapping. This RFC specifies the document format and its delta semantics.
+The feature built on it — the `cg organize` command, the mapping
+capability, the apply engine — is FDR 0023.
+
+Layering: hyphence RFC 0001 (envelope) + hyphence RFC 0002 (content
+grammar against trellis); cutting-garden RFC 0014 (the trellis/espalier
+grammar — headings and object lines parse under it); RFC 0012 (facet
+schema, which this RFC extends with write descriptors); FDR 0020 /
+ContainerCreator (#143) as the write surface. Precedent throughout is
+dodder's organize (orgie), whose confirmed behaviors this dialect
+preserves or deliberately supersedes — each divergence is marked.
+
+## Core principle
+
+**Headings are writable facet buckets.** A heading is a ground trellis
+term; every object beneath it satisfies that term; moving an object under
+a heading is an instruction to *make the term true* through the
+substrate's mapping. Generation (facet bucketing → headings) and
+interpretation (heading position → writes) are fully decoupled: the
+parser is structure-only (`#`-depth and heading text), exactly as
+dodder's reader already behaves — it never knows or cares what grouping
+generated the tree.
+
+## Document structure
+
+A hyphence document. **Metadata section** (RFC 0001 envelope, RFC 0002
+content grammar), governed by the **distribution rule**:
+
+> Metadata-section terms distribute over the document's objects — except
+> `_`-reserved terms, which address the document/operation itself.
+
+- `- <bare-identifier>` / `- key=value` — distributed: applied to every
+  object (dodder's document-tags convention, generalized to fields).
+- `- _base=@<digest>` — REQUIRED. The generated document's canonical
+  ground form, stored as a content-addressed blob typed
+  `organize-base-v1`. A document without `_base` is invalid — organize
+  documents are ephemeral action, not durable artifacts; there is no
+  legacy mode. (Divergence: dodder's live-only fork-overlay is
+  superseded; dodder adopts `_base`.)
+- `- _allow-deletion=true` — OPTIONAL settings field; see Deletion.
+  Settings are `_`-reserved document fields, never comments (dodder's
+  `% dry-run:true` is the legacy-to-align spelling; comments are opaque
+  per RFC 0001 and MUST NOT carry behavior).
+- `% …` comments — genuinely inert (provenance, e.g.
+  `% generated: cg organize …`).
+- `! <type>` — LAST line (RFC 0001 canonical order): the **type
+  anchor**, naming the substrate whose mapping gives every heading its
+  meaning, and the default type for created objects (dodder's dual
+  reading, preserved).
+
+**Body**: markdown-style headings + object lines.
+
+### Headings
+
+- A heading's text is one or more space-separated **ground trellis
+  terms** (conjunction). Comma is NOT valid in headings. (Divergence:
+  dodder's conjunctive comma headings are dropped; dodder migrates.)
+- Depth (`#` count) expresses nesting only; effective terms for an
+  object = the union of its heading path, composed by the laddering
+  rules below.
+- **Dependent-dimension sugar**: a heading may be a `PartialTerm`
+  (`date=` — field + operator, no value); descendant headings may be
+  dependent values (`=2026-07-22` — operator + value). Resolution
+  composes them (`date="2026-07-22"`). PartialTerms parse everywhere
+  and validate only in heading position (the `~=` / `-[p]->>` pattern).
+- **Laddering** is per-dimension composition of parent+child heading
+  content: hyphen-joined for tags (dodder's `expandedTags`, verbatim),
+  path-segment-joined for directories, calendar decomposition for
+  dates. Generation-side compression (showing `-q3`, `=22`, `=rfcs`
+  under their parents) is the same-flag inverse (dodder's
+  prefix-joints, generalized). Adaptive refinement (synthesizing
+  intermediate buckets from the data, collapsing redundant ones) is a
+  per-dimension generation strategy (dodder's refiner, generalized).
+- `%`-prefixed heading terms mark **read-only scopes** (`write: none`
+  dimensions): generation derives the mark from the schema; the schema
+  stays authoritative; edits under (moves into/out of) a `%` scope are
+  validation errors.
+
+### Object lines
+
+`- ` followed by an espalier literal (box interior) and description
+trailer, per RFC 0014's isometry. `%` object-line prefix (virtual /
+inferred type) preserved from dodder. `%`-marked atoms inside the box
+(computed tags, derived fields) are display-only; editing them is an
+error. Object ids are substrate node ids (strict sigil rule; quoted for
+reserved runes). Aliased short ids are reserved-but-unspecified
+(deferred).
+
+## Write descriptors
+
+RFC 0012's `FacetDimension` gains `write: none | one | many` plus the
+mapping to the underlying mutation (which field a bucket value patches,
+the completion rule for underdetermined values, whether the write is
+identity-affecting, creation requirements). Facet keys and fields are
+one namespace (RFC 0014); writability is a declaration, never inferred
+from shape (the proof pair: newsblur `user_tag` write:many vs
+`story_tag` write:none — identical shapes).
+
+- **`write: one`** — moving between buckets reassigns; an object under
+  two sibling buckets of the dimension is a validation error; absence /
+  un-bucketed placement is a **no-op** (an exclusive field cannot be
+  unset by position); nullable fields declare an explicit empty bucket.
+  `closed: true` composes: the bucket set is the value set; novel
+  buckets are validation errors.
+- **`write: many`** — clone-per-match rendering (dodder's confirmed
+  mechanism, incl. exact-match→ungrouped); **membership = the set of
+  headings the object appears under in the patch; absence from the
+  patch = the empty set** (clearing membership and total line deletion
+  are the same statement). Removal from one heading removes that value
+  only.
+- **`write: none`** — groupable for viewing; `%`-marked; moves are
+  errors. A document whose entire patchable projection is empty is a
+  **view**: generation emits it output-only and says so.
+
+Only ONE dimension may be grouped per document (it may drill into
+itself). Cross-dimension nesting is out of scope — far-future/never.
+
+## Delta semantics
+
+Three inputs: **base** (dereferenced `_base` — what the user was shown),
+**patch** (the edited document), **live** (the substrate now).
+
+- **patch − base = intent.** Moves, membership changes, trailer/field
+  edits, creations, adoptions — all computed structurally.
+- **live − base = drift.** Drift on fields the patch also touches ⇒
+  conflict: v1 rejects loudly; the end state is a mergetool presenting
+  the conflict for intent selection (near-deferred, dodder merge-tool
+  precedent). Drift on untouched fields merges silently. Convergent
+  edits are idempotent no-ops.
+- **The patchable projection is pinned**: base and patch carry only what
+  the mapping declares patchable/displayable; the digest certifies what
+  the user saw.
+- Divergent edits to clones of one object: conflict (detectable only
+  via the base).
+
+### Creation and adoption
+
+| Patch line | Meaning | Action |
+|---|---|---|
+| No id | new object | create (ContainerCreator): type from anchor/inline, fields from heading path + inline atoms (+ optional `@digest` content where the substrate supports it); **identity allocated by the substrate and reported back** |
+| Id in patch, absent from base, known live | adoption | apply the heading path's writes to the existing object |
+| Id unknown to base and substrate | error | loud rejection |
+
+Identity-affecting writes (fs `mv`) likewise report the resulting id;
+apply treats them as allocation-like.
+
+### Deletion
+
+Substrate deletion is expressible ONLY when all gates pass: the
+document carries `- _allow-deletion=true`; apply computes the deletion
+set (in base and substrate, absent from patch, beyond membership-∅
+semantics) and requires **explicit post-editor confirmation**; in
+`commit-directly` mode a CLI flag is additionally required (double
+assertion for the scripted path). Without the settings field, line
+absence never deletes.
+
+## Modes
+
+| Mode | Absence means | Writes |
+|---|---|---|
+| edit (default) | membership ∅ (`many`) / no-op (`one`) | metadata write-through |
+| edit + deletion | as above; wholly-absent objects → confirmed deletion | write-through + confirmed deletes |
+| filter | **excluded from the operation** | none — the driving operation consumes the survivors |
+
+Filter mode is dodder's `der checkout/add/clean -organize` made
+first-class; cutting-garden analogs: `cg capture --organize`,
+`cg restore --organize`. Filter-mode documents are selection-only in v1
+(combined filter+edit deferred). Invocation modes (interactive /
+commit-directly / output-only) are orthogonal and carry over from
+dodder.
+
+## Validation (loud-rejection catalog)
+
+Unmapped metadata for the substrate; moves under `%`/`write:none`
+scopes; `write:one` multi-bucket placement; closed-set violations;
+divergent clone edits; conflicting live drift (until mergetool);
+unknown object ids; stale/undereferenceable `_base`; deletion without
+its gates; PartialTerms outside heading position; comma in headings.
+
+## Deferred
+
+Mergetool (near). Aliased object ids; combined filter+edit; empty-bucket
+declaration ergonomics; dodder-as-overlay for unmappable substrates
+(deferred). Cross-dimension nesting (far-future/never). Espalier
+nested-stream serialization unknowns: FDR 0022's in-hoc checklist
+applies to `organize-base-v1` blobs.
+
+## See also
+
+FDR 0023 (the feature); RFC 0014 + `0014-trellis.peg`; RFC 0012;
+hyphence RFC 0001/0002 (hyphence#2); FDR 0020 + cutting-garden#143;
+dodder orgie (`constructor.go`, `reader.go`, `refiner.go`,
+`assignment.go` — the confirmed behaviors cited throughout);
+organize-text(7) (superseded by this dialect for cutting-garden;
+dodder-side reconciliation tracked in the dodder alignment issue).
