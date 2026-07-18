@@ -147,6 +147,24 @@ Three inputs: **base** (dereferenced `_base` — what the user was shown),
 - **The patchable projection is pinned**: base and patch carry only what
   the mapping declares patchable/displayable; the digest certifies what
   the user saw.
+
+### The base blob's shape (ruled 2026-07-18, in-hoc)
+
+Surfaced by the first implementation (dodder #374(b)): the base cannot
+contain its own digest. The resolution: **the base blob is an
+`organize-base-v1` hyphence envelope whose metadata carries only
+generation parameters** (`- _group-by="…"` iff grouped; provenance
+comment; type line last) **and whose body is the outer document's
+canonical text with exactly one line excised: `- _base=@…`** (the
+self-reference). Generation renders the full document without `_base`,
+writes the blob, obtains the digest, then inserts the `_base` line at
+its canonical position. Apply excises the patch's `_base` line
+symmetrically — base-body and patch-sans-`_base` are the same document
+class, parsed by the same parser. The body carries the outer document's
+distributing metadata (document tags, the substrate type anchor)
+faithfully, since edits to those are intents the diff must see; the
+envelope's `! organize-base-v1` and the body's substrate anchor are
+different layers, never in conflict.
 - Divergent edits to clones of one object: conflict (detectable only
   via the base).
 
