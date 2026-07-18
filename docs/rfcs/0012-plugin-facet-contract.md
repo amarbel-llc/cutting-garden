@@ -100,6 +100,13 @@ type Node struct {
 }
 ```
 
+The same-enumeration rule governs `Node.Facets` population only. A
+`FacetCounter`'s one-shot summary (§5) is an independent operation that
+MAY fetch whatever its single shot needs — a plugin whose traversal
+listing is deliberately field-light simply leaves `Node.Facets` nil and
+routes everything through `FacetCounter` (caldav and jira both do; the
+prohibition in both places is the same one: no per-node fan-out).
+
 A plugin's facet values MUST be cheap to produce at enumeration time (already
 in hand from the listing call). They MAY, but need NOT, coincide with the
 node's display projection: a plugin MAY facet over a field it does not show,
