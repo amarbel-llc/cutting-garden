@@ -83,10 +83,19 @@ func (f *fakeJira) handler() http.Handler {
 func startFake(t *testing.T) (*fakeJira, string) {
 	t.Helper()
 	f := newFakeJira()
+	// Opaque form reaches the plain-HTTP test server.
+	return f, "jira:" + startFakeServer(t, f)
+}
+
+// startFakeServer starts an httptest server for an already-seeded fakeJira
+// (facet_test.go seeds issues directly before starting the server) and
+// returns its base URL. startFake is the common case (fresh, empty fake);
+// this is the seed-then-serve variant.
+func startFakeServer(t *testing.T, f *fakeJira) string {
+	t.Helper()
 	srv := httptest.NewServer(f.handler())
 	t.Cleanup(srv.Close)
-	// Opaque form reaches the plain-HTTP test server.
-	return f, "jira:" + srv.URL
+	return srv.URL
 }
 
 func sortedPaths(entries []capture_receipt.EntryV1) []string {
