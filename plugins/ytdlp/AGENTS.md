@@ -13,15 +13,45 @@ Deferral.
 
 ## What lives here
 
-- `Plugin.CaptureRoot` (`capture.go`) — runs yt-dlp with
-  `--write-info-json --write-thumbnail --write-subs` into a tempdir,
-  streams every produced artifact into the destination blob store as
-  one EntryV1 per file, then removes the tempdir.
+- `probeFlatPlaylist` (`flatplaylist.go`) — the SHARED enumeration
+  primitive (`yt-dlp --flat-playlist --dump-json`): capture's
+  channel-vs-single-video classification, `ListRoots`, and
+  `FacetCounts` all call this ONE function rather than each
+  re-deriving the tree (FDR 0014 §"Where bulk orchestration lives").
+  One returned entry means the source is a plain video (the FDR 0003
+  path, unchanged); more than one means a channel/playlist (FDR 0004).
+  Also owns the `cg-ytdlp-limit` query-parameter guardrail
+  (`extractChannelLimit`/`applyChannelLimit`) — see FDR 0004's
+  Implementation Note for why it's a query param and not a CLI flag.
+- `Plugin.CaptureRoot` (`capture.go`) — classifies via
+  `probeFlatPlaylist`, then dispatches to `captureSingleVideo` (FDR
+  0003's original body, byte-for-byte: `--write-info-json
+  --write-thumbnail --write-subs` into a tempdir, streams every
+  artifact into the destination blob store) or `captureChannel` (FDR
+  0004: fans out one `captureSingleVideo`-shaped download per video,
+  then rewrites `EntryV1.Root` to the channel URL and prefixes `Path`
+  with `<video-id>/`). Per-video failures aggregate rather than
+  aborting the channel.
+- `Plugin.Types`/`Plugin.ListRoots` (`traversal.go`) — the `RootLister`
+  capability (FDR 0014): a channel/playlist is a `ytdlp-channel-v1`
+  container; each video is a `ytdlp-video-v1` leaf whose `Node.URI` is
+  the flat entry's own canonical `https://` URL — it round-trips
+  through `ValidateSource`'s allowlist unchanged, so `capture
+  <node.URI>` captures exactly that video through the existing
+  single-video path.
+- `Plugin.DescribeFacets`/`Plugin.FacetCounts` (`facet.go`) — the
+  facet contract (RFC 0012): `uploader` (categorical), `year`/`month`
+  (open numeric-bucket, populated only when yt-dlp's flat-mode
+  `upload_date` is present — see FDR 0004's Implementation Note),
+  `duration_band` (closed short/medium/long). `FacetCounts` is a
+  one-shot fold over `probeFlatPlaylist`'s own output rather than a
+  framework fold, because no framework-fold consumer exists yet.
 - `Plugin.ScanForDiff` (`diff.go`) — lightweight freshness probe:
   fetch only the `.info.json` via `--skip-download`, hash it, compare
   to the receipt's info.json blob-id. Match → re-emit receipt
   entries verbatim (no diff). Miss → run a full yt-dlp invocation
-  and return fresh-hashed entries.
+  and return fresh-hashed entries. Single-video only — channel diff
+  (FDR 0004's two-level freshness probe) is not yet implemented.
 - `sourceURLFromArg` (`url.go`) — URL coercion across the three
   accepted argument forms. Refuses https hosts outside the YouTube
   allowlist; refuses non-`ytdlp`/non-`https` schemes.
@@ -29,7 +59,8 @@ Deferral.
   ctx-cancellation and surfaces the last 4 KiB of stderr on
   non-zero exit. Resolves the binary via `exec.LookPath`; the Nix
   flake wraps cutting-garden binaries so yt-dlp is on PATH at
-  install time.
+  install time. `probeFlatPlaylist` reuses it with an empty outDir
+  since `--dump-json` writes nothing to disk.
 - Blob streaming is delegated to
   `pkgs/plugin_blob_io/`'s `WriteFileBlob`, shared with the
   filesystem plugin. The package also owns `CtxReader`, the
