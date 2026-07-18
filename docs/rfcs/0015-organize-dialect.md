@@ -1,6 +1,9 @@
 ---
 status: proposed
 date: 2026-07-18
+revised: 2026-07-18 (deletion semantics split by grouped-ness; unresolved
+  intents as a first-class apply outcome — surfaced by the dodder
+  changes.go trace showing today's selection-tag stripping)
 ---
 
 # The organize document dialect
@@ -120,7 +123,8 @@ from shape (the proof pair: newsblur `user_tag` write:many vs
   headings the object appears under in the patch; absence from the
   patch = the empty set** (clearing membership and total line deletion
   are the same statement). Removal from one heading removes that value
-  only.
+  only. (Applies to GROUPED documents; see "Deletion semantics by
+  grouped-ness" for the ungrouped case.)
 - **`write: none`** — groupable for viewing; `%`-marked; moves are
   errors. A document whose entire patchable projection is empty is a
   **view**: generation emits it output-only and says so.
@@ -145,6 +149,36 @@ Three inputs: **base** (dereferenced `_base` — what the user was shown),
   the user saw.
 - Divergent edits to clones of one object: conflict (detectable only
   via the base).
+
+### Deletion semantics by grouped-ness
+
+Whether the document is grouped is the defining factor for what a
+deleted line means (ruled 2026-07-18, after tracing dodder's actual
+behavior — which strips the invoking query's selection tags on
+deletion, a semantics the two rules below supersede):
+
+- **Grouped document**: deletion (= absence) empties the **grouped
+  dimension** — membership-∅ for `write:many`, no-op for `write:one`.
+  Selection predicates are NEVER written; they are read-only context.
+- **Ungrouped document**: deletion means **removal from the
+  selection**. Each selection term is evaluated for writability through
+  the mapping: writable terms (a `write:many` tag — dodder's
+  `organize tag-5` workflow, preserved and now principled) are removed;
+  a non-writable or underdetermined selection term (a field predicate
+  like `dtstart^="202607"` — "make this false" has no defined write)
+  produces an **unresolved intent**.
+
+**Unresolved intents** are a first-class apply outcome — neither
+silently dropped nor flatly rejected. Each carries the object, the
+impossible/underdetermined write, and its resolution options ("cannot
+remove a start date for X without replacing it" → supply replacement /
+skip / abort), and identical intent shapes are **batchable** (one
+prompt resolving the same question across N objects). In v1 the apply
+engine reports them as structured rejections enumerating each intent
+with its options (the failure-surface shape of cutting-garden#147);
+the mergetool milestone (Deferred, near) makes them interactively
+collapsible — its scope explicitly includes intent-underdetermination
+alongside base/live conflicts, batch-capable.
 
 ### Creation and adoption
 

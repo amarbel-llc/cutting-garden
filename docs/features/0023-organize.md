@@ -82,7 +82,10 @@ filter mode is selection-only.
 
 ## Deferral tiers
 
-- **Near**: conflict mergetool (dodder merge-tool precedent).
+- **Near**: the mergetool (dodder merge-tool precedent) — scope per
+  RFC 0015's 2026-07-18 revision: base/live conflicts AND unresolved
+  intents (deletion underdetermination in ungrouped documents),
+  batch-capable; v1 reports both as structured rejections (#147 shape).
 - **Deferred**: node-id aliasing in documents; combined filter+edit;
   empty-bucket ergonomics; dodder-as-overlay.
 - **Far-future/never**: cross-dimension nesting (all-write:one matrix
