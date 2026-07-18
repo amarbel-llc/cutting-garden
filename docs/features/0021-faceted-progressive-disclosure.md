@@ -36,7 +36,7 @@ A **facet** is a labelled way to group a node's children and count them — "by
 status", "by domain", "by year". A plugin opts in by declaring its facets and
 attaching facet values to the nodes it lists. The framework does all the
 counting and rolling-up; the plugin never writes aggregation code. The exact
-Go contract is RFC 0013; this record is the plain-language version.
+Go contract is RFC 0012; this record is the plain-language version.
 
 ### Facet values are cheap, and come from enumeration
 
