@@ -111,8 +111,12 @@ FieldOp      <- '*=' / '^=' / '$=' / '!=' / '<=' / '>=' / '~=' / '=' / '<' / '>'
 
 // Value lists distribute the operator as OR:
 //   k*=[v1, v2]  ==  [k*=v1, k*=v2]
+// DigestTerm is admitted as a value (amended 2026-07-18, surfaced by
+// hyphence RFC 0002's isometry check): digest-valued field predicates
+// are the query-side spelling of reference-valued fields / typed edges
+// (`_mother=@blake2b256-…`, `_base=@…`) and of edge-target matching.
 ValueList    <- '[' SP? Value (SP? ',' SP? Value)* SP? ']'
-Value        <- String / Bareword
+Value        <- String / DigestTerm / Bareword
 
 // ---- combinators: typed-arrow traversal ----------------------------------
 
@@ -193,3 +197,6 @@ EOF          <- !.
 //     — quoted opaque reference (pre-FDR external+genre spelling, retired)
 //   12.7
 //     — InventoryList id as one identifier (interior `.`)
+//   _mother=@blake2b256-9ft3x
+//     — digest-valued field predicate (typed-edge target match; Value
+//       amendment 2026-07-18)
