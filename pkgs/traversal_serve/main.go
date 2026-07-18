@@ -82,6 +82,15 @@ type LeafReadParams = internal.LeafReadParams
 // failures, exactly as the Go contract reserves non-nil err.
 type LeafReadResult = internal.LeafReadResult
 
+// NodeCreateChildParams is the node.create_child request payload
+// (ContainerCreator, cutting-garden#143): create a node of Type under
+// the Container URI, the source assigning the created node's identity.
+type NodeCreateChildParams = internal.NodeCreateChildParams
+
+// NodeCreateChildResult reports the URI the source assigned. MUST be
+// non-empty and credential-free.
+type NodeCreateChildResult = internal.NodeCreateChildResult
+
 // NodeCreateParams is the node.create request payload
 // (NodeMutator, FDR 0020): strict create, no upsert — an existing URI
 // is an error. Type MUST be a declared node_types tag. The result is
@@ -325,6 +334,10 @@ var ValidateStanzas = internal.ValidateStanzas
 // CodeMethodNotFound.
 var WithHandler = internal.WithHandler
 
+// CapContainerCreate gates node.create_child — server-assigned
+// identity creation (ContainerCreator, cutting-garden#143). An
+// additive capability token under RFC 0013 §Compatibility.
+const CapContainerCreate = internal.CapContainerCreate
 const CapFacetCounts = internal.CapFacetCounts
 const CapFacetLabels = internal.CapFacetLabels
 const CapFacetVersion = internal.CapFacetVersion
@@ -358,6 +371,7 @@ const MethodInitialize = internal.MethodInitialize
 const MethodLabelsResolve = internal.MethodLabelsResolve
 const MethodLeafRead = internal.MethodLeafRead
 const MethodNodeCreate = internal.MethodNodeCreate
+const MethodNodeCreateChild = internal.MethodNodeCreateChild
 const MethodNodeDelete = internal.MethodNodeDelete
 const MethodNodePatch = internal.MethodNodePatch
 const MethodNodePut = internal.MethodNodePut

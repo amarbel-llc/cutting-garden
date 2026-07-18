@@ -161,7 +161,7 @@ func TestLaunchServeSessionRoundTrip(t *testing.T) {
 	}
 	wantCaps := []string{
 		CapRoots, CapLeafRead, CapFacetCounts,
-		CapFacetVersion, CapFacetLabels, CapMutate,
+		CapFacetVersion, CapFacetLabels, CapMutate, CapContainerCreate,
 	}
 	gotCaps := slices.Clone(sess.Init.Capabilities)
 	slices.Sort(gotCaps)

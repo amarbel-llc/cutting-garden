@@ -124,6 +124,32 @@ func ResolveNodeMutatorPlugin(
 	return u, mutator, nil
 }
 
+// ResolveContainerCreatorPlugin parses uriStr as a URL and returns the
+// ContainerCreator registered for its scheme — the server-assigned-identity
+// creation capability (cutting-garden#143) the mcp create_node tool
+// dispatches to for types declared ServerAssignedIdentity. Resolution
+// mirrors ResolveNodeMutatorPlugin.
+func ResolveContainerCreatorPlugin(
+	uriStr string,
+) (*url.URL, cutting_garden_plugins.ContainerCreator, error) {
+	u, err := url.Parse(uriStr)
+	if err != nil {
+		return nil, nil, errors.Wrapf(err, "parse uri %q", uriStr)
+	}
+	plugin, err := resolvePluginForScheme(u.Scheme)
+	if err != nil {
+		return nil, nil, err
+	}
+	creator, ok := plugin.(cutting_garden_plugins.ContainerCreator)
+	if !ok {
+		return nil, nil, errors.ErrorWithStackf(
+			"scheme %q does not support container-create (its plugin "+
+				"assigns no server-side identities)", u.Scheme,
+		)
+	}
+	return u, creator, nil
+}
+
 // ReadReceiptBlob fetches and parses the receipt blob.
 //
 // With storeOverride non-empty: resolve that store, read directly.

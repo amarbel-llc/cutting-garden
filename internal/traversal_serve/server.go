@@ -121,6 +121,7 @@ type server struct {
 	versioner cutting_garden_plugins.FacetVersioner
 	labeler   cutting_garden_plugins.FacetLabeler
 	mutator   cutting_garden_plugins.NodeMutator
+	creator   cutting_garden_plugins.ContainerCreator
 
 	// schemes indexes the plugin's advertised URI schemes for the
 	// nodes.list scheme gate (RFC 0013 §Traversal).
@@ -218,6 +219,11 @@ func newServer(cfg ServeConfig) (*server, error) {
 		capabilities = append(capabilities, CapMutate)
 	}
 
+	if creator, ok := cfg.Plugin.(cutting_garden_plugins.ContainerCreator); ok {
+		srv.creator = creator
+		capabilities = append(capabilities, CapContainerCreate)
+	}
+
 	srv.init.Capabilities = capabilities
 
 	if describer, ok := cfg.Plugin.(cutting_garden_plugins.FacetDescriber); ok {
@@ -307,6 +313,12 @@ func (s *server) Handle(
 			return nil, methodNotAdvertised(method)
 		}
 		return s.handleNodeCreate(ctx, params)
+
+	case MethodNodeCreateChild:
+		if s.creator == nil {
+			return nil, methodNotAdvertised(method)
+		}
+		return s.handleNodeCreateChild(ctx, params)
 
 	case MethodNodePut:
 		if s.mutator == nil {
@@ -569,6 +581,39 @@ func (s *server) handleNodeCreate(
 	}
 
 	return struct{}{}, nil
+}
+
+func (s *server) handleNodeCreateChild(
+	ctx context.Context, params json.RawMessage,
+) (any, error) {
+	var createParams NodeCreateChildParams
+	if rpcErr := unmarshalParams(params, &createParams); rpcErr != nil {
+		return nil, rpcErr
+	}
+
+	container, rpcErr := parseURIParam(createParams.Container)
+	if rpcErr != nil {
+		return nil, rpcErr
+	}
+
+	body, rpcErr := decodeBodyBase64(createParams.BodyBase64)
+	if rpcErr != nil {
+		return nil, rpcErr
+	}
+
+	created, err := s.creator.CreateChild(
+		ctx, container, bytes.NewReader(body), createParams.Type,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if created == nil {
+		return nil, errors.ErrorWithStackf(
+			"CreateChild returned no created URI",
+		)
+	}
+
+	return NodeCreateChildResult{Created: created.String()}, nil
 }
 
 func (s *server) handleNodePut(

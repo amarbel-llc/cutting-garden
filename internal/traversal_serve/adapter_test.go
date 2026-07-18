@@ -549,6 +549,48 @@ func TestWirePluginDeclarationsServedFromCachedInit(t *testing.T) {
 	}
 }
 
+// TestWirePluginCreateChild pins node.create_child (cutting-garden#143):
+// the created URI the peer assigned comes back through the adapter, and
+// a plugin that does not advertise container-create refuses the write
+// with an error naming the capability (never a silent decline).
+func TestWirePluginCreateChild(t *testing.T) {
+	plugin := &fakeFullPlugin{}
+	adapter, _ := newTestWirePlugin(
+		t, memSpec(), fullPluginConfig(plugin),
+	)
+
+	created, err := adapter.CreateChild(
+		context.Background(), mustParseURL(t, fakeRootURI),
+		strings.NewReader("hello child"), "mem-obj-v1",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.String() != fakeRootURI+"/assigned-1" {
+		t.Errorf("created = %q, want %q/assigned-1", created, fakeRootURI)
+	}
+
+	plugin.mu.Lock()
+	gotBody := string(plugin.createdBody)
+	plugin.mu.Unlock()
+	if gotBody != "hello child" {
+		t.Errorf("create_child body = %q", gotBody)
+	}
+
+	minimal, _ := newTestWirePlugin(
+		t, minSpec(), minimalPluginConfig(),
+	)
+	_, err = minimal.CreateChild(
+		context.Background(), mustParseURL(t, "min://host/root"),
+		strings.NewReader("x"), "min-obj-v1",
+	)
+	if err == nil ||
+		!strings.Contains(err.Error(), CapContainerCreate) {
+		t.Errorf("unadvertised create_child: err = %v, want capability"+
+			" refusal", err)
+	}
+}
+
 // credentialLeakPlugin emits a child URI carrying userinfo — the
 // invariant violation the adapter must reject rather than surface
 // (RFC 0007/0013 §Security: enforce on plugin output, don't trust).

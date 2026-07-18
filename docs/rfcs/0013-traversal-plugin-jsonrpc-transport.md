@@ -152,6 +152,7 @@ arrival order.
 | `facets.version`  | request      | `facet-version`            | `FacetVersioner.FacetVersion` |
 | `labels.resolve`  | request      | `facet-labels`             | `FacetLabeler.ResolveFacetLabels` |
 | `node.create`     | request      | `mutate`                   | `NodeMutator.CreateNode`   |
+| `node.create_child` | request    | `container-create`         | `ContainerCreator.CreateChild` |
 | `node.put`        | request      | `mutate`                   | `NodeMutator.PutNode`      |
 | `node.patch`      | request      | `mutate`                   | `NodeMutator.PatchNode`    |
 | `node.delete`     | request      | `mutate`                   | `NodeMutator.DeleteNode`   |
@@ -383,6 +384,18 @@ would in process:
   change; the body format is plugin-defined. An empty body is an error
   (`-32602`).
 - `node.delete` params `{ "uri": string }` → result `{}`.
+
+Separately gated on `container-create` (an additive capability token
+per §Compatibility): **`node.create_child`** — server-assigned-identity
+creation (`ContainerCreator`, cutting-garden#143), for sources that
+name the created node themselves (a subscription's server-chosen feed
+id, a forge's issue number). Params `{ "container": string, "type":
+string, "body_base64": string? }` → result `{ "created": string }`,
+the URI the source assigned — non-empty and credential-free (the host
+enforces both). A plugin declares which types are created this way via
+the bodies block's `server_assigned_identity` field (additive on
+NodeTypeBody); a type is created through exactly one of
+`node.create` / `node.create_child`, per that declaration.
 
 ### Errors
 

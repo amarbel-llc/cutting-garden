@@ -45,3 +45,27 @@ type NodeMutator interface {
 	// DeleteNode removes the node at uri. node MUST be non-nil.
 	DeleteNode(ctx context.Context, uri *url.URL) error
 }
+
+// ContainerCreator is the OPTIONAL capability for sources that assign a
+// created node's identity server-side (a feed subscription's server-chosen
+// feed id, a forge's issue number, a zettel pool's next id): create a child
+// under container, returning the URI the source chose. It is probed by type
+// assertion exactly as NodeMutator is, and complements — never replaces —
+// CreateNode's caller-names-the-URI form; a plugin implements one, the
+// other, or both, per node type, and declares which types are
+// server-assigned via NodeTypeBody.ServerAssignedIdentity (cutting-garden#143).
+//
+// The container param is fully generic: any container node URI, including —
+// under the roots-as-nodes direction (FDR 0022) — a root itself. Returning
+// the resulting URI follows the shared convention that identity-affecting
+// operations report the node's post-operation address.
+type ContainerCreator interface {
+	Plugin
+
+	// CreateChild creates a new node of type typ under container from body,
+	// returning the created node's URI. container MUST be non-nil; created
+	// MUST be non-nil on success and MUST be credential-free.
+	CreateChild(
+		ctx context.Context, container *url.URL, body io.Reader, typ string,
+	) (created *url.URL, err error)
+}

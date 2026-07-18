@@ -36,18 +36,19 @@ const SchemaV1 = "traversal-plugin/v1"
 // mandatory; every other method is gated on the corresponding
 // capability token appearing in the plugin's initialize response.
 const (
-	MethodInitialize    = "initialize"
-	MethodShutdown      = "shutdown"
-	MethodNodesList     = "nodes.list"
-	MethodRootsList     = "roots.list"
-	MethodLeafRead      = "leaf.read"
-	MethodFacetCounts   = "facets.counts"
-	MethodFacetVersion  = "facets.version"
-	MethodLabelsResolve = "labels.resolve"
-	MethodNodeCreate    = "node.create"
-	MethodNodePut       = "node.put"
-	MethodNodePatch     = "node.patch"
-	MethodNodeDelete    = "node.delete"
+	MethodInitialize      = "initialize"
+	MethodShutdown        = "shutdown"
+	MethodNodesList       = "nodes.list"
+	MethodRootsList       = "roots.list"
+	MethodLeafRead        = "leaf.read"
+	MethodFacetCounts     = "facets.counts"
+	MethodFacetVersion    = "facets.version"
+	MethodLabelsResolve   = "labels.resolve"
+	MethodNodeCreate      = "node.create"
+	MethodNodeCreateChild = "node.create_child"
+	MethodNodePut         = "node.put"
+	MethodNodePatch       = "node.patch"
+	MethodNodeDelete      = "node.delete"
 )
 
 // JSON-RPC error codes (RFC 0013 §Errors). The first two are
@@ -75,6 +76,10 @@ const (
 	CapFacetVersion = "facet-version"
 	CapFacetLabels  = "facet-labels"
 	CapMutate       = "mutate"
+	// CapContainerCreate gates node.create_child — server-assigned
+	// identity creation (ContainerCreator, cutting-garden#143). An
+	// additive capability token under RFC 0013 §Compatibility.
+	CapContainerCreate = "container-create"
 )
 
 // InitializeParams is the host→plugin initialize request payload
@@ -235,6 +240,22 @@ type NodeCreateParams struct {
 	// BodyBase64 is the new node's body in standard base64; OPTIONAL
 	// (a bodyless create).
 	BodyBase64 string `json:"body_base64,omitempty"`
+}
+
+// NodeCreateChildParams is the node.create_child request payload
+// (ContainerCreator, cutting-garden#143): create a node of Type under
+// the Container URI, the source assigning the created node's identity.
+type NodeCreateChildParams struct {
+	Container string `json:"container"`
+	Type      string `json:"type"`
+	// BodyBase64 is the new node's body in standard base64; OPTIONAL.
+	BodyBase64 string `json:"body_base64,omitempty"`
+}
+
+// NodeCreateChildResult reports the URI the source assigned. MUST be
+// non-empty and credential-free.
+type NodeCreateChildResult struct {
+	Created string `json:"created"`
 }
 
 // NodePutParams is the node.put request payload: full-replace an
@@ -516,6 +537,10 @@ type NodeTypeBodyView struct {
 	Tag     string   `json:"tag"`
 	Accepts []string `json:"accepts"`
 	Example any      `json:"example,omitempty"`
+	// ServerAssignedIdentity marks a container-create type
+	// (cutting-garden#143, node.create_child) — additive under
+	// RFC 0013 §Compatibility's ignore-unknown rule.
+	ServerAssignedIdentity bool `json:"server_assigned_identity,omitempty"`
 }
 
 // NodeTypeBodyViewFrom projects one writable type's body description
@@ -524,9 +549,10 @@ func NodeTypeBodyViewFrom(
 	body cutting_garden_plugins.NodeTypeBody,
 ) NodeTypeBodyView {
 	return NodeTypeBodyView{
-		Tag:     body.Tag,
-		Accepts: body.Accepts,
-		Example: body.Example,
+		Tag:                    body.Tag,
+		Accepts:                body.Accepts,
+		Example:                body.Example,
+		ServerAssignedIdentity: body.ServerAssignedIdentity,
 	}
 }
 
@@ -535,9 +561,10 @@ func NodeTypeBodyViewFrom(
 // satisfies the domain field's JSON-marshalable contract.
 func (v NodeTypeBodyView) ToNodeTypeBody() cutting_garden_plugins.NodeTypeBody {
 	return cutting_garden_plugins.NodeTypeBody{
-		Tag:     v.Tag,
-		Accepts: v.Accepts,
-		Example: v.Example,
+		Tag:                    v.Tag,
+		Accepts:                v.Accepts,
+		Example:                v.Example,
+		ServerAssignedIdentity: v.ServerAssignedIdentity,
 	}
 }
 

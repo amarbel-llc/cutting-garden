@@ -41,8 +41,18 @@ type resourceReader interface {
 type Tools struct {
 	roots   []*url.URL
 	resolve mutatorResolveFunc
-	reader  resourceReader
+	// resolveCreator resolves the ContainerCreator capability
+	// (cutting-garden#143): create_node dispatches to CreateChild for
+	// types the plugin declares ServerAssignedIdentity.
+	resolveCreator creatorResolveFunc
+	reader         resourceReader
 }
+
+// creatorResolveFunc mirrors mutatorResolveFunc for the
+// server-assigned-identity creation capability.
+type creatorResolveFunc func(
+	uriStr string,
+) (*url.URL, cutting_garden_plugins.ContainerCreator, error)
 
 var _ server.ToolProviderV1 = (*Tools)(nil)
 
@@ -50,18 +60,25 @@ var _ server.ToolProviderV1 = (*Tools)(nil)
 // plugin registry and the resource read surface the read/list tools wrap.
 func newTools(roots []*url.URL, reader resourceReader) *Tools {
 	return &Tools{
-		roots:   roots,
-		resolve: command_components.ResolveNodeMutatorPlugin,
-		reader:  reader,
+		roots:          roots,
+		resolve:        command_components.ResolveNodeMutatorPlugin,
+		resolveCreator: command_components.ResolveContainerCreatorPlugin,
+		reader:         reader,
 	}
 }
 
-// hasMutator reports whether any configured root's plugin can mutate, so the
-// server advertises the write tools only where they apply.
+// hasMutator reports whether any configured root's plugin can mutate —
+// NodeMutator or ContainerCreator — so the server advertises the write
+// tools only where they apply.
 func (t *Tools) hasMutator() bool {
 	for _, r := range t.roots {
 		if _, _, err := t.resolve(r.String()); err == nil {
 			return true
+		}
+		if t.resolveCreator != nil {
+			if _, _, err := t.resolveCreator(r.String()); err == nil {
+				return true
+			}
 		}
 	}
 	return false
@@ -144,7 +161,10 @@ func cudToolDefs() []protocol.ToolV1 {
 		{
 			Name: mcp_tool_perms.ToolCreateNode,
 			Description: "Create a new node (e.g. a calendar event or task) at a node URI. " +
-				"Strict: errors if the node already exists (use put_node to overwrite).",
+				"Strict: errors if the node already exists (use put_node to overwrite). " +
+				"For types describe_node_types marks serverAssignedIdentity, pass the " +
+				"CONTAINER uri instead — the source names the node and the result " +
+				"reports the created URI.",
 			InputSchema: json.RawMessage(createNodeSchema),
 			Annotations: annotationFor(mcp_tool_perms.ToolCreateNode),
 		},
@@ -232,6 +252,52 @@ func (t *Tools) CallToolV1(
 	}, nil
 }
 
+// createChild routes a create to ContainerCreator.CreateChild when the
+// scheme's plugin both implements the capability and DECLARES the requested
+// type ServerAssignedIdentity (via DescribeBodies — the explicit contract of
+// cutting-garden#143). handled is false when either condition misses, and
+// the caller falls through to the CreateNode path; err is meaningful only
+// when handled.
+func (t *Tools) createChild(
+	ctx context.Context, uriStr, body, typ string,
+) (created string, handled bool, err error) {
+	if t.resolveCreator == nil || typ == "" {
+		return "", false, nil
+	}
+	container, creator, err := t.resolveCreator(uriStr)
+	if err != nil {
+		return "", false, nil
+	}
+
+	describer, ok := creator.(cutting_garden_plugins.BodyDescriber)
+	if !ok {
+		return "", false, nil
+	}
+	declared := false
+	for _, b := range describer.DescribeBodies() {
+		if b.Tag == typ && b.ServerAssignedIdentity {
+			declared = true
+			break
+		}
+	}
+	if !declared {
+		return "", false, nil
+	}
+
+	createdURL, err := creator.CreateChild(
+		ctx, container, strings.NewReader(body), typ,
+	)
+	if err != nil {
+		return "", true, err
+	}
+	if createdURL == nil {
+		return "", true, errors.ErrorWithStackf(
+			"scheme %q: CreateChild returned no created URI", container.Scheme,
+		)
+	}
+	return createdURL.String(), true, nil
+}
+
 // call performs one mutation and returns a human-readable success line. A
 // returned error is surfaced as an MCP tool error result (IsError), not a
 // transport failure: a mutation rejection (already-exists, not-found, a
@@ -249,6 +315,19 @@ func (t *Tools) call(
 		if err := json.Unmarshal(args, &in); err != nil {
 			return "", errors.Wrap(err)
 		}
+
+		// Server-assigned-identity types (cutting-garden#143): the uri is
+		// the CONTAINER, the source names the created node, and the result
+		// reports the URI it chose. Dispatch is by the plugin's own
+		// declaration, so caller-named and server-assigned types coexist
+		// on one scheme.
+		if created, handled, err := t.createChild(ctx, in.URI, in.Body, in.Type); handled {
+			if err != nil {
+				return "", err
+			}
+			return "created " + created, nil
+		}
+
 		u, m, err := t.resolve(in.URI)
 		if err != nil {
 			return "", err
@@ -426,10 +505,13 @@ type typeSchema struct {
 
 // bodySchema is the create/update payload description for a writable type: the
 // accepted formats and a concrete example. A formal JSON Schema per type is a
-// future addition (cutting-garden FDR 0020).
+// future addition (cutting-garden FDR 0020). ServerAssignedIdentity marks a
+// container-create type (cutting-garden#143): create_node takes the CONTAINER
+// URI and the result reports the URI the source assigned.
 type bodySchema struct {
-	Accepts []string `json:"accepts"`
-	Example any      `json:"example,omitempty"`
+	Accepts                []string `json:"accepts"`
+	Example                any      `json:"example,omitempty"`
+	ServerAssignedIdentity bool     `json:"serverAssignedIdentity,omitempty"`
 }
 
 // facetDimSchema describes one declared facet dimension of a node type, for
@@ -495,7 +577,11 @@ func collectSchema(plugins []cutting_garden_plugins.Plugin) []schemeSchema {
 			}
 			if b, ok := bodies[nt.Tag]; ok {
 				ts.Writable = true
-				ts.Body = &bodySchema{Accepts: b.Accepts, Example: b.Example}
+				ts.Body = &bodySchema{
+					Accepts:                b.Accepts,
+					Example:                b.Example,
+					ServerAssignedIdentity: b.ServerAssignedIdentity,
+				}
 			}
 			if dims, ok := facets[nt.Tag]; ok {
 				ts.Facets = facetDimSchemas(dims)

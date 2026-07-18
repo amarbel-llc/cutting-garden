@@ -17,6 +17,12 @@ type NodeTypeBody struct {
 	// offers no structured form. A formal JSON Schema is a future addition
 	// (an Example is the pragmatic first cut).
 	Example any
+	// ServerAssignedIdentity is true when nodes of this type are created via
+	// ContainerCreator.CreateChild — the caller passes a CONTAINER URI and
+	// the source assigns the created node's identity (cutting-garden#143) —
+	// rather than CreateNode's caller-names-the-URI form. The mcp
+	// create_node tool dispatches on this declaration.
+	ServerAssignedIdentity bool
 }
 
 // BodyDescriber is the OPTIONAL capability a write-capable plugin implements

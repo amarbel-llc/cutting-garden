@@ -38,7 +38,10 @@ const (
 
 	ContainerType = "cgtest-box-v1"
 	LeafType      = "cgtest-obj-v1"
-	LeafMimeType  = "text/plain"
+	// AssignedLeafType is created only via CreateChild — the peer
+	// assigns its identity (cutting-garden#143).
+	AssignedLeafType = "cgtest-assigned-v1"
+	LeafMimeType     = "text/plain"
 
 	RootBox   = "cgtest://fixture/box"
 	NestedBox = "cgtest://fixture/box/nested"
@@ -91,6 +94,9 @@ type TreePlugin struct {
 	// token from it, so the token is deterministic on a fresh tree and
 	// changes on every write.
 	generation int64
+	// assigned counts CreateChild-created nodes, so the peer's
+	// server-assigned names are deterministic per instance.
+	assigned int64
 
 	// configTOML records what ApplyConfigTOML received, for tests
 	// asserting the RFC 0007 §Plugin-Owned Sections passthrough.
@@ -230,6 +236,7 @@ func (p *TreePlugin) Types() []cutting_garden_plugins.NodeType {
 	return []cutting_garden_plugins.NodeType{
 		{Tag: ContainerType, Container: true},
 		{Tag: LeafType, Container: false, MimeType: LeafMimeType},
+		{Tag: AssignedLeafType, Container: false, MimeType: LeafMimeType},
 	}
 }
 
@@ -422,7 +429,61 @@ func (p *TreePlugin) DescribeBodies() []cutting_garden_plugins.NodeTypeBody {
 			},
 			Example: map[string]any{"title": "example"},
 		},
+		{
+			// The server-assigned-identity type (cutting-garden#143):
+			// created only via CreateChild — the peer names the node.
+			Tag:                    AssignedLeafType,
+			Accepts:                []string{"text/plain (the object body)"},
+			ServerAssignedIdentity: true,
+		},
 	}
+}
+
+// CreateChild is the ContainerCreator capability (cutting-garden#143):
+// the peer assigns the created node's identity — a deterministic
+// child-N name under the container — and reports it back.
+func (p *TreePlugin) CreateChild(
+	_ context.Context, container *url.URL, body io.Reader, typ string,
+) (*url.URL, error) {
+	if typ != AssignedLeafType {
+		return nil, errors.BadRequestf(
+			"create_child under %s: type %q is not server-assigned",
+			container.String(), typ,
+		)
+	}
+	data, err := readAllBody(body)
+	if err != nil {
+		return nil, err
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	parent, found := p.nodes[container.String()]
+	if !found || !parent.container() {
+		return nil, errors.BadRequestf(
+			"create_child: %s is not a container", container.String(),
+		)
+	}
+
+	p.assigned++
+	key := strings.TrimRight(container.String(), "/") +
+		fmt.Sprintf("/assigned-%d", p.assigned)
+	p.nodes[key] = &memNode{
+		name:       fmt.Sprintf("assigned-%d", p.assigned),
+		typ:        AssignedLeafType,
+		structured: map[string]any{"title": string(data)},
+		raw:        data,
+		rawMime:    LeafMimeType,
+	}
+	parent.children = append(parent.children, key)
+	p.generation++
+
+	created, err := url.Parse(key)
+	if err != nil {
+		return nil, errors.Wrap(err)
+	}
+	return created, nil
 }
 
 func (p *TreePlugin) CreateNode(

@@ -241,6 +241,35 @@ Each tool call surfaces to the clown PreToolUse hook, which classifies
 all four as destructive and emits `ask` — the agent must get user
 approval before the mutation reaches the live server.
 
+## Server-assigned identity (`ContainerCreator`, #143)
+
+`CreateNode` is strictly caller-names-the-URI. Sources that assign a
+created node's identity server-side (a subscription's server-chosen
+feed id, a forge's issue number, a zettel pool's next id) use the
+OPTIONAL sibling capability:
+
+```go
+type ContainerCreator interface {
+    Plugin
+    CreateChild(
+        ctx context.Context, container *url.URL, body io.Reader, typ string,
+    ) (created *url.URL, err error)
+}
+```
+
+A plugin declares which types are created this way via
+`NodeTypeBody.ServerAssignedIdentity`; the mcp `create_node` tool
+dispatches on that declaration (the `uri` argument is then the
+CONTAINER) and reports the created URI in its result. The container
+param is fully generic — under the roots-as-nodes direction (FDR 0022)
+a root itself is a valid container. On the RFC 0013 wire this is
+`node.create_child`, gated on the `container-create` token.
+
+**Shared convention:** identity-affecting operations report the node's
+resulting URI. `CreateChild` is the first carrier; a future move/rename
+verb (an `fs` mv changes the node's URI) follows the same rule rather
+than inventing its own result shape.
+
 ## Limitations
 
 - **Not receipt-based.** CUD mutates one live node; it does not write or

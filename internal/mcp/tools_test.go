@@ -208,6 +208,70 @@ func TestCallTool_PatchDispatches(t *testing.T) {
 	}
 }
 
+// fakeCreator implements ContainerCreator + BodyDescriber: one type is
+// declared server-assigned, so create_node dispatches CreateChild for it
+// (uri = the container) and CreateNode for everything else.
+type fakeCreator struct {
+	fakeMutator
+	childrenOf []string
+}
+
+func (f *fakeCreator) DescribeBodies() []cutting_garden_plugins.NodeTypeBody {
+	return []cutting_garden_plugins.NodeTypeBody{
+		{Tag: "test-assigned-v1", ServerAssignedIdentity: true},
+		{Tag: "test-object-v1"},
+	}
+}
+
+func (f *fakeCreator) CreateChild(
+	_ context.Context, container *url.URL, _ io.Reader, _ string,
+) (*url.URL, error) {
+	f.childrenOf = append(f.childrenOf, container.String())
+	return url.Parse(container.String() + "/assigned-9")
+}
+
+// TestCallTool_CreateChildDispatches pins the #143 tool semantics: a
+// server-assigned type routes create_node to CreateChild with the uri
+// as the CONTAINER and reports the URI the source chose; a
+// caller-named type on the same plugin still routes to CreateNode.
+func TestCallTool_CreateChildDispatches(t *testing.T) {
+	c := &fakeCreator{}
+	tools := newFakeTools(t, &c.fakeMutator, "faketest://h/")
+	tools.resolveCreator = func(
+		uriStr string,
+	) (*url.URL, cutting_garden_plugins.ContainerCreator, error) {
+		u, err := url.Parse(uriStr)
+		return u, c, err
+	}
+
+	res, err := tools.CallTool(context.Background(), "create_node",
+		json.RawMessage(`{"uri":"faketest://h/box","body":"b","type":"test-assigned-v1"}`))
+	if err != nil {
+		t.Fatalf("transport error: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("unexpected tool error: %+v", res.Content)
+	}
+	if len(c.childrenOf) != 1 || c.childrenOf[0] != "faketest://h/box" {
+		t.Fatalf("CreateChild not dispatched with the container: %v",
+			c.childrenOf)
+	}
+	if len(res.Content) == 0 ||
+		!strings.Contains(res.Content[0].Text, "faketest://h/box/assigned-9") {
+		t.Errorf("result does not report the created URI: %+v", res.Content)
+	}
+
+	// A caller-named type on the same plugin still takes CreateNode.
+	res, err = tools.CallTool(context.Background(), "create_node",
+		json.RawMessage(`{"uri":"faketest://h/x.ics","body":"b","type":"test-object-v1"}`))
+	if err != nil || res.IsError {
+		t.Fatalf("caller-named create failed: %v %+v", err, res)
+	}
+	if len(c.created) != 1 || c.created[0] != "faketest://h/x.ics" {
+		t.Errorf("CreateNode not dispatched: %v", c.created)
+	}
+}
+
 func TestCallTool_NonMutatorURIIsToolError(t *testing.T) {
 	tools := newFakeTools(t, &fakeMutator{}, "faketest://h/")
 	res, err := tools.CallTool(context.Background(), "create_node",

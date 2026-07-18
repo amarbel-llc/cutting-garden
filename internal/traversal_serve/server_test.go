@@ -185,6 +185,23 @@ func (p *fakeFullPlugin) CreateNode(
 	return nil
 }
 
+func (p *fakeFullPlugin) CreateChild(
+	_ context.Context, container *url.URL, body io.Reader, typ string,
+) (*url.URL, error) {
+	data, err := io.ReadAll(body)
+	if err != nil {
+		return nil, err
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.createdType = typ
+	p.createdBody = data
+	p.createdURI = container.String() + "/assigned-1"
+
+	return url.Parse(p.createdURI)
+}
+
 func (p *fakeFullPlugin) PutNode(
 	_ context.Context, _ *url.URL, body io.Reader,
 ) error {
@@ -356,7 +373,7 @@ func TestServeInitializeFullPluginDeclaration(t *testing.T) {
 
 	wantCaps := []string{
 		CapRoots, CapLeafRead, CapFacetCounts,
-		CapFacetVersion, CapFacetLabels, CapMutate,
+		CapFacetVersion, CapFacetLabels, CapMutate, CapContainerCreate,
 	}
 	gotCaps := slices.Clone(result.Capabilities)
 	slices.Sort(gotCaps)

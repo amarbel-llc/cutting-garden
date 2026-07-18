@@ -48,14 +48,15 @@ type WirePlugin struct {
 }
 
 var (
-	_ cutting_garden_plugins.RootProvider   = (*WirePlugin)(nil)
-	_ cutting_garden_plugins.LeafReader     = (*WirePlugin)(nil)
-	_ cutting_garden_plugins.FacetDescriber = (*WirePlugin)(nil)
-	_ cutting_garden_plugins.FacetCounter   = (*WirePlugin)(nil)
-	_ cutting_garden_plugins.FacetVersioner = (*WirePlugin)(nil)
-	_ cutting_garden_plugins.FacetLabeler   = (*WirePlugin)(nil)
-	_ cutting_garden_plugins.NodeMutator    = (*WirePlugin)(nil)
-	_ cutting_garden_plugins.BodyDescriber  = (*WirePlugin)(nil)
+	_ cutting_garden_plugins.RootProvider     = (*WirePlugin)(nil)
+	_ cutting_garden_plugins.LeafReader       = (*WirePlugin)(nil)
+	_ cutting_garden_plugins.FacetDescriber   = (*WirePlugin)(nil)
+	_ cutting_garden_plugins.FacetCounter     = (*WirePlugin)(nil)
+	_ cutting_garden_plugins.FacetVersioner   = (*WirePlugin)(nil)
+	_ cutting_garden_plugins.FacetLabeler     = (*WirePlugin)(nil)
+	_ cutting_garden_plugins.NodeMutator      = (*WirePlugin)(nil)
+	_ cutting_garden_plugins.BodyDescriber    = (*WirePlugin)(nil)
+	_ cutting_garden_plugins.ContainerCreator = (*WirePlugin)(nil)
 )
 
 // NewWirePlugin returns the adapter for spec. It does NOT spawn — the
@@ -580,6 +581,65 @@ func (w *WirePlugin) CreateNode(
 		},
 		nil,
 	)
+}
+
+// CreateChild issues node.create_child (ContainerCreator,
+// cutting-garden#143): create under container with the source assigning
+// the created node's identity, reported back as the result URI. Writes
+// never silently decline: an unadvertised capability is an error, and
+// the returned URI is held to the same credential-free invariant as
+// every other plugin-emitted URI.
+func (w *WirePlugin) CreateChild(
+	ctx context.Context, container *url.URL, body io.Reader, typ string,
+) (*url.URL, error) {
+	sess, advertised, err := w.liveSessionWithCap(CapContainerCreate)
+	if err != nil {
+		return nil, err
+	}
+	if !advertised {
+		return nil, errors.ErrorWithStackf(
+			"wire plugin %q does not advertise the %q capability;"+
+				" refusing the mutation",
+			w.spec.Name, CapContainerCreate,
+		)
+	}
+
+	encoded, err := encodeBody(body)
+	if err != nil {
+		return nil, errors.Wrapf(
+			err, "wire plugin %q: read create_child body", w.spec.Name,
+		)
+	}
+
+	var result NodeCreateChildResult
+	if err := w.call(
+		ctx, sess, MethodNodeCreateChild,
+		NodeCreateChildParams{
+			Container:  container.String(),
+			Type:       typ,
+			BodyBase64: encoded,
+		},
+		&result,
+	); err != nil {
+		return nil, err
+	}
+
+	created, err := url.Parse(result.Created)
+	if err != nil || result.Created == "" {
+		return nil, errors.ErrorWithStackf(
+			"wire plugin %q: create_child returned an unusable URI %q",
+			w.spec.Name, result.Created,
+		)
+	}
+	if created.User != nil {
+		return nil, errors.ErrorWithStackf(
+			"wire plugin %q: created %q carries userinfo — URIs MUST be"+
+				" credential-free",
+			w.spec.Name, created.Redacted(),
+		)
+	}
+
+	return created, nil
 }
 
 // PutNode issues node.put — full-replace of an existing leaf's body.
