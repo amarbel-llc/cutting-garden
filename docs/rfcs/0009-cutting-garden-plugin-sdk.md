@@ -57,11 +57,18 @@ Two facts close this model to outside extension:
    capture protocol (RFC 0002 §Subprocess, RFC 0008) is **capture-write
    only**: its method set is `initialize` / `capture.batch` /
    `blob.begin` / `blob.finish` / `shutdown`. It carries no traversal,
-   restore, diff, or keyed-read surface — those are in-process Go
-   interfaces with no wire form. A plugin whose purpose is *reading and
-   traversing* a tree (enumerating roots, walking a DAG, serving nodes)
-   cannot be expressed over it. The Go-library SDK specified here is the
-   only path that exposes the read/traversal capabilities.
+   restore, diff, or keyed-read surface. A plugin whose purpose is
+   *reading and traversing* a tree (enumerating roots, walking a DAG,
+   serving nodes) cannot be expressed over it.
+
+   > Superseded on one point since acceptance of RFC 0013: the
+   > traversal/read/facet/mutation capabilities now ALSO have a wire
+   > form — the traversal plugin transport — through which a non-Go
+   > plugin serves them (`[[traversal_plugins]]`, adapted host-side into
+   > these same interfaces). The Go-library SDK remains the richer
+   > surface (no serialization, no process management) and the only
+   > path for capture/restore/diff implementations in Go; this RFC's
+   > facade contract is unchanged.
 
 ### Why plugins must leave `internal/`
 

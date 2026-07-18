@@ -1,16 +1,29 @@
 ---
-status: proposed
-date: 2026-07-17
+status: accepted
+date: 2026-07-18
 ---
 
 # RFC 0013 — Traversal Plugin Transport: JSON-RPC over stream sockets
 
-- Status: **proposed** — drafted against cutting-garden#140; the first
-  external consumer is forgejo-cli's `fj-cg` (Rust). Ratification
-  follows the RFC 0008 precedent: two independent implementations (the
-  in-repo Go test peer + one non-Go peer) passing §Conformance flips
-  this to `accepted`.
-- Date: 2026-07-17
+- Status: **accepted** (2026-07-18) — ratified by two independent
+  implementations, per the RFC 0008 precedent. cutting-garden's host
+  side pins the §Conformance bar in-repo: the packaged Go test peer
+  served through `WirePlugin` is deeply equal to the same plugin linked
+  in-process (nodes, types, facet declarations, summaries, tokens,
+  labels, leaf content, and the full create/put/patch/delete mutation
+  lifecycle), plus the portable bats lane under the nix sandbox.
+  forgejo-cli's `fj-cg` (Rust) then ratified as the second
+  implementation: the portable lane 4/4 via `CG_TEST_TRAVERSAL_SERVE`
+  substitution, and a live `[[traversal_plugins]]`-configured
+  `list fj://…` descending two levels (repo → issues → comments) with
+  real content (cutting-garden#140). The ratification run itself
+  surfaced and fixed one host defect (direct-URI `list`/`mcp` paths not
+  loading config, so wire schemes went unregistered) and two fj-cg
+  defects (a `sun_path` overflow under deep `$TMPDIR`s — the same
+  RFC 0008 Phase-0 finding, §Launch's short-path requirement vindicated
+  — and wire encodings drifted from the ratified shapes), all resolved
+  before acceptance.
+- Date: 2026-07-17 (drafted); 2026-07-18 (accepted)
 - Relation: complements RFC 0008 (capture transport). Reuses its launch
   pattern (§Launch) but NOT its data path — no `SOCK_SEQPACKET`, no
   `SCM_RIGHTS`. Lifts the in-process capability contracts of FDR 0014
