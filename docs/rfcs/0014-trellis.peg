@@ -1,0 +1,171 @@
+// trellis.peg — normative grammar for the trellis query language (RFC 0014)
+//
+// Trellis supersets post-FDR doddish (dodder FDR 0018 "Genre as a
+// Type-Defined Field"): the per-step predicate layer is doddish with genre
+// suffixes removed and identifiers opaque (tag vs object id resolves
+// through the type system at evaluation, never from token shape). Trellis
+// adds typed-arrow traversal, subpath predicates (spatial and version),
+// value lists, and framework-reserved virtual fields (_genre, _body,
+// _description).
+//
+// Notation: Ford PEG, authored langlang-compatible (FDR 0022): // comments
+// only, explicit spacing, no reliance on automatic space insertion.
+// Whitespace is SEMANTIC in trellis — space is the AND separator between
+// terms and is REQUIRED around combinators — so when feeding this grammar
+// to langlang, disable builtin spacing (cf. grammars/sku_record.peg).
+//
+// The espalier data format (RFC 0014 "Isometry") is the ground fragment of
+// this same grammar: trellis literals with `=`-semantics only (no other
+// operators, no value lists, no sigils beyond the default, only ground
+// subpaths), object ids present, @digests for blob identity, and
+// _description carrying the box trailer. Groundness is a semantic validity
+// condition, not a separate grammar: espalier parses as trellis.
+
+// ---- entry ---------------------------------------------------------------
+
+Query        <- SP? Path SP? EOF
+
+// A path is steps joined by combinators. The result set is the last
+// step's (object, version) pairs. Whitespace around combinators is
+// mandatory (this kills the `due<-1` vs `due <- 1` ambiguity class).
+Path         <- Step (SP Combinator SP Step)*
+
+// A step is a maximal run of space-separated terms, ANDed, all
+// predicating the same (object, version) pair. The !Combinator guard is
+// what ends a step: `-` may begin an identifier (dependent tags), but
+// `->` after whitespace is always a combinator.
+Step         <- Term (SP !Combinator Term)*
+
+// ---- terms (per-step predicate layer, doddish-inherited) -----------------
+
+// `^` negates the next atom or group; `=` forces exact (non-prefix)
+// matching. Both apply to the term they prefix, per doddish.
+Term         <- '^'? '='? BasicTerm
+
+BasicTerm    <- Group
+              / FieldPred
+              / TypeTerm Sigil?
+              / DigestTerm Sigil?
+              / Ident Sigil?
+              / Sigil                 // bare sigil: empty predicate (doddish `:`)
+
+TypeTerm     <- '!' Ident             // type identity (not genre; dodder FDR 0018)
+DigestTerm   <- '@' Ident             // blob identity — content-addressed exact match
+
+// Sigils choose the step's candidate version-set and are combinable
+// (`:.`). A sigil on any term — or bare — scopes the WHOLE step (pair
+// model): some single version satisfies every term of the step.
+// Per-term version binding is the version subpath, below.
+//   :  latest (default)   +  history / captured revisions
+//   .  external / local materializations   ?  hidden (host-defined)
+Sigil        <- SigilRune+
+SigilRune    <- [:+.?]
+
+// ---- groups --------------------------------------------------------------
+
+// One bracket syntax, three readings, disambiguated by the first token:
+//   combinator  => spatial subpath predicate  [-> ...]
+//   sigil       => version subpath predicate  [+ ...]
+//   otherwise   => OR-alternatives            [a b, c]
+// Subpaths are existential and leave the subject unchanged; each subpath
+// is independently quantified. OR-alternatives are comma-separated
+// CONJUNCTION RUNS (extends doddish's single-atom alternatives) — load-
+// bearing for isometry: every box-format interior is a one-alternative
+// group, so a bare step and its bracketed spelling are equivalent.
+Group        <- '[' SP? GroupBody SP? ']'
+GroupBody    <- SubPath / VersionSub / Alternatives
+
+// [-> ...] full paths allowed inside (chained hops, closures, nesting).
+// [->] (empty) means "has any outgoing edge", mirroring [+].
+SubPath      <- Combinator (SP Path)?
+
+// [+ ...] existential over this object's versions; v1 restricts the
+// content to a step (no combinators inside — deferred). [+] (empty)
+// means "has at least one recorded revision"; ^[+] its negation.
+VersionSub   <- Sigil (SP Step)?
+
+Alternatives <- ConjRun (SP? ',' SP? ConjRun)*
+ConjRun      <- Term (SP !Combinator Term)*
+
+// ---- field predicates ----------------------------------------------------
+
+// Flat per-type field namespace; the plugin owns the flattening (facet
+// keys are field projections in the same namespace). Quoted field names
+// are OPAQUE — "event.summary" names a field; dots are characters, not
+// paths (arrows walk; names name). The `_` prefix is reserved for
+// framework virtual fields; the reservation applies to the unquoted
+// content and to field-name position only.
+FieldPred    <- FieldName SP? FieldOp SP? (ValueList / Value)
+FieldName    <- String / Ident
+
+// Longest-match first. `~=` is RESERVED (regex, deferred): parsed here,
+// rejected at validation.
+FieldOp      <- '*=' / '^=' / '$=' / '!=' / '<=' / '>=' / '~=' / '=' / '<' / '>'
+
+// Value lists distribute the operator as OR:
+//   k*=[v1, v2]  ==  [k*=v1, k*=v2]
+ValueList    <- '[' SP? Value (SP? ',' SP? Value)* SP? ']'
+Value        <- String / Bareword
+
+// ---- combinators: typed-arrow traversal ----------------------------------
+
+// Every edge has a type; containment (parent->child) is the built-in
+// edge type every traversal plugin provides. Edge brackets hold a
+// compound predicate (ConjRun — no traversal inside, v1) evaluated
+// against the EDGE; a bare name is the degenerate identifier predicate.
+// Closures (`->>`, `<<-`) are one-or-more hops with visited-set
+// deduplication — termination is defined on cyclic graphs.
+// Longest-match first: closure forms before their single-hop prefixes.
+// TypedClosure (`-[pred]->>`) is RESERVED: parsed, rejected at
+// validation until hosts serve typed edges (walkthrough #6).
+Combinator   <- TypedClosure / TypedFwd / TypedBack
+              / '->>' / '<<-'
+              / '->'  / '<-'
+TypedClosure <- '-[' SP? ConjRun SP? ']->>'
+TypedFwd     <- '-[' SP? ConjRun SP? ']->'
+TypedBack    <- '<-[' SP? ConjRun SP? ']-'
+
+// ---- lexical -------------------------------------------------------------
+
+// Identifiers are opaque object references using rune-class EXCLUSION,
+// matching doddish's scanner discipline: everything that is not
+// whitespace and not a reserved delimiter is identifier. `-` and `/` are
+// admitted inline (`area-personal`, `one/uno`, leading `-` for dependent
+// tags). `.` is EXCLUDED (it is the external sigil) — quote identifiers
+// that need it (InventoryList `num.num` ids arrive quoted).
+Ident        <- IdentRune+
+IdentRune    <- '-' / '/' / (!Reserved !SP1 .)
+Reserved     <- [\[\]^=,!@<>*$~%#"'] / SigilRune
+
+// Doddish quoting rules verbatim: double or single quotes; backslash
+// escapes \n \t \r \a \b \f \v, \" and \\ round-trip, unknown escapes
+// pass the following character through unchanged.
+String       <- '"' (!'"' Char)* '"'
+              / "'" (!"'" Char)* "'"
+Char         <- '\\' . / .
+Bareword     <- IdentRune+
+
+SP           <- SP1+
+SP1          <- [ \t\r\n]
+EOF          <- !.
+
+// ---- conformance vectors (RFC 0014 Examples; each MUST parse) ------------
+//
+//   !task priority-1_should [due<="2026-08-01"]          — the bracketed field
+//     predicate is a one-alternative group, equivalent to bare due<="2026-08-01"
+//   !newsblur-story-v1 year=2026
+//     [-> _body*=["zettelkasten", "localfirst", "git", "obsidian", "roam research"]]
+//   !caldav-object-v1 component=VEVENT dtstart^=["20260718", "20260719"]
+//   !caldav-object-v1 component=VEVENT dtstart>="20260720" dtstart<"20260727"
+//   !forgejo-issue-v1 created^="2026-07-17" state=closed
+//   !forgejo-issue-v1 state=open [+ state=closed]
+//   !newsblur-story-v1 [-> [+ _body*="merkle"]]
+//   +
+//   !web-page-v1 [+]
+//   !web-page-v1 ^[+]
+//   !task ^done project-cutting-garden
+//   ->> !task ^done
+//   -[blocks]->> !task ^done                             — parses; validation rejects (reserved)
+//   "event.summary"*="standup"
+//   [story-8841 !newsblur-story-v1 year=2026 [-> content-8841 @blake2b256-9ft3x]]
+//     — espalier literal: parses as a ground one-alternative group
