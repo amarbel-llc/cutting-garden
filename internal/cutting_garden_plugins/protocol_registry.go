@@ -55,14 +55,27 @@ func ResolveProtocolRestore(kind string) (ProtocolRestorePlugin, error) {
 // MustRegisterProtocolDiff is the diff-direction analogue of
 // MustRegisterProtocolRestore.
 func MustRegisterProtocolDiff(p ProtocolDiffPlugin) {
+	if err := RegisterProtocolDiff(p); err != nil {
+		panic(err)
+	}
+}
+
+// RegisterProtocolDiff installs p under p.ProtocolKind(), returning an
+// error (wrapping ErrAlreadyRegistered) on a clash instead of
+// panicking — the config-driven registration path for a wire capture
+// plugin (cutting-garden#146 slice 2), where a kind collision is user
+// misconfiguration (EX_USAGE), not a programming error. MustRegister
+// ProtocolDiff is a thin panicking wrapper for binding init() functions.
+func RegisterProtocolDiff(p ProtocolDiffPlugin) error {
 	r := defaultProtocolDiffRegistry
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	kind := p.ProtocolKind()
 	if _, ok := r.plugins[kind]; ok {
-		panic(errors.Errorf("%w: protocol diff %q", ErrAlreadyRegistered, kind))
+		return errors.Errorf("%w: protocol diff %q", ErrAlreadyRegistered, kind)
 	}
 	r.plugins[kind] = p
+	return nil
 }
 
 // ResolveProtocolDiff is the diff-direction analogue of

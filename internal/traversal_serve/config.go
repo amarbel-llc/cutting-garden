@@ -29,9 +29,12 @@ const (
 // capture-serve and/or traversal-serve sessions as needed.
 // `[[traversal_plugins]]` remains a compatibility alias decoded into
 // this same type (cgconfig.ConfigV0.TraversalPlugins): an entry there
-// is always treated as Protocols = [ProtocolTraversal] regardless of
-// any protocols key present (EffectiveProtocols), so existing configs
-// keep working unmodified.
+// that omits protocols — the shape every existing config has, since
+// the key did not exist before this generalization — defaults to
+// Protocols = [ProtocolTraversal] via EffectiveProtocols, so existing
+// configs keep working unmodified. (An entry that explicitly sets
+// protocols under the legacy table is honored as written; the default
+// only fills the gap left by an absent key.)
 //
 // Command's interpretation depends on which table decoded the stanza:
 // a [[traversal_plugins]] (legacy alias) entry's Command is the full

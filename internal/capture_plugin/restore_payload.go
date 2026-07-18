@@ -9,6 +9,43 @@ import (
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 )
 
+// PayloadRefOfReceipt walks a protocol receipt to its single "payload"
+// reference — the generic shape RestorePayload materializes — verifying
+// the ref's type lock along the way. It is the read-only half of that
+// same generic convention (cutting-garden#146 decision 3): reused by
+// RestorePayload itself and by the generic protocol-diff fallback
+// (internal/diff's runProtocolDiff, and the config-declared capture
+// wire plugin's own DiffProtocol) to compare two receipts' payload
+// digests without any kind-specific plugin code. Does not verify the
+// receipt's kind — callers reach a specific receipt only through
+// kind-keyed dispatch already (ResolveProtocolRestore/ResolveProtocolDiff),
+// so a redundant kind check here would only duplicate that guarantee.
+func PayloadRefOfReceipt(
+	store blob_stores.BlobStoreInitialized,
+	receiptDigest string,
+) (Ref, error) {
+	receipt, err := ReadNode(store, receiptDigest)
+	if err != nil {
+		return Ref{}, err
+	}
+
+	payloadRef, ok := receipt.RefByAlias("payload")
+	if !ok {
+		return Ref{}, errors.ErrorWithStackf(
+			"capture_plugin: receipt %s has no \"payload\" reference; "+
+				"generic restore/diff only supports single-payload "+
+				"receipts (a kind-specific plugin is required for this "+
+				"receipt's shape)",
+			receiptDigest,
+		)
+	}
+	if err := VerifyRef(payloadRef); err != nil {
+		return Ref{}, err
+	}
+
+	return payloadRef, nil
+}
+
 // RestorePayload materializes a protocol receipt's single "payload" node
 // body to dest, without any receipt-kind-specific plugin code. It is the
 // GENERIC restore path (cutting-garden#146 decision 3; #116's "restore
@@ -37,23 +74,8 @@ func RestorePayload(
 	receiptDigest string,
 	dest string,
 ) (err error) {
-	receipt, err := ReadNode(store, receiptDigest)
+	payloadRef, err := PayloadRefOfReceipt(store, receiptDigest)
 	if err != nil {
-		return err
-	}
-
-	payloadRef, ok := receipt.RefByAlias("payload")
-	if !ok {
-		return errors.ErrorWithStackf(
-			"capture_plugin: receipt %s has no \"payload\" reference; "+
-				"generic restore only supports single-payload receipts "+
-				"(a kind-specific plugin registered via "+
-				"MustRegisterProtocolRestore is required for this "+
-				"receipt's shape)",
-			receiptDigest,
-		)
-	}
-	if err := VerifyRef(payloadRef); err != nil {
 		return err
 	}
 

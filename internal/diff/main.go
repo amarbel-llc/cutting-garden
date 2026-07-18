@@ -268,7 +268,9 @@ func (cmd *Diff) runDiff(
 
 // runProtocolDiff compares an RFC 0002 receipt against a live source by
 // dispatching to the protocol-diff plugin registered for the receipt's
-// kind. Difference lines are printed to stdout; a non-empty set yields a
+// kind — or, when no plugin is registered for that kind,
+// genericProtocolDiffViaRecapture (cutting-garden#146 decision 3).
+// Difference lines are printed to stdout; a non-empty set yields a
 // MismatchError (exit 1), matching the EntryV1 diff's exit semantics.
 func (cmd *Diff) runProtocolDiff(
 	ctx errors.Context,
@@ -276,33 +278,36 @@ func (cmd *Diff) runProtocolDiff(
 	store blob_stores.BlobStoreInitialized,
 	receiptIDStr, dirStr string,
 ) error {
-	pp, err := cutting_garden_plugins.ResolveProtocolDiff(kind)
-	if err != nil {
-		return err
-	}
-
 	sourceURL, err := url.Parse(dirStr)
 	if err != nil {
 		return errors.Wrapf(err, "parse source %q", dirStr)
 	}
 
-	res, err := pp.DiffProtocol(cutting_garden_plugins.ProtocolDiffRequest{
-		Context:       ctx,
-		BlobStore:     store,
-		ReceiptDigest: receiptIDStr,
-		// Re-capture into the SAME store the receipt was located in, not the
-		// raw -store flag (which is empty when omitted). LocateReceiptStore
-		// may resolve a non-default store, and a subprocess-form diff (the
-		// web binding) re-captures the live source via writer.cmd: threading
-		// the located store's canonical id keeps DiffProtocol's live
-		// re-capture and its readback on one store. The subprocess writer
-		// re-resolves this same id from the inherited env — blob_store_id's
-		// String form is canonical, so there is no separate digest pin lost
-		// across the process boundary.
-		StoreName: store.GetId().String(),
-		Source:    sourceURL,
-		RawSource: dirStr,
-	})
+	// Re-capture into the SAME store the receipt was located in, not the
+	// raw -store flag (which is empty when omitted). LocateReceiptStore
+	// may resolve a non-default store, and a subprocess-form diff
+	// re-captures the live source via writer.cmd: threading the located
+	// store's canonical id keeps the re-capture and its readback on one
+	// store. The subprocess writer re-resolves this same id from the
+	// inherited env — blob_store_id's String form is canonical, so there
+	// is no separate digest pin lost across the process boundary.
+	storeName := store.GetId().String()
+
+	var res cutting_garden_plugins.ProtocolDiffResult
+	if pp, perr := cutting_garden_plugins.ResolveProtocolDiff(kind); perr == nil {
+		res, err = pp.DiffProtocol(cutting_garden_plugins.ProtocolDiffRequest{
+			Context:       ctx,
+			BlobStore:     store,
+			ReceiptDigest: receiptIDStr,
+			StoreName:     storeName,
+			Source:        sourceURL,
+			RawSource:     dirStr,
+		})
+	} else {
+		res, err = genericProtocolDiffViaRecapture(
+			ctx, store, receiptIDStr, storeName, sourceURL, dirStr,
+		)
+	}
 	if err != nil {
 		return err
 	}
@@ -327,6 +332,77 @@ func (cmd *Diff) runProtocolDiff(
 	}
 
 	return nil
+}
+
+// genericProtocolDiffViaRecapture is the GENERIC protocol-diff fallback
+// for a receipt whose kind has no registered
+// cutting_garden_plugins.ProtocolDiffPlugin (cutting-garden#146
+// decision 3: "old-receipt diff degrades to capture-and-compare
+// through the new path" — the diff-side sibling of
+// capture_plugin.RestorePayload's generic restore). It resolves a
+// capture plugin for the comparison source's URL SCHEME (not the
+// receipt's kind — the two may differ once a plugin is reconfigured or
+// removed from config), re-captures the source, and compares the two
+// receipts' single "payload" reference digests — the same generic
+// shape RestorePayload targets. Fails with that helper's own
+// diagnostic when the receipt is not single-payload shaped (a
+// structured multi-object tree, e.g. git's or caldav's, has no generic
+// diff fallback either — it needs its kind-specific plugin registered).
+func genericProtocolDiffViaRecapture(
+	ctx errors.Context,
+	store blob_stores.BlobStoreInitialized,
+	receiptIDStr, storeName string,
+	sourceURL *url.URL,
+	rawSource string,
+) (cutting_garden_plugins.ProtocolDiffResult, error) {
+	plugin, err := cutting_garden_plugins.ResolveScheme(sourceURL.Scheme)
+	if err != nil {
+		return cutting_garden_plugins.ProtocolDiffResult{}, errors.Wrapf(
+			err, "generic protocol diff: no plugin registered for scheme %q"+
+				" (and no protocol-diff plugin registered for the receipt's kind)",
+			sourceURL.Scheme,
+		)
+	}
+	pcp, ok := plugin.(cutting_garden_plugins.ProtocolCapturePlugin)
+	if !ok {
+		return cutting_garden_plugins.ProtocolDiffResult{}, errors.ErrorWithStackf(
+			"generic protocol diff: plugin for scheme %q does not support"+
+				" capture; cannot re-capture %q for comparison",
+			sourceURL.Scheme, rawSource,
+		)
+	}
+
+	storedPayload, err := capture_plugin.PayloadRefOfReceipt(store, receiptIDStr)
+	if err != nil {
+		return cutting_garden_plugins.ProtocolDiffResult{}, err
+	}
+
+	captureRes, err := pcp.CaptureProtocol(cutting_garden_plugins.ProtocolCaptureRequest{
+		Context:   ctx,
+		Source:    sourceURL,
+		RawArg:    rawSource,
+		BlobStore: store,
+		StoreName: storeName,
+	})
+	if err != nil {
+		return cutting_garden_plugins.ProtocolDiffResult{}, err
+	}
+
+	livePayload, err := capture_plugin.PayloadRefOfReceipt(store, captureRes.ReceiptDigest)
+	if err != nil {
+		return cutting_garden_plugins.ProtocolDiffResult{}, err
+	}
+
+	if storedPayload.Digest == livePayload.Digest {
+		return cutting_garden_plugins.ProtocolDiffResult{}, nil
+	}
+
+	return cutting_garden_plugins.ProtocolDiffResult{
+		Differences: []string{
+			fmt.Sprintf("M %s payload %s -> %s",
+				rawSource, storedPayload.Digest, livePayload.Digest),
+		},
+	}, nil
 }
 
 // pluralize returns singular when n == 1, plural otherwise. Used in

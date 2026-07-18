@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"code.linenisgreat.com/cutting-garden/internal/capture_wire"
 	"code.linenisgreat.com/cutting-garden/internal/cgconfig"
 	"code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
 	"code.linenisgreat.com/cutting-garden/internal/traversal_serve"
@@ -189,17 +190,65 @@ protocols = ["traversal"]
 	}
 }
 
-// TestRegisterPlugins_CapturePlugin_NotYetImplemented pins the phase-1
-// intermediate state (cutting-garden#146 slice 2): a [[plugins]] stanza
-// declaring the capture protocol is a clear configuration error, not a
-// silent no-op, until phase 2 wires the capture-side launcher.
-func TestRegisterPlugins_CapturePlugin_NotYetImplemented(t *testing.T) {
+// TestRegisterPlugins_GeneralTableCaptureStanza pins cutting-garden#146
+// slice 2 phase 2: a [[plugins]] stanza declaring protocols =
+// ["capture"] registers a capture_wire.Plugin under its configured
+// scheme AND under its name in the protocol-diff registry — diff
+// dispatches RFC 0002 protocol receipts by receipt KIND, a registry
+// independent of the scheme registry RegisterScheme populates, so
+// capture-side registration needs both.
+func TestRegisterPlugins_GeneralTableCaptureStanza(t *testing.T) {
 	raw := []byte(`
 [[plugins]]
-name = "chrest"
+name = "chresttest"
 command = ["chrest"]
-schemes = ["web"]
+schemes = ["chresttest"]
 protocols = ["capture"]
+`)
+	doc, err := cgconfig.DecodeConfigV0(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := registerPlugins(doc.Data(), raw); err != nil {
+		t.Fatal(err)
+	}
+
+	plugin, err := cutting_garden_plugins.ResolveScheme("chresttest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cw, ok := plugin.(*capture_wire.Plugin)
+	if !ok {
+		t.Fatalf("registered plugin is %T, want *capture_wire.Plugin", plugin)
+	}
+	if got := cw.Schemes(); len(got) != 1 || got[0] != "chresttest" {
+		t.Errorf("Schemes() = %v, want [chresttest]", got)
+	}
+	if got := cw.ProtocolKind(); got != "chresttest" {
+		t.Errorf("ProtocolKind() = %q, want %q", got, "chresttest")
+	}
+
+	pp, err := cutting_garden_plugins.ResolveProtocolDiff("chresttest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotCW, ok := pp.(*capture_wire.Plugin); !ok || gotCW != cw {
+		t.Error("ResolveProtocolDiff did not return the same registered plugin")
+	}
+}
+
+// TestRegisterPlugins_CombinedProtocols_NotYetSupported pins the
+// current limitation: a stanza declaring BOTH protocols on one entry
+// is a clear configuration error rather than silently registering
+// only one capability surface.
+func TestRegisterPlugins_CombinedProtocols_NotYetSupported(t *testing.T) {
+	raw := []byte(`
+[[plugins]]
+name = "bothtest"
+command = ["true"]
+schemes = ["bothtest"]
+protocols = ["capture", "traversal"]
 `)
 	doc, err := cgconfig.DecodeConfigV0(raw)
 	if err != nil {
@@ -208,7 +257,7 @@ protocols = ["capture"]
 
 	err = registerPlugins(doc.Data(), raw)
 	if err == nil {
-		t.Fatal("capture-protocol stanza must error before phase 2 lands")
+		t.Fatal("combined-protocol stanza must error")
 	}
 	if !errors.Is400BadRequest(err) {
 		t.Errorf("want EX_USAGE (400 bad request), got %v", err)

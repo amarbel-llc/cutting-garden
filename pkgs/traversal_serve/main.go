@@ -171,11 +171,38 @@ type PluginInfo = internal.PluginInfo
 // dependency.
 type PluginSpec = internal.PluginSpec
 
-// PluginStanza is one `[[traversal_plugins]]` stanza of the
-// cutting-garden config (RFC 0013 §Host integration): the declaration
-// that a wire plugin serves some schemes via a spawned command. The
-// aggregator (cgconfig.ConfigV0) embeds a slice of these at the top
-// level; tommy's generated codec for that field delegates to this
+// PluginStanza is one `[[plugins]]` stanza of the cutting-garden config:
+// the declaration that a wire plugin binary serves some schemes via a
+// spawned command, and which wire protocol(s) it speaks (Protocols).
+// This is the cutting-garden#146 slice 2 generalization of the
+// RFC 0013-only `[[traversal_plugins]]` stanza into ONE stanza shape
+// covering both RFC 0008 (capture) and RFC 0013 (traversal) — a single
+// config entry per plugin binary, from which the host launches
+// capture-serve and/or traversal-serve sessions as needed.
+// `[[traversal_plugins]]` remains a compatibility alias decoded into
+// this same type (cgconfig.ConfigV0.TraversalPlugins): an entry there
+// that omits protocols — the shape every existing config has, since
+// the key did not exist before this generalization — defaults to
+// Protocols = [ProtocolTraversal] via EffectiveProtocols, so existing
+// configs keep working unmodified. (An entry that explicitly sets
+// protocols under the legacy table is honored as written; the default
+// only fills the gap left by an absent key.)
+//
+// Command's interpretation depends on which table decoded the stanza:
+// a [[traversal_plugins]] (legacy alias) entry's Command is the full
+// argv verbatim, unchanged from RFC 0013's original convention (e.g.
+// ["fj-cg", "traversal-serve"]) — the plugin-launching code appends
+// nothing. A [[plugins]] (general) entry's Command is instead the BASE
+// binary invocation WITHOUT a subcommand (e.g. ["chrest"]); the host
+// appends the protocol-specific subcommand itself — "traversal-serve"
+// for ProtocolTraversal, "capture-serve" (attempted first) or
+// "capture-batch" (the RFC 0008 §Migration v1 fallback) for
+// ProtocolCapture. This lets one [[plugins]] Command work for either or
+// both protocols without the caller having to know which subcommand
+// name to embed.
+//
+// The aggregator (cgconfig.ConfigV0) embeds slices of these at the top
+// level; tommy's generated codec for those fields delegates to this
 // type's generated DecodePluginStanzaInto.
 type PluginStanza = internal.PluginStanza
 type PluginStanzaDocument = internal.PluginStanzaDocument
@@ -323,7 +350,11 @@ var SectionTOML = internal.SectionTOML
 var Serve = internal.Serve
 
 // ValidateStanzas enforces the cross-stanza invariants the aggregated
-// config's Validate delegates here: unique names, unique schemes.
+// config's Validate delegates here: unique names, unique schemes —
+// across BOTH the general []PluginStanza slice (the `[[plugins]]`
+// table) and the legacy slice (the `[[traversal_plugins]]`
+// compatibility alias, cutting-garden#146 decision 2). A name or scheme
+// may not be claimed twice regardless of which table declared it.
 // (Scheme clashes against LINKED plugins surface at registration, which
 // consults the live registry.)
 var ValidateStanzas = internal.ValidateStanzas
@@ -378,6 +409,15 @@ const MethodNodePut = internal.MethodNodePut
 const MethodNodesList = internal.MethodNodesList
 const MethodRootsList = internal.MethodRootsList
 const MethodShutdown = internal.MethodShutdown
+
+// ProtocolCapture declares the plugin speaks the RFC 0008 capture
+// transport (a capture-serve session, with the RFC 0008 §Migration
+// v1 capture-batch fallback).
+const ProtocolCapture = internal.ProtocolCapture
+
+// ProtocolTraversal declares the plugin speaks the RFC 0013
+// traversal transport (a traversal-serve session).
+const ProtocolTraversal = internal.ProtocolTraversal
 
 // SchemaV1 is the protocol version token negotiated by initialize
 // (RFC 0013 §Handshake).

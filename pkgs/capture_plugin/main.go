@@ -127,6 +127,19 @@ var ParseNode = internal.ParseNode
 // body lives in the reader.
 var ParseNodeHeader = internal.ParseNodeHeader
 
+// PayloadRefOfReceipt walks a protocol receipt to its single "payload"
+// reference — the generic shape RestorePayload materializes — verifying
+// the ref's type lock along the way. It is the read-only half of that
+// same generic convention (cutting-garden#146 decision 3): reused by
+// RestorePayload itself and by the generic protocol-diff fallback
+// (internal/diff's runProtocolDiff, and the config-declared capture
+// wire plugin's own DiffProtocol) to compare two receipts' payload
+// digests without any kind-specific plugin code. Does not verify the
+// receipt's kind — callers reach a specific receipt only through
+// kind-keyed dispatch already (ResolveProtocolRestore/ResolveProtocolDiff),
+// so a redundant kind check here would only duplicate that guarantee.
+var PayloadRefOfReceipt = internal.PayloadRefOfReceipt
+
 // ReadNode opens the blob identified by digest in store and parses it as a
 // protocol node. It is the store-backed counterpart of ParseNode: the
 // markl-id parse + MakeBlobReader + ParseNode loop that every binding's

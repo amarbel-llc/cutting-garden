@@ -355,6 +355,14 @@ var MustRegisterScheme = internal.MustRegisterScheme
 // the leaf default.
 var NodeTypeFor = internal.NodeTypeFor
 
+// RegisterProtocolDiff installs p under p.ProtocolKind(), returning an
+// error (wrapping ErrAlreadyRegistered) on a clash instead of
+// panicking — the config-driven registration path for a wire capture
+// plugin (cutting-garden#146 slice 2), where a kind collision is user
+// misconfiguration (EX_USAGE), not a programming error. MustRegister
+// ProtocolDiff is a thin panicking wrapper for binding init() functions.
+var RegisterProtocolDiff = internal.RegisterProtocolDiff
+
 // RegisterScheme installs p under every scheme it declares, returning an
 // error (wrapping ErrAlreadyRegistered) on a clash instead of panicking —
 // the config-driven registration path for wire plugins (RFC 0013 §Host

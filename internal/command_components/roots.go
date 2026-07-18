@@ -7,6 +7,7 @@ import (
 	"slices"
 	"sync"
 
+	"code.linenisgreat.com/cutting-garden/internal/capture_wire"
 	"code.linenisgreat.com/cutting-garden/internal/cgconfig"
 	"code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
 	"code.linenisgreat.com/cutting-garden/internal/traversal_serve"
@@ -91,9 +92,24 @@ func registerStanza(
 	wantsTraversal := slices.Contains(protocols, traversal_serve.ProtocolTraversal)
 	wantsCapture := slices.Contains(protocols, traversal_serve.ProtocolCapture)
 
-	var plugin cutting_garden_plugins.Plugin
+	var (
+		plugin      cutting_garden_plugins.Plugin
+		captureWire *capture_wire.Plugin
+	)
 	switch {
-	case wantsTraversal && !wantsCapture:
+	case wantsTraversal && wantsCapture:
+		// A single stanza speaking BOTH protocols needs one registered
+		// value satisfying both capability surfaces; no configured
+		// plugin needs this yet (chrest is capture-only, fj-cg-style
+		// peers are traversal-only), so it is a clear configuration
+		// error rather than silently registering just one side.
+		return errors.BadRequestf(
+			"plugin %q: declaring both %q and %q protocols on one stanza"+
+				" is not yet supported",
+			stanza.Name, traversal_serve.ProtocolTraversal,
+			traversal_serve.ProtocolCapture,
+		)
+	case wantsTraversal:
 		cmd := stanza.Command
 		if !legacyVerbatimCommand {
 			cmd = append(append([]string{}, stanza.Command...), "traversal-serve")
@@ -105,14 +121,20 @@ func registerStanza(
 			ConfigTOML: configTOML,
 		})
 	case wantsCapture:
-		// cutting-garden#146 slice 2 phase 2 wires the capture-side
-		// launcher here (and the wantsTraversal+wantsCapture combined
-		// case); until then a capture-protocol stanza is a clear
-		// configuration error rather than a silent no-op.
-		return errors.BadRequestf(
-			"plugin %q: protocol %q is not yet implemented",
-			stanza.Name, traversal_serve.ProtocolCapture,
-		)
+		// Command is always treated as the base binary invocation for
+		// capture, regardless of which table decoded the stanza — see
+		// traversal_serve.PluginStanza's doc comment: unlike traversal,
+		// RFC 0008's v2/v1 fallback needs to append either
+		// "capture-serve" or "capture-batch", so there is no verbatim
+		// form to preserve for a legacy-alias capture stanza (none
+		// exist today; [[traversal_plugins]] predates ProtocolCapture).
+		cw := capture_wire.New(capture_wire.Spec{
+			Name:    stanza.Name,
+			Command: stanza.Command,
+			Schemes: stanza.Schemes,
+		})
+		captureWire = cw
+		plugin = cw
 	default:
 		return errors.BadRequestf(
 			"plugin %q: no recognized protocols in %v", stanza.Name, protocols,
@@ -122,6 +144,17 @@ func registerStanza(
 	if err := cutting_garden_plugins.RegisterScheme(plugin); err != nil {
 		return errors.BadRequestf("plugin %q: %s", stanza.Name, err)
 	}
+
+	// A capture-side wire plugin ALSO dispatches diff by receipt kind
+	// (internal/diff's runProtocolDiff resolves ResolveProtocolDiff(kind),
+	// a registry independent of the scheme registry RegisterScheme just
+	// populated) — register it there too, under the same stanza name.
+	if captureWire != nil {
+		if err := cutting_garden_plugins.RegisterProtocolDiff(captureWire); err != nil {
+			return errors.BadRequestf("plugin %q: %s", stanza.Name, err)
+		}
+	}
+
 	return nil
 }
 

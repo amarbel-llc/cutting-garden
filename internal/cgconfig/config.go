@@ -38,10 +38,11 @@ type ConfigV0 struct {
 
 	// TraversalPlugins is the pre-generalization `[[traversal_plugins]]`
 	// compatibility alias (cutting-garden#146 decision 2): an entry here
-	// decodes into the same PluginStanza shape as Plugins and is always
-	// treated as protocols = [traversal_serve.ProtocolTraversal]
-	// (PluginStanza.EffectiveProtocols), regardless of any protocols key
-	// present. Existing configs keep working unmodified.
+	// decodes into the same PluginStanza shape as Plugins. Every
+	// existing config omits the (newly-introduced) protocols key, so
+	// PluginStanza.EffectiveProtocols defaults it to
+	// [traversal_serve.ProtocolTraversal] — existing configs keep
+	// working unmodified.
 	TraversalPlugins []traversal_serve.PluginStanza `toml:"traversal_plugins,omitempty"`
 }
 
