@@ -189,22 +189,28 @@ func TestCaptureRoot_EmitsDownloadAndWritePhases(t *testing.T) {
 		t.Fatalf("FailCount = %d, want 0", result.FailCount)
 	}
 
-	if len(rep.phaseStarts) != 2 {
-		t.Fatalf("phaseStarts = %d, want 2 (download + write): %v",
+	// CaptureRoot now brackets every capture with an "enumerate" phase
+	// (the FDR 0004 flat-playlist classification probe, flatplaylist.go)
+	// ahead of the unchanged download+write pair.
+	if len(rep.phaseStarts) != 3 {
+		t.Fatalf("phaseStarts = %d, want 3 (enumerate + download + write): %v",
 			len(rep.phaseStarts), rep.phaseStarts)
 	}
-	if !strings.HasPrefix(rep.phaseStarts[0], "download ") {
-		t.Errorf("phaseStarts[0] = %q, want prefix %q", rep.phaseStarts[0], "download ")
+	if !strings.HasPrefix(rep.phaseStarts[0], "enumerate ") {
+		t.Errorf("phaseStarts[0] = %q, want prefix %q", rep.phaseStarts[0], "enumerate ")
 	}
-	if !strings.Contains(rep.phaseStarts[0], "https://youtu.be/dQw4w9WgXcQ") {
-		t.Errorf("phaseStarts[0] = %q, want the resolved source URL", rep.phaseStarts[0])
+	if !strings.HasPrefix(rep.phaseStarts[1], "download ") {
+		t.Errorf("phaseStarts[1] = %q, want prefix %q", rep.phaseStarts[1], "download ")
 	}
-	if !strings.HasPrefix(rep.phaseStarts[1], "write ") {
-		t.Errorf("phaseStarts[1] = %q, want prefix %q", rep.phaseStarts[1], "write ")
+	if !strings.Contains(rep.phaseStarts[1], "https://youtu.be/dQw4w9WgXcQ") {
+		t.Errorf("phaseStarts[1] = %q, want the resolved source URL", rep.phaseStarts[1])
+	}
+	if !strings.HasPrefix(rep.phaseStarts[2], "write ") {
+		t.Errorf("phaseStarts[2] = %q, want prefix %q", rep.phaseStarts[2], "write ")
 	}
 
-	if len(rep.phaseEnds) != 2 {
-		t.Fatalf("phaseEnds = %d, want 2: %+v", len(rep.phaseEnds), rep.phaseEnds)
+	if len(rep.phaseEnds) != 3 {
+		t.Fatalf("phaseEnds = %d, want 3: %+v", len(rep.phaseEnds), rep.phaseEnds)
 	}
 	for i, v := range rep.phaseEnds {
 		if !v.OK {
@@ -214,6 +220,12 @@ func TestCaptureRoot_EmitsDownloadAndWritePhases(t *testing.T) {
 }
 
 func TestCaptureRoot_DownloadFailureVerdict(t *testing.T) {
+	// failingYtdlpScript fails on EVERY invocation, so CaptureRoot now
+	// fails at its first yt-dlp call — the flat-playlist enumeration
+	// probe (flatplaylist.go) — before ever reaching the download phase.
+	// This still exercises the same contract the test name promises: a
+	// yt-dlp failure surfaces as a single failed phase verdict plus a
+	// root-level Failure.
 	installFakeYtdlp(t, failingYtdlpScript)
 
 	rep := &recordingReporter{}
@@ -228,8 +240,8 @@ func TestCaptureRoot_DownloadFailureVerdict(t *testing.T) {
 		t.Fatalf("FailCount = %d, want 1", result.FailCount)
 	}
 
-	if len(rep.phaseStarts) != 1 || !strings.HasPrefix(rep.phaseStarts[0], "download ") {
-		t.Fatalf("phaseStarts = %v, want exactly the download phase", rep.phaseStarts)
+	if len(rep.phaseStarts) != 1 || !strings.HasPrefix(rep.phaseStarts[0], "enumerate ") {
+		t.Fatalf("phaseStarts = %v, want exactly the enumerate phase", rep.phaseStarts)
 	}
 	if len(rep.phaseEnds) != 1 {
 		t.Fatalf("phaseEnds = %d, want 1: %+v", len(rep.phaseEnds), rep.phaseEnds)

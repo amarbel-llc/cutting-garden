@@ -46,21 +46,82 @@ func captureDefaultArgs(outDir, source string) []string {
 	}
 }
 
-// CaptureRoot resolves the source URL, runs yt-dlp into a tempdir,
-// streams every produced artifact into req.BlobStore as a separate
-// file entry, and emits Stream events per artifact. Non-zero yt-dlp
-// exit collapses into a single stream Failure on rawArg.
+// CaptureRoot resolves the source URL, then classifies it via the SAME
+// flat-playlist enumeration primitive ListRoots and FacetCounts use
+// (flatplaylist.go, FDR 0014 §"Where bulk orchestration lives"): a
+// single probed entry is the FDR 0003 single-video path (unchanged); more
+// than one is a channel/playlist, fanned out per FDR 0004 (captureChannel).
 func (Plugin) CaptureRoot(
 	req cutting_garden_plugins.CaptureRootRequest,
 ) cutting_garden_plugins.CaptureRootResult {
 	r := cutting_garden_plugins.ReporterOrNop(req.Reporter)
 
-	source, err := sourceURLFromArg(req.Source)
+	cleaned, limit, hasLimit, err := extractChannelLimit(req.Source)
 	if err != nil {
 		r.Failure(req.RawArg, err)
 		return rootLevelFailure(req.RawArg, err)
 	}
 
+	source, err := sourceURLFromArg(cleaned)
+	if err != nil {
+		r.Failure(req.RawArg, err)
+		return rootLevelFailure(req.RawArg, err)
+	}
+
+	r.PhaseStart("enumerate " + source)
+	entries, err := probeFlatPlaylist(req.Context, source)
+	if err != nil {
+		r.PhaseEnd(capture_events.Verdict{
+			OK:         false,
+			Diagnostic: map[string]any{"error": err.Error()},
+		})
+		r.Failure(req.RawArg, err)
+		return rootLevelFailure(source, err)
+	}
+	r.PhaseEnd(capture_events.Verdict{
+		OK:         true,
+		Diagnostic: map[string]any{"videos": len(entries)},
+	})
+
+	switch {
+	case len(entries) == 0:
+		err := errors.ErrorWithStackf(
+			"ytdlp plugin: no videos found at %q\n"+
+				"hint: confirm the URL is a video, channel, or playlist yt-dlp recognizes",
+			source,
+		)
+		r.Failure(req.RawArg, err)
+		return rootLevelFailure(source, err)
+
+	case len(entries) == 1:
+		// FDR 0004 single-video classification: download `source` itself
+		// (not the probed entry's own URL, which may differ in
+		// canonicalized form — e.g. a youtu.be short link) so
+		// EntryV1.Root/paths stay byte-identical to FDR 0003's original,
+		// pre-channel behavior.
+		return captureSingleVideo(req, r, source)
+
+	default:
+		limited, err := applyChannelLimit(entries, hasLimit, limit)
+		if err != nil {
+			r.Failure(req.RawArg, err)
+			return rootLevelFailure(source, err)
+		}
+		return captureChannel(req, r, source, limited)
+	}
+}
+
+// captureSingleVideo is FDR 0003's original CaptureRoot body, factored
+// out so CaptureRoot's channel-vs-single-video dispatch can reuse it
+// unchanged: runs yt-dlp into a tempdir, streams every produced artifact
+// into req.BlobStore as a separate file entry, and emits Stream events
+// per artifact. Non-zero yt-dlp exit collapses into a single stream
+// Failure on req.RawArg.
+func captureSingleVideo(
+	req cutting_garden_plugins.CaptureRootRequest,
+	r cutting_garden_plugins.Reporter,
+	source string,
+) cutting_garden_plugins.CaptureRootResult {
 	tempDir, err := os.MkdirTemp("", "cg-ytdlp-capture-*")
 	if err != nil {
 		r.Failure(req.RawArg, errors.Wrap(err))
@@ -110,6 +171,118 @@ func (Plugin) CaptureRoot(
 		Entries:   entries,
 		FailCount: len(failures),
 		Failures:  failures,
+	}
+}
+
+// captureChannel fans a channel/playlist's flat-playlist entries out into
+// one per-video capture each, through the SAME single-video download path
+// (captureDefaultArgs + walkArtifacts) FDR 0003 already shipped, then
+// rewrites each video's entries onto the FDR 0004 receipt shape:
+//
+//	Root  = <canonical channel URL>   (channelRoot, constant across every video)
+//	Path  = <video-id>/<artifact-filename>
+//
+// Per-video failures aggregate into the returned result rather than
+// aborting the whole channel — FDR 0004: "one geo-blocked video shouldn't
+// torch a 500-video archive."
+func captureChannel(
+	req cutting_garden_plugins.CaptureRootRequest,
+	r cutting_garden_plugins.Reporter,
+	channelRoot string,
+	entries []flatPlaylistEntry,
+) cutting_garden_plugins.CaptureRootResult {
+	var (
+		allEntries  []capture_receipt.EntryV1
+		allFailures []capture_failures.FailureV1
+	)
+
+	recordRootFailure := func(videoID string, err error) {
+		allFailures = append(allFailures, capture_failures.FailureV1{
+			Root:  channelRoot,
+			Path:  videoID,
+			Op:    capture_failures.OpPlugin,
+			Error: err.Error(),
+		})
+		r.Failure(videoID, err)
+	}
+
+	for i, e := range entries {
+		if req.Context.Err() != nil {
+			// Cancellation mid-channel: stop starting new videos; entries
+			// and failures already collected are still returned.
+			break
+		}
+
+		videoID, ok := entryVideoID(e)
+		if !ok {
+			recordRootFailure(fmt.Sprintf("entry-%d", i), errors.ErrorWithStackf(
+				"ytdlp plugin: flat-playlist entry %d has neither id nor url", i,
+			))
+			continue
+		}
+		videoURL, ok := entryTargetURL(e)
+		if !ok {
+			recordRootFailure(videoID, errors.ErrorWithStackf(
+				"ytdlp plugin: flat-playlist entry %q has no capturable url", videoID,
+			))
+			continue
+		}
+
+		tempDir, err := os.MkdirTemp("", "cg-ytdlp-capture-*")
+		if err != nil {
+			recordRootFailure(videoID, errors.Wrap(err))
+			continue
+		}
+
+		r.PhaseStart("download " + videoID)
+		onLog := func(line string) { r.Log("%s", line) }
+		if runErr := runYtdlp(req.Context, tempDir, captureDefaultArgs(tempDir, videoURL), nil, onLog); runErr != nil {
+			r.PhaseEnd(capture_events.Verdict{
+				OK:         false,
+				Diagnostic: map[string]any{"error": runErr.Error()},
+			})
+			recordRootFailure(videoID, runErr)
+			_ = os.RemoveAll(tempDir)
+			continue
+		}
+		r.PhaseEnd(capture_events.Verdict{OK: true})
+
+		videoEntries, videoFailures := walkArtifacts(req.Context, req.BlobStore, tempDir, videoURL, r)
+		rewriteChannelEntries(videoEntries, videoFailures, channelRoot, videoID)
+		allEntries = append(allEntries, videoEntries...)
+		allFailures = append(allFailures, videoFailures...)
+
+		if rmErr := os.RemoveAll(tempDir); rmErr != nil {
+			r.Log("ytdlp plugin: tempdir cleanup failed: %v", rmErr)
+		}
+	}
+
+	return cutting_garden_plugins.CaptureRootResult{
+		Entries:   allEntries,
+		FailCount: len(allFailures),
+		Failures:  allFailures,
+	}
+}
+
+// rewriteChannelEntries maps one video's (Root=videoURL, Path=relpath)
+// entries/failures — the shape walkArtifacts always produces, since it
+// has no notion of a channel — onto the FDR 0004 channel receipt shape:
+// Root becomes the channel URL (constant across every video in the
+// receipt) and Path gains the `<video-id>/` prefix that lets restore
+// materialize `<dest>/<video-id>/<files…>` through the file plugin.
+func rewriteChannelEntries(
+	entries []capture_receipt.EntryV1,
+	failures []capture_failures.FailureV1,
+	channelRoot, videoID string,
+) {
+	prefix := videoID + "/"
+	for i := range entries {
+		entries[i].Root = channelRoot
+		entries[i].Path = prefix + entries[i].Path
+	}
+	for i := range failures {
+		failures[i].Root = channelRoot
+		failures[i].Path = prefix + failures[i].Path
 	}
 }
 

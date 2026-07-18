@@ -26,6 +26,7 @@ set -e
 
 template=""
 skip_download=0
+flat=0
 for arg in "$@"; do
   if [ "$pending" = "out" ]; then
     template="$arg"
@@ -35,8 +36,20 @@ for arg in "$@"; do
   case "$arg" in
     -o) pending=out ;;
     --skip-download) skip_download=1 ;;
+    --flat-playlist) flat=1 ;;
   esac
 done
+
+if [ "$flat" = "1" ]; then
+  # CaptureRoot's classification probe (flatplaylist.go): this fake only
+  # ever models a single video, so it always emits exactly one
+  # --dump-json record — the FDR 0004 "one id -> single-video path"
+  # signal every capture/diff test in this file relies on. No -o is
+  # given for --flat-playlist calls, so this branch must come before the
+  # "missing -o template" check below.
+  printf '{"id":"video","title":"test","url":"https://youtu.be/dQw4w9WgXcQ","uploader":"Test Uploader","upload_date":"20260101","duration":42}\n'
+  exit 0
+fi
 
 if [ -z "$template" ]; then
   echo "fake-yt-dlp: missing -o template" >&2
