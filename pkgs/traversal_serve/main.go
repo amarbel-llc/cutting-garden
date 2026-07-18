@@ -17,7 +17,10 @@ type FacetCountsResult = internal.FacetCountsResult
 
 // FacetDimensionView is the wire form of
 // cutting_garden_plugins.FacetDimension (RFC 0013 §Wire encodings):
-// Values present ≙ a CLOSED domain (RFC 0012 §2).
+// Values present ≙ a CLOSED domain (RFC 0012 §2);
+// revalidate_after_seconds (absent ≙ 0) marks a VOLATILE dimension
+// (RFC 0012 §11.3) — the additive-field precedent of RFC 0013
+// §Compatibility.
 type FacetDimensionView = internal.FacetDimensionView
 
 // FacetValueView is the wire form of cutting_garden_plugins.FacetValue
@@ -223,6 +226,7 @@ var DecodePluginStanzaInto = internal.DecodePluginStanzaInto
 var EncodePluginStanzaFrom = internal.EncodePluginStanzaFrom
 
 // FacetDimensionViewFrom projects a declared dimension onto the wire.
+// RevalidateAfter is truncated to whole seconds (the wire unit).
 var FacetDimensionViewFrom = internal.FacetDimensionViewFrom
 
 // FacetFilterFrom is the inverse of PredicateViewsFrom: an absent or

@@ -2,10 +2,12 @@ package caldav
 
 import (
 	"context"
+	"math"
 	"net/url"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
@@ -19,7 +21,28 @@ const (
 	facetStatus    = "status"    // the object's STATUS property
 	facetYear      = "year"      // the year bucket of DTSTART (DUE for a task)
 	facetMonth     = "month"     // the YYYY-MM bucket of the same date
+	facetDueBand   = "due_band"  // VOLATILE: a task's due date vs today (§11.3)
 )
+
+// The due_band closed domain: a total partition of time relative to the
+// current host-local day, so every contributing task occupies exactly
+// one bucket at every instant. Order renders urgency-first.
+const (
+	dueBandOverdue  = "overdue"   // due day strictly before today
+	dueBandToday    = "today"     // due day == today
+	dueBandThisWeek = "this-week" // within the next 6 days
+	dueBandLater    = "later"     // beyond
+)
+
+// dueBandRevalidateAfter is the volatile window (RFC 0012 §11.3): a task
+// crosses buckets at most this + the refresher interval late.
+const dueBandRevalidateAfter = 15 * time.Minute
+
+// dueBandNow is the evaluation clock, injectable for tests. Bucketing
+// quantizes it to the host-local day start (§11.3 evaluation-instant
+// quantization), so summaries memoized at different instants within one
+// day agree exactly.
+var dueBandNow = time.Now
 
 var (
 	_ cutting_garden_plugins.FacetDescriber = (*Plugin)(nil)
@@ -56,6 +79,23 @@ func (Plugin) DescribeFacets() []cutting_garden_plugins.NodeTypeFacets {
 					Key:   facetMonth,
 					Label: "Month",
 					Kind:  cutting_garden_plugins.FacetNumericBucket,
+				},
+				{
+					// VOLATILE (RFC 0012 §11.3): bucketing is a function
+					// of (due date, today). The label names the anchor
+					// zone so consumers can reconcile boundaries
+					// (host-local days — the ical parser retains no
+					// per-object TZID; absolute times convert).
+					Key:   facetDueBand,
+					Label: "Due (host-local days)",
+					Kind:  cutting_garden_plugins.FacetNumericBucket,
+					Values: []cutting_garden_plugins.FacetValue{
+						{Key: dueBandOverdue, Order: 4},
+						{Key: dueBandToday, Order: 3},
+						{Key: dueBandThisWeek, Order: 2},
+						{Key: dueBandLater, Order: 1},
+					},
+					RevalidateAfter: dueBandRevalidateAfter,
 				},
 			},
 		},
@@ -108,6 +148,8 @@ func (Plugin) FacetCounts(
 			}
 		}
 	}
+
+	ensureDueBandPresence(summary)
 
 	return cutting_garden_plugins.FacetResult{Summary: summary, Complete: true}, true, nil
 }
@@ -220,7 +262,108 @@ func objectFacets(raw string) map[string][]cutting_garden_plugins.FacetValue {
 	if key, order := monthOf(date); key != "" {
 		facets[facetMonth] = []cutting_garden_plugins.FacetValue{{Key: key, Order: order}}
 	}
+
+	// due_band: open tasks only — a completed or cancelled task cannot
+	// become overdue, and counting it there forever would be noise. DUE
+	// is the due date; DTSTART is the task fallback (inverse of the
+	// year/month preference, where start dominates).
+	if view.Task != nil &&
+		status != "COMPLETED" && status != "CANCELLED" {
+		due := firstNonEmpty(view.Task.Due, view.Task.DtStart)
+		if key, order := dueBandOf(due, dueBandNow()); key != "" {
+			facets[facetDueBand] = []cutting_garden_plugins.FacetValue{
+				{Key: key, Order: order},
+			}
+		}
+	}
 	return facets
+}
+
+// dueBandOrder renders urgency-first (descending Order).
+var dueBandOrder = map[string]int64{
+	dueBandOverdue:  4,
+	dueBandToday:    3,
+	dueBandThisWeek: 2,
+	dueBandLater:    1,
+}
+
+// dueBandOf buckets a due date against the current host-local day —
+// the RFC 0012 §11.3 quantized evaluation instant, so summaries
+// computed at different times within one day agree exactly. Empty key
+// when raw is absent or unparsable.
+func dueBandOf(raw string, now time.Time) (key string, order int64) {
+	if raw == "" {
+		return "", 0
+	}
+	loc := now.Location()
+	dueDay, ok := parseDueDay(raw, loc)
+	if !ok {
+		return "", 0
+	}
+	today := time.Date(
+		now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc,
+	)
+
+	// Day-start subtraction crosses DST boundaries as 23/25h days;
+	// rounding the hour count recovers the calendar-day distance.
+	days := int(math.Round(dueDay.Sub(today).Hours() / 24))
+	switch {
+	case days < 0:
+		key = dueBandOverdue
+	case days == 0:
+		key = dueBandToday
+	case days <= 6:
+		key = dueBandThisWeek
+	default:
+		key = dueBandLater
+	}
+	return key, dueBandOrder[key]
+}
+
+// parseDueDay resolves an iCalendar date or date-time to its day start
+// in loc. A UTC-suffixed instant converts into loc before the day is
+// taken; floating and date-only values evaluate in loc directly. (The
+// ical parser retains no per-object TZID, so loc — host-local — is the
+// anchor zone; the due_band label documents this.)
+func parseDueDay(raw string, loc *time.Location) (time.Time, bool) {
+	if t, err := time.Parse("20060102T150405Z", raw); err == nil {
+		l := t.In(loc)
+		return time.Date(
+			l.Year(), l.Month(), l.Day(), 0, 0, 0, 0, loc,
+		), true
+	}
+	for _, layout := range []string{
+		"20060102T150405", "20060102", "2006-01-02",
+	} {
+		if t, err := time.ParseInLocation(layout, raw, loc); err == nil {
+			return time.Date(
+				t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, loc,
+			), true
+		}
+	}
+	return time.Time{}, false
+}
+
+// ensureDueBandPresence implements the RFC 0012 §11.3 emission rule:
+// whenever the summarized set contains tasks, the volatile due_band
+// dimension is present with informative zeros — the memoization layer's
+// expiry trigger stays correct even when every bucket is currently
+// empty (an empty bucket can fill purely by time passing; a task-free
+// subtree can only gain a task via a data change the ctag catches).
+func ensureDueBandPresence(summary cutting_garden_plugins.FacetSummary) {
+	if summary[facetComponent]["VTODO"] == 0 {
+		return
+	}
+	hist := summary[facetDueBand]
+	if hist == nil {
+		hist = cutting_garden_plugins.FacetHistogram{}
+		summary[facetDueBand] = hist
+	}
+	for key := range dueBandOrder {
+		if _, ok := hist[key]; !ok {
+			hist[key] = 0
+		}
+	}
 }
 
 // liftFacets folds one object's facet values into summary: +1 per

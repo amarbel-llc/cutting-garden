@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
 )
@@ -102,6 +103,149 @@ func TestDescribeFacets_DeclaresObjectDimensions(t *testing.T) {
 	}
 	if dims[facetMonth] != cutting_garden_plugins.FacetNumericBucket {
 		t.Errorf("month kind = %q, want numeric-bucket", dims[facetMonth])
+	}
+	if dims[facetDueBand] != cutting_garden_plugins.FacetNumericBucket {
+		t.Errorf("due_band kind = %q, want numeric-bucket", dims[facetDueBand])
+	}
+}
+
+// TestDueBandDeclaration pins the RFC 0012 §11.3 obligations on the
+// volatile dimension: nonzero RevalidateAfter, a closed domain covering
+// every bucket, and declaration Orders consistent with the bucketing
+// map (the literal exists for stable Values ordering; the map is the
+// single source at lift time).
+func TestDueBandDeclaration(t *testing.T) {
+	var dim *cutting_garden_plugins.FacetDimension
+	for _, ntf := range (Plugin{}).DescribeFacets() {
+		for i := range ntf.Dimensions {
+			if ntf.Dimensions[i].Key == facetDueBand {
+				dim = &ntf.Dimensions[i]
+			}
+		}
+	}
+	if dim == nil {
+		t.Fatal("due_band not declared")
+	}
+	if dim.RevalidateAfter != dueBandRevalidateAfter {
+		t.Errorf("RevalidateAfter = %v, want %v",
+			dim.RevalidateAfter, dueBandRevalidateAfter)
+	}
+	if len(dim.Values) != len(dueBandOrder) {
+		t.Fatalf("closed domain has %d values, want %d",
+			len(dim.Values), len(dueBandOrder))
+	}
+	for _, v := range dim.Values {
+		if want, ok := dueBandOrder[v.Key]; !ok || v.Order != want {
+			t.Errorf("declared %q order %d inconsistent with"+
+				" dueBandOrder (%d, declared=%t)", v.Key, v.Order, want, ok)
+		}
+	}
+}
+
+// TestDueBandOf pins the quantized bucketing: evaluation is against the
+// host-local day start, a UTC instant converts before the day is taken,
+// and the domain totally partitions time.
+func TestDueBandOf(t *testing.T) {
+	now := time.Date(2026, 7, 18, 12, 0, 0, 0, time.Local)
+
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"20260717", dueBandOverdue},
+		{"20250101T120000Z", dueBandOverdue},
+		{"20260718", dueBandToday},
+		{"2026-07-18", dueBandToday},
+		{"20260721T090000", dueBandThisWeek},
+		{"20260724", dueBandThisWeek}, // today+6: the week's edge
+		{"20260725", dueBandLater},    // today+7
+		{"20270101", dueBandLater},
+		{"", ""},
+		{"garbage", ""},
+	}
+	for _, c := range cases {
+		key, order := dueBandOf(c.in, now)
+		if key != c.want {
+			t.Errorf("dueBandOf(%q) = %q, want %q", c.in, key, c.want)
+			continue
+		}
+		if key != "" && order != dueBandOrder[key] {
+			t.Errorf("dueBandOf(%q) order = %d, want %d",
+				c.in, order, dueBandOrder[key])
+		}
+	}
+}
+
+// TestFacetCounts_DueBandVolatile drives the reference volatile
+// dimension end to end: open tasks bucket against the injected today,
+// completed tasks are excluded, events contribute nothing, and the
+// §11.3 emission rule holds — every bucket key is present (informative
+// zeros) because the calendar contains tasks, even though no task
+// occupies "later".
+func TestFacetCounts_DueBandVolatile(t *testing.T) {
+	prev := dueBandNow
+	dueBandNow = func() time.Time {
+		return time.Date(2026, 7, 18, 9, 30, 0, 0, time.Local)
+	}
+	t.Cleanup(func() { dueBandNow = prev })
+
+	f := newFakeCalDAV()
+	f.seed("/dav/cal/t1.ics", "VTODO",
+		vtodoFull("t1", "Yesterday", "NEEDS-ACTION", "20260717"))
+	f.seed("/dav/cal/t2.ics", "VTODO",
+		vtodoFull("t2", "Today", "NEEDS-ACTION", "20260718"))
+	f.seed("/dav/cal/t3.ics", "VTODO",
+		vtodoFull("t3", "Soon", "IN-PROCESS", "20260722"))
+	f.seed("/dav/cal/t4.ics", "VTODO",
+		vtodoFull("t4", "Done long ago", "COMPLETED", "20260101"))
+	f.seed("/dav/cal/e1.ics", "VEVENT",
+		veventFull("e1", "Party", "CONFIRMED", "20260719T180000Z"))
+
+	srv := httptest.NewServer(f.handler())
+	t.Cleanup(srv.Close)
+	node := mustParseURL(t, "caldav:"+srv.URL+"/dav/")
+
+	result, ok, err := Plugin{}.FacetCounts(context.Background(), node, nil)
+	if err != nil || !ok {
+		t.Fatalf("FacetCounts: ok=%v err=%v", ok, err)
+	}
+
+	assertCount(t, result.Summary, facetDueBand, dueBandOverdue, 1)
+	assertCount(t, result.Summary, facetDueBand, dueBandToday, 1)
+	assertCount(t, result.Summary, facetDueBand, dueBandThisWeek, 1)
+	// Informative zero: present, empty — the volatile expiry trigger.
+	assertCount(t, result.Summary, facetDueBand, dueBandLater, 0)
+
+	total := int64(0)
+	for _, n := range result.Summary[facetDueBand] {
+		total += n
+	}
+	if total != 3 {
+		t.Errorf("due_band total = %d, want 3 (completed excluded,"+
+			" events excluded): %+v", total, result.Summary[facetDueBand])
+	}
+}
+
+// TestFacetCounts_NoTasksNoDueBand pins the other half of the emission
+// rule: a task-free calendar omits the volatile dimension entirely, so
+// its memoized summary stays purely token-gated (the §11.3 cost
+// containment).
+func TestFacetCounts_NoTasksNoDueBand(t *testing.T) {
+	f := newFakeCalDAV()
+	f.seed("/dav/cal/e1.ics", "VEVENT",
+		veventFull("e1", "Standup", "CONFIRMED", "20260224T150000Z"))
+
+	srv := httptest.NewServer(f.handler())
+	t.Cleanup(srv.Close)
+	node := mustParseURL(t, "caldav:"+srv.URL+"/dav/")
+
+	result, ok, err := Plugin{}.FacetCounts(context.Background(), node, nil)
+	if err != nil || !ok {
+		t.Fatalf("FacetCounts: ok=%v err=%v", ok, err)
+	}
+	if _, present := result.Summary[facetDueBand]; present {
+		t.Errorf("task-free summary carries due_band: %+v",
+			result.Summary[facetDueBand])
 	}
 }
 
