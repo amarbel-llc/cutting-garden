@@ -462,6 +462,39 @@ config_section = "fj"      # optional; defaults to name
 - `config_section` — the top-level table whose raw TOML the host passes
   as `config_toml`.
 
+> **Generalized by cutting-garden#146 slice 2.** `[[traversal_plugins]]`
+> is now a compatibility ALIAS for a broader `[[plugins]]` stanza that
+> also covers the RFC 0008 capture transport, from ONE config entry per
+> plugin binary — `traversal_serve.PluginStanza` grows a `protocols`
+> field (`["traversal"]`, `["capture"]`, or in principle both, though
+> the host does not yet support a single stanza declaring both — see
+> `internal/command_components.registerStanza`) declaring which
+> session(s) the host launches for that binary:
+>
+> ```toml
+> [[plugins]]
+> name = "web"
+> command = ["chrest"]        # base invocation — NO subcommand
+> schemes = ["web"]
+> protocols = ["capture"]
+> ```
+>
+> Every EXISTING `[[traversal_plugins]]` entry keeps decoding and
+> registering identically — it implicitly defaults to
+> `protocols = ["traversal"]` and keeps `command`'s ORIGINAL verbatim-
+> argv meaning (`["fj-cg", "traversal-serve"]`, subcommand included).
+> A `[[plugins]]` entry's `command` means something narrower instead —
+> the BASE binary invocation, no subcommand — because the capture
+> transport needs the host to choose between `capture-serve` (RFC 0008
+> v2, tried first) and `capture-batch` (the §Migration v1 fallback) per
+> attempt, which a single verbatim argv cannot express; the host
+> appends `"traversal-serve"` for the traversal case the same way. This
+> RFC's own wire protocol, framing, and method set are completely
+> unaffected — only the config surface and Go-side dispatch that
+> chooses which transport(s) to launch for a plugin generalized. See
+> RFC 0005's `internal/capture_wire` (the capture-side wire plugin this
+> generalization made possible) for the capture half in full.
+
 The host wraps a session in an adapter implementing exactly the
 capability interfaces the plugin advertised — `RootLister` always;
 `RootProvider`, `LeafReader`, `FacetCounter`, `FacetVersioner`,

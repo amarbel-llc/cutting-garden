@@ -9,25 +9,32 @@ A filesystem-tree capture/restore CLI atop
 dodder's command-dispatch framework. Nine user-facing subcommands —
 `capture`, `restore`, `diff`, `serve`, `failures`, `health`, `list`,
 `mcp`, `version` — plus three hidden ones (`complete` for shell completion,
-`__write-blob`, the RFC 0002 writer-protocol sink chrest pipes node blobs
-into — now the v1 FALLBACK: the web plugin always attempts the RFC 0008
-persistent JSON-RPC/SCM_RIGHTS transport first (`chrest capture-serve`
-via `internal/capture_serve`, exported at `pkgs/capture_serve` for the
-plugin side; `capture_serve.IsFallbackSignal` gates the drop to v1) —
-and `hook`, the clown-plugin PreToolUse sink — inert until the MCP
-server grows write tools, cutting-garden#102) are registered in
+`__write-blob`, the RFC 0002 writer-protocol sink a config-declared
+capture plugin's v1 FALLBACK pipes node blobs into: `internal/capture_wire`
+always attempts the RFC 0008 persistent JSON-RPC/SCM_RIGHTS transport
+first (`<binary> capture-serve` via `internal/capture_serve`, exported at
+`pkgs/capture_serve` for the plugin side; `capture_serve.IsFallbackSignal`
+gates the drop to v1's `capture-batch` + `__write-blob`) — and `hook`,
+the clown-plugin PreToolUse sink — inert until the MCP server grows
+write tools, cutting-garden#102) are registered in
 `internal/cgapp.Build()`, the single factory
 shared by the `cutting-garden` binary, its `cg` alias, and the
 manpage/completion generator `cutting-garden-gen`. Hidden subcommands
 implement `command.CommandHidden` so they stay dispatchable but are
 filtered out of usage, manpages, and completion. Capture/restore/diff
-backends are URI-scheme-keyed plugins (file, git, yt-dlp, caldav, web,
+backends are URI-scheme-keyed plugins (file, git, yt-dlp, caldav,
 optical, gphotos, jira), each living in `plugins/<scheme>/` and consuming the
 public plugin SDK (`pkgs/`, RFC 0009) exactly as an out-of-tree plugin
 would — none import `internal/` (the no-inversion guard,
 `internal/sdklayering`, enforces this). The in-repo binaries opt into the
 standard set via `plugins/all`, which their `cmd/` mains blank-import;
-`cgapp.Build()` is plugin-bare. `serve` (`internal/serve/`) is a
+`cgapp.Build()` is plugin-bare. `web` (the `web:<http(s)-url>` scheme,
+via chrest) is NOT one of these in-tree plugins any more — it retired
+(cutting-garden#146) in favor of a **config-declared capture plugin**:
+a `[[plugins]]` stanza (RFC 0013 §Host integration, generalized) naming
+`chrest` as the plugin binary and `protocols = ["capture"]`, resolved
+through `internal/capture_wire` (RFC 0005's protocol-only resolution
+path) rather than compiled-in plugin code. `serve` (`internal/serve/`) is a
 long-lived LocalSend receiver bound to the host's Tailscale address:
 each incoming transfer lands as a normal fs-v1 capture receipt
 (FDR 0011). The original extraction design
