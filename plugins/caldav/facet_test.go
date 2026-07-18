@@ -142,37 +142,107 @@ func TestDueBandDeclaration(t *testing.T) {
 	}
 }
 
-// TestDueBandOf pins the quantized bucketing: evaluation is against the
-// host-local day start, a UTC instant converts before the day is taken,
-// and the domain totally partitions time.
+// TestDueBandOf pins the quantized, zone-anchored bucketing (#141):
+// evaluation is against the day start in the DATE'S OWN zone (TZID when
+// loadable, host-local otherwise), a UTC instant converts before the
+// day is taken, and the domain totally partitions time. The evening
+// evaluation instant (19:00 New York) makes the cross-zone cases
+// discriminating: Berlin and Tokyo have already rolled into July 19.
 func TestDueBandOf(t *testing.T) {
-	now := time.Date(2026, 7, 18, 12, 0, 0, 0, time.Local)
+	ny, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 7, 18, 19, 0, 0, 0, ny)
 
 	cases := []struct {
 		in   string
+		tzid string
 		want string
 	}{
-		{"20260717", dueBandOverdue},
-		{"20250101T120000Z", dueBandOverdue},
-		{"20260718", dueBandToday},
-		{"2026-07-18", dueBandToday},
-		{"20260721T090000", dueBandThisWeek},
-		{"20260724", dueBandThisWeek}, // today+6: the week's edge
-		{"20260725", dueBandLater},    // today+7
-		{"20270101", dueBandLater},
-		{"", ""},
-		{"garbage", ""},
+		{"20260717", "", dueBandOverdue},
+		{"20250101T120000Z", "", dueBandOverdue},
+		{"20260718", "", dueBandToday},
+		{"2026-07-18", "", dueBandToday},
+		{"20260721T090000", "", dueBandThisWeek},
+		{"20260724", "", dueBandThisWeek}, // today+6: the week's edge
+		{"20260725", "", dueBandLater},    // today+7
+		{"20270101", "", dueBandLater},
+		{"", "", ""},
+		{"garbage", "", ""},
+
+		// Berlin is at 01:00 July 19: its "today" is the 19th, so a
+		// task due end-of-day July 18 BERLIN time is already overdue —
+		// host-local bucketing would still call it "today".
+		{"20260718T235900", "Europe/Berlin", dueBandOverdue},
+		// Tokyo is at 08:00 July 19: a July-19-morning Tokyo due is
+		// "today" there — host-local would call it tomorrow.
+		{"20260719T063000", "Asia/Tokyo", dueBandToday},
+		// A non-IANA TZID falls back to the host-local anchor: July 19
+		// is tomorrow in New York → this-week.
+		{"20260719", "Customized Time Zone", dueBandThisWeek},
 	}
 	for _, c := range cases {
-		key, order := dueBandOf(c.in, now)
+		key, order := dueBandOf(c.in, c.tzid, now)
 		if key != c.want {
-			t.Errorf("dueBandOf(%q) = %q, want %q", c.in, key, c.want)
+			t.Errorf("dueBandOf(%q, %q) = %q, want %q",
+				c.in, c.tzid, key, c.want)
 			continue
 		}
 		if key != "" && order != dueBandOrder[key] {
-			t.Errorf("dueBandOf(%q) order = %d, want %d",
-				c.in, order, dueBandOrder[key])
+			t.Errorf("dueBandOf(%q, %q) order = %d, want %d",
+				c.in, c.tzid, order, dueBandOrder[key])
 		}
+	}
+}
+
+// TestFacetCounts_TimezoneAnchoring drives #141 end to end: a
+// TZID-bearing task buckets in its own zone AND surfaces that zone
+// through the pure timezone dimension, while zone-free objects
+// contribute nothing there (host-local is the documented default).
+func TestFacetCounts_TimezoneAnchoring(t *testing.T) {
+	ny, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Fatal(err)
+	}
+	prev := dueBandNow
+	dueBandNow = func() time.Time {
+		return time.Date(2026, 7, 18, 19, 0, 0, 0, ny)
+	}
+	t.Cleanup(func() { dueBandNow = prev })
+
+	berlinTask := "BEGIN:VCALENDAR\nVERSION:2.0\nBEGIN:VTODO\n" +
+		"UID:berlin1\nSUMMARY:EOD Berlin\nSTATUS:NEEDS-ACTION\n" +
+		"DUE;TZID=Europe/Berlin:20260718T235900\n" +
+		"END:VTODO\nEND:VCALENDAR\n"
+
+	f := newFakeCalDAV()
+	f.seed("/dav/cal/berlin.ics", "VTODO", berlinTask)
+	f.seed("/dav/cal/plain.ics", "VTODO",
+		vtodoFull("plain1", "No zone", "NEEDS-ACTION", "20260718"))
+
+	srv := httptest.NewServer(f.handler())
+	t.Cleanup(srv.Close)
+	node := mustParseURL(t, "caldav:"+srv.URL+"/dav/")
+
+	result, ok, err := Plugin{}.FacetCounts(context.Background(), node, nil)
+	if err != nil || !ok {
+		t.Fatalf("FacetCounts: ok=%v err=%v", ok, err)
+	}
+
+	// The Berlin task is overdue in Berlin's day; the zone-free task is
+	// "today" in the host's.
+	assertCount(t, result.Summary, facetDueBand, dueBandOverdue, 1)
+	assertCount(t, result.Summary, facetDueBand, dueBandToday, 1)
+
+	assertCount(t, result.Summary, facetTimezone, "Europe/Berlin", 1)
+	total := int64(0)
+	for _, n := range result.Summary[facetTimezone] {
+		total += n
+	}
+	if total != 1 {
+		t.Errorf("timezone total = %d, want 1 (zone-free objects"+
+			" contribute nothing): %+v", total, result.Summary[facetTimezone])
 	}
 }
 

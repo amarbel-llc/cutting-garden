@@ -28,7 +28,9 @@ type Task struct {
 	Status             string   `json:"status,omitempty"`
 	Priority           int      `json:"priority,omitempty"`
 	Due                string   `json:"due,omitempty"`
+	DueTZID            string   `json:"due_tzid,omitempty"`
 	DtStart            string   `json:"dtstart,omitempty"`
+	DtStartTZID        string   `json:"dtstart_tzid,omitempty"`
 	Completed          string   `json:"completed,omitempty"`
 	Created            string   `json:"created,omitempty"`
 	LastModified       string   `json:"last_modified,omitempty"`
@@ -165,8 +167,10 @@ func ParseVTODO(raw string) (*Task, error) {
 			}
 		case "DUE":
 			t.Due = value
+			t.DueTZID = paramValue(name, "TZID")
 		case "DTSTART":
 			t.DtStart = value
+			t.DtStartTZID = paramValue(name, "TZID")
 		case "COMPLETED":
 			t.Completed = value
 		case "CREATED":
@@ -292,10 +296,10 @@ func TaskToIcal(t *Task) string {
 		writeIcalProp(&b, "PRIORITY", strconv.Itoa(t.Priority))
 	}
 	if t.Due != "" {
-		writeDateProp(&b, "DUE", t.Due)
+		writeDatePropTZ(&b, "DUE", t.Due, t.DueTZID)
 	}
 	if t.DtStart != "" {
-		writeDateProp(&b, "DTSTART", t.DtStart)
+		writeDatePropTZ(&b, "DTSTART", t.DtStart, t.DtStartTZID)
 	}
 	if t.Completed != "" {
 		writeIcalProp(&b, "COMPLETED", t.Completed)
@@ -345,6 +349,14 @@ func writeIcalProp(b *strings.Builder, name, value string) {
 }
 
 func writeDateProp(b *strings.Builder, name, value string) {
+	writeDatePropTZ(b, name, value, "")
+}
+
+// writeDatePropTZ emits a date property, re-attaching the TZID the
+// parser retained (#141: round-trips no longer strip an object's zone).
+// A date-only value stays VALUE=DATE with no TZID — RFC 5545 forbids
+// the combination, and a bare date is zone-agnostic anyway.
+func writeDatePropTZ(b *strings.Builder, name, value, tzid string) {
 	// If it looks like a date-only value (YYYYMMDD or YYYY-MM-DD), use VALUE=DATE
 	if len(value) == 8 || len(value) == 10 {
 		normalized := strings.ReplaceAll(value, "-", "")
@@ -352,6 +364,10 @@ func writeDateProp(b *strings.Builder, name, value string) {
 			b.WriteString(name + ";VALUE=DATE:" + normalized + "\r\n")
 			return
 		}
+	}
+	if tzid != "" && !strings.HasSuffix(value, "Z") {
+		b.WriteString(name + ";TZID=" + tzid + ":" + value + "\r\n")
+		return
 	}
 	writeIcalProp(b, name, value)
 }

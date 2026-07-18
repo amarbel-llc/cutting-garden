@@ -9,6 +9,12 @@ import (
 	"strings"
 	"time"
 
+	// The embedded IANA zone database (#141): TZID resolution via
+	// time.LoadLocation must work wherever this plugin runs — sandboxed
+	// bats binaries and minimal containers have no /usr/share/zoneinfo.
+	// Costs ~450KiB of binary size.
+	_ "time/tzdata"
+
 	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 )
@@ -22,6 +28,7 @@ const (
 	facetYear      = "year"      // the year bucket of DTSTART (DUE for a task)
 	facetMonth     = "month"     // the YYYY-MM bucket of the same date
 	facetDueBand   = "due_band"  // VOLATILE: a task's due date vs today (§11.3)
+	facetTimezone  = "timezone"  // the explicit TZID anchoring the object's date
 )
 
 // The due_band closed domain: a total partition of time relative to the
@@ -82,12 +89,13 @@ func (Plugin) DescribeFacets() []cutting_garden_plugins.NodeTypeFacets {
 				},
 				{
 					// VOLATILE (RFC 0012 §11.3): bucketing is a function
-					// of (due date, today). The label names the anchor
-					// zone so consumers can reconcile boundaries
-					// (host-local days — the ical parser retains no
-					// per-object TZID; absolute times convert).
+					// of (due date, today). Each task's day boundary is
+					// anchored in its OWN zone — the date's TZID when
+					// loadable, host-local otherwise (#141); the
+					// timezone dimension below and the structured
+					// due_tzid field are the reconciliation surface.
 					Key:   facetDueBand,
-					Label: "Due (host-local days)",
+					Label: "Due",
 					Kind:  cutting_garden_plugins.FacetNumericBucket,
 					Values: []cutting_garden_plugins.FacetValue{
 						{Key: dueBandOverdue, Order: 4},
@@ -96,6 +104,17 @@ func (Plugin) DescribeFacets() []cutting_garden_plugins.NodeTypeFacets {
 						{Key: dueBandLater, Order: 1},
 					},
 					RevalidateAfter: dueBandRevalidateAfter,
+				},
+				{
+					// PURE zone visibility (#141, RFC 0012 §11.3 time
+					// anchoring): the explicit, loadable TZID anchoring
+					// an object's primary date. Objects with no explicit
+					// zone contribute nothing — host-local is the
+					// documented default anchor, so absence means
+					// "anchored to your day".
+					Key:   facetTimezone,
+					Label: "Time zone",
+					Kind:  cutting_garden_plugins.FacetCategorical,
 				},
 			},
 		},
@@ -266,13 +285,38 @@ func objectFacets(raw string) map[string][]cutting_garden_plugins.FacetValue {
 	// due_band: open tasks only — a completed or cancelled task cannot
 	// become overdue, and counting it there forever would be noise. DUE
 	// is the due date; DTSTART is the task fallback (inverse of the
-	// year/month preference, where start dominates).
+	// year/month preference, where start dominates). The band anchors in
+	// the date's own zone (#141).
 	if view.Task != nil &&
 		status != "COMPLETED" && status != "CANCELLED" {
-		due := firstNonEmpty(view.Task.Due, view.Task.DtStart)
-		if key, order := dueBandOf(due, dueBandNow()); key != "" {
+		due, dueTZID := view.Task.Due, view.Task.DueTZID
+		if due == "" {
+			due, dueTZID = view.Task.DtStart, view.Task.DtStartTZID
+		}
+		if key, order := dueBandOf(due, dueTZID, dueBandNow()); key != "" {
 			facets[facetDueBand] = []cutting_garden_plugins.FacetValue{
 				{Key: key, Order: order},
+			}
+		}
+	}
+
+	// timezone: the explicit, loadable zone on the object's primary
+	// date (#141's reconciliation surface). No explicit zone means the
+	// object anchors host-local and contributes nothing here.
+	var primaryTZID string
+	switch {
+	case view.Event != nil:
+		primaryTZID = view.Event.DtStartTZID
+	case view.Task != nil:
+		primaryTZID = view.Task.DueTZID
+		if view.Task.Due == "" {
+			primaryTZID = view.Task.DtStartTZID
+		}
+	}
+	if primaryTZID != "" {
+		if _, err := time.LoadLocation(primaryTZID); err == nil {
+			facets[facetTimezone] = []cutting_garden_plugins.FacetValue{
+				{Key: primaryTZID},
 			}
 		}
 	}
@@ -287,21 +331,24 @@ var dueBandOrder = map[string]int64{
 	dueBandLater:    1,
 }
 
-// dueBandOf buckets a due date against the current host-local day —
-// the RFC 0012 §11.3 quantized evaluation instant, so summaries
-// computed at different times within one day agree exactly. Empty key
-// when raw is absent or unparsable.
-func dueBandOf(raw string, now time.Time) (key string, order int64) {
+// dueBandOf buckets a due date against the current day IN THE DATE'S
+// OWN ZONE — the date's TZID when loadable, host-local otherwise
+// (#141) — quantized to day start (RFC 0012 §11.3), so summaries
+// computed at different times within one step agree exactly. A Berlin
+// task's "today" is Berlin's day even when the host is hours behind.
+// Empty key when raw is absent or unparsable.
+func dueBandOf(raw, tzid string, now time.Time) (key string, order int64) {
 	if raw == "" {
 		return "", 0
 	}
-	loc := now.Location()
+	loc := anchorZone(tzid, now)
 	dueDay, ok := parseDueDay(raw, loc)
 	if !ok {
 		return "", 0
 	}
+	local := now.In(loc)
 	today := time.Date(
-		now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc,
+		local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, loc,
 	)
 
 	// Day-start subtraction crosses DST boundaries as 23/25h days;
@@ -320,11 +367,23 @@ func dueBandOf(raw string, now time.Time) (key string, order int64) {
 	return key, dueBandOrder[key]
 }
 
+// anchorZone resolves a date's anchoring zone: its TZID when present
+// and loadable (the embedded tzdata guarantees IANA names resolve
+// everywhere), host-local otherwise — including non-IANA TZIDs some
+// servers emit ("Customized Time Zone"), the documented fallback.
+func anchorZone(tzid string, now time.Time) *time.Location {
+	if tzid == "" {
+		return now.Location()
+	}
+	if loc, err := time.LoadLocation(tzid); err == nil {
+		return loc
+	}
+	return now.Location()
+}
+
 // parseDueDay resolves an iCalendar date or date-time to its day start
 // in loc. A UTC-suffixed instant converts into loc before the day is
-// taken; floating and date-only values evaluate in loc directly. (The
-// ical parser retains no per-object TZID, so loc — host-local — is the
-// anchor zone; the due_band label documents this.)
+// taken; floating and date-only values evaluate in loc directly.
 func parseDueDay(raw string, loc *time.Location) (time.Time, bool) {
 	if t, err := time.Parse("20060102T150405Z", raw); err == nil {
 		l := t.In(loc)
