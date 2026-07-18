@@ -105,6 +105,55 @@ pinned by `TestSeededStorer_FetchTransfersOnlyDelta`.)
   coercion and the network-free Root identity (`<remote>#<branch>`,
   npm/pip convention).
 
+## Traversal (FDR 0014): branches only, not tags
+
+`Plugin.Types()` / `Plugin.ListRoots()` (`traversal.go`) implement the
+`RootLister` capability: the bare endpoint (`git:<remote>`, no
+`#fragment`) is a container whose children are one `git-branch-v1` leaf
+Node per remote branch, enumerated via the SAME no-object-transfer
+`ListContext` ref advertisement `listRemoteTip` (`remote.go`) already
+uses for the diff freshness probe — `listRemoteBranches` generalizes it
+to collect every `refs/heads/*` entry instead of resolving one. A
+branch-scoped node (`git:<remote>#<branch>`) is itself a leaf (no
+children): a branch's content is a merkle tree of many objects, not
+one further-traversable structure.
+
+**Tags are deliberately not enumerated.** `CaptureProtocol` resolves a
+node's `#fragment` as a *branch* reference only
+(`remoteAndBranchFromArg` → `plumbing.NewBranchReferenceName`), so a
+listed tag node's URI would not round-trip through `capture <node.URI>`
+— violating FDR 0014's "URI re-classifies as a capture root" contract.
+Surfacing only what capture can actually re-resolve keeps that contract
+exact; capturing tags is a capture-side feature gap (tracked
+separately), not a traversal omission.
+
+`Plugin.DescribeFacets()` declares one closed categorical dimension,
+`default` (RFC 0012), populated during the same `ListContext` call from
+the advertised symbolic `HEAD` — no per-node re-fetch. No
+`FacetCounter`/`FacetVersioner` is implemented: the tree is exactly one
+level (endpoint → branch leaves) with no recursion, so the framework's
+generic fold (RFC 0012 §4.2) already computes the hoisted summary from
+this single `ListRoots` call — implementing a one-shot summarizer would
+duplicate it for zero savings.
+
+`Plugin.ReadLeaf()` fetches a branch leaf's cheap identity (resolved
+branch name + tip oid) via `listRemoteTip`, the same freshness-probe
+call diff uses — no object transfer. There is no `Raw` byte form to
+offer (a branch is a merkle tree, not a single fetchable body), so only
+the `Structured` view is populated.
+
+**Not implemented, and not a gap:** `RootProvider` (git has no
+RFC 0007 configured-account subsystem — captures are always
+argument-driven, unlike caldav's `[[caldav.accounts]]`) and
+`NodeMutator`/`BodyDescriber` (git has no live-mutation surface; a
+capture is a point-in-time clone, not an editable resource). The new
+traversal tag `git-branch-v1` is intentionally NOT unified with any
+RFC 0002 capture-leaf type-string (unlike caldav's FDR 0018 unification
+of `caldav-object-v1` across both systems): a branch has no single
+corresponding leaf — its capture is a `git-capture-object-*-v1` family
+of per-object leaves, so there is nothing for `git-branch-v1` to unify
+with.
+
 ## Vestigial EntryV1 stubs
 
 `CaptureRoot` (`capture.go`) and `ScanForDiff` (`diff.go`) are stubs that
