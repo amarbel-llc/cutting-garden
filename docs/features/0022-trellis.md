@@ -28,6 +28,29 @@ reference implementation.
 - Hosts: `cg list <uri> --query`, the MCP server (container reads with a
   query param), and eventually dodder commands.
 
+## Roots as nodes
+
+The root aggregate (`cg list` with no URI; RFC 0007 + FDR 0014) is the
+**default anchor**, and each configured root is a **typed node** (tag
+settled at implementation, e.g. `root-v1`) with fields (`scheme`,
+`account`) and config-declared tags. Root selection is then ordinary
+predicate machinery — no root/URI syntax in the language:
+
+    !root-v1 scheme=caldav -> !caldav-object-v1 dtstart^="20260718"
+        # today's events across ALL caldav accounts
+
+    work -> !caldav-object-v1 component=VEVENT
+        # ... across roots tagged `work` in config.toml
+
+    caldav:fastmail -> component=VEVENT
+        # one specific root, named by its URI as an opaque identifier
+        # (strict sigil rule, RFC 0014)
+
+Requires: root nodes in the traversal surface (SDK change), and an
+optional `tags = [...]` key on RFC 0007 account stanzas (filed as a
+config-subsystem amendment). URIs remain host-layer sugar — compressed
+ground containment paths (RFC 0014 "Isometry").
+
 ## Host capability contract
 
 - **Sigils**: meanings are fixed by the framework; support is per-host

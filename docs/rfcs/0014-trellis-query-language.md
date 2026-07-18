@@ -31,9 +31,13 @@ trellis query with identical meaning.
    from token shape. Sigils `: + . ?` are retained unchanged.
 2. **The type system is the single dispatch point** — kinds, tag-vs-id,
    edge kinds, and (per cutting-garden FDR 0018) the cross-tool vocabulary.
-3. **Anchoring is host-supplied.** No root/URI syntax in the grammar; the
-   host (cg list URI argument, MCP container read, dodder -repo_id-style
-   flag) supplies the context node. Query strings are portable.
+3. **Anchoring is host-supplied.** No root/URI *decomposition* in the
+   grammar; the host (cg list URI argument, MCP container read, dodder
+   -repo_id-style flag) supplies the context node, and the **root
+   aggregate is the default anchor** (FDR 0022 "Roots as nodes"): roots
+   are typed nodes, so root selection is ordinary predicate machinery
+   (`!root-v1 scheme=caldav -> ...`), and a URI names a root only as an
+   opaque identifier. Query strings are portable.
 4. **Whitespace is semantic.** Space separates terms (AND); whitespace is
    REQUIRED around combinators (`a -> b`, never `a->b`).
 
@@ -50,7 +54,13 @@ and unbracketed (query-flavored) spellings are valid everywhere a step is
 
 ### Terms (per-step predicate layer, doddish-inherited)
 
-- bare identifier — opaque object reference; type-resolved semantics
+- bare identifier — opaque object reference; type-resolved semantics.
+  Sigil runes are identifier-INTERIOR unless term-final (the strict sigil
+  rule, below), so `caldav:fastmail`, `web:http://example.com`, and
+  `12.7` are single identifiers. A **quoted string in identifier
+  position** is likewise an opaque reference — the escape hatch for
+  content containing reserved runes (`"one/uno.zettel"`, a URI with a
+  query string).
 - `!name` — type predicate (`!task`); type identity, not genre
 - `@digest` — blob-identity predicate, the content-addressed analog of
   exact match (doddish scans `@` as OpMarklId but never wired it into the
@@ -76,6 +86,21 @@ and unbracketed (query-flavored) spellings are valid everywhere a step is
   history, same pair") is unspellable. See host capability rules in
   FDR 0022.
 - quoted literals with Go-style escapes (doddish quoting rules verbatim)
+
+**The strict sigil rule.** A sigil-rune run (`[:+.?]+`) is a sigil only
+when it is *term-final* — the trailing maximal run immediately before a
+term boundary (whitespace, `]`, `,`, EOF). Interior occurrences are
+identifier content. `todo:` is a tag plus the latest sigil;
+`caldav:fastmail` is one identifier. Two documented consequences: an
+identifier whose content genuinely ends in a sigil rune (a tag named
+`c++`) mis-lexes and must be quoted; and the pre-FDR spelling
+`one/uno.zettel` (external sigil + genre word, deliberately enforced so
+query syntax mapped seamlessly onto checkout filenames) reads as a single
+identifier here — its replacement is `"one/uno.zettel"` (quoted, opaque)
+or `one/uno.` (bare external sigil). That filesystem fixed point was
+always problematic to enforce; under trellis the checkout filename
+becomes a host-layer compressed spelling, the same family as URIs
+(see Isometry).
 
 ### Reserved fields
 
@@ -266,6 +291,16 @@ ground trellis literals — an organize document is a materialized query
 result in the query's own syntax (the organize upstreaming inherits its
 data language from trellis); box output and capture listings gain a
 canonical printable form that round-trips through the parser.
+
+**URIs are compressed ground containment paths** — the same duality one
+level up. `caldav:fastmail/cal-7/event-3` is scheme+account then
+slash-segments: exactly `caldav:fastmail -> cal-7 -> event-3`, a ground
+prefix path. The host's URI argument is sugar for that prefix, which is
+why URI *decomposition* stays out of the grammar (there is one traversal
+mechanism) while a URI still appears in queries as an ordinary opaque
+identifier (strict sigil rule) resolved by the type system. Checkout
+filenames (`one/uno.zettel`) belong to the same family: host-layer
+compressed spellings of things the language says longhand.
 
 ## Deferred
 

@@ -42,12 +42,19 @@ Step         <- Term (SP !Combinator Term)*
 // matching. Both apply to the term they prefix, per doddish.
 Term         <- '^'? '='? BasicTerm
 
+// FieldPred is tried before the identifier alternatives so `"name"=v`
+// reads as a field predicate; a bare String (no operator) falls through
+// to QuotedRef — a quoted identifier, the opaque-reference escape hatch
+// for content containing reserved runes ("one/uno.zettel", a URI with a
+// query string).
 BasicTerm    <- Group
               / FieldPred
               / TypeTerm Sigil?
               / DigestTerm Sigil?
+              / QuotedRef Sigil?
               / Ident Sigil?
               / Sigil                 // bare sigil: empty predicate (doddish `:`)
+QuotedRef    <- String
 
 TypeTerm     <- '!' Ident             // type identity (not genre; dodder FDR 0018)
 DigestTerm   <- '@' Ident             // blob identity — content-addressed exact match
@@ -131,10 +138,17 @@ TypedBack    <- '<-[' SP? ConjRun SP? ']-'
 // matching doddish's scanner discipline: everything that is not
 // whitespace and not a reserved delimiter is identifier. `-` and `/` are
 // admitted inline (`area-personal`, `one/uno`, leading `-` for dependent
-// tags). `.` is EXCLUDED (it is the external sigil) — quote identifiers
-// that need it (InventoryList `num.num` ids arrive quoted).
+// tags).
+//
+// THE STRICT SIGIL RULE: sigil runes are identifier-INTERIOR unless the
+// run is term-final — a SigilRune continues an identifier only when
+// another identifier rune follows (the &IdentRune lookahead). So
+// `caldav:fastmail`, `web:http://example.com`, and `12.7` are single
+// identifiers, while `todo:` is identifier + sigil and a trailing
+// `[:+.?]+` run is always the sigil suffix. Identifiers whose CONTENT
+// ends in a sigil rune (a tag named `c++`) must be quoted (QuotedRef).
 Ident        <- IdentRune+
-IdentRune    <- '-' / '/' / (!Reserved !SP1 .)
+IdentRune    <- '-' / '/' / (SigilRune &IdentRune) / (!Reserved !SP1 .)
 Reserved     <- [\[\]^=,!@<>*$~%#"'] / SigilRune
 
 // Doddish quoting rules verbatim: double or single quotes; backslash
@@ -169,3 +183,13 @@ EOF          <- !.
 //   "event.summary"*="standup"
 //   [story-8841 !newsblur-story-v1 year=2026 [-> content-8841 @blake2b256-9ft3x]]
 //     — espalier literal: parses as a ground one-alternative group
+//   caldav:fastmail -> component=VEVENT dtstart^="20260718"
+//     — a URI as a single opaque identifier (strict sigil rule)
+//   !root-v1 scheme=caldav -> !caldav-object-v1 dtstart^="20260718"
+//   work -> !caldav-object-v1 component=VEVENT
+//   web:http://example.com +
+//     — identifier, then bare history sigil: all captures of that node
+//   "one/uno.zettel"
+//     — quoted opaque reference (pre-FDR external+genre spelling, retired)
+//   12.7
+//     — InventoryList id as one identifier (interior `.`)
