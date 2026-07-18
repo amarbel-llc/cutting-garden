@@ -23,6 +23,7 @@ import (
 	"code.linenisgreat.com/cutting-garden/internal/command"
 	"code.linenisgreat.com/cutting-garden/internal/command_components"
 	"code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
+	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
 	"github.com/amarbel-llc/piggy/go/pkgs/markl"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/interfaces"
@@ -127,21 +128,7 @@ func (cmd *Restore) runRestore(
 	// not the destination, decides how the capture is rebuilt. fs-v1
 	// receipts fall through to the EntryV1 path below.
 	if kind, ok := capture_plugin.KindFromReceiptType(typeStr); ok {
-		pp, err := cutting_garden_plugins.ResolveProtocolRestore(kind)
-		if err != nil {
-			return err
-		}
-		destURL, err := url.Parse(destStr)
-		if err != nil {
-			return errors.Wrapf(err, "parse dest %q", destStr)
-		}
-		return pp.RestoreProtocol(cutting_garden_plugins.ProtocolRestoreRequest{
-			Context:       ctx,
-			BlobStore:     store,
-			ReceiptDigest: receiptIDStr,
-			Dest:          destURL,
-			RawDest:       destStr,
-		})
+		return restoreProtocolReceipt(ctx, store, kind, receiptIDStr, destStr)
 	}
 
 	destURL, plugin, err := command_components.ResolveRestorePlugin(destStr)
@@ -186,4 +173,42 @@ func (cmd *Restore) runRestore(
 		Dest:      destURL,
 		RawDest:   destStr,
 	})
+}
+
+// restoreProtocolReceipt dispatches an RFC 0002 protocol receipt of the
+// given kind to its registered cutting_garden_plugins.ProtocolRestorePlugin.
+// When no plugin is registered for kind (ResolveProtocolRestore misses),
+// it falls back to capture_plugin.RestorePayload — the GENERIC
+// single-payload restorer (cutting-garden#146 decision 3; #116's "restore
+// natively" principle) — so a receipt whose kind has no plugin restorer
+// still restores as long as its capture shape is one payload blob (the web
+// binding's shape, and any future single-artifact protocol plugin's).
+// Receipts that are neither (a structured multi-object tree with no
+// registered kind-specific plugin) fail with RestorePayload's own
+// diagnostic.
+//
+// Factored out of runRestore so it depends only on the already-located
+// receipt store, not the full blob_store_env/materialization-store
+// plumbing the EntryV1 path below needs — letting it be exercised directly
+// in tests with a bare blob_stores.BlobStoreInitialized fixture.
+func restoreProtocolReceipt(
+	ctx errors.Context,
+	store blob_stores.BlobStoreInitialized,
+	kind, receiptIDStr, destStr string,
+) error {
+	if pp, perr := cutting_garden_plugins.ResolveProtocolRestore(kind); perr == nil {
+		destURL, err := url.Parse(destStr)
+		if err != nil {
+			return errors.Wrapf(err, "parse dest %q", destStr)
+		}
+		return pp.RestoreProtocol(cutting_garden_plugins.ProtocolRestoreRequest{
+			Context:       ctx,
+			BlobStore:     store,
+			ReceiptDigest: receiptIDStr,
+			Dest:          destURL,
+			RawDest:       destStr,
+		})
+	}
+
+	return capture_plugin.RestorePayload(store, receiptIDStr, destStr)
 }

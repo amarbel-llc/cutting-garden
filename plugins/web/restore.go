@@ -1,10 +1,6 @@
 package cutting_garden_plugin_web
 
 import (
-	"io"
-	"os"
-	"path/filepath"
-
 	"code.linenisgreat.com/cutting-garden/pkgs/capture_plugin"
 	"code.linenisgreat.com/cutting-garden/pkgs/capture_receipt"
 	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
@@ -19,55 +15,20 @@ func (Plugin) ProtocolKind() string { return captureKind }
 // produced by chrest), so restore is a pure in-process read: walk the
 // receipt to its payload node and write the body out. No browser, no
 // chrest subprocess.
+//
+// This DELEGATES entirely to capture_plugin.RestorePayload — the GENERIC
+// protocol-receipt payload restorer (cutting-garden#146 decision 3) that
+// internal/restore also falls back to for any receipt kind with no
+// registered plugin. The web binding's registration stays (so nothing
+// user-visible changes and web receipts keep dispatching through this
+// method), but the restore logic itself is no longer web-specific: it was
+// already chrest-free, and the web payload shape (one "payload" ref
+// pointing at the captured bytes) is exactly what the generic restorer
+// handles.
 func (Plugin) RestoreProtocol(
 	req cutting_garden_plugins.ProtocolRestoreRequest,
-) (err error) {
-	payloadRef, err := receiptPayloadRef(req.BlobStore, req.ReceiptDigest)
-	if err != nil {
-		return err
-	}
-
-	dest := req.RawDest
-	if dest == "" {
-		return errors.BadRequestf("web plugin: restore requires a destination path")
-	}
-
-	// Refuse an existing destination and create any missing parent dirs,
-	// matching the git binding's restore precondition (assertDestAbsent +
-	// MkdirAll) so restore never silently clobbers an existing file and
-	// works when the parent directory does not yet exist.
-	if _, statErr := os.Lstat(dest); statErr == nil {
-		return errors.BadRequestf(
-			"web plugin: destination %s already exists\n"+
-				"hint: choose a destination that does not exist", dest,
-		)
-	} else if !os.IsNotExist(statErr) {
-		return errors.Wrapf(statErr, "web plugin: stat destination %s", dest)
-	}
-	if mkErr := os.MkdirAll(filepath.Dir(dest), 0o755); mkErr != nil {
-		return errors.Wrapf(mkErr, "web plugin: create destination parent for %s", dest)
-	}
-
-	// Stream the payload body straight to disk rather than buffering it:
-	// the web payload node body IS the captured artifact (PDF/PNG/MHTML)
-	// and can be many MB. OpenNodeBody parses the node framing and returns
-	// a reader positioned at the body.
-	_, body, err := capture_plugin.OpenNodeBody(req.BlobStore, payloadRef.Digest)
-	if err != nil {
-		return err
-	}
-	defer errors.DeferredCloser(&err, body)
-
-	f, err := os.Create(dest)
-	if err != nil {
-		return errors.Wrapf(err, "web plugin: create %s", dest)
-	}
-	defer errors.DeferredCloser(&err, f)
-
-	if _, err = io.Copy(f, body); err != nil {
-		return errors.Wrapf(err, "web plugin: write payload to %s", dest)
-	}
-	return nil
+) error {
+	return capture_plugin.RestorePayload(req.BlobStore, req.ReceiptDigest, req.RawDest)
 }
 
 // ScanForDiff is a vestigial EntryV1 entry point. Web diff routes through

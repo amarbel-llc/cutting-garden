@@ -21,7 +21,14 @@ type captureRoot struct {
 	// diagnostics. NEVER cleaned — see sourceURL for the cleaned form.
 	path string
 
-	plugin cutting_garden_plugins.CapturePlugin
+	// plugin is the base Plugin interface, not CapturePlugin: RFC 0005's
+	// scheme-registry fallback (resolveCapturePlugin) can resolve a
+	// plugin that implements ONLY ProtocolCapturePlugin (no CaptureRoot/
+	// ValidateSource), so this field must be able to hold that narrower
+	// value too. capture.go's dispatch loop probes ProtocolCapturePlugin
+	// first, then CapturePlugin — the precedence resolveCapturePlugin
+	// already checked at classify time.
+	plugin cutting_garden_plugins.Plugin
 
 	// sourceURL is the parsed URL the plugin walks. For schemeless args
 	// (the file plugin's common case), sourceURL.Path is cleaned via
@@ -59,7 +66,7 @@ const (
 type classifiedArg struct {
 	kind      argKind
 	storeID   blob_store_id.Id
-	plugin    cutting_garden_plugins.CapturePlugin
+	plugin    cutting_garden_plugins.Plugin
 	sourceURL *url.URL
 	err       error
 }
@@ -74,7 +81,7 @@ func planCapture(
 	shadowCandidates []blob_store_id.Id,
 ) (groups []captureGroup, classifyFails []classifyFailure, err error) {
 	if len(args) == 0 {
-		plugin, _ := cutting_garden_plugins.ResolveCapture("")
+		plugin, _ := resolveCapturePlugin("")
 		return []captureGroup{{
 			roots: []captureRoot{{
 				path:      ".",
@@ -88,7 +95,7 @@ func planCapture(
 		k := classifyArg(args[0])
 		switch k.kind {
 		case argKindStoreId:
-			plugin, _ := cutting_garden_plugins.ResolveCapture("")
+			plugin, _ := resolveCapturePlugin("")
 			return []captureGroup{{
 				storeID:      k.storeID,
 				switchNotice: arg_resolver.FormatStoreSwitchNotice(k.storeID),
@@ -99,7 +106,7 @@ func planCapture(
 				}},
 			}}, nil, nil
 		case argKindCapture:
-			if scopeErr := k.plugin.ValidateSource(k.sourceURL, args[0]); scopeErr != nil {
+			if scopeErr := validateCaptureSource(k.plugin, k.sourceURL, args[0]); scopeErr != nil {
 				// Match the multi-arg loop: validation failures route to
 				// classifyFails and surface via the sink. The
 				// "failCount > 0" path in Run produces the cancel message;
@@ -159,7 +166,7 @@ func planCapture(
 			}
 
 		case argKindCapture:
-			if scopeErr := k.plugin.ValidateSource(k.sourceURL, arg); scopeErr != nil {
+			if scopeErr := validateCaptureSource(k.plugin, k.sourceURL, arg); scopeErr != nil {
 				classifyFails = append(classifyFails, classifyFailure{
 					arg: arg,
 					err: scopeErr,
@@ -219,7 +226,7 @@ func planCapture(
 // sink labels and shadow detection.
 func classifyArg(arg string) classifiedArg {
 	if u, err := url.Parse(arg); err == nil && u.Scheme != "" {
-		if plugin, perr := cutting_garden_plugins.ResolveCapture(u.Scheme); perr == nil {
+		if plugin, perr := resolveCapturePlugin(u.Scheme); perr == nil {
 			return classifiedArg{
 				kind:      argKindCapture,
 				plugin:    plugin,
@@ -232,7 +239,7 @@ func classifyArg(arg string) classifiedArg {
 	info, err := os.Lstat(arg)
 	switch {
 	case err == nil && info.IsDir():
-		plugin, _ := cutting_garden_plugins.ResolveCapture("")
+		plugin, _ := resolveCapturePlugin("")
 		return classifiedArg{
 			kind:      argKindCapture,
 			plugin:    plugin,
@@ -264,6 +271,54 @@ func classifyArg(arg string) classifiedArg {
 			arg,
 		),
 	}
+}
+
+// resolveCapturePlugin resolves scheme's capture-capable plugin, preferring
+// the typed capture registry (ResolveCapture) — preserving today's exact
+// resolution and error semantics for every plugin already registered via
+// MustRegisterCapture — and falling back to the base scheme registry when
+// the typed lookup misses. The fallback lets a plugin registered ONLY via
+// MustRegisterScheme/RegisterScheme become classifiable, provided its
+// value implements ProtocolCapturePlugin (the RFC 0002 representation,
+// checked first per the dispatch precedence in capture.go) or the legacy
+// EntryV1 CapturePlugin. This is RFC 0005 §Resolution's capability-
+// precedence rule, mirroring command_components.resolvePluginForScheme's
+// existing capture-then-scheme fallback for traversal capabilities.
+func resolveCapturePlugin(scheme string) (cutting_garden_plugins.Plugin, error) {
+	if plugin, err := cutting_garden_plugins.ResolveCapture(scheme); err == nil {
+		return plugin, nil
+	}
+	plugin, err := cutting_garden_plugins.ResolveScheme(scheme)
+	if err != nil {
+		return nil, err
+	}
+	if _, ok := plugin.(cutting_garden_plugins.ProtocolCapturePlugin); ok {
+		return plugin, nil
+	}
+	if _, ok := plugin.(cutting_garden_plugins.CapturePlugin); ok {
+		return plugin, nil
+	}
+	return nil, errors.ErrorWithStackf(
+		"scheme %q does not support capture (its plugin exposes neither "+
+			"the RFC 0002 protocol capture interface nor the legacy "+
+			"EntryV1 CapturePlugin interface)", scheme,
+	)
+}
+
+// validateCaptureSource probes plugin for the OPTIONAL SourceValidator
+// capability (RFC 0005 §Source validation) and calls it when present.
+// resolveCapturePlugin's field type widened from CapturePlugin (which
+// always had ValidateSource) to the base Plugin interface, so a plugin
+// reached via the scheme-registry fallback may implement neither
+// SourceValidator nor the full CapturePlugin interface — in that case
+// validation is skipped (not an error), exactly as the RFC specifies.
+func validateCaptureSource(
+	plugin cutting_garden_plugins.Plugin, u *url.URL, raw string,
+) error {
+	if sv, ok := plugin.(cutting_garden_plugins.SourceValidator); ok {
+		return sv.ValidateSource(u, raw)
+	}
+	return nil
 }
 
 // checkRootCollisions refuses two roots within a single store-group that

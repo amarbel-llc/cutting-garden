@@ -192,3 +192,68 @@ func TestResolveRootListerPlugin_FallsBackToSchemeRegistry(t *testing.T) {
 		t.Fatal("nil lister")
 	}
 }
+
+// ---------------------------------------------------------------------
+// ResolveDiffPlugin / ResolveRestorePlugin scheme-registry fallback
+// (RFC 0005 §Resolution, extended to the EntryV1 diff/restore
+// directions)
+// ---------------------------------------------------------------------
+
+// schemeOnlyDiffRestore is a DiffPlugin AND RestorePlugin registered ONLY
+// via MustRegisterScheme — no MustRegisterDiff/MustRegisterRestore — the
+// shape RFC 0005 §Resolution's capability-precedence rule makes reachable.
+// One fake exercises both directions since the fallback logic
+// (resolveDiffCapablePlugin / resolveRestoreCapablePlugin) is otherwise
+// identical.
+type schemeOnlyDiffRestore struct{}
+
+func (schemeOnlyDiffRestore) Schemes() []string { return []string{"schemeonlydiffrestore"} }
+func (schemeOnlyDiffRestore) TypeTag() string {
+	return "cutting_garden-schemeonlydiffrestore-v1"
+}
+
+func (schemeOnlyDiffRestore) ValidateDiffDir(*url.URL, string) error { return nil }
+
+func (schemeOnlyDiffRestore) ScanForDiff(
+	cutting_garden_plugins.DiffScanRequest,
+) ([]capture_receipt.EntryV1, error) {
+	return nil, nil
+}
+
+func (schemeOnlyDiffRestore) ValidateDest(*url.URL, string) error { return nil }
+
+func (schemeOnlyDiffRestore) Restore(cutting_garden_plugins.RestoreRequest) error {
+	return nil
+}
+
+func init() {
+	cutting_garden_plugins.MustRegisterScheme(schemeOnlyDiffRestore{})
+}
+
+func TestResolveDiffPlugin_FallsBackToSchemeRegistry(t *testing.T) {
+	u, plugin, err := ResolveDiffPlugin("schemeonlydiffrestore://endpoint/")
+	if err != nil {
+		t.Fatalf("a MustRegisterScheme-only DiffPlugin must resolve via the "+
+			"scheme-registry fallback (RFC 0005 §Resolution): %v", err)
+	}
+	if u.Scheme != "schemeonlydiffrestore" {
+		t.Errorf("scheme = %q, want schemeonlydiffrestore", u.Scheme)
+	}
+	if plugin == nil {
+		t.Fatal("nil plugin")
+	}
+}
+
+func TestResolveRestorePlugin_FallsBackToSchemeRegistry(t *testing.T) {
+	u, plugin, err := ResolveRestorePlugin("schemeonlydiffrestore://endpoint/")
+	if err != nil {
+		t.Fatalf("a MustRegisterScheme-only RestorePlugin must resolve via "+
+			"the scheme-registry fallback (RFC 0005 §Resolution): %v", err)
+	}
+	if u.Scheme != "schemeonlydiffrestore" {
+		t.Errorf("scheme = %q, want schemeonlydiffrestore", u.Scheme)
+	}
+	if plugin == nil {
+		t.Fatal("nil plugin")
+	}
+}

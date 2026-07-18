@@ -82,6 +82,20 @@ type CapturePlugin interface {
 	CaptureRoot(req CaptureRootRequest) CaptureRootResult
 }
 
+// SourceValidator is the OPTIONAL narrow capability (RFC 0005 §Source
+// validation) that lets a capture source be validated even when the
+// resolved plugin does not (also) satisfy the full CapturePlugin
+// interface — notably a plugin resolved via the scheme-registry fallback
+// (RFC 0005 §Resolution) that implements only ProtocolCapturePlugin. Its
+// signature is identical to CapturePlugin.ValidateSource, so every
+// existing CapturePlugin already satisfies it with no changes. The
+// orchestrator probes for this interface by type assertion and skips
+// validation (not an error) when a resolved plugin implements neither
+// it nor CapturePlugin.
+type SourceValidator interface {
+	ValidateSource(u *url.URL, raw string) error
+}
+
 // RestoreRequest is what a RestorePlugin needs to materialize a
 // previously-captured tree: the receipt's parsed entries, the source
 // blob store, and the destination URL (already parsed; may be

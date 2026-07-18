@@ -18,7 +18,12 @@ import (
 
 // ResolveRestorePlugin parses destStr as a URL and looks up the
 // restore plugin registered for its scheme. Schemeless dests resolve
-// to the file plugin's `""` registration.
+// to the file plugin's `""` registration. Resolution prefers the typed
+// restore registry (resolveRestoreCapablePlugin), falling back to the
+// base scheme registry so a plugin registered ONLY via MustRegisterScheme
+// whose value implements RestorePlugin is reachable too (RFC 0005
+// §Resolution, extended to the EntryV1 restore direction — see the RFC's
+// §Compatibility notes for why restore was originally out of scope).
 func ResolveRestorePlugin(
 	destStr string,
 ) (*url.URL, cutting_garden_plugins.RestorePlugin, error) {
@@ -26,16 +31,43 @@ func ResolveRestorePlugin(
 	if err != nil {
 		return nil, nil, errors.Wrapf(err, "parse dest %q", destStr)
 	}
-	plugin, err := cutting_garden_plugins.ResolveRestore(u.Scheme)
+	plugin, err := resolveRestoreCapablePlugin(u.Scheme)
 	if err != nil {
 		return nil, nil, err
 	}
 	return u, plugin, nil
 }
 
+// resolveRestoreCapablePlugin resolves scheme's RestorePlugin, preferring
+// the typed restore registry (ResolveRestore) — preserving today's exact
+// resolution and error semantics for every already-registered plugin —
+// and falling back to the base scheme registry when the typed lookup
+// misses. Sibling to internal/capture's resolveCapturePlugin and to
+// resolveDiffCapablePlugin below.
+func resolveRestoreCapablePlugin(
+	scheme string,
+) (cutting_garden_plugins.RestorePlugin, error) {
+	if plugin, err := cutting_garden_plugins.ResolveRestore(scheme); err == nil {
+		return plugin, nil
+	}
+	plugin, err := cutting_garden_plugins.ResolveScheme(scheme)
+	if err != nil {
+		return nil, err
+	}
+	rp, ok := plugin.(cutting_garden_plugins.RestorePlugin)
+	if !ok {
+		return nil, errors.ErrorWithStackf(
+			"scheme %q does not support restore (its plugin exposes no "+
+				"EntryV1 restore capability)", scheme,
+		)
+	}
+	return rp, nil
+}
+
 // ResolveDiffPlugin parses dirStr as a URL and looks up the diff
 // plugin registered for its scheme. Schemeless dirs resolve to the
-// file plugin's `""` registration. Sibling to ResolveRestorePlugin.
+// file plugin's `""` registration. Sibling to ResolveRestorePlugin;
+// same typed-registry-first, scheme-registry-fallback resolution.
 func ResolveDiffPlugin(
 	dirStr string,
 ) (*url.URL, cutting_garden_plugins.DiffPlugin, error) {
@@ -43,11 +75,33 @@ func ResolveDiffPlugin(
 	if err != nil {
 		return nil, nil, errors.Wrapf(err, "parse dir %q", dirStr)
 	}
-	plugin, err := cutting_garden_plugins.ResolveDiff(u.Scheme)
+	plugin, err := resolveDiffCapablePlugin(u.Scheme)
 	if err != nil {
 		return nil, nil, err
 	}
 	return u, plugin, nil
+}
+
+// resolveDiffCapablePlugin is the diff-direction analogue of
+// resolveRestoreCapablePlugin.
+func resolveDiffCapablePlugin(
+	scheme string,
+) (cutting_garden_plugins.DiffPlugin, error) {
+	if plugin, err := cutting_garden_plugins.ResolveDiff(scheme); err == nil {
+		return plugin, nil
+	}
+	plugin, err := cutting_garden_plugins.ResolveScheme(scheme)
+	if err != nil {
+		return nil, err
+	}
+	dp, ok := plugin.(cutting_garden_plugins.DiffPlugin)
+	if !ok {
+		return nil, errors.ErrorWithStackf(
+			"scheme %q does not support diff (its plugin exposes no "+
+				"EntryV1 diff capability)", scheme,
+		)
+	}
+	return dp, nil
 }
 
 // resolvePluginForScheme resolves the plugin registered for scheme,

@@ -658,7 +658,32 @@ func (cmd *Capture) Run(req command.Request) {
 				continue
 			}
 
-			result := root.plugin.CaptureRoot(cutting_garden_plugins.CaptureRootRequest{
+			// root.plugin is the base Plugin interface (RFC 0005's
+			// scheme-registry fallback widened captureRoot.plugin beyond
+			// CapturePlugin); classifyArg's resolveCapturePlugin already
+			// guaranteed the resolved plugin implements ProtocolCapturePlugin
+			// (handled above) or CapturePlugin, so this assertion cannot
+			// fail on a path that reached here through the planner.
+			cp, ok := root.plugin.(cutting_garden_plugins.CapturePlugin)
+			if !ok {
+				perr := errors.ErrorWithStackf(
+					"internal error: resolved plugin for %q supports neither "+
+						"the RFC 0002 protocol capture interface nor the legacy "+
+						"EntryV1 CapturePlugin interface (resolveCapturePlugin "+
+						"invariant violated)", root.path,
+				)
+				p.failurePhase(root.path, perr)
+				failCount++
+				groupFailures = append(groupFailures, capture_failures.FailureV1{
+					Root:  root.path,
+					Path:  root.path,
+					Op:    capture_failures.OpPlugin,
+					Error: perr.Error(),
+				})
+				continue
+			}
+
+			result := cp.CaptureRoot(cutting_garden_plugins.CaptureRootRequest{
 				Context:   ctx,
 				Source:    root.sourceURL,
 				RawArg:    root.path,

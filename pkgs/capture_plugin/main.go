@@ -157,6 +157,31 @@ var ReceiptType = internal.ReceiptType
 // programmer errors caught at startup.
 var RegisterType = internal.RegisterType
 
+// RestorePayload materializes a protocol receipt's single "payload" node
+// body to dest, without any receipt-kind-specific plugin code. It is the
+// GENERIC restore path (cutting-garden#146 decision 3; #116's "restore
+// natively" principle): a receipt whose capture shape is one payload blob
+// captured verbatim (the web binding's PDF/PNG/text, or any future
+// single-artifact protocol plugin) needs no browser, no plugin subprocess,
+// and no kind-specific knowledge beyond "the receipt has a ref aliased
+// 'payload'" — restore is a pure read-payload-stream-to-disk operation.
+//
+// internal/restore's dispatch keys this by receipt *kind*: it is the
+// fallback tried when a receipt's kind has no registered
+// cutting_garden_plugins.ProtocolRestorePlugin (ResolveProtocolRestore
+// misses). Receipts whose capture shape is NOT a single payload blob
+// (git's per-object tree, caldav's structured collection) do not carry a
+// "payload" ref and MUST instead be restored by a kind-specific plugin
+// registered via MustRegisterProtocolRestore; RestorePayload returns an
+// error for those rather than guessing.
+//
+// dest must not already exist; missing parent directories are created.
+// Mirrors the precondition/streaming shape plugins/web/restore.go used to
+// implement inline (that binding now delegates here via the pkgs/
+// capture_plugin facade — RFC 0009 plugins may not import internal/
+// directly).
+var RestorePayload = internal.RestorePayload
+
 // SignatureFor returns the registered type's signature, and whether the
 // type is known. Unknown types are sig-less (unlocked) per RFC 0002.
 var SignatureFor = internal.SignatureFor
