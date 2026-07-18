@@ -126,8 +126,14 @@ Confirmed against the six demo scenarios (walkthrough in progress):
 See RFC 0014 "Deferred"; additionally here: facets as *named* trellis
 predicates (a facet as a stored query the framework counts by);
 organize-text × trellis (the organize upstreaming sequence owns it);
-dodder-side reverse-reference index; edge typing for dodder references
-(prerequisite for `-[blocks]->` over dodder stores).
+dodder-side reverse-reference index (direction: index inversion over the
+type-defined field index once edges are fields — see below); edge typing
+for dodder references (prerequisite for `-[blocks]->` over dodder
+stores) — **direction settled 2026-07-18**: typed edges arrive as
+reference-valued fields with locks (`- blocks=task/other @digest`), the
+field name as edge label, `_`-reserved framework edges (`_base`,
+`_mother`); specified in hyphence#2 / hyphence RFC 0002 (content grammar
+against trellis).
 
 ## More information
 
