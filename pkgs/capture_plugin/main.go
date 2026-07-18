@@ -174,10 +174,11 @@ var RegisterType = internal.RegisterType
 // body to dest, without any receipt-kind-specific plugin code. It is the
 // GENERIC restore path (cutting-garden#146 decision 3; #116's "restore
 // natively" principle): a receipt whose capture shape is one payload blob
-// captured verbatim (the web binding's PDF/PNG/text, or any future
-// single-artifact protocol plugin) needs no browser, no plugin subprocess,
-// and no kind-specific knowledge beyond "the receipt has a ref aliased
-// 'payload'" — restore is a pure read-payload-stream-to-disk operation.
+// captured verbatim (a config-declared capture plugin's PDF/PNG/text, or
+// any future single-artifact protocol plugin) needs no browser, no
+// plugin subprocess, and no kind-specific knowledge beyond "the receipt
+// has a ref aliased 'payload'" — restore is a pure
+// read-payload-stream-to-disk operation.
 //
 // internal/restore's dispatch keys this by receipt *kind*: it is the
 // fallback tried when a receipt's kind has no registered
@@ -189,10 +190,11 @@ var RegisterType = internal.RegisterType
 // error for those rather than guessing.
 //
 // dest must not already exist; missing parent directories are created.
-// Mirrors the precondition/streaming shape plugins/web/restore.go used to
-// implement inline (that binding now delegates here via the pkgs/
-// capture_plugin facade — RFC 0009 plugins may not import internal/
-// directly).
+// Mirrors the precondition/streaming shape the now-retired plugins/web
+// binding (cutting-garden#146) used to implement inline; a config-
+// declared capture plugin (internal/capture_wire) needs no such code at
+// all — it delegates here via the pkgs/capture_plugin facade — RFC 0009
+// plugins may not import internal/ directly).
 var RestorePayload = internal.RestorePayload
 
 // SignatureFor returns the registered type's signature, and whether the

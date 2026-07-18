@@ -55,9 +55,11 @@ func Build() command.Utility {
 	utility.AddCmd("list", list.New())
 	utility.AddCmd("mcp", mcp.New())
 	utility.AddCmd("version", version.New())
-	// Hidden plumbing: the RFC 0002 writer-protocol sink that external
-	// capturer subprocesses (the web binding's chrest) pipe node blobs
-	// into. See internal/blob_writer and internal/cutting_garden_plugin_web.
+	// Hidden plumbing: the RFC 0002 writer-protocol sink a config-
+	// declared capture plugin's v1 capture-batch fallback pipes node
+	// blobs into when its binary (e.g. chrest) has no working RFC 0008
+	// capture-serve session. See internal/blob_writer and
+	// internal/capture_wire.
 	utility.AddCmd("__write-blob", blob_writer.New())
 	// Hidden plumbing: the clown-plugin PreToolUse hook sink. The plugin's
 	// hooks/handler execs `cutting-garden hook` per hook event; it routes

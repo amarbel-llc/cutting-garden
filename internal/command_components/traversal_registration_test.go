@@ -238,6 +238,57 @@ protocols = ["capture"]
 	}
 }
 
+// TestRegisterPlugins_WebMigrationConfig is the cutting-garden#146
+// phase-3 retirement proof at the launcher level (deliberately NOT
+// live chrest): a [[plugins]] stanza shaped exactly like the one a
+// real user migrates plugins/web's retired hardcoded "web" scheme to
+// — name "web", schemes ["web"], protocols ["capture"] — registers a
+// *capture_wire.Plugin that reproduces every dispatch surface the
+// deleted plugins/web package used to provide via its init():
+// resolvable by the "web" scheme (capture/diff arg classification,
+// RFC 0005 §Resolution) AND by the "web" receipt kind (protocol diff
+// dispatch) — both routes landing on the SAME plugin instance, and
+// ProtocolKind() matching the frozen legacy receipt-type segment
+// (capture_plugin's frozenHyphenKinds) so old "web"-kind receipts'
+// diff dispatch keeps working unmodified.
+func TestRegisterPlugins_WebMigrationConfig(t *testing.T) {
+	raw := []byte(`
+[[plugins]]
+name = "web"
+command = ["chrest"]
+schemes = ["web"]
+protocols = ["capture"]
+`)
+	doc, err := cgconfig.DecodeConfigV0(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := registerPlugins(doc.Data(), raw); err != nil {
+		t.Fatal(err)
+	}
+
+	byScheme, err := cutting_garden_plugins.ResolveScheme("web")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cw, ok := byScheme.(*capture_wire.Plugin)
+	if !ok {
+		t.Fatalf("registered plugin is %T, want *capture_wire.Plugin", byScheme)
+	}
+	if got := cw.ProtocolKind(); got != "web" {
+		t.Errorf("ProtocolKind() = %q, want %q (the frozen legacy receipt kind)", got, "web")
+	}
+
+	byKind, err := cutting_garden_plugins.ResolveProtocolDiff("web")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if kindCW, ok := byKind.(*capture_wire.Plugin); !ok || kindCW != cw {
+		t.Error("scheme and receipt-kind dispatch resolved to different plugin instances")
+	}
+}
+
 // TestRegisterPlugins_CombinedProtocols_NotYetSupported pins the
 // current limitation: a stanza declaring BOTH protocols on one entry
 // is a clear configuration error rather than silently registering

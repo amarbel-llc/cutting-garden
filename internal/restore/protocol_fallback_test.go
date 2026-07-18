@@ -205,3 +205,77 @@ func TestRestoreProtocolReceipt_FallsBackToGenericPayloadRestore(t *testing.T) {
 		t.Errorf("restored content = %q, want %q", got, content)
 	}
 }
+
+// TestRestoreProtocolReceipt_WebKindFallsBackToGenericPayloadRestore is
+// the literal cutting-garden#146 retirement regression: plugins/web
+// (deleted; #146 phase 3) used to register its OWN
+// ProtocolRestorePlugin for the "web" receipt kind — now nothing in
+// this binary registers one, so a receipt of that exact kind, produced
+// by the frozen legacy hyphen type string
+// ("cutting_garden-capture-receipt-web-v1", capture_plugin's
+// frozenHyphenKinds) any pre-retirement web capture still carries, MUST
+// keep restoring — the generic single-payload fallback, not any
+// web-specific code, is what makes that guarantee hold post-deletion.
+func TestRestoreProtocolReceipt_WebKindFallsBackToGenericPayloadRestore(t *testing.T) {
+	store := newMemStore(t)
+	const content = "a pre-retirement web capture's payload bytes\n"
+	receiptDigest := writeWebKindReceipt(t, store, []byte(content))
+
+	ctx := errors.MakeContextDefault()
+	dest := filepath.Join(t.TempDir(), "out", "restored.bin")
+
+	if err := restoreProtocolReceipt(
+		ctx, store, "web", receiptDigest, dest,
+	); err != nil {
+		t.Fatalf("restoreProtocolReceipt(kind=web): %v", err)
+	}
+
+	got, err := os.ReadFile(dest)
+	if err != nil {
+		t.Fatalf("read restored file: %v", err)
+	}
+	if string(got) != content {
+		t.Errorf("restored content = %q, want %q", got, content)
+	}
+}
+
+// writeWebKindReceipt writes a single-payload protocol receipt of kind
+// "web" — the exact shape a real (now-retired) plugins/web capture
+// produced. Separate from writeWebShapedReceipt so the literal "web"
+// kind case (the actual retirement regression) and the
+// no-plugin-registered-anywhere case stay independently readable.
+func writeWebKindReceipt(
+	t *testing.T, store blob_stores.BlobStoreInitialized, payload []byte,
+) string {
+	t.Helper()
+	w := capture_plugin.NewBlobStoreWriter(store)
+
+	payloadNodeType := "jcs-web-capture-payload-v1"
+	payloadDigest, _, err := capture_plugin.WriteNode(
+		context.Background(), w, capture_plugin.BuildNode(payloadNodeType, nil, payload),
+	)
+	if err != nil {
+		t.Fatalf("write payload node: %v", err)
+	}
+
+	receiptDigest, err := capture_plugin.WriteReceipt(context.Background(), w, capture_plugin.ReceiptParams{
+		Kind: "web",
+		Invocation: capture_plugin.Invocation{
+			Target: "https://example.com/article", Format: "pdf",
+		},
+		Host:   capture_plugin.HostInfo{OS: "linux", Kernel: "6.0", Arch: "x86_64", Libc: "unknown"},
+		Binary: capture_plugin.BinaryInfo{Name: "chrest", Version: "dev"},
+		PluginEnv: capture_plugin.PluginEnv{
+			TypeString: "jcs-web-capture-environment-v1",
+			Body:       map[string]any{},
+		},
+		PayloadRefs: []capture_plugin.Ref{
+			{Alias: "payload", Digest: payloadDigest, TypeString: payloadNodeType},
+		},
+		Now: func() time.Time { return time.Date(2026, 7, 18, 0, 0, 0, 0, time.UTC) },
+	})
+	if err != nil {
+		t.Fatalf("WriteReceipt: %v", err)
+	}
+	return receiptDigest
+}
