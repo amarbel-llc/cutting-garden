@@ -163,9 +163,11 @@ func readToolDefs() []protocol.ToolV1 {
 		{
 			Name: mcp_tool_perms.ToolDescribeNodeTypes,
 			Description: "List the node types each scheme exposes (tag, container vs " +
-				"leaf, mimetype) and, for writable types, the body payload create_node/" +
-				"put_node accept, with a concrete example. Read-only; call it first " +
-				"to learn a type tag and body shape before create_node.",
+				"leaf, mimetype), the facet dimensions and listing fields a type may " +
+				"carry in an enriched listing (see list_nodes), and, for writable " +
+				"types, the body payload create_node/put_node accept, with a " +
+				"concrete example. Read-only; call it first to learn a type tag and " +
+				"body shape before create_node.",
 			InputSchema: json.RawMessage(describeNodeTypesSchema),
 			Annotations: annotationFor(mcp_tool_perms.ToolDescribeNodeTypes),
 		},
@@ -766,6 +768,12 @@ type typeSchema struct {
 	Writable     bool             `json:"writable"`
 	Body         *bodySchema      `json:"body,omitempty"`
 	Facets       []facetDimSchema `json:"facets,omitempty"`
+	// ListingFields are the human-readable keys a node of this type may
+	// carry in an enriched listing's `fields` (cutting-garden#160) — e.g.
+	// a caldav object's summary/due/status/dtstart. Empty means the
+	// plugin declares no listing fields for this type (it may still
+	// enrich with Facets alone, via ListRoots or EnrichedLister).
+	ListingFields []listingFieldSchema `json:"listingFields,omitempty"`
 }
 
 // bodySchema is the create/update payload description for a writable type: the
@@ -816,6 +824,26 @@ func facetDimSchemas(
 	return out
 }
 
+// listingFieldSchema describes one declared listing field of a node type,
+// for the describe_node_types tool: its key and display label. Symmetric
+// with facetDimSchema. See cutting-garden#160.
+type listingFieldSchema struct {
+	Key   string `json:"key"`
+	Label string `json:"label,omitempty"`
+}
+
+// listingFieldSchemas projects a plugin's declared ListingFields into their
+// describe_node_types view.
+func listingFieldSchemas(
+	fields []cutting_garden_plugins.ListingField,
+) []listingFieldSchema {
+	out := make([]listingFieldSchema, 0, len(fields))
+	for _, f := range fields {
+		out = append(out, listingFieldSchema{Key: f.Key, Label: f.Label})
+	}
+	return out
+}
+
 // collectSchema builds the describe_node_types catalogue from the registered
 // plugins: every RootLister contributes its node types, and a BodyDescriber
 // adds the writable types' payload detail. Plugins without traversal (the
@@ -839,6 +867,12 @@ func collectSchema(plugins []cutting_garden_plugins.Plugin) []schemeSchema {
 				facets[ntf.Tag] = ntf.Dimensions
 			}
 		}
+		listingFields := map[string][]cutting_garden_plugins.ListingField{}
+		if lfd, ok := p.(cutting_garden_plugins.ListingFieldsDescriber); ok {
+			for _, ntf := range lfd.DescribeListingFields() {
+				listingFields[ntf.Tag] = ntf.Fields
+			}
+		}
 		nts := rl.Types()
 		types := make([]typeSchema, 0, len(nts))
 		for _, nt := range nts {
@@ -857,6 +891,9 @@ func collectSchema(plugins []cutting_garden_plugins.Plugin) []schemeSchema {
 			}
 			if dims, ok := facets[nt.Tag]; ok {
 				ts.Facets = facetDimSchemas(dims)
+			}
+			if fields, ok := listingFields[nt.Tag]; ok {
+				ts.ListingFields = listingFieldSchemas(fields)
 			}
 			types = append(types, ts)
 		}

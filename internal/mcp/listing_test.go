@@ -204,6 +204,58 @@ func TestReadResource_ChildViewsCarryFacetsByDefault(t *testing.T) {
 	}
 }
 
+// listingFieldsPlugin is a fakeLister that also declares listing fields —
+// the describe_node_types fixture for TestCollectSchema_IncludesListingFields.
+type listingFieldsPlugin struct{ fakeLister }
+
+func (listingFieldsPlugin) DescribeListingFields() []cutting_garden_plugins.NodeTypeListingFields {
+	return []cutting_garden_plugins.NodeTypeListingFields{{
+		Tag: "test-object-v1",
+		Fields: []cutting_garden_plugins.ListingField{
+			{Key: "summary", Label: "Summary"},
+			{Key: "due", Label: "Due"},
+		},
+	}}
+}
+
+// TestCollectSchema_IncludesListingFields pins the describe_node_types
+// discoverability surface for #160's listing-projection declaration,
+// symmetric with TestCollectSchema_IncludesFacetDimensions.
+func TestCollectSchema_IncludesListingFields(t *testing.T) {
+	schemes := collectSchema([]cutting_garden_plugins.Plugin{listingFieldsPlugin{}})
+
+	var fields []listingFieldSchema
+	for _, s := range schemes {
+		for _, ts := range s.Types {
+			if ts.Tag == "test-object-v1" {
+				fields = ts.ListingFields
+			}
+		}
+	}
+	if len(fields) != 2 {
+		t.Fatalf("test-object-v1 listing fields = %d, want 2: %+v", len(fields), fields)
+	}
+	byKey := map[string]listingFieldSchema{}
+	for _, f := range fields {
+		byKey[f.Key] = f
+	}
+	if byKey["summary"].Label != "Summary" {
+		t.Errorf("summary label = %q, want Summary", byKey["summary"].Label)
+	}
+	if byKey["due"].Label != "Due" {
+		t.Errorf("due label = %q, want Due", byKey["due"].Label)
+	}
+
+	// The calendar container type declares no listing fields.
+	for _, s := range schemes {
+		for _, ts := range s.Types {
+			if ts.Tag == "test-calendar-v1" && len(ts.ListingFields) != 0 {
+				t.Errorf("calendar type carries listing fields: %+v", ts.ListingFields)
+			}
+		}
+	}
+}
+
 // listerResolve builds a Tools-compatible resolveFunc that always resolves
 // to lister for the faketest scheme, mirroring fakeResolve.
 func listerResolve(lister cutting_garden_plugins.RootLister) resolveFunc {
