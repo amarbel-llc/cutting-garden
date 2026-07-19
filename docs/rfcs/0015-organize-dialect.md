@@ -164,7 +164,14 @@ class, parsed by the same parser. The body carries the outer document's
 distributing metadata (document tags, the substrate type anchor)
 faithfully, since edits to those are intents the diff must see; the
 envelope's `! organize-base-v1` and the body's substrate anchor are
-different layers, never in conflict.
+different layers, never in conflict. The `! organize-base-v1` type line
+is descriptive text *inside the blob's own bytes* — it MUST NEVER be
+materialized as a committed, listed, or queryable object in any substrate
+(no dodder type object, no cg node). The blob is pure infrastructure:
+content-addressed for durability and `_base` dereferencing, and invisible
+to user-facing output in every mode. (Ruled dodder-side 2026-07-18 — the
+defect is a real object existing at all for infrastructure, not merely its
+creation being printed; cutting-garden inherits the same invariant.)
 - Divergent edits to clones of one object: conflict (detectable only
   via the base).
 

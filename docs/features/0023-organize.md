@@ -79,6 +79,11 @@ record carries the shape, the per-substrate findings, and the ledgers.
   (FDR 0018 unified namespace).
 - Adjacent: cutting-garden#142 (root tags) — filter-mode
   `cg capture --organize` composes with tagged roots.
+- Adjacent (successor, NOT a blocker): cutting-garden#154 — bulk /
+  multi-node mutation (NodeMutator successor). organize's apply engine is
+  the motivating consumer, but v1 composes single-node writes; #154 is the
+  atomicity/optimization path organize will want, layered on FDR 0020 and
+  bright-cherry's PutNode/PatchNode split.
 
 ## Boundaries
 

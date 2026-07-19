@@ -125,6 +125,9 @@ Confirmed against the six demo scenarios (walkthrough in progress):
 
 See RFC 0014 "Deferred"; additionally here: facets as *named* trellis
 predicates (a facet as a stored query the framework counts by);
+full-text search-index acceleration for the `_body*=` / `~=` predicates,
+probed as a host capability like reverse-edges/facets (RFC 0012 posture) —
+an honest walk otherwise (boundary #6): cutting-garden#153;
 organize-text × trellis (the organize upstreaming sequence owns it);
 dodder-side reverse-reference index (direction: index inversion over the
 type-defined field index once edges are fields — see below); edge typing
