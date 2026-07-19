@@ -616,10 +616,60 @@
             --replace-fail '@cutting-garden@' '${cuttingGarden}/bin/cutting-garden'
           chmod 0755 $pluginRoot/hooks/handler
         '';
+
+        # cuttingGardenDoc compiles the hand-written section 5/7 man pages
+        # under doc/ (eng-manpages(7) SCDOC PATTERN — cutting-garden-config(5)
+        # / cutting-garden-plugins(7), cutting-garden#166 / cutting-garden#172)
+        # into the standard share/man layout. Kept as its OWN
+        # stdenvNoCC.mkDerivation, per eng-manpages(7)'s reference derivation,
+        # scoped to `src = ./doc` — buildGoApplication's src is filtered for
+        # Go-relevant files, so a Go-application postInstall step can't
+        # reliably read arbitrary non-Go source paths like doc/*.scd; a plain
+        # mkDerivation with its own src sidesteps that entirely. Section 1
+        # pages stay on the existing Go-codegen path (cutting-garden-gen);
+        # this derivation covers ONLY man5/man7, merged into the default
+        # package below.
+        cuttingGardenDoc = pkgs.stdenvNoCC.mkDerivation {
+          pname = "cutting-garden-doc";
+          version = cgVersion;
+          src = ./doc;
+          nativeBuildInputs = [ pkgs.scdoc ];
+          dontUnpack = true;
+          dontBuild = true;
+          installPhase = ''
+            mkdir -p $out/share/man/man5 $out/share/man/man7
+            for f in $src/*.5.scd; do
+              [ -e "$f" ] || continue
+              scdoc < "$f" > "$out/share/man/man5/$(basename "$f" .scd)"
+            done
+            for f in $src/*.7.scd; do
+              [ -e "$f" ] || continue
+              scdoc < "$f" > "$out/share/man/man7/$(basename "$f" .scd)"
+            done
+          '';
+        };
+
+        # The installed package: cuttingGarden's own output (binaries,
+        # go-codegen'd section 1 pages, completions) merged with
+        # cuttingGardenDoc's section 5/7 pages via symlinkJoin — the
+        # "combining patterns" approach eng-manpages(7) prescribes for a repo
+        # that has both a Go-codegen'd command reference and hand-written
+        # scdoc pages. nixpkgs' standard compressManPages fixup gzips
+        # cuttingGardenDoc's *.5/*.7 the same way it already gzips
+        # cuttingGarden's *.1 (zz-tests_bats/install_artifacts.bats pins the
+        # combined result).
+        cuttingGardenWithDoc = pkgs.symlinkJoin {
+          name = "cutting-garden-${cgVersion}";
+          paths = [
+            cuttingGarden
+            cuttingGardenDoc
+          ];
+          meta = cuttingGarden.meta;
+        };
       in
       {
         packages = {
-          default = cuttingGarden;
+          default = cuttingGardenWithDoc;
 
           # Producer outputs for out-of-tree Go consumers (RFC 0001 producer,
           # RFC 0009 §2): a plugin in its own repo bridges
@@ -686,8 +736,13 @@
             base = cuttingGarden;
             batsSrc = ./zz-tests_bats;
             binaries = {
+              # cuttingGardenWithDoc (not the bare cuttingGarden) so
+              # install_artifacts.bats — which derives $prefix from CG_BIN —
+              # sees the merged tree's share/man/man5 and man7 pages
+              # (cutting-garden#166 / cutting-garden#172) alongside the
+              # go-codegen'd man1 pages.
               CG_BIN = {
-                base = cuttingGarden;
+                base = cuttingGardenWithDoc;
                 name = "cutting-garden";
               };
               MADDER_BIN = {
@@ -824,6 +879,11 @@
             # from PATH, so keep it here too — otherwise `go generate -run
             # dagnabit` exits nonzero).
             tommy.packages.${system}.conformist-tommy-codegen
+            # scdoc: compiles the hand-written section 5/7 man pages under
+            # doc/ (eng-manpages(7) SCDOC PATTERN). Devshell-only, mirrors
+            # cuttingGardenDoc's nativeBuildInputs below; `just debug-manpage`
+            # shells out to it directly for the fast eyeball loop.
+            pkgs.scdoc
           ]
           # cdparanoia + ddrescue back the optical plugin
           # (internal/cutting_garden_plugin_optical), matching the wrap in

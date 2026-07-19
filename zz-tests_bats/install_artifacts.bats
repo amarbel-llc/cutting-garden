@@ -40,6 +40,21 @@ function install_emits_subcommand_manpages { # @test
   done
 }
 
+function install_emits_scdoc_manpages { # @test
+  # The hand-written section 5/7 pages (doc/*.scd, eng-manpages(7) SCDOC
+  # PATTERN) compiled by the cuttingGardenDoc derivation and merged into
+  # the default package via symlinkJoin — cutting-garden-config(5)
+  # (cutting-garden#166) and cutting-garden-plugins(7) (cutting-garden#172).
+  local prefix
+  prefix="$(install_prefix)"
+
+  [[ -f "$prefix/share/man/man5/cutting-garden-config.5.gz" ]] ||
+    fail "missing cutting-garden-config(5) at $prefix/share/man/man5/cutting-garden-config.5.gz"
+
+  [[ -f "$prefix/share/man/man7/cutting-garden-plugins.7.gz" ]] ||
+    fail "missing cutting-garden-plugins(7) at $prefix/share/man/man7/cutting-garden-plugins.7.gz"
+}
+
 function install_omits_hidden_subcommand_manpages { # @test
   # Hidden commands (CommandHidden: `complete`, `__write-blob`, `hook`)
   # are framework plumbing — they get no per-subcommand manpage, matching
