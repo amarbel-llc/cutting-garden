@@ -28,7 +28,13 @@ Query        <- SP? Path SP? EOF
 // A path is steps joined by combinators. The result set is the last
 // step's (object, version) pairs. Whitespace around combinators is
 // mandatory (this kills the `due<-1` vs `due <- 1` ambiguity class).
-Path         <- Step (SP Combinator SP Step)*
+// A LEADING combinator (optional prefix) is a traversal from the
+// implicit DEFAULT ANCHOR — the root aggregate, FDR 0022 "roots as
+// nodes" — so `->> !task ^done` means "from all roots, walk
+// containment to undone tasks." PEG ordered choice consumes the prefix
+// greedily; a leading dependent-tag term like `-content` matches no
+// Combinator, so the prefix falls through to empty and Step parses it.
+Path         <- (Combinator SP)? Step (SP Combinator SP Step)*
 
 // A step is a maximal run of space-separated terms, ANDed, all
 // predicating the same (object, version) pair. The !Combinator guard is

@@ -47,6 +47,13 @@ A query is a sequence of **steps** joined by **combinators**. A step is a
 maximal run of space-separated **terms**, ANDed, all predicating one object.
 The result set of a query is the objects matched by the **last** step.
 
+A query MAY **begin with a combinator**: a leading combinator traverses
+from the implicit **default anchor** (the root aggregate; FDR 0022 "Roots
+as nodes"), so `->> !task ^done` reads "from all roots, walk containment to
+undone tasks." This is the only place the default anchor is named
+implicitly rather than by a selecting first step; everywhere else a step
+supplies its own subject.
+
 A bare step and a one-alternative group are equivalent: `!task due<=X` and
 `[!task due<=X]` mean the same thing, so both the bracketed (data-flavored)
 and unbracketed (query-flavored) spellings are valid everywhere a step is
