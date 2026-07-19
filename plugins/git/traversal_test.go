@@ -176,3 +176,83 @@ func TestReadLeaf_NilNode_Errors(t *testing.T) {
 		t.Fatal("ReadLeaf(nil) did not error")
 	}
 }
+
+// TestFacetCounts_EndpointSummarizesDefaultDimension pins the RFC 0012 §4.1
+// one-shot path (cutting-garden#124): the declared "default" dimension,
+// previously undeclared-by-nobody (no FacetCounter and the §4.2 framework
+// fold unimplemented), now actually surfaces — with informative zeros for
+// its closed two-value domain even when every non-default bucket is 0.
+func TestFacetCounts_EndpointSummarizesDefaultDimension(t *testing.T) {
+	dir, _, tips := buildRepo(t, map[string]string{"f.txt": "v1"})
+	createBranch(t, dir, "feature", tips[0])
+	createBranch(t, dir, "another", tips[0])
+
+	result, ok, err := (Plugin{}).FacetCounts(
+		context.Background(), mustParseURL(t, "git:"+dir), nil,
+	)
+	if err != nil {
+		t.Fatalf("FacetCounts: %v", err)
+	}
+	if !ok {
+		t.Fatal("FacetCounts ok = false, want true for the endpoint")
+	}
+	if !result.Complete {
+		t.Error("Complete = false, want true (one list-remote call, no cap)")
+	}
+	hist := result.Summary[facetDefault]
+	if hist["true"] != 1 {
+		t.Errorf("default[true] = %d, want 1 (exactly one default branch)", hist["true"])
+	}
+	if hist["false"] != 2 {
+		t.Errorf("default[false] = %d, want 2 (feature, another)", hist["false"])
+	}
+}
+
+// TestFacetCounts_FilterNarrowsToMatchingBranches pins RFC 0012 §6: a filter
+// on facetDefault restricts the counted set to matching branches, while the
+// closed domain's informative-zero bucket stays present.
+func TestFacetCounts_FilterNarrowsToMatchingBranches(t *testing.T) {
+	dir, _, tips := buildRepo(t, map[string]string{"f.txt": "v1"})
+	createBranch(t, dir, "feature", tips[0])
+
+	result, ok, err := (Plugin{}).FacetCounts(
+		context.Background(), mustParseURL(t, "git:"+dir),
+		cutting_garden_plugins.FacetFilter{{Dimension: facetDefault, Value: "true"}},
+	)
+	if err != nil {
+		t.Fatalf("FacetCounts: %v", err)
+	}
+	if !ok {
+		t.Fatal("FacetCounts ok = false, want true")
+	}
+	hist := result.Summary[facetDefault]
+	if hist["true"] != 1 {
+		t.Errorf("filtered default[true] = %d, want 1", hist["true"])
+	}
+	if hist["false"] != 0 {
+		t.Errorf("filtered default[false] = %d, want 0 (feature excluded by the filter)", hist["false"])
+	}
+}
+
+// TestFacetCounts_BranchScopedNodeDeclines pins that a leaf node has no
+// facets of its own — the framework falls back to nothing for a leaf,
+// mirroring ListRoots's branch-scoped-node-has-no-children posture.
+func TestFacetCounts_BranchScopedNodeDeclines(t *testing.T) {
+	dir, branch, _ := buildRepo(t, map[string]string{"f.txt": "v1"})
+
+	_, ok, err := (Plugin{}).FacetCounts(
+		context.Background(), mustParseURL(t, "git:"+dir+"#"+branch), nil,
+	)
+	if err != nil {
+		t.Fatalf("FacetCounts: %v", err)
+	}
+	if ok {
+		t.Error("FacetCounts(branch-scoped) ok = true, want false (a leaf has no facets)")
+	}
+}
+
+func TestFacetCounts_NilNode_Errors(t *testing.T) {
+	if _, _, err := (Plugin{}).FacetCounts(context.Background(), nil, nil); err == nil {
+		t.Fatal("FacetCounts(nil) did not error")
+	}
+}

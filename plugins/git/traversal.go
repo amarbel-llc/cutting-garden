@@ -30,6 +30,7 @@ var (
 	_ cutting_garden_plugins.RootLister     = (*Plugin)(nil)
 	_ cutting_garden_plugins.LeafReader     = (*Plugin)(nil)
 	_ cutting_garden_plugins.FacetDescriber = (*Plugin)(nil)
+	_ cutting_garden_plugins.FacetCounter   = (*Plugin)(nil)
 )
 
 // Types declares the git binding's single traversal node type — a
@@ -153,6 +154,57 @@ func (Plugin) ReadLeaf(
 			"branch": resolvedBranch,
 			"tip":    tip,
 		},
+	}, true, nil
+}
+
+// FacetCounts summarizes an endpoint's branches in one shot, reusing the
+// SAME listRemoteBranches call ListRoots makes (RFC 0012 §4.1's preferred
+// one-shot path, size-agnostic and no extra wire round trip beyond what
+// browsing already pays). Declines (ok=false) for an already branch-scoped
+// leaf node, which has no facets of its own — mirroring ListRoots's
+// leaf-has-no-children posture. The result is always Complete: one
+// list-remote call enumerates every branch, with no source-imposed cap.
+func (Plugin) FacetCounts(
+	ctx context.Context,
+	node *url.URL,
+	filter cutting_garden_plugins.FacetFilter,
+) (cutting_garden_plugins.FacetResult, bool, error) {
+	if node == nil {
+		return cutting_garden_plugins.FacetResult{}, false, errors.ErrorWithStackf(
+			"git plugin: FacetCounts requires a node URI",
+		)
+	}
+	remote, branch, err := remoteAndBranchFromArg(node)
+	if err != nil {
+		return cutting_garden_plugins.FacetResult{}, false, err
+	}
+	if branch != "" {
+		// A branch-scoped leaf has no facets of its own.
+		return cutting_garden_plugins.FacetResult{}, false, nil
+	}
+
+	branches, defaultBranch, err := listRemoteBranches(ctx, remote)
+	if err != nil {
+		return cutting_garden_plugins.FacetResult{}, false, err
+	}
+
+	// Informative zeros (RFC 0012 §3): facetDefault is a closed two-value
+	// domain, so both buckets are present even when every branch (or none)
+	// is the default.
+	hist := cutting_garden_plugins.FacetHistogram{"true": 0, "false": 0}
+	for _, name := range branches {
+		key := boolFacetKey(name == defaultBranch)
+		if !filter.Matches(map[string][]cutting_garden_plugins.FacetValue{
+			facetDefault: {{Key: key}},
+		}) {
+			continue
+		}
+		hist[key]++
+	}
+
+	return cutting_garden_plugins.FacetResult{
+		Summary:  cutting_garden_plugins.FacetSummary{facetDefault: hist},
+		Complete: true,
 	}, true, nil
 }
 
