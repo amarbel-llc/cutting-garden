@@ -1,0 +1,103 @@
+package trellis
+
+import "strings"
+
+// isSP1 reports whether r is one rune of whitespace, per trellis.peg's
+//
+//	SP1 <- [ \t\r\n]
+func isSP1(r rune) bool {
+	switch r {
+	case ' ', '\t', '\r', '\n':
+		return true
+	default:
+		return false
+	}
+}
+
+// isSigilRune reports whether r is one of the four sigil runes, per
+//
+//	SigilRune <- [:+.?]
+func isSigilRune(r rune) bool {
+	switch r {
+	case ':', '+', '.', '?':
+		return true
+	default:
+		return false
+	}
+}
+
+// reservedRunes are the literal (non-sigil) members of trellis.peg's
+//
+//	Reserved <- [\[\]^=,!@<>*$~%#"'] / SigilRune
+//
+// Sigil runes are handled separately by isSigilRune wherever Reserved is
+// consulted (see IsIdentRuneAt), so this set omits them.
+const reservedRunes = "[]^=,!@<>*$~%#\"'"
+
+func isReservedRune(r rune) bool {
+	return strings.ContainsRune(reservedRunes, r)
+}
+
+// IsIdentRuneAt reports whether the rune at s[i] is consumed as identifier
+// content, per trellis.peg's
+//
+//	IdentRune <- '-' / '/' / (SigilRune &IdentRune) / (!Reserved !SP1 .)
+//
+// This is THE STRICT SIGIL RULE: a sigil rune is identifier-interior only
+// when the rune immediately following it is itself identifier content — the
+// grammar's `&IdentRune` positive lookahead, implemented here by recursing
+// on i+1. A trailing run of sigil runes (nothing identifier-shaped left to
+// look ahead to) therefore always bottoms out false, which is exactly what
+// makes it the term-final sigil suffix instead of identifier content:
+// `todo:` is identifier "todo" + sigil ":"; `caldav:fastmail` is one
+// identifier, because ':' is followed by more identifier content ("f...").
+//
+// '-' and '/' are unconditionally identifier runes (no lookahead), so a
+// trailing hyphen or slash never gets stripped as if it were a sigil.
+func IsIdentRuneAt(s []rune, i int) bool {
+	if i < 0 || i >= len(s) {
+		return false
+	}
+	switch r := s[i]; {
+	case r == '-' || r == '/':
+		return true
+	case isSigilRune(r):
+		return IsIdentRuneAt(s, i+1)
+	case isReservedRune(r) || isSP1(r):
+		return false
+	default:
+		return true
+	}
+}
+
+// decodeEscape maps the character following a backslash to its decoded
+// rune, per trellis.peg's String comment ("Doddish quoting rules verbatim:
+// double or single quotes; backslash escapes \n \t \r \a \b \f \v, \" and \\
+// round-trip, unknown escapes pass the following character through
+// unchanged").
+func decodeEscape(r rune) rune {
+	switch r {
+	case 'n':
+		return '\n'
+	case 't':
+		return '\t'
+	case 'r':
+		return '\r'
+	case 'a':
+		return '\a'
+	case 'b':
+		return '\b'
+	case 'f':
+		return '\f'
+	case 'v':
+		return '\v'
+	case '"':
+		return '"'
+	case '\\':
+		return '\\'
+	default:
+		// Unknown escapes pass the following character through unchanged
+		// (the escaping backslash is simply dropped).
+		return r
+	}
+}

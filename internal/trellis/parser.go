@@ -1,0 +1,714 @@
+package trellis
+
+import "fmt"
+
+// SyntaxError reports a trellis query that does not match the grammar.
+type SyntaxError struct {
+	// Offset is the rune offset into the source at which parsing could
+	// make no further progress (the "farthest failure" position, a
+	// standard PEG diagnostic technique: the deepest point any attempted
+	// alternative reached before the overall parse backtracked out of
+	// it).
+	Offset int
+	Msg    string
+}
+
+func (e *SyntaxError) Error() string {
+	return fmt.Sprintf("trellis: syntax error at offset %d: %s", e.Offset, e.Msg)
+}
+
+// Parse parses src as a complete trellis Query:
+//
+//	Query <- SP? Path SP? EOF
+//
+// It returns a *SyntaxError (wrapped in the error return) for any input
+// that does not match the grammar, including valid-prefix input followed by
+// unparsed trailing content.
+//
+// Parse builds an AST only — it performs no evaluation and no validation
+// beyond what the grammar itself demands. Grammar-reserved forms (the `~=`
+// field operator, the `-[pred]->>` typed-transitive-closure combinator)
+// parse successfully; see FieldOpRegex and CombinatorTypedClosure.
+func Parse(src string) (*Query, error) {
+	p := &parser{src: []rune(src)}
+	p.skipSPOpt()
+	path, ok := p.parsePath()
+	if !ok {
+		return nil, p.syntaxError("expected a query")
+	}
+	p.skipSPOpt()
+	if !p.atEOF() {
+		return nil, p.syntaxError("unexpected trailing input")
+	}
+	return &Query{Path: path}, nil
+}
+
+// parser is a hand-rolled recursive-descent, backtracking parser over
+// trellis.peg. Each grammar rule has a corresponding parseX method; ordered
+// choices try alternatives in the grammar's own order and restore p.pos on
+// failure, exactly mirroring PEG's ordered-choice-with-backtracking
+// semantics. Methods return (value, ok) rather than (value, error): only
+// the top-level Parse constructs a diagnostic, from the farthest position
+// any sub-parse reached.
+type parser struct {
+	src []rune
+	pos int
+
+	farthest    int
+	farthestMsg string
+}
+
+func (p *parser) fail(msg string) {
+	if p.pos >= p.farthest {
+		p.farthest = p.pos
+		p.farthestMsg = msg
+	}
+}
+
+func (p *parser) syntaxError(fallback string) error {
+	msg, offset := p.farthestMsg, p.farthest
+	if msg == "" {
+		msg, offset = fallback, p.pos
+	}
+	return &SyntaxError{Offset: offset, Msg: msg}
+}
+
+func (p *parser) atEOF() bool { return p.pos >= len(p.src) }
+
+// literal consumes lit if it matches at the current position; otherwise it
+// leaves p.pos untouched and returns false. (No partial consumption on
+// failure, so callers generally don't need their own save/restore around a
+// single literal() call.)
+func (p *parser) literal(lit string) bool {
+	rs := []rune(lit)
+	if p.pos+len(rs) > len(p.src) {
+		p.fail("expected " + lit)
+		return false
+	}
+	for i, r := range rs {
+		if p.src[p.pos+i] != r {
+			p.fail("expected " + lit)
+			return false
+		}
+	}
+	p.pos += len(rs)
+	return true
+}
+
+// skipSP consumes SP <- SP1+ (one or more whitespace runes); it fails
+// (leaving p.pos untouched) if the current rune isn't whitespace.
+func (p *parser) skipSP() bool {
+	start := p.pos
+	for !p.atEOF() && isSP1(p.src[p.pos]) {
+		p.pos++
+	}
+	if p.pos == start {
+		p.fail("expected whitespace")
+		return false
+	}
+	return true
+}
+
+// skipSPOpt consumes SP? — zero or more whitespace runes; always succeeds.
+func (p *parser) skipSPOpt() {
+	for !p.atEOF() && isSP1(p.src[p.pos]) {
+		p.pos++
+	}
+}
+
+// ---- lexical: Ident / Bareword / Sigil / String -------------------------
+
+// scanIdentText consumes IdentRune+ per the strict sigil rule
+// (IsIdentRuneAt); shared by Ident and Bareword, which are lexically
+// identical (same production body) under different rule names.
+func (p *parser) scanIdentText() (string, bool) {
+	start := p.pos
+	for !p.atEOF() && IsIdentRuneAt(p.src, p.pos) {
+		p.pos++
+	}
+	if p.pos == start {
+		p.fail("expected identifier")
+		return "", false
+	}
+	return string(p.src[start:p.pos]), true
+}
+
+func (p *parser) parseIdent() (Ident, bool) {
+	s, ok := p.scanIdentText()
+	if !ok {
+		return Ident{}, false
+	}
+	return Ident{Name: s}, true
+}
+
+func (p *parser) parseBareword() (Bareword, bool) {
+	s, ok := p.scanIdentText()
+	if !ok {
+		return Bareword{}, false
+	}
+	return Bareword{Name: s}, true
+}
+
+// parseSigil consumes SigilRune+.
+func (p *parser) parseSigil() (Sigil, bool) {
+	start := p.pos
+	for !p.atEOF() && isSigilRune(p.src[p.pos]) {
+		p.pos++
+	}
+	if p.pos == start {
+		p.fail("expected sigil")
+		return Sigil{}, false
+	}
+	return Sigil{Runes: string(p.src[start:p.pos])}, true
+}
+
+// parseSigilOpt matches Sigil? — always succeeds, returning nil when absent.
+func (p *parser) parseSigilOpt() *Sigil {
+	s, ok := p.parseSigil()
+	if !ok {
+		return nil
+	}
+	return &s
+}
+
+// parseString consumes a quoted String, decoding doddish backslash escapes
+// (decodeEscape). Returns the decoded content, not including the quotes.
+func (p *parser) parseString() (string, bool) {
+	if p.atEOF() {
+		p.fail("expected string")
+		return "", false
+	}
+	quote := p.src[p.pos]
+	if quote != '"' && quote != '\'' {
+		p.fail("expected string")
+		return "", false
+	}
+	start := p.pos
+	i := p.pos + 1
+	var out []rune
+	for {
+		if i >= len(p.src) {
+			p.pos = start
+			p.fail("unterminated string")
+			return "", false
+		}
+		r := p.src[i]
+		if r == quote {
+			i++
+			break
+		}
+		if r == '\\' {
+			if i+1 >= len(p.src) {
+				p.pos = start
+				p.fail("unterminated string escape")
+				return "", false
+			}
+			out = append(out, decodeEscape(p.src[i+1]))
+			i += 2
+			continue
+		}
+		out = append(out, r)
+		i++
+	}
+	p.pos = i
+	return string(out), true
+}
+
+// ---- BasicTerm's leaf alternatives ---------------------------------------
+
+func (p *parser) parseTypeTerm() (TypeTerm, bool) {
+	save := p.pos
+	if !p.literal("!") {
+		return TypeTerm{}, false
+	}
+	id, ok := p.parseIdent()
+	if !ok {
+		p.pos = save
+		return TypeTerm{}, false
+	}
+	return TypeTerm{Name: id.Name}, true
+}
+
+func (p *parser) parseDigestTerm() (DigestTerm, bool) {
+	save := p.pos
+	if !p.literal("@") {
+		return DigestTerm{}, false
+	}
+	id, ok := p.parseIdent()
+	if !ok {
+		p.pos = save
+		return DigestTerm{}, false
+	}
+	return DigestTerm{Digest: id.Name}, true
+}
+
+// parseMarklTerm: (String / Ident) '@' Ident.
+func (p *parser) parseMarklTerm() (MarklTerm, bool) {
+	save := p.pos
+	var purpose string
+	var quoted bool
+	if s, ok := p.parseString(); ok {
+		purpose, quoted = s, true
+	} else if id, ok := p.parseIdent(); ok {
+		purpose, quoted = id.Name, false
+	} else {
+		return MarklTerm{}, false
+	}
+	if !p.literal("@") {
+		p.pos = save
+		return MarklTerm{}, false
+	}
+	digest, ok := p.parseIdent()
+	if !ok {
+		p.pos = save
+		return MarklTerm{}, false
+	}
+	return MarklTerm{Purpose: purpose, PurposeQuoted: quoted, Digest: digest.Name}, true
+}
+
+func (p *parser) parseQuotedRef() (QuotedRef, bool) {
+	s, ok := p.parseString()
+	if !ok {
+		return QuotedRef{}, false
+	}
+	return QuotedRef{Value: s}, true
+}
+
+// ---- field predicates -----------------------------------------------------
+
+func (p *parser) parseFieldName() (FieldName, bool) {
+	if s, ok := p.parseString(); ok {
+		return FieldName{Name: s, Quoted: true}, true
+	}
+	if id, ok := p.parseIdent(); ok {
+		return FieldName{Name: id.Name}, true
+	}
+	p.fail("expected field name")
+	return FieldName{}, false
+}
+
+// fieldOps is FieldOp's ordered-choice table, longest-match first (per
+// trellis.peg's FieldOp comment).
+var fieldOps = []struct {
+	lit string
+	op  FieldOp
+}{
+	{"*=", FieldOpContains},
+	{"^=", FieldOpPrefix},
+	{"$=", FieldOpSuffix},
+	{"!=", FieldOpNotEq},
+	{"<=", FieldOpLte},
+	{">=", FieldOpGte},
+	{"~=", FieldOpRegex},
+	{"=", FieldOpEq},
+	{"<", FieldOpLt},
+	{">", FieldOpGt},
+}
+
+func (p *parser) parseFieldOp() (FieldOp, bool) {
+	for _, cand := range fieldOps {
+		if p.literal(cand.lit) {
+			return cand.op, true
+		}
+	}
+	p.fail("expected field operator")
+	return FieldOpInvalid, false
+}
+
+func (p *parser) parseValue() (Value, bool) {
+	if m, ok := p.parseMarklTerm(); ok {
+		return m, true
+	}
+	if s, ok := p.parseString(); ok {
+		return StringValue{Value: s}, true
+	}
+	if d, ok := p.parseDigestTerm(); ok {
+		return d, true
+	}
+	if b, ok := p.parseBareword(); ok {
+		return b, true
+	}
+	p.fail("expected value")
+	return nil, false
+}
+
+// parseValueList: '[' SP? Value (SP? ',' SP? Value)* SP? ']'.
+func (p *parser) parseValueList() ([]Value, bool) {
+	save := p.pos
+	if !p.literal("[") {
+		return nil, false
+	}
+	p.skipSPOpt()
+	first, ok := p.parseValue()
+	if !ok {
+		p.pos = save
+		return nil, false
+	}
+	values := []Value{first}
+	for {
+		iterStart := p.pos
+		p.skipSPOpt()
+		if !p.literal(",") {
+			p.pos = iterStart
+			break
+		}
+		p.skipSPOpt()
+		v, ok := p.parseValue()
+		if !ok {
+			p.pos = iterStart
+			break
+		}
+		values = append(values, v)
+	}
+	p.skipSPOpt()
+	if !p.literal("]") {
+		p.pos = save
+		return nil, false
+	}
+	return values, true
+}
+
+// parseFieldPred: FieldName SP? FieldOp SP? (ValueList / Value).
+func (p *parser) parseFieldPred() (FieldPred, bool) {
+	save := p.pos
+	name, ok := p.parseFieldName()
+	if !ok {
+		return FieldPred{}, false
+	}
+	p.skipSPOpt()
+	op, ok := p.parseFieldOp()
+	if !ok {
+		p.pos = save
+		return FieldPred{}, false
+	}
+	p.skipSPOpt()
+	if values, ok := p.parseValueList(); ok {
+		return FieldPred{Field: name, Op: op, Values: values, List: true}, true
+	}
+	v, ok := p.parseValue()
+	if !ok {
+		p.pos = save
+		return FieldPred{}, false
+	}
+	return FieldPred{Field: name, Op: op, Values: []Value{v}}, true
+}
+
+// ---- groups ----------------------------------------------------------------
+
+// parseGroup: '[' SP? GroupBody SP? ']'.
+func (p *parser) parseGroup() (Group, bool) {
+	save := p.pos
+	if !p.literal("[") {
+		return Group{}, false
+	}
+	p.skipSPOpt()
+	body, ok := p.parseGroupBody()
+	if !ok {
+		p.pos = save
+		return Group{}, false
+	}
+	p.skipSPOpt()
+	if !p.literal("]") {
+		p.pos = save
+		return Group{}, false
+	}
+	return Group{Body: body}, true
+}
+
+// parseGroupBody: SubPath / VersionSub / Alternatives.
+func (p *parser) parseGroupBody() (GroupBody, bool) {
+	if sp, ok := p.parseSubPath(); ok {
+		return sp, true
+	}
+	if vs, ok := p.parseVersionSub(); ok {
+		return vs, true
+	}
+	if alt, ok := p.parseAlternatives(); ok {
+		return alt, true
+	}
+	p.fail("expected group body")
+	return nil, false
+}
+
+// parseSubPath: Combinator (SP Path)?.
+func (p *parser) parseSubPath() (SubPath, bool) {
+	comb, ok := p.parseCombinator()
+	if !ok {
+		return SubPath{}, false
+	}
+	iterStart := p.pos
+	if p.skipSP() {
+		if path, ok := p.parsePath(); ok {
+			return SubPath{Combinator: comb, Path: &path}, true
+		}
+	}
+	p.pos = iterStart
+	return SubPath{Combinator: comb}, true
+}
+
+// parseVersionSub: Sigil (SP Step)?.
+func (p *parser) parseVersionSub() (VersionSub, bool) {
+	sig, ok := p.parseSigil()
+	if !ok {
+		return VersionSub{}, false
+	}
+	iterStart := p.pos
+	if p.skipSP() {
+		if step, ok := p.parseStep(); ok {
+			return VersionSub{Sigil: sig, Step: &step}, true
+		}
+	}
+	p.pos = iterStart
+	return VersionSub{Sigil: sig}, true
+}
+
+// parseAlternatives: ConjRun (SP? ',' SP? ConjRun)*.
+func (p *parser) parseAlternatives() (Alternatives, bool) {
+	first, ok := p.parseConjRun()
+	if !ok {
+		return Alternatives{}, false
+	}
+	alts := []ConjRun{first}
+	for {
+		iterStart := p.pos
+		p.skipSPOpt()
+		if !p.literal(",") {
+			p.pos = iterStart
+			break
+		}
+		p.skipSPOpt()
+		cr, ok := p.parseConjRun()
+		if !ok {
+			p.pos = iterStart
+			break
+		}
+		alts = append(alts, cr)
+	}
+	return Alternatives{Alts: alts}, true
+}
+
+// ---- paths/steps/terms -----------------------------------------------------
+
+// parseTermRun implements the production shared, verbatim, by Step and
+// ConjRun: Term (SP !Combinator Term)*. The !Combinator negative lookahead
+// is what lets a step end cleanly at a combinator: whitespace followed by
+// something that WOULD parse as a Combinator stops the run without
+// consuming that whitespace (it belongs to the enclosing Path's separator).
+func (p *parser) parseTermRun() ([]Term, bool) {
+	first, ok := p.parseTerm()
+	if !ok {
+		return nil, false
+	}
+	terms := []Term{first}
+	for {
+		iterStart := p.pos
+		if !p.skipSP() {
+			p.pos = iterStart
+			break
+		}
+		lookahead := p.pos
+		_, isComb := p.parseCombinator()
+		p.pos = lookahead
+		if isComb {
+			p.pos = iterStart
+			break
+		}
+		term, ok := p.parseTerm()
+		if !ok {
+			p.pos = iterStart
+			break
+		}
+		terms = append(terms, term)
+	}
+	return terms, true
+}
+
+func (p *parser) parseStep() (Step, bool) {
+	terms, ok := p.parseTermRun()
+	if !ok {
+		return Step{}, false
+	}
+	return Step{Terms: terms}, true
+}
+
+func (p *parser) parseConjRun() (ConjRun, bool) {
+	terms, ok := p.parseTermRun()
+	if !ok {
+		return ConjRun{}, false
+	}
+	return ConjRun{Terms: terms}, true
+}
+
+// parsePath: Step (SP Combinator SP Step)*.
+func (p *parser) parsePath() (Path, bool) {
+	first, ok := p.parseStep()
+	if !ok {
+		return Path{}, false
+	}
+	steps := []Step{first}
+	var combinators []Combinator
+	for {
+		iterStart := p.pos
+		if !p.skipSP() {
+			p.pos = iterStart
+			break
+		}
+		comb, ok := p.parseCombinator()
+		if !ok {
+			p.pos = iterStart
+			break
+		}
+		if !p.skipSP() {
+			p.pos = iterStart
+			break
+		}
+		step, ok := p.parseStep()
+		if !ok {
+			p.pos = iterStart
+			break
+		}
+		combinators = append(combinators, comb)
+		steps = append(steps, step)
+	}
+	return Path{Steps: steps, Combinators: combinators}, true
+}
+
+// parseTerm: '^'? '='? BasicTerm.
+func (p *parser) parseTerm() (Term, bool) {
+	save := p.pos
+	negate := p.literal("^")
+	exact := p.literal("=")
+	basic, ok := p.parseBasicTerm()
+	if !ok {
+		p.pos = save
+		return Term{}, false
+	}
+	return Term{Negate: negate, Exact: exact, Basic: basic}, true
+}
+
+// parseBasicTerm tries BasicTerm's eight alternatives in the grammar's own
+// order:
+//
+//	Group / FieldPred / TypeTerm Sigil? / DigestTerm Sigil?
+//	/ MarklTerm Sigil? / QuotedRef Sigil? / Ident Sigil? / Sigil
+func (p *parser) parseBasicTerm() (BasicTerm, bool) {
+	if g, ok := p.parseGroup(); ok {
+		return GroupBasicTerm{Group: g}, true
+	}
+	if fp, ok := p.parseFieldPred(); ok {
+		return FieldPredBasicTerm{FieldPred: fp}, true
+	}
+	if t, ok := p.parseTypeTerm(); ok {
+		return TypeBasicTerm{Type: t, Sigil: p.parseSigilOpt()}, true
+	}
+	if d, ok := p.parseDigestTerm(); ok {
+		return DigestBasicTerm{Digest: d, Sigil: p.parseSigilOpt()}, true
+	}
+	if m, ok := p.parseMarklTerm(); ok {
+		return MarklBasicTerm{Markl: m, Sigil: p.parseSigilOpt()}, true
+	}
+	if q, ok := p.parseQuotedRef(); ok {
+		return QuotedRefBasicTerm{Ref: q, Sigil: p.parseSigilOpt()}, true
+	}
+	if id, ok := p.parseIdent(); ok {
+		return IdentBasicTerm{Ident: id, Sigil: p.parseSigilOpt()}, true
+	}
+	if s, ok := p.parseSigil(); ok {
+		return SigilBasicTerm{Sigil: s}, true
+	}
+	p.fail("expected term")
+	return nil, false
+}
+
+// ---- combinators ------------------------------------------------------------
+
+// parseCombinator tries Combinator's seven forms in the grammar's own
+// order, longest-match first:
+//
+//	TypedClosure / TypedFwd / TypedBack / '->>' / '<<-' / '->' / '<-'
+func (p *parser) parseCombinator() (Combinator, bool) {
+	if c, ok := p.parseTypedClosure(); ok {
+		return c, true
+	}
+	if c, ok := p.parseTypedFwd(); ok {
+		return c, true
+	}
+	if c, ok := p.parseTypedBack(); ok {
+		return c, true
+	}
+	if p.literal("->>") {
+		return Combinator{Kind: CombinatorFwdClosure}, true
+	}
+	if p.literal("<<-") {
+		return Combinator{Kind: CombinatorBackClosure}, true
+	}
+	if p.literal("->") {
+		return Combinator{Kind: CombinatorFwd}, true
+	}
+	if p.literal("<-") {
+		return Combinator{Kind: CombinatorBack}, true
+	}
+	p.fail("expected combinator")
+	return Combinator{}, false
+}
+
+// parseTypedClosure: '-[' SP? ConjRun SP? ']->>'. RESERVED (RFC 0014
+// "Deferred", walkthrough #6): parses; a later validation layer rejects it.
+func (p *parser) parseTypedClosure() (Combinator, bool) {
+	save := p.pos
+	if !p.literal("-[") {
+		return Combinator{}, false
+	}
+	p.skipSPOpt()
+	pred, ok := p.parseConjRun()
+	if !ok {
+		p.pos = save
+		return Combinator{}, false
+	}
+	p.skipSPOpt()
+	if !p.literal("]->>") {
+		p.pos = save
+		return Combinator{}, false
+	}
+	return Combinator{Kind: CombinatorTypedClosure, Pred: &pred}, true
+}
+
+// parseTypedFwd: '-[' SP? ConjRun SP? ']->'.
+func (p *parser) parseTypedFwd() (Combinator, bool) {
+	save := p.pos
+	if !p.literal("-[") {
+		return Combinator{}, false
+	}
+	p.skipSPOpt()
+	pred, ok := p.parseConjRun()
+	if !ok {
+		p.pos = save
+		return Combinator{}, false
+	}
+	p.skipSPOpt()
+	if !p.literal("]->") {
+		p.pos = save
+		return Combinator{}, false
+	}
+	return Combinator{Kind: CombinatorTypedFwd, Pred: &pred}, true
+}
+
+// parseTypedBack: '<-[' SP? ConjRun SP? ']-'.
+func (p *parser) parseTypedBack() (Combinator, bool) {
+	save := p.pos
+	if !p.literal("<-[") {
+		return Combinator{}, false
+	}
+	p.skipSPOpt()
+	pred, ok := p.parseConjRun()
+	if !ok {
+		p.pos = save
+		return Combinator{}, false
+	}
+	p.skipSPOpt()
+	if !p.literal("]-") {
+		p.pos = save
+		return Combinator{}, false
+	}
+	return Combinator{Kind: CombinatorTypedBack, Pred: &pred}, true
+}
