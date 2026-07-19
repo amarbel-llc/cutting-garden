@@ -271,27 +271,24 @@ validate-generate-dagnabit:
 # Validate docs/rfcs/0014-trellis.peg parses under langlang (Sasha's
 # requirement: "langlang should always be able to parse the grammar" —
 # RFC 0014 / docs/features/0022-trellis.md's authored-langlang-compatible
-# pledge). langlang is a sibling checkout, not a Go module dep of this
-# repo, so this shells out to it directly rather than bridging it via
-# gomod.nix/flake.nix (like tommy) — hermetic flake-input wiring is
-# deferred to #150: langlang's amarbel-llc fork still lives on private
-# GitHub over SSH, unlike every other sibling input here (all mirrored to
-# the auth-free code.linenisgreat.com Forgejo), so a github: input would
-# need SSH creds this repo's other flake inputs don't. Runs THIS repo's own
-# devshell Go toolchain against langlang's module (go.mod pins go 1.26.1,
-# compatible with our go_1_26). -disable-builtins AND -disable-spaces are
-# both required: langlang auto-inserts whitespace-eating "Spacing"
-# productions between every Sequence element unless both are passed
-# (verified 2026-07-18: -disable-builtins alone still injects
-# Identifier[Spacing] into the AST) — trellis whitespace is semantic, so
-# the validated dialect must match Ford PEG exactly.
+# pledge). langlang is a hermetic flake input (cutting-garden#150): its
+# amarbel-llc fork lives on private GitHub over SSH — the git+ssh input in
+# flake.nix fetches it via the user's forwarded SSH agent, and `.#langlang`
+# builds its `cmd/langlang` CLI. `nix build --no-link --print-out-paths`
+# resolves the store path; no sibling `~/eng/repos/langlang` checkout is
+# needed. -disable-builtins AND -disable-spaces are both required: langlang
+# auto-inserts whitespace-eating "Spacing" productions between every
+# Sequence element unless both are passed (verified 2026-07-18:
+# -disable-builtins alone still injects Identifier[Spacing] into the AST) —
+# trellis whitespace is semantic, so the validated dialect must match Ford
+# PEG exactly.
 [group('pre-build')]
-validate-grammar LANGLANG_DIR='/home/sasha/eng/repos/langlang':
+validate-grammar:
     #!/usr/bin/env bash
     set -euo pipefail
     peg="{{ justfile_directory() }}/docs/rfcs/0014-trellis.peg"
-    (cd "{{ LANGLANG_DIR }}/go" && nix develop "{{ justfile_directory() }}" --command \
-      go run ./cmd/langlang -grammar "$peg" -grammar-ast -disable-builtins -disable-spaces) >/dev/null
+    langlang_bin="$(nix build "{{ justfile_directory() }}#langlang" --no-link --print-out-paths)/bin/langlang"
+    "$langlang_bin" -grammar "$peg" -grammar-ast -disable-builtins -disable-spaces >/dev/null
     gum log --level info "validate-grammar: ok ($peg parses under langlang)"
 
 # Fast `go build` of the CLI into .tmp/cutting-garden for the tight

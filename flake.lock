@@ -290,6 +290,38 @@
         "type": "github"
       }
     },
+    "langlang": {
+      "inputs": {
+        "bats": [
+          "bats"
+        ],
+        "igloo": [
+          "igloo"
+        ],
+        "nixpkgs-master": [
+          "nixpkgs-master"
+        ],
+        "tap": [
+          "tap"
+        ],
+        "utils": [
+          "flake-utils"
+        ]
+      },
+      "locked": {
+        "lastModified": 1783344978,
+        "narHash": "sha256-6oSyTN563abHKnvaNmuhpodX6Xb0IGUfKWLWiyC5bXM=",
+        "ref": "refs/heads/master",
+        "rev": "5fbd00358572d7f0f34e20f00a05ee79e64ee04d",
+        "revCount": 1089,
+        "type": "git",
+        "url": "ssh://git@github.com/amarbel-llc/langlang"
+      },
+      "original": {
+        "type": "git",
+        "url": "ssh://git@github.com/amarbel-llc/langlang"
+      }
+    },
     "madder": {
       "inputs": {
         "bats": [
@@ -459,6 +491,7 @@
         "flake-utils": "flake-utils",
         "hyphence": "hyphence",
         "igloo": "igloo",
+        "langlang": "langlang",
         "madder": "madder",
         "nixpkgs-master": "nixpkgs-master",
         "piggy": "piggy",

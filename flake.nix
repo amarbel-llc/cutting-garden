@@ -143,6 +143,25 @@
       inputs.bats.follows = "bats";
       inputs.tap.follows = "tap";
     };
+
+    # langlang: the Ford-PEG grammar parser/validator behind the
+    # `just validate-grammar` gate for docs/rfcs/0014-trellis.peg (RFC 0014 /
+    # docs/features/0022-trellis.md's authored-langlang-compatible pledge:
+    # "langlang should always be able to parse the grammar"). Sourced as a
+    # hermetic flake input (cutting-garden#150) rather than a sibling
+    # `~/eng/repos/langlang` checkout. The amarbel-llc fork has no public
+    # code.linenisgreat.com mirror, so this is an SSH-auth GitHub fetch (the
+    # user's forwarded SSH agent) — the same git+ssh pattern piggy#220 proved
+    # for its marklid.peg gate. `packages.${system}.default` is the `langlang`
+    # CLI (buildGoApplication over cmd/langlang), exposed below as `.#langlang`.
+    langlang = {
+      url = "git+ssh://git@github.com/amarbel-llc/langlang";
+      inputs.igloo.follows = "igloo";
+      inputs.nixpkgs-master.follows = "nixpkgs-master";
+      inputs.utils.follows = "flake-utils";
+      inputs.bats.follows = "bats";
+    };
+
     madder.inputs.bats.follows = "bats";
     tap.inputs.treefmt-nix.follows = "igloo/treefmt-nix";
     crap.inputs.conformist.follows = "conformist";
@@ -169,6 +188,14 @@
     purse-first.inputs.conformist.follows = "conformist";
     tommy.inputs.conformist.follows = "conformist";
     bats.inputs.conformist.follows = "conformist";
+    # Collapse langlang's diamond: langlang -> tap -> purse-first. cutting-garden
+    # already carries its own `tap` input (whose purse-first follows ours), so
+    # follow langlang's tap onto it wholesale — same discipline as
+    # madder.inputs.tap.follows above. Without this, `nix flake lock` resolves
+    # langlang/tap/purse-first as an INDEPENDENT node and nix's node-naming
+    # collision handling can silently reassign which dagnabit build the
+    # facade-export tooling runs against (piggy#220's hard-won gotcha).
+    langlang.inputs.tap.follows = "tap";
   };
 
   outputs =
@@ -186,6 +213,7 @@
       bats,
       conformist,
       tommy,
+      langlang,
       ...
     }:
     {
@@ -632,6 +660,12 @@
           # --config-file <impure> --tree-root .` — the wrapper would collide on
           # --tree-root. Mirrors conformist's own lint-worktree recipe.
           conformist = conformist.packages.${system}.default;
+
+          # The langlang Ford-PEG parser/validator CLI, consumed hermetically
+          # by `just validate-grammar` (cutting-garden#150) to gate
+          # docs/rfcs/0014-trellis.peg's authored-langlang-compatibility.
+          # `nix build .#langlang` yields the CLI at result/bin/langlang.
+          langlang = langlang.packages.${system}.default;
 
           # bats-capture is the hermetic Phase 2 step 9 test lane. It
           # builds a derivation whose only purpose is to run the bats
