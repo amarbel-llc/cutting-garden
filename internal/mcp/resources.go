@@ -74,6 +74,10 @@ type Resources struct {
 	// facets memoizes container facet summaries (RFC 0012 §11) so reads
 	// serve cached counts instead of recomputing per read.
 	facets *facetCache
+	// listings memoizes enriched, unfiltered container listings
+	// (cutting-garden#160 phase 3) so reads serve cached enrichment instead
+	// of recomputing a plugin's data-bearing fetch per read.
+	listings *listingCache
 }
 
 var _ server.ResourceProvider = (*Resources)(nil)
@@ -83,17 +87,21 @@ var _ server.ResourceProvider = (*Resources)(nil)
 // bytes (nil when no store is configured).
 func newResources(roots []*url.URL, writer capture_plugin.Writer) *Resources {
 	return &Resources{
-		roots:   roots,
-		resolve: command_components.ResolveRootListerPlugin,
-		writer:  writer,
-		facets:  newFacetCache(),
+		roots:    roots,
+		resolve:  command_components.ResolveRootListerPlugin,
+		writer:   writer,
+		facets:   newFacetCache(),
+		listings: newListingCache(),
 	}
 }
 
-// startFacetMaintenance warms the facet cache with the configured roots
-// (so first reads hit warm cache) and runs the eager refresher until ctx
-// is done (RFC 0012 §11.2). Warmup is best-effort: an endpoint that fails
-// or declines simply stays cold and computes on first touch.
+// startFacetMaintenance warms the facet AND listing caches with the
+// configured roots (so first reads hit warm cache) and runs both eager
+// refreshers until ctx is done (RFC 0012 §11.2, extended to #160's listing
+// enrichment cache). Warmup is best-effort: an endpoint that fails or
+// declines simply stays cold and computes on first touch. The listing
+// refresher runs in its own goroutine since facets.maintain blocks for the
+// life of ctx.
 func (r *Resources) startFacetMaintenance(ctx context.Context) {
 	for _, root := range r.roots {
 		if ctx.Err() != nil {
@@ -102,8 +110,10 @@ func (r *Resources) startFacetMaintenance(ctx context.Context) {
 		uri := root.String()
 		if u, lister, err := r.resolve(uri); err == nil {
 			_, _ = r.facets.serve(ctx, lister, uri, u)
+			_, _ = r.listings.serve(ctx, lister, uri, u)
 		}
 	}
+	go r.listings.maintain(ctx, r.resolve, facetRefreshInterval)
 	r.facets.maintain(ctx, r.resolve, facetRefreshInterval)
 }
 
@@ -151,7 +161,7 @@ func (r *Resources) ReadResource(
 	if err != nil {
 		return nil, errors.Wrapf(err, "read resource %s", uri)
 	}
-	nodes, _, err := enrichedListing(ctx, lister, u, nil)
+	nodes, err := r.listings.serve(ctx, lister, uri, u)
 	if err != nil {
 		return nil, errors.Wrapf(err, "list roots under %s", uri)
 	}

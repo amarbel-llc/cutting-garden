@@ -32,7 +32,12 @@ func runServerOnce(t *testing.T, requests ...string) map[int64]rpcResponse {
 	if err != nil {
 		t.Fatalf("parse root: %v", err)
 	}
-	provider := &Resources{roots: []*url.URL{root}, resolve: fakeResolve}
+	provider := &Resources{
+		roots:    []*url.URL{root},
+		resolve:  fakeResolve,
+		facets:   newFacetCache(),
+		listings: newListingCache(),
+	}
 
 	var out bytes.Buffer
 	in := strings.NewReader(strings.Join(requests, "\n") + "\n")

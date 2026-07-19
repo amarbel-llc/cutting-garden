@@ -133,7 +133,7 @@ func (fc *facetCache) computeAndStore(
 	uri string,
 	u *url.URL,
 ) (*facetView, error) {
-	token, hasToken := fc.tokenFor(ctx, lister, u)
+	token, hasToken := tokenFor(ctx, lister, u)
 
 	result, ok, err := counter.FacetCounts(ctx, u, nil)
 	if err != nil {
@@ -199,8 +199,11 @@ func volatileWindowFor(
 
 // tokenFor obtains the node's change token when the plugin offers one.
 // Any failure (no capability, ok=false, error) degrades to tokenless — the
-// entry then refreshes on TTL instead.
-func (fc *facetCache) tokenFor(
+// entry then refreshes on TTL instead. A package-level function (not a
+// facetCache method) so listingCache (cutting-garden#160) shares it too —
+// change-token acquisition is identical regardless of what is being
+// memoized against it.
+func tokenFor(
 	ctx context.Context,
 	lister cutting_garden_plugins.RootLister,
 	u *url.URL,
@@ -328,7 +331,7 @@ func (fc *facetCache) refreshOne(
 
 	// Token moved, TTL lapsed, or volatile window lapsed: recompute and
 	// replace.
-	token, hasToken := fc.tokenFor(ctx, lister, u)
+	token, hasToken := tokenFor(ctx, lister, u)
 	result, ok, err := counter.FacetCounts(ctx, u, nil)
 	if err != nil {
 		fc.markError(uri, err)
