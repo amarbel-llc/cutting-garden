@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project status
 
 A filesystem-tree capture/restore CLI atop
-[madder](https://github.com/amarbel-llc/madder), grown from a port of
+[madder](https://code.linenisgreat.com/madder), grown from a port of
 dodder's command-dispatch framework. Nine user-facing subcommands —
 `capture`, `restore`, `diff`, `serve`, `failures`, `health`, `list`,
 `mcp`, `version` — plus three hidden ones (`complete` for shell completion,
