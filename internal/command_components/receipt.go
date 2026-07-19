@@ -8,7 +8,7 @@ import (
 
 	"code.linenisgreat.com/cutting-garden/internal/capture_receipt"
 	"code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
-	"github.com/amarbel-llc/hyphence/go/hyphence"
+	"code.linenisgreat.com/hyphence/go/hyphence"
 	"github.com/amarbel-llc/madder/go/pkgs/blob_store_env"
 	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
 	"github.com/amarbel-llc/madder/go/pkgs/ids"

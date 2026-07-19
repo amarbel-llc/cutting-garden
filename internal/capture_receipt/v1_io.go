@@ -9,7 +9,7 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/amarbel-llc/hyphence/go/hyphence"
+	"code.linenisgreat.com/hyphence/go/hyphence"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/interfaces"
 )

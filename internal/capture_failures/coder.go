@@ -20,7 +20,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/amarbel-llc/hyphence/go/hyphence"
+	"code.linenisgreat.com/hyphence/go/hyphence"
 	"github.com/amarbel-llc/madder/go/pkgs/ids"
 	"github.com/amarbel-llc/piggy/go/pkgs/markl"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"

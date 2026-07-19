@@ -58,7 +58,7 @@
 
     # The canonical hyphence (`---`-fenced metadata+body document format)
     # library — extracted from madder in madder#253. Sourced via gomod.nix's
-    # `goFlakeInputs` to bridge github.com/amarbel-llc/hyphence/go the same way
+    # `goFlakeInputs` to bridge code.linenisgreat.com/hyphence/go the same way
     # madder/tap/crap are bridged, so a bump is a flake.lock-only edit.
     # cutting-garden's capture-receipt/failure coders consume the canonical
     # library directly, not madder's (now-deleted) pkgs/hyphence re-export. The
@@ -170,6 +170,15 @@
     igloo.inputs.systems.follows = "flake-utils/systems";
     madder.inputs.hyphence.follows = "hyphence";
     madder.inputs.doppelgang.follows = "hyphence/doppelgang";
+    # hyphence's langlang subtree carries its own nested tap (a DIFFERENT
+    # rev than our own `tap` input above), whose crane/rust-overlay
+    # therefore fail to dedupe against ours (nix mints crane_2/
+    # rust-overlay_2 rather than reusing crane/rust-overlay). Deep-follows
+    # onto our own tap's crane/rust-overlay collapses the duplicate —
+    # mirrors madder/flake.nix's identical fix for the same collision
+    # (go-module-rename playbook Gotchas, cutting-garden hyphence rename).
+    hyphence.inputs.langlang.inputs.tap.inputs.crane.follows = "tap/crane";
+    hyphence.inputs.langlang.inputs.tap.inputs.rust-overlay.follows = "tap/rust-overlay";
     igloo.inputs.nixpkgs-master.follows = "nixpkgs-master";
     madder.inputs.purse-first.follows = "purse-first";
     tap.inputs.purse-first.follows = "purse-first";
