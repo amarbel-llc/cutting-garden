@@ -578,14 +578,20 @@ type bodySchema struct {
 
 // facetDimSchema describes one declared facet dimension of a node type, for
 // the describe_node_types tool: its key, display label, value-shape kind,
-// whether a node may carry several values, and whether its value domain is
-// closed (known up front). See RFC 0012 §2.
+// whether a node may carry several values, whether its value domain is
+// closed (known up front), and — when nonzero — the volatile revalidation
+// window. See RFC 0012 §2, §11.3.
 type facetDimSchema struct {
 	Key    string `json:"key"`
 	Label  string `json:"label,omitempty"`
 	Kind   string `json:"kind"`
 	Multi  bool   `json:"multi,omitempty"`
 	Closed bool   `json:"closed,omitempty"`
+	// RevalidateAfterSeconds, when nonzero, marks the dimension VOLATILE
+	// (RFC 0012 §11.3): its bucketing is a function of (data, now), so a
+	// memoized summary containing it expires after this many seconds even
+	// with an unmoved change token. Zero (the default, omitted) means pure.
+	RevalidateAfterSeconds int64 `json:"revalidateAfterSeconds,omitempty"`
 }
 
 // facetDimSchemas projects a plugin's declared FacetDimensions into their
@@ -596,11 +602,12 @@ func facetDimSchemas(
 	out := make([]facetDimSchema, 0, len(dims))
 	for _, d := range dims {
 		out = append(out, facetDimSchema{
-			Key:    d.Key,
-			Label:  d.Label,
-			Kind:   string(d.Kind),
-			Multi:  d.Multi,
-			Closed: d.Values != nil,
+			Key:                    d.Key,
+			Label:                  d.Label,
+			Kind:                   string(d.Kind),
+			Multi:                  d.Multi,
+			Closed:                 d.Values != nil,
+			RevalidateAfterSeconds: int64(d.RevalidateAfter.Seconds()),
 		})
 	}
 	return out

@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
@@ -350,6 +351,51 @@ func TestCollectSchema_TypesAndWritability(t *testing.T) {
 	}
 	if len(obj.Body.Accepts) != 2 || obj.Body.Example == nil {
 		t.Errorf("object body = %+v, want accepts+example", obj.Body)
+	}
+}
+
+// TestFacetDimSchemas_RevalidateAfterSeconds pins the RFC 0012 §11.3 schema
+// surface (cutting-garden#124): a pure dimension's revalidateAfterSeconds is
+// omitted (zero value + omitempty); a volatile dimension's is the
+// RevalidateAfter duration in whole seconds.
+func TestFacetDimSchemas_RevalidateAfterSeconds(t *testing.T) {
+	dims := []cutting_garden_plugins.FacetDimension{
+		{Key: "status", Kind: cutting_garden_plugins.FacetCategorical},
+		{
+			Key: "due", Kind: cutting_garden_plugins.FacetNumericBucket,
+			RevalidateAfter: 15 * time.Minute,
+		},
+	}
+	schemas := facetDimSchemas(dims)
+	byKey := map[string]facetDimSchema{}
+	for _, s := range schemas {
+		byKey[s.Key] = s
+	}
+
+	if got := byKey["status"].RevalidateAfterSeconds; got != 0 {
+		t.Errorf("status revalidateAfterSeconds = %d, want 0 (pure)", got)
+	}
+	if got := byKey["due"].RevalidateAfterSeconds; got != 900 {
+		t.Errorf("due revalidateAfterSeconds = %d, want 900 (15m)", got)
+	}
+
+	// omitempty: the JSON encoding must actually omit the zero value, and
+	// carry the nonzero one, so a client can distinguish "pure" from
+	// "declared volatile with a 0s window" (an invalid but distinguishable
+	// state) purely by field presence.
+	body, err := json.Marshal(byKey["status"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(body), "revalidateAfterSeconds") {
+		t.Errorf("pure dimension JSON carries revalidateAfterSeconds: %s", body)
+	}
+	body, err = json.Marshal(byKey["due"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), `"revalidateAfterSeconds":900`) {
+		t.Errorf("volatile dimension JSON missing revalidateAfterSeconds: %s", body)
 	}
 }
 

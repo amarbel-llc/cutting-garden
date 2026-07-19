@@ -287,6 +287,13 @@ type facetView struct {
 	// Error carries the last refresh/compute failure when the served
 	// summary is stale (or, with no facets at all, why none is available).
 	Error string `json:"error,omitempty"`
+	// Labels resolves FacetLabelled dimensions' opaque value keys to display
+	// names (RFC 0012 §7): {dimension: {key: label}}. Present only for
+	// dimensions the plugin declares FacetLabelled AND implements
+	// FacetLabeler for; a key with no resolved label is simply absent (the
+	// consumer falls back to the key). Presentation-only and non-fatal —
+	// resolution failure omits labels, never fails the read (§7, §9).
+	Labels map[string]map[string]string `json:"labels,omitempty"`
 }
 
 // facetContent serves a container's hoisted facet summary as a facet
@@ -309,6 +316,7 @@ func (r *Resources) facetContent(
 	if view == nil {
 		return nil, nil
 	}
+	attachLabels(ctx, lister, view)
 
 	body, err := json.MarshalIndent(view, "", "  ")
 	if err != nil {
@@ -364,6 +372,7 @@ func (r *Resources) ReadFacets(
 				"read_facets %s: no facet summary available at this node", uri,
 			)
 		}
+		attachLabels(ctx, lister, view)
 		return view, nil
 	}
 
@@ -376,12 +385,14 @@ func (r *Resources) ReadFacets(
 			"read_facets %s: no facet summary available at this node", uri,
 		)
 	}
-	return &facetView{
+	view := &facetView{
 		Facets:     result.Summary,
 		Complete:   result.Complete,
 		ComputedAt: time.Now().UTC().Format(time.RFC3339),
 		Freshness:  freshnessFresh,
-	}, nil
+	}
+	attachLabels(ctx, lister, view)
+	return view, nil
 }
 
 // ListResourceTemplates returns no templates: cutting-garden resources
