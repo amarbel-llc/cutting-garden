@@ -1,7 +1,10 @@
 ---
 status: proposed
 date: 2026-06-20
-revised: 2026-07-19 (§6: `FacetFilter` validation against the declared
+revised: 2026-07-19 (new §13: per-child-container attribution —
+    `FacetResult.ByContainer`, `FacetContainerBreakdown`,
+    `SortAndLimitContainerBreakdown` — resolves #170)
+  2026-07-19 (§6: `FacetFilter` validation against the declared
     schema — an undeclared dimension or an off-domain closed-dimension
     value is REJECTED with an actionable error rather than silently
     matching nothing; §2/describe_node_types: a closed dimension's
@@ -48,13 +51,17 @@ Specifies: the facet value and `Node.Facets` field; the schema types
 aggregate types (`FacetHistogram`, `FacetSummary`, `FacetResult`) and their
 merge semantics; the one-shot `FacetCounter` capability and the framework-fold
 fallback; the conjunctive `FacetFilter`; the display-only `FacetLabeler`; the
-binding to `list`, `mcp`, and `describe_node_types`; and (§12) the
-listing-side counterpart — `Node.Fields`, `ListingFieldsDescriber`, the
-`EnrichedLister` one-fetch capability, and applying `FacetFilter` to
-*retrieve* matching nodes rather than only count them. Does not specify the
+binding to `list`, `mcp`, and `describe_node_types`; (§12) the listing-side
+counterpart — `Node.Fields`, `ListingFieldsDescriber`, the `EnrichedLister`
+one-fetch capability, and applying `FacetFilter` to *retrieve* matching nodes
+rather than only count them; and (§13) the OPTIONAL per-child-container
+attribution of a `FacetResult` — which immediate child container of the
+summarized node each counted match lives under. Does not specify the
 traversal primitive (FDR 0014, a normative dependency), the MCP mapping
-(FDR 0015), the SDK facade (RFC 0009), capture/restore/diff, or any individual
-plugin.
+(FDR 0015), the SDK facade (RFC 0009), capture/restore/diff, recursive or
+cross-subtree filtered retrieval (cutting-garden#170's option 1, deliberately
+deferred pending coordination with trellis/RFC 0014/FDR 0022 and the search
+capability/#153), or any individual plugin.
 
 ## Requirements Language
 
@@ -758,6 +765,133 @@ bare. Combining `bare` with a `filter` still pays whatever fetch the filter
 requires (§12.3 branch 1 may need `EnrichedLister`); only the OUTPUT is
 stripped down.
 
+### 13. Per-child-container attribution (`FacetResult.ByContainer`)
+
+§§1–12 let a consumer *count* across a whole subtree (§4's hoisted summary)
+and *retrieve* the matching set at one level (§12). Neither tells a consumer
+*which child container of a multi-container node* the counted matches came
+from. cutting-garden#170 measured the resulting gap directly: `read_facets`
+on a caldav account root correctly reported "9 overdue" aggregated across 23
+calendars, but nothing told the caller which of the 23 held them — it had to
+guess (and, in the validation run, admitted "searching only two calendars
+was lucky": overdue items in any of the other 21 would have been silently
+missed, with the same confident-sounding answer produced either way). This
+is a correctness problem — a confidently incomplete answer — not merely a
+cost one, and this section closes it for the ONE-LEVEL case: which immediate
+child container of the summarized node contributed. It deliberately does
+NOT specify recursive or cross-subtree filtered retrieval (walking several
+levels down to return matching leaves directly) — cutting-garden#170's
+option 1, overlapping trellis (RFC 0014, FDR 0022) and the search capability
+(#153), left for a design coordinated with both rather than bolted on here.
+
+```go
+// FacetContainerBreakdown is one immediate child container's contribution
+// to a FacetResult's Summary: how many of the matching nodes live under it.
+type FacetContainerBreakdown struct {
+    // URI is the child container's node URI — the exact address a caller
+    // re-issues to list_nodes or read_facets to descend into just this one
+    // container.
+    URI string
+    // Name is the container's human display name when known. MAY be empty.
+    Name string
+    // Count is the number of matching nodes attributed to this container,
+    // under the SAME filter (or none) the enclosing FacetCounts call was
+    // given.
+    Count int64
+}
+
+// FacetResult (§5) gains:
+type FacetResult struct {
+    Summary  FacetSummary
+    Complete bool
+    // ByContainer is an OPTIONAL per-child-container breakdown of the
+    // matching set Summary aggregates. nil is honest and normal: not every
+    // plugin, and not every node, has per-container attribution to offer.
+    // Only containers with Count > 0 are included.
+    ByContainer []FacetContainerBreakdown
+    // ByContainerTruncated is true when ByContainer was capped
+    // (FacetContainerBreakdownLimit) and more non-empty child containers
+    // contributed beyond what is listed.
+    ByContainerTruncated bool
+}
+```
+
+**Optionality.** `ByContainer` is OPTIONAL and MAY be nil even when
+`FacetCounter` returns `ok == true` — exactly the same honest-absence
+posture `Node.Fields` (§12.1) and `Node.Facets` (§1) already carry. A
+plugin populates it only when it already computes per-container counts on
+the way to `Summary`: caldav's `FacetCounts` folds a calendar-home's
+objects one calendar at a time (`foldCalendarFacets`) to build the merged
+histogram; recording each calendar's per-call match count as it goes and
+reporting it as `ByContainer` is recovering information the fold already
+produces and previously discarded, not an additional fetch. A `FacetCounter`
+whose summary is not naturally decomposable by child container (a flat
+corpus with no meaningful containment, or an index that only ever returns
+totals) MUST simply omit `ByContainer` rather than approximate it. A
+single-container node (the summarized node has no children of its own to
+attribute across — e.g. a single caldav calendar, not a calendar-home) also
+has nothing to report and MUST leave `ByContainer` nil.
+
+**Attribution scope.** `ByContainer`'s counts are under the SAME filter (or
+its absence) the enclosing `FacetCounts` call received — it is a breakdown
+of exactly what `Summary` aggregates, not a separate, differently-scoped
+computation. This is why the feature is most useful paired with a filter
+(§6): a nil-filter `ByContainer` breaks down the TOTAL node count per child
+container (which is still useful — it shows the fan-out's shape — but does
+not by itself answer "which of these hold the overdue ones"); a filtered
+call (`due_band=overdue`) breaks down exactly the matching subset, which is
+the #170 worked example: `read_facets` at the caldav root with
+`due_band=overdue` returns `Summary: {due_band: {overdue: 9}}` and
+`ByContainer: [{uri: "caldav://…/personal/", name: "Personal", count: 2},
+{uri: "caldav://…/work/", name: "Work", count: 7}]` — the caller now
+descends into exactly those two of the 23 calendars, with no guessing and
+no risk of silently missing the other 21.
+
+**Bounding large fan-out.** A container's immediate children can number in
+the hundreds (a newsblur account's feed list). An unbounded `ByContainer`
+would trade one guessing problem (which of 23 calendars?) for a scanning
+problem (a 285-entry list). `ByContainer` MUST therefore be bounded:
+
+- Only containers with `Count > 0` are included — bounded by the matching
+  set's actual shape, not the subtree's total fan-out, and directly
+  actionable (a zero-count container is nothing to descend into).
+- The result is capped at `FacetContainerBreakdownLimit` (50) entries,
+  ordered by descending `Count` (ties broken by ascending `URI` for
+  determinism) so a cap always keeps the highest-value entries — the
+  `SortAndLimitContainerBreakdown` helper is the shared implementation of
+  this ordering-and-cap rule, so every `FacetCounter` enforces it
+  identically rather than each hand-rolling its own truncation.
+- `ByContainerTruncated` marks the cut the same way `Complete` marks a
+  capped `Summary` (§5, §8's Top-N rule): a consumer MUST NOT present a
+  truncated `ByContainer` as the complete set of contributing containers.
+  `ByContainerTruncated` is scoped to `ByContainer` alone — it says nothing
+  about whether `Summary` itself is `Complete`, since a node can have a
+  complete count summary (every match was seen and counted) while its
+  per-container breakdown is truncated (more than 50 distinct containers
+  contributed).
+
+**Binding.** The `mcp` `read_facets` tool (FDR 0015) surfaces `ByContainer`
+and `ByContainerTruncated` on `facetView` (`byContainer` /
+`byContainerTruncated`, `omitempty`) exactly as `Complete` is surfaced,
+through BOTH `read_facets` paths (§9, §11): the filtered path computes
+`FacetCounts` directly and passes the result's `ByContainer` through
+unchanged; the nil-filter (memoized) path caches and serves the WHOLE
+`FacetResult` — `ByContainer` included — so a cached unfiltered summary's
+breakdown (a total-count-per-container view) is served without
+recomputation exactly like `Summary` is, and a filtered call always bypasses
+the cache and computes fresh (§9's explicit-request fail-fast, unchanged by
+this section). Per the #161 discoverability lesson ("a capability nobody
+finds may as well not exist"), the `read_facets` tool schema description and
+the `mcp` server's advertised `instructions` string both name `byContainer`
+explicitly, so a client learns of it without reading this RFC.
+
+**Compatibility.** Additive per the usual rule (§ Compatibility below):
+`FacetResult` gains two new fields whose zero values (nil, false) reproduce
+prior behavior exactly, and `FacetContainerBreakdown` is a new type. A
+`FacetCounter` implementation that does not populate `ByContainer` is
+unaffected; a consumer that does not know about it simply never sees the
+field (`omitempty` on the wire).
+
 ## Security Considerations
 
 - **Untrusted aggregate data.** Facet keys and resolved labels derive from
@@ -810,6 +944,20 @@ reject/accept, open-domain any-value, no-schema passthrough) and
 A `zz-tests_bats/mcp.bats` case is a reasonable follow-up but not yet
 added.
 
+§13's per-child-container attribution is likewise covered by Go unit tests:
+`internal/cutting_garden_plugins/facet_test.go`
+(`SortAndLimitContainerBreakdown` — descending-count ordering, the
+ascending-URI tiebreak, and the `FacetContainerBreakdownLimit`
+truncation), `plugins/caldav/facet_test.go`
+(`TestFacetCounts_ByContainerAttributesMatchesToTheirCalendars`, built on
+the `caldavtestserver` multi-calendar fixture added for #162: a
+calendar-home with several calendars where only some hold matching items —
+`FacetCounts` with a `due_band=overdue` filter reports exactly which
+calendars contributed and how many, and a single calendar reports no
+`ByContainer` at all), and `internal/mcp/facet_test.go` (`ReadFacets`
+propagates `ByContainer`/`ByContainerTruncated` on both the filtered-direct
+and nil-filter-cached paths).
+
 ## Compatibility
 
 - **Additive and opt-in.** Every capability is a new OPTIONAL interface probed
@@ -841,6 +989,10 @@ added.
   filters silently returning an empty result now gets a rejection instead.
   The fallback for a plugin with no declared schema (§6, last bullet)
   keeps such a plugin's behavior byte-for-byte unchanged.
+- **§13 is purely additive.** `FacetResult.ByContainer` and
+  `ByContainerTruncated` are new fields whose zero values (nil, false)
+  reproduce every prior `FacetResult` byte-for-byte; `FacetContainerBreakdown`
+  is a wholly new type. No existing method signature changes.
 
 ## References
 
@@ -861,3 +1013,9 @@ added.
 - nebulous `internal/bravo/tools/facets.go` — the whole-corpus-only
   aggregation this generalizes; its feed "label" is the newest starred story's
   title, the wrong-record failure §7 prevents.
+- cutting-garden#170 — the measured gap §13 closes (count-across-a-subtree
+  vs. retrieve-across-a-subtree), and #160 — its one-level-down precedent
+  (`list_nodes` filtering, §12) that #170 found one level up.
+- cutting-garden#153 — the plugin search capability; recursive/cross-subtree
+  filtered retrieval (#170's deferred option 1) is adjacent and should not
+  diverge from it or from trellis (RFC 0014, FDR 0022).

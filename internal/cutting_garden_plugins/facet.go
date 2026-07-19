@@ -122,6 +122,75 @@ type FacetResult struct {
 	// sampled index, or an internal bound. Consumers MUST surface a false
 	// Complete as a partial result and MUST NOT present it as exhaustive.
 	Complete bool
+	// ByContainer is an OPTIONAL per-child-container breakdown of the
+	// matching set Summary aggregates: how many of the (possibly
+	// filter-narrowed) nodes counted in Summary live under which immediate
+	// child container of the summarized node — so a caller can descend
+	// into exactly the containers that contributed instead of guessing
+	// across a wide fan-out (RFC 0012 §13, cutting-garden#170). A plugin
+	// populates it only when it already computes per-container counts on
+	// the way to Summary (a per-calendar/per-feed fold, as caldav does for
+	// a calendar-home); nil is honest and normal — NOT every plugin, and
+	// not every node (a single-container node has no children to break
+	// down by, and some plugins never compute per-container detail), has
+	// one to report. Only containers with Count > 0 are included. Use
+	// SortAndLimitContainerBreakdown to build a correctly ordered, bounded
+	// ByContainer from raw per-container counts.
+	ByContainer []FacetContainerBreakdown
+	// ByContainerTruncated is true when ByContainer was capped at
+	// FacetContainerBreakdownLimit and more non-empty child containers
+	// contributed beyond what is listed — mirrors Complete's
+	// partial-result honesty, scoped to the breakdown rather than the
+	// whole result (a truncated ByContainer says nothing about whether
+	// Summary itself is complete).
+	ByContainerTruncated bool
+}
+
+// FacetContainerBreakdown is one immediate child container's contribution
+// to a FacetResult's Summary: how many of the matching nodes live under it.
+// See RFC 0012 §13.
+type FacetContainerBreakdown struct {
+	// URI is the child container's node URI (Node.URIString()) — the exact
+	// address a caller re-issues to list_nodes or read_facets to descend
+	// into just this one container.
+	URI string
+	// Name is the container's human display name (Node.Name) when known,
+	// so the breakdown reads without a second lookup. MAY be empty.
+	Name string
+	// Count is the number of matching nodes attributed to this container,
+	// under the SAME filter (or none) the enclosing FacetCounts call was
+	// given.
+	Count int64
+}
+
+// FacetContainerBreakdownLimit bounds how many non-empty child containers a
+// FacetResult.ByContainer may list. A container fan-out can be large (a
+// newsblur account's several hundred feeds); an unbounded breakdown would
+// trade one guessing problem (which of 23 calendars?) for another (a
+// 285-entry list to scan). See RFC 0012 §13.
+const FacetContainerBreakdownLimit = 50
+
+// SortAndLimitContainerBreakdown orders a per-container breakdown by
+// descending Count (ties broken by ascending URI for determinism) and caps
+// it at FacetContainerBreakdownLimit, reporting whether truncation
+// occurred — the shared bounding logic behind FacetResult.ByContainer, so
+// every FacetCounter implementation enforces the same cap the same way
+// instead of each hand-rolling it (RFC 0012 §13, cutting-garden#170).
+// breakdown is sorted and possibly resliced in place; callers MUST NOT
+// rely on its pre-call order or capacity afterward.
+func SortAndLimitContainerBreakdown(
+	breakdown []FacetContainerBreakdown,
+) (limited []FacetContainerBreakdown, truncated bool) {
+	sort.Slice(breakdown, func(i, j int) bool {
+		if breakdown[i].Count != breakdown[j].Count {
+			return breakdown[i].Count > breakdown[j].Count
+		}
+		return breakdown[i].URI < breakdown[j].URI
+	})
+	if len(breakdown) > FacetContainerBreakdownLimit {
+		return breakdown[:FacetContainerBreakdownLimit], true
+	}
+	return breakdown, false
 }
 
 // FacetPredicate is one equality constraint: a node matches when its

@@ -218,7 +218,18 @@ func readToolDefs() []protocol.ToolV1 {
 				"you care about before deciding whether/how to browse further. With " +
 				"no filter, serves the memoized summary; filter is a comma-separated " +
 				"dimension=value grammar, AND-composed (e.g. \"due_band=overdue\"), " +
-				"and computes a fresh narrowed summary directly. Call " +
+				"and computes a fresh narrowed summary directly. When the resolved " +
+				"container has its own child containers below it (e.g. a caldav " +
+				"account with several calendars beneath it), the result MAY carry a " +
+				"byContainer breakdown: which immediate child container each " +
+				"matching item lives under, and how many — call this WITH a filter " +
+				"(e.g. \"due_band=overdue\") to learn exactly which child to descend " +
+				"into next instead of guessing across every one, capped at 50 " +
+				"non-empty entries with byContainerTruncated set if more existed. " +
+				"byContainer is absent when the plugin does not compute " +
+				"per-container attribution for this node — this counts across the " +
+				"subtree but only sometimes tells you where; list_nodes with the " +
+				"SAME filter still retrieves the matching nodes at ONE level. Call " +
 				"describe_node_types FIRST to see each type's declared dimensions " +
 				"and, for closed ones, their complete valid values — an undeclared " +
 				"dimension or an out-of-domain value is a rejected, actionable " +

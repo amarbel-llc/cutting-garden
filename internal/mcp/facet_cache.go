@@ -222,11 +222,13 @@ func tokenFor(
 // viewLocked projects an entry onto the wire shape. Caller holds fc.mu.
 func (fc *facetCache) viewLocked(e *facetCacheEntry) *facetView {
 	view := &facetView{
-		Facets:     e.result.Summary,
-		Complete:   e.result.Complete,
-		ComputedAt: e.computedAt.UTC().Format(time.RFC3339),
-		Freshness:  e.freshness(fc.now()),
-		Error:      e.lastErr,
+		Facets:               e.result.Summary,
+		Complete:             e.result.Complete,
+		ByContainer:          e.result.ByContainer,
+		ByContainerTruncated: e.result.ByContainerTruncated,
+		ComputedAt:           e.computedAt.UTC().Format(time.RFC3339),
+		Freshness:            e.freshness(fc.now()),
+		Error:                e.lastErr,
 	}
 	if e.revalidateAfter > 0 {
 		// validUntil bounds only the volatile dimensions' currency

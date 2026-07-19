@@ -154,23 +154,47 @@ func (Plugin) FacetCounts(
 	}
 
 	summary := cutting_garden_plugins.FacetSummary{}
+	var byContainer []cutting_garden_plugins.FacetContainerBreakdown
 	if selfIsCalendar {
-		if err := c.foldCalendarFacets(ctx, base, filter, summary); err != nil {
+		// A single calendar has no child containers to break down by — the
+		// summarized node IS the container being asked about, not a home
+		// with calendars beneath it. ByContainer stays nil (honest
+		// absence, RFC 0012 §13).
+		if _, err := c.foldCalendarFacets(ctx, base, filter, summary); err != nil {
 			return cutting_garden_plugins.FacetResult{}, false, err
 		}
 	} else {
 		// A calendar-home: fold every calendar's objects into one summary —
 		// still one-shot from the caller's view (no framework descent).
+		// foldCalendarFacets already visits each calendar independently to
+		// build the merged summary; recording its per-calendar matched
+		// count as it goes is recovering information already computed, not
+		// an extra fetch (cutting-garden#170) — the ATTRIBUTION half of
+		// what discoverCalendars + the fold already do, previously
+		// discarded once folded into one histogram.
 		for _, cal := range calendars {
-			if err := c.foldCalendarFacets(ctx, cal.href, filter, summary); err != nil {
+			matched, err := c.foldCalendarFacets(ctx, cal.href, filter, summary)
+			if err != nil {
 				return cutting_garden_plugins.FacetResult{}, false, err
+			}
+			if matched > 0 {
+				byContainer = append(byContainer,
+					cutting_garden_plugins.FacetContainerBreakdown{
+						URI:   caldavURIForAbs(c.resolveHref(cal.href)).String(),
+						Name:  calendarLabel(cal),
+						Count: matched,
+					})
 			}
 		}
 	}
 
 	ensureDueBandPresence(summary)
 
-	return cutting_garden_plugins.FacetResult{Summary: summary, Complete: true}, true, nil
+	result := cutting_garden_plugins.FacetResult{Summary: summary, Complete: true}
+	if byContainer != nil {
+		result.ByContainer, result.ByContainerTruncated = cutting_garden_plugins.SortAndLimitContainerBreakdown(byContainer)
+	}
+	return result, true, nil
 }
 
 // FacetVersion is caldav's change token (RFC 0012 §11): the
@@ -225,17 +249,21 @@ func (Plugin) FacetVersion(
 
 // foldCalendarFacets REPORTs each component's objects (with full
 // calendar-data) from one calendar and folds those matching filter into
-// summary.
+// summary. matched is the number of this calendar's objects that were
+// lifted (had facets and satisfied filter) — the per-container attribution
+// FacetCounts uses to populate FacetResult.ByContainer (RFC 0012 §13,
+// cutting-garden#170) at no extra fetch: it is a byproduct of the same
+// per-object loop that builds summary.
 func (c *client) foldCalendarFacets(
 	ctx context.Context,
 	calendarHref string,
 	filter cutting_garden_plugins.FacetFilter,
 	summary cutting_garden_plugins.FacetSummary,
-) error {
+) (matched int64, err error) {
 	for _, component := range capturedComponents {
 		resources, err := c.listResources(ctx, calendarHref, component)
 		if err != nil {
-			return err
+			return matched, err
 		}
 		for _, res := range resources {
 			facets := objectFacets(res.data)
@@ -243,9 +271,10 @@ func (c *client) foldCalendarFacets(
 				continue
 			}
 			liftFacets(summary, facets)
+			matched++
 		}
 	}
-	return nil
+	return matched, nil
 }
 
 // objectFacets parses one iCalendar object and projects its facet values.

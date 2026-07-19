@@ -72,6 +72,14 @@ func (fakeFacetLister) FacetCounts(
 			"status": {"CONFIRMED": 2, "CANCELLED": 1},
 		},
 		Complete: true,
+		// A fixed per-child-container breakdown (RFC 0012 §13,
+		// cutting-garden#170), so tests can pin that ReadFacets/the facet
+		// cache propagate it rather than dropping it on the way to the
+		// wire.
+		ByContainer: []cutting_garden_plugins.FacetContainerBreakdown{
+			{URI: "faketest://h/work/personal", Name: "Personal", Count: 2},
+			{URI: "faketest://h/work/team", Name: "Team", Count: 1},
+		},
 	}, true, nil
 }
 
@@ -124,6 +132,29 @@ func TestReadResource_ContainerCarriesFacets(t *testing.T) {
 	}
 }
 
+// TestReadResource_ContainerFacetsCarryByContainer pins RFC 0012 §13's mcp
+// binding on the resources/read path: a container's facet block carries the
+// plugin's per-child-container breakdown (cutting-garden#170) verbatim,
+// exactly as the counts themselves do.
+func TestReadResource_ContainerFacetsCarryByContainer(t *testing.T) {
+	r := newFakeFacetResources(t, "faketest://h/")
+
+	got, err := r.ReadResource(context.Background(), "faketest://h/work")
+	if err != nil {
+		t.Fatalf("ReadResource: %v", err)
+	}
+	fv := facetBlockOf(t, got.Contents)
+	if len(fv.ByContainer) != 2 {
+		t.Fatalf("ByContainer = %+v, want 2 entries", fv.ByContainer)
+	}
+	if fv.ByContainer[0].Name != "Personal" || fv.ByContainer[0].Count != 2 {
+		t.Errorf("ByContainer[0] = %+v, want {Personal, 2 matches}", fv.ByContainer[0])
+	}
+	if fv.ByContainerTruncated {
+		t.Error("ByContainerTruncated = true, want false")
+	}
+}
+
 // TestReadResource_LeafHasNoFacets pins that a childless (leaf) read carries
 // no facet block — the summary is a container concern.
 func TestReadResource_LeafHasNoFacets(t *testing.T) {
@@ -167,6 +198,13 @@ func (l *countingFacetLister) FacetCounts(
 			"status": {"CONFIRMED": int64(l.computes)},
 		},
 		Complete: true,
+		// Carries the compute count too, so a cache-propagation test can
+		// tell "served the memoized ByContainer" (unchanged since the
+		// first compute) apart from "recomputed" (RFC 0012 §13,
+		// cutting-garden#170).
+		ByContainer: []cutting_garden_plugins.FacetContainerBreakdown{
+			{URI: "faketest://h/work/a", Count: int64(l.computes)},
+		},
 	}, true, nil
 }
 
@@ -220,6 +258,38 @@ func TestFacetCache_ReadsServeMemoized(t *testing.T) {
 	}
 	if got := lister.computeCount(); got != 1 {
 		t.Errorf("FacetCounts ran %d times across 3 reads, want 1", got)
+	}
+}
+
+// TestFacetCache_ReadsServeMemoizedByContainer pins RFC 0012 §13's
+// memoization interaction (cutting-garden#170): the nil-filter path caches
+// and serves the WHOLE FacetResult, so ByContainer rides the same cache
+// entry Facets does — served unchanged across repeat reads, not
+// recomputed or dropped.
+func TestFacetCache_ReadsServeMemoizedByContainer(t *testing.T) {
+	lister := &countingFacetLister{token: "t1"}
+	r := newCountingResources(t, lister)
+	ctx := context.Background()
+	const uri = "faketest://h/work"
+
+	first, err := r.ReadFacets(ctx, uri, nil)
+	if err != nil {
+		t.Fatalf("first ReadFacets: %v", err)
+	}
+	if len(first.ByContainer) != 1 || first.ByContainer[0].Count != 1 {
+		t.Fatalf("first view ByContainer = %+v, want [{…, Count:1}]", first.ByContainer)
+	}
+
+	second, err := r.ReadFacets(ctx, uri, nil)
+	if err != nil {
+		t.Fatalf("second ReadFacets: %v", err)
+	}
+	if lister.computeCount() != 1 {
+		t.Fatalf("FacetCounts ran %d times across 2 reads, want 1", lister.computeCount())
+	}
+	if len(second.ByContainer) != 1 || second.ByContainer[0].Count != 1 {
+		t.Errorf("second view ByContainer = %+v, want the SAME cached "+
+			"entry as the first (Count:1, not recomputed)", second.ByContainer)
 	}
 }
 
@@ -354,6 +424,26 @@ func TestResourcesReadFacets_NilFilterServesMemoizedSummary(t *testing.T) {
 	}
 	if got := view.Facets["status"]["CONFIRMED"]; got != 2 {
 		t.Errorf("status[CONFIRMED] = %d, want 2", got)
+	}
+}
+
+// TestResourcesReadFacets_FilteredPathPropagatesByContainer pins RFC 0012
+// §13 on the read_facets tool's filtered (direct-compute) path
+// (cutting-garden#170): FacetCounts's ByContainer/ByContainerTruncated ride
+// through to the served view unchanged, the same way Facets/Complete do.
+func TestResourcesReadFacets_FilteredPathPropagatesByContainer(t *testing.T) {
+	r := newFakeFacetResources(t, "faketest://h/")
+
+	view, err := r.ReadFacets(context.Background(), "faketest://h/work",
+		cutting_garden_plugins.FacetFilter{{Dimension: "status", Value: "CONFIRMED"}})
+	if err != nil {
+		t.Fatalf("ReadFacets: %v", err)
+	}
+	if len(view.ByContainer) != 2 {
+		t.Fatalf("ByContainer = %+v, want 2 entries", view.ByContainer)
+	}
+	if view.ByContainer[1].Name != "Team" || view.ByContainer[1].Count != 1 {
+		t.Errorf("ByContainer[1] = %+v, want {Team, 1 match}", view.ByContainer[1])
 	}
 }
 

@@ -278,6 +278,18 @@ func (r *Resources) rawBlobLink(
 type facetView struct {
 	Facets   cutting_garden_plugins.FacetSummary `json:"facets"`
 	Complete bool                                `json:"complete"`
+	// ByContainer is the OPTIONAL per-child-container breakdown of Facets
+	// (RFC 0012 §13, cutting-garden#170): which immediate child container
+	// of the summarized node each matching node lives under, so a caller
+	// can descend into exactly the containers that contributed instead of
+	// guessing across a wide fan-out. nil/empty when the plugin does not
+	// compute per-container attribution for this node (honest absence,
+	// not every plugin or node has one to report).
+	ByContainer []cutting_garden_plugins.FacetContainerBreakdown `json:"byContainer,omitempty"`
+	// ByContainerTruncated is true when ByContainer was capped
+	// (FacetContainerBreakdownLimit) and more non-empty child containers
+	// contributed beyond what is listed.
+	ByContainerTruncated bool `json:"byContainerTruncated,omitempty"`
 	// ComputedAt is when the served summary was computed (RFC 3339).
 	ComputedAt string `json:"computedAt,omitempty"`
 	// ValidUntil, present when the summary contains volatile dimensions
@@ -404,10 +416,12 @@ func (r *Resources) ReadFacets(
 		)
 	}
 	view := &facetView{
-		Facets:     result.Summary,
-		Complete:   result.Complete,
-		ComputedAt: time.Now().UTC().Format(time.RFC3339),
-		Freshness:  freshnessFresh,
+		Facets:               result.Summary,
+		Complete:             result.Complete,
+		ByContainer:          result.ByContainer,
+		ByContainerTruncated: result.ByContainerTruncated,
+		ComputedAt:           time.Now().UTC().Format(time.RFC3339),
+		Freshness:            freshnessFresh,
 	}
 	attachLabels(ctx, lister, view)
 	return view, nil

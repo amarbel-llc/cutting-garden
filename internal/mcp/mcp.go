@@ -32,7 +32,10 @@
 //     read_facets (a container's hoisted facet summary — RFC 0012 §7's
 //     progressive-disclosure block, otherwise reachable only via
 //     resources/read — with an optional filter to narrow it,
-//     cutting-garden#151), describe_node_types (schema discovery,
+//     cutting-garden#151; a filtered result MAY carry a per-child-container
+//     breakdown naming exactly which child container(s) contributed the
+//     matches, when the plugin computes that attribution — RFC 0012 §13,
+//     cutting-garden#170), describe_node_types (schema discovery,
 //     including declared facet dimensions and listing fields). Write
 //     (FDR 0020, plugins implementing NodeMutator): create_node /
 //     put_node / patch_node / delete_node, advertised only when a
@@ -97,9 +100,22 @@ const instructions = "Resources are the capturable trees of cutting-garden " +
 	"the cheap way to orient on a large tree's size and shape before " +
 	"deciding whether or how to browse further; once you know WHICH " +
 	"predicate you want, list_nodes with the SAME filter retrieves the " +
-	"matching nodes themselves. The create_node / put_node / patch_node / " +
-	"delete_node tools mutate a node at its URI (e.g. create a calendar " +
-	"event); they are destructive and require user approval."
+	"matching nodes themselves — but only at the ONE level you called it " +
+	"on. Counting and retrieving both stop at the immediate children of " +
+	"the node you asked about: read_facets on an account root can tell " +
+	"you '9 overdue' across every calendar beneath it, but list_nodes at " +
+	"that same root cannot hand you those 9 items directly. Before " +
+	"descending into every child container to find out which ones " +
+	"matter, call read_facets WITH a filter (e.g. \"due_band=overdue\"): " +
+	"when the container has its own child containers, the result MAY " +
+	"carry a byContainer breakdown naming exactly which child contributed " +
+	"how many matches, so you descend into only those instead of " +
+	"guessing across the whole fan-out. byContainer is absent when the " +
+	"plugin has no per-container attribution to offer for that node — " +
+	"an honest omission, not a bug. The create_node / put_node / " +
+	"patch_node / delete_node tools mutate a node at its URI (e.g. " +
+	"create a calendar event); they are destructive and require user " +
+	"approval."
 
 // MCP is the value registered for the `mcp` subcommand. Endpoints come from
 // the config, or from optional positional args that override it;

@@ -1,6 +1,7 @@
 package cutting_garden_plugins
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -119,5 +120,75 @@ func TestFacetFilter_Validate_MultiplePredicatesFirstFailureWins(t *testing.T) {
 	}
 	if err := f.Validate(validateTestDims); err == nil {
 		t.Fatal("one bad predicate in an AND-composed filter: want error, got nil")
+	}
+}
+
+// TestSortAndLimitContainerBreakdown_OrdersByDescendingCount pins RFC 0012
+// §13's ordering rule: the highest-contributing container comes first, so a
+// truncated breakdown always keeps the most actionable entries.
+func TestSortAndLimitContainerBreakdown_OrdersByDescendingCount(t *testing.T) {
+	in := []FacetContainerBreakdown{
+		{URI: "a", Count: 2},
+		{URI: "b", Count: 9},
+		{URI: "c", Count: 5},
+	}
+	got, truncated := SortAndLimitContainerBreakdown(in)
+	if truncated {
+		t.Fatal("truncated = true, want false (well under the limit)")
+	}
+	want := []string{"b", "c", "a"}
+	for i, w := range want {
+		if got[i].URI != w {
+			t.Errorf("got[%d].URI = %q, want %q (full: %+v)", i, got[i].URI, w, got)
+		}
+	}
+}
+
+// TestSortAndLimitContainerBreakdown_TiesBrokenByURI pins the deterministic
+// tiebreak: equal counts sort by ascending URI, so the ordering is stable
+// across calls/plugins rather than depending on input (fold) order.
+func TestSortAndLimitContainerBreakdown_TiesBrokenByURI(t *testing.T) {
+	in := []FacetContainerBreakdown{
+		{URI: "zeta", Count: 3},
+		{URI: "alpha", Count: 3},
+		{URI: "mid", Count: 3},
+	}
+	got, _ := SortAndLimitContainerBreakdown(in)
+	want := []string{"alpha", "mid", "zeta"}
+	for i, w := range want {
+		if got[i].URI != w {
+			t.Errorf("got[%d].URI = %q, want %q (full: %+v)", i, got[i].URI, w, got)
+		}
+	}
+}
+
+// TestSortAndLimitContainerBreakdown_TruncatesAtLimit pins the large-fan-out
+// bound (RFC 0012 §13, cutting-garden#170's newsblur-285-feeds case): a
+// breakdown over the limit is capped, keeps the highest-count entries, and
+// reports truncation rather than silently dropping the tail.
+func TestSortAndLimitContainerBreakdown_TruncatesAtLimit(t *testing.T) {
+	n := FacetContainerBreakdownLimit + 10
+	in := make([]FacetContainerBreakdown, n)
+	for i := range in {
+		// Strictly descending count by construction index, so index 0 has
+		// the highest count and is guaranteed to survive truncation.
+		in[i] = FacetContainerBreakdown{
+			URI:   fmt.Sprintf("container-%02d", i),
+			Count: int64(n - i),
+		}
+	}
+	got, truncated := SortAndLimitContainerBreakdown(in)
+	if !truncated {
+		t.Fatal("truncated = false, want true (over the limit)")
+	}
+	if len(got) != FacetContainerBreakdownLimit {
+		t.Fatalf("len(got) = %d, want %d", len(got), FacetContainerBreakdownLimit)
+	}
+	// The kept entries are exactly the top FacetContainerBreakdownLimit by
+	// count — none of the low-count tail leaked in.
+	for _, b := range got {
+		if b.Count < 10 {
+			t.Errorf("low-count entry survived truncation: %+v", b)
+		}
 	}
 }

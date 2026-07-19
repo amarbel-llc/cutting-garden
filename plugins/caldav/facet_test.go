@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
+	"code.linenisgreat.com/cutting-garden/plugins/caldav/caldavtestserver"
 )
 
 func veventFull(uid, summary, status, dtstart string) string {
@@ -393,6 +394,135 @@ func TestFacetCounts_FilterNarrowsListingAndSummary(t *testing.T) {
 	// Year is re-hoisted over only the two events.
 	assertCount(t, result.Summary, facetYear, "2026", 1)
 	assertCount(t, result.Summary, facetYear, "2025", 1)
+}
+
+// startFakeFacetedMultiCalendar seeds THREE calendars under one
+// calendar-home — Personal and Work each hold one overdue task, Someday
+// holds one task due far in the future — via the SHARED caldavtestserver
+// multi-calendar support added for cutting-garden#162
+// (plugins/caldav/multicalendar_test.go's startMultiCalendarFake sibling),
+// reused here to drive the cutting-garden#170 core scenario: a caller
+// filtering read_facets at the home for `due_band=overdue` must learn
+// exactly which calendars contributed, not merely how many matched in
+// total.
+func startFakeFacetedMultiCalendar(t *testing.T) string {
+	t.Helper()
+	srv := caldavtestserver.Start("/dav/personal/")
+	srv.AddCalendar("/dav/work/", "Work")
+	srv.AddCalendar("/dav/someday/", "Someday")
+	srv.Seed("/dav/personal/t1.ics", "VTODO",
+		vtodoFull("t1", "Overdue personal", "NEEDS-ACTION", "20260717"))
+	srv.Seed("/dav/work/t2.ics", "VTODO",
+		vtodoFull("t2", "Overdue work", "NEEDS-ACTION", "20260716"))
+	srv.Seed("/dav/someday/t3.ics", "VTODO",
+		vtodoFull("t3", "Not due yet", "NEEDS-ACTION", "20270101"))
+	t.Cleanup(srv.Close)
+	return "caldav:" + srv.URL() + "/dav/"
+}
+
+// TestFacetCounts_ByContainerAttributesMatchesToTheirCalendars is the
+// cutting-garden#170 proof: with a `due_band=overdue` filter at the
+// calendar-home, FacetCounts's ByContainer names exactly the TWO calendars
+// (of three) that hold an overdue item, each with its own count, and
+// excludes the calendar with no overdue items entirely — recovering the
+// per-calendar attribution `foldCalendarFacets` already computes on the
+// way to the merged Summary, previously discarded once folded together.
+func TestFacetCounts_ByContainerAttributesMatchesToTheirCalendars(t *testing.T) {
+	prev := dueBandNow
+	dueBandNow = func() time.Time {
+		return time.Date(2026, 7, 18, 9, 0, 0, 0, time.UTC)
+	}
+	t.Cleanup(func() { dueBandNow = prev })
+
+	home := startFakeFacetedMultiCalendar(t)
+	node := mustParseURL(t, home)
+
+	filter := cutting_garden_plugins.FacetFilter{
+		{Dimension: facetDueBand, Value: dueBandOverdue},
+	}
+	result, ok, err := Plugin{}.FacetCounts(context.Background(), node, filter)
+	if err != nil || !ok {
+		t.Fatalf("FacetCounts: ok=%v err=%v", ok, err)
+	}
+
+	assertCount(t, result.Summary, facetDueBand, dueBandOverdue, 2)
+
+	if len(result.ByContainer) != 2 {
+		t.Fatalf("ByContainer = %+v, want exactly 2 entries (Personal, Work)",
+			result.ByContainer)
+	}
+	byName := map[string]cutting_garden_plugins.FacetContainerBreakdown{}
+	for _, b := range result.ByContainer {
+		byName[b.Name] = b
+	}
+	for _, want := range []string{"Personal", "Work"} {
+		b, ok := byName[want]
+		if !ok {
+			t.Fatalf("ByContainer missing %q: %+v", want, result.ByContainer)
+		}
+		if b.Count != 1 {
+			t.Errorf("%s count = %d, want 1", want, b.Count)
+		}
+		if b.URI == "" {
+			t.Errorf("%s URI is empty — a caller cannot descend into it", want)
+		}
+	}
+	if _, present := byName["Someday"]; present {
+		t.Errorf("Someday has no overdue items and must be excluded "+
+			"from ByContainer: %+v", result.ByContainer)
+	}
+	if result.ByContainerTruncated {
+		t.Error("ByContainerTruncated = true, want false (well under the limit)")
+	}
+}
+
+// TestFacetCounts_SingleCalendarHasNoByContainer pins the honest-absence
+// half of RFC 0012 §13: a node that IS a single calendar (no child
+// containers beneath it to attribute across) reports no ByContainer at
+// all, never an empty-but-present slice. startFakeFaceted's arg points at
+// the calendar-HOME ("/dav/"), which discovers its one calendar as a
+// CHILD (selfIsCalendar=false) — the "one-calendar home" case, which
+// legitimately DOES carry a (single-entry) ByContainer; pointing directly
+// at the calendar's own path ("/dav/cal/") is what makes the resolved node
+// itself a calendar (selfIsCalendar=true), the case this test pins.
+func TestFacetCounts_SingleCalendarHasNoByContainer(t *testing.T) {
+	_, home := startFakeFaceted(t)
+	calArg := home + "cal/"
+
+	result, ok, err := Plugin{}.FacetCounts(
+		context.Background(), mustParseURL(t, calArg), nil,
+	)
+	if err != nil || !ok {
+		t.Fatalf("FacetCounts: ok=%v err=%v", ok, err)
+	}
+	if result.ByContainer != nil {
+		t.Errorf("single-calendar FacetCounts carries ByContainer: %+v",
+			result.ByContainer)
+	}
+}
+
+// TestFacetCounts_SingleCalendarHomeHasSingleEntryByContainer pins the
+// companion case: a calendar-HOME whose PROPFIND discovers exactly one
+// child calendar (selfIsCalendar=false, len(calendars)==1) still reports
+// a ByContainer — with exactly that one entry — since the resolved node
+// genuinely has a child container to attribute across, however small.
+func TestFacetCounts_SingleCalendarHomeHasSingleEntryByContainer(t *testing.T) {
+	_, home := startFakeFaceted(t)
+
+	result, ok, err := Plugin{}.FacetCounts(
+		context.Background(), mustParseURL(t, home), nil,
+	)
+	if err != nil || !ok {
+		t.Fatalf("FacetCounts: ok=%v err=%v", ok, err)
+	}
+	if len(result.ByContainer) != 1 {
+		t.Fatalf("ByContainer = %+v, want exactly 1 entry (the home's one calendar)",
+			result.ByContainer)
+	}
+	if result.ByContainer[0].Name != "Personal" {
+		t.Errorf("ByContainer[0].Name = %q, want %q",
+			result.ByContainer[0].Name, "Personal")
+	}
 }
 
 func TestFacetCounts_NilNodeErrors(t *testing.T) {

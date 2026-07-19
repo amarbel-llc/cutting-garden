@@ -82,6 +82,11 @@ type DiffScanRequest = internal.DiffScanRequest
 // filtering then falls back to FacetFilter.Matches over those same Facets.
 type EnrichedLister = internal.EnrichedLister
 
+// FacetContainerBreakdown is one immediate child container's contribution
+// to a FacetResult's Summary: how many of the matching nodes live under it.
+// See RFC 0012 §13.
+type FacetContainerBreakdown = internal.FacetContainerBreakdown
+
 // FacetCounter is the OPTIONAL capability that returns a node's hoisted facet
 // summary in one operation, without the framework walking the subtree — the
 // PREFERRED path, size-agnostic (an atomic listing, an in-memory index, or a
@@ -470,8 +475,25 @@ var ResolveRestore = internal.ResolveRestore
 // MustRegisterScheme. Returns an error wrapping ErrUnknownScheme on miss.
 var ResolveScheme = internal.ResolveScheme
 
+// SortAndLimitContainerBreakdown orders a per-container breakdown by
+// descending Count (ties broken by ascending URI for determinism) and caps
+// it at FacetContainerBreakdownLimit, reporting whether truncation
+// occurred — the shared bounding logic behind FacetResult.ByContainer, so
+// every FacetCounter implementation enforces the same cap the same way
+// instead of each hand-rolling it (RFC 0012 §13, cutting-garden#170).
+// breakdown is sorted and possibly resliced in place; callers MUST NOT
+// rely on its pre-call order or capacity afterward.
+var SortAndLimitContainerBreakdown = internal.SortAndLimitContainerBreakdown
+
 // FacetCategorical is a plain discrete bucket (status, state, domain).
 const FacetCategorical = internal.FacetCategorical
+
+// FacetContainerBreakdownLimit bounds how many non-empty child containers a
+// FacetResult.ByContainer may list. A container fan-out can be large (a
+// newsblur account's several hundred feeds); an unbounded breakdown would
+// trade one guessing problem (which of 23 calendars?) for another (a
+// 285-entry list to scan). See RFC 0012 §13.
+const FacetContainerBreakdownLimit = internal.FacetContainerBreakdownLimit
 
 // FacetLabelled is an opaque stable key whose human name is resolved out
 // of band via FacetLabeler (a feed id, an account id).
