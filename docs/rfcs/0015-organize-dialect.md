@@ -77,8 +77,13 @@ content grammar), governed by the **distribution rule**:
 - **Dependent-dimension sugar**: a heading may be a `PartialTerm`
   (`date=` — field + operator, no value); descendant headings may be
   dependent values (`=2026-07-22` — operator + value). Resolution
-  composes them (`date="2026-07-22"`). PartialTerms parse everywhere
-  and validate only in heading position (the `~=` / `-[p]->>` pattern).
+  composes them (`date="2026-07-22"`). This lives at **runtime
+  resolution, deliberately not the grammar**: a grammar-level spelling
+  would be context-sensitive and break the PEG, so `PartialTerm`s parse
+  context-freely everywhere and validate only in heading position (the
+  `~=` / `-[p]->>` pattern). The `=` overload resolves positionally —
+  under a pending dimension a leading-operator term (`=2026-07-22`) reads
+  as a dependent value; elsewhere `=` keeps its exact-match meaning.
 - **Laddering** is per-dimension composition of parent+child heading
   content: hyphen-joined for tags (dodder's `expandedTags`, verbatim),
   path-segment-joined for directories, calendar decomposition for
@@ -91,6 +96,12 @@ content grammar), governed by the **distribution rule**:
   dimensions): generation derives the mark from the schema; the schema
   stays authoritative; edits under (moves into/out of) a `%` scope are
   validation errors.
+- **Ungrouped objects list before the topmost heading** (dodder orgie's
+  convention, preserved): rather than a synthetic `Ungrouped` heading,
+  objects with no value for the grouped dimension render *above the first
+  `#` heading* — that pre-heading position IS the implicit "ungrouped"
+  marker. On apply it reads as membership-∅ for the grouped dimension,
+  consistent with the deletion-by-grouped-ness rule.
 
 ### Object lines
 
@@ -134,8 +145,12 @@ from shape (the proof pair: newsblur `user_tag` write:many vs
   headings the object appears under in the patch; absence from the
   patch = the empty set** (clearing membership and total line deletion
   are the same statement). Removal from one heading removes that value
-  only. (Applies to GROUPED documents; see "Deletion semantics by
-  grouped-ness" for the ungrouped case.)
+  only. On an **open** dimension a freshly-typed heading is legal and
+  **creates** that value (`## ="needs-triage"` adds the label) — the
+  converse of the closed-set `novel buckets are validation errors` rule
+  above, and what makes that rejection meaningful. (Applies to GROUPED
+  documents; see "Deletion semantics by grouped-ness" for the ungrouped
+  case.)
 - **`write: none`** — groupable for viewing; `%`-marked; moves are
   errors. A document whose entire patchable projection is empty is a
   **view**: generation emits it output-only and says so.
@@ -225,7 +240,12 @@ alongside base/live conflicts, batch-capable.
 | Id unknown to base and substrate | error | loud rejection |
 
 Identity-affecting writes (fs `mv`) likewise report the resulting id;
-apply treats them as allocation-like.
+apply treats them as allocation-like. The three-way merge survives a
+live-side rename **only because of content-addressing**: for an
+identity-affecting substrate where the path *is* the id, base↔live
+re-association across a move matches on the box line's `@digest` (the
+stable content identity), not the changed id — which is also why the
+deferred id-aliasing ergonomic must survive id churn.
 
 ### Deletion
 
