@@ -124,7 +124,9 @@ const (
 	readNodeSchema          = `{"type":"object","required":["uri"],` +
 		`"properties":{"uri":{"type":"string","description":"the node URI to read (a leaf returns its parsed fields + a raw-bytes link; a container returns its child listing)"}}}`
 	listNodesSchema = `{"type":"object","properties":{` +
-		`"uri":{"type":"string","description":"the container/prefix to list children of; omit to list the configured roots (the entry points)"}}}`
+		`"uri":{"type":"string","description":"the container/prefix to list children of; omit to list the configured roots (the entry points)"},` +
+		`"limit":{"type":"integer","minimum":0,"description":"max number of child nodes to return (optional). A response SHORTER than limit means you have reached the end of the listing; a full-length response may or may not be the end — pass a larger offset to check."},` +
+		`"offset":{"type":"integer","minimum":0,"description":"number of child nodes to skip before applying limit (optional, default 0). An offset past the end yields an empty array, not an error."}}}`
 	readFacetsSchema = `{"type":"object","required":["uri"],` +
 		`"properties":{` +
 		`"uri":{"type":"string","description":"the container node URI to summarize"},` +
@@ -163,7 +165,10 @@ func readToolDefs() []protocol.ToolV1 {
 			Description: "Browse the tree: list the child nodes under a container URI " +
 				"(or, with no uri, the configured roots — the entry points). " +
 				"Each node carries its uri, so you descend by listing deeper or read a " +
-				"leaf with read_node.",
+				"leaf with read_node. Optional limit/offset page a large listing " +
+				"host-side after enumeration; a response shorter than limit signals " +
+				"the end (there is no separate total — read_facets gives you counts " +
+				"without paging through the whole listing).",
 			InputSchema: json.RawMessage(listNodesSchema),
 			Annotations: annotationFor(mcp_tool_perms.ToolListNodes),
 		},
@@ -451,10 +456,18 @@ func (t *Tools) call(
 
 	case mcp_tool_perms.ToolListNodes:
 		var in struct {
-			URI string `json:"uri"`
+			URI    string `json:"uri"`
+			Limit  int    `json:"limit"`
+			Offset int    `json:"offset"`
 		}
 		if err := json.Unmarshal(args, &in); err != nil {
 			return "", errors.Wrap(err)
+		}
+		if in.Limit < 0 {
+			return "", errors.ErrorWithStackf("list_nodes: limit must be >= 0")
+		}
+		if in.Offset < 0 {
+			return "", errors.ErrorWithStackf("list_nodes: offset must be >= 0")
 		}
 		// No uri: the configured roots themselves are the browse entry points
 		// (a root is a container you descend into), mirroring the `list`
@@ -473,6 +486,7 @@ func (t *Tools) call(
 					Container: true,
 				})
 			}
+			views = paginate(views, in.Offset, in.Limit)
 			body, err := json.MarshalIndent(views, "", "  ")
 			if err != nil {
 				return "", errors.Wrap(err)
@@ -483,7 +497,17 @@ func (t *Tools) call(
 		if err != nil {
 			return "", err
 		}
-		return renderContents(res.Contents), nil
+		text := renderContents(res.Contents)
+		// A byte-for-byte-unchanged default is REQUIRED (cutting-garden#86):
+		// skip pagination entirely when neither param was given, rather than
+		// slicing with limit=0 (which would empty a container's listing).
+		if in.Limit > 0 || in.Offset > 0 {
+			text, err = paginateListingText(text, in.Offset, in.Limit)
+			if err != nil {
+				return "", errors.Wrap(err)
+			}
+		}
+		return text, nil
 
 	case mcp_tool_perms.ToolReadFacets:
 		var in struct {
@@ -510,6 +534,38 @@ func (t *Tools) call(
 	default:
 		return "", errors.ErrorWithStackf("unknown tool %q", name)
 	}
+}
+
+// paginate slices items to [offset:offset+limit] (cutting-garden#86 phase A):
+// limit<=0 means unbounded (only offset applies), offset past the end yields
+// an empty (never nil) slice so it marshals to `[]`, not `null`.
+func paginate[T any](items []T, offset, limit int) []T {
+	if offset >= len(items) {
+		return []T{}
+	}
+	items = items[offset:]
+	if limit > 0 && limit < len(items) {
+		items = items[:limit]
+	}
+	return items
+}
+
+// paginateListingText applies paginate to a JSON array's text form — the
+// list_nodes(uri) path, where the child listing already arrived as rendered
+// text from t.reader.ReadResource (renderContents). Text that does not
+// decode as a JSON array (a leaf object read, or an empty listing already
+// smaller than any reasonable page) is returned unchanged: pagination is a
+// listing concern, not a leaf-read one.
+func paginateListingText(text string, offset, limit int) (string, error) {
+	var raw []json.RawMessage
+	if err := json.Unmarshal([]byte(text), &raw); err != nil {
+		return text, nil
+	}
+	body, err := json.MarshalIndent(paginate(raw, offset, limit), "", "  ")
+	if err != nil {
+		return "", errors.Wrap(err)
+	}
+	return string(body), nil
 }
 
 // renderContents flattens a resources/read result into tool text: each

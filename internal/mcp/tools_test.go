@@ -399,6 +399,137 @@ func TestFacetDimSchemas_RevalidateAfterSeconds(t *testing.T) {
 	}
 }
 
+// TestCallTool_ListNodesRootsPagination pins cutting-garden#86 phase A on
+// the no-uri (roots) branch: limit/offset slice host-side after
+// enumeration, and an out-of-range offset yields an empty array, not an
+// error.
+func TestCallTool_ListNodesRootsPagination(t *testing.T) {
+	tools := newFakeTools(t, &fakeMutator{},
+		"faketest://h/a/", "faketest://h/b/", "faketest://h/c/")
+
+	res, err := tools.CallTool(context.Background(), "list_nodes",
+		json.RawMessage(`{"limit":2}`))
+	if err != nil {
+		t.Fatalf("transport error: %v", err)
+	}
+	var views []nodeView
+	if err := json.Unmarshal([]byte(res.Content[0].Text), &views); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(views) != 2 {
+		t.Fatalf("limit=2 got %d roots, want 2: %+v", len(views), views)
+	}
+
+	res, err = tools.CallTool(context.Background(), "list_nodes",
+		json.RawMessage(`{"offset":1,"limit":2}`))
+	if err != nil {
+		t.Fatalf("transport error: %v", err)
+	}
+	views = nil
+	if err := json.Unmarshal([]byte(res.Content[0].Text), &views); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(views) != 2 || views[0].URI != "faketest://h/b/" {
+		t.Fatalf("offset=1,limit=2 = %+v, want [b, c]", views)
+	}
+
+	// Out-of-range offset: an empty array, not an error.
+	res, err = tools.CallTool(context.Background(), "list_nodes",
+		json.RawMessage(`{"offset":100}`))
+	if err != nil {
+		t.Fatalf("transport error: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("out-of-range offset must not error: %+v", res.Content)
+	}
+	if res.Content[0].Text != "[]" {
+		t.Errorf("out-of-range offset body = %q, want []", res.Content[0].Text)
+	}
+}
+
+// TestCallTool_ListNodesContainerPagination pins the uri branch: the child
+// listing text (as rendered by renderContents) is decoded, sliced, and
+// re-encoded.
+func TestCallTool_ListNodesContainerPagination(t *testing.T) {
+	tools := newFakeTools(t, &fakeMutator{}, "faketest://h/")
+	tools.reader = fakeReader{read: &protocol.ResourceReadResult{Contents: []protocol.ResourceContent{
+		{
+			URI: "faketest://h/work", MimeType: "application/json",
+			Text: `[{"uri":"a"},{"uri":"b"},{"uri":"c"}]`,
+		},
+	}}}
+
+	res, err := tools.CallTool(context.Background(), "list_nodes",
+		json.RawMessage(`{"uri":"faketest://h/work","limit":2}`))
+	if err != nil {
+		t.Fatalf("transport error: %v", err)
+	}
+	var got []map[string]string
+	if err := json.Unmarshal([]byte(res.Content[0].Text), &got); err != nil {
+		t.Fatalf("decode %q: %v", res.Content[0].Text, err)
+	}
+	if len(got) != 2 || got[0]["uri"] != "a" || got[1]["uri"] != "b" {
+		t.Fatalf("limit=2 = %+v, want [a, b]", got)
+	}
+
+	res, err = tools.CallTool(context.Background(), "list_nodes",
+		json.RawMessage(`{"uri":"faketest://h/work","offset":5}`))
+	if err != nil {
+		t.Fatalf("transport error: %v", err)
+	}
+	if res.Content[0].Text != "[]" {
+		t.Errorf("out-of-range offset body = %q, want []", res.Content[0].Text)
+	}
+}
+
+// TestCallTool_ListNodesDefaultUnpaged pins the byte-for-byte-unchanged
+// default: with neither limit nor offset, list_nodes(uri) output is
+// IDENTICAL to what renderContents alone would produce — pagination is
+// skipped entirely, not applied with an effective limit=0.
+func TestCallTool_ListNodesDefaultUnpaged(t *testing.T) {
+	tools := newFakeTools(t, &fakeMutator{}, "faketest://h/")
+	tools.reader = fakeReader{read: &protocol.ResourceReadResult{Contents: []protocol.ResourceContent{
+		{
+			URI: "faketest://h/work", MimeType: "application/json",
+			Text: `[{"uri":"a"},{"uri":"b"}]`,
+		},
+	}}}
+
+	res, err := tools.CallTool(context.Background(), "list_nodes",
+		json.RawMessage(`{"uri":"faketest://h/work"}`))
+	if err != nil {
+		t.Fatalf("transport error: %v", err)
+	}
+	if res.Content[0].Text != `[{"uri":"a"},{"uri":"b"}]` {
+		t.Errorf("default (no limit/offset) output = %q, want the raw listing unchanged",
+			res.Content[0].Text)
+	}
+}
+
+func TestCallTool_ListNodesNegativeLimitOrOffsetIsToolError(t *testing.T) {
+	tools := newFakeTools(t, &fakeMutator{}, "faketest://h/")
+
+	for _, args := range []string{`{"limit":-1}`, `{"offset":-1}`} {
+		res, err := tools.CallTool(context.Background(), "list_nodes", json.RawMessage(args))
+		if err != nil {
+			t.Fatalf("transport error for %s: %v", args, err)
+		}
+		if !res.IsError {
+			t.Errorf("args %s: want IsError, got %+v", args, res.Content)
+		}
+	}
+}
+
+func TestPaginate_LimitZeroIsUnbounded(t *testing.T) {
+	items := []int{1, 2, 3, 4}
+	if got := paginate(items, 0, 0); len(got) != 4 {
+		t.Errorf("paginate(offset=0,limit=0) = %v, want all 4 items", got)
+	}
+	if got := paginate(items, 2, 0); len(got) != 2 || got[0] != 3 {
+		t.Errorf("paginate(offset=2,limit=0) = %v, want [3 4]", got)
+	}
+}
+
 func TestCollectSchema_SkipsNonRootListers(t *testing.T) {
 	// A plugin with no traversal (here a bare NodeMutator) contributes no
 	// type catalogue.
