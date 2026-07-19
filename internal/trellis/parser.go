@@ -539,8 +539,26 @@ func (p *parser) parseConjRun() (ConjRun, bool) {
 	return ConjRun{Terms: terms}, true
 }
 
-// parsePath: Step (SP Combinator SP Step)*.
+// parsePath: (Combinator SP)? Step (SP Combinator SP Step)*.
+//
+// The optional leading `(Combinator SP)?` denotes traversal from the
+// IMPLICIT DEFAULT ANCHOR (the root aggregate; FDR 0022 "roots as nodes",
+// grammar amended for cutting-garden#152). It is recorded as Path.Leading,
+// distinct from the interior Combinators joining explicit Steps. The prefix
+// is PEG-safe against leading dependent-tag terms like `-content`: those
+// match no Combinator and fall through to the mandatory first Step below.
+// The SP inside the optional group is required (combinators demand
+// surrounding whitespace); a combinator not followed by whitespace is not a
+// leading prefix and is fully backtracked.
 func (p *parser) parsePath() (Path, bool) {
+	var leading *Combinator
+	leadStart := p.pos
+	if comb, ok := p.parseCombinator(); ok && p.skipSP() {
+		leading = &comb
+	} else {
+		p.pos = leadStart
+	}
+
 	first, ok := p.parseStep()
 	if !ok {
 		return Path{}, false
@@ -570,7 +588,7 @@ func (p *parser) parsePath() (Path, bool) {
 		combinators = append(combinators, comb)
 		steps = append(steps, step)
 	}
-	return Path{Steps: steps, Combinators: combinators}, true
+	return Path{Leading: leading, Steps: steps, Combinators: combinators}, true
 }
 
 // parseTerm: '^'? '='? BasicTerm.

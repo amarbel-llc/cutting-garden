@@ -1,50 +1,168 @@
 package trellis
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
 
-// conformanceVectors are RFC 0014's Examples, taken verbatim from
-// docs/rfcs/0014-trellis.peg's trailing comment block ("each MUST parse").
-// Two-line vectors in that file are joined with a space here; the file's
-// prose commentary (the em-dash lines) is not part of the query text.
+// conformanceVectorsPegPath is the normative grammar file whose trailing
+// "// ---- conformance vectors" comment block is the SINGLE SOURCE of the
+// RFC 0014 example corpus. The tests below extract the vectors from it
+// directly (rather than transcribing them into a slice here) so that a
+// vector added to the .peg cannot silently escape the "each MUST parse"
+// gate — the well-formed-only hole that let cutting-garden#152 (the leading-
+// combinator forms `->> !task ^done` / `-[blocks]->> !task ^done`) slip a
+// green langlang grammar check while remaining unparseable under the
+// grammar's own Path production. The path is relative to this package's
+// directory (Go runs tests with CWD = the package dir).
+const conformanceVectorsPegPath = "../../docs/rfcs/0014-trellis.peg"
+
+// loadConformanceVectors reads the normative grammar and returns every query
+// string from its trailing conformance-vector comment block, in file order.
+// The block's format (docs/rfcs/0014-trellis.peg):
 //
-// NOTE #12/#13 (the leading-combinator forms) are deliberately absent from
-// this table — see TestConformanceVectors_KnownGap_LeadingCombinator below
-// for why, and cutting-garden#152 for the tracked grammar gap.
-var conformanceVectors = []string{
-	`!task priority-1_should [due<="2026-08-01"]`,
-	`!newsblur-story-v1 year=2026 [-> _body*=["zettelkasten", "localfirst", "git", "obsidian", "roam research"]]`,
-	`!caldav-object-v1 component=VEVENT dtstart^=["20260718", "20260719"]`,
-	`!caldav-object-v1 component=VEVENT dtstart>="20260720" dtstart<"20260727"`,
-	`!forgejo-issue-v1 created^="2026-07-17" state=closed`,
-	`!forgejo-issue-v1 state=open [+ state=closed]`,
-	`!newsblur-story-v1 [-> [+ _body*="merkle"]]`,
-	`+`,
-	`!web-page-v1 [+]`,
-	`!web-page-v1 ^[+]`,
-	`!task ^done project-cutting-garden`,
-	`"event.summary"*="standup"`,
-	`[story-8841 !newsblur-story-v1 year=2026 [-> content-8841 @blake2b256-9ft3x]]`,
-	`caldav:fastmail -> component=VEVENT dtstart^="20260718"`,
-	`!root-v1 scheme=caldav -> !caldav-object-v1 dtstart^="20260718"`,
-	`work -> !caldav-object-v1 component=VEVENT`,
-	`web:http://example.com +`,
-	`"one/uno.zettel"`,
-	`12.7`,
-	`_mother=@blake2b256-9ft3x`,
-	`piggy-piv_auth-v1@ssh_ecdsa_nistp256_pub-qqxyz`,
-	`one/uno@blake2b256-9ft3x`,
-	`"my thing"@blake2b256-9ft3x`,
-	`blocks=task/other@blake2b256-9ft3x`,
-	`due = "2026-08-01"`,
+//   - A vector STARTS on a comment line indented exactly three spaces past
+//     the `//` ("//   query…"). Everything up to an inline em/en-dash (—/–,
+//     the prose-annotation marker) is query text.
+//   - A more-indented comment line ("//     …") CONTINUES the current
+//     vector's query — but only until the query is "closed" by a dash
+//     (inline on the start line, or leading a continuation line). Once
+//     closed, further indented lines are multi-line prose and are skipped.
+//   - The block header rule and blank comment lines are skipped.
+//
+// Every returned vector is a query the RFC asserts MUST parse; a broken
+// extractor that leaked prose text would be caught by TestConformanceVectors
+// below (prose does not parse as trellis).
+func loadConformanceVectors(t *testing.T) []string {
+	t.Helper()
+	raw, err := os.ReadFile(conformanceVectorsPegPath)
+	if err != nil {
+		t.Fatalf("read normative grammar %q: %v", conformanceVectorsPegPath, err)
+	}
+
+	var (
+		vectors   []string
+		cur       strings.Builder
+		haveCur   bool
+		curClosed bool
+		inBlock   bool
+	)
+	flush := func() {
+		if haveCur {
+			if q := strings.TrimSpace(cur.String()); q != "" {
+				vectors = append(vectors, q)
+			}
+		}
+		cur.Reset()
+		haveCur = false
+		curClosed = false
+	}
+
+	for _, line := range strings.Split(string(raw), "\n") {
+		if !inBlock {
+			// The block begins at its header comment; the top-of-file doc
+			// comment (which mentions no "conformance vectors") is skipped.
+			if strings.HasPrefix(strings.TrimSpace(line), "//") &&
+				strings.Contains(line, "conformance vectors") {
+				inBlock = true
+			}
+			continue
+		}
+
+		trimmedLeft := strings.TrimLeft(line, " \t")
+		if !strings.HasPrefix(trimmedLeft, "//") {
+			break // a non-comment line ends the block
+		}
+		body := strings.TrimPrefix(trimmedLeft, "//")
+		indent := len(body) - len(strings.TrimLeft(body, " "))
+		content := strings.TrimLeft(body, " ")
+		if content == "" {
+			continue // blank comment separator
+		}
+		if indent <= 2 {
+			continue // the header rule / any shallow line: not a vector
+		}
+
+		// Drop an inline prose annotation (everything from the first dash).
+		queryPart := content
+		hasDash := false
+		if idx := firstDashIndex(content); idx >= 0 {
+			queryPart = content[:idx]
+			hasDash = true
+		}
+		queryPart = strings.TrimRight(queryPart, " ")
+
+		if indent == 3 { // a vector start
+			flush()
+			haveCur = true
+			cur.WriteString(queryPart)
+			curClosed = hasDash
+			continue
+		}
+
+		// indent >= 4: a continuation or a prose line for the current
+		// vector. Prose lines (query already closed) are skipped.
+		if !haveCur || curClosed {
+			continue
+		}
+		if queryPart != "" {
+			if cur.Len() > 0 {
+				cur.WriteByte(' ')
+			}
+			cur.WriteString(queryPart)
+		}
+		if hasDash {
+			curClosed = true
+		}
+	}
+	flush()
+	return vectors
 }
 
-// TestConformanceVectors parses every RFC 0014 example and requires a
-// non-nil AST — the corpus-level conformance gate the task asked for.
+// firstDashIndex returns the byte index of the first em-dash (U+2014) or
+// en-dash (U+2013) in s, or -1 — the prose-annotation marker separating a
+// conformance vector's query text from its commentary.
+func firstDashIndex(s string) int {
+	em := strings.IndexRune(s, '—')
+	en := strings.IndexRune(s, '–')
+	switch {
+	case em < 0:
+		return en
+	case en < 0:
+		return em
+	case em < en:
+		return em
+	default:
+		return en
+	}
+}
+
+// TestConformanceVectors extracts every RFC 0014 example straight from the
+// normative grammar's conformance-vector block and requires each to parse
+// into a non-nil AST — the corpus-level conformance gate, sourced from the
+// .peg itself so no example can drift out of coverage (cutting-garden#152).
 func TestConformanceVectors(t *testing.T) {
-	for _, src := range conformanceVectors {
+	vectors := loadConformanceVectors(t)
+
+	// Guard against a silently-broken extractor: the corpus is ~two dozen
+	// vectors, so an empty/tiny slice means extraction failed, not that the
+	// grammar shrank.
+	if len(vectors) < 20 {
+		t.Fatalf("extracted only %d conformance vectors from %s; expected the full corpus "+
+			"(~two dozen) — extraction likely broke", len(vectors), conformanceVectorsPegPath)
+	}
+
+	// The leading-combinator forms (FDR 0022 "roots as nodes";
+	// cutting-garden#152) MUST be among the extracted corpus — they are the
+	// vectors the well-formed-only gate used to miss.
+	for _, want := range []string{`->> !task ^done`, `-[blocks]->> !task ^done`} {
+		if !containsVector(vectors, want) {
+			t.Errorf("conformance corpus is missing %q; extraction or the .peg block changed", want)
+		}
+	}
+
+	for _, src := range vectors {
 		t.Run(src, func(t *testing.T) {
 			q, err := Parse(src)
 			if err != nil {
@@ -60,32 +178,68 @@ func TestConformanceVectors(t *testing.T) {
 	}
 }
 
-// TestConformanceVectors_KnownGap_LeadingCombinator documents a confirmed
-// gap between RFC 0014's conformance-vector corpus and its own normative
-// grammar (docs/rfcs/0014-trellis.peg): `Path <- Step (SP Combinator SP
-// Step)*` requires a non-empty leading Step, so these two vectors (default-
-// anchor traversal, FDR 0022 "Roots as nodes") do NOT parse under the
-// CURRENT grammar — confirmed both by this package's parser (below) and
-// independently by feeding the raw strings to langlang's compiled grammar
-// (`go run ./cmd/langlang -grammar ... -input ...`), which fails at the
-// same point. This is a semantic gap (what the grammar matches), not a
-// parser bug, so it is not silently special-cased here: fixing it means
-// changing Path's production (e.g. an optional leading Step), a normative
-// call for RFC 0014's owner. Tracked at cutting-garden#152. If that issue
-// lands a grammar fix, this test (and the file's leading comment) should be
-// updated together with the parser.
-func TestConformanceVectors_KnownGap_LeadingCombinator(t *testing.T) {
-	for _, src := range []string{
-		`->> !task ^done`,
-		`-[blocks]->> !task ^done`,
-	} {
-		t.Run(src, func(t *testing.T) {
-			if _, err := Parse(src); err == nil {
-				t.Fatalf("Parse(%q) succeeded; cutting-garden#152 expects this to still fail "+
-					"under the current grammar — if it now parses, the grammar gap was fixed "+
-					"and this test (and its comment) need updating, not deleting silently", src)
+func containsVector(vectors []string, want string) bool {
+	for _, v := range vectors {
+		if v == want {
+			return true
+		}
+	}
+	return false
+}
+
+// TestLeadingCombinatorVectors asserts the two default-anchor traversal
+// vectors — the forms cutting-garden#152 taught the grammar's Path
+// production to accept via its `(Combinator SP)?` prefix (FDR 0022 "roots as
+// nodes") — now PARSE, and that the parser records the leading combinator as
+// Path.Leading (an explicit default-anchor origin) rather than as an
+// interior between-steps join.
+//
+// The typed-closure form (`-[blocks]->>`) remains validation-RESERVED, but
+// parsing and validation are separate layers: this asserts only that it
+// PARSES (into a CombinatorTypedClosure), exactly as trellis.peg's vector
+// comment promises ("parses; validation rejects (reserved)"). This replaces
+// the former TestConformanceVectors_KnownGap_LeadingCombinator, which
+// documented the pre-#152 gap by asserting these vectors did NOT parse.
+func TestLeadingCombinatorVectors(t *testing.T) {
+	cases := []struct {
+		src      string
+		wantKind CombinatorKind
+	}{
+		{`->> !task ^done`, CombinatorFwdClosure},
+		{`-[blocks]->> !task ^done`, CombinatorTypedClosure},
+	}
+	for _, tc := range cases {
+		t.Run(tc.src, func(t *testing.T) {
+			q := mustParse(t, tc.src)
+
+			if q.Path.Leading == nil {
+				t.Fatalf("Path.Leading = nil, want a leading %v combinator (default-anchor origin)", tc.wantKind)
+			}
+			if got := q.Path.Leading.Kind; got != tc.wantKind {
+				t.Fatalf("Path.Leading.Kind = %v, want %v", got, tc.wantKind)
+			}
+
+			// The leading combinator is NOT an interior join: the explicit
+			// `!task ^done` is the single Step, with no between-steps
+			// Combinators.
+			if len(q.Path.Steps) != 1 {
+				t.Fatalf("len(Steps) = %d, want 1 (`!task ^done`)", len(q.Path.Steps))
+			}
+			if len(q.Path.Combinators) != 0 {
+				t.Fatalf("len(Combinators) = %d, want 0 (leading combinator lives in Path.Leading, "+
+					"not the interior joins)", len(q.Path.Combinators))
+			}
+			if got := len(q.Path.Steps[0].Terms); got != 2 {
+				t.Fatalf("Steps[0]: len(Terms) = %d, want 2 (`!task`, `^done`)", got)
 			}
 		})
+	}
+
+	// The typed-closure leading combinator carries its edge predicate.
+	q := mustParse(t, `-[blocks]->> !task ^done`)
+	pred := q.Path.Leading.Pred
+	if pred == nil || len(pred.Terms) != 1 {
+		t.Fatalf("leading typed-closure Pred = %+v, want exactly one term (`blocks`)", pred)
 	}
 }
 
@@ -108,6 +262,9 @@ func TestShape_MultiStepPathWithCombinator(t *testing.T) {
 	}
 	if got, want := len(q.Path.Combinators), 1; got != want {
 		t.Fatalf("len(Combinators) = %d, want %d", got, want)
+	}
+	if q.Path.Leading != nil {
+		t.Fatalf("Path.Leading = %+v, want nil (this path starts at an explicit step)", q.Path.Leading)
 	}
 	if got, want := q.Path.Combinators[0].Kind, CombinatorFwd; got != want {
 		t.Fatalf("Combinators[0].Kind = %v, want %v", got, want)
@@ -386,6 +543,10 @@ func TestParse_MalformedInputs(t *testing.T) {
 		{"term-final @ (dangling MarklTerm digest slot)", `done@`},
 		{"unterminated string", `"unterminated`},
 		{"empty group", `[]`},
+		// A leading combinator with NO following step is invalid: the
+		// grammar's `(Combinator SP)? Step` still requires the Step
+		// (cutting-garden#152 admits a leading combinator, not a bare one).
+		{"leading combinator with no step", `->>`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

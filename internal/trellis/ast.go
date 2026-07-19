@@ -20,13 +20,24 @@ type Query struct {
 	Path Path
 }
 
-// Path <- Step (SP Combinator SP Step)*
+// Path <- (Combinator SP)? Step (SP Combinator SP Step)*
 //
 // A sequence of Steps joined by Combinators. len(Combinators) is always
 // len(Steps)-1; Combinators[i] joins Steps[i] to Steps[i+1]. The result set
 // of a query is the objects matched by the LAST step (RFC 0014 "Query
 // structure") — this package does not compute that; it only parses.
+//
+// Leading is the optional `(Combinator SP)?` prefix (grammar amended for
+// cutting-garden#152): when non-nil it is a combinator applied to the
+// IMPLICIT DEFAULT ANCHOR — the root aggregate, FDR 0022 "roots as nodes" —
+// so the path originates from that default anchor rather than from an
+// explicit first Step. nil means the path begins directly at Steps[0] with
+// no default-anchor origin. A leading combinator is NOT one of the interior
+// Combinators: Steps[0] is still the first explicit step, and the
+// len(Combinators) == len(Steps)-1 invariant counts only the combinators
+// BETWEEN explicit steps.
 type Path struct {
+	Leading     *Combinator // (Combinator SP)? — default-anchor origin; nil when absent
 	Steps       []Step
 	Combinators []Combinator
 }
