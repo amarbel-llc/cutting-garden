@@ -889,6 +889,107 @@
 
               touch "$out"
             '';
+
+        # Eval-check for cutting-garden#158's `traversalPlugins`/`plugins`
+        # options (docs/features/0019 addendum): render a sample
+        # `traversalPlugins` entry with a non-empty `extraConfig` and confirm
+        # (a) the TOML shape is what internal/traversal_serve.SectionTOML's
+        # line-based header extraction expects — a `[[traversal_plugins]]`
+        # stanza plus a wrapper `[[fj.roots]]` array-of-tables, not an inline
+        # `roots = [ {...} ]` — and (b) the real binary's config loader
+        # ACCEPTS it. There is no fj-cg binary in this sandbox to actually
+        # spawn, so this deliberately does NOT call `list` with no URI (that
+        # aggregates roots across every registered RootProvider, including
+        # the newly-registered fj WirePlugin, which would try to spawn the
+        # configured command). Instead it calls `list` with an explicit,
+        # network-free `file://` URI: internal/list.List.Run loads + injects
+        # config (decoding EVERY stanza, validating it, and wrapper-stripping
+        # its `extraConfig` section via SectionTOML) unconditionally before
+        # looking at the URI argument (cutting-garden#140's fix), so this
+        # still exercises the full decode path for the fj stanza — a
+        # malformed render fails LoadAndInjectConfig and the command exits
+        # nonzero — without ever touching the fj scheme itself. Registration
+        # is lazy (NewWirePlugin spawns nothing), so nothing needs to run.
+        checks.modules-eval-traversal-plugins =
+          if !pkgs.stdenv.hostPlatform.isLinux then
+            pkgs.runCommand "cutting-garden-modules-eval-traversal-plugins-skipped" { } "touch \"$out\""
+          else
+            let
+              shared = import ./nix/config.nix {
+                inherit (pkgs) lib;
+                inherit pkgs;
+              };
+              sampleTraversalPlugins = [
+                {
+                  name = "fj";
+                  command = [
+                    "/nonexistent/fj-cg"
+                    "traversal-serve"
+                  ];
+                  schemes = [ "fj" ];
+                  configSection = null;
+                  protocols = null;
+                  extraConfig.roots = [
+                    {
+                      name = "forge";
+                      url = "fj://forge.example/linenisgreat/cutting-garden";
+                    }
+                  ];
+                }
+              ];
+              sampleConfig = shared.renderConfigToml {
+                caldav.accounts = [ ];
+                traversalPlugins = sampleTraversalPlugins;
+                plugins = [ ];
+              };
+
+              nixosEtc =
+                (igloo.lib.nixosSystem {
+                  inherit system;
+                  modules = [
+                    self.nixosModules.default
+                    {
+                      system.stateVersion = "25.11";
+                      services.cutting-garden = {
+                        enable = true;
+                        traversalPlugins = sampleTraversalPlugins;
+                      };
+                    }
+                  ];
+                }).config.environment.etc."cutting-garden/config.toml".source;
+            in
+            pkgs.runCommand "cutting-garden-modules-eval-traversal-plugins" { } ''
+              echo '--- rendered config.toml (traversalPlugins + extraConfig) ---'
+              cat ${sampleConfig}
+
+              # The stanza itself, plus its extraConfig rendered as a header-
+              # form array-of-tables under the fj section (SectionTOML is a
+              # LINE-BASED extractor over TOML header syntax — an inline
+              # `roots = [ {...} ]` would NOT be recognized as the fj
+              # section's content).
+              grep -q '^\[\[traversal_plugins\]\]$' ${sampleConfig}
+              grep -q 'name = "fj"' ${sampleConfig}
+              grep -q '^\[\[fj\.roots\]\]$' ${sampleConfig}
+              grep -q 'url = "fj://forge.example/linenisgreat/cutting-garden"' ${sampleConfig}
+
+              echo '--- NixOS module-rendered environment.etc config.toml ---'
+              cat ${nixosEtc}
+              diff ${sampleConfig} ${nixosEtc}
+
+              # The real binary's config loader accepts the render: an
+              # explicit, network-free file:// URI still runs
+              # LoadAndInjectConfig first (decode + register every stanza,
+              # including SectionTOML's wrapper-stripping of [fj]/[[fj.roots]])
+              # before resolving the URI, so a bad render fails here even
+              # though the fj scheme itself is never touched.
+              export HOME="$PWD"
+              export XDG_CONFIG_HOME="$PWD/xdg"
+              mkdir -p "$XDG_CONFIG_HOME/cutting-garden" listtarget
+              cp ${sampleConfig} "$XDG_CONFIG_HOME/cutting-garden/config.toml"
+              ${cuttingGarden}/bin/cutting-garden list "file://$PWD/listtarget" | tee out.txt
+
+              touch "$out"
+            '';
       }
     );
 }

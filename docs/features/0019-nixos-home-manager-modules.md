@@ -74,8 +74,18 @@ the Go structs (`internal/config_common`, `plugins/caldav`).
 - `enable`, `package`.
 - `caldav.accounts` — list of `{ name; url; username?; passwordEnv?; }`,
   rendered to RFC 0007 `[[caldav.accounts]]` (`passwordEnv` → `password_env`,
-  null fields omitted). caldav is the only section implemented today; future
-  plugin sections extend the shared attrset additively.
+  null fields omitted).
+- `traversalPlugins` / `plugins` (cutting-garden#158) — lists of
+  `{ name; command; schemes; configSection?; protocols?; extraConfig?; }`,
+  rendered to `[[traversal_plugins]]` / `[[plugins]]` array-of-tables
+  (RFC 0013 §Host integration, generalized by cutting-garden#146). These are
+  the declarative seam for out-of-process wire plugins like forgejo-cli's
+  `fj-cg` — circus wires one via `traversalPlugins` without any
+  cutting-garden-module change. `extraConfig` is a freeform attrset rendered
+  to the plugin's own `[<configSection>]` table (`configSection` defaults to
+  `name`); the nix module stays plugin-agnostic — it has no per-plugin-type
+  option, mirroring the Go side's own config-agnostic `SectionTOML`
+  wrapper-stripping.
 
 ### Options (NixOS only)
 
@@ -111,6 +121,12 @@ services.cutting-garden = {
   enable = true;
   caldav.accounts = [{ name = "team"; url = "caldav://dav.host/dav/team/";
                        username = "me"; passwordEnv = "CALDAV_TEAM_PASSWORD"; }];
+  traversalPlugins = [{
+    name = "fj";
+    command = [ "${fj-cg}/bin/fj-cg" "traversal-serve" ];
+    schemes = [ "fj" ];
+    extraConfig.roots = [{ name = "forge"; url = "fj://forge.example/linenisgreat/cutting-garden"; }];
+  }];
   environmentFile = "/run/cutting-garden/secrets.env";  # placed out-of-band
 };
 # → /etc/cutting-garden/config.toml. circus adds a moxy child:
@@ -131,8 +147,12 @@ services.cutting-garden = {
   host provisions from piggy, matching circus's nix-cache `secretKeyFile`
   pattern. Plaintext passwords never enter config.toml or the nix store
   (RFC 0007 § Security Considerations).
-- **caldav-only config.** The only RFC 0007 section implemented today; the
-  schema is structured so ytdlp/sftp/webdav/github sections drop in additively.
+- **caldav plus generic wire-plugin sections.** `caldav.accounts` is the only
+  TYPED per-plugin section; every other plugin section (a wire plugin's own
+  `[<configSection>]` table, cutting-garden#158) goes through the freeform
+  `extraConfig` attrset on `traversalPlugins`/`plugins` entries rather than a
+  dedicated option — the schema stays structured so a FUTURE typed section
+  (ytdlp/sftp/webdav/github) can still drop in additively if warranted.
 - **Eval-check only.** A pure `nix flake check` (`checks.modules-eval`) renders
   a sample config and confirms the binary loads it and surfaces the root. A full
   NixOS VM `nixosTest` (booting a host + stubbed moxy child) is a deferred
