@@ -113,13 +113,18 @@ function mcp_browse_and_read { # @test
     fail "list_nodes() root entry-point wrong: $roots"
 
   # Descend the root (using the uri it reported) → its calendars: the
-  # testserver's one calendar, Personal.
+  # testserver's two calendars, Personal and Work — discovered via PROPFIND
+  # on the calendar-home root, each labeled by its DAV displayname
+  # (cutting-garden#162; also the cutting-garden#120 friendly-label win for
+  # accounts configured at the home level).
   rooturi="$(echo "$roots" | jq -r '.[0].uri')"
   mcp_drive "$CALDAV_SOURCE" "$(tools_call 3 list_nodes "$(jq -nc --arg u "$rooturi" '{uri:$u}')")"
   local cals
   cals="$(mcp_result_text "$output" 3)"
   echo "$cals" | jq -e 'any(.[]; .name=="Personal")' >/dev/null ||
     fail "list_nodes(root) missing the Personal calendar: $cals"
+  echo "$cals" | jq -e 'any(.[]; .name=="Work")' >/dev/null ||
+    fail "list_nodes(root) missing the discovered Work calendar: $cals"
 
   # read_node a seeded VTODO → its parsed task fields. grep (not jq) since a
   # leaf read may append a raw-bytes link line after the JSON.

@@ -97,6 +97,22 @@ credential-free traversal roots for the `RootProvider` capability
   `RootLister` capability: lazily enumerate a node's children (endpoint →
   calendars → objects) so `list` and the `mcp` server can descend the tree
   without capturing it. An object enumerates to no children (it is a leaf).
+  **This is also the cutting-garden#162 principal/calendar-home discovery
+  answer**, and it predates #162: `ListRoots`/`CaptureRoot`/`ScanForDiff`
+  all share `discoverCalendars` (`client.go`), which PROPFINDs whatever
+  endpoint it's given and returns either that one calendar (`selfIsCalendar`)
+  or every calendar collection beneath it. So a `[[caldav.accounts]]` entry
+  (or a bare `caldav:` CLI arg) can point at EITHER a single calendar OR a
+  calendar-home/principal URL — no config schema distinguishes the two, and
+  no code change was needed to support the home form; a home-level URL is
+  already fully discoverable and capturable, it just wasn't previously
+  exercised by any test with more than one calendar underneath it (fixed by
+  `plugins/caldav/multicalendar_test.go` and the second calendar
+  `cmd/cutting-garden-caldav-testserver` now seeds). Each discovered
+  calendar's `Node.Name` is its DAV `displayname` (`calendarLabel`), which
+  doubles as the cutting-garden#120 friendly-label fix for accounts
+  configured at the home level (a calendar-scoped account's top-level root
+  label is untouched by this — that's #120's remaining, narrower surface).
 - `Plugin.ReadLeaf` (`leaf.go`) — the `LeafReader` capability backing MCP
   `resources/read` on a leaf (#85): GET one object's body and return both
   its parsed `ical` event/task (`objectView`) and the verbatim `.ics`

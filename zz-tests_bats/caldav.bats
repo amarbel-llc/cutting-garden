@@ -23,6 +23,11 @@ teardown() {
 # Capture emits an RFC 0011 caldav-kind protocol receipt: a merkle tree
 # referencing identity, outcome, and the caldav payload node, with the
 # payload listing one caldav-object-v1 ref per resource by native identity.
+# $CALDAV_SOURCE is a calendar-HOME (not a single calendar) advertising two
+# calendars (Personal, Work — see cmd/cutting-garden-caldav-testserver); this
+# also asserts capture at the home level aggregates objects from BOTH,
+# proving the cutting-garden#162 discovery path feeds capture, not just
+# `list`.
 function capture_caldav_emits_rfc0011_tree { # @test
   run_cg capture -format json "$CALDAV_SOURCE"
   assert_success
@@ -46,12 +51,39 @@ function capture_caldav_emits_rfc0011_tree { # @test
   assert_success
   assert_line '! jcs-caldav-payload-v1'
   assert_output --partial 'caldav-object-v1'
-  # Native-identity aliases <collection>/<component>/<UID>, all three seeded
-  # resources, and the count.
+  # Native-identity aliases <collection>/<component>/<UID>, all four seeded
+  # resources across both discovered calendars, and the count.
   assert_output --partial 'cal/VTODO/task1'
   assert_output --partial 'cal/VTODO/task2'
   assert_output --partial 'cal/VEVENT/event1'
-  assert_output --partial '"object_count":3'
+  assert_output --partial 'work/VTODO/task3'
+  assert_output --partial '"object_count":4'
+}
+
+# cutting-garden#162: a caldav account configured at the principal/
+# calendar-home level (which is exactly what $CALDAV_SOURCE is — see
+# start_caldav_server / cmd/cutting-garden-caldav-testserver) is already
+# fully discoverable via the RootLister traversal FDR 0014 specified: `list`
+# on the home PROPFINDs it and returns each calendar collection as a child
+# container, labeled by its DAV `displayname` prop (not a raw path segment —
+# this is also the cutting-garden#120 friendly-label win for accounts
+# configured this way). No config schema change was needed for this to
+# work; this test is the first end-to-end proof against the real binary
+# that N>1 calendars are discovered distinctly, not just N=1.
+function list_discovers_multiple_calendars_at_home { # @test
+  run_cg list "$CALDAV_SOURCE"
+  assert_success
+  assert_output --partial 'Personal'
+  assert_output --partial 'Work'
+  assert_output --partial 'caldav-calendar-v1'
+
+  # Descending the discovered Work calendar (not the home) lists exactly its
+  # own object — proving the discovered child is itself a fully addressable,
+  # independently-descendable capture root (FDR 0014), not just a label.
+  run_cg list "${CALDAV_SOURCE%/dav/}/dav/work/"
+  assert_success
+  assert_output --partial 'task3.ics'
+  refute_output --partial 'task1.ics'
 }
 
 # Round-trip: capture → restore back to the endpoint → diff is clean. The

@@ -320,6 +320,13 @@ filesystem path, and the etag probe avoids transferring unchanged bodies.
   (§Restore) into a generic cross-binding home.
 - [#77](https://github.com/amarbel-llc/cutting-garden/issues/77) — caldav
   MKCALENDAR on restore (create a missing destination collection).
+- [#162](https://github.com/amarbel-llc/cutting-garden/issues/162) — asked
+  for calendar-home discovery (a `[[caldav.accounts]]` entry that lists its
+  calendars instead of requiring each one hand-enumerated); this abstract's
+  "calendar home … or a single calendar collection" wording already covers
+  it, and `discoverCalendars` (shared by capture/diff/`ListRoots`, FDR 0014)
+  already implements it — #162 added the first test exercising N>1
+  discovered calendars, not new discovery behavior.
 - RFC 4791 §9.6 — the `calendar-data` property projection the diff
   freshness probe relies on to fetch UIDs without bodies.
 - `internal/capture_plugin/` — the protocol emitter.

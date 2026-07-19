@@ -1,8 +1,10 @@
 // Package caldavtestserver is a minimal in-memory CalDAV server for tests
-// and the bats lane. It answers PROPFIND (one calendar collection), REPORT
-// calendar-query (calendar-data + getetag, filtered by component), GET
-// (verbatim body), and PUT (records the body and registers it so a
-// subsequent REPORT/GET sees it).
+// and the bats lane. It answers PROPFIND (one calendar collection by
+// default, or several once AddCalendar registers more — the
+// cutting-garden#162 calendar-home discovery scenario), REPORT
+// calendar-query (calendar-data + getetag, filtered by component and scoped
+// to the requested collection), GET (verbatim body), and PUT (records the
+// body and registers it so a subsequent REPORT/GET sees it).
 //
 // It exists because Radicale cannot start under the nix test sandbox (it
 // calls socket.socketpair(AF_UNIX), which the sandbox blocks — see
@@ -26,20 +28,41 @@ import (
 	"sync"
 )
 
+// Calendar describes one calendar collection the server advertises via
+// PROPFIND: its server-absolute path and its `displayname` DAV prop. Used
+// to seed multiple calendars under one calendar-home so the
+// principal/calendar-home discovery path (cutting-garden#162) has a
+// server to discover against — a single-calendar server cannot exercise
+// "PROPFIND the home, get back N distinctly-named children".
+type Calendar struct {
+	Path        string
+	DisplayName string
+}
+
 // Server is a running in-memory CalDAV test server.
 type Server struct {
 	mu        sync.Mutex
 	httptest  *httptest.Server
 	resources map[string]string // href -> verbatim text/calendar body
 	component map[string]string // href -> "VTODO"/"VEVENT"
-	// CalendarPath is the server-absolute path of the single calendar
-	// collection this server advertises (e.g. "/dav/cal/").
+	// CalendarPath is the server-absolute path of the FIRST calendar
+	// collection this server advertises (e.g. "/dav/cal/") — kept for
+	// backward compatibility with single-calendar callers. Calendars holds
+	// every advertised collection, including this one.
 	CalendarPath string
+	// Calendars is every calendar collection this server advertises.
+	// PROPFIND on a non-object, non-self path returns all of them, so a
+	// request at a calendar-home path discovers every entry here (mirroring
+	// discoverCalendars' "base is not itself a calendar" branch); a request
+	// at one calendar's own path is picked out of the same list by the
+	// client-side self-match (see AddCalendar).
+	Calendars []Calendar
 }
 
 // Start launches a server advertising one calendar collection at
 // calendarPath (default "/dav/cal/" when empty) and returns it. Close it
-// when done.
+// when done. Call AddCalendar afterward to seed additional calendars under
+// the same calendar-home for multi-calendar discovery tests.
 func Start(calendarPath string) *Server {
 	if calendarPath == "" {
 		calendarPath = "/dav/cal/"
@@ -48,9 +71,24 @@ func Start(calendarPath string) *Server {
 		resources:    map[string]string{},
 		component:    map[string]string{},
 		CalendarPath: calendarPath,
+		Calendars:    []Calendar{{Path: calendarPath, DisplayName: "Personal"}},
 	}
 	s.httptest = httptest.NewServer(http.HandlerFunc(s.handle))
 	return s
+}
+
+// AddCalendar registers an additional calendar collection at path,
+// advertised with the given displayname. A PROPFIND at a calendar-home
+// path (anything that isn't one calendar's own path) then discovers every
+// registered calendar — the caldav#162 principal/calendar-home discovery
+// scenario. The plugin's traversal (ListRoots) surfaces each discovered
+// calendar's displayname as its Node.Name, which is also the #120 friendly-
+// label win: a discovered calendar is labeled by its DAV displayname rather
+// than an opaque path segment.
+func (s *Server) AddCalendar(path, displayName string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.Calendars = append(s.Calendars, Calendar{Path: path, DisplayName: displayName})
 }
 
 // URL is the server's base http URL (no trailing path).
@@ -95,6 +133,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 func (s *Server) propfind(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	_, isObject := s.resources[r.URL.Path]
+	calendars := append([]Calendar(nil), s.Calendars...)
 	s.mu.Unlock()
 
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
@@ -122,13 +161,23 @@ func (s *Server) propfind(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Fprintf(w, `<?xml version="1.0" encoding="utf-8"?>
-<d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
-  <d:response>
+	// Every other PROPFIND (whether at a calendar-home path or at one
+	// calendar's own path) answers with every registered calendar. The
+	// caller doesn't need path-based filtering here: discoverCalendars
+	// (plugins/caldav/client.go) already picks the self-match out of
+	// whatever the response contains when the request targets one
+	// calendar's own path, and treats every entry as a discovered child
+	// otherwise — so returning the full set both ways exercises both
+	// branches correctly.
+	var sb strings.Builder
+	sb.WriteString(`<?xml version="1.0" encoding="utf-8"?>` + "\n")
+	sb.WriteString(`<d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">` + "\n")
+	for _, cal := range calendars {
+		fmt.Fprintf(&sb, `  <d:response>
     <d:href>%s</d:href>
     <d:propstat>
       <d:prop>
-        <d:displayname>Personal</d:displayname>
+        <d:displayname>%s</d:displayname>
         <d:resourcetype><d:collection/><c:calendar/></d:resourcetype>
         <c:supported-calendar-component-set>
           <c:comp name="VTODO"/>
@@ -138,7 +187,10 @@ func (s *Server) propfind(w http.ResponseWriter, r *http.Request) {
       <d:status>HTTP/1.1 200 OK</d:status>
     </d:propstat>
   </d:response>
-</d:multistatus>`, s.CalendarPath)
+`, cal.Path, cal.DisplayName)
+	}
+	sb.WriteString(`</d:multistatus>`)
+	_, _ = io.WriteString(w, sb.String())
 }
 
 func (s *Server) report(w http.ResponseWriter, r *http.Request) {
@@ -154,6 +206,12 @@ func (s *Server) report(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	hrefs := make([]string, 0, len(s.resources))
 	for href := range s.resources {
+		// Scope to the calendar collection the REPORT targeted: with
+		// multiple calendars registered (AddCalendar), a resource under a
+		// sibling calendar must not appear in this collection's listing.
+		if !strings.HasPrefix(href, r.URL.Path) {
+			continue
+		}
 		if s.component[href] == want {
 			hrefs = append(hrefs, href)
 		}

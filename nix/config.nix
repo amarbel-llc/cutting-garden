@@ -146,6 +146,15 @@ in
       description = ''
         cutting-garden caldav accounts (RFC 0007), rendered to
         `[[caldav.accounts]]` tables in config.toml.
+
+        `url` MAY point at a single calendar collection OR at a
+        principal/calendar-home (a URL that PROPFINDs back multiple
+        calendars) — the plugin auto-DISCOVERS the calendar collections
+        beneath a home-level URL (cutting-garden#162), so one account entry
+        covers every calendar under that principal without hand-enumerating
+        each one. `list`/the `mcp` server then surface each discovered
+        calendar as its own child node, labeled by its server-side
+        displayname.
       '';
     };
 

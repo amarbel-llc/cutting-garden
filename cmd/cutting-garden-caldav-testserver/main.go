@@ -38,6 +38,15 @@ func main() {
 	srv.Seed("/dav/cal/task2.ics", "VTODO", vtodo("task2", "Walk dog"))
 	srv.Seed("/dav/cal/event1.ics", "VEVENT", vevent("event1", "Standup"))
 
+	// A second calendar under the SAME calendar-home ("/dav/"), so a
+	// PROPFIND at $CALDAV_SOURCE (the home, not a specific calendar)
+	// discovers TWO distinctly-named children — the cutting-garden#162
+	// principal/calendar-home discovery scenario, exercised end-to-end by
+	// zz-tests_bats/caldav.bats against the real binary rather than only
+	// the in-process Go fakes.
+	srv.AddCalendar("/dav/work/", "Work")
+	srv.Seed("/dav/work/task3.ics", "VTODO", vtodo("task3", "Submit report"))
+
 	// Handshake: the caldav: source arg (opaque form reaches the plain-HTTP
 	// test server) and the calendar path.
 	fmt.Printf("caldav:%s/dav/ %s\n", srv.URL(), srv.CalendarPath)

@@ -242,6 +242,18 @@ receipts (personal, work); `--split '//caldav-object-v1'` yields three
 
 ## More Information
 
+- amarbel-llc/cutting-garden#162 — confirmed this FDR's caldav
+  `ListRoots`/`discoverCalendars` already covers the "account configured at
+  a principal/calendar-home" case the RFC 0007 config subsystem allows
+  (no schema change, no new discovery code); #162 closed a *test* gap — no
+  prior fixture exercised N>1 discovered calendars — not an implementation
+  gap. See `plugins/caldav/AGENTS.md` for the full account-shape note.
+- amarbel-llc/cutting-garden#120 — the friendly-label follow-on: a calendar
+  discovered via `ListRoots` is already labeled by its DAV `displayname`
+  (`calendarLabel`), which is a de facto fix for #120 whenever an account is
+  configured at the home level; #120's remaining scope is the top-level
+  root label for an account configured directly at one calendar (no
+  PROPFIND happens at that level to learn a displayname).
 - amarbel-llc/cutting-garden#78 — tracking issue.
 - amarbel-llc/cutting-garden#79 — hyphenated / horizontal plugin
   versioning that `NodeType.Tag` adopts.
