@@ -297,6 +297,18 @@ type RestorePlugin = internal.RestorePlugin
 // schemeless). Context is the command's cancelable context.
 type RestoreRequest = internal.RestoreRequest
 
+// RootLabeler is the OPTIONAL capability a RootProvider implements to
+// supply a friendlier display label for one or more of its OWN top-level
+// roots than the framework's default URL-derived label (the last path
+// segment, else the host) — e.g. a caldav account configured directly at
+// a single calendar collection, whose path segment is an opaque UID
+// rather than a human name (cutting-garden#120). It is probed alongside
+// RootProvider by the shared root-aggregation path
+// (command_components.AggregateRootLabels), the one place that still
+// holds the plugin reference before Roots()'s per-plugin URLs are
+// flattened into one list.
+type RootLabeler = internal.RootLabeler
+
 // RootLister is the OPTIONAL traversal capability a Plugin implements
 // when its scheme has meaningful sub-structure a user may want to
 // discover, address, diff, or restore independently (a CalDAV

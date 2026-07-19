@@ -179,7 +179,7 @@ func (*MCP) GetDescription() command.Description {
 func (cmd *MCP) Run(req command.Request) {
 	ctx := req.Context.(errors.Context)
 
-	roots, err := mcpRoots(ctx, req.PopArgs(), cmd.ExcludeSchemes)
+	roots, rootLabels, err := mcpRoots(ctx, req.PopArgs(), cmd.ExcludeSchemes)
 	if err != nil {
 		// A bad endpoint or malformed config is a usage error: the client
 		// misconfigured the server. Fail fast (EX_USAGE) before the
@@ -190,6 +190,12 @@ func (cmd *MCP) Run(req command.Request) {
 
 	provider := newResources(roots, mcpBlobWriter(ctx))
 	tools := newTools(roots, provider)
+	// cutting-garden#120: a friendlier root label (e.g. a calendar-scoped
+	// caldav account's DAV displayname) than the default URL-derived one,
+	// for the no-uri list_nodes listing only — resources/list never
+	// renders roots as a listing (it returns their children), so it needs
+	// no equivalent wiring.
+	tools.rootLabels = rootLabels
 
 	// Warm the facet cache with the configured roots and keep summaries
 	// fresh in the background (RFC 0012 §11.2); ends with ctx.
@@ -236,6 +242,14 @@ func (cmd *MCP) Run(req command.Request) {
 // their roots" behavior. A malformed config is EX_USAGE; an empty config
 // still yields the file plugin's working-directory root.
 //
+// labels is the friendlier per-root display name a plugin's RootLabeler
+// supplies (cutting-garden#120), keyed by root URL String(); it is only
+// ever populated on the aggregated (no-args) branch, since the explicit-args
+// override path names its own endpoints and has no configured account to
+// resolve a label against. nil is a normal, common result (no configured
+// plugin implements RootLabeler, or none resolved a label) — callers treat
+// it exactly like an empty map.
+//
 // excludeSchemes (cutting-garden#148) applies to both branches: an
 // aggregated root whose Scheme is excluded is dropped silently (it simply
 // does not appear, exactly as a plugin with no roots at all would not);
@@ -248,27 +262,28 @@ func (cmd *MCP) Run(req command.Request) {
 // most likely to test by hand.
 func mcpRoots(
 	ctx context.Context, args []string, excludeSchemes []string,
-) ([]*url.URL, error) {
+) (roots []*url.URL, labels map[string]string, err error) {
 	// Config load precedes BOTH branches: explicit root args still
 	// resolve through the scheme registry, and a [[traversal_plugins]]
 	// wire plugin exists there only after registration (RFC 0013 §Host
 	// integration; the same gap `list <uri>` had, found via #140).
 	if err := command_components.LoadAndInjectConfig(os.Stderr); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	excluded := excludedSchemeSet(excludeSchemes)
 	if len(args) > 0 {
 		roots, err := resolveRoots(args, excluded)
 		if err != nil {
-			return nil, errors.BadRequestf("%s", err.Error())
+			return nil, nil, errors.BadRequestf("%s", err.Error())
 		}
-		return roots, nil
+		return roots, nil, nil
 	}
-	roots, err := command_components.AggregateRoots(ctx, os.Stderr)
+	roots, err = command_components.AggregateRoots(ctx, os.Stderr)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return filterExcludedSchemes(roots, excluded), nil
+	labels = command_components.AggregateRootLabels(ctx, os.Stderr)
+	return filterExcludedSchemes(roots, excluded), labels, nil
 }
 
 // resolveRoots parses each endpoint argument and verifies its scheme has

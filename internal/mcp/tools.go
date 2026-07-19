@@ -70,6 +70,12 @@ type Tools struct {
 	// ReadResource delegation (which has no filter/bare parameters of its
 	// own) and drive ListRoots/EnrichedLister themselves.
 	resolveLister resolveFunc
+	// rootLabels overrides a root's display name in the no-uri list_nodes
+	// listing (cutting-garden#120): keyed by the root URL's String() form,
+	// from command_components.AggregateRootLabels. nil (the test-harness
+	// default) means every root falls back to rootLabel's bare URL
+	// derivation, exactly as before #120.
+	rootLabels map[string]string
 }
 
 // creatorResolveFunc mirrors mutatorResolveFunc for the
@@ -521,7 +527,7 @@ func (t *Tools) call(
 			for _, root := range t.roots {
 				views = append(views, nodeView{
 					URI:       root.String(),
-					Name:      rootLabel(root),
+					Name:      t.rootDisplayLabel(root),
 					Container: true,
 				})
 			}
@@ -941,8 +947,8 @@ func collectSchema(plugins []cutting_garden_plugins.Plugin) []schemeSchema {
 // rootLabel derives a short display name for a root URI: the last path
 // segment, else the host, else the full URI. Mirrors list.rootLabel so the
 // `list` command and the list_nodes tool label the entry points the same
-// way. A friendlier per-calendar label (the server displayname or the
-// configured account name) is a follow-up (#120).
+// way. The framework-side fallback when no plugin supplies a friendlier
+// label (see rootDisplayLabel, cutting-garden#120).
 func rootLabel(u *url.URL) string {
 	if trimmed := strings.TrimRight(u.Path, "/"); trimmed != "" {
 		return path.Base(trimmed)
@@ -951,6 +957,17 @@ func rootLabel(u *url.URL) string {
 		return u.Host
 	}
 	return u.String()
+}
+
+// rootDisplayLabel resolves a root's display name for the no-uri
+// list_nodes listing: the RootLabeler-supplied friendly label
+// (cutting-garden#120, e.g. a caldav calendar's DAV displayname) when
+// present, else the framework's default URL-derived rootLabel().
+func (t *Tools) rootDisplayLabel(u *url.URL) string {
+	if label, ok := t.rootLabels[u.String()]; ok && label != "" {
+		return label
+	}
+	return rootLabel(u)
 }
 
 // firstScheme is the plugin's first non-empty scheme — the name a user types

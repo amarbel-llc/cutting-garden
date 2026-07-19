@@ -179,6 +179,33 @@ type RootProvider interface {
 	Roots(ctx context.Context) ([]*url.URL, error)
 }
 
+// RootLabeler is the OPTIONAL capability a RootProvider implements to
+// supply a friendlier display label for one or more of its OWN top-level
+// roots than the framework's default URL-derived label (the last path
+// segment, else the host) — e.g. a caldav account configured directly at
+// a single calendar collection, whose path segment is an opaque UID
+// rather than a human name (cutting-garden#120). It is probed alongside
+// RootProvider by the shared root-aggregation path
+// (command_components.AggregateRootLabels), the one place that still
+// holds the plugin reference before Roots()'s per-plugin URLs are
+// flattened into one list.
+type RootLabeler interface {
+	RootProvider
+
+	// RootLabels returns a label for zero or more of the plugin's own
+	// roots (as returned by Roots()), keyed by the root URL's String()
+	// form. A key absent from the result — or an empty label — falls
+	// back to the framework's default label derivation for that root; a
+	// partial map is fine. Resolving a label MAY cost a network round
+	// trip (e.g. a PROPFIND); a resolution failure MUST be non-fatal
+	// (cutting-garden#165: a plugin's trouble degrades, it never
+	// cascades) — return whatever labels succeeded plus a nil error, or
+	// a nil map plus a non-nil error. Either way the caller treats the
+	// result as "use the default for anything missing," never as
+	// aborting the whole root listing.
+	RootLabels(ctx context.Context) (map[string]string, error)
+}
+
 // LeafContent is one leaf node's fetched content, returned by ReadLeaf. It
 // carries two views of the same object: a structured, JSON-marshalable
 // projection a client reads (the parsed fields), and the verbatim source

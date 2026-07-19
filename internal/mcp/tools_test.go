@@ -743,3 +743,42 @@ func TestCallTool_ListNodesRootsAndContainer(t *testing.T) {
 		t.Errorf("list_nodes(uri) = %+v, want the container's child", res.Content)
 	}
 }
+
+// TestCallTool_ListNodesRootsUsesRootLabelOverride pins cutting-garden#120:
+// when a root's URI has a friendlier label supplied (e.g. by
+// command_components.AggregateRootLabels from a caldav account's DAV
+// displayname), the no-uri roots listing uses it instead of the bare
+// URL-derived rootLabel() fallback — an opaque path segment like a
+// calendar UID never has to leak into the entry-point listing when a
+// friendlier name is available. A root with NO override still falls back
+// to the default derivation, so labeling is per-root, not all-or-nothing.
+func TestCallTool_ListNodesRootsUsesRootLabelOverride(t *testing.T) {
+	tools := newFakeTools(t, &fakeMutator{},
+		"faketest://h/45d37e8a-uuid/", "faketest://h/cal-b/")
+	tools.rootLabels = map[string]string{
+		"faketest://h/45d37e8a-uuid/": "My Personal Calendar",
+	}
+
+	res, err := tools.CallTool(context.Background(), "list_nodes", json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("transport error: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("list_nodes() errored: %+v", res.Content)
+	}
+	var views []nodeView
+	if err := json.Unmarshal([]byte(res.Content[0].Text), &views); err != nil {
+		t.Fatalf("list_nodes() output is not a node-view array: %v (%q)", err, res.Content[0].Text)
+	}
+	byURI := map[string]nodeView{}
+	for _, v := range views {
+		byURI[v.URI] = v
+	}
+	if got := byURI["faketest://h/45d37e8a-uuid/"].Name; got != "My Personal Calendar" {
+		t.Errorf("labeled root Name = %q, want the RootLabeler override %q",
+			got, "My Personal Calendar")
+	}
+	if got := byURI["faketest://h/cal-b/"].Name; got != "cal-b" {
+		t.Errorf("unlabeled root Name = %q, want the default derivation %q", got, "cal-b")
+	}
+}

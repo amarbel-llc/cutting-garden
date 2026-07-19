@@ -197,3 +197,37 @@ func AggregateRoots(ctx context.Context, warnw io.Writer) ([]*url.URL, error) {
 	}
 	return out, nil
 }
+
+// AggregateRootLabels probes every registered plugin implementing
+// RootLabeler (cutting-garden#120) and merges their root->label maps into
+// one, keyed by each root URL's String() form — the SAME key AggregateRoots'
+// URLs stringify to, so a caller pairs them by a plain map lookup. Call
+// LoadAndInjectConfig first, exactly as AggregateRoots.
+//
+// A plugin's label resolution failure is a non-fatal warning, mirroring
+// AggregateRoots' own per-plugin fault isolation (cutting-garden#165): that
+// plugin's roots simply keep the framework's default label derivation
+// rather than aborting the whole aggregation. A returned empty-string label
+// for a key is dropped (treated the same as the key being absent), so a
+// RootLabeler need not filter its own "no label for this one" entries.
+func AggregateRootLabels(ctx context.Context, warnw io.Writer) map[string]string {
+	labels := map[string]string{}
+	for _, plugin := range cutting_garden_plugins.RegisteredPlugins() {
+		labeler, ok := plugin.(cutting_garden_plugins.RootLabeler)
+		if !ok {
+			continue
+		}
+		got, err := labeler.RootLabels(ctx)
+		if err != nil && warnw != nil {
+			fmt.Fprintf(warnw,
+				"warning: plugin %v: root labels unavailable: %s\n",
+				labeler.Schemes(), err)
+		}
+		for k, v := range got {
+			if v != "" {
+				labels[k] = v
+			}
+		}
+	}
+	return labels
+}

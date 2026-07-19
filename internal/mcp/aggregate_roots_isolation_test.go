@@ -19,6 +19,8 @@ package mcp
 import (
 	"bytes"
 	"context"
+	"fmt"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -108,5 +110,75 @@ func TestAggregateRoots_IsolatesFailingWirePlugin(t *testing.T) {
 	}
 	if !strings.Contains(warnings, "cg165-crash") {
 		t.Errorf("warnings %q do not mention the crashing plugin", warnings)
+	}
+}
+
+// labelerFake is a minimal RootProvider + RootLabeler fake for
+// AggregateRootLabels' cutting-garden#165 fault-isolation proof
+// (cutting-garden#120's aggregator). Unlike TestAggregateRoots_
+// IsolatesFailingWirePlugin above, no real subprocess is needed here:
+// AggregateRootLabels' isolation logic doesn't care how a plugin's error
+// arrives, only that one plugin's RootLabels failure must not crowd out
+// another's successful labels.
+type labelerFake struct {
+	scheme string
+	label  string
+	fail   bool
+}
+
+func (f labelerFake) Schemes() []string { return []string{f.scheme} }
+func (f labelerFake) TypeTag() string   { return "cutting_garden-test-" + f.scheme + "-v1" }
+
+func (f labelerFake) Types() []cutting_garden_plugins.NodeType {
+	return []cutting_garden_plugins.NodeType{{Tag: f.scheme + "-leaf-v1"}}
+}
+
+func (f labelerFake) ListRoots(
+	context.Context, *url.URL,
+) ([]cutting_garden_plugins.Node, error) {
+	return nil, nil
+}
+
+func (f labelerFake) Roots(context.Context) ([]*url.URL, error) {
+	return []*url.URL{f.rootURL()}, nil
+}
+
+func (f labelerFake) RootLabels(context.Context) (map[string]string, error) {
+	if f.fail {
+		return nil, fmt.Errorf("labeler for %q is broken", f.scheme)
+	}
+	return map[string]string{f.rootURL().String(): f.label}, nil
+}
+
+func (f labelerFake) rootURL() *url.URL {
+	return &url.URL{Scheme: f.scheme, Path: "/root"}
+}
+
+var _ cutting_garden_plugins.RootLabeler = labelerFake{}
+
+// TestAggregateRootLabels_IsolatesFailingLabeler mirrors
+// TestAggregateRoots_IsolatesFailingWirePlugin at the RootLabels layer
+// (cutting-garden#120): a plugin whose RootLabels call errors must not
+// abort the whole aggregation or crowd out another plugin's successfully
+// resolved labels — its roots simply keep the framework's default label
+// derivation instead, with a warning naming the plugin.
+func TestAggregateRootLabels_IsolatesFailingLabeler(t *testing.T) {
+	healthy := labelerFake{scheme: "cg120-healthy", label: "Healthy Label"}
+	broken := labelerFake{scheme: "cg120-broken", fail: true}
+	cutting_garden_plugins.MustRegisterScheme(healthy)
+	cutting_garden_plugins.MustRegisterScheme(broken)
+
+	var warnBuf bytes.Buffer
+	labels := command_components.AggregateRootLabels(context.Background(), &warnBuf)
+
+	if got := labels[healthy.rootURL().String()]; got != "Healthy Label" {
+		t.Errorf("labels[healthy] = %q, want %q (a broken labeler must not crowd out a healthy one)",
+			got, "Healthy Label")
+	}
+	if _, ok := labels[broken.rootURL().String()]; ok {
+		t.Errorf("broken labeler contributed a label: %+v", labels)
+	}
+	if !strings.Contains(warnBuf.String(), "cg120-broken") {
+		t.Errorf("warnings %q do not mention the broken labeler", warnBuf.String())
 	}
 }
