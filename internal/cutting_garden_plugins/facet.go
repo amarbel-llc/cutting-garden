@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"sort"
 	"strings"
 	"time"
 )
@@ -180,6 +181,93 @@ func ParseFacetFilter(raw string) (FacetFilter, error) {
 		filter = append(filter, FacetPredicate{Dimension: dim, Value: val})
 	}
 	return filter, nil
+}
+
+// Validate checks f's predicates against dims — the declared facet schema
+// (the NodeTypeFacets a plugin's FacetDescriber returns, typically the union
+// across every type a summarized subtree may contain): an undeclared
+// dimension, or a value outside a CLOSED dimension's declared set, is an
+// actionable error naming the mistake and the valid options, instead of
+// silently producing a filter that matches nothing — indistinguishable from
+// a typo (cutting-garden#161). An OPEN dimension (Values == nil) accepts any
+// value; only the dimension name is checked for it, since its domain is
+// discovered at enumeration, not declared up front. dims == nil (a plugin
+// with no FacetDescriber, or one that declares no dimensions at all) means
+// there is no schema to validate against, so any filter passes through
+// unchecked — exactly today's behavior. See RFC 0012 §6.
+func (f FacetFilter) Validate(dims []NodeTypeFacets) error {
+	if len(f) == 0 || len(dims) == 0 {
+		return nil
+	}
+	for _, pred := range f {
+		dim, ok := findFacetDimension(dims, pred.Dimension)
+		if !ok {
+			return fmt.Errorf(
+				"filter dimension %q is not declared; valid dimensions: %s "+
+					"(see describe_node_types)",
+				pred.Dimension, strings.Join(declaredDimensionKeys(dims), ", "),
+			)
+		}
+		if dim.Values == nil {
+			// Open domain: values are discovered at enumeration, not
+			// declared up front, so any value is accepted.
+			continue
+		}
+		if !containsFacetValue(dim.Values, pred.Value) {
+			return fmt.Errorf(
+				"filter value %q is not valid for dimension %q; valid "+
+					"values: %s (see describe_node_types)",
+				pred.Value, pred.Dimension,
+				strings.Join(declaredValueKeys(dim.Values), ", "),
+			)
+		}
+	}
+	return nil
+}
+
+// findFacetDimension looks up key across every NodeTypeFacets in dims — a
+// filter predicate names only a dimension key, not the node type that
+// declares it, since a summarized subtree may fold several leaf types
+// together (RFC 0012 §4.1).
+func findFacetDimension(
+	dims []NodeTypeFacets, key string,
+) (FacetDimension, bool) {
+	for _, ntf := range dims {
+		for _, d := range ntf.Dimensions {
+			if d.Key == key {
+				return d, true
+			}
+		}
+	}
+	return FacetDimension{}, false
+}
+
+// declaredDimensionKeys is every distinct dimension key across dims, sorted
+// for a deterministic, scannable error message.
+func declaredDimensionKeys(dims []NodeTypeFacets) []string {
+	seen := map[string]bool{}
+	var keys []string
+	for _, ntf := range dims {
+		for _, d := range ntf.Dimensions {
+			if !seen[d.Key] {
+				seen[d.Key] = true
+				keys = append(keys, d.Key)
+			}
+		}
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// declaredValueKeys projects a closed dimension's declared values to their
+// keys, preserving declaration order (typically meaningful, e.g. due_band's
+// urgency-first ordering) rather than sorting.
+func declaredValueKeys(values []FacetValue) []string {
+	keys := make([]string, len(values))
+	for i, v := range values {
+		keys[i] = v.Key
+	}
+	return keys
 }
 
 // FacetCounter is the OPTIONAL capability that returns a node's hoisted facet

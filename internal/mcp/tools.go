@@ -134,12 +134,12 @@ const (
 		`"uri":{"type":"string","description":"the container/prefix to list children of; omit to list the configured roots (the entry points)"},` +
 		`"limit":{"type":"integer","minimum":0,"description":"max number of child nodes to return (optional). A response SHORTER than limit means you have reached the end of the listing; a full-length response may or may not be the end — pass a larger offset to check."},` +
 		`"offset":{"type":"integer","minimum":0,"description":"number of child nodes to skip before applying limit (optional, default 0). An offset past the end yields an empty array, not an error."},` +
-		`"filter":{"type":"string","description":"optional comma-separated dimension=value predicates (AND-composed, same grammar as read_facets/list --filter, e.g. \"due_band=overdue\") narrowing the returned nodes to those matching. When present the result is wrapped as {nodes, filterApplied, filterMode} instead of a bare array — filterApplied is false (filterMode \"none\") on the rare scheme with no way to filter, so the caller always knows whether the returned nodes are actually narrowed."},` +
+		`"filter":{"type":"string","description":"optional comma-separated dimension=value predicates (AND-composed), e.g. \"due_band=overdue\" or \"status=CONFIRMED,year=2026\" — the SAME grammar and dimension keys as read_facets. Call describe_node_types first to see a type's declared facets: each dimension's key and, when closed=true, its complete valid values array (values); an open dimension (closed=false) accepts any value, discovered at enumeration. An undeclared dimension or an out-of-domain closed-dimension value is a REJECTED, actionable error naming what was wrong — never a silent empty/unfiltered result. When present the result is wrapped as {nodes, filterApplied, filterMode} instead of a bare array — filterApplied is false (filterMode \"none\") on the rare scheme with no way to filter, so the caller always knows whether the returned nodes are actually narrowed."},` +
 		`"bare":{"type":"boolean","description":"opt out of the default enrichment: true returns the cheap pre-enrichment shape {uri,name,type,container,mimeType} with no facets/fields, skipping any extra data-bearing fetch a plugin would otherwise perform (e.g. caldav skips its per-object body fetch, staying hrefs-only). Combining bare with filter still fetches whatever the filter requires; only the OUTPUT is stripped down. Default false: every entry carries its facets and any plugin-declared human-readable fields (e.g. summary/due/status) inline."}}}`
 	readFacetsSchema = `{"type":"object","required":["uri"],` +
 		`"properties":{` +
 		`"uri":{"type":"string","description":"the container node URI to summarize"},` +
-		`"filter":{"type":"string","description":"optional comma-separated dimension=value predicates (AND-composed, same grammar as list --filter) narrowing the summary, e.g. \"read=false\" or \"status=CONFIRMED,year=2026\""}}}`
+		`"filter":{"type":"string","description":"optional comma-separated dimension=value predicates (AND-composed), e.g. \"due_band=overdue\" or \"status=CONFIRMED,year=2026\" — same grammar as list_nodes/list --filter. Call describe_node_types first to see this scheme's declared facet dimensions: each dimension's key and, when closed=true, its complete valid values array (values), e.g. due_band's values are [\"overdue\",\"today\",\"this-week\",\"later\"]; an open dimension (closed=false, e.g. status) accepts any value, discovered at enumeration rather than declared up front. An undeclared dimension, or a value outside a closed dimension's declared set, is a REJECTED, actionable error naming what was wrong and the valid options — never a silent {facets:{}} indistinguishable from a genuine zero-match filter."}}}`
 )
 
 // toolDefs is the V1 tool catalogue this server advertises: the read-only
@@ -164,10 +164,13 @@ func readToolDefs() []protocol.ToolV1 {
 			Name: mcp_tool_perms.ToolDescribeNodeTypes,
 			Description: "List the node types each scheme exposes (tag, container vs " +
 				"leaf, mimetype), the facet dimensions and listing fields a type may " +
-				"carry in an enriched listing (see list_nodes), and, for writable " +
-				"types, the body payload create_node/put_node accept, with a " +
-				"concrete example. Read-only; call it first to learn a type tag and " +
-				"body shape before create_node.",
+				"carry in an enriched listing (see list_nodes) — including, for a " +
+				"CLOSED dimension (closed:true), its complete valid values array so " +
+				"a read_facets/list_nodes filter value never has to be guessed — " +
+				"and, for writable types, the body payload create_node/put_node " +
+				"accept, with a concrete example. Read-only; call it first to learn " +
+				"a type tag, body shape, and filterable dimensions before create_node " +
+				"or a filtered read_facets/list_nodes call.",
 			InputSchema: json.RawMessage(describeNodeTypesSchema),
 			Annotations: annotationFor(mcp_tool_perms.ToolDescribeNodeTypes),
 		},
@@ -207,11 +210,14 @@ func readToolDefs() []protocol.ToolV1 {
 				"its children: it orients you on size and shape (how many, of what " +
 				"kind) cheaply, and a filter lets you narrow the counts to a slice " +
 				"you care about before deciding whether/how to browse further. With " +
-				"no filter, serves the memoized summary (see describe_node_types for " +
-				"a scheme's declared dimensions); filter is the same comma-separated " +
-				"dimension=value grammar as `list --filter` (e.g. \"read=false\"), " +
-				"AND-composed, and computes a fresh narrowed summary directly. " +
-				"Errors when the URI's scheme declares no facets.",
+				"no filter, serves the memoized summary; filter is a comma-separated " +
+				"dimension=value grammar, AND-composed (e.g. \"due_band=overdue\"), " +
+				"and computes a fresh narrowed summary directly. Call " +
+				"describe_node_types FIRST to see each type's declared dimensions " +
+				"and, for closed ones, their complete valid values — an undeclared " +
+				"dimension or an out-of-domain value is a rejected, actionable " +
+				"error, not a silent empty result. Errors when the URI's scheme " +
+				"declares no facets.",
 			InputSchema: json.RawMessage(readFacetsSchema),
 			Annotations: annotationFor(mcp_tool_perms.ToolReadFacets),
 		},
@@ -650,6 +656,19 @@ func (t *Tools) listNodesURI(
 	if err != nil {
 		return "", err
 	}
+
+	// Validate against the plugin's declared facet schema BEFORE listing
+	// (cutting-garden#161, same rule read_facets applies): an undeclared
+	// dimension or an out-of-domain closed-dimension value is rejected
+	// with an actionable error rather than silently narrowing to nothing.
+	var dims []cutting_garden_plugins.NodeTypeFacets
+	if describer, ok := lister.(cutting_garden_plugins.FacetDescriber); ok {
+		dims = describer.DescribeFacets()
+	}
+	if verr := filter.Validate(dims); verr != nil {
+		return "", errors.Wrapf(verr, "list_nodes %s (filtered)", uri)
+	}
+
 	nodes, mode, err := enrichedListing(ctx, lister, u, filter)
 	if err != nil {
 		return "", errors.Wrapf(err, "list %s (filtered)", uri)
@@ -798,6 +817,13 @@ type facetDimSchema struct {
 	Kind   string `json:"kind"`
 	Multi  bool   `json:"multi,omitempty"`
 	Closed bool   `json:"closed,omitempty"`
+	// Values lists the dimension's complete value domain, in the plugin's
+	// declared order, when Closed is true (cutting-garden#161) — e.g.
+	// ["overdue","today","this-week","later"] for due_band — so a caller
+	// can look up a valid filter value here instead of guessing one.
+	// Absent when Closed is false: an open dimension's values are
+	// discovered at enumeration, not known up front.
+	Values []string `json:"values,omitempty"`
 	// RevalidateAfterSeconds, when nonzero, marks the dimension VOLATILE
 	// (RFC 0012 §11.3): its bucketing is a function of (data, now), so a
 	// memoized summary containing it expires after this many seconds even
@@ -806,18 +832,28 @@ type facetDimSchema struct {
 }
 
 // facetDimSchemas projects a plugin's declared FacetDimensions into their
-// describe_node_types view. A non-nil Values list marks a closed domain.
+// describe_node_types view. A non-nil Values list marks a closed domain and
+// is surfaced verbatim (cutting-garden#161) so a filter value is
+// discoverable rather than guessed.
 func facetDimSchemas(
 	dims []cutting_garden_plugins.FacetDimension,
 ) []facetDimSchema {
 	out := make([]facetDimSchema, 0, len(dims))
 	for _, d := range dims {
+		var values []string
+		if d.Values != nil {
+			values = make([]string, len(d.Values))
+			for i, v := range d.Values {
+				values[i] = v.Key
+			}
+		}
 		out = append(out, facetDimSchema{
 			Key:                    d.Key,
 			Label:                  d.Label,
 			Kind:                   string(d.Kind),
 			Multi:                  d.Multi,
 			Closed:                 d.Values != nil,
+			Values:                 values,
 			RevalidateAfterSeconds: int64(d.RevalidateAfter.Seconds()),
 		})
 	}

@@ -365,6 +365,21 @@ func (r *Resources) ReadFacets(
 		)
 	}
 
+	// Validate an explicit filter against the plugin's declared schema
+	// BEFORE computing anything (cutting-garden#161): an undeclared
+	// dimension or an out-of-domain closed-dimension value is rejected
+	// with an actionable error, so a filter that genuinely matches
+	// nothing stays distinguishable from a typo'd one.
+	if len(filter) > 0 {
+		var dims []cutting_garden_plugins.NodeTypeFacets
+		if describer, ok := lister.(cutting_garden_plugins.FacetDescriber); ok {
+			dims = describer.DescribeFacets()
+		}
+		if verr := filter.Validate(dims); verr != nil {
+			return nil, errors.Wrapf(verr, "read_facets %s", uri)
+		}
+	}
+
 	if len(filter) == 0 {
 		view, ferr := r.facets.serve(ctx, lister, uri, u)
 		if ferr != nil {

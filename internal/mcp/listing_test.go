@@ -379,6 +379,54 @@ func TestCallTool_ListNodesFilterOnRootsIsToolError(t *testing.T) {
 	}
 }
 
+// TestCallTool_ListNodesFilterUndeclaredDimensionIsToolError pins
+// cutting-garden#161's list_nodes-side validation: a filter naming a
+// dimension the plugin never declared via FacetDescriber is a rejected,
+// actionable tool error (not a silent unfiltered/empty listing) — the same
+// rule read_facets applies, so the two tools share one mental model for
+// "did my filter apply?" (see TestResourcesReadFacets_UndeclaredDimensionIsRejected).
+func TestCallTool_ListNodesFilterUndeclaredDimensionIsToolError(t *testing.T) {
+	tools := newFakeTools(t, &fakeMutator{}, "faketest://h/")
+	tools.resolveLister = listerResolve(fakeFacetLister{})
+
+	res, err := tools.CallTool(context.Background(), "list_nodes",
+		json.RawMessage(`{"uri":"faketest://h/work","filter":"bogus=x"}`))
+	if err != nil {
+		t.Fatalf("transport error: %v", err)
+	}
+	if !res.IsError {
+		t.Fatal("list_nodes(filter=bogus=x) on a scheme with no such dimension: want IsError, got success")
+	}
+	msg := res.Content[0].Text
+	if !strings.Contains(msg, "bogus") || !strings.Contains(msg, "status") {
+		t.Errorf("error %q does not name the bad dimension and the valid ones", msg)
+	}
+}
+
+// TestCallTool_ListNodesFilterClosedDimensionInvalidValueIsToolError pins
+// the closed-domain half of cutting-garden#161: a value outside a CLOSED
+// dimension's declared set (fakeFacetLister's "read" ∈ {read,unread}) is
+// rejected naming the valid values, distinguishing a bad guess from a
+// listing that genuinely has no matches.
+func TestCallTool_ListNodesFilterClosedDimensionInvalidValueIsToolError(t *testing.T) {
+	tools := newFakeTools(t, &fakeMutator{}, "faketest://h/")
+	tools.resolveLister = listerResolve(fakeFacetLister{})
+
+	res, err := tools.CallTool(context.Background(), "list_nodes",
+		json.RawMessage(`{"uri":"faketest://h/work","filter":"read=false"}`))
+	if err != nil {
+		t.Fatalf("transport error: %v", err)
+	}
+	if !res.IsError {
+		t.Fatal("list_nodes(filter=read=false) on a closed dimension not " +
+			"containing \"false\": want IsError, got success")
+	}
+	msg := res.Content[0].Text
+	if !strings.Contains(msg, "false") || !strings.Contains(msg, "unread") {
+		t.Errorf("error %q does not name the bad value and the valid ones", msg)
+	}
+}
+
 // TestAcceptance_OneFilteredListNodesCallReturnsMatchingEnrichedNodes pins
 // the #160 collapse in spirit: on a multi-item container, ONE filtered
 // list_nodes call returns exactly the matching nodes with enough inline

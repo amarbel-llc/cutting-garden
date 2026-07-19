@@ -434,6 +434,69 @@ func TestResourcesReadFacets_FilterErrorIsFailFast(t *testing.T) {
 	}
 }
 
+// TestResourcesReadFacets_UndeclaredDimensionIsRejected pins
+// cutting-garden#161: a filter naming a dimension the plugin never declared
+// via FacetDescriber is a REJECTED, actionable error — never a silent
+// {facets:{}} indistinguishable from a filter that genuinely matches
+// nothing. The error names both the bad dimension and the declared ones.
+func TestResourcesReadFacets_UndeclaredDimensionIsRejected(t *testing.T) {
+	r := newFakeFacetResources(t, "faketest://h/")
+
+	_, err := r.ReadFacets(context.Background(), "faketest://h/work",
+		cutting_garden_plugins.FacetFilter{{Dimension: "bogus", Value: "x"}})
+	if err == nil {
+		t.Fatal("filter naming an undeclared dimension: want error, got nil")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "bogus") {
+		t.Errorf("error %q does not name the bad dimension", msg)
+	}
+	if !strings.Contains(msg, "status") || !strings.Contains(msg, "read") {
+		t.Errorf("error %q does not list the declared dimensions", msg)
+	}
+}
+
+// TestResourcesReadFacets_ClosedDimensionInvalidValueIsRejected pins the
+// closed-domain half of cutting-garden#161: a value outside a CLOSED
+// dimension's declared set ("read" ∈ {read,unread} per fakeFacetLister) is
+// a rejected, actionable error naming the valid values — the exact
+// ergonomic study finding (a guessed "read=false" must not silently return
+// an empty summary).
+func TestResourcesReadFacets_ClosedDimensionInvalidValueIsRejected(t *testing.T) {
+	r := newFakeFacetResources(t, "faketest://h/")
+
+	_, err := r.ReadFacets(context.Background(), "faketest://h/work",
+		cutting_garden_plugins.FacetFilter{{Dimension: "read", Value: "false"}})
+	if err == nil {
+		t.Fatal("filter with an out-of-domain closed-dimension value: want error, got nil")
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, "false") {
+		t.Errorf("error %q does not name the bad value", msg)
+	}
+	if !strings.Contains(msg, "read") || !strings.Contains(msg, "unread") {
+		t.Errorf("error %q does not list the valid values", msg)
+	}
+}
+
+// TestResourcesReadFacets_OpenDimensionAcceptsAnyValue pins that an OPEN
+// dimension (status, Values == nil) is checked only by dimension name — any
+// value passes validation (its domain is discovered at enumeration, not
+// declared up front), so the guessed-value ergonomics fix does not turn
+// open dimensions into a second guessing game.
+func TestResourcesReadFacets_OpenDimensionAcceptsAnyValue(t *testing.T) {
+	r := newFakeFacetResources(t, "faketest://h/")
+
+	view, err := r.ReadFacets(context.Background(), "faketest://h/work",
+		cutting_garden_plugins.FacetFilter{{Dimension: "status", Value: "ANYTHING"}})
+	if err != nil {
+		t.Fatalf("open-dimension filter with an undeclared value: want no error, got %v", err)
+	}
+	if view == nil {
+		t.Fatal("view is nil")
+	}
+}
+
 // TestResourcesReadFacets_NilFilterComputeFailureDegrades pins that the
 // nil-filter (implicit-surface-mirroring) path degrades a cold-cache compute
 // failure to a stale, error-noted view rather than failing the call — the
@@ -481,6 +544,19 @@ func TestCollectSchema_IncludesFacetDimensions(t *testing.T) {
 	}
 	if !byKey["read"].Closed {
 		t.Error("read declares Values; Closed must be true")
+	}
+
+	// cutting-garden#161: a closed dimension's complete value domain is
+	// surfaced verbatim, so a filter value is discoverable rather than
+	// guessed; an open dimension carries none (its values are discovered
+	// at enumeration).
+	if got := byKey["status"].Values; got != nil {
+		t.Errorf("status (open) Values = %+v, want nil", got)
+	}
+	wantReadValues := []string{"read", "unread"}
+	if got := byKey["read"].Values; len(got) != len(wantReadValues) ||
+		got[0] != wantReadValues[0] || got[1] != wantReadValues[1] {
+		t.Errorf("read (closed) Values = %+v, want %+v", got, wantReadValues)
 	}
 }
 
