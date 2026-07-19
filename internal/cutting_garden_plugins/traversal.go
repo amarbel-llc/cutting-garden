@@ -91,6 +91,18 @@ type Node struct {
 	// contributes nothing to any facet; several values under one key is a
 	// multi-valued contribution. MUST be free of credentials or secrets.
 	Facets map[string][]FacetValue
+	// Fields is the node's declared human-readable listing projection, keyed
+	// by ListingField.Key — a plugin-declared "here is what this node is"
+	// view (e.g. caldav: summary/due/status/dtstart) distinct from Facets'
+	// bucketed membership (cutting-garden#160). nil means the node
+	// contributes no extra listing fields (a plugin may rely on Facets
+	// alone, or on neither). Each value MUST be JSON-marshalable and free
+	// of credentials or secrets. Declared via ListingFieldsDescriber;
+	// populated wherever the plugin already has the data in hand — cheaply
+	// during ListRoots when possible, or via the one-shot EnrichedLister
+	// capability when it requires a data-bearing fetch ListRoots itself
+	// deliberately keeps cheap (caldav's hrefs-only listing).
+	Fields map[string]any
 }
 
 // URIString renders the node's URI, tolerating a nil URL (rendered as
