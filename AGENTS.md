@@ -47,8 +47,10 @@ primitive (`RootLister`, FDR 0014): `list` prints a node's child nodes,
 `mcp` serves them over the Model Context Protocol (FDR 0015). A plugin MAY
 also declare **facets** (RFC 0012, FDR 0021) — grouped-count summaries the
 framework computes over a node type's children, surfaced by `list --facets`,
-the `mcp` container read's `facets` block, and `describe_node_types`; caldav
-is the reference (`FacetDescriber` + a one-shot `FacetCounter`). Both, with
+the `mcp` container read's `facets` block, the `mcp` `read_facets` tool (the
+tools-only-client path resources/read cannot reach, cutting-garden#151), and
+`describe_node_types`; caldav is the reference (`FacetDescriber` + a one-shot
+`FacetCounter`). Both, with
 no URI, aggregate every plugin's **roots** (the `RootProvider` capability)
 from the **config subsystem** (RFC 0007): a tommy-codegen'd
 `$XDG_CONFIG_HOME/cutting-garden/config.toml` of per-plugin named accounts

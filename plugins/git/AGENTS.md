@@ -129,12 +129,16 @@ separately), not a traversal omission.
 
 `Plugin.DescribeFacets()` declares one closed categorical dimension,
 `default` (RFC 0012), populated during the same `ListContext` call from
-the advertised symbolic `HEAD` — no per-node re-fetch. No
-`FacetCounter`/`FacetVersioner` is implemented: the tree is exactly one
-level (endpoint → branch leaves) with no recursion, so the framework's
-generic fold (RFC 0012 §4.2) already computes the hoisted summary from
-this single `ListRoots` call — implementing a one-shot summarizer would
-duplicate it for zero savings.
+the advertised symbolic `HEAD` — no per-node re-fetch. `Plugin.FacetCounts`
+(RFC 0012 §4.1/§5) implements the one-shot `FacetCounter` path, reusing the
+SAME `listRemoteBranches` call `ListRoots` makes — no extra wire round
+trip. This is a correction of an earlier (never-true) claim here that the
+framework's §4.2 generic fold covered this dimension: that fold is not
+implemented anywhere in this codebase (cutting-garden#124), so before
+`FacetCounts` existed the dimension surfaced NOWHERE despite being
+declared — found and fixed as part of #124's tracer slice. `FacetVersioner`
+remains unimplemented: a git endpoint has no cheap change-token analog
+(unlike caldav's ctag), so the mcp facet cache falls back to its TTL.
 
 `Plugin.ReadLeaf()` fetches a branch leaf's cheap identity (resolved
 branch name + tip oid) via `listRemoteTip`, the same freshness-probe

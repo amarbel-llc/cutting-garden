@@ -23,9 +23,13 @@
 //     leaf instead reads as the object's parsed fields (#85).
 //   - tools/call — the same tree as tools, for clients that render only
 //     tools, not resources (the claude.ai web UI; circus#29). Read-only:
-//     list_nodes (browse children; omit uri for the roots), read_node
-//     (read one node, = resources/read), describe_node_types (schema
-//     discovery). Write (FDR 0020, plugins implementing NodeMutator):
+//     list_nodes (browse children; omit uri for the roots, optional
+//     limit/offset to page a large listing, cutting-garden#86), read_node
+//     (read one node, = resources/read), read_facets (a container's
+//     hoisted facet summary — RFC 0012 §7's progressive-disclosure block,
+//     otherwise reachable only via resources/read — with an optional
+//     filter to narrow it, cutting-garden#151), describe_node_types
+//     (schema discovery). Write (FDR 0020, plugins implementing NodeMutator):
 //     create_node / put_node / patch_node / delete_node, advertised
 //     only when a configured root supports mutation and annotated
 //     destructive so a client gates them (and the clown PreToolUse
@@ -70,11 +74,18 @@ const instructions = "Resources are the capturable trees of cutting-garden " +
 	"object returns its parsed fields as JSON, plus (when available) a " +
 	"madder://blobs/<digest> link to its verbatim bytes. The same surface " +
 	"is also exposed as tools (for clients that render only tools): " +
-	"list_nodes browses children (omit the uri for the entry points), " +
-	"read_node reads one node, and describe_node_types reports each scheme's " +
-	"node types and what body create_node accepts. The create_node / " +
-	"put_node / patch_node / delete_node tools mutate a node at its URI " +
-	"(e.g. create a calendar event); they are destructive and require user approval."
+	"list_nodes browses children (omit the uri for the entry points; " +
+	"optional limit/offset page a large listing), read_node reads one " +
+	"node, and describe_node_types reports each scheme's node types and " +
+	"what body create_node accepts, including any declared facet " +
+	"dimensions. Call read_facets on a container FIRST, before " +
+	"enumerating it: it summarizes children by their facet dimensions " +
+	"(counts per value, e.g. status or read/unread) without listing them, " +
+	"and an optional filter narrows the summary directly — the cheap way " +
+	"to orient on a large tree's size and shape before deciding whether " +
+	"or how to browse further. The create_node / put_node / patch_node / " +
+	"delete_node tools mutate a node at its URI (e.g. create a calendar " +
+	"event); they are destructive and require user approval."
 
 // MCP is the value registered for the `mcp` subcommand. Endpoints come from
 // the config, or from optional positional args that override it;

@@ -355,6 +355,12 @@ var MustRegisterScheme = internal.MustRegisterScheme
 // the leaf default.
 var NodeTypeFor = internal.NodeTypeFor
 
+// ParseFacetFilter parses "dim=val,dim2=val2" into an AND-composed
+// FacetFilter (RFC 0012 §6) — the shared grammar behind `list --filter` and
+// the mcp read_facets tool's optional filter parameter, so the two surfaces
+// never drift. The empty string (after trimming) is no filter (nil, nil).
+var ParseFacetFilter = internal.ParseFacetFilter
+
 // RegisterProtocolDiff installs p under p.ProtocolKind(), returning an
 // error (wrapping ErrAlreadyRegistered) on a clash instead of
 // panicking — the config-driven registration path for a wire capture
