@@ -2,10 +2,22 @@ package caldav
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
 )
+
+// facetedCalendarArg rewrites startFakeFaceted's calendar-home arg
+// ("caldav:.../dav/") into the argument addressing the fake's ONE
+// calendar directly ("caldav:.../dav/cal/", the fake's fixed calendarHref).
+// fakeCalDAV (unlike caldavtestserver) always reports itself at
+// calendarHref regardless of the requested path, so it never classifies as
+// selfIsCalendar at the home level — ListEnriched needs the calendar's own
+// URI to exercise the single-calendar (selfIsCalendar) branch.
+func facetedCalendarArg(homeArg string) string {
+	return strings.TrimSuffix(homeArg, "/dav/") + calendarHref
+}
 
 // TestListEnriched_PopulatesFacetsAndFields drives #160's caldav adoption
 // end to end: an unfiltered ListEnriched call over a multi-object calendar
@@ -14,7 +26,8 @@ import (
 // populated — the inline data a list_nodes caller needs to answer without
 // a follow-up read_node.
 func TestListEnriched_PopulatesFacetsAndFields(t *testing.T) {
-	_, arg := startFakeFaceted(t)
+	_, home := startFakeFaceted(t)
+	arg := facetedCalendarArg(home)
 
 	nodes, ok, err := Plugin{}.ListEnriched(
 		context.Background(), mustParseURL(t, arg), nil,
@@ -72,7 +85,8 @@ func TestListEnriched_PopulatesFacetsAndFields(t *testing.T) {
 // dimension=value predicates read_facets/FacetCounts accept narrow the
 // RETURNED NODES, not just a count.
 func TestListEnriched_FilterNarrowsNodes(t *testing.T) {
-	_, arg := startFakeFaceted(t)
+	_, home := startFakeFaceted(t)
+	arg := facetedCalendarArg(home)
 
 	filter := cutting_garden_plugins.FacetFilter{
 		{Dimension: facetComponent, Value: "VTODO"},
@@ -120,6 +134,63 @@ func TestDescribeListingFields_DeclaresObjectFields(t *testing.T) {
 	} {
 		if !keys[want] {
 			t.Errorf("listing field %q not declared", want)
+		}
+	}
+}
+
+// TestListEnriched_CalendarHomeDeclinesRatherThanFlattens pins the fix for
+// a real bug caught during development: ListEnriched at a calendar-HOME
+// node (multiple calendars beneath it) MUST decline (ok=false) rather than
+// flatten every calendar's objects into one list — that would silently
+// change what a container read at THIS URI reports relative to plain
+// ListRoots (calendar containers), reintroducing the cross-calendar
+// flattening circus#29 ruled out for the no-uri root listing. Each
+// calendar, descended into individually, IS enriched correctly.
+func TestListEnriched_CalendarHomeDeclinesRatherThanFlattens(t *testing.T) {
+	_, home := startMultiCalendarFake(t)
+	ctx := context.Background()
+	node := mustParseURL(t, home)
+
+	nodes, ok, err := Plugin{}.ListEnriched(ctx, node, nil)
+	if err != nil {
+		t.Fatalf("ListEnriched(home): %v", err)
+	}
+	if ok {
+		t.Fatalf("ListEnriched(home) ok = true, want false (decline; children "+
+			"are calendar containers, not enrichable objects): %+v", nodes)
+	}
+
+	// The fallback path (plain ListRoots) at the SAME uri reports the
+	// calendar containers — unenriched but correct, and UNCHANGED by this
+	// decline.
+	calendars, err := Plugin{}.ListRoots(ctx, node)
+	if err != nil {
+		t.Fatalf("ListRoots(home): %v", err)
+	}
+	if len(calendars) != 2 {
+		t.Fatalf("ListRoots(home) = %d nodes, want 2 calendar containers: %+v",
+			len(calendars), calendars)
+	}
+
+	// Descending into ONE calendar (a selfIsCalendar node) DOES enrich.
+	for _, cal := range calendars {
+		if cal.Name != "Personal" {
+			continue
+		}
+		objs, ok, err := Plugin{}.ListEnriched(ctx, cal.URI, nil)
+		if err != nil {
+			t.Fatalf("ListEnriched(Personal): %v", err)
+		}
+		if !ok {
+			t.Fatal("ListEnriched(Personal) ok = false, want true (a single calendar)")
+		}
+		if len(objs) != 2 {
+			t.Fatalf("ListEnriched(Personal) = %d nodes, want 2: %+v", len(objs), objs)
+		}
+		for _, o := range objs {
+			if len(o.Facets) == 0 || len(o.Fields) == 0 {
+				t.Errorf("Personal object %+v missing enrichment", o)
+			}
 		}
 	}
 }

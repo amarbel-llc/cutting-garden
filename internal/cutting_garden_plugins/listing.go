@@ -73,6 +73,19 @@ type EnrichedLister interface {
 	// false means "I do not serve an enriched listing for this node;
 	// fall back to ListRoots plus host-side filtering". An error aborts
 	// the read. node MUST be non-nil.
+	//
+	// LEVEL-SCOPING IS REQUIRED: the returned nodes MUST be the SAME set
+	// ListRoots(node) would return (enriched, and possibly narrowed) —
+	// never a deeper or shallower set. A plugin whose tree has more than
+	// one container kind at different depths (caldav: a calendar-home
+	// containing calendars containing objects) MUST decline at a level
+	// whose children are not the enrichable unit — e.g. caldav declines
+	// at a calendar-home rather than flattening every calendar's objects
+	// into one list, which would make this capability disagree with
+	// ListRoots about node's children at the identical URI (RFC 0012
+	// §12.2). A plugin with only one container kind needs no special
+	// handling: ListEnriched and ListRoots naturally agree on scope
+	// everywhere.
 	ListEnriched(
 		ctx context.Context, node *url.URL, filter FacetFilter,
 	) (nodes []Node, ok bool, err error)

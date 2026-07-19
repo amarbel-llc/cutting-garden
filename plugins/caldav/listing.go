@@ -42,15 +42,26 @@ func (Plugin) DescribeListingFields() []cutting_garden_plugins.NodeTypeListingFi
 	}
 }
 
-// ListEnriched serves a calendar's (or calendar-home's) objects with
-// Facets and Fields populated, optionally narrowed by filter, in ONE
-// data-bearing REPORT per component per calendar — the SAME
-// listResources-with-full-calendar-data fetch FacetCounts/foldCalendarFacets
-// already issues (RFC 0012 §4.1), now projecting each object's parsed
-// fields onto its Node instead of (only) folding them into a histogram.
-// This is what keeps ListRoots itself hrefs-only and cheap (the bare/opt-
-// out path, cutting-garden#160): enrichment is a deliberately separate,
-// heavier fetch a consumer opts into by not passing bare=true.
+// ListEnriched serves ONE calendar's objects with Facets and Fields
+// populated, optionally narrowed by filter, in ONE data-bearing REPORT per
+// component — the SAME listResources-with-full-calendar-data fetch
+// FacetCounts/foldCalendarFacets already issues for a single calendar
+// (RFC 0012 §4.1), now projecting each object's parsed fields onto its Node
+// instead of (only) folding them into a histogram. This is what keeps
+// ListRoots itself hrefs-only and cheap (the bare/opt-out path,
+// cutting-garden#160): enrichment is a deliberately separate, heavier
+// fetch a consumer opts into by not passing bare=true.
+//
+// At a calendar-HOME node (multiple calendars beneath it), ListEnriched
+// declines (ok=false): the immediate children of a calendar-home are
+// calendar CONTAINERS, not objects, and containers carry no per-object
+// Facets/Fields to enrich here — flattening every calendar's objects into
+// one list at this level would silently change what ListRoots reports at
+// the SAME URI (the exact cross-calendar flattening circus#29 ruled out
+// for list_nodes' no-uri root listing, now guarded here too). The
+// framework's fallback to plain ListRoots then returns the calendar
+// containers, unenriched but correct; enrichment applies one level deeper,
+// against each individual calendar.
 func (Plugin) ListEnriched(
 	ctx context.Context,
 	node *url.URL,
@@ -68,26 +79,17 @@ func (Plugin) ListEnriched(
 	}
 	c := newClient(base, username, password)
 
-	selfIsCalendar, calendars, err := c.discoverCalendars(ctx)
+	selfIsCalendar, _, err := c.discoverCalendars(ctx)
 	if err != nil {
 		return nil, false, err
 	}
+	if !selfIsCalendar {
+		return nil, false, nil
+	}
 
-	var nodes []cutting_garden_plugins.Node
-	if selfIsCalendar {
-		n, err := c.enrichedCalendarNodes(ctx, base, filter)
-		if err != nil {
-			return nil, false, err
-		}
-		nodes = n
-	} else {
-		for _, cal := range calendars {
-			n, err := c.enrichedCalendarNodes(ctx, cal.href, filter)
-			if err != nil {
-				return nil, false, err
-			}
-			nodes = append(nodes, n...)
-		}
+	nodes, err := c.enrichedCalendarNodes(ctx, base, filter)
+	if err != nil {
+		return nil, false, err
 	}
 	return nodes, true, nil
 }
