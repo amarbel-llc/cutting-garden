@@ -138,6 +138,12 @@ by, you can filter by.
 
 ### Field namespace (walkthrough #2)
 
+Fields are **first-class in both dodder and cutting-garden**, and trellis's
+field-predicate layer is the single query surface over both: a
+cutting-garden plugin's declared fields and dodder's type-defined fields
+(FDR 0018) are addressed by the same predicates, so trellis serves the two
+substrates identically rather than being a cutting-garden-only construct.
+
 A node type exposes a **flat field namespace**; the plugin owns the
 flattening. Nesting in a leaf's serialized body (e.g. caldav's
 `{component, event: {summary, dtstart, ...}}`) is a serialization detail,

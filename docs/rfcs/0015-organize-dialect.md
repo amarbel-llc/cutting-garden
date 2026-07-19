@@ -102,6 +102,17 @@ error. Object ids are substrate node ids (strict sigil rule; quoted for
 reserved runes). Aliased short ids are reserved-but-unspecified
 (deferred).
 
+### Bindings
+
+Hyphence bindings (the `<` document-scoped lock table; hyphence
+RFC 0003/0004) resolve across **both** layers of an organize document: a
+name bound once (`fred < task/other@digest`) is usable as a metadata field
+value (`blocked-by=fred` resolves through the table) *and* as a body
+reflink (`[fred]: …`, markdown-style), so one binding serves distributed
+metadata and typed-body content alike. Bindings are document-scoped, shadow
+lexically, and are not themselves queryable (hyphence RFC 0003); a pinned
+identifier bypasses the table.
+
 ## Write descriptors
 
 RFC 0012's `FacetDimension` gains `write: none | one | many` plus the
@@ -247,7 +258,12 @@ Unmapped metadata for the substrate; moves under `%`/`write:none`
 scopes; `write:one` multi-bucket placement; closed-set violations;
 divergent clone edits; conflicting live drift (until mergetool);
 unknown object ids; stale/undereferenceable `_base`; deletion without
-its gates; PartialTerms outside heading position; comma in headings.
+its gates; PartialTerms outside heading position; comma in headings;
+field-residence collisions — a key authored in BOTH its metadata and
+body homes (the distributed `blocked-by=fred` term vs a `!task` body's
+own `blocked-by`), a loud bidirectional error since every field key has
+one type-declared authored home and the write-through targets that
+residence (dodder#377; FDR 0023 §Dependencies).
 
 ## Deferred
 

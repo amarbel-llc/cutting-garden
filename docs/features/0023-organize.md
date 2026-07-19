@@ -79,11 +79,19 @@ record carries the shape, the per-substrate findings, and the ledgers.
   (FDR 0018 unified namespace).
 - Adjacent: cutting-garden#142 (root tags) — filter-mode
   `cg capture --organize` composes with tagged roots.
-- Adjacent (successor, NOT a blocker): cutting-garden#154 — bulk /
-  multi-node mutation (NodeMutator successor). organize's apply engine is
-  the motivating consumer, but v1 composes single-node writes; #154 is the
-  atomicity/optimization path organize will want, layered on FDR 0020 and
-  bright-cherry's PutNode/PatchNode split.
+- Adjacent: cutting-garden#154 — bulk / multi-node mutation (NodeMutator
+  successor), specified as RFC 0017. organize's apply engine is the
+  motivating consumer; v1 composes single-node writes, but RFC 0017 makes
+  **atomic bulk the EXPECTED posture** for transactional substrates (a
+  BulkMutator SHOULD advertise `bulk-atomic` and honor atomic mode for
+  every request shape its backend can transact) — best-effort is reserved
+  for genuinely non-transactional backends (NewsBlur's REST mark-read). So
+  organize's atomic-commit direction has a capability contract that
+  *expects* atomic from transactional substrates, not merely permits it.
+  Layered on FDR 0020 and bright-cherry's PutNode/PatchNode split. Future
+  (RFC 0017): a lazy multi-stream of `io.Reader`s orchestrated into one
+  atomic operation, so large deltas apply atomically without buffering
+  whole (v1's `[]byte` is a materialization, not permanent).
 
 ## Boundaries
 

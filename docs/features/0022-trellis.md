@@ -121,6 +121,39 @@ Confirmed against the six demo scenarios (walkthrough in progress):
 6. **Walk cost** — `_body` matching and closures without indices are
    honest walks; acceleration is a capability, not a language feature.
 
+## Relation to GraphQL, and two future directions (2026-07-19)
+
+Comparing trellis to GraphQL sharpens the boundary above and surfaced two
+future directions. The core contrast: **GraphQL is a response-projection
+language over a mandatory typed schema; trellis is a set-selection +
+graph-traversal language that deliberately decouples selection from
+projection** (boundary #4). trellis's traversal (reverse edges, typed
+transitive closures) is graph-query territory GraphQL has no operators for;
+its query/result **isometry** (a query is a data shape with holes, the
+result is the ground-filled espalier, and espalier parses as trellis) has no
+GraphQL analog; and trellis carries a first-class version/history dimension
+(sigils) GraphQL models only as schema fields. What GraphQL has that trellis
+deliberately punts — client-specified projection and a validated typed
+schema — maps onto exactly two future directions, each the trellis-shaped
+answer (gradual, isometric) rather than the GraphQL-shaped one:
+
+- **Gradually-typed trellis** ([cutting-garden#156]) — plan-time
+  type-checking (field existence, operator/value typing, edge-target typing)
+  via a plugin-declared schema probed like facets, *optional* so FDR 0018's
+  opaque-identifier flexibility survives. Edge typing is nearly free once
+  edges are reference-valued fields (hyphence RFC 0002).
+- **Mutation through trellis** ([cutting-garden#157]) — extend the isometry
+  from read=match to write=construct: an espalier form is both a query
+  result and a write instruction. organize (RFC 0015) is the existing
+  document-UX prototype; the open design problem is the `=`
+  predicate-vs-assignment mode-disambiguation. Typing (above) is what makes
+  it safe.
+
+Both want a dedicated grill before any design lands; neither is scheduled.
+
+[cutting-garden#156]: https://code.linenisgreat.com/cutting-garden/cutting-garden/issues/156
+[cutting-garden#157]: https://code.linenisgreat.com/cutting-garden/cutting-garden/issues/157
+
 ## Deferred
 
 See RFC 0014 "Deferred"; additionally here: facets as *named* trellis
