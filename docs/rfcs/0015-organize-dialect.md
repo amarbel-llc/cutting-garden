@@ -257,6 +257,16 @@ semantics) and requires **explicit post-editor confirmation**; in
 assertion for the scripted path). Without the settings field, line
 absence never deletes.
 
+The gates guard only substrates with a **true-delete** operation (an
+object ceasing to exist). A substrate whose removals are all
+soft/membership mutations has nothing for them to guard, so
+`_allow-deletion` still parses (round-trip portability across substrates)
+but gates nothing there. dodder is the reference case (ruled dodder-side
+2026-07-19): its `write:many` tag-clears only un-tag a still-
+history-queryable object, and it has no hard-delete primitive at all — so
+the gates are inert for it, revisitable only if dodder grows a real
+delete operation or a shared apply engine needs the interface uniformly.
+
 ## Modes
 
 | Mode | Absence means | Writes |
