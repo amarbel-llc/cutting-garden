@@ -88,6 +88,35 @@ your honest "no results" from your silent "I misunderstood the request,"
 that is a bug to fix, not a limitation to document. See RFC 0012 §6 for the
 filter-validation contract this precedent comes from.
 
+# PER-CHILD-CONTAINER ATTRIBUTION
+
+A *FacetCounter* MAY report which of a summarized node's immediate child
+containers contributed the matches counted in its summary, and how many
+each contributed, via *FacetResult.ByContainer* — so a caller descends
+into exactly the containers that matched instead of guessing across a
+wide fan-out. This is the strongest motivating example on this page:
+without it, an agent asked "is anything overdue?" against a calendar-home
+with 23 calendars had no way to know which of them to search, and risked
+returning a confidently incomplete answer.
+
+Populate *ByContainer* only when you already compute per-container counts
+on the way to your *Summary*: caldav's per-calendar fold does, so
+recording each calendar's match count as it goes is recovered information,
+not an additional fetch. A nil *ByContainer* is honest and normal — not
+every *FacetCounter* computes per-container detail, and a single-container
+node has no children to break down by. Use
+*SortAndLimitContainerBreakdown* rather than hand-rolling the cap and
+ordering, so every implementation bounds a large fan-out the same way;
+*ByContainerTruncated* reports only whether the breakdown itself was cut,
+and says nothing about whether *Summary* is complete. See RFC 0012 §13 for
+the full contract.
+
+Caveat for wire-plugin authors: a wire plugin cannot populate
+*ByContainer* today. RFC 0013's *facets.counts* result has no field for
+it yet (cutting-garden#173), so this capability currently reaches linked
+(in-process) plugins only — know that up front, rather than adding the
+field to your wire response and discovering the host silently drops it.
+
 # SERVE TEXT AS A FIELD, NOT BYTES-ONLY
 
 When a leaf's natural content is text, put it in the STRUCTURED/inline field
