@@ -158,7 +158,7 @@ func (cmd *List) Run(req command.Request) {
 // can then pass back to `list` to descend one level. Config is already
 // loaded and injected by Run.
 func (cmd *List) runRoots(ctx errors.Context) error {
-	roots, err := command_components.AggregateRoots(ctx)
+	roots, err := command_components.AggregateRoots(ctx, os.Stderr)
 	if err != nil {
 		return err
 	}

@@ -3,6 +3,7 @@ package traversal_serve
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/url"
@@ -455,6 +456,66 @@ func TestWirePluginSchemesEchoMismatchIsPersistent(t *testing.T) {
 
 	if got := dialer.dialCount(); got != 1 {
 		t.Errorf("dials = %d, want 1 — a misconfig must not respawn", got)
+	}
+}
+
+// TestWirePluginSpawnFailureIsPersistent pins the cutting-garden#165
+// fault-isolation contract at the adapter's finest grain: a plugin that
+// fails to spawn or complete its bring-up (a missing command, a child
+// that exits before announcing, initialize erroring — all surfaced by
+// Launch/dial as one opaque error) is rejected at first spawn, and
+// EVERY subsequent operation fails fast on the SAME recorded error —
+// no respawn attempt, exactly like the schemes-echo-mismatch
+// misconfiguration path — so a plugin that crashed once cannot
+// re-crash on every later touch. The declaration methods (which have
+// no error channel) degrade to their zero value instead of erroring.
+func TestWirePluginSpawnFailureIsPersistent(t *testing.T) {
+	var dials atomic.Int64
+	spawnErr := errors.New("exec: no such file or directory")
+
+	adapter := newWirePluginWithDialer(
+		minSpec(),
+		func(context.Context) (*Session, error) {
+			dials.Add(1)
+			return nil, spawnErr
+		},
+	)
+	ctx := context.Background()
+	uri := mustParseURL(t, "min://host/root")
+
+	_, err := adapter.ListRoots(ctx, uri)
+	if err == nil {
+		t.Fatal("expected a spawn-failure error")
+	}
+	if !strings.Contains(err.Error(), spawnErr.Error()) {
+		t.Errorf("error %q does not wrap the spawn failure", err)
+	}
+	if !strings.Contains(err.Error(), "fake-min") {
+		t.Errorf("error %q does not name the plugin", err)
+	}
+
+	if _, err := adapter.Roots(ctx); err == nil {
+		t.Error("Roots after spawn failure: no error")
+	}
+	if _, _, err := adapter.FacetVersion(ctx, uri); err == nil {
+		t.Error("FacetVersion after spawn failure: no error")
+	}
+	if err := adapter.DeleteNode(ctx, uri); err == nil {
+		t.Error("DeleteNode after spawn failure: no error")
+	}
+	if got := adapter.Types(); got != nil {
+		t.Errorf("Types after spawn failure = %+v, want nil", got)
+	}
+	if got := adapter.TypeTag(); got != "" {
+		t.Errorf("TypeTag after spawn failure = %q, want empty", got)
+	}
+	if got := adapter.DescribeFacets(); got != nil {
+		t.Errorf("DescribeFacets after spawn failure = %+v, want nil", got)
+	}
+
+	if got := dials.Load(); got != 1 {
+		t.Errorf("dials = %d, want 1 — a dead plugin must not respawn"+
+			" (would re-crash on every touch)", got)
 	}
 }
 

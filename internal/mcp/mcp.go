@@ -250,7 +250,7 @@ func mcpRoots(
 		}
 		return roots, nil
 	}
-	roots, err := command_components.AggregateRoots(ctx)
+	roots, err := command_components.AggregateRoots(ctx, os.Stderr)
 	if err != nil {
 		return nil, err
 	}

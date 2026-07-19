@@ -2,6 +2,7 @@ package command_components
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/url"
 	"slices"
@@ -160,10 +161,23 @@ func registerStanza(
 
 // AggregateRoots returns every top-level root across all registered
 // RootProvider plugins (RFC 0007 § The Root-Provider Capability), in
-// registry order. Fail-fast: any plugin's error aborts rather than
-// yielding a silently partial set. Call LoadAndInjectConfig first so
-// config-driven plugins see their accounts.
-func AggregateRoots(ctx context.Context) ([]*url.URL, error) {
+// registry order. Call LoadAndInjectConfig first so config-driven
+// plugins see their accounts.
+//
+// Per-plugin fault isolation (cutting-garden#165): a plugin's Roots
+// error — most commonly a wire plugin (RFC 0013) that failed to spawn,
+// crashed before announcing, or failed its initialize handshake — is
+// contained to that plugin. A warning naming the plugin's schemes and
+// the error is written to warnw (nil discards it; callers pass
+// os.Stderr, matching LoadAndInjectConfig's convention — NEVER stdout,
+// which on `mcp` is the JSON-RPC transport), and the plugin's
+// contribution is simply omitted from the result, exactly as if it had
+// returned no roots. Before this, ANY plugin's error aborted the whole
+// aggregation — including every OTHER already-healthy plugin's roots —
+// which on `mcp` meant one misconfigured wire plugin failed
+// cutting-garden's own MCP `initialize` handshake with its host and
+// took down every scheme (caldav, file, ...), not just its own.
+func AggregateRoots(ctx context.Context, warnw io.Writer) ([]*url.URL, error) {
 	var out []*url.URL
 	for _, plugin := range cutting_garden_plugins.RegisteredPlugins() {
 		provider, ok := plugin.(cutting_garden_plugins.RootProvider)
@@ -172,7 +186,12 @@ func AggregateRoots(ctx context.Context) ([]*url.URL, error) {
 		}
 		roots, err := provider.Roots(ctx)
 		if err != nil {
-			return nil, err
+			if warnw != nil {
+				fmt.Fprintf(warnw,
+					"warning: plugin %v: roots unavailable: %s\n",
+					provider.Schemes(), err)
+			}
+			continue
 		}
 		out = append(out, roots...)
 	}

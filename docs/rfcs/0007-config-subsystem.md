@@ -1,6 +1,8 @@
 ---
 status: accepted
 date: 2026-06-09
+revised: 2026-07-19 (§ The Root-Provider Capability: root aggregation is a
+  per-plugin fault-isolation boundary, not fail-fast — cutting-garden#165)
 ---
 
 # Configuration Subsystem and Root Enumeration (cutting-garden config.toml)
@@ -119,9 +121,15 @@ type RootProvider interface {
   MUST aggregate roots by iterating
   `cutting_garden_plugins.RegisteredPlugins()`, type-asserting `RootProvider`,
   and concatenating each plugin's `Roots(ctx)`.
-- A non-nil error from any plugin's `Roots` MUST abort the aggregation
-  (fail-fast); a command MUST NOT proceed with a silently partial root set.
-  This matches the MCP server's existing fail-fast root resolution (FDR 0015).
+- A non-nil error from one plugin's `Roots` MUST NOT abort the whole
+  aggregation: it is contained to that plugin (a warning naming it is logged
+  and its contribution is simply omitted), and every OTHER plugin's roots
+  MUST still be returned. This is a per-plugin fault-isolation boundary, not
+  a fail-fast one (cutting-garden#165): a single misconfigured or crashed
+  wire plugin (RFC 0013) previously took the whole aggregation down —
+  including every healthy plugin — which on `mcp` meant it failed
+  cutting-garden's own MCP `initialize` handshake with its host. This
+  matches the MCP server's root resolution (FDR 0015).
 - Every `*url.URL` returned by `Roots` MUST be credential-free (no userinfo);
   the same holds for every child URI a plugin's traversal emits
   (§ Security Considerations).

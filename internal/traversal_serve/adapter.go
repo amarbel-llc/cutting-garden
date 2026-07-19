@@ -34,17 +34,23 @@ type WirePlugin struct {
 	// tests inject an in-process maker via newWirePluginWithDialer.
 	dial func(ctx context.Context) (*Session, error)
 
-	// mu guards the lazy session and the persistent config error. It
+	// mu guards the lazy session and the persistent fatal error. It
 	// is held across dial, so concurrent first operations spawn exactly
 	// one child (later ones find the cached session).
 	mu      sync.Mutex
 	session *Session
 
-	// configErr, once set, fails every subsequent operation fast: a
-	// schemes-echo mismatch is a misconfiguration, not a transient
-	// fault — no amount of respawning can make the plugin serve a
-	// scheme it does not speak.
-	configErr error
+	// fatalErr, once set, fails every subsequent operation fast and is
+	// never cleared: a schemes-echo mismatch is a misconfiguration, and
+	// a spawn/handshake failure (missing command, the child crashing or
+	// exiting before it announces, a bad config section, initialize
+	// erroring out) means this plugin is not viable in this process —
+	// no amount of respawning fixes either, so a dead plugin degrades to
+	// "unavailable" for the rest of the process's life rather than
+	// re-dialing (and potentially re-crashing) on every enumeration
+	// (cutting-garden#165: a single wire plugin's startup failure used
+	// to be fatal to the WHOLE host process — see liveSession).
+	fatalErr error
 }
 
 var (
@@ -106,6 +112,22 @@ func (w *WirePlugin) Close() error {
 // call was sent: a call that dies mid-flight surfaces the transport
 // error (the host cannot know whether the mutation applied).
 //
+// A dial failure (missing/bad command, the child crashing or exiting
+// before it announces, a bad config section, initialize erroring) is
+// recorded as the persistent fatalErr, exactly like a schemes-echo
+// mismatch: cutting-garden#165 found this plugin taking the WHOLE host
+// process down when its first (eager, enumeration-triggered) spawn
+// crashed, because the caller propagated the error instead of isolating
+// it. Caching it here means every later operation on this plugin fails
+// fast and locally — "this scheme is unavailable" — instead of
+// re-dialing (and potentially re-crashing) the plugin on every touch. A
+// warning naming the plugin is NOT logged here: liveSession has no
+// writer, and every caller either already tolerates a nil/zero decline
+// (TypeTag, Types, DescribeFacets, DescribeBodies) or is a fallible
+// operation the CALLER logs and degrades around (Roots, in
+// AggregateRoots) — logging here too would double-log the same failure
+// on the plugin's first touch.
+//
 // The spawn deliberately uses context.Background(), not the operation
 // ctx: Launch's exec.CommandContext ties the child's lifetime to the
 // spawn ctx, and the session must outlive the operation that happened
@@ -116,8 +138,8 @@ func (w *WirePlugin) liveSession() (*Session, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	if w.configErr != nil {
-		return nil, w.configErr
+	if w.fatalErr != nil {
+		return nil, w.fatalErr
 	}
 
 	if w.session != nil {
@@ -134,17 +156,30 @@ func (w *WirePlugin) liveSession() (*Session, error) {
 
 	sess, err := w.dial(context.Background())
 	if err != nil {
-		return nil, errors.Wrapf(err, "wire plugin %q", w.spec.Name)
+		// ErrorWithStackf, not Wrapf: Wrapf's *ErrorTree.Error() returns
+		// only the wrapped error's own message (dewey's stack-tree
+		// convention — the format string is metadata for a stack-trace
+		// print, not part of Error()'s text), so it would silently drop
+		// the plugin name and scheme list a caller logging this error
+		// needs. ErrorWithStackf's message IS the formatted string, so
+		// %s below folds the underlying cause in verbatim.
+		w.fatalErr = errors.ErrorWithStackf(
+			"wire plugin %q: spawn/initialize failed; scheme(s) %v"+
+				" unavailable for the rest of this process: %s",
+			w.spec.Name, w.spec.Schemes, err,
+		)
+
+		return nil, w.fatalErr
 	}
 
 	// Schemes-echo validation (RFC 0013 §Host integration): the
 	// initialize echo must cover every scheme the configuration routed
-	// here. A miss is recorded as the persistent config error so every
+	// here. A miss is recorded as the persistent fatal error so every
 	// subsequent operation fails fast instead of respawning a plugin
 	// that can never serve the claim.
 	for _, scheme := range w.spec.Schemes {
 		if !slices.Contains(sess.Init.Schemes, scheme) {
-			w.configErr = errors.ErrorWithStackf(
+			w.fatalErr = errors.ErrorWithStackf(
 				"wire plugin %q: configured scheme %q missing from"+
 					" initialize echo %v",
 				w.spec.Name, scheme, sess.Init.Schemes,
@@ -152,7 +187,7 @@ func (w *WirePlugin) liveSession() (*Session, error) {
 
 			_ = sess.Close()
 
-			return nil, w.configErr
+			return nil, w.fatalErr
 		}
 	}
 
@@ -201,13 +236,15 @@ func (w *WirePlugin) Schemes() []string { return w.spec.Schemes }
 // TypeTag spawns the session on first need — the wire declaration is
 // the only source of the tag. The interface has no error channel, so a
 // launch failure here degrades to "": the failure is not lost — the
-// next operation with an error return re-attempts the launch and
-// surfaces it — but a caller consulting TypeTag alone sees an empty
-// tag. That is the tradeoff of lazily-spawned identity: the
-// alternative, spawning at registration, would make constructing the
-// registry block on every configured plugin. No ctx in the interface;
-// liveSession spawns under context.Background() with Launch's own
-// deadlines.
+// next operation with an error return (Roots, ListRoots, ReadLeaf, ...)
+// surfaces it, and it is now cached (see liveSession's fatalErr), so
+// every such operation reports the SAME failure rather than re-dialing
+// a plugin that already proved unviable — but a caller consulting
+// TypeTag alone sees an empty tag. That is the tradeoff of
+// lazily-spawned identity: the alternative, spawning at registration,
+// would make constructing the registry block on every configured
+// plugin. No ctx in the interface; liveSession spawns under
+// context.Background() with Launch's own deadlines.
 func (w *WirePlugin) TypeTag() string {
 	sess, err := w.liveSession()
 	if err != nil {

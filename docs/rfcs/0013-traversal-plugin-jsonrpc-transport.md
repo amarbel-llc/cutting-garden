@@ -1,6 +1,8 @@
 ---
 status: accepted
 date: 2026-07-18
+revised: 2026-07-19 (§ Host integration: a wire plugin's bring-up failure
+  MUST be isolated to that plugin, never fatal to the host — cutting-garden#165)
 ---
 
 # RFC 0013 — Traversal Plugin Transport: JSON-RPC over stream sockets
@@ -504,6 +506,27 @@ registry. Type-assertion probing then works unchanged; consumers
 (`list`, `mcp`, the facet cache, `describe_node_types`) MUST NOT be
 able to distinguish a wire plugin from a linked one. That
 indistinguishability is this RFC's conformance bar.
+
+**Bring-up failure isolation (cutting-garden#165).** A wire plugin's
+adapter (host-side, e.g. `WirePlugin`) is lazily launched (§ Session
+lifecycle), but the host's own startup enumerates every registered
+plugin's declaration and roots to build its serving surface (e.g. `mcp`'s
+`initialize` response) — an EAGER touch that triggers the first spawn. A
+plugin that fails to spawn (missing/bad `command`), crashes or exits
+before it announces, or fails its `initialize` handshake MUST NOT be
+fatal to the host process or to any OTHER plugin: the host MUST record the
+failure once (subsequent operations on that plugin fail fast against the
+recorded error rather than re-dialing, since a bring-up failure is not
+transient) and log a warning identifying the plugin — to a diagnostic
+channel, NEVER to a stdout the host is using as a wire transport (e.g.
+`mcp`'s stdio JSON-RPC framing). A caller enumerating roots or capabilities
+across all plugins MUST omit the failed plugin's contribution and continue
+with every other plugin; an explicit request naming the failed plugin's
+scheme surfaces a clean error rather than crashing. Before this
+requirement, a single misconfigured or crashed wire plugin could fail the
+host's own `initialize` handshake with ITS host (e.g. cutting-garden
+failing to start under moxy because one configured wire plugin — fj-cg —
+crashed on startup), taking every other scheme down with it.
 
 ## Security Considerations
 

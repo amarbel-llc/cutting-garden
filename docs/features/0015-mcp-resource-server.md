@@ -1,6 +1,8 @@
 ---
 status: experimental
 date: 2026-06-09
+revised: 2026-07-19 (root aggregation is per-plugin fault-isolated, not
+  fail-fast — cutting-garden#165)
 promotion-criteria: |
   Promote to `testing` once a second RootProvider plugin (yt-dlp channels,
   FDR 0004, or sftp/webdav #55/#54) surfaces through `resources/list` /
@@ -94,8 +96,13 @@ walks `cutting_garden_plugins.RegisteredPlugins()`, type-asserts the
 `RootProvider` capability, and concatenates each plugin's `Roots()` (RFC
 0007). caldav yields its configured accounts; the file plugin yields its
 working directory intrinsically (no config needed). A plugin with no roots
-contributes nothing. Resolution is fail-fast: an error from any plugin
-aborts rather than serving a silently partial set.
+contributes nothing. Resolution is per-plugin fault-isolated (cutting-garden#165):
+an error from one plugin — most commonly a misconfigured or crashed RFC 0013
+wire plugin — is contained to that plugin (a warning is logged and its
+contribution omitted); every other plugin's roots are still served. Before
+this, any plugin's error aborted the whole aggregation, which meant one bad
+wire plugin could fail cutting-garden's own MCP `initialize` handshake and
+take every scheme down with it.
 
 Credentials for a CalDAV node resolve per RFC 0007: explicit URI userinfo,
 else a configured account matched by host + longest path prefix, else the
@@ -164,8 +171,14 @@ working-directory tree as MCP resources out of the box.
   *receipt* tools (those stay CLI subcommands).
 - **No `--split` frontier.** The receipt-fanout selector grammar (FDR
   0014) is a planner concern; it does not surface here.
-- **Fail-fast aggregation.** A resolution or traversal error on any root
-  fails `resources/list` rather than returning a silently partial set.
+- **Per-plugin fault-isolated aggregation.** The startup root aggregation
+  (`command_components.AggregateRoots`) contains a plugin's `Roots` error to
+  that plugin (cutting-garden#165) rather than failing the whole server —
+  see "Roots come from config, not argv" above. A resolution or traversal
+  error *within* an already-resolved root's `resources/list` /
+  `resources/read` call (a live plugin failing mid-request) is unaffected by
+  this and still fails that request outright rather than returning a
+  silently partial set.
 
 ## Open Questions
 
