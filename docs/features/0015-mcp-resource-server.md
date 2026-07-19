@@ -208,4 +208,8 @@ working-directory tree as MCP resources out of the box.
   disclosure; extends this server's container `resources/read` with a hoisted
   `facets` block and a `dimension=value` narrowing parameter.
 - [RFC 0012](../rfcs/0012-plugin-facet-contract.md) — the facet contract
-  whose §7 binds to this server's `resources/read` and `describe_node_types`.
+  whose §7 binds to this server's `resources/read` and `describe_node_types`,
+  and whose §12 (cutting-garden#160) makes the `list_nodes` tool's listings
+  enriched by default (facets + plugin-declared human-readable fields
+  inline, with a `bare` opt-out) and adds a `filter` parameter — the direct
+  way to retrieve the matching nodes `read_facets` can only count.

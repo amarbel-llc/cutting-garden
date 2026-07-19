@@ -140,6 +140,52 @@ function mcp_browse_and_read { # @test
     fail "read_node(task1) summary: $read"
 }
 
+# list_nodes' filter param retrieves the matching nodes directly — the
+# #160 fix for the measured 45-tool-call gap (read_facets could only COUNT
+# overdue/matching items, never retrieve them). Descend to the "Personal"
+# calendar (task1.ics, task2.ics, event1.ics seeded there), then filter for
+# component=VTODO: exactly the two tasks come back, wrapped with an honest
+# filterApplied/filterMode signal, EACH CARRYING its facets and
+# plugin-declared fields (summary) inline — proving the collapse from "list
+# everything, read_node each candidate" to one filtered call.
+function mcp_list_nodes_filter_retrieves_matching_enriched_nodes { # @test
+  mcp_drive "$CALDAV_SOURCE" "$(tools_call 3 list_nodes '{}')"
+  local rooturi
+  rooturi="$(mcp_result_text "$output" 3 | jq -r '.[0].uri')"
+
+  mcp_drive "$CALDAV_SOURCE" "$(tools_call 3 list_nodes "$(jq -nc --arg u "$rooturi" '{uri:$u}')")"
+  local personaluri
+  personaluri="$(mcp_result_text "$output" 3 | jq -r 'first(.[] | select(.name=="Personal")) | .uri')"
+  [[ -n $personaluri ]] || fail "could not find the Personal calendar: $(mcp_result_text "$output" 3)"
+
+  mcp_drive "$CALDAV_SOURCE" "$(tools_call 3 list_nodes \
+    "$(jq -nc --arg u "$personaluri" '{uri:$u,filter:"component=VTODO"}')")"
+  local text
+  text="$(mcp_result_text "$output" 3)"
+
+  echo "$text" | jq -e '.filterApplied == true' >/dev/null ||
+    fail "filter was not reported applied: $text"
+  echo "$text" | jq -e '.filterMode == "plugin"' >/dev/null ||
+    fail "filterMode wrong (caldav's EnrichedLister should apply it): $text"
+
+  # Exactly the two VTODOs, never the VEVENT (event1.ics).
+  echo "$text" | jq -e '(.nodes | length) == 2' >/dev/null ||
+    fail "filtered nodes count wrong (want 2 VTODOs): $text"
+  echo "$text" | jq -e 'any(.nodes[]; .name=="task1.ics")' >/dev/null ||
+    fail "missing task1.ics: $text"
+  echo "$text" | jq -e 'any(.nodes[]; .name=="task2.ics")' >/dev/null ||
+    fail "missing task2.ics: $text"
+  echo "$text" | jq -e 'all(.nodes[]; .name!="event1.ics")' >/dev/null ||
+    fail "event1.ics leaked through a component=VTODO filter: $text"
+
+  # Enough inline data to answer WITHOUT a follow-up read_node: facets and
+  # the plugin-declared summary field.
+  echo "$text" | jq -e 'all(.nodes[]; .facets.component[0]=="VTODO")' >/dev/null ||
+    fail "filtered nodes missing inline component facet: $text"
+  echo "$text" | jq -e 'any(.nodes[]; .fields.summary=="Buy milk")' >/dev/null ||
+    fail "filtered nodes missing inline summary field: $text"
+}
+
 # A read-only cache root must not crash the server at startup (#121). The
 # Phase-B blob writer eagerly inits the madder store, which mkdir's
 # <cache>/tmp-<pid>; on an unwritable cache that mkdir fails and madder

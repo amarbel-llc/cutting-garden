@@ -269,4 +269,12 @@ receipts (personal, work); `--split '//caldav-object-v1'` yields three
   traversal's enumeration (`Node`) and hoist over its tree for progressive
   disclosure.
 - [RFC 0012](../rfcs/0012-plugin-facet-contract.md) — the facet contract
-  built atop `Node` / `NodeType` / `RootLister`.
+  built atop `Node` / `NodeType` / `RootLister`, including §12's `Node`
+  extension (`Fields`) and the `EnrichedLister` capability
+  (cutting-garden#160): `list_nodes` enriched-by-default listings and the
+  filter that retrieves matching nodes, not merely counts them.
+- amarbel-llc/cutting-garden#160 — `list_nodes` was metadata-blind
+  (`{uri,name,type}` only) and unfilterable, forcing a per-node
+  `read_node` fan-out; resolved by carrying `Node.Facets`/`Node.Fields`
+  through to the listing views (previously computed but never surfaced
+  past the framework fold) and adding a `filter` parameter.

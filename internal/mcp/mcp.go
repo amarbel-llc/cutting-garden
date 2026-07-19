@@ -24,16 +24,21 @@
 //   - tools/call — the same tree as tools, for clients that render only
 //     tools, not resources (the claude.ai web UI; circus#29). Read-only:
 //     list_nodes (browse children; omit uri for the roots, optional
-//     limit/offset to page a large listing, cutting-garden#86), read_node
-//     (read one node, = resources/read), read_facets (a container's
-//     hoisted facet summary — RFC 0012 §7's progressive-disclosure block,
-//     otherwise reachable only via resources/read — with an optional
-//     filter to narrow it, cutting-garden#151), describe_node_types
-//     (schema discovery). Write (FDR 0020, plugins implementing NodeMutator):
-//     create_node / put_node / patch_node / delete_node, advertised
-//     only when a configured root supports mutation and annotated
-//     destructive so a client gates them (and the clown PreToolUse
-//     hook classifies them `ask`, #102).
+//     limit/offset to page a large listing, cutting-garden#86; entries are
+//     enriched by default with facets and plugin-declared listing fields,
+//     opt out via bare=true; an optional filter narrows the returned nodes
+//     to those matching — RETRIEVING the matching set, not merely counting
+//     it — cutting-garden#160), read_node (read one node, = resources/read),
+//     read_facets (a container's hoisted facet summary — RFC 0012 §7's
+//     progressive-disclosure block, otherwise reachable only via
+//     resources/read — with an optional filter to narrow it,
+//     cutting-garden#151), describe_node_types (schema discovery,
+//     including declared facet dimensions and listing fields). Write
+//     (FDR 0020, plugins implementing NodeMutator): create_node /
+//     put_node / patch_node / delete_node, advertised only when a
+//     configured root supports mutation and annotated destructive so a
+//     client gates them (and the clown PreToolUse hook classifies them
+//     `ask`, #102).
 //
 // Discovery (resources) is read-only and captures nothing; the write tools
 // mutate live nodes directly, with no blob store or receipt. (One
@@ -70,20 +75,29 @@ const serverName = "cutting-garden"
 const instructions = "Resources are the capturable trees of cutting-garden " +
 	"plugin endpoints. resources/list returns each endpoint's immediate " +
 	"children; reading a container resource returns its children as a JSON " +
-	"array, so you descend the tree one level per read. Reading a leaf " +
+	"array, so you descend the tree one level per read. Every listing " +
+	"entry is ENRICHED BY DEFAULT: it carries its facets and any " +
+	"plugin-declared human-readable fields (e.g. a caldav object's " +
+	"summary/due/status) inline, not just {uri,name,type}. Reading a leaf " +
 	"object returns its parsed fields as JSON, plus (when available) a " +
 	"madder://blobs/<digest> link to its verbatim bytes. The same surface " +
 	"is also exposed as tools (for clients that render only tools): " +
 	"list_nodes browses children (omit the uri for the entry points; " +
-	"optional limit/offset page a large listing), read_node reads one " +
+	"optional limit/offset page a large listing; pass filter to narrow " +
+	"the returned nodes to those matching a dimension=value predicate — " +
+	"the direct way to RETRIEVE a matching set, not just count it; pass " +
+	"bare=true to opt out of enrichment back to the cheap " +
+	"{uri,name,type,container,mimeType} shape), read_node reads one " +
 	"node, and describe_node_types reports each scheme's node types and " +
 	"what body create_node accepts, including any declared facet " +
-	"dimensions. Call read_facets on a container FIRST, before " +
-	"enumerating it: it summarizes children by their facet dimensions " +
-	"(counts per value, e.g. status or read/unread) without listing them, " +
-	"and an optional filter narrows the summary directly — the cheap way " +
-	"to orient on a large tree's size and shape before deciding whether " +
-	"or how to browse further. The create_node / put_node / patch_node / " +
+	"dimensions and listing fields. Call read_facets on a container " +
+	"FIRST, before enumerating it: it summarizes children by their facet " +
+	"dimensions (counts per value, e.g. status or read/unread) without " +
+	"listing them, and an optional filter narrows the summary directly — " +
+	"the cheap way to orient on a large tree's size and shape before " +
+	"deciding whether or how to browse further; once you know WHICH " +
+	"predicate you want, list_nodes with the SAME filter retrieves the " +
+	"matching nodes themselves. The create_node / put_node / patch_node / " +
 	"delete_node tools mutate a node at its URI (e.g. create a calendar " +
 	"event); they are destructive and require user approval."
 

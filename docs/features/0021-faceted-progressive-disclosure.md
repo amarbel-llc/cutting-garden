@@ -216,6 +216,11 @@ Free-text search is **not** a facet; it is a search index, a separate thing.
 - **Filtering is equality, AND-ed.** No ranges, "or", or negation; combine
   reads. Free-text search is a search index, not a facet, and stays a
   plugin-local tool.
+- ~~Counting without retrieving.~~ Resolved by cutting-garden#160 (RFC 0012
+  §12): `read_facets` COUNTS matching nodes with the same `FacetFilter`
+  `list_nodes` now accepts to RETRIEVE them, with their facets and
+  plugin-declared human-readable fields inline — no more per-node
+  `read_node` fan-out to see which nodes actually matched.
 - **Read-only.** Like the MCP server (FDR 0015), faceting never touches
   capture, restore, diff, or receipts.
 - **One plugin's tree.** Facets roll up within a single scheme; there is no
@@ -232,7 +237,9 @@ Free-text search is **not** a facet; it is a search index, a separate thing.
 
 ## More Information
 
-- RFC 0012 — the normative facet contract this describes.
+- RFC 0012 — the normative facet contract this describes, including §12's
+  enriched/filterable listings (`Node.Fields`, `EnrichedLister`) —
+  cutting-garden#160.
 - FDR 0014 — plugin root traversal; facets ride on its enumeration and roll
   up its tree.
 - FDR 0015 — MCP resource server; the container read this extends with a

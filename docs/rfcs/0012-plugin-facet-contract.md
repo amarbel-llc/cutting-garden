@@ -1,7 +1,9 @@
 ---
 status: proposed
 date: 2026-06-20
-revised: 2026-07-12 (§9 fail-fast rescoped to explicit requests; new §11
+revised: 2026-07-19 (new §12: enriched, filterable listings — `Node.Fields`,
+    `ListingFieldsDescriber`, `EnrichedLister` — resolves #160)
+  2026-07-12 (§9 fail-fast rescoped to explicit requests; new §11
   summary memoization, change tokens, and eager refresh — resolves #133)
 ---
 
@@ -40,8 +42,11 @@ Specifies: the facet value and `Node.Facets` field; the schema types
 (`FacetKind`, `FacetDimension`, `NodeTypeFacets`) and `FacetDescriber`; the
 aggregate types (`FacetHistogram`, `FacetSummary`, `FacetResult`) and their
 merge semantics; the one-shot `FacetCounter` capability and the framework-fold
-fallback; the conjunctive `FacetFilter`; the display-only `FacetLabeler`; and
-the binding to `list`, `mcp`, and `describe_node_types`. Does not specify the
+fallback; the conjunctive `FacetFilter`; the display-only `FacetLabeler`; the
+binding to `list`, `mcp`, and `describe_node_types`; and (§12) the
+listing-side counterpart — `Node.Fields`, `ListingFieldsDescriber`, the
+`EnrichedLister` one-fetch capability, and applying `FacetFilter` to
+*retrieve* matching nodes rather than only count them. Does not specify the
 traversal primitive (FDR 0014, a normative dependency), the MCP mapping
 (FDR 0015), the SDK facade (RFC 0009), capture/restore/diff, or any individual
 plugin.
@@ -533,6 +538,178 @@ query irreducibly wants now-relative grouping.
   is cached (§11.2); a per-read dimension would break that design, and
   its effective floor is the refresh interval anyway. Direct-compute
   surfaces (`list --facets`) are always current by construction.
+
+### 12. Enriched, filterable listings (`Node.Fields`, `EnrichedLister`)
+
+§§1–11 let a consumer *count* nodes by facet ("how many overdue tasks"). They
+do not let a consumer *retrieve* the matching nodes without enumerating and
+reading each one — the gap cutting-garden#160 measured directly: an agent
+answering "what's overdue" needed 45 tool calls because `list_nodes` was
+metadata-blind (`{uri, name, type}` only) and unfilterable, forcing a
+per-node `read_node` fan-out over the whole container. This section
+specifies the listing-side counterpart to §§1–11: a node's listing entry
+carries human-readable fields alongside its facet membership, and a listing
+can be narrowed by the SAME `FacetFilter` grammar §6 defines — so counting
+and retrieving the matching set are two views of one mechanism, not two
+different code paths that can disagree.
+
+#### 12.1 `Node.Fields` and `ListingFieldsDescriber`
+
+A node MAY carry a **listing projection** — a plugin-declared,
+human-readable view distinct from its facet membership:
+
+```go
+// Node (traversal.go) gains:
+Fields map[string]any
+```
+
+`Fields` is keyed by a **listing field key** (`"summary"`, `"due"`,
+`"status"`, `"dtstart"`, …), values MUST be JSON-marshalable, and — like
+`Facets` — MUST be free of credentials or secrets. `nil` means the node
+contributes no extra listing fields (a plugin MAY rely on `Facets` alone,
+or on neither).
+
+`ListingFieldsDescriber` declares which keys a node type may carry, the
+schema counterpart to `FacetDescriber` (§2):
+
+```go
+type ListingField struct {
+    Key   string
+    Label string
+}
+
+type NodeTypeListingFields struct {
+    Tag    string
+    Fields []ListingField
+}
+
+type ListingFieldsDescriber interface {
+    Plugin
+    DescribeListingFields() []NodeTypeListingFields
+}
+```
+
+OPTIONAL, probed by type assertion exactly as `FacetDescriber` is. A plugin
+SHOULD declare an entry for every key it emits in `Node.Fields`; a consumer
+MUST ignore an emitted key with no matching declaration (the same tolerance
+`FacetDescriber` requires of `Facets`).
+
+#### 12.2 `EnrichedLister` — the one-fetch enrichment path
+
+Populating `Fields` (and, for some plugins, `Facets`) often needs a
+data-bearing fetch the plugin's plain `ListRoots` deliberately avoids —
+caldav's `ListRoots` lists hrefs only, so a per-object body fetch stays out
+of the cheap listing path everything (capture discovery, the bare listing
+below) shares. `EnrichedLister` is the OPTIONAL capability a plugin
+implements to serve that fetch once, for the whole container, instead of
+per node:
+
+```go
+type EnrichedLister interface {
+    RootLister
+
+    // ListEnriched returns node's children with Facets and Fields
+    // populated, narrowed by filter. A nil/empty filter still requests
+    // the full enriched listing. ok == false means "fall back to
+    // ListRoots plus host-side filtering". node MUST be non-nil.
+    ListEnriched(
+        ctx context.Context, node *url.URL, filter FacetFilter,
+    ) (nodes []Node, ok bool, err error)
+}
+```
+
+Probed by type assertion exactly as `FacetCounter` is (§5) — the same
+capability-probe-with-honest-fallback shape. caldav's `ListEnriched` issues
+the identical one-REPORT-per-component fetch `FacetCounts` already does
+(§5), projecting each object's parsed fields onto its `Node` instead of
+folding them into a histogram: the two capabilities are frequently backed
+by the same underlying call, which is why §12.4's caching reuses §11's
+machinery rather than inventing a second scheme.
+
+**Level-scoping is a hard requirement.** `ListEnriched(node)` MUST return
+the SAME set of children `ListRoots(node)` would (enriched, and possibly
+narrowed by filter) — never a deeper or shallower set. This matters
+concretely for a plugin whose tree has more than one container kind at
+different depths: caldav's `ListEnriched` at a single calendar returns that
+calendar's objects (the enrichable unit — one data-bearing fetch covers
+them), but at a calendar-HOME (multiple calendars beneath it) it MUST
+decline (`ok == false`) rather than flatten every calendar's objects into
+one list, because the calendar-home's actual children are calendar
+CONTAINERS — a different node type `ListRoots` already reports correctly
+and unenriched (calendar containers carry no per-object `Fields` to begin
+with). Silently returning the deeper, flattened set at the shallower node
+URI would make `EnrichedLister` disagree with `ListRoots` about what
+`node`'s children are — the same cross-level flattening the `list_nodes`
+no-uri root listing already rules out (FDR 0015, motivated by circus#29) —
+and a consumer has no way to detect the mismatch since both are read
+through the identical `resources/read`/`list_nodes(uri)` surface. A plugin
+whose tree has only one container kind (most plugins) does not need to
+think about this: `ListEnriched(node)` and `ListRoots(node)` naturally
+agree on scope everywhere.
+
+#### 12.3 Filter precedence for listings
+
+A listing consumer (the `mcp` `list_nodes` tool) accepts the SAME
+`FacetFilter` grammar §6 defines (`dimension=value[,dimension=value]…`,
+AND-composed) and resolves it in this order, mirroring §4–§5's
+capability-probe-with-honest-fallback pattern:
+
+1. **Plugin.** `lister.(EnrichedLister)`, when implemented: the plugin
+   filters efficiently in its own fetch (a data-bearing REPORT, a backend
+   query).
+2. **Host-side.** Else, over whatever `Facets` the plain `ListRoots` already
+   populates — free for a plugin that eagerly attaches `Facets` on its cheap
+   listing (the file, git, and yt-dlp plugins do today) — via
+   `FacetFilter.Matches(node.Facets)`, the SAME predicate §6 defines.
+3. **Honest unfiltered.** Else — no `EnrichedLister` and nothing in `Facets`
+   to filter on — the framework returns the UNFILTERED nodes with an
+   explicit signal that filtering was not applied. A listing consumer MUST
+   NOT silently present an unfiltered result as filtered: this is §9's
+   fail-fast principle applied to listings, since (unlike a facet summary,
+   which can degrade to a stale-but-labeled block) a listing has no
+   equivalent "last known good filtered set" to degrade to — the honest
+   move is to say so, not to guess.
+
+A nil/empty filter always requests the full enriched listing (branch 1 when
+available; branches 2/3 are meaningless without a predicate to apply).
+
+#### 12.4 Caching
+
+An enriched, UNFILTERED listing is memoized per node URI using the exact
+token/TTL/volatile-window machinery §11 specifies — the same
+`FacetVersioner` token, the same eager-refresh cadence, and the same §11.3
+volatile-dimension expiry rule (a cached listing containing a node whose
+`Facets` include a volatile dimension key expires on that dimension's
+window, not only on token movement). This is what makes "enriched by
+default" (§12.5) affordable: without it, a plugin whose enrichment needs a
+data-bearing fetch would re-run that fetch on every listing read.
+
+A FILTERED listing request is an explicit ask — mirroring §9's treatment of
+an explicit (filtered) facet request — and always computes fresh via the
+§12.3 precedence directly, bypassing the memoized-unfiltered-listing cache
+entirely: only the base listing every consumer of a container pays for is
+worth memoizing; a filtered slice is narrower and comparatively rare, and
+caching it would mean an unbounded key space (one entry per distinct filter
+string) for little reuse.
+
+#### 12.5 Binding: enriched by default, with an opt-out
+
+The `mcp` binding (FDR 0015) makes every listing entry ENRICHED BY DEFAULT:
+a container's child listing (`resources/read`, and the `list_nodes` tool)
+carries each node's `Facets` (projected as `{dimension: [value keys]}`) and
+`Fields` inline, with no opt-in required. This is a DELIBERATE break from
+listings' pre-§12 shape (`{uri, name, type, container, mimeType}` only) —
+the settled resolution of cutting-garden#160's measured gap, not an
+oversight.
+
+A consumer that wants the cheap, pre-§12 shape opts out via `list_nodes`'
+`bare` parameter: `true` skips enrichment entirely (no `EnrichedLister`
+fetch — the plain `ListRoots` result, unmodified) for the common
+no-filter case, so a scheme whose `ListRoots` stays deliberately cheap
+(caldav's hrefs-only listing) is unaffected by callers who only ever browse
+bare. Combining `bare` with a `filter` still pays whatever fetch the filter
+requires (§12.3 branch 1 may need `EnrichedLister`); only the OUTPUT is
+stripped down.
 
 ## Security Considerations
 
