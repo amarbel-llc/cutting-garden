@@ -1,7 +1,11 @@
 ---
 status: accepted
 date: 2026-06-09
-revised: 2026-07-19 (§ The Root-Provider Capability: root aggregation is a
+revised: 2026-07-19 (new § The Root-Labeler Capability: an OPTIONAL
+  RootProvider sibling that supplies a friendlier per-root label, with the
+  same per-plugin fault isolation as § The Root-Provider Capability —
+  cutting-garden#120)
+  2026-07-19 (§ The Root-Provider Capability: root aggregation is a
   per-plugin fault-isolation boundary, not fail-fast — cutting-garden#165)
 ---
 
@@ -133,6 +137,60 @@ type RootProvider interface {
 - Every `*url.URL` returned by `Roots` MUST be credential-free (no userinfo);
   the same holds for every child URI a plugin's traversal emits
   (§ Security Considerations).
+
+### The Root-Labeler Capability
+
+A `RootProvider` MAY additionally implement an OPTIONAL sibling capability
+that supplies a friendlier display label for one or more of its own roots
+than the framework's default URL-derived label (the last path segment,
+else the host, else the full URI):
+
+```go
+// RootLabeler is the OPTIONAL capability a RootProvider implements to
+// supply a friendlier label for one or more of its own roots than the
+// framework's default URL-derived label — e.g. a root whose path
+// segment is an opaque identifier rather than a human name.
+type RootLabeler interface {
+    RootProvider
+    // RootLabels returns a label for zero or more of the plugin's own
+    // roots (as returned by Roots()), keyed by the root URL's String()
+    // form.
+    RootLabels(ctx context.Context) (map[string]string, error)
+}
+```
+
+- A key absent from the returned map, or an empty label value, MUST fall
+  back to the framework's default label derivation for that root — a
+  partial map is valid; a `RootLabeler` need not label every root it
+  provides.
+- Resolving a label MAY cost a network round trip (e.g. a PROPFIND). A
+  plugin SHOULD memoize a resolved label for reuse across calls when doing
+  so is safe: the roots a `RootProvider` offers, and their labels, are not
+  expected to move without the process restarting (the same staleness
+  bound `config.toml` changes already carry — § Compatibility).
+- A non-nil error from `RootLabels`, or any per-root resolution failure,
+  MUST be non-fatal: it MUST NOT abort root aggregation and MUST NOT
+  cause any OTHER plugin's roots or labels to be dropped — the SAME
+  per-plugin fault-isolation rule § The Root-Provider Capability specifies
+  for `Roots` itself (cutting-garden#165). The aggregating command (`mcp`,
+  `list`) MUST warn naming the plugin and continue, exactly as for a
+  failing `Roots` call.
+- The traversal commands MUST probe for `RootLabeler` alongside
+  `RootProvider` (type assertion, as with every other capability in this
+  document) and use a resolved label in place of the default derivation
+  wherever a root ITSELF — not its children — is rendered as a listing
+  entry (the no-argument `list_nodes`/`list` roots listing). `resources/list`
+  is unaffected: it renders a root's CHILDREN, never the root itself, as a
+  listing (FDR 0015).
+
+The reference implementer is caldav: an account configured directly at a
+single calendar collection (rather than a calendar-home) surfaces the
+calendar's DAV `displayname` as its root label instead of an opaque path
+segment (cutting-garden#120). An account configured at a calendar-home is
+left unlabeled at the top level by this capability — its child calendars
+are already labeled during descent via `ListRoots` (FDR 0014,
+cutting-garden#162), and the home URL itself has no calendar `displayname`
+of its own to give.
 
 ### Root Sources
 
@@ -385,6 +443,7 @@ Tests use binary injection via `bats-emo`:
 |-------------|-----------|-------------|
 | § File Location, missing file is empty | `config.bats` | with no `config.toml`, intrinsic roots still surface and no error occurs |
 | § Root-Provider, aggregation | `config.bats` | a seeded caldav account surfaces as a root in `list` (no URI arg) and an MCP `resources/list` roundtrip |
+| § Root-Labeler, per-root override with fallback and fault isolation | Go unit tests (`plugins/caldav/rootlabels_test.go`, `internal/mcp/aggregate_roots_isolation_test.go`, `internal/mcp/tools_test.go`) | a calendar-scoped caldav account's root label is its DAV displayname; a calendar-home account's root keeps the default derivation; an unreachable account and a `RootLabels`-erroring plugin both degrade non-fatally without dropping another plugin's labels |
 | § Root Sources, intrinsic | `config.bats` | the file plugin surfaces its working directory as a root with no config |
 | § Credential Resolution, precedence | `config.bats` | a node matching an account uses that account's `password_env`; a non-matching host falls back to `CALDAV_USERNAME`/`CALDAV_PASSWORD` |
 | § Loading and Validation | `config.bats` | an unknown key warns but does not abort; a duplicate `name`/empty `url` aborts with EX_USAGE naming the entry |
@@ -408,6 +467,10 @@ This subsystem is additive and changes no existing on-disk capture receipt.
 - **tommy version skew** is caught at build time: the generated decoder stamps
   the producing tommy build, and `tommy generate --check` in the merge gate
   fails on drift.
+- **`RootLabeler` is additive and opt-in.** A `RootProvider` that does not
+  implement it is unaffected — the framework's pre-existing URL-derived
+  label applies exactly as before. A plugin adopting it need not label
+  every root it offers (§ The Root-Labeler Capability).
 
 ## Relationship to RFC 0006
 
@@ -449,6 +512,12 @@ influences RFC 0006 resolution in this revision.
   deferral this RFC acts on. #55 (sftp), #54 (webdav), #53 (github) — planned
   account-bearing plugins this schema extends to. #73 — expose plugin resources
   through an MCP server.
+- cutting-garden#120 — friendly root labels; motivates § The Root-Labeler
+  Capability. #162 — calendar-home discovery already labels a
+  `RootLabeler`-unlabeled account's children during descent (FDR 0014),
+  the complementary case this capability does not need to cover.
+- cutting-garden#165 — per-plugin fault isolation; § The Root-Labeler
+  Capability applies the same rule to `RootLabels` resolution failures.
 - madder `MakeSSHClientFromSSHConfig`
   (`internal/foxtrot/blob_stores/util_ssh.go`) — the URI-explicit-over-host-
   resolved credential precedence this RFC generalizes; madder's `// TODO move

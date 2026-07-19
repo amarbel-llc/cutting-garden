@@ -1,7 +1,12 @@
 ---
 status: proposed
 date: 2026-06-20
-revised: 2026-07-19 (new §12: enriched, filterable listings — `Node.Fields`,
+revised: 2026-07-19 (§6: `FacetFilter` validation against the declared
+    schema — an undeclared dimension or an off-domain closed-dimension
+    value is REJECTED with an actionable error rather than silently
+    matching nothing; §2/describe_node_types: a closed dimension's
+    declared `Values` are surfaced for discoverability — resolves #161)
+  2026-07-19 (new §12: enriched, filterable listings — `Node.Fields`,
     `ListingFieldsDescriber`, `EnrichedLister` — resolves #160)
   2026-07-12 (§9 fail-fast rescoped to explicit requests; new §11
   summary memoization, change tokens, and eager refresh — resolves #133)
@@ -185,6 +190,18 @@ type FacetDescriber interface {
 }
 ```
 
+**Discoverability of closed domains.** A CLOSED dimension's declared
+`Values` (the complete value set, §2) MUST be surfaced through
+`describe_node_types` (the mcp binding, FDR 0015), not only used
+internally by filter validation (§6): a consumer needs to learn a
+dimension's valid predicate values (e.g. `due_band`'s `overdue`, `today`,
+`this-week`, `later`) without guessing at them. An OPEN dimension
+(`Values == nil`) has no declared set to surface; `describe_node_types`
+MUST omit the values list for it rather than inventing one. This is the
+discoverability half of §6's filter-value validation — the two exist
+together so a rejected filter's error message and the schema a consumer
+would have consulted beforehand agree exactly (cutting-garden#161).
+
 ### 3. The aggregate and its merge semantics
 
 ```go
@@ -314,6 +331,36 @@ negation are out of scope (compose successive reads). Repeating a dimension is
 RESERVED (a future within-axis "or"); until specified, a consumer MUST reject a
 filter that names the same dimension twice. A predicate naming an undeclared
 dimension MUST be rejected as a usage error.
+
+**Filter validation.** A `FacetFilter` MUST be validated against the
+resolved node type's declared schema (§2) before it is applied to either a
+`FacetCounter` summary (§5) or a listing (§12.3):
+
+- A predicate naming a dimension absent from every `NodeTypeFacets.Dimensions`
+  the plugin declares MUST be rejected — restating the "undeclared
+  dimension" rule above as part of one validation pass, not a separate
+  check.
+- A predicate whose `Value` does not match any `FacetValue.Key` in a
+  CLOSED dimension's declared `Values` (§2) MUST also be rejected.
+- An OPEN dimension (`Values == nil`) accepts any value: only the
+  dimension NAME is checked for it, since its value domain is discovered
+  at enumeration rather than declared up front.
+- When the resolved plugin declares NO facet schema at all — no
+  `FacetDescriber`, or `DescribeFacets` returns no dimensions for the
+  relevant node type(s) — there is nothing to validate against, and a
+  filter MUST pass through unchecked. This is the explicit
+  backward-compatibility rule: a plugin with no declared schema behaves
+  exactly as it did before this validation existed.
+
+Rejection MUST be an actionable usage error naming what was wrong — the
+undeclared dimension, or the bad value plus the closed dimension's
+complete valid-values list (§2's discoverability requirement is what makes
+that list available to quote) — never a filter that is silently accepted
+and simply matches nothing. Before this rule, a well-formed-looking but
+mistaken filter (an undeclared dimension, or a guessed value outside a
+closed domain) and a filter that genuinely matches zero nodes produced the
+IDENTICAL empty result, with no way for the caller to tell them apart —
+the exact ambiguity that motivated this rule (cutting-garden#161).
 
 Worked example (nebulous): `FacetFilter{{"tag","rust"},{"status","unread"}}`
 over a feed's stories returns the unread rust-tagged stories and a `year`
@@ -754,6 +801,15 @@ is the reference implementer).
 | §3/§8, closed-domain zeros & suppression | `list.bats` | a closed dimension shows a `0` value and is not suppressed; an open constant dimension is suppressed |
 | §7/§9, label failure non-fatal | `mcp.bats` | a labelled dimension with a failing resolver renders keys and the read still succeeds |
 
+§6's filter-validation rule and §2's `describe_node_types` `Values`
+surfacing are, as of this revision, covered by Go unit tests rather than
+a bats lane: `internal/cutting_garden_plugins/facet_test.go`
+(`FacetFilter.Validate` — undeclared dimension, closed-domain
+reject/accept, open-domain any-value, no-schema passthrough) and
+`internal/mcp/facet_test.go` (`read_facets`/`describe_node_types` wiring).
+A `zz-tests_bats/mcp.bats` case is a reasonable follow-up but not yet
+added.
+
 ## Compatibility
 
 - **Additive and opt-in.** Every capability is a new OPTIONAL interface probed
@@ -777,6 +833,14 @@ is the reference implementer).
   `pkgs/cutting_garden_plugins` by the dagnabit facade (RFC 0009) via the
   alias-identity guarantee, so an out-of-tree plugin implements the contract
   identically to an in-repo one.
+- **§6 filter validation is a normative tightening, not purely additive.**
+  This RFC's text already required rejecting an undeclared-dimension
+  predicate (§6); before cutting-garden#161, no implementation actually
+  enforced it, and a closed-dimension off-domain value was accepted and
+  silently matched nothing. A caller that depended on either of those
+  filters silently returning an empty result now gets a rejection instead.
+  The fallback for a plugin with no declared schema (§6, last bullet)
+  keeps such a plugin's behavior byte-for-byte unchanged.
 
 ## References
 
