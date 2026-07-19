@@ -268,8 +268,6 @@ validate-generate-dagnabit:
       DAGNABIT_CEILING_DIRECTORIES="{{ justfile_directory() }}" \
       nix develop --command dagnabit export -check
 
-# Fast `go build` of the CLI into .tmp/cutting-garden for the tight
-# debug dev-loop (skips the full nix build).
 # Validate docs/rfcs/0014-trellis.peg parses under langlang (Sasha's
 # requirement: "langlang should always be able to parse the grammar" —
 # RFC 0014 / docs/features/0022-trellis.md's authored-langlang-compatible
@@ -296,6 +294,8 @@ validate-grammar LANGLANG_DIR='/home/sasha/eng/repos/langlang':
       go run ./cmd/langlang -grammar "$peg" -grammar-ast -disable-builtins -disable-spaces) >/dev/null
     gum log --level info "validate-grammar: ok ($peg parses under langlang)"
 
+# Fast `go build` of the CLI into .tmp/cutting-garden for the tight
+# debug dev-loop (skips the full nix build).
 [group('debug')]
 debug-build-go:
     nix develop --command go build -o .tmp/cutting-garden ./cmd/cutting-garden
