@@ -64,6 +64,12 @@ type Tools struct {
 	reader         resourceReader
 	// facets is the read_facets tool's read surface (cutting-garden#151).
 	facets facetReader
+	// resolveLister resolves the RootLister capability directly
+	// (cutting-garden#160): list_nodes needs it whenever a filter or the
+	// bare opt-out is requested, since those paths bypass the reader's
+	// ReadResource delegation (which has no filter/bare parameters of its
+	// own) and drive ListRoots/EnrichedLister themselves.
+	resolveLister resolveFunc
 }
 
 // creatorResolveFunc mirrors mutatorResolveFunc for the
@@ -84,6 +90,7 @@ func newTools(roots []*url.URL, reader readSurface) *Tools {
 		resolveCreator: command_components.ResolveContainerCreatorPlugin,
 		reader:         reader,
 		facets:         reader,
+		resolveLister:  command_components.ResolveRootListerPlugin,
 	}
 }
 
@@ -126,7 +133,9 @@ const (
 	listNodesSchema = `{"type":"object","properties":{` +
 		`"uri":{"type":"string","description":"the container/prefix to list children of; omit to list the configured roots (the entry points)"},` +
 		`"limit":{"type":"integer","minimum":0,"description":"max number of child nodes to return (optional). A response SHORTER than limit means you have reached the end of the listing; a full-length response may or may not be the end — pass a larger offset to check."},` +
-		`"offset":{"type":"integer","minimum":0,"description":"number of child nodes to skip before applying limit (optional, default 0). An offset past the end yields an empty array, not an error."}}}`
+		`"offset":{"type":"integer","minimum":0,"description":"number of child nodes to skip before applying limit (optional, default 0). An offset past the end yields an empty array, not an error."},` +
+		`"filter":{"type":"string","description":"optional comma-separated dimension=value predicates (AND-composed, same grammar as read_facets/list --filter, e.g. \"due_band=overdue\") narrowing the returned nodes to those matching. When present the result is wrapped as {nodes, filterApplied, filterMode} instead of a bare array — filterApplied is false (filterMode \"none\") on the rare scheme with no way to filter, so the caller always knows whether the returned nodes are actually narrowed."},` +
+		`"bare":{"type":"boolean","description":"opt out of the default enrichment: true returns the cheap pre-enrichment shape {uri,name,type,container,mimeType} with no facets/fields, skipping any extra data-bearing fetch a plugin would otherwise perform (e.g. caldav skips its per-object body fetch, staying hrefs-only). Combining bare with filter still fetches whatever the filter requires; only the OUTPUT is stripped down. Default false: every entry carries its facets and any plugin-declared human-readable fields (e.g. summary/due/status) inline."}}}`
 	readFacetsSchema = `{"type":"object","required":["uri"],` +
 		`"properties":{` +
 		`"uri":{"type":"string","description":"the container node URI to summarize"},` +
@@ -165,10 +174,17 @@ func readToolDefs() []protocol.ToolV1 {
 			Description: "Browse the tree: list the child nodes under a container URI " +
 				"(or, with no uri, the configured roots — the entry points). " +
 				"Each node carries its uri, so you descend by listing deeper or read a " +
-				"leaf with read_node. Optional limit/offset page a large listing " +
-				"host-side after enumeration; a response shorter than limit signals " +
-				"the end (there is no separate total — read_facets gives you counts " +
-				"without paging through the whole listing).",
+				"leaf with read_node. Every entry is ENRICHED BY DEFAULT with its " +
+				"facets and any plugin-declared human-readable fields (e.g. a caldav " +
+				"object's summary/due/status) inline — pass bare=true to opt out to " +
+				"the cheap {uri,name,type,container,mimeType} shape. An optional " +
+				"filter (the same dimension=value grammar as read_facets) narrows the " +
+				"returned nodes to those matching, wrapping the result as " +
+				"{nodes, filterApplied, filterMode} so you always know whether the " +
+				"nodes were actually narrowed — this is the direct way to retrieve " +
+				"the matching set read_facets can only count. Optional limit/offset " +
+				"page a large listing host-side after enumeration; a response " +
+				"shorter than limit signals the end.",
 			InputSchema: json.RawMessage(listNodesSchema),
 			Annotations: annotationFor(mcp_tool_perms.ToolListNodes),
 		},
@@ -459,6 +475,8 @@ func (t *Tools) call(
 			URI    string `json:"uri"`
 			Limit  int    `json:"limit"`
 			Offset int    `json:"offset"`
+			Filter string `json:"filter"`
+			Bare   bool   `json:"bare"`
 		}
 		if err := json.Unmarshal(args, &in); err != nil {
 			return "", errors.Wrap(err)
@@ -469,6 +487,10 @@ func (t *Tools) call(
 		if in.Offset < 0 {
 			return "", errors.ErrorWithStackf("list_nodes: offset must be >= 0")
 		}
+		filter, err := cutting_garden_plugins.ParseFacetFilter(in.Filter)
+		if err != nil {
+			return "", err
+		}
 		// No uri: the configured roots themselves are the browse entry points
 		// (a root is a container you descend into), mirroring the `list`
 		// command's no-arg listing. This deliberately differs from
@@ -476,8 +498,17 @@ func (t *Tools) call(
 		// itself a calendar (a per-calendar account), listing its children
 		// flattens every event into the entry-point listing (circus#29). A
 		// uri lists that container's children (= reading the container, which
-		// yields its child listing).
+		// yields its child listing). Roots are plugin entry points, not
+		// data-bearing nodes, so enrichment/filtering do not apply here; bare
+		// is accepted (a no-op — this shape was always bare) but filter is
+		// rejected, since there is nothing meaningful to filter.
 		if in.URI == "" {
+			if len(filter) > 0 {
+				return "", errors.ErrorWithStackf(
+					"list_nodes: filter requires a uri; the aggregated roots " +
+						"listing has no facets to filter",
+				)
+			}
 			views := make([]nodeView, 0, len(t.roots))
 			for _, root := range t.roots {
 				views = append(views, nodeView{
@@ -493,21 +524,7 @@ func (t *Tools) call(
 			}
 			return string(body), nil
 		}
-		res, err := t.reader.ReadResource(ctx, in.URI)
-		if err != nil {
-			return "", err
-		}
-		text := renderContents(res.Contents)
-		// A byte-for-byte-unchanged default is REQUIRED (cutting-garden#86):
-		// skip pagination entirely when neither param was given, rather than
-		// slicing with limit=0 (which would empty a container's listing).
-		if in.Limit > 0 || in.Offset > 0 {
-			text, err = paginateListingText(text, in.Offset, in.Limit)
-			if err != nil {
-				return "", errors.Wrap(err)
-			}
-		}
-		return text, nil
+		return t.listNodesURI(ctx, in.URI, filter, in.Bare, in.Offset, in.Limit)
 
 	case mcp_tool_perms.ToolReadFacets:
 		var in struct {
@@ -534,6 +551,136 @@ func (t *Tools) call(
 	default:
 		return "", errors.ErrorWithStackf("unknown tool %q", name)
 	}
+}
+
+// filteredListingView is list_nodes(uri)'s output shape whenever a filter
+// was requested (cutting-garden#160): a wrapper carrying the honest
+// filter-precedence signal (RFC 0012 §6) alongside the (possibly narrowed)
+// nodes, so a caller always knows whether the returned set was actually
+// filtered. With no filter requested, list_nodes(uri) keeps returning a
+// bare JSON array of nodeView (now enriched by default) — unwrapped, for
+// continuity with the pre-#160 shape and with resources/read's listing.
+type filteredListingView struct {
+	Nodes []nodeView `json:"nodes"`
+	// Filter is the requested filter string, echoed back for clarity.
+	Filter string `json:"filter"`
+	// FilterApplied is true iff Nodes was actually narrowed by Filter
+	// (filterMode "plugin" or "host"); false means the filter could NOT be
+	// applied (filterMode "none") and Nodes is the UNFILTERED listing —
+	// never silently presented as filtered.
+	FilterApplied bool `json:"filterApplied"`
+	// FilterMode names which precedence branch produced Nodes: "plugin"
+	// (the scheme's own efficient filtered fetch), "host" (framework-side
+	// FacetFilter.Matches over already-populated Facets), or "none" (could
+	// not filter; Nodes is unfiltered).
+	FilterMode string `json:"filterMode"`
+}
+
+// listNodesURI implements the list_nodes(uri) branch: the byte-for-byte
+// unchanged default (delegates to t.reader.ReadResource, cutting-garden#86)
+// when neither filter nor bare is requested, and the enrichment/filter/bare
+// paths (cutting-garden#160) otherwise. bare's cheap path (plain ListRoots,
+// no EnrichedLister fetch) applies only with an empty filter — combining
+// bare with a filter still pays whatever fetch the filter requires; only
+// the OUTPUT is stripped down to the bare shape.
+func (t *Tools) listNodesURI(
+	ctx context.Context,
+	uri string,
+	filter cutting_garden_plugins.FacetFilter,
+	bare bool,
+	offset, limit int,
+) (string, error) {
+	if len(filter) == 0 && !bare {
+		res, err := t.reader.ReadResource(ctx, uri)
+		if err != nil {
+			return "", err
+		}
+		text := renderContents(res.Contents)
+		// A byte-for-byte-unchanged default is REQUIRED (cutting-garden#86):
+		// skip pagination entirely when neither param was given, rather
+		// than slicing with limit=0 (which would empty a listing).
+		if limit > 0 || offset > 0 {
+			var perr error
+			text, perr = paginateListingText(text, offset, limit)
+			if perr != nil {
+				return "", errors.Wrap(perr)
+			}
+		}
+		return text, nil
+	}
+
+	if len(filter) == 0 {
+		// bare, no filter: the cheap path — plain ListRoots only, no
+		// EnrichedLister fetch. A childless result may be a leaf (or an
+		// empty container); that rare case falls back to the full
+		// (enriched) ReadResource path so a leaf body read still works
+		// through list_nodes, exactly as the non-bare path does.
+		u, lister, err := t.resolveLister(uri)
+		if err != nil {
+			return "", err
+		}
+		nodes, err := lister.ListRoots(ctx, u)
+		if err != nil {
+			return "", errors.Wrapf(err, "list roots under %s", uri)
+		}
+		if len(nodes) == 0 {
+			res, err := t.reader.ReadResource(ctx, uri)
+			if err != nil {
+				return "", err
+			}
+			return renderContents(res.Contents), nil
+		}
+		views := make([]nodeView, 0, len(nodes))
+		for _, n := range nodes {
+			views = append(views, bareNodeView(lister, n))
+		}
+		views = paginate(views, offset, limit)
+		body, err := json.MarshalIndent(views, "", "  ")
+		if err != nil {
+			return "", errors.Wrap(err)
+		}
+		return string(body), nil
+	}
+
+	// A filter is requested (bare or not): resolve the lister directly and
+	// run the RFC 0012 §6 precedence (plugin -> host -> honest-unfiltered).
+	u, lister, err := t.resolveLister(uri)
+	if err != nil {
+		return "", err
+	}
+	nodes, mode, err := enrichedListing(ctx, lister, u, filter)
+	if err != nil {
+		return "", errors.Wrapf(err, "list %s (filtered)", uri)
+	}
+	views := make([]nodeView, 0, len(nodes))
+	for _, n := range nodes {
+		if bare {
+			views = append(views, bareNodeView(lister, n))
+		} else {
+			views = append(views, enrichedNodeView(lister, n))
+		}
+	}
+	views = paginate(views, offset, limit)
+	body, err := json.MarshalIndent(filteredListingView{
+		Nodes:         views,
+		Filter:        filterString(filter),
+		FilterApplied: mode != filterModeNone,
+		FilterMode:    mode,
+	}, "", "  ")
+	if err != nil {
+		return "", errors.Wrap(err)
+	}
+	return string(body), nil
+}
+
+// filterString renders a FacetFilter back to its "dim=val,dim2=val2" wire
+// form, for echoing in filteredListingView.
+func filterString(filter cutting_garden_plugins.FacetFilter) string {
+	parts := make([]string, 0, len(filter))
+	for _, p := range filter {
+		parts = append(parts, p.Dimension+"="+p.Value)
+	}
+	return strings.Join(parts, ",")
 }
 
 // paginate slices items to [offset:offset+limit] (cutting-garden#86 phase A):

@@ -1,0 +1,373 @@
+package mcp
+
+import (
+	"context"
+	"encoding/json"
+	"net/url"
+	"strings"
+	"testing"
+
+	"code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
+	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
+)
+
+// facetedLister is fakeLister whose ListRoots ALSO populates Node.Facets on
+// each leaf — mirroring how file/git/ytdlp eagerly populate Facets on their
+// plain (non-enriched) listing. The branch-b fixture: host-side filtering
+// works over Facets already present on the cheap listing, no EnrichedLister
+// needed.
+type facetedLister struct{ fakeLister }
+
+func (facetedLister) ListRoots(
+	ctx context.Context, node *url.URL,
+) ([]cutting_garden_plugins.Node, error) {
+	nodes, err := (fakeLister{}).ListRoots(ctx, node)
+	if err != nil {
+		return nil, err
+	}
+	for i := range nodes {
+		if nodes[i].Type == "test-object-v1" {
+			nodes[i].Facets = map[string][]cutting_garden_plugins.FacetValue{
+				"status": {{Key: "CONFIRMED"}},
+			}
+		}
+	}
+	return nodes, nil
+}
+
+// enrichedTestLister implements EnrichedLister directly (the caldav-shaped
+// fixture, branch a): one call returns every object with BOTH Facets and
+// Fields populated, optionally narrowed by filter.
+type enrichedTestLister struct {
+	fakeLister
+	calls int
+}
+
+func (l *enrichedTestLister) ListEnriched(
+	_ context.Context, node *url.URL, filter cutting_garden_plugins.FacetFilter,
+) ([]cutting_garden_plugins.Node, bool, error) {
+	l.calls++
+	all := []cutting_garden_plugins.Node{
+		{
+			URI:  &url.URL{Scheme: "faketest", Host: node.Host, Path: "/work/task1.ics"},
+			Name: "task1.ics",
+			Type: "test-object-v1",
+			Facets: map[string][]cutting_garden_plugins.FacetValue{
+				"status": {{Key: "CONFIRMED"}},
+			},
+			Fields: map[string]any{"summary": "Buy milk", "due": "2026-07-20"},
+		},
+		{
+			URI:  &url.URL{Scheme: "faketest", Host: node.Host, Path: "/work/task2.ics"},
+			Name: "task2.ics",
+			Type: "test-object-v1",
+			Facets: map[string][]cutting_garden_plugins.FacetValue{
+				"status": {{Key: "CANCELLED"}},
+			},
+			Fields: map[string]any{"summary": "Cancelled thing"},
+		},
+	}
+	if len(filter) == 0 {
+		return all, true, nil
+	}
+	out := make([]cutting_garden_plugins.Node, 0, len(all))
+	for _, n := range all {
+		if filter.Matches(n.Facets) {
+			out = append(out, n)
+		}
+	}
+	return out, true, nil
+}
+
+func mustParseTestURL(t *testing.T, s string) *url.URL {
+	t.Helper()
+	u, err := url.Parse(s)
+	if err != nil {
+		t.Fatalf("parse %q: %v", s, err)
+	}
+	return u
+}
+
+// TestEnrichedListing_PrefersPluginCapability pins branch (a): an
+// EnrichedLister is called (even unfiltered) and its result is served
+// as-is, with an empty filterMode since no filter was requested.
+func TestEnrichedListing_PrefersPluginCapability(t *testing.T) {
+	l := &enrichedTestLister{}
+	nodes, mode, err := enrichedListing(
+		context.Background(), l, mustParseTestURL(t, "faketest://h/work"), nil,
+	)
+	if err != nil {
+		t.Fatalf("enrichedListing: %v", err)
+	}
+	if len(nodes) != 2 {
+		t.Fatalf("got %d nodes, want 2: %+v", len(nodes), nodes)
+	}
+	if mode != "" {
+		t.Errorf("mode = %q, want empty (no filter requested)", mode)
+	}
+	if l.calls != 1 {
+		t.Errorf("ListEnriched called %d times, want 1", l.calls)
+	}
+	if nodes[0].Fields["summary"] != "Buy milk" {
+		t.Errorf("Fields not carried through: %+v", nodes[0])
+	}
+}
+
+// TestEnrichedListing_PluginAppliesFilter pins branch (a) with a filter: the
+// EnrichedLister narrows the result itself, reported as filterModePlugin.
+func TestEnrichedListing_PluginAppliesFilter(t *testing.T) {
+	l := &enrichedTestLister{}
+	nodes, mode, err := enrichedListing(
+		context.Background(), l, mustParseTestURL(t, "faketest://h/work"),
+		cutting_garden_plugins.FacetFilter{{Dimension: "status", Value: "CONFIRMED"}},
+	)
+	if err != nil {
+		t.Fatalf("enrichedListing: %v", err)
+	}
+	if len(nodes) != 1 || nodes[0].Name != "task1.ics" {
+		t.Fatalf("filtered nodes = %+v, want just task1.ics", nodes)
+	}
+	if mode != filterModePlugin {
+		t.Errorf("mode = %q, want %q", mode, filterModePlugin)
+	}
+}
+
+// TestEnrichedListing_HostSideFiltersOverPlainFacets pins branch (b): a
+// plugin with no EnrichedLister but whose plain ListRoots already populates
+// Node.Facets (file/git/ytdlp today) is filtered host-side.
+func TestEnrichedListing_HostSideFiltersOverPlainFacets(t *testing.T) {
+	l := facetedLister{}
+	nodes, mode, err := enrichedListing(
+		context.Background(), l, mustParseTestURL(t, "faketest://h/work"),
+		cutting_garden_plugins.FacetFilter{{Dimension: "status", Value: "CONFIRMED"}},
+	)
+	if err != nil {
+		t.Fatalf("enrichedListing: %v", err)
+	}
+	if len(nodes) != 1 || nodes[0].Name != "task1.ics" {
+		t.Fatalf("host-filtered nodes = %+v, want just task1.ics", nodes)
+	}
+	if mode != filterModeHost {
+		t.Errorf("mode = %q, want %q", mode, filterModeHost)
+	}
+}
+
+// TestEnrichedListing_NoCapabilityIsHonestlyUnfiltered pins branch (c): a
+// plugin with neither EnrichedLister nor any Facets on its plain listing
+// cannot filter at all — the framework returns the UNFILTERED nodes with an
+// explicit "none" signal rather than silently dropping everything (an empty
+// Facets map would otherwise make every predicate fail).
+func TestEnrichedListing_NoCapabilityIsHonestlyUnfiltered(t *testing.T) {
+	l := fakeLister{}
+	nodes, mode, err := enrichedListing(
+		context.Background(), l, mustParseTestURL(t, "faketest://h/work"),
+		cutting_garden_plugins.FacetFilter{{Dimension: "status", Value: "CONFIRMED"}},
+	)
+	if err != nil {
+		t.Fatalf("enrichedListing: %v", err)
+	}
+	if len(nodes) != 1 {
+		t.Fatalf("got %d nodes, want the single unfiltered child: %+v", len(nodes), nodes)
+	}
+	if mode != filterModeNone {
+		t.Errorf("mode = %q, want %q (honest unfiltered signal)", mode, filterModeNone)
+	}
+}
+
+// TestReadResource_ChildViewsCarryFacetsByDefault pins item 1 of #160 at the
+// resources/read layer: a container read's child listing carries each
+// node's Facets by default (Fields too, when the plugin populates them) —
+// no opt-in required.
+func TestReadResource_ChildViewsCarryFacetsByDefault(t *testing.T) {
+	r := newFakeResources(t, "faketest://h/")
+	r.resolve = func(uriStr string) (*url.URL, cutting_garden_plugins.RootLister, error) {
+		u, _, err := fakeResolve(uriStr)
+		if err != nil {
+			return nil, nil, err
+		}
+		return u, facetedLister{}, nil
+	}
+
+	got, err := r.ReadResource(context.Background(), "faketest://h/work")
+	if err != nil {
+		t.Fatalf("ReadResource: %v", err)
+	}
+	var views []nodeView
+	if err := json.Unmarshal([]byte(got.Contents[0].Text), &views); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(views) != 1 {
+		t.Fatalf("got %d children, want 1: %+v", len(views), views)
+	}
+	if got := views[0].Facets["status"]; len(got) != 1 || got[0] != "CONFIRMED" {
+		t.Errorf("child facets = %+v, want status=[CONFIRMED]", views[0].Facets)
+	}
+}
+
+// listerResolve builds a Tools-compatible resolveFunc that always resolves
+// to lister for the faketest scheme, mirroring fakeResolve.
+func listerResolve(lister cutting_garden_plugins.RootLister) resolveFunc {
+	return func(uriStr string) (*url.URL, cutting_garden_plugins.RootLister, error) {
+		u, err := url.Parse(uriStr)
+		if err != nil {
+			return nil, nil, errors.Wrap(err)
+		}
+		if u.Scheme != "faketest" {
+			return nil, nil, errors.ErrorWithStackf("unknown scheme %q", u.Scheme)
+		}
+		return u, lister, nil
+	}
+}
+
+// TestCallTool_ListNodesBareOptOut pins the opt-out param (cutting-garden#160):
+// bare=true returns the pre-enrichment shape, with no facets/fields, even
+// though the underlying plugin carries both.
+func TestCallTool_ListNodesBareOptOut(t *testing.T) {
+	l := &enrichedTestLister{}
+	tools := newFakeTools(t, &fakeMutator{}, "faketest://h/")
+	tools.resolveLister = listerResolve(l)
+
+	res, err := tools.CallTool(context.Background(), "list_nodes",
+		json.RawMessage(`{"uri":"faketest://h/work","bare":true}`))
+	if err != nil {
+		t.Fatalf("transport error: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("list_nodes(bare) errored: %+v", res.Content)
+	}
+	if l.calls != 0 {
+		t.Errorf("bare (no filter) called ListEnriched %d times, want 0 (cheap path)", l.calls)
+	}
+	if strings.Contains(res.Content[0].Text, "facets") || strings.Contains(res.Content[0].Text, "fields") {
+		t.Errorf("bare output carries enrichment: %q", res.Content[0].Text)
+	}
+	var views []nodeView
+	if err := json.Unmarshal([]byte(res.Content[0].Text), &views); err != nil {
+		t.Fatalf("bare output is not a bare array: %v (%q)", err, res.Content[0].Text)
+	}
+	if len(views) != 1 || views[0].URI != "faketest://h/work/task1.ics" {
+		t.Fatalf("bare output = %+v, want the single fakeLister child", views)
+	}
+}
+
+// TestCallTool_ListNodesFilterAppliedByPlugin pins the filter param and the
+// wrapped {nodes,filterApplied,filterMode} output shape (cutting-garden#160):
+// this is the direct "retrieve the matching set" path #160 was filed for.
+func TestCallTool_ListNodesFilterAppliedByPlugin(t *testing.T) {
+	l := &enrichedTestLister{}
+	tools := newFakeTools(t, &fakeMutator{}, "faketest://h/")
+	tools.resolveLister = listerResolve(l)
+
+	res, err := tools.CallTool(context.Background(), "list_nodes",
+		json.RawMessage(`{"uri":"faketest://h/work","filter":"status=CONFIRMED"}`))
+	if err != nil {
+		t.Fatalf("transport error: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("list_nodes(filter) errored: %+v", res.Content)
+	}
+	var view filteredListingView
+	if err := json.Unmarshal([]byte(res.Content[0].Text), &view); err != nil {
+		t.Fatalf("decode: %v (%q)", err, res.Content[0].Text)
+	}
+	if !view.FilterApplied || view.FilterMode != filterModePlugin {
+		t.Errorf("filterApplied/-Mode = %v/%q, want true/%q",
+			view.FilterApplied, view.FilterMode, filterModePlugin)
+	}
+	if len(view.Nodes) != 1 || view.Nodes[0].Name != "task1.ics" {
+		t.Fatalf("filtered nodes = %+v, want just task1.ics", view.Nodes)
+	}
+	// Filtered nodes are enriched too (facets+fields inline) — no follow-up
+	// read_node needed to see WHY they matched or what they are.
+	if view.Nodes[0].Fields["summary"] != "Buy milk" {
+		t.Errorf("filtered node missing inline fields: %+v", view.Nodes[0])
+	}
+}
+
+// TestCallTool_ListNodesFilterHonestlyUnfiltered pins branch (c)'s wire
+// signal: a scheme with no way to filter reports filterApplied=false and
+// filterMode="none", never silently pretending to have narrowed the set.
+func TestCallTool_ListNodesFilterHonestlyUnfiltered(t *testing.T) {
+	tools := newFakeTools(t, &fakeMutator{}, "faketest://h/")
+	tools.resolveLister = listerResolve(fakeLister{})
+
+	res, err := tools.CallTool(context.Background(), "list_nodes",
+		json.RawMessage(`{"uri":"faketest://h/work","filter":"status=CONFIRMED"}`))
+	if err != nil {
+		t.Fatalf("transport error: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("list_nodes(filter) errored: %+v", res.Content)
+	}
+	var view filteredListingView
+	if err := json.Unmarshal([]byte(res.Content[0].Text), &view); err != nil {
+		t.Fatalf("decode: %v (%q)", err, res.Content[0].Text)
+	}
+	if view.FilterApplied || view.FilterMode != filterModeNone {
+		t.Errorf("filterApplied/-Mode = %v/%q, want false/%q",
+			view.FilterApplied, view.FilterMode, filterModeNone)
+	}
+	if len(view.Nodes) != 1 {
+		t.Errorf("unfiltered fallback nodes = %+v, want the single unfiltered child", view.Nodes)
+	}
+}
+
+// TestCallTool_ListNodesFilterOnRootsIsToolError pins that filtering the
+// no-uri roots listing (which has no facets to filter) is rejected rather
+// than silently ignored.
+func TestCallTool_ListNodesFilterOnRootsIsToolError(t *testing.T) {
+	tools := newFakeTools(t, &fakeMutator{}, "faketest://h/a/", "faketest://h/b/")
+	res, err := tools.CallTool(context.Background(), "list_nodes",
+		json.RawMessage(`{"filter":"status=CONFIRMED"}`))
+	if err != nil {
+		t.Fatalf("transport error: %v", err)
+	}
+	if !res.IsError {
+		t.Error("filter with no uri must be an IsError tool result")
+	}
+}
+
+// TestAcceptance_OneFilteredListNodesCallReturnsMatchingEnrichedNodes pins
+// the #160 collapse in spirit: on a multi-item container, ONE filtered
+// list_nodes call returns exactly the matching nodes with enough inline
+// data (facets + fields) to answer without a per-node read_node — exercised
+// end to end through the real mcp tool surface (Tools -> Resources -> the
+// fake EnrichedLister plugin), mirroring
+// TestAcceptance_UnreadCountsPerFeedInOneCall's shape for read_facets.
+func TestAcceptance_OneFilteredListNodesCallReturnsMatchingEnrichedNodes(t *testing.T) {
+	l := &enrichedTestLister{}
+	r := newFakeResources(t, "faketest://h/")
+	r.resolve = func(uriStr string) (*url.URL, cutting_garden_plugins.RootLister, error) {
+		u, err := url.Parse(uriStr)
+		if err != nil {
+			return nil, nil, errors.Wrap(err)
+		}
+		return u, l, nil
+	}
+	tools := newTools(r.roots, r)
+	tools.resolveLister = listerResolve(l)
+
+	res, err := tools.CallTool(context.Background(), "list_nodes",
+		json.RawMessage(`{"uri":"faketest://h/work","filter":"status=CONFIRMED"}`))
+	if err != nil {
+		t.Fatalf("transport error: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("list_nodes(filter) errored: %+v", res.Content)
+	}
+	var view filteredListingView
+	if err := json.Unmarshal([]byte(res.Content[0].Text), &view); err != nil {
+		t.Fatalf("decode: %v (%q)", err, res.Content[0].Text)
+	}
+	if len(view.Nodes) != 1 {
+		t.Fatalf("got %d matching nodes, want exactly 1: %+v", len(view.Nodes), view.Nodes)
+	}
+	n := view.Nodes[0]
+	if n.Fields["summary"] != "Buy milk" || n.Fields["due"] != "2026-07-20" {
+		t.Errorf("matching node missing enough inline data to answer without "+
+			"a follow-up read_node: %+v", n)
+	}
+	if got := n.Facets["status"]; len(got) != 1 || got[0] != "CONFIRMED" {
+		t.Errorf("matching node facets = %+v, want status=[CONFIRMED]", n.Facets)
+	}
+}

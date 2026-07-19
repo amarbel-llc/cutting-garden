@@ -151,7 +151,7 @@ func (r *Resources) ReadResource(
 	if err != nil {
 		return nil, errors.Wrapf(err, "read resource %s", uri)
 	}
-	nodes, err := lister.ListRoots(ctx, u)
+	nodes, _, err := enrichedListing(ctx, lister, u, nil)
 	if err != nil {
 		return nil, errors.Wrapf(err, "list roots under %s", uri)
 	}
@@ -169,14 +169,7 @@ func (r *Resources) ReadResource(
 
 	views := make([]nodeView, 0, len(nodes))
 	for _, n := range nodes {
-		nt, _ := cutting_garden_plugins.NodeTypeFor(lister, n.Type)
-		views = append(views, nodeView{
-			URI:       n.URIString(),
-			Name:      n.Name,
-			Type:      n.Type,
-			Container: nt.Container,
-			MimeType:  nt.BodyMimeType(),
-		})
+		views = append(views, enrichedNodeView(lister, n))
 	}
 	body, err := json.MarshalIndent(views, "", "  ")
 	if err != nil {
@@ -409,12 +402,74 @@ func (r *Resources) ListResourceTemplates(
 // what a leaf's bytes are — without hardcoding tag strings. MimeType is
 // the node body's content type (leaf default applied); it is empty for
 // containers, whose listing rendering is the server's concern.
+//
+// Facets and Fields carry the node's ENRICHMENT (cutting-garden#160): a
+// listing is enriched by default, so both are populated whenever the
+// underlying Node carries them (nil/empty omits the key entirely, so a
+// caller of the bare/opt-out path — which never populates them — sees
+// the pre-#160 shape byte-for-byte).
 type nodeView struct {
 	URI       string `json:"uri"`
 	Name      string `json:"name"`
 	Type      string `json:"type"`
 	Container bool   `json:"container"`
 	MimeType  string `json:"mimeType,omitempty"`
+	// Facets projects the node's own facet membership (Node.Facets): per
+	// dimension key, the value keys it belongs to. Order is a histogram
+	// sort hint irrelevant per-node, so it is dropped here — the raw
+	// FacetValue.Key list is what a listing consumer filters/reads by.
+	Facets map[string][]string `json:"facets,omitempty"`
+	// Fields projects the node's declared human-readable listing
+	// projection (Node.Fields) — e.g. a caldav object's summary/due/
+	// status/dtstart.
+	Fields map[string]any `json:"fields,omitempty"`
+}
+
+// projectNodeFacets renders a node's facet membership map for the listing
+// view: per dimension, just the value keys (Order is a histogram-sort hint,
+// meaningless for a single node's membership). nil in, nil out — so an
+// unenriched or facet-free node's view omits the key (omitempty).
+func projectNodeFacets(
+	facets map[string][]cutting_garden_plugins.FacetValue,
+) map[string][]string {
+	if len(facets) == 0 {
+		return nil
+	}
+	out := make(map[string][]string, len(facets))
+	for dim, values := range facets {
+		keys := make([]string, 0, len(values))
+		for _, v := range values {
+			keys = append(keys, v.Key)
+		}
+		out[dim] = keys
+	}
+	return out
+}
+
+// bareNodeView projects n onto the cheap, pre-#160 shape: no facets, no
+// fields — the list_nodes `bare` opt-out (cutting-garden#160).
+func bareNodeView(
+	lister cutting_garden_plugins.RootLister, n cutting_garden_plugins.Node,
+) nodeView {
+	nt, _ := cutting_garden_plugins.NodeTypeFor(lister, n.Type)
+	return nodeView{
+		URI:       n.URIString(),
+		Name:      n.Name,
+		Type:      n.Type,
+		Container: nt.Container,
+		MimeType:  nt.BodyMimeType(),
+	}
+}
+
+// enrichedNodeView projects n onto the enriched (default) shape: bareNodeView
+// plus whatever Facets/Fields the node carries.
+func enrichedNodeView(
+	lister cutting_garden_plugins.RootLister, n cutting_garden_plugins.Node,
+) nodeView {
+	v := bareNodeView(lister, n)
+	v.Facets = projectNodeFacets(n.Facets)
+	v.Fields = n.Fields
+	return v
 }
 
 // nodeToResource maps a traversal Node onto an MCP resource. A container
