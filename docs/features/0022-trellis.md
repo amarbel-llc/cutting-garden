@@ -154,6 +154,138 @@ Both want a dedicated grill before any design lands; neither is scheduled.
 [cutting-garden#156]: https://code.linenisgreat.com/cutting-garden/cutting-garden/issues/156
 [cutting-garden#157]: https://code.linenisgreat.com/cutting-garden/cutting-garden/issues/157
 
+## Amendment: whitespace-insignificance via identifier-limiting (2026-07-19)
+
+status: exploring — prototype only. The normative grammar
+(`docs/rfcs/0014-trellis.peg`) is UNCHANGED; the prototype lives beside it
+at `docs/rfcs/0014-trellis-whitespace-optional.peg` and is validated (see
+below) but not adopted.
+
+### The question
+
+"Whitespace is semantic in trellis" (boundary #… ; RFC 0014 principle 4)
+was taken as a fixed constraint — and the langlang-compatibility pledge
+disables builtin spacing precisely because of it (`validate-grammar` runs
+`-disable-builtins -disable-spaces`). This amendment records a walkthrough
+of whether that constraint is actually load-bearing, and how much of it can
+be removed by GRAMMAR restructuring (not by langlang's auto-spacer, which
+stays the wrong tool — it injects an OPTIONAL space at every sequence
+boundary, including the one boundary that is intrinsically significant,
+below).
+
+### What "whitespace is semantic" actually decomposes into
+
+It is not one property. Pulling it apart:
+
+1. **AND-by-adjacency is already the model, and its space is INTRINSIC.**
+   `Step <- Term (SP Term)*` is juxtaposition-AND. Two bare identifiers
+   need a separating space *regardless of any whitespace policy*, because
+   `IdentRune` excludes `SP1` at the token level: `todo urgent` is two
+   terms, `todourgent` is one, always. This is tokenization, not a rule
+   that could be relaxed — under exclusion-class opaque identifiers there
+   is no other delimiter. Not removable, and not the interesting part.
+
+2. **The load-bearing required space is around COMBINATORS**, and its job
+   is to break shared-prefix lexical collisions, not to express AND. The
+   canonical case: `a->b` is NOT parser-ambiguous — PEG yields exactly one
+   parse, `FieldPred(a-, >, b)`, because `IdentRune` greedily absorbs the
+   `-` into `a-` and `>` is a valid `FieldOp`. The traversal reading
+   `a -> b` is merely *unreachable* without the space (confirmed against
+   langlang: parse tree shows `FieldName "a-"`, `FieldOp ">"`,
+   `Value "b"`). So the space is a two-meanings-one-string discriminator,
+   not an ambiguity resolver.
+
+3. **The term-final SIGIL SUFFIX is boundary-defined** (the strict sigil
+   rule): `todo:` vs `todo:x` differ by the following rune. This cannot be
+   made whitespace-free without abolishing colon/dot-bearing opaque
+   identifiers (`caldav:fastmail`, `12.7`). Irreducible — but it does not
+   touch ground/espalier literals (which carry no explicit term-final
+   sigils), so isometry is unaffected.
+
+### The finding: limit the identifier, at TOKEN granularity
+
+The clean move (credit: the walkthrough's second turn) is to push
+disambiguation into the identifier class rather than gating operators —
+but the operative unit must be the operator TOKEN, not its leading
+CHARACTER. "Characters that start operators cannot be unescaped identifier
+terminals" is already true for 11 of the 15 operator-leading characters
+(they are in `Reserved`); the residue is exactly `-`, `:`, `.`, `?` — the
+opaque-reference alphabet. Reserving those *characters* wholesale forces
+quoting the bulk of the real corpus (`"caldav-object-v1"`) and turns
+espalier serialization into quote-soup — the isometry cost. Reserving
+against the operator *token* does not:
+
+    IdentRune <- ('-' !'>' !'[') / '/' / (SigilRune &IdentRune)
+               / (!Reserved !'-' !SP1 .)
+
+A `-` is identifier content EXCEPT when it begins `->`/`->>` (`!'>'`) or a
+typed edge `-[` (`!'['`). (Because `-` is not in `Reserved`, the exclusion
+alternative must also drop it, `!'-'`, so the guarded branch is the only
+admission.) With the required `SP` around combinators relaxed to `SP?` in
+`Path`, `SubPath`, and `VersionSub`, `a->b` now self-delimits into
+`a` / `->` / `b`, and all four spacings (`a->b`, `a-> b`, `a ->b`,
+`a -> b`) parse identically as the traversal.
+
+### Isometry survives — this is the decisive result
+
+The earlier claim (walkthrough turn 1) that isometry *forces* significant
+whitespace was WRONG. What isometry needs is self-delimiting term SHAPES,
+which the ground fragment already has: `!type`, `key=value`, `@digest`,
+`[-> …]`, bare id. The only whitespace in a ground espalier literal is
+bare-id adjacency (point 1, intrinsic). Under the token-granular
+identifier-limiting route the serializer emits *exactly what it emits
+today* and it round-trips — no quote-soup. Verified: the espalier vector
+`[story-8841 !newsblur-story-v1 year=2026 [-> content-8841 @blake2b256-…]]`
+parses unchanged under the prototype. It is the *character*-granular route
+that would have broken isometry — which is why token granularity is the
+whole game.
+
+### Residue this prototype deliberately leaves
+
+- **Term-AND boundary stays required-`SP`.** Optionality is scoped to
+  combinator and subpath-head boundaries. A group or prefixed term
+  following another term (`!web-page-v1 [+]`, `!task ^done`) keeps its
+  space — both because bare-value adjacency (`year=2026 feed=hn`) must
+  stay a loud error rather than silently re-lex as `year=2026feed` +
+  `=hn`, and to keep the rule uniform. Consequence: `!web-page-v1[+]` is
+  still rejected glued (a conservative, revisitable choice).
+- **Backward/comparison collision NOT resolved.** `a<-b` still parses as
+  `FieldPred(a, <, -b)`, because `<` is consumed by the field-operator
+  layer before `Path`'s combinator loop runs. Forcing `<-`/`<<-` to win
+  when glued needs a `FieldOp` gate (`'<' !'-'`) whose price is DELETING
+  the "less-than a dash-led bareword value" spelling (`rank<-3` ceasing to
+  mean `rank < -3`, requiring `rank<"-3"`). That is a language-level policy
+  call left to reviewers, not silently baked in — so forward and backward
+  arrows are asymmetric in the prototype, by design.
+
+### Validation
+
+`docs/rfcs/0014-trellis-whitespace-optional.peg` parses under langlang
+(`-grammar-ast -disable-builtins -disable-spaces`, same lane as
+`validate-grammar`). Every RFC 0014 conformance vector parses with
+unchanged meaning; the new glued forms (`a->b`, `!task->!done`,
+`->>!task ^done`, `caldav:fastmail->component=VEVENT`, `[->content-8841]`,
+`[+state=closed]`) parse; the negative cases (`->>`, `done@`,
+`"unterminated`, `[]`) still fail. One CHANGED case:
+`!task->!done` — previously a documented syntax error (no `FieldPred`
+escape for a `!`-led name) — is now the legal traversal `!task -> !done`,
+the intended consequence of glued combinators (would flip
+`internal/trellis/parser_test.go`'s corresponding negative case if the
+hand-rolled parser adopted this grammar).
+
+### Net
+
+Whitespace in trellis can be made insignificant across the arrow and
+bracket surfaces, and throughout the ground/espalier form, via
+identifier-limiting (token granularity) + optional combinator/subpath
+`SP`, with isometry intact. The irreducible remainder is the explicit
+term-final sigil suffix in query position and the intrinsic bare-term
+separator — a small, well-contained set, not the pervasive dependency the
+"whitespace is semantic" headline implies. Whether to adopt (and whether
+to pay the backward-collision cost for symmetry) is a normative decision
+for RFC 0014; this amendment and the prototype exist to make that decision
+reviewable rather than asserted.
+
 ## Deferred
 
 See RFC 0014 "Deferred"; additionally here: facets as *named* trellis

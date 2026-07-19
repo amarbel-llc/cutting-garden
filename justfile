@@ -286,10 +286,15 @@ validate-generate-dagnabit:
 validate-grammar:
     #!/usr/bin/env bash
     set -euo pipefail
-    peg="{{ justfile_directory() }}/docs/rfcs/0014-trellis.peg"
     langlang_bin="$(nix build "{{ justfile_directory() }}#langlang" --no-link --print-out-paths)/bin/langlang"
-    "$langlang_bin" -grammar "$peg" -grammar-ast -disable-builtins -disable-spaces >/dev/null
-    gum log --level info "validate-grammar: ok ($peg parses under langlang)"
+    # The normative grammar plus the whitespace-optional prototype
+    # (FDR 0022 Amendment, 2026-07-19) — both must always parse under langlang.
+    for peg in \
+        "{{ justfile_directory() }}/docs/rfcs/0014-trellis.peg" \
+        "{{ justfile_directory() }}/docs/rfcs/0014-trellis-whitespace-optional.peg"; do
+        "$langlang_bin" -grammar "$peg" -grammar-ast -disable-builtins -disable-spaces >/dev/null
+        gum log --level info "validate-grammar: ok ($peg parses under langlang)"
+    done
 
 # Fast `go build` of the CLI into .tmp/cutting-garden for the tight
 # debug dev-loop (skips the full nix build).
