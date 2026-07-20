@@ -15,7 +15,7 @@ RFC 0009) like an out-of-tree plugin would — it imports `pkgs/`, never
   `jira:http://10.0.0.2:8080/PROJ`).
 
 This is the capture-shaped sibling of the **`sisyphus`** moxin in
-[`amarbel-llc/moxy`](https://github.com/amarbel-llc/moxy), which exposes
+[`amarbel-llc/moxy`](https://code.linenisgreat.com/moxy), which exposes
 the same Jira Cloud REST v3 surface (search-by-JQL, issue GET, project
 enumeration, `JIRA_URL`/`JIRA_USERNAME`/`JIRA_API_TOKEN` basic auth) as
 interactive MCP tools. sisyphus mutates a live tracker; this plugin

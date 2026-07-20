@@ -169,7 +169,7 @@ EntryV1 `CapturePlugin` registry and *then* type-asserts
 EntryV1 `CapturePlugin`/`DiffPlugin` for the `git` scheme to resolve at
 all. Removing the stubs depends on teaching the orchestrator to resolve
 protocol-only plugins — tracked in
-[amarbel-llc/cutting-garden#48](https://github.com/amarbel-llc/cutting-garden/issues/48).
+[amarbel-llc/cutting-garden#48](https://code.linenisgreat.com/cutting-garden/issues/48).
 
 ## TypeTag reuse
 
