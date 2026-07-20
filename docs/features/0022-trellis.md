@@ -154,6 +154,76 @@ Both want a dedicated grill before any design lands; neither is scheduled.
 [cutting-garden#156]: https://code.linenisgreat.com/cutting-garden/cutting-garden/issues/156
 [cutting-garden#157]: https://code.linenisgreat.com/cutting-garden/cutting-garden/issues/157
 
+## Whitespace-insignificance via identifier-limiting (explored 2026-07-19)
+
+Trellis requires whitespace around combinators (`a -> b`, never `a->b`) —
+RFC 0014 design constraint #4, "whitespace is semantic." A prototype
+(GitHub PR #133, **closed unmerged**; findings preserved here) tested
+whether that is load-bearing, by pushing disambiguation into the
+identifier class at **token granularity** rather than leaning on
+langlang's auto-spacer — which stays the wrong tool, since it injects an
+*optional* space at every sequence boundary, including the one boundary
+that is intrinsically significant:
+
+    IdentRune <- ('-' !'>' !'[') / … / (!Reserved !'-' !SP1 .)
+
+`-` stays identifier content EXCEPT where it begins a combinator token
+(`->`, `->>`, `-[`), which lets the required `SP` around combinators
+relax to `SP?` in `Path`/`SubPath`/`VersionSub`. `a->b` then
+self-delimits, and all four spacings parse identically as the traversal.
+
+Findings, which stand independent of whether the prototype is adopted:
+
+- **`a->b` is not ambiguous.** PEG yields exactly one parse —
+  `FieldPred(a-, >, b)` — so the traversal reading is merely
+  *unreachable* without the space, not contested. (Independently
+  rediscovered while writing the hand-rolled parser's negative-case
+  suite: `a->b` had to be swapped for `!task->!done`, the only form with
+  no legal FieldPred reading.)
+- **Token granularity is the decisive axis.** Reserving the *character*
+  `-` breaks isometry — every hyphenated tag becomes quote-soup
+  (`"caldav-object-v1"`). Reserving the *token* does not.
+- **Isometry survives** token-granular limiting: ground/espalier literals
+  already use self-delimiting term shapes, so the serializer round-trips
+  unchanged.
+- **Validated** under langlang: every RFC 0014 conformance vector parses
+  with unchanged meaning; glued forms (`a->b`, `->>!task ^done`,
+  `caldav:fastmail->component=VEVENT`, `[->content-8841]`) parse; and
+  negative cases (`->>`, `done@`, `"unterminated`, `[]`) still fail.
+- **One intended semantic change:** `!task->!done` becomes the legal
+  traversal `!task -> !done` rather than a syntax error — which would
+  flip that negative case in `internal/trellis`'s parser suite.
+
+Deliberately unresolved residue: the intrinsic bare-term separator; the
+term-final sigil suffix; and the backward/comparison collision (`a<-b`),
+whose fix would delete dash-led field values (`rank<-3` ceasing to mean
+`rank < -3`).
+
+**Scope — combinator delimitation only.** Combinators are a trellis-only
+construct, so this question does not reach the sibling grammars: piggy's
+`marklid.peg` is whitespace-FREE by construction (a markl-id has no
+whitespace anywhere in its wire form), and hyphence's content grammar has
+no combinators — a hyphence line carries ONE term, never a
+space-separated run, so it has neither of trellis's load-bearing rules.
+(hyphence went further on 2026-07-19: its one *required* space — before a
+trailing `%` comment — became optional (`SP?`), admitting **glued
+comments**, since `%` is already `Reserved` and therefore
+self-delimiting. Its content grammar is now semantically
+whitespace-insensitive: whitespace is permitted wherever it appears,
+required nowhere, and never meaning-bearing. Note the PEG mechanics —
+`SP` had to become OPTIONAL, not be deleted: unlike Go/Rust/C/JS, whose
+tokenizers skip inter-token whitespace independently of what introduces a
+comment, a PEG must consume every byte with some production, so deleting
+`SP` would have forbidden the spaced form rather than permitting the
+glued one. Trellis cannot follow regardless: its space genuinely
+separates terms and delimits combinators.)
+
+Note this is a question about the LANGUAGE, kept strictly separate from
+langlang's space-injector: `-disable-spaces` stops the tool inserting
+optional `Spacing` at sequence boundaries, which says nothing about
+whether the language's whitespace is significant. Adoption stays an open
+normative RFC 0014 decision; the normative grammar is unchanged.
+
 ## Deferred
 
 See RFC 0014 "Deferred"; additionally here: facets as *named* trellis
