@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
-	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
+	"code.linenisgreat.com/madder/go/pkgs/blob_stores"
 )
 
 // captureForDiff runs CaptureProtocol against the fake and returns the

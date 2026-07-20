@@ -7,7 +7,7 @@ import (
 
 	"code.linenisgreat.com/cutting-garden/pkgs/capture_receipt"
 	"code.linenisgreat.com/cutting-garden/pkgs/plugin_blob_io"
-	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
+	"code.linenisgreat.com/madder/go/pkgs/blob_stores"
 )
 
 // allFields is the Jira field selector for a full-fidelity capture: every

@@ -21,8 +21,8 @@ import (
 	"strings"
 
 	"code.linenisgreat.com/hyphence/go/hyphence"
-	"github.com/amarbel-llc/madder/go/pkgs/ids"
-	"github.com/amarbel-llc/piggy/go/pkgs/markl"
+	"code.linenisgreat.com/madder/go/pkgs/ids"
+	"code.linenisgreat.com/piggy/go/pkgs/markl"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/format"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/interfaces"

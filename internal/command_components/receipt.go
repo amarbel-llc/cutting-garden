@@ -9,10 +9,10 @@ import (
 	"code.linenisgreat.com/cutting-garden/internal/capture_receipt"
 	"code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
 	"code.linenisgreat.com/hyphence/go/hyphence"
-	"github.com/amarbel-llc/madder/go/pkgs/blob_store_env"
-	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
-	"github.com/amarbel-llc/madder/go/pkgs/ids"
-	"github.com/amarbel-llc/piggy/go/pkgs/markl"
+	"code.linenisgreat.com/madder/go/pkgs/blob_store_env"
+	"code.linenisgreat.com/madder/go/pkgs/blob_stores"
+	"code.linenisgreat.com/madder/go/pkgs/ids"
+	"code.linenisgreat.com/piggy/go/pkgs/markl"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 )
 

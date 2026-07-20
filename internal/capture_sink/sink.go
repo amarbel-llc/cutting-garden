@@ -17,7 +17,7 @@ import (
 	"io"
 
 	"code.linenisgreat.com/cutting-garden/internal/capture_receipt"
-	"github.com/amarbel-llc/madder/go/pkgs/tap_diagnostics"
+	"code.linenisgreat.com/madder/go/pkgs/tap_diagnostics"
 	tap "github.com/amarbel-llc/tap/go/pkgs/writer"
 )
 

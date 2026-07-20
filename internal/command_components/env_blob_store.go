@@ -24,11 +24,11 @@ package command_components
 import (
 	"io"
 
-	"github.com/amarbel-llc/madder/go/pkgs/blob_store_env"
-	"github.com/amarbel-llc/madder/go/pkgs/env_dir"
-	"github.com/amarbel-llc/madder/go/pkgs/env_local"
-	"github.com/amarbel-llc/madder/go/pkgs/env_ui"
-	"github.com/amarbel-llc/madder/go/pkgs/madder_env"
+	"code.linenisgreat.com/madder/go/pkgs/blob_store_env"
+	"code.linenisgreat.com/madder/go/pkgs/env_dir"
+	"code.linenisgreat.com/madder/go/pkgs/env_local"
+	"code.linenisgreat.com/madder/go/pkgs/env_ui"
+	"code.linenisgreat.com/madder/go/pkgs/madder_env"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/debug"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 )

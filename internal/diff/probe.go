@@ -4,8 +4,8 @@ import (
 	"path/filepath"
 
 	"code.linenisgreat.com/cutting-garden/internal/capture_receipt"
-	"github.com/amarbel-llc/madder/go/pkgs/domain_interfaces"
-	"github.com/amarbel-llc/piggy/go/pkgs/markl"
+	"code.linenisgreat.com/madder/go/pkgs/domain_interfaces"
+	"code.linenisgreat.com/piggy/go/pkgs/markl"
 )
 
 // blobProber is the narrow surface probeMissingBlobs consumes from

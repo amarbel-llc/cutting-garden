@@ -2,6 +2,10 @@ c2sp.org/CCTV/age v0.0.0-20251208015420-e9274a7bdbfd h1:ZLsPO6WdZ5zatV4UfVpr7oAw
 c2sp.org/CCTV/age v0.0.0-20251208015420-e9274a7bdbfd/go.mod h1:SrHC2C7r5GkDk8R+NFVzYy/sdj0Ypg9htaPXQq5Cqeo=
 code.linenisgreat.com/hyphence/go v0.3.0 h1:FpQ0ROPDmTGyU1F4Pqnp11Hzj4IutDaVCaMJcr+e7sk=
 code.linenisgreat.com/hyphence/go v0.3.0/go.mod h1:i3VFG2dtPRi9a5i86CwRjOT3FXnCwmf2aNFp+mXfZuM=
+code.linenisgreat.com/madder/go v0.4.5-0.20260720110107-3b9fcba5ddae h1:ksXtR0JA8xW9dtBRK9tFKdhSGRjnY7JFrcuTqQdpLLg=
+code.linenisgreat.com/madder/go v0.4.5-0.20260720110107-3b9fcba5ddae/go.mod h1:Orxl+aiUgEGHlfjfXDGfMaeJ5ckd9KxPIwv6Co9oeI8=
+code.linenisgreat.com/piggy/go v0.0.0-20260719231529-e5adf0d2047c h1:+T9ig/RdqZK0OVwvxWMZgT2JaZWYo4Nl5+L6/qupgKw=
+code.linenisgreat.com/piggy/go v0.0.0-20260719231529-e5adf0d2047c/go.mod h1:kai+lmyXc6Wq4noebgeoIArqh3MxCCTol7VP7UHI/xQ=
 dario.cat/mergo v1.0.0 h1:AGCNq9Evsj31mOgNPcLyXc+4PNABt905YmuqPYYpBWk=
 dario.cat/mergo v1.0.0/go.mod h1:uNxQE+84aUszobStD9th8a29P2fMDhsBdgRYvZOxGmk=
 filippo.io/age v1.3.1 h1:hbzdQOJkuaMEpRCLSN1/C5DX74RPcNCk6oqhKMXmZi0=
@@ -19,10 +23,6 @@ github.com/ProtonMail/go-crypto v1.1.6 h1:ZcV+Ropw6Qn0AX9brlQLAUXfqLBc7Bl+f/DmNx
 github.com/ProtonMail/go-crypto v1.1.6/go.mod h1:rA3QumHc/FZ8pAHreoekgiAbzpNsfQAosU5td4SnOrE=
 github.com/amarbel-llc/crap/go-crap/v2 v2.2.2 h1:obhuaA7a8HYj//3z321tm48K+DaDh+ztFYxVD5B3dKs=
 github.com/amarbel-llc/crap/go-crap/v2 v2.2.2/go.mod h1:uu9rKZID7II1lWu+892mMErK43Lvc0e8cRYs3cRlayI=
-github.com/amarbel-llc/madder/go v0.4.5-0.20260719151456-c52fe2e87c76 h1:Omf/Gu2K5LuOWD7xwDqMJtioMrXste/56RzxJT6erYE=
-github.com/amarbel-llc/madder/go v0.4.5-0.20260719151456-c52fe2e87c76/go.mod h1:nXeF/Wn5J3iTe4uNT8AhI325p/dzyUQyo7X/nEthdt8=
-github.com/amarbel-llc/piggy/go v0.0.0-20260706021717-a08ad5ae28b3 h1:eZ+G6z6nIdvcmIfBd1iuyr0lLXLN96hhDaYb8r4n/70=
-github.com/amarbel-llc/piggy/go v0.0.0-20260706021717-a08ad5ae28b3/go.mod h1:KR34AXASubIX4VLxJwP89kw18gbyp8kYXUzpfl25s9M=
 github.com/amarbel-llc/purse-first/libs/dewey v0.3.2 h1:DfqmtVDsyt0Is0IWoNS6o4xoYCD/RLavV+jyKSl19Hs=
 github.com/amarbel-llc/purse-first/libs/dewey v0.3.2/go.mod h1:js1n+xvK+A/cNwc/RXiqg7ic/XyjbtYdL7YofO6IJRI=
 github.com/amarbel-llc/purse-first/libs/go-mcp v0.3.1 h1:DoDFqb3xzgsqblxfgntQq2h7PTRTkpVUwrH2XP8mDyU=

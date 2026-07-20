@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
+	"code.linenisgreat.com/madder/go/pkgs/blob_stores"
 )
 
 // fakePlugin installs a shim capturer binary that drains stdin and

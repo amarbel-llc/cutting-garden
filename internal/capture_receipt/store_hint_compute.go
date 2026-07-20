@@ -1,9 +1,9 @@
 package capture_receipt
 
 import (
-	"github.com/amarbel-llc/madder/go/pkgs/blob_store_configs"
-	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
-	"github.com/amarbel-llc/madder/go/pkgs/markl_io"
+	"code.linenisgreat.com/madder/go/pkgs/blob_store_configs"
+	"code.linenisgreat.com/madder/go/pkgs/blob_stores"
+	"code.linenisgreat.com/madder/go/pkgs/markl_io"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 )
 

@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
-	"github.com/amarbel-llc/piggy/go/pkgs/markl"
+	"code.linenisgreat.com/madder/go/pkgs/blob_stores"
+	"code.linenisgreat.com/piggy/go/pkgs/markl"
 )
 
 func TestCtxReader_PreCancelledReturnsCtxErr(t *testing.T) {

@@ -19,8 +19,8 @@ import (
 
 	"code.linenisgreat.com/cutting-garden/internal/capture_failures"
 	"code.linenisgreat.com/cutting-garden/internal/capture_log"
-	"github.com/amarbel-llc/madder/go/pkgs/domain_interfaces"
-	"github.com/amarbel-llc/madder/go/pkgs/env_dir"
+	"code.linenisgreat.com/madder/go/pkgs/domain_interfaces"
+	"code.linenisgreat.com/madder/go/pkgs/env_dir"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 )
 

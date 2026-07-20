@@ -5,8 +5,8 @@ import (
 	"io"
 
 	"code.linenisgreat.com/cutting-garden/internal/capture_receipt"
-	"github.com/amarbel-llc/madder/go/pkgs/blob_store_id"
-	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
+	"code.linenisgreat.com/madder/go/pkgs/blob_store_id"
+	"code.linenisgreat.com/madder/go/pkgs/blob_stores"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 )
 

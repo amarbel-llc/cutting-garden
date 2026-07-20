@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"code.linenisgreat.com/cutting-garden/pkgs/capture_plugin"
-	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
+	"code.linenisgreat.com/madder/go/pkgs/blob_stores"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 )
 

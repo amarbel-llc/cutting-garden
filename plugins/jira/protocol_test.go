@@ -8,7 +8,7 @@ import (
 
 	"code.linenisgreat.com/cutting-garden/pkgs/capture_plugin"
 	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
-	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
+	"code.linenisgreat.com/madder/go/pkgs/blob_stores"
 )
 
 // seedFull seeds an issue with an `updated` timestamp plus a description and

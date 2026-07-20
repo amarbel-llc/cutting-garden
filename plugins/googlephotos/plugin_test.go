@@ -11,8 +11,8 @@ import (
 	"code.linenisgreat.com/cutting-garden/pkgs/capture_events"
 	"code.linenisgreat.com/cutting-garden/pkgs/capture_receipt"
 	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
-	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
-	"github.com/amarbel-llc/piggy/go/pkgs/markl"
+	"code.linenisgreat.com/madder/go/pkgs/blob_stores"
+	"code.linenisgreat.com/piggy/go/pkgs/markl"
 )
 
 // fakeGalleryDLScript is the shim binary written onto PATH for every

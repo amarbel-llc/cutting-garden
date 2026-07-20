@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/url"
 
-	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
+	"code.linenisgreat.com/madder/go/pkgs/blob_stores"
 )
 
 // ProtocolCaptureRequest is what a ProtocolCapturePlugin needs to

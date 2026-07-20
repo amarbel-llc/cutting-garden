@@ -31,7 +31,7 @@ import (
 	// `plugins/all` from its own main to register the standard set; that
 	// aggregator is the single list, so the three in-repo mains cannot
 	// drift apart.
-	_ "github.com/amarbel-llc/madder/go/pkgs/markl_registrations"
+	_ "code.linenisgreat.com/madder/go/pkgs/markl_registrations"
 )
 
 // Build returns a fully-configured cutting-garden Utility with the

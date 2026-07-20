@@ -17,7 +17,7 @@ import (
 
 	"code.linenisgreat.com/cutting-garden/internal/capture_failures"
 	"code.linenisgreat.com/cutting-garden/internal/capture_receipt"
-	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
+	"code.linenisgreat.com/madder/go/pkgs/blob_stores"
 )
 
 // Plugin is the cross-cutting identity every capture or restore

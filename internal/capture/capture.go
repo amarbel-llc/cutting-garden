@@ -41,8 +41,8 @@ import (
 	"code.linenisgreat.com/cutting-garden/internal/command"
 	"code.linenisgreat.com/cutting-garden/internal/command_components"
 	"code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
-	"github.com/amarbel-llc/madder/go/pkgs/blob_store_env"
-	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
+	"code.linenisgreat.com/madder/go/pkgs/blob_store_env"
+	"code.linenisgreat.com/madder/go/pkgs/blob_stores"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/interfaces"
 )

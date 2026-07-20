@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"code.linenisgreat.com/cutting-garden/internal/capture_receipt"
-	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
+	"code.linenisgreat.com/madder/go/pkgs/blob_stores"
 )
 
 // fakeEnv is the test-only MaterializationEnv. The default-store

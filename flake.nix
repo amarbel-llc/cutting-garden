@@ -179,6 +179,12 @@
     # (go-module-rename playbook Gotchas, cutting-garden hyphence rename).
     hyphence.inputs.langlang.inputs.tap.inputs.crane.follows = "tap/crane";
     hyphence.inputs.langlang.inputs.tap.inputs.rust-overlay.follows = "tap/rust-overlay";
+    # piggy's own langlang pin (piggy#183's markl-id framework pulls in the
+    # same langlang subtree hyphence does) is bit-identical to hyphence's —
+    # doppelgang lint flagged the duplicate node; collapse onto hyphence's
+    # copy rather than deep-following piggy's separately (mirrors madder's
+    # identical fix, madder 3b9fcba, go-module-rename playbook Gotchas).
+    piggy.inputs.langlang.follows = "hyphence/langlang";
     igloo.inputs.nixpkgs-master.follows = "nixpkgs-master";
     madder.inputs.purse-first.follows = "purse-first";
     tap.inputs.purse-first.follows = "purse-first";

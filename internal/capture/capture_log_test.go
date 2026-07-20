@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"code.linenisgreat.com/cutting-garden/internal/capture_log"
-	"github.com/amarbel-llc/madder/go/pkgs/env_dir"
-	"github.com/amarbel-llc/madder/go/pkgs/madder_env"
+	"code.linenisgreat.com/madder/go/pkgs/env_dir"
+	"code.linenisgreat.com/madder/go/pkgs/madder_env"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 )
 

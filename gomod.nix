@@ -26,7 +26,7 @@
   # (its producer slices upstream), so no subPath here. purse-first's
   # go-pkgs is the whole workspace (the repo root carries multiple go
   # modules + non-Go assets), so we slice into each module subdir.
-  "github.com/amarbel-llc/madder/go" = {
+  "code.linenisgreat.com/madder/go" = {
     src = madder.packages.${system}.go-pkgs;
   };
   "github.com/amarbel-llc/purse-first/libs/dewey" = {

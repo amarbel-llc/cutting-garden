@@ -394,7 +394,7 @@ private to dodder ([`expand_edges`][expand-edges] in
 `go/internal/romeo/local_working_copy/`). For non-dodder consumers
 (cutting-garden itself, plugin authors, external archive tooling),
 this walker SHOULD be lifted to the same upstream location as the
-hyphence package (`github.com/amarbel-llc/madder/go/pkgs/`), with
+hyphence package (`code.linenisgreat.com/madder/go/pkgs/`), with
 its `EdgeExplorer` interface parameterized over the consumer's
 store abstraction. Tracked as a followup against madder; this RFC
 specifies the wire format the walker traverses, not the walker

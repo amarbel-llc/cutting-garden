@@ -14,7 +14,7 @@ import (
 	"code.linenisgreat.com/cutting-garden/internal/capture_log"
 	"code.linenisgreat.com/cutting-garden/internal/capture_receipt"
 	"code.linenisgreat.com/cutting-garden/internal/plugin_blob_io"
-	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
+	"code.linenisgreat.com/madder/go/pkgs/blob_stores"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 )
 

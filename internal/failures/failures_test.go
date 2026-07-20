@@ -13,16 +13,16 @@ import (
 	"code.linenisgreat.com/cutting-garden/internal/capture_failures"
 	"code.linenisgreat.com/cutting-garden/internal/command"
 	"code.linenisgreat.com/cutting-garden/internal/command_components"
-	"github.com/amarbel-llc/madder/go/pkgs/blob_store_configs"
-	"github.com/amarbel-llc/madder/go/pkgs/directory_layout"
-	"github.com/amarbel-llc/madder/go/pkgs/ids"
+	"code.linenisgreat.com/madder/go/pkgs/blob_store_configs"
+	"code.linenisgreat.com/madder/go/pkgs/directory_layout"
+	"code.linenisgreat.com/madder/go/pkgs/ids"
 
 	// Blank-import the markl purpose registrations: EncodeWithDigest in
 	// initDefaultBlobStore digests the store config under the
 	// "madder-blob_store-config-digest-v1" purpose, which panics unless
 	// registered (the production binaries get this via cgapp's
 	// blank-import).
-	_ "github.com/amarbel-llc/madder/go/pkgs/markl_registrations"
+	_ "code.linenisgreat.com/madder/go/pkgs/markl_registrations"
 	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
 )
 

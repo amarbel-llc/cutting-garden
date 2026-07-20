@@ -3,7 +3,7 @@ package capture_receipt
 import (
 	"testing"
 
-	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
+	"code.linenisgreat.com/madder/go/pkgs/blob_stores"
 )
 
 func TestComputeStoreHint_EmptyStoreIdReturnsNil(t *testing.T) {

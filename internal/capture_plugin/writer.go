@@ -25,7 +25,7 @@ import (
 	"io"
 
 	"code.linenisgreat.com/cutting-garden/internal/plugin_blob_io"
-	"github.com/amarbel-llc/madder/go/pkgs/blob_stores"
+	"code.linenisgreat.com/madder/go/pkgs/blob_stores"
 )
 
 // Writer is the narrow sink every node blob flows through. WriteBlob

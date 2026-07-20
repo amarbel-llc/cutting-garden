@@ -35,7 +35,7 @@ import (
 	"code.linenisgreat.com/cutting-garden/internal/capture_events"
 	"code.linenisgreat.com/cutting-garden/internal/capture_receipt"
 	"code.linenisgreat.com/cutting-garden/internal/capture_sink"
-	"github.com/amarbel-llc/madder/go/pkgs/tap_diagnostics"
+	"code.linenisgreat.com/madder/go/pkgs/tap_diagnostics"
 	tap "github.com/amarbel-llc/tap/go/pkgs/writer"
 	"github.com/amarbel-llc/tap/go/pkgs/yaml_diagnostic"
 )

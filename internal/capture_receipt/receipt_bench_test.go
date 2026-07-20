@@ -6,7 +6,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/amarbel-llc/piggy/go/pkgs/markl"
+	"code.linenisgreat.com/piggy/go/pkgs/markl"
 )
 
 // benchIndexEntry mirrors the in-memory shape proposed by issue #80's

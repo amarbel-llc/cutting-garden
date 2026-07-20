@@ -14,8 +14,8 @@ import (
 	// cutting_garden_plugins.ResolveRestore returns an empty-registry
 	// error before ResolveRestorePlugin can dispatch.
 	_ "code.linenisgreat.com/cutting-garden/plugins/file"
-	"github.com/amarbel-llc/madder/go/pkgs/ids"
-	"github.com/amarbel-llc/piggy/go/pkgs/markl"
+	"code.linenisgreat.com/madder/go/pkgs/ids"
+	"code.linenisgreat.com/piggy/go/pkgs/markl"
 )
 
 // ---------------------------------------------------------------------

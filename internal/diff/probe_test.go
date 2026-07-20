@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"code.linenisgreat.com/cutting-garden/internal/capture_receipt"
-	"github.com/amarbel-llc/madder/go/pkgs/domain_interfaces"
+	"code.linenisgreat.com/madder/go/pkgs/domain_interfaces"
 )
 
 // fakeProber answers HasBlob from a set of known-present id strings.
