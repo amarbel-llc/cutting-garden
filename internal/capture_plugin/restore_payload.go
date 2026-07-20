@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 
 	"code.linenisgreat.com/madder/go/pkgs/blob_stores"
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
 // PayloadRefOfReceipt walks a protocol receipt to its single "payload"

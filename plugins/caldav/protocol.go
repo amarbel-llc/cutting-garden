@@ -11,7 +11,7 @@ import (
 	"code.linenisgreat.com/cutting-garden/pkgs/capture_plugin"
 	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
 	"code.linenisgreat.com/cutting-garden/plugins/caldav/ical"
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
 // CaptureProtocol implements cutting_garden_plugins.ProtocolCapturePlugin:

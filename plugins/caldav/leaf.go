@@ -7,7 +7,7 @@ import (
 
 	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
 	"code.linenisgreat.com/cutting-garden/plugins/caldav/ical"
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
 // mimeICalendar is the IANA content type of a raw CalDAV object body

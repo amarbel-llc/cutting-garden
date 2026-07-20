@@ -241,7 +241,7 @@ parity-fixing. See dodder#182 and the cg #1 resolution.
 ## External dependencies
 
 The framework leans heavily on
-`github.com/amarbel-llc/purse-first/libs/dewey`. All exported
+`code.linenisgreat.com/purse-first/libs/dewey`. All exported
 surface is under `pkgs/` (dagnabit-generated facades over `internal/`):
 
 - `pkgs/errors` — context-based error propagation

@@ -21,7 +21,7 @@ import (
 	"code.linenisgreat.com/cutting-garden/internal/capture_log"
 	"code.linenisgreat.com/madder/go/pkgs/domain_interfaces"
 	"code.linenisgreat.com/madder/go/pkgs/env_dir"
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
 // buildFailureReceipt assembles the in-memory failure receipt for one

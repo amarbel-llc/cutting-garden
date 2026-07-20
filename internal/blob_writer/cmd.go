@@ -19,8 +19,8 @@ import (
 	"code.linenisgreat.com/cutting-garden/internal/command_components"
 	"code.linenisgreat.com/cutting-garden/internal/plugin_blob_io"
 	"code.linenisgreat.com/madder/go/pkgs/blob_stores"
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/interfaces"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/interfaces"
 )
 
 // WriteBlob is the value registered for the `__write-blob` subcommand.

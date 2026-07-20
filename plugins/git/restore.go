@@ -6,7 +6,7 @@ import (
 
 	"code.linenisgreat.com/cutting-garden/pkgs/capture_plugin"
 	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 	git "github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"

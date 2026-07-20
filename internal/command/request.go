@@ -3,9 +3,9 @@ package command
 import (
 	"slices"
 
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/flags"
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/interfaces"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/flags"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/interfaces"
 )
 
 type Request struct {

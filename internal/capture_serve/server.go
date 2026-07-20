@@ -11,8 +11,8 @@ import (
 	"sync/atomic"
 
 	"code.linenisgreat.com/cutting-garden/internal/capture_plugin"
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
-	"github.com/amarbel-llc/purse-first/libs/go-mcp/jsonrpc"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
+	"code.linenisgreat.com/purse-first/libs/go-mcp/jsonrpc"
 )
 
 // BatchFunc is the plugin's capture implementation: assemble each

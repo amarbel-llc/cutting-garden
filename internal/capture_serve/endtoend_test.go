@@ -13,7 +13,7 @@ import (
 	"code.linenisgreat.com/cutting-garden/internal/capture_plugin"
 	"code.linenisgreat.com/cutting-garden/internal/capture_serve"
 	testpeer "code.linenisgreat.com/cutting-garden/internal/capture_serve_testpeer"
-	"github.com/amarbel-llc/purse-first/libs/go-mcp/jsonrpc"
+	"code.linenisgreat.com/purse-first/libs/go-mcp/jsonrpc"
 )
 
 // The conformance bar (RFC 0008 §Conformance): the SAME fixed inputs,

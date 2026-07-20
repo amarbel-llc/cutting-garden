@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/amarbel-llc/purse-first/libs/go-mcp/server"
-	"github.com/amarbel-llc/purse-first/libs/go-mcp/transport"
+	"code.linenisgreat.com/purse-first/libs/go-mcp/server"
+	"code.linenisgreat.com/purse-first/libs/go-mcp/transport"
 )
 
 // rpcResponse is the slice of a JSON-RPC response this test inspects.

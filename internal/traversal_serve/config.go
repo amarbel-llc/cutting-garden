@@ -4,7 +4,7 @@ import (
 	"regexp"
 	"slices"
 
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
 // Protocol tokens for PluginStanza.Protocols (cutting-garden#146 slice

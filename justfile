@@ -69,7 +69,7 @@ lint-go-analyzer name:
     set -euo pipefail
     bin="{{ justfile_directory() }}/.tmp/analyzers/{{ name }}"
     mkdir -p "$(dirname "$bin")"
-    nix develop --command go build -o "$bin" github.com/amarbel-llc/purse-first/libs/dewey/cmd/{{ name }}
+    nix develop --command go build -o "$bin" code.linenisgreat.com/purse-first/libs/dewey/cmd/{{ name }}
     nix develop --command go vet -vettool="$bin" ./...
     gum log --level info "lint-go-analyzer {{ name }}: ok"
 

@@ -22,10 +22,10 @@ import (
 	"code.linenisgreat.com/madder/go/pkgs/domain_interfaces"
 	"code.linenisgreat.com/madder/go/pkgs/ids"
 	"code.linenisgreat.com/piggy/go/pkgs/markl"
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/format"
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/interfaces"
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/ohio"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/format"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/interfaces"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/ohio"
 )
 
 // The canonical hyphence TypedBlob is generic over the type-tag and digest

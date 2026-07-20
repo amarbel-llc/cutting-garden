@@ -5,7 +5,7 @@ import (
 
 	"code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
 	"code.linenisgreat.com/madder/go/pkgs/blob_stores"
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
 // CaptureProtocol drives one config-declared capture: it resolves the

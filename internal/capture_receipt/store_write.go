@@ -2,7 +2,7 @@ package capture_receipt
 
 import (
 	"code.linenisgreat.com/madder/go/pkgs/blob_stores"
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
 // WriteV1ToStore encodes entries via WriteV1WithHint and writes the

@@ -6,7 +6,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
 // captureTarget extracts the http(s) URL to navigate to from a

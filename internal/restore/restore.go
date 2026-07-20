@@ -25,8 +25,8 @@ import (
 	"code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
 	"code.linenisgreat.com/madder/go/pkgs/blob_stores"
 	"code.linenisgreat.com/piggy/go/pkgs/markl"
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/interfaces"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/interfaces"
 )
 
 // Restore is the value registered for the `restore` subcommand.

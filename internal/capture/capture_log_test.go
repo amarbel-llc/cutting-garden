@@ -11,7 +11,7 @@ import (
 	"code.linenisgreat.com/cutting-garden/internal/capture_log"
 	"code.linenisgreat.com/madder/go/pkgs/env_dir"
 	"code.linenisgreat.com/madder/go/pkgs/madder_env"
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
 // setupCgEnvDir builds a cutting-garden-scoped env_dir rooted at a

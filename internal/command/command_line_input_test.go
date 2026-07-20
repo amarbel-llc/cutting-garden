@@ -3,7 +3,7 @@ package command
 import (
 	"testing"
 
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/collections_slice"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/collections_slice"
 )
 
 func TestCommandLineInput_LastArg(t *testing.T) {

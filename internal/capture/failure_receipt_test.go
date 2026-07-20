@@ -13,8 +13,8 @@ import (
 	"code.linenisgreat.com/madder/go/pkgs/domain_interfaces"
 	_ "code.linenisgreat.com/madder/go/pkgs/markl_registrations"
 	"code.linenisgreat.com/piggy/go/pkgs/markl"
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/files"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/files"
 )
 
 // stubTimestamp pins capture_log.Timestamp (a package var, indirected

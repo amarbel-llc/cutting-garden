@@ -29,8 +29,8 @@ import (
 	"code.linenisgreat.com/madder/go/pkgs/env_local"
 	"code.linenisgreat.com/madder/go/pkgs/env_ui"
 	"code.linenisgreat.com/madder/go/pkgs/madder_env"
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/debug"
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/debug"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
 // MakeEnvDir builds a madder-family env_dir at the given xdgScope.

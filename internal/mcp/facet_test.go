@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
-	"github.com/amarbel-llc/purse-first/libs/go-mcp/protocol"
+	"code.linenisgreat.com/purse-first/libs/go-mcp/protocol"
 )
 
 // TestRenderContents_SkipsFacetBlock guards the read_node/list_nodes tool

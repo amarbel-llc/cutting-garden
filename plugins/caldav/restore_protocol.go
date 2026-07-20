@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
 var _ cutting_garden_plugins.ProtocolRestorePlugin = (*Plugin)(nil)

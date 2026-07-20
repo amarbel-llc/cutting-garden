@@ -2,7 +2,7 @@ package cutting_garden_plugin_git
 
 import (
 	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
 // CaptureRoot is a vestigial EntryV1 entry point. Git capture always uses

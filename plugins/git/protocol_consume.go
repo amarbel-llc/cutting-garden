@@ -6,7 +6,7 @@ import (
 
 	"code.linenisgreat.com/cutting-garden/pkgs/capture_plugin"
 	"code.linenisgreat.com/madder/go/pkgs/blob_stores"
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
 // payloadMeta is the JCS body of the jcs-git-capture-payload-v1 node.

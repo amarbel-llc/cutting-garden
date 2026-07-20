@@ -20,7 +20,7 @@ import (
 
 	"code.linenisgreat.com/madder/go/pkgs/blob_stores"
 	"code.linenisgreat.com/madder/go/pkgs/domain_interfaces"
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
 // WriteFileBlob streams srcPath into store and returns the content-

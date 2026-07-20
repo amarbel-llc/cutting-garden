@@ -201,7 +201,7 @@ working-directory tree as MCP resources out of the box.
   the `RootProvider` capability this server aggregates over.
 - [FDR 0013](0013-caldav-plugin.md) — the first `RootLister` implementer,
   the reference endpoint this server is exercised against.
-- `github.com/amarbel-llc/purse-first/libs/go-mcp` — the MCP server library
+- `code.linenisgreat.com/purse-first/libs/go-mcp` — the MCP server library
   (`server.ResourceProvider`, stdio transport), bridged into the build like
   dewey (see `gomod.nix`).
 - [FDR 0021](0021-faceted-progressive-disclosure.md) — faceted progressive

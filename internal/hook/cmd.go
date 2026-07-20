@@ -11,7 +11,7 @@ import (
 
 	"code.linenisgreat.com/cutting-garden/internal/claude_hooks"
 	"code.linenisgreat.com/cutting-garden/internal/command"
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
 // Hook is the value registered for the hidden `hook` subcommand. It carries

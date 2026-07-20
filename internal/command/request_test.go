@@ -3,8 +3,8 @@ package command
 import (
 	"testing"
 
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/collections_slice"
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/flags"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/collections_slice"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/flags"
 )
 
 func newTestRequest(args ...string) Request {

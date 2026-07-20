@@ -13,7 +13,7 @@ import (
 
 	"code.linenisgreat.com/cutting-garden/pkgs/capture_events"
 	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
 // Audio-mode metadata sidecar filenames, written into the capture

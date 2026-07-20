@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"code.linenisgreat.com/cutting-garden/internal/capture_plugin"
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
 // announceTimeout bounds plugin bring-up: a child that has not produced

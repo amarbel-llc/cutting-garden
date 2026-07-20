@@ -6,7 +6,7 @@ import (
 
 	"code.linenisgreat.com/cutting-garden/internal/capture_log"
 	"code.linenisgreat.com/madder/go/pkgs/env_dir"
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/files"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/files"
 )
 
 // captureLogEntry is one NDJSON line in captures.log. The schema (and

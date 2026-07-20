@@ -10,7 +10,7 @@ import (
 	"code.linenisgreat.com/cutting-garden/internal/capture_plugin"
 	"code.linenisgreat.com/cutting-garden/internal/capture_serve"
 	"code.linenisgreat.com/madder/go/pkgs/blob_stores"
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
 const stderrTailBytes = 4096

@@ -1,6 +1,6 @@
 package command
 
-import "github.com/amarbel-llc/purse-first/libs/dewey/pkgs/interfaces"
+import "code.linenisgreat.com/purse-first/libs/dewey/pkgs/interfaces"
 
 // SupportsCompletion is a marker interface a Cmd may implement to
 // declare it offers shell completion candidates. Phase 1 doesn't yet

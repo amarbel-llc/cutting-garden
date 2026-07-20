@@ -4,7 +4,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
 // opticalScheme is the single URI scheme this plugin claims.

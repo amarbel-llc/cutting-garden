@@ -29,7 +29,7 @@
   "code.linenisgreat.com/madder/go" = {
     src = madder.packages.${system}.go-pkgs;
   };
-  "github.com/amarbel-llc/purse-first/libs/dewey" = {
+  "code.linenisgreat.com/purse-first/libs/dewey" = {
     src = purse-first.packages.${system}.go-pkgs;
     subPath = "libs/dewey";
   };
@@ -38,7 +38,7 @@
   # dewey so a purse-first bump stays a flake.lock-only edit. Neither
   # purse-first module is re-exported by any producer's passthru, so both
   # stay direct.
-  "github.com/amarbel-llc/purse-first/libs/go-mcp" = {
+  "code.linenisgreat.com/purse-first/libs/go-mcp" = {
     src = purse-first.packages.${system}.go-pkgs;
     subPath = "libs/go-mcp";
   };

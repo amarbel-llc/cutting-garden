@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
 // fakeLister is a registry-free RootLister for the provider tests. It

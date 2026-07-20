@@ -6,7 +6,7 @@ import (
 	"io"
 	"os/exec"
 
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
 // stderrTailBytes caps how much gallery-dl stderr is buffered for the

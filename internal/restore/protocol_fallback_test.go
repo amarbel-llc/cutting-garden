@@ -14,9 +14,9 @@ import (
 	"code.linenisgreat.com/madder/go/pkgs/domain_interfaces"
 	_ "code.linenisgreat.com/madder/go/pkgs/markl_registrations"
 	"code.linenisgreat.com/piggy/go/pkgs/markl"
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/interfaces"
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/ohio"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/interfaces"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/ohio"
 )
 
 // memStore is the same real-markl-id in-memory store fixture used by

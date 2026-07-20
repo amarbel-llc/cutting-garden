@@ -18,7 +18,7 @@ import (
 	"code.linenisgreat.com/madder/go/pkgs/directory_layout"
 	"code.linenisgreat.com/madder/go/pkgs/ids"
 	"code.linenisgreat.com/piggy/go/pkgs/markl"
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
 // isolateXDG points every XDG base dir at a per-test tempdir and opts

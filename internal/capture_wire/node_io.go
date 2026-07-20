@@ -5,7 +5,7 @@ import (
 
 	"code.linenisgreat.com/cutting-garden/internal/capture_plugin"
 	"code.linenisgreat.com/madder/go/pkgs/blob_stores"
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
 // formatFromReceipt recovers the capture format an already-read

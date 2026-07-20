@@ -8,7 +8,7 @@ import (
 
 	"code.linenisgreat.com/cutting-garden/pkgs/config_common"
 	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
 // AccountsConfig is the caldav plugin's section of the cutting-garden

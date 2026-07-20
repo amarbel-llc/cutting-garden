@@ -3,7 +3,7 @@ package cutting_garden_plugins
 import (
 	"sync"
 
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
 // schemeRegistry is the base-Plugin index keyed by URI scheme (RFC 0005).

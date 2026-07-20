@@ -236,7 +236,7 @@ Spill filename: `Meta.Ts` with `:` replaced by `-`, plus `.ndjson`.
 
 **Step 4: Wire into Run** — collect `[]capture_failures.FailureV1` per store group alongside `failCount` (classify failures at line ~482: `Op: OpPlugin, Path: cf.arg`; protocol per-root failures ~533: `OpPlugin`; `result.Failures` append at ~557–560; receipt-write failure ~602: `OpReceiptWrite, Path: "(receipt)"`). After the success-receipt write + captures.log entry build, when `len(groupFailures) > 0 || ctxAborted`:
 
-- `ctxAborted := ctx.Err() != nil`; signal name: investigate `dewey/pkgs/errors` for the RFC 0002 signal cause (the framework prints `received signal: "interrupt"` — find the cause type via `rg 'received signal' $(go env GOMODCACHE)/github.com/amarbel-llc/purse-first/...`). If no exported accessor exists, record `Signal: ""` and file a dewey issue; do NOT parse strings.
+- `ctxAborted := ctx.Err() != nil`; signal name: investigate `dewey/pkgs/errors` for the RFC 0002 signal cause (the framework prints `received signal: "interrupt"` — find the cause type via `rg 'received signal' $(go env GOMODCACHE)/code.linenisgreat.com/purse-first/...`). If no exported accessor exists, record `Signal: ""` and file a dewey issue; do NOT parse strings.
 - Build + write the failure receipt; print via the pipeline: `p.notice("failures store=%s id=%s count=%d", quoteEmpty(storeName), id, len(groupFailures))` (or the spill path variant).
 - Stash `failureReceiptID` for Task 4's log entry.
 

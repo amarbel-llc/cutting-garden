@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"code.linenisgreat.com/hyphence/go/hyphence"
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
 // Node is a parsed protocol node: its type-string, its ordered typed

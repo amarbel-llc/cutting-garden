@@ -4,7 +4,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
 // httpsAllowlist is the closed set of hostnames the plugin claims via

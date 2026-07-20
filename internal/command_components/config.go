@@ -10,7 +10,7 @@ import (
 
 	"code.linenisgreat.com/cutting-garden/internal/cgconfig"
 	"code.linenisgreat.com/cutting-garden/internal/traversal_serve"
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
 // ConfigFileName is the config leaf under $XDG_CONFIG_HOME/cutting-garden/.

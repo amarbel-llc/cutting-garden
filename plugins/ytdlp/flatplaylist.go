@@ -9,7 +9,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
 // flatPlaylistEntry is one parsed line from `yt-dlp --flat-playlist

@@ -12,7 +12,7 @@ import (
 	"code.linenisgreat.com/cutting-garden/internal/cgconfig"
 	"code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
 	"code.linenisgreat.com/cutting-garden/internal/traversal_serve"
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
 // LoadAndInjectConfig loads the default config (a missing file is empty)

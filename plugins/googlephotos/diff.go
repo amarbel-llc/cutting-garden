@@ -9,7 +9,7 @@ import (
 	"code.linenisgreat.com/cutting-garden/pkgs/capture_receipt"
 	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
 	"code.linenisgreat.com/cutting-garden/pkgs/plugin_blob_io"
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
 // ScanForDiff downloads the current state behind the Google Photos share

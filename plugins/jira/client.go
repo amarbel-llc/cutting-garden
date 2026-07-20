@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
 // requestTimeout caps every Jira HTTP round-trip. The command's cancelable

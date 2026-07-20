@@ -12,7 +12,7 @@ import (
 	"code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
 	"code.linenisgreat.com/cutting-garden/internal/traversal_serve"
 	"code.linenisgreat.com/cutting-garden/internal/traversal_serve_testpeer"
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
 // testpeerMainEnv re-execs this test binary as the RFC 0013 test peer:

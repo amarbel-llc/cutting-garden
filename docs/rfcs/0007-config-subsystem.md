@@ -523,7 +523,7 @@ influences RFC 0006 resolution in this revision.
   resolved credential precedence this RFC generalizes; madder's `// TODO move
   to a config_common package` over its shared `TomlUriV0` is the shared-base
   prior art.
-- `github.com/amarbel-llc/tommy` — the TOML codegen (`tommy generate`,
+- `code.linenisgreat.com/tommy` — the TOML codegen (`tommy generate`,
   `Validate`, `Undecoded`); madder's `internal/charlie/blob_store_configs` is
   the usage pattern.
 

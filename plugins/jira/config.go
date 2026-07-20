@@ -7,7 +7,7 @@ import (
 
 	"code.linenisgreat.com/cutting-garden/pkgs/config_common"
 	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
-	"github.com/amarbel-llc/purse-first/libs/dewey/pkgs/errors"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
 // AccountsConfig is the jira plugin's section of the cutting-garden config
