@@ -1,5 +1,5 @@
 // Package capture_viewport adapts cutting-garden's capture event stream to
-// the shared CRAP-2 viewport (github.com/amarbel-llc/crap/go-crap/v2/viewport).
+// the shared CRAP-2 viewport (code.linenisgreat.com/crap/go-crap/v2/viewport).
 //
 // The viewport Model and its message vocabulary used to live here (a WET copy
 // of purse-first FDR 0010's operation_viewport). They have been extracted into
@@ -8,7 +8,7 @@
 // in adapter.go), which translates capture_events into viewport messages.
 package capture_viewport
 
-import vp "github.com/amarbel-llc/crap/go-crap/v2/viewport"
+import vp "code.linenisgreat.com/crap/go-crap/v2/viewport"
 
 // Message types delivered to the Model via tea.Program.Send. Aliased to the
 // shared viewport package so the adapter (and external callers) keep using

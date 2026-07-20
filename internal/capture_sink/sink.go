@@ -18,7 +18,7 @@ import (
 
 	"code.linenisgreat.com/cutting-garden/internal/capture_receipt"
 	"code.linenisgreat.com/madder/go/pkgs/tap_diagnostics"
-	tap "github.com/amarbel-llc/tap/go/pkgs/writer"
+	tap "code.linenisgreat.com/tap/go/pkgs/writer"
 )
 
 // summaryRecordType is the wire `type` value the NDJSON sink writes on

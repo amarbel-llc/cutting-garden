@@ -55,7 +55,7 @@ import (
 	"code.linenisgreat.com/cutting-garden/internal/capture_events"
 	"code.linenisgreat.com/cutting-garden/internal/capture_receipt"
 	"code.linenisgreat.com/cutting-garden/internal/capture_sink"
-	"github.com/amarbel-llc/tap/go/pkgs/ndjson"
+	"code.linenisgreat.com/tap/go/pkgs/ndjson"
 )
 
 // successSubtestCap bounds how many SUCCESS entries are retained as

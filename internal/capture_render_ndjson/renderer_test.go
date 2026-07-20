@@ -11,7 +11,7 @@ import (
 
 	"code.linenisgreat.com/cutting-garden/internal/capture_events"
 	"code.linenisgreat.com/cutting-garden/internal/capture_receipt"
-	"github.com/amarbel-llc/tap/go/pkgs/ndjson"
+	"code.linenisgreat.com/tap/go/pkgs/ndjson"
 )
 
 // scriptedRun drives the renderer through one phase with entries and a

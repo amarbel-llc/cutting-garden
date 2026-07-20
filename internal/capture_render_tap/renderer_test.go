@@ -9,7 +9,7 @@ import (
 	"code.linenisgreat.com/cutting-garden/internal/capture_events"
 	"code.linenisgreat.com/cutting-garden/internal/capture_receipt"
 	"code.linenisgreat.com/cutting-garden/internal/capture_sink"
-	"github.com/amarbel-llc/tap/go/pkgs/reader"
+	"code.linenisgreat.com/tap/go/pkgs/reader"
 )
 
 // scriptedRun drives the renderer through the canonical Stage B event

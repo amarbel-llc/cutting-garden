@@ -3,14 +3,14 @@ module code.linenisgreat.com/cutting-garden
 go 1.26
 
 require (
+	code.linenisgreat.com/crap/go-crap/v2 v2.3.0
 	code.linenisgreat.com/hyphence/go v0.3.1-0.20260720154720-ea7f1e0933f9
-	code.linenisgreat.com/madder/go v0.4.5-0.20260720162024-c2d4d389e726
+	code.linenisgreat.com/madder/go v0.4.5-0.20260720184544-d463a948790d
 	code.linenisgreat.com/piggy/go v0.0.0-20260720155209-77cfdea0031e
 	code.linenisgreat.com/purse-first/libs/dewey v0.5.0
 	code.linenisgreat.com/purse-first/libs/go-mcp v0.5.0
+	code.linenisgreat.com/tap/go v0.2.0
 	code.linenisgreat.com/tommy v0.5.0
-	github.com/amarbel-llc/crap/go-crap/v2 v2.2.2
-	github.com/amarbel-llc/tap/go v0.1.11
 	github.com/charmbracelet/bubbletea v1.3.10
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/go-git/go-billy/v5 v5.9.0
@@ -27,7 +27,6 @@ require (
 	github.com/DataDog/zstd v1.5.7 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/ProtonMail/go-crypto v1.1.6 // indirect
-	github.com/amarbel-llc/purse-first/libs/dewey v0.1.8 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.41.7 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.10 // indirect

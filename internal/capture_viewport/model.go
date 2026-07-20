@@ -1,6 +1,6 @@
 package capture_viewport
 
-import vp "github.com/amarbel-llc/crap/go-crap/v2/viewport"
+import vp "code.linenisgreat.com/crap/go-crap/v2/viewport"
 
 // Model and its options are the shared CRAP-2 viewport. Aliased here so
 // existing call sites (capture.go, the demo) keep using

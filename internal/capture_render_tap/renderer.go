@@ -36,8 +36,8 @@ import (
 	"code.linenisgreat.com/cutting-garden/internal/capture_receipt"
 	"code.linenisgreat.com/cutting-garden/internal/capture_sink"
 	"code.linenisgreat.com/madder/go/pkgs/tap_diagnostics"
-	tap "github.com/amarbel-llc/tap/go/pkgs/writer"
-	"github.com/amarbel-llc/tap/go/pkgs/yaml_diagnostic"
+	tap "code.linenisgreat.com/tap/go/pkgs/writer"
+	"code.linenisgreat.com/tap/go/pkgs/yaml_diagnostic"
 )
 
 // Renderer is a capture_events.Stream rendering TAP-14 text. The mutex
