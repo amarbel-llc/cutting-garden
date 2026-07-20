@@ -332,6 +332,71 @@ debug-capture-fixture-nix STORE='.default' FORMAT='auto': build-nix debug-make-f
 debug-madder-init STORE='.test':
     nix develop --command madder init {{ STORE }}
 
+# Probe whether the live CalDAV server honors RFC 4791 §9.6.5 <C:expand>
+# (cutting-garden#176). Issues two calendar-query REPORTs over the SAME window
+# — one with <C:expand>, one without — and compares them. Expansion honored =>
+# the expand response carries RECURRENCE-ID and no RRULE; byte-identical
+# responses => <expand> was ignored (the signature reported against Fastmail in
+# python-caldav#157). Also shows whether a bare <time-range> selects recurring
+# events at all, which is RFC 4791 §7.4 and the foundation of the hybrid
+# (server-side filtering + client-side expansion of only the matches).
+# READ-ONLY: REPORT only, never PUT/DELETE. Credentials come from piggy
+# (fastmail-caldav.env); the secret is never echoed or written to disk.
+[group('debug')]
+debug-caldav-expand-probe CAL='93fe8ff4-b027-4c5e-a961-96ec236624d8' START='20260720T000000Z' END='20260727T000000Z':
+    #!/usr/bin/env bash
+    set -euo pipefail
+    set +x
+    set -a
+    . <(piggy pass show fastmail-caldav.env)
+    set +a
+    : "${CALDAV_USERNAME:?fastmail-caldav.env did not define CALDAV_USERNAME}"
+    : "${CALDAV_PASSWORD:?fastmail-caldav.env did not define CALDAV_PASSWORD}"
+
+    url="https://caldav.fastmail.com/dav/calendars/user/${CALDAV_USERNAME}/{{ CAL }}/"
+    tmp="$(mktemp -d)"
+    trap 'rm -rf "$tmp"' EXIT
+
+    filter='<C:filter><C:comp-filter name="VCALENDAR"><C:comp-filter name="VEVENT"><C:time-range start="{{ START }}" end="{{ END }}"/></C:comp-filter></C:comp-filter></C:filter>'
+    head='<C:calendar-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">'
+    plain="${head}<D:prop><D:getetag/><C:calendar-data/></D:prop>${filter}</C:calendar-query>"
+    expand="${head}<D:prop><D:getetag/><C:calendar-data><C:expand start=\"{{ START }}\" end=\"{{ END }}\"/></C:calendar-data></D:prop>${filter}</C:calendar-query>"
+
+    probe() {
+      curl -sS -X REPORT "$url" \
+        --user "${CALDAV_USERNAME}:${CALDAV_PASSWORD}" \
+        -H 'Depth: 1' \
+        -H 'Content-Type: application/xml; charset=utf-8' \
+        --data-binary "$1"
+    }
+
+    probe "$plain"  >"$tmp/plain.out"
+    probe "$expand" >"$tmp/expand.out"
+
+    for n in plain expand; do
+      printf '%-7s bytes=%-8s VEVENT=%-4s RRULE=%-4s RECURRENCE-ID=%s\n' \
+        "$n" \
+        "$(wc -c <"$tmp/$n.out" | tr -d ' ')" \
+        "$(grep -c 'BEGIN:VEVENT' "$tmp/$n.out" || true)" \
+        "$(grep -c 'RRULE' "$tmp/$n.out" || true)" \
+        "$(grep -c 'RECURRENCE-ID' "$tmp/$n.out" || true)"
+    done
+
+    if cmp -s "$tmp/plain.out" "$tmp/expand.out"; then
+      echo 'VERDICT: responses BYTE-IDENTICAL — <C:expand> appears to be IGNORED'
+    else
+      echo 'VERDICT: responses DIFFER — <C:expand> appears to be HONORED'
+    fi
+
+    # The decisive detail: true expansion rewrites each instance's DTSTART to
+    # its own occurrence time (and per RFC 4791 §9.6.5 should carry
+    # RECURRENCE-ID). Identical DTSTARTs across both responses would mean the
+    # server only stripped RRULE without materializing occurrences.
+    for n in plain expand; do
+      echo "--- $n: SUMMARY / DTSTART / RECURRENCE-ID ---"
+      grep -oE '(SUMMARY|DTSTART|RECURRENCE-ID|RRULE)[^[:space:]<]{0,60}' "$tmp/$n.out" || true
+    done
+
 # Capture a live jira: NODE (READ-ONLY) into a throwaway store, emitting the
 # RFC 0002 merkle receipt — the FDR 0019 protocol-capture smoke loop (#110).
 # NODE is the in-jira path under $JIRA_URL's host (e.g. PROJ or PROJ/PROJ-1).
