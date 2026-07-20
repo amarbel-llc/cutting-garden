@@ -74,6 +74,16 @@ which is strictly more work than answering once. Before defaulting to
 decline, compare its cost against the fold it triggers - see RFC 0012 §4.2
 for the fold's exact shape and when the framework bounds or refuses it.
 
+This guidance is bounded to declining WHOLESALE: returning *ok == false* so
+the whole request falls through to a framework fallback. Omitting a single
+dimension from a summary you otherwise serve as *ok: true* is a different
+thing, and it is possible today - a dimension simply can be absent from
+what you emit. That triggers no fallback at all: nothing re-walks
+anything, so there is no fold to weigh the omission against. The cost
+instead falls entirely on the CONSUMER, who loses the ability to ask that
+one question; weigh an omitted dimension against that lost question, not
+against a fold that was never going to run.
+
 # NO SILENT EMPTIES
 
 A result that is indistinguishable from an error is a defect, not a graceful
