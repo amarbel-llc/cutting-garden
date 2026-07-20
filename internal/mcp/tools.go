@@ -187,7 +187,7 @@ func readToolDefs() []protocol.ToolV1 {
 				"Each node carries its uri, so you descend by listing deeper or read a " +
 				"leaf with read_node. Every entry is ENRICHED BY DEFAULT with its " +
 				"facets and any plugin-declared human-readable fields (e.g. a caldav " +
-				"object's summary/due/status) inline — pass bare=true to opt out to " +
+				"object's summary/status/dtstart/dtend) inline — pass bare=true to opt out to " +
 				"the cheap {uri,name,type,container,mimeType} shape. An optional " +
 				"filter (the same dimension=value grammar as read_facets) narrows the " +
 				"returned nodes to those matching, wrapping the result as " +
@@ -806,7 +806,8 @@ type typeSchema struct {
 	Facets       []facetDimSchema `json:"facets,omitempty"`
 	// ListingFields are the human-readable keys a node of this type may
 	// carry in an enriched listing's `fields` (cutting-garden#160) — e.g.
-	// a caldav object's summary/due/status/dtstart. Empty means the
+	// a caldav object's summary/status/dtstart/dtend/duration/location/due.
+	// Empty means the
 	// plugin declares no listing fields for this type (it may still
 	// enrich with Facets alone, via ListRoots or EnrichedLister).
 	ListingFields []listingFieldSchema `json:"listingFields,omitempty"`

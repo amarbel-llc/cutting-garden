@@ -81,7 +81,7 @@ const instructions = "Resources are the capturable trees of cutting-garden " +
 	"array, so you descend the tree one level per read. Every listing " +
 	"entry is ENRICHED BY DEFAULT: it carries its facets and any " +
 	"plugin-declared human-readable fields (e.g. a caldav object's " +
-	"summary/due/status) inline, not just {uri,name,type}. Reading a leaf " +
+	"summary/status/dtstart/dtend) inline, not just {uri,name,type}. Reading a leaf " +
 	"object returns its parsed fields as JSON, plus (when available) a " +
 	"madder://blobs/<digest> link to its verbatim bytes. The same surface " +
 	"is also exposed as tools (for clients that render only tools): " +

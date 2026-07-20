@@ -2,6 +2,7 @@ package caldav
 
 import (
 	"context"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -131,10 +132,94 @@ func TestDescribeListingFields_DeclaresObjectFields(t *testing.T) {
 	}
 	for _, want := range []string{
 		listingFieldSummary, listingFieldDue, listingFieldStatus, listingFieldDtStart,
+		listingFieldDtEnd, listingFieldDuration, listingFieldLocation, listingFieldPercentComplete,
 	} {
 		if !keys[want] {
 			t.Errorf("listing field %q not declared", want)
 		}
+	}
+}
+
+// TestListEnriched_PopulatesTimingAndLocationFields pins #177's addition:
+// dtend, duration, location, and percent_complete flow from the already-
+// parsed ical.Event/ical.Task onto the enriched listing. An event with
+// DTEND carries "dtend" but not "duration" (RFC 5545 §3.6.1 permits at
+// most one of the two on a VEVENT, and listingFieldsOf reports each
+// as-parsed rather than cross-deriving one from the other); an event
+// with only DURATION set carries the inverse. A task's location and
+// percent-complete are reported the same way facets are: present only
+// when the source data actually carries a value.
+func TestListEnriched_PopulatesTimingAndLocationFields(t *testing.T) {
+	f := newFakeCalDAV()
+	f.seed("/dav/cal/standup.ics", "VEVENT",
+		"BEGIN:VCALENDAR\nVERSION:2.0\nBEGIN:VEVENT\nUID:standup\n"+
+			"SUMMARY:Standup\nSTATUS:CONFIRMED\n"+
+			"DTSTART:20260224T150000Z\nDTEND:20260224T151500Z\n"+
+			"LOCATION:HQ / video link\nEND:VEVENT\nEND:VCALENDAR\n")
+	f.seed("/dav/cal/allhands.ics", "VEVENT",
+		"BEGIN:VCALENDAR\nVERSION:2.0\nBEGIN:VEVENT\nUID:allhands\n"+
+			"SUMMARY:All Hands\nSTATUS:CONFIRMED\n"+
+			"DTSTART:20260225T173000Z\nDURATION:PT1H\n"+
+			"END:VEVENT\nEND:VCALENDAR\n")
+	f.seed("/dav/cal/task1.ics", "VTODO",
+		"BEGIN:VCALENDAR\nVERSION:2.0\nBEGIN:VTODO\nUID:task1\n"+
+			"SUMMARY:Draft report\nSTATUS:IN-PROCESS\n"+
+			"DUE:20260226T000000Z\nLOCATION:Office\nPERCENT-COMPLETE:40\n"+
+			"END:VTODO\nEND:VCALENDAR\n")
+
+	srv := httptest.NewServer(f.handler())
+	t.Cleanup(srv.Close)
+	arg := "caldav:" + srv.URL + calendarHref
+
+	nodes, ok, err := Plugin{}.ListEnriched(
+		context.Background(), mustParseURL(t, arg), nil,
+	)
+	if err != nil {
+		t.Fatalf("ListEnriched: %v", err)
+	}
+	if !ok {
+		t.Fatal("ListEnriched ok = false, want true")
+	}
+
+	byName := map[string]cutting_garden_plugins.Node{}
+	for _, n := range nodes {
+		byName[n.Name] = n
+	}
+
+	standup, ok := byName["standup.ics"]
+	if !ok {
+		t.Fatalf("missing standup.ics in %+v", byName)
+	}
+	if standup.Fields[listingFieldDtEnd] != "20260224T151500Z" {
+		t.Errorf("standup dtend = %v, want 20260224T151500Z", standup.Fields[listingFieldDtEnd])
+	}
+	if standup.Fields[listingFieldLocation] != "HQ / video link" {
+		t.Errorf("standup location = %v, want %q", standup.Fields[listingFieldLocation], "HQ / video link")
+	}
+	if _, present := standup.Fields[listingFieldDuration]; present {
+		t.Errorf("standup carries a duration field though only DTEND was set: %+v", standup.Fields)
+	}
+
+	allhands, ok := byName["allhands.ics"]
+	if !ok {
+		t.Fatalf("missing allhands.ics in %+v", byName)
+	}
+	if allhands.Fields[listingFieldDuration] != "PT1H" {
+		t.Errorf("allhands duration = %v, want PT1H", allhands.Fields[listingFieldDuration])
+	}
+	if _, present := allhands.Fields[listingFieldDtEnd]; present {
+		t.Errorf("allhands carries a dtend field though only DURATION was set: %+v", allhands.Fields)
+	}
+
+	task, ok := byName["task1.ics"]
+	if !ok {
+		t.Fatalf("missing task1.ics in %+v", byName)
+	}
+	if task.Fields[listingFieldLocation] != "Office" {
+		t.Errorf("task1 location = %v, want Office", task.Fields[listingFieldLocation])
+	}
+	if task.Fields[listingFieldPercentComplete] != 40 {
+		t.Errorf("task1 percent_complete = %v, want 40", task.Fields[listingFieldPercentComplete])
 	}
 }
 
