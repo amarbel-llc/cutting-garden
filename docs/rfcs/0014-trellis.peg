@@ -228,6 +228,14 @@ EOF          <- !.
 //     — fully-contained object-at-version identifier (MarklTerm)
 //   "my thing"@blake2b256-9ft3x
 //     — quoted purpose slot; the digest is NEVER inside the quotes
+//   "a@b"@fmt-x
+//     — quoted purpose CONTAINING the join rune: the join is the SECOND
+//       `@`. A decoder MUST scan quote-aware and MUST NOT split on the
+//       first `@` (piggy RFC 0011 §4 step 1, which pins this with six
+//       vectors as the most divergence-prone point for an independent
+//       implementation). Trellis gets it right by construction — MarklTerm
+//       tries String before seeking `@`, so the quoted slot consumes its
+//       own inner `@`.
 //   blocks=task/other@blake2b256-9ft3x
 //     — typed edge, pinned: field value is one MarklTerm
 //   due = "2026-08-01"

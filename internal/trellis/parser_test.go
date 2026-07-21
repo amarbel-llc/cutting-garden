@@ -429,6 +429,38 @@ func TestShape_MarklTermQuotedPurpose(t *testing.T) {
 	}
 }
 
+// TestShape_MarklTermQuotedPurposeContainingJoinRune pins the case piggy
+// RFC 0011 §4 step 1 identifies as the single most divergence-prone point
+// for an independent implementation: a quoted purpose that CONTAINS the
+// join rune. The join is the SECOND `@`; a decoder that splits on the
+// first one mis-parses, taking `"a` as the purpose.
+//
+// Trellis is correct here by construction — MarklTerm is
+// `(String / Ident) '@' Ident` and tries String FIRST, so the quoted slot
+// consumes its own inner `@` before the join is ever sought; there is no
+// first-`@` split in the implementation to get wrong. But until now that
+// was asserted only in 0014-trellis.peg's prose, never pinned by a
+// conformance vector or a test, so a regression would have gone unnoticed.
+// piggy pins the equivalent with six vectors.
+func TestShape_MarklTermQuotedPurposeContainingJoinRune(t *testing.T) {
+	q := mustParse(t, `"a@b"@fmt-x`)
+	term := q.Path.Steps[0].Terms[0]
+	mb, ok := term.Basic.(MarklBasicTerm)
+	if !ok {
+		t.Fatalf("Basic = %T, want MarklBasicTerm", term.Basic)
+	}
+	if !mb.Markl.PurposeQuoted {
+		t.Fatalf("PurposeQuoted = false, want true")
+	}
+	if got, want := mb.Markl.Purpose, "a@b"; got != want {
+		t.Fatalf("Purpose = %q, want %q — the join is the SECOND `@`, "+
+			"not the first (a first-`@` split would yield `\"a`)", got, want)
+	}
+	if got, want := mb.Markl.Digest, "fmt-x"; got != want {
+		t.Fatalf("Digest = %q, want %q", got, want)
+	}
+}
+
 func TestShape_SpacedFieldPredicate(t *testing.T) {
 	q := mustParse(t, `due = "2026-08-01"`)
 	if len(q.Path.Steps) != 1 || len(q.Path.Steps[0].Terms) != 1 {
