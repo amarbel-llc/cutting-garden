@@ -386,6 +386,7 @@ const CapFacetVersion = internal.CapFacetVersion
 const CapLeafRead = internal.CapLeafRead
 const CapMutate = internal.CapMutate
 const CapRoots = internal.CapRoots
+const CodeInternalError = internal.CodeInternalError
 const CodeInvalidConfig = internal.CodeInvalidConfig
 const CodeInvalidParams = internal.CodeInvalidParams
 const CodeMethodNotFound = internal.CodeMethodNotFound

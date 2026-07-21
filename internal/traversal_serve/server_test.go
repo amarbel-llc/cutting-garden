@@ -40,6 +40,9 @@ type fakeFullPlugin struct {
 	// patchApplied is what PatchNode reports; nil (the zero value) is the
 	// "does not report applied fields" case (cutting-garden#182).
 	patchApplied []string
+	// patchErr, when set, is returned by PatchNode instead of succeeding —
+	// used to drive the error-CLASSIFICATION path (cutting-garden#185).
+	patchErr error
 }
 
 var (
@@ -231,6 +234,10 @@ func (p *fakeFullPlugin) PatchNode(
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.patchBody = data
+
+	if p.patchErr != nil {
+		return nil, p.patchErr
+	}
 
 	return p.patchApplied, nil
 }
@@ -818,6 +825,62 @@ func TestServeNodePatchAppliedRoundTrip(t *testing.T) {
 
 			if string(raw) != testCase.wantRaw {
 				t.Errorf("node.patch result = %s, want %s", raw, testCase.wantRaw)
+			}
+		})
+	}
+}
+
+// TestServePluginErrorsAreClassified pins that a plugin's caller-fault
+// error reaches the wire as -32602 and a genuine plugin failure as -32603
+// (cutting-garden#185). The distinction is operational, not cosmetic:
+// -32603 invites a retry, and a retried malformed request fails
+// identically forever, so misclassifying a caller mistake as a plugin
+// failure manufactures an unretryable retry loop.
+//
+// This asserts the CODE, not the message text — a test matching on message
+// text would pass while the code stayed wrong, which is exactly how the
+// defect survived (the old behavior mapped every non-*RPCError to -32603
+// and was documented as intentional).
+func TestServePluginErrorsAreClassified(t *testing.T) {
+	for _, testCase := range []struct {
+		name     string
+		err      error
+		wantCode int
+	}{
+		{
+			// What a plugin returns for a recognized field carrying an
+			// unusable value — the caller can fix this, and must be told so.
+			name:     "caller fault",
+			err:      errors.BadRequestf("patch field %q: not a string", "title"),
+			wantCode: CodeInvalidParams,
+		},
+		{
+			name:     "plugin fault",
+			err:      errors.ErrorWithStackf("upstream unreachable"),
+			wantCode: CodeInternalError,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			plugin := &fakeFullPlugin{patchErr: testCase.err}
+			client, _ := startServe(t, fullPluginConfig(plugin))
+			mustInitialize(t, client)
+
+			err := client.Call(
+				context.Background(),
+				MethodNodePatch,
+				NodePatchParams{
+					URI: fakeLeafA,
+					BodyBase64: base64.StdEncoding.EncodeToString(
+						[]byte(`{"state":"closed"}`),
+					),
+				},
+				nil,
+			)
+
+			code, ok := CodeOf(err)
+			if !ok || code != testCase.wantCode {
+				t.Errorf("CodeOf = %d, %t, want %d, true",
+					code, ok, testCase.wantCode)
 			}
 		})
 	}

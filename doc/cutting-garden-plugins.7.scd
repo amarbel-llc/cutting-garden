@@ -124,6 +124,38 @@ result for the wire encoding (the key is OMITTED, never sent as an empty
 list, precisely so the two states stay distinct) and FDR 0020's Settled
 section for the full rationale.
 
+*Tolerate the KEY, not the VALUE.* The rule buys forward-compatibility, and
+forward-compatibility is a claim about keys: a key you have never heard of
+may mean something to a newer caller you have not met. A key you DO know,
+carrying a value you cannot use — a number where the field is a string —
+has no such future, and tolerating it protects nobody while costing the
+caller the ability to find their own bug. Reject it (*-32602* on the wire,
+a bad request in process). Do not drop it silently, and do not fold it into
+an empty "applied nothing" report — it is not a tolerance case at all.
+
+The governing invariant, once you have both halves: *what you report as
+applied is empty if and only if nothing changed.* If your node's payload
+is not a keyed object at all — plain text, say — a successful write still
+reports the one logical field it replaced, under the name your own body
+schema uses for it. Reporting "nothing" there would be the same false
+signal in the opposite direction.
+
+*Distinguish YOUR failures from the CALLER'S.* A caller-side rejection and
+an internal failure are different answers, and the difference is
+operational rather than cosmetic: "I failed" invites a retry, and a retried
+malformed request fails identically forever, whereas "your request is
+wrong" is something the caller can act on. Mapping everything you fail on
+to a single internal-error code is non-conformant for exactly this reason —
+see RFC 0013 §Errors for the normative rule and the code assignments.
+
+Watch the shape of that trap, because two independent implementations —
+including this project's own reference host — fell into it. Deciding
+whether a failure is the caller's fault is knowledge only YOU have;
+turning that decision into a wire code belongs to the transport. The
+natural structure computes the decision deep inside your plugin and then
+throws it away before the transport can see it, leaving a catch-all to
+guess. Carry the classification out to the boundary intact.
+
 # PER-CHILD-CONTAINER ATTRIBUTION
 
 A *FacetCounter* MAY report which of a summarized node's immediate child

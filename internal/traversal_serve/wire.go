@@ -51,17 +51,29 @@ const (
 	MethodNodeDelete      = "node.delete"
 )
 
-// JSON-RPC error codes (RFC 0013 §Errors). The first two are
-// RFC-defined and initialize-only; the last two are the JSON-RPC 2.0
-// standard codes the spec pins for unadvertised methods and
-// scheme-mismatched URIs. Domain outcomes the Go contracts express as
-// ok == false are RESULTS, never JSON-RPC errors — the distinction
-// selects fallback behavior host-side, not failure.
+// JSON-RPC error codes (RFC 0013 §Errors). The first two are RFC-defined
+// and initialize-only; the rest are JSON-RPC 2.0 standard codes.
+//
+// The CALLER-FAULT vs PLUGIN-FAULT split — CodeInvalidParams against
+// CodeInternalError — is load-bearing, not descriptive
+// (cutting-garden#185). They mean opposite things operationally: an
+// internal error says "this plugin failed", which invites a retry, and a
+// retried malformed request fails identically forever; invalid-params says
+// "your request is wrong", which the caller can act on. A plugin that maps
+// every failure to CodeInternalError therefore does not merely report
+// imprecisely, it converts every caller mistake into an unretryable retry
+// loop. Classifying is the plugin's job precisely because only it knows
+// which of the two a given failure is.
+//
+// Domain outcomes the Go contracts express as ok == false are RESULTS,
+// never JSON-RPC errors — that distinction selects fallback behavior
+// host-side, not failure.
 const (
 	CodeUnsupportedVersion = -32000
 	CodeInvalidConfig      = -32002
 	CodeMethodNotFound     = -32601
 	CodeInvalidParams      = -32602
+	CodeInternalError      = -32603
 )
 
 // Capability tokens (RFC 0013 §Method set), advertised in

@@ -245,11 +245,58 @@ func newServer(cfg ServeConfig) (*server, error) {
 	return srv, nil
 }
 
-// Handle dispatches one method to the corresponding capability. Domain
-// errors (non-*RPCError) propagate as-is — the peer maps them to -32603
-// internal (RFC 0013 §Errors); where the RFC pins a specific code the
-// handlers below wrap in *RPCError themselves.
+// Handle dispatches one method and CLASSIFIES the resulting error as
+// caller-fault or plugin-fault before it reaches the transport
+// (cutting-garden#185).
+//
+// The split matters. Classification — "is this the caller's mistake or
+// mine?" — is knowledge only the plugin has: it is the thing that knows a
+// wrong-typed patch value is unusable rather than transiently failing.
+// Translation of that verdict into a wire code is the peer's business, and
+// the peer stays transport-generic by translating a classification someone
+// else made rather than sniffing plugin errors it should know nothing
+// about. This function is where the two meet, because it is the last point
+// at which a plugin's Go error is still intact.
+//
+// Previously every non-*RPCError propagated raw and the peer defaulted it
+// to -32603. That discarded a verdict the plugin had already reached —
+// dewey's errors.Is400BadRequest — and the two codes mean opposite things
+// operationally: -32603 says "this plugin failed", inviting a retry, and a
+// retried malformed request fails identically forever; -32602 says "your
+// request is wrong", which the caller can act on. So the old default did
+// not merely report imprecisely, it turned every caller mistake into an
+// unretryable retry loop. It also made a linked plugin and a wire plugin
+// answer differently for identical input, which RFC 0013's
+// indistinguishability bar forbids.
+//
+// An error already carrying an *RPCError is passed through untouched — a
+// handler that pinned a specific code meant it.
 func (s *server) Handle(
+	ctx context.Context, method string, params json.RawMessage,
+) (any, error) {
+	result, err := s.dispatch(ctx, method, params)
+	if err == nil {
+		return result, nil
+	}
+
+	var rpcErr *RPCError
+	if errors.As(err, &rpcErr) {
+		return nil, err
+	}
+
+	if errors.Is400BadRequest(err) {
+		return nil, &RPCError{
+			Code:    CodeInvalidParams,
+			Message: err.Error(),
+		}
+	}
+
+	return nil, err
+}
+
+// dispatch routes one method to the corresponding capability. It returns
+// plugin errors unclassified; Handle is what decides their wire meaning.
+func (s *server) dispatch(
 	ctx context.Context, method string, params json.RawMessage,
 ) (any, error) {
 	switch method {

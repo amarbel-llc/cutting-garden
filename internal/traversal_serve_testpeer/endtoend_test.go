@@ -351,6 +351,25 @@ func TestWireIndistinguishableFromLinked(t *testing.T) {
 		t.Errorf("facet token unchanged across a mutation: %q", postToken)
 	}
 
+	// A caller-fault error from the PLUGIN must reach the host as
+	// -32602, not -32603 (cutting-garden#185). This asserts it over a
+	// REAL socket against the spawned peer, so it pins the byte on the
+	// wire rather than the in-process classification: the peer's
+	// PatchNode rejects a non-JSON body as a bad request, and that
+	// verdict has to survive serialization. Before the fix every plugin
+	// error arrived as -32603 "the plugin failed", which invites a retry
+	// that then fails identically forever.
+	malformed, err := wire.PatchNode(ctx, delta, strings.NewReader("not json"))
+	if err == nil {
+		t.Fatalf("malformed patch body must error; got applied = %#v", malformed)
+	}
+	if code, ok := traversal_serve.CodeOf(err); !ok ||
+		code != traversal_serve.CodeInvalidParams {
+		t.Errorf("malformed patch body: CodeOf = %d, %t, want %d, true"+
+			" — a caller mistake must not be reported as a plugin failure",
+			code, ok, traversal_serve.CodeInvalidParams)
+	}
+
 	applied, err := wire.PatchNode(
 		ctx, delta, strings.NewReader(`{"note":"patched"}`),
 	)

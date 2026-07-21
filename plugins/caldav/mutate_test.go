@@ -5,6 +5,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
 func TestCreateNode_CreatesObject(t *testing.T) {
@@ -224,6 +226,48 @@ func TestPatchNode_AllFieldsUnrecognizedReportsNothingApplied(t *testing.T) {
 	}
 	if len(f.puts) != 0 {
 		t.Errorf("nothing-applied patch must not issue a PUT; puts=%v", f.puts)
+	}
+	if got := f.resources["/dav/cal/task1.ics"]; got != before {
+		t.Errorf("stored body changed: %q", got)
+	}
+}
+
+// A RECOGNIZED field carrying a value caldav cannot use is a caller
+// mistake, not a forward-compatibility case, and MUST be rejected rather
+// than tolerated (cutting-garden#185). The distinction: tolerance exists so
+// a newer caller stays safe against an older plugin, which is a claim about
+// unknown KEYS — a key we have never heard of may mean something to a
+// future version. A known key with a wrong-typed value never will.
+//
+// caldav already behaved this way, but only as a side effect of
+// json.Unmarshal failing — nothing recorded the decision and nothing
+// pinned it, so a refactor of applyPatch could silently downgrade it to
+// "drop the field and report applied: []", which is what the first
+// external peer implementation did before this was ruled on. This test is
+// the pin.
+func TestPatchNode_RecognizedFieldWithUnusableValueErrors(t *testing.T) {
+	f, home := startFake(t)
+	arg := objectArg(home, "/dav/cal/task1.ics")
+	before := f.resources["/dav/cal/task1.ics"]
+
+	applied, err := Plugin{}.PatchNode(
+		context.Background(), mustParseURL(t, arg),
+		strings.NewReader(`{"component":"VTODO","task":{"summary":123}}`),
+	)
+	if err == nil {
+		t.Fatalf("a recognized field with an unusable value must error;"+
+			" got applied = %#v", applied)
+	}
+	if !errors.Is400BadRequest(err) {
+		t.Errorf("error must classify as a CALLER fault so the wire"+
+			" reports -32602 rather than -32603: %v", err)
+	}
+	if applied != nil {
+		t.Errorf("applied = %#v, want nil on error — a partial patch must"+
+			" not report fields as landed", applied)
+	}
+	if len(f.puts) != 0 {
+		t.Errorf("rejected patch must not issue a PUT; puts=%v", f.puts)
 	}
 	if got := f.resources["/dav/cal/task1.ics"]; got != before {
 		t.Errorf("stored body changed: %q", got)

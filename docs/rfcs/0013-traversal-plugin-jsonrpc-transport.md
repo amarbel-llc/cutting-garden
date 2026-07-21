@@ -403,6 +403,40 @@ would in process:
     `applied` existed lands in the first state, not the second.
 
   Order is unspecified; a consumer MUST NOT depend on it.
+
+  **The invariant: `applied` is empty if and only if nothing changed.**
+  Every other question about it resolves against this. It is necessary
+  but not sufficient — it governs what a plugin reports when it
+  legitimately did nothing, and never licenses *choosing* to do nothing
+  when the caller made a correctable mistake (see below).
+
+  **Non-keyed payloads.** A node type whose patch body is not a keyed
+  object — a comment whose payload is markdown text, say — still
+  reports a non-empty `applied` on success, naming the single logical
+  field it replaced, using the name that node type's declared body
+  schema (`bodies`, `DescribeBodies`) uses for that content. Reporting
+  `[]` would state that a successful edit changed nothing, which is the
+  same lie this field exists to prevent, reached from the other side;
+  omitting would claim the plugin does not track something it plainly
+  does. Naming it from the declared vocabulary is what lets a caller
+  compare what it sent against what landed as a set operation.
+
+  **A recognized key carrying an unusable value is `-32602`, NOT a
+  tolerated field.** Tolerance is a claim about unknown *keys*: a key
+  the plugin has never heard of may be meaningful to a future version,
+  which is exactly the forward-compatibility this rule buys. A key the
+  plugin knows, carrying a value it cannot use — `{"title": 123}` for a
+  string field — has no such future, and tolerating it protects nothing
+  while costing the caller the ability to find their own bug. Such a
+  field MUST NOT be silently dropped, and MUST NOT be reported via an
+  empty `applied`; it never reaches the reporting question at all. An
+  explicit JSON `null` reads as "not supplied" (i.e. absent), not as a
+  type error.
+
+  These three were settled after two independent peer implementations
+  diverged on them (cutting-garden#182, #185): one errored on the
+  unusable value while another dropped it and reported `[]`, and both
+  believed they were conformant, because the text did not say.
 - `node.delete` params `{ "uri": string }` → result `{}`.
 
 Separately gated on `container-create` (an additive capability token
@@ -435,6 +469,47 @@ selects fallback behavior host-side, not failure).
 The host maps a JSON-RPC error from any method onto the corresponding
 Go contract's `err` return. Error `data` MAY carry structure; hosts
 MUST NOT depend on it in v1.
+
+#### Caller-fault and plugin-fault MUST be distinguishable
+
+A plugin MUST be able to distinguish a **caller-side rejection**
+(`-32602`) from an **internal failure** (`-32603`), and MUST answer with
+the one that applies. **A uniform mapping of every failure to `-32603` is
+NON-CONFORMANT**, even though it never produces a malformed message.
+
+This is not a diagnostics preference. The two codes mean opposite things
+operationally:
+
+- `-32603` says *this plugin failed* — which invites a retry, and a
+  retried malformed request fails identically forever.
+- `-32602` says *your request is wrong* — which the caller can act on.
+
+So a catch-all does not merely report imprecisely; it converts every
+caller mistake into an unretryable retry loop.
+
+Concretely, on the mutation methods: an unrecognized patch key is
+tolerated and is not an error at all (see `node.patch`), while a
+recognized key carrying an unusable value — `{"title": 123}` for a string
+field — is `-32602`. A backend that is unreachable, or that fails a write
+the plugin issued correctly, is `-32603`.
+
+Note the shape of the implementation trap, since two independent
+implementations fell into it. **Classification** — "is this the caller's
+mistake or mine?" — is knowledge only the plugin has. **Translation** of
+that verdict into a wire code is the transport's business. The natural
+structure (one error type, one catch-all mapping at the dispatch
+boundary) computes the classification somewhere inside the plugin and
+then discards it before translation can see it. The transport is not
+where the bug lives; the loss of the verdict on the way there is. A
+correct implementation carries the classification out to the boundary and
+translates it, rather than defaulting.
+
+Until this section existed, the code table above defined codes for
+`initialize` only, so nothing told a peer author that a *mutation* method
+might need to answer a caller-side code at all. The requirement was
+implied by the codes existing rather than stated, and peers could follow
+every written rule and still answer wrongly (cutting-garden#185; found by
+the fj-cg Rust peer, and present in this RFC's own reference host).
 
 ### Session lifecycle
 

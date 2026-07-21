@@ -65,6 +65,30 @@ type NodeMutator interface {
 	//     nil as "nothing applied"; it carries no information either way.
 	//
 	// Order is unspecified; callers MUST NOT depend on it.
+	//
+	// The invariant, from which the rest follows: applied is empty IF AND
+	// ONLY IF nothing changed. It is necessary but not sufficient — it
+	// governs what to report having legitimately done nothing, and never
+	// licenses CHOOSING to do nothing when the caller made a correctable
+	// mistake. Two consequences worth stating outright, because two
+	// independent implementations got them wrong (cutting-garden#185):
+	//
+	//   - A RECOGNIZED field carrying a value the implementation cannot
+	//     use — a number where the field is a string — is a BAD REQUEST,
+	//     not a tolerated field. The tolerance above is a claim about
+	//     unknown KEYS, which may mean something to a future version; a
+	//     wrong-typed value for a known key never will, so tolerating it
+	//     protects nobody and costs the caller the ability to find their
+	//     own bug. Such a field MUST NOT be dropped silently, and MUST
+	//     NOT be folded into an empty applied — it never reaches the
+	//     reporting question. Classify it so errors.Is400BadRequest
+	//     reports true: that is what the wire transport translates into
+	//     a caller-fault code rather than "this plugin failed"
+	//     (RFC 0013 §Errors).
+	//   - A node type whose body is not a keyed object at all (plain
+	//     text) still reports the single logical field it replaced, under
+	//     the name its NodeTypeBody schema uses. Reporting empty there
+	//     would claim a successful write changed nothing.
 	PatchNode(
 		ctx context.Context, uri *url.URL, body io.Reader,
 	) (applied []string, err error)
