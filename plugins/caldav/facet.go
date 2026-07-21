@@ -280,12 +280,34 @@ func (c *client) foldCalendarFacets(
 // objectFacets parses one iCalendar object and projects its facet values.
 // Returns nil when the body is not a VEVENT/VTODO/VJOURNAL this plugin reads
 // (parseObjectView reports ok=false) — that object then contributes nothing.
+//
+// NOTE (cutting-garden#176/#177): this stays UNWINDOWED and master-only for
+// VEVENT — foldCalendarFacets (below) still fetches every VEVENT via the
+// shared listResources, exactly as before Phase 2. A recurring VEVENT's
+// year/month facet buckets therefore still key on its master's original
+// DTSTART, not any expanded occurrence's instant. This is a KNOWN,
+// documented limitation, not an oversight: issue #176's own investigation
+// explicitly redirected recurrence-correct calendar answers away from a
+// facet/band shape ("you cannot bucket a recurring event by a stored
+// instant") and toward the windowed listing expand.go implements instead
+// — so extending facet counting to expand recurrences would reintroduce
+// the exact design #176 rejected. Fixing facet-level recurrence
+// correctness, if ever wanted, is future work, not this phase's scope.
 func objectFacets(raw string) map[string][]cutting_garden_plugins.FacetValue {
 	view, ok := parseObjectView(raw)
 	if !ok {
 		return nil
 	}
+	return facetsFromView(view)
+}
 
+// facetsFromView is objectFacets' computation split out from parsing, so a
+// caller that already holds a parsed objectView (listing.go's VEVENT
+// expansion path, which parses via ical.ParseAllVEVENTs rather than
+// re-parsing raw text) can compute the same facet values without a second
+// parse. Behavior is byte-for-byte identical to objectFacets' prior
+// (pre-split) body — this is a pure refactor.
+func facetsFromView(view objectView) map[string][]cutting_garden_plugins.FacetValue {
 	facets := map[string][]cutting_garden_plugins.FacetValue{
 		facetComponent: {{Key: view.Component}},
 	}

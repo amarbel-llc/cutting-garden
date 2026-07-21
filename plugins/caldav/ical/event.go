@@ -195,6 +195,70 @@ func ParseVEVENT(raw string) (*Event, error) {
 	return e, nil
 }
 
+// ParseAllVEVENTs parses every VEVENT component in raw, returning one
+// *Event per component in document order. It exists for cutting-garden
+// #176/#177's recurrence expansion: a CalDAV server honoring RFC 4791
+// §9.6.5's <C:expand> returns ONE resource whose calendar-data contains
+// MULTIPLE VEVENT components sharing a UID — the master's recurrence
+// materialized into individual occurrences (each with its own DTSTART and
+// RECURRENCE-ID, RRULE stripped) — where ParseVEVENT (which stops at the
+// first component) would silently see only the first occurrence.
+//
+// Rather than duplicating ParseVEVENT's property-by-property switch (a
+// second, drifting copy of parsing logic touching the same properties
+// capture identity depends on via uidOf), this splits raw into its
+// component "BEGIN:VEVENT…END:VEVENT" spans and parses each
+// independently through the existing, unmodified ParseVEVENT — so every
+// property this function understands is exactly what ParseVEVENT
+// understands, with one parser to keep correct. A component that fails to
+// parse (e.g. missing UID) is skipped rather than failing the whole call,
+// so one malformed occurrence does not hide the others. A body with no
+// VEVENT returns an empty, non-error slice.
+func ParseAllVEVENTs(raw string) ([]*Event, error) {
+	var events []*Event
+	for _, block := range splitComponentBlocks(raw, "VEVENT") {
+		e, err := ParseVEVENT(block)
+		if err != nil {
+			continue
+		}
+		events = append(events, e)
+	}
+	return events, nil
+}
+
+// splitComponentBlocks extracts each "BEGIN:<kind>…END:<kind>" span from
+// raw as its own line-joined string, so a per-component parser (which
+// itself scans for that BEGIN/END pair and does not require a VCALENDAR
+// wrapper) can be run standalone against each one. Lines are unfolded
+// first (RFC 5545 §3.1) so a folded continuation line already joined to
+// its property is never split mid-property by this second pass.
+func splitComponentBlocks(raw, kind string) []string {
+	lines := unfoldLines(raw)
+	begin, end := "BEGIN:"+kind, "END:"+kind
+
+	var blocks []string
+	var current []string
+	inBlock := false
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		switch {
+		case trimmed == begin:
+			inBlock = true
+			current = []string{line}
+		case trimmed == end:
+			if inBlock {
+				current = append(current, line)
+				blocks = append(blocks, strings.Join(current, "\r\n"))
+			}
+			inBlock = false
+			current = nil
+		case inBlock:
+			current = append(current, line)
+		}
+	}
+	return blocks
+}
+
 // EventToIcal serializes an Event to a full VCALENDAR string.
 func EventToIcal(e *Event) string {
 	var b strings.Builder

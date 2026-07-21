@@ -3,8 +3,6 @@ package caldav
 import (
 	"context"
 	"net/url"
-	"path"
-	"strings"
 
 	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
@@ -84,14 +82,41 @@ func (c *client) calendarNodes(
 	return nodes
 }
 
-// objectNodes lists the calendar's objects by href only (no bodies) and
-// maps each to a leaf Node.
+// objectNodes lists the calendar's objects and maps each to a leaf Node.
+// VTODO/VJOURNAL stay hrefs-only (no bodies) exactly as before Phase 2 —
+// recurrence expansion is a VEVENT-only concern (cutting-garden#176's
+// investigation: task clients roll DUE forward themselves, so due_band
+// already answers correctly without windowing). VEVENT instead goes
+// through expand.go's expandedEventItems: a windowed, <C:expand>-
+// requesting REPORT (cutting-garden#176/#177) that returns EITHER
+// expanded occurrences, explicit override instances, or — on graceful
+// degradation against a server that ignores <C:expand> — the unexpanded
+// masters, one node each, exactly as today (see eventOccurrenceURI). This
+// means a calendar's VEVENT listing is now BOUNDED to expansionWindow()
+// rather than exhaustive; #178 (a caller-supplied window) is the tracked
+// follow-up, and DescribeListingFields/RFC 0011 document the default
+// window since Node/ListRoots carries no structural completeness field.
 func (c *client) objectNodes(
 	ctx context.Context,
 	calendarBase string,
 ) ([]cutting_garden_plugins.Node, error) {
 	var nodes []cutting_garden_plugins.Node
 	for _, component := range capturedComponents {
+		if component == "VEVENT" {
+			items, err := c.expandedEventItems(ctx, calendarBase)
+			if err != nil {
+				return nil, err
+			}
+			for _, item := range items {
+				nodes = append(nodes, cutting_garden_plugins.Node{
+					URI:  eventOccurrenceURI(item),
+					Name: eventNodeName(item.rel),
+					Type: typeObject,
+				})
+			}
+			continue
+		}
+
 		hrefs, err := c.listObjectHrefs(ctx, calendarBase, component)
 		if err != nil {
 			return nil, err
@@ -104,7 +129,7 @@ func (c *client) objectNodes(
 			}
 			nodes = append(nodes, cutting_garden_plugins.Node{
 				URI:  caldavURIForAbs(abs),
-				Name: path.Base(strings.TrimRight(rel, "/")),
+				Name: eventNodeName(rel),
 				Type: typeObject,
 			})
 		}

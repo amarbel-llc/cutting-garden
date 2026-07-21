@@ -117,7 +117,9 @@ credential-free traversal roots for the `RootProvider` capability
   `resources/read` on a leaf (#85): GET one object's body and return both
   its parsed `ical` event/task (`objectView`) and the verbatim `.ics`
   bytes. Consulted only when `ListRoots` reports no children, so a
-  populated calendar is never mistaken for a leaf.
+  populated calendar is never mistaken for a leaf. A derived-occurrence
+  node URI (see `expand.go` below) is instead routed to
+  `readOccurrenceLeaf`, which re-projects the specific occurrence.
 - `Plugin.CreateNode` / `PutNode` / `PatchNode` / `DeleteNode` (`mutate.go`) — the
   `NodeMutator` write capability (FDR 0020), the write-side sibling of
   `ReadLeaf`. Strict create (`If-None-Match: *`, errors on collision) and
@@ -129,6 +131,37 @@ credential-free traversal roots for the `RootProvider` capability
   `ReadLeaf`), normalized to iCalendar via the `ical` writers
   (`normalizeObjectBody`). Patch bodies are JSON only. Creating a calendar
   *container* is rejected until MKCALENDAR (#77) lands; leaf objects only.
+  `clientForNode` — the choke point every one of these four routes
+  through — refuses a derived-occurrence node URI outright (#176/#177):
+  per-occurrence mutation (edit-this-instance-vs-series) is out of scope.
+- `expand.go` + `client.go`'s `listExpandedEvents` — VEVENT recurrence
+  expansion (#176/#177, read-only): `traversal.go`'s `objectNodes`
+  (`ListRoots`) and `listing.go`'s `enrichedCalendarNodes`
+  (`ListEnriched`) both surface a calendar's VEVENT objects through a
+  single shared building block, `expandedEventItems`, which REPORTs a
+  bounded default window (`expansionWindow`, `expand.go` — 1 day back /
+  30 days forward from now, no caller-supplied window yet; see #178)
+  requesting server-side `<C:expand>` (confirmed live against Fastmail;
+  `docs/plans/2026-07-20-caldav-recurrence-expansion-phase1.md`). A
+  recurring VEVENT surfaces as several nodes — one per occurrence,
+  addressed by the real master href plus a `?recurrence-id=` suffix
+  (`occurrenceURI`) — rather than one node stuck at its original DTSTART.
+  A server that ignores `<C:expand>` (RFC 4791 does not require it)
+  degrades gracefully: `eventOccurrenceURI` detects an unstripped `RRULE`
+  per object and falls back to today's pre-#176 shape, one node per
+  master. VTODO/VJOURNAL are UNAFFECTED (still hrefs-only/unwindowed via
+  `listObjectHrefs`/`listResources`) — recurrence expansion is a
+  VEVENT-only concern; `due_band` (`facet.go`) already gets a correct
+  answer for recurring VTODOs because task clients roll `DUE` forward
+  themselves. **This is strictly confined to the traversal/listing/read
+  layer**: `listExpandedEvents` is deliberately NOT one of the four
+  shared low-level `client` methods
+  (`listResources`/`listObjectHrefs`/`listObjectEtags`/`getResource`)
+  capture/diff/restore depend on, so those five entry points
+  (`capture.go`, `protocol.go`, `diff.go`, `diff_protocol.go`,
+  `restore.go`/`restore_protocol.go`) are provably unaffected — see FDR
+  0014's Derived-nodes section and RFC 0012 §12.2 for the node-model
+  statement this introduces.
 
 ## iCalendar parsing: identity only, stored bytes stay verbatim
 

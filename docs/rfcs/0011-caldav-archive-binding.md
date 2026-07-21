@@ -1,6 +1,9 @@
 ---
 status: proposed
 date: 2026-06-18
+revised: 2026-07-21 (Limitations: cross-reference the #176/#177 VEVENT
+    recurrence-expansion traversal feature — this binding's object
+    leaves/native identity are unaffected by it)
 ---
 
 # CalDAV-Archive Binding
@@ -299,6 +302,21 @@ filesystem path, and the etag probe avoids transferring unchanged bodies.
 - **No cross-family diff.** Diffing a caldav receipt against a
   non-caldav source is out of scope
   ([#18](https://github.com/amarbel-llc/cutting-garden/issues/18)).
+- **Object leaves are always the unexpanded master.** This binding's
+  `!caldav-object-v1` leaf (§Object leaves) is unaffected by the
+  traversal-layer VEVENT recurrence expansion added for
+  [#176/#177](../features/0014-plugin-root-traversal.md#derived-nodes-no-11-stored-object):
+  capture, diff, and restore fetch and store each resource's whole,
+  unexpanded body via the same shared client methods they always have
+  (`listResources`/`listObjectHrefs`/`listObjectEtags`/`getResource`) and
+  never call the new windowed `<C:expand>` REPORT
+  (`plugins/caldav/client.go`'s `listExpandedEvents`) or its callers
+  (`plugins/caldav/expand.go`). A recurring VEVENT's native identity
+  (§Native identity) is still `<collection>/VEVENT/<UID>` — one entry per
+  series, not one per occurrence — exactly as before #176/#177. The
+  *derived occurrence* nodes that expansion adds are a `list`/`mcp`-only,
+  read-only concept (FDR 0014's Derived-nodes section) with no
+  representation in this protocol's payload or object leaves.
 
 ## References
 
@@ -329,5 +347,9 @@ filesystem path, and the etag probe avoids transferring unchanged bodies.
   discovered calendars, not new discovery behavior.
 - RFC 4791 §9.6 — the `calendar-data` property projection the diff
   freshness probe relies on to fetch UIDs without bodies.
+- [FDR 0014: Plugin root traversal](../features/0014-plugin-root-traversal.md)'s
+  Derived-nodes section, and [RFC 0012](./0012-plugin-facet-contract.md)
+  §12.2 — the traversal-layer VEVENT recurrence expansion
+  (cutting-garden#176/#177) this binding is deliberately unaffected by.
 - `internal/capture_plugin/` — the protocol emitter.
 - `plugins/caldav/` — the caldav binding implementation.

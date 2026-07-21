@@ -304,7 +304,31 @@ func (Plugin) DeleteNode(ctx context.Context, node *url.URL) error {
 // absolute href the mutation targets. The node URI is itself the object's
 // address (the same URI ListRoots/resources/read surface), so the resolved
 // base is the href to PUT/DELETE.
+//
+// It is the single choke point every NodeMutator entry point
+// (CreateNode/PutNode/PatchNode/DeleteNode) routes through, which is
+// exactly why it is where a DERIVED RECURRENCE OCCURRENCE node
+// (cutting-garden#176/#177, a ?recurrence-id= URI from expand.go's
+// occurrenceURI) is refused: mutating it would either silently resolve to
+// the real master href and edit/delete the WHOLE series when the caller
+// meant one instance, or — worse — silently discard the recurrence-id and
+// pretend the mutation targeted the occurrence it did not. Per-occurrence
+// mutation (edit-this-instance-vs-series) is genuinely out of scope for
+// this phase (the brief's "refuse clearly rather than guess" posture,
+// already established for the read-only expansion this refusal guards);
+// a caller wanting to change the series edits the master node (the same
+// URI without the query suffix).
 func clientForNode(node *url.URL) (*client, string, error) {
+	if recurrenceID, derived := recurrenceIDOf(node); derived {
+		return nil, "", errors.BadRequestf(
+			"caldav plugin: cannot mutate a derived recurrence occurrence "+
+				"(recurrence-id=%s) at %s — edit the series (the same URI "+
+				"without ?recurrence-id=) or the stored override object "+
+				"directly; per-occurrence mutation is out of scope "+
+				"(cutting-garden#176/#177)",
+			recurrenceID, node,
+		)
+	}
 	base, username, password, err := connectionFromArg(node)
 	if err != nil {
 		return nil, "", err

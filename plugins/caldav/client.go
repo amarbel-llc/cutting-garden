@@ -465,6 +465,106 @@ func uidFromProjection(component, calendarData string) string {
 	return uid
 }
 
+// calendarExpandQuery is the REPORT body template for VEVENT recurrence
+// expansion (cutting-garden#176/#177): a <C:time-range> filter narrows the
+// REPORT to a bounded window (see expansionWindow in expand.go — a
+// caller-supplied window is future work gated on #178) and <C:expand>
+// asks a cooperating server to materialize recurring VEVENTs into
+// individual occurrence components (own DTSTART + RECURRENCE-ID, RRULE
+// stripped) inside the SAME <c:calendar-data> value — confirmed live
+// against Fastmail's CalDAV endpoint (issue #176, probed via
+// `just debug-caldav-expand-probe`; see
+// docs/plans/2026-07-20-caldav-recurrence-expansion-phase1.md). RFC 4791
+// does not require <C:expand> and offers no capability-discovery
+// mechanism, so a non-cooperating server MAY ignore it while still
+// honoring <C:time-range> per §7.4 — expandedEventItems (expand.go)
+// detects this per object (an unstripped RRULE) and degrades gracefully
+// to today's pre-expansion node shape rather than presenting the wrong
+// data as an occurrence.
+const calendarExpandQuery = `<?xml version="1.0" encoding="utf-8" ?>
+<c:calendar-query xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+  <d:prop>
+    <d:getetag />
+    <c:calendar-data>
+      <c:expand start="%s" end="%s" />
+    </c:calendar-data>
+  </d:prop>
+  <c:filter>
+    <c:comp-filter name="VCALENDAR">
+      <c:comp-filter name="VEVENT">
+        <c:time-range start="%s" end="%s" />
+      </c:comp-filter>
+    </c:comp-filter>
+  </c:filter>
+</c:calendar-query>`
+
+// listExpandedEvents issues a windowed VEVENT REPORT requesting server-side
+// <C:expand> over [start, end]. It is deliberately NOT one of the four
+// shared low-level methods (listResources / listObjectHrefs /
+// listObjectEtags / getResource) that capture, diff, restore, and mutate
+// depend on — it exists solely for the traversal/listing recurrence-
+// expansion path (traversal.go, listing.go, expand.go, leaf.go's
+// occurrence projection) and MUST stay that way: Phase 1's investigation
+// (docs/plans/2026-07-20-caldav-recurrence-expansion-phase1.md §b)
+// established that capture/diff/restore identity depends on those four
+// methods' behavior never changing.
+//
+// Each returned resource's calendar-data MAY contain more than one VEVENT
+// component when the server expanded a recurring master into several
+// occurrences within the window; parse it with ical.ParseAllVEVENTs, not
+// ical.ParseVEVENT (which reads only the first component).
+func (c *client) listExpandedEvents(
+	ctx context.Context,
+	calendarHref string,
+	start, end time.Time,
+) (resources []resource, err error) {
+	url := c.resolveHref(calendarHref)
+	startStr, endStr := icalTimeUTC(start), icalTimeUTC(end)
+	body := fmt.Sprintf(calendarExpandQuery, startStr, endStr, startStr, endStr)
+	resp, err := c.do(ctx, "REPORT", url, body,
+		"application/xml; charset=utf-8", 1)
+	if err != nil {
+		return nil, errors.Wrapf(err, "REPORT %s (VEVENT expand)", url)
+	}
+	defer errors.DeferredCloser(&err, resp.Body)
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, errors.Wrap(err)
+	}
+	if resp.StatusCode != http.StatusMultiStatus {
+		return nil, errors.ErrorWithStackf(
+			"REPORT %s (VEVENT expand): status %d: %s",
+			url, resp.StatusCode, snippet(data),
+		)
+	}
+
+	var ms multistatusResponse
+	if err := xml.Unmarshal(data, &ms); err != nil {
+		return nil, errors.Wrapf(err, "parse multistatus from %s", url)
+	}
+
+	for _, r := range ms.Responses {
+		for _, ps := range r.PropStat {
+			if !strings.Contains(ps.Status, "200") || ps.Prop.CalendarData == "" {
+				continue
+			}
+			resources = append(resources, resource{
+				href: r.Href,
+				data: ps.Prop.CalendarData,
+				etag: ps.Prop.Etag,
+			})
+		}
+	}
+	return resources, nil
+}
+
+// icalTimeUTC formats t as an RFC 5545 UTC DATE-TIME — the form RFC 4791
+// §9.9 requires for <C:time-range>/<C:expand> start/end attributes.
+func icalTimeUTC(t time.Time) string {
+	return t.UTC().Format("20060102T150405Z")
+}
+
 // putResourceCond PUTs icalData at href. extra carries an optional WebDAV
 // precondition header (If-None-Match / If-Match). On 412 Precondition Failed
 // it returns precondErr (the strict create/update message); any other non-2xx

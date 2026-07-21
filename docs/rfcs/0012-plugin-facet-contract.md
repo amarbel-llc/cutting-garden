@@ -1,7 +1,11 @@
 ---
 status: proposed
 date: 2026-06-20
-revised: 2026-07-19 (new §13: per-child-container attribution —
+revised: 2026-07-21 (§12.2: a node need not correspond 1:1 to a stored
+    object — caldav's VEVENT recurrence expansion is the first concrete
+    case, `ListRoots`/`ListEnriched` level-scoping still holds because
+    BOTH apply the same windowed expansion — resolves #176/#177)
+  2026-07-19 (new §13: per-child-container attribution —
     `FacetResult.ByContainer`, `FacetContainerBreakdown`,
     `SortAndLimitContainerBreakdown` — resolves #170)
   2026-07-19 (§6: `FacetFilter` validation against the declared
@@ -701,6 +705,23 @@ whose tree has only one container kind (most plugins) does not need to
 think about this: `ListEnriched(node)` and `ListRoots(node)` naturally
 agree on scope everywhere.
 
+**A node need not correspond 1:1 to a stored object.** Level-scoping
+constrains WHICH children a URI reports, not that each child must be a
+literal, individually-addressable server object. caldav's VEVENT
+recurrence expansion (cutting-garden#176/#177) is the first concrete
+case: a single recurring `VEVENT` resource can materialize into SEVERAL
+`Node`s — one per occurrence within a bounded default window — each
+addressed by the real master href plus a discriminator query parameter
+(`?recurrence-id=…`) rather than by a distinct stored blob. Level-scoping
+still holds: `ListRoots` and `ListEnriched` apply the SAME windowed
+expansion to the SAME calendar node, so they still agree on the child set
+at that URI — "same set" is preserved, it is just no longer in 1:1
+correspondence with what a plain PROPFIND/REPORT enumerates server-side.
+A plugin introducing derived nodes this way MUST document the addressing
+scheme and MUST make every capability that lists a container's children
+(`ListRoots`, `ListEnriched`, any future sibling) apply the identical
+derivation, for the identical reason plain level-scoping requires it.
+
 #### 12.3 Filter precedence for listings
 
 A listing consumer (the `mcp` `list_nodes` tool) accepts the SAME
@@ -1019,3 +1040,10 @@ and nil-filter-cached paths).
 - cutting-garden#153 — the plugin search capability; recursive/cross-subtree
   filtered retrieval (#170's deferred option 1) is adjacent and should not
   diverge from it or from trellis (RFC 0014, FDR 0022).
+- cutting-garden#176/#177 — caldav VEVENT recurrence expansion, the §12.2
+  derived-node precedent; `docs/plans/2026-07-20-caldav-recurrence-
+  expansion-phase1.md` is the investigation, `plugins/caldav/expand.go`
+  the implementation, `plugins/caldav/AGENTS.md` the operational summary.
+  A caller-supplied expansion window is deferred to #178 (coordinated
+  with trellis — RFC 0014, FDR 0022 — rather than invented as a one-off
+  range predicate here).

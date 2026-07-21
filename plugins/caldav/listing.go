@@ -3,8 +3,6 @@ package caldav
 import (
 	"context"
 	"net/url"
-	"path"
-	"strings"
 
 	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
@@ -31,6 +29,14 @@ const (
 	listingFieldLocation        = "location"
 	listingFieldDue             = "due"
 	listingFieldPercentComplete = "percent_complete"
+	// listingFieldRecurrenceID surfaces a VEVENT node's RECURRENCE-ID when
+	// it has one (cutting-garden#176/#177): present on a derived expanded
+	// occurrence or an explicit stored override, absent on an ordinary
+	// event and on a degraded (server-ignored-<expand>) master. It is the
+	// same value occurrenceURI's ?recurrence-id= suffix encodes into the
+	// node's URI — declared here too so a caller can tell a derived node
+	// apart from its master without parsing the URI.
+	listingFieldRecurrenceID = "recurrence_id"
 )
 
 var (
@@ -54,6 +60,7 @@ func (Plugin) DescribeListingFields() []cutting_garden_plugins.NodeTypeListingFi
 				{Key: listingFieldLocation, Label: "Location"},
 				{Key: listingFieldDue, Label: "Due"},
 				{Key: listingFieldPercentComplete, Label: "% Complete"},
+				{Key: listingFieldRecurrenceID, Label: "Recurrence ID"},
 			},
 		},
 	}
@@ -62,10 +69,16 @@ func (Plugin) DescribeListingFields() []cutting_garden_plugins.NodeTypeListingFi
 // ListEnriched serves ONE calendar's objects with Facets and Fields
 // populated, optionally narrowed by filter, in ONE data-bearing REPORT per
 // component — the SAME listResources-with-full-calendar-data fetch
-// FacetCounts/foldCalendarFacets already issues for a single calendar
-// (RFC 0012 §4.1), now projecting each object's parsed fields onto its Node
-// instead of (only) folding them into a histogram. This is what keeps
-// ListRoots itself hrefs-only and cheap (the bare/opt-out path,
+// FacetCounts/foldCalendarFacets issues for VTODO/VJOURNAL (RFC 0012
+// §4.1), projecting each object's parsed fields onto its Node instead of
+// (only) folding them into a histogram. VEVENT is the exception
+// (cutting-garden#176/#177): it goes through expand.go's
+// expandedEventItems instead of listResources, so ListEnriched's VEVENT
+// nodes are windowed/expanded EXACTLY like ListRoots's (see
+// enrichedCalendarNodes) — required for the RFC 0012 §12.2 level-scoping
+// invariant this doc comment already promises: ListEnriched must return
+// the SAME set ListRoots would, enriched. This is what keeps ListRoots
+// itself hrefs-only and cheap for VTODO/VJOURNAL (the bare/opt-out path,
 // cutting-garden#160): enrichment is a deliberately separate, heavier
 // fetch a consumer opts into by not passing bare=true.
 //
@@ -111,12 +124,17 @@ func (Plugin) ListEnriched(
 	return nodes, true, nil
 }
 
-// enrichedCalendarNodes REPORTs each component's objects (with full
-// calendar-data, exactly as foldCalendarFacets does) from one calendar and
-// projects each matching object onto an enriched leaf Node: Facets from
-// objectFacets (the same values FacetCounts folds into its histogram) and
-// Fields from the parsed objectView (listingFieldsOf). An object that
-// fails to parse, or does not match filter, contributes no node.
+// enrichedCalendarNodes builds one calendar's enriched leaf Nodes. VEVENT
+// goes through expand.go's expandedEventItems (windowed, <C:expand>-
+// requesting, cutting-garden#176/#177) so its node SET matches
+// objectNodes' (ListRoots) exactly — the level-scoping invariant
+// ListEnriched's doc comment requires. VTODO/VJOURNAL are unchanged from
+// before Phase 2: REPORTed with full calendar-data (exactly as
+// foldCalendarFacets does) and projected onto an enriched leaf Node —
+// Facets from objectFacets (the same values FacetCounts folds into its
+// histogram) and Fields from the parsed objectView (listingFieldsOf). An
+// object that fails to parse, or does not match filter, contributes no
+// node.
 func (c *client) enrichedCalendarNodes(
 	ctx context.Context,
 	calendarHref string,
@@ -124,6 +142,28 @@ func (c *client) enrichedCalendarNodes(
 ) ([]cutting_garden_plugins.Node, error) {
 	var nodes []cutting_garden_plugins.Node
 	for _, component := range capturedComponents {
+		if component == "VEVENT" {
+			items, err := c.expandedEventItems(ctx, calendarHref)
+			if err != nil {
+				return nil, err
+			}
+			for _, item := range items {
+				view := objectView{Component: "VEVENT", Event: item.event}
+				facets := facetsFromView(view)
+				if facets == nil || !filter.Matches(facets) {
+					continue
+				}
+				nodes = append(nodes, cutting_garden_plugins.Node{
+					URI:    eventOccurrenceURI(item),
+					Name:   eventNodeName(item.rel),
+					Type:   typeObject,
+					Facets: facets,
+					Fields: listingFieldsOf(view),
+				})
+			}
+			continue
+		}
+
 		resources, err := c.listResources(ctx, calendarHref, component)
 		if err != nil {
 			return nil, err
@@ -144,7 +184,7 @@ func (c *client) enrichedCalendarNodes(
 			}
 			nodes = append(nodes, cutting_garden_plugins.Node{
 				URI:    caldavURIForAbs(abs),
-				Name:   path.Base(strings.TrimRight(rel, "/")),
+				Name:   eventNodeName(rel),
 				Type:   typeObject,
 				Facets: facets,
 				Fields: listingFieldsOf(view),
@@ -167,7 +207,7 @@ func (c *client) enrichedCalendarNodes(
 // one of the two fields. Empty/zero values are omitted, never reported as
 // present-but-empty, so a client's presence check is meaningful.
 func listingFieldsOf(view objectView) map[string]any {
-	var summary, status, dtstart, dtend, duration, location, due string
+	var summary, status, dtstart, dtend, duration, location, due, recurrenceID string
 	var percentComplete int
 	switch {
 	case view.Event != nil:
@@ -177,6 +217,10 @@ func listingFieldsOf(view objectView) map[string]any {
 		dtend = view.Event.DtEnd
 		duration = view.Event.Duration
 		location = view.Event.Location
+		// recurrence_id (cutting-garden#176/#177): present on a derived
+		// expanded occurrence or explicit override, absent on an ordinary
+		// event and on a degraded (unexpanded) master.
+		recurrenceID = view.Event.RecurrenceID
 	case view.Task != nil:
 		summary = view.Task.Summary
 		status = view.Task.Status
@@ -213,6 +257,9 @@ func listingFieldsOf(view objectView) map[string]any {
 	}
 	if percentComplete > 0 {
 		fields[listingFieldPercentComplete] = percentComplete
+	}
+	if recurrenceID != "" {
+		fields[listingFieldRecurrenceID] = recurrenceID
 	}
 	return fields
 }

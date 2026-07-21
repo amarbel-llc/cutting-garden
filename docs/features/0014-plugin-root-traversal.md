@@ -146,6 +146,40 @@ calendar/object."
 The plugin only ever learns how to enumerate its tree; one-receipt vs
 N-receipt is a **planner policy**, not a plugin concern.
 
+### Derived nodes (no 1:1 stored object)
+
+A `Node.URI` need not name a distinct, individually-stored server object.
+A plugin MAY synthesize additional nodes derived from one stored object's
+content — e.g. a value implied by, but not literally equal to, what a
+plain enumeration of the source would return — when its own semantics
+call for it and no other addressing scheme fits.
+
+The first concrete case is caldav's VEVENT recurrence expansion
+(cutting-garden#176/#177, `plugins/caldav/expand.go`): a single stored
+`VEVENT` resource carrying an `RRULE` can materialize into SEVERAL
+`Node`s — one per occurrence within a bounded window — each addressed by
+the real, fetchable master href plus a discriminator query parameter
+(`?recurrence-id=<value>`) rather than by a distinct stored blob. Reading
+such a node (`ReadLeaf`) fetches the real master and projects the
+specific occurrence; there is no separate resource on the server at the
+derived URI itself.
+
+This does not weaken [RFC 0012](../rfcs/0012-plugin-facet-contract.md)
+§12.2's level-scoping requirement (`ListRoots`/`ListEnriched` must report
+the SAME children at one URI) — it generalizes what "the same children"
+may consist of. A plugin introducing derived nodes MUST:
+
+- document the addressing scheme (what the discriminator means, and how
+  to recover the real, fetchable address from it);
+- apply the SAME derivation in every capability that lists a container's
+  children, so `ListRoots` and `ListEnriched` (and any future sibling)
+  never disagree about a URI's child set;
+- refuse mutation of a derived node rather than silently resolving it to
+  the underlying stored object and mutating the wrong scope (caldav:
+  `mutate.go`'s `clientForNode` refuses a `?recurrence-id=` URI outright
+  — editing/deleting one occurrence vs. the whole series is a genuinely
+  unresolved question, not a detail to guess at).
+
 ### `--split <selector>`
 
 `--split` takes an XPath-like selector over the `ListRoots` tree rather
@@ -210,6 +244,15 @@ receipts (personal, work); `--split '//caldav-object-v1'` yields three
   Protocol (RFC 0002) plugins like git also opt out: they capture one
   receipt via `CaptureProtocol`, not `CaptureRoot`, so `RootLister` is
   an EntryV1-plugin capability.
+- **Derived nodes are read-only.** A derived node (see above) can be
+  listed and read; it cannot be mutated, created, or deleted as itself —
+  a plugin implementing `NodeMutator` MUST refuse a derived-node URI
+  rather than silently retargeting the mutation at the underlying stored
+  object. `capture`/`ScanForDiff`/`Restore` are similarly unaffected:
+  caldav's expansion is confined to `ListRoots`/`ListEnriched`/`ReadLeaf`
+  and never reaches the shared client methods those three entry points
+  depend on for identity (cutting-garden#176/#177 Phase 1's governing
+  constraint).
 
 ## Open Questions
 
@@ -258,6 +301,11 @@ receipts (personal, work); `--split '//caldav-object-v1'` yields three
   `caldav.Plugin.RootLabels` PROPFINDs a calendar-scoped account's own
   endpoint via `discoverCalendars`, the same traversal primitive
   `ListRoots` uses.
+- amarbel-llc/cutting-garden#176/#177 — caldav VEVENT recurrence
+  expansion, the first Derived-nodes case; `docs/plans/2026-07-20-caldav-
+  recurrence-expansion-phase1.md` is the investigation. A caller-supplied
+  expansion window is deferred to #178 (coordinated with trellis — RFC
+  0014 (trellis), FDR 0022) rather than invented ahead of that design.
 - amarbel-llc/cutting-garden#78 — tracking issue.
 - amarbel-llc/cutting-garden#79 — hyphenated / horizontal plugin
   versioning that `NodeType.Tag` adopts.

@@ -5,6 +5,99 @@ import (
 	"testing"
 )
 
+// TestParseAllVEVENTs_MultipleComponentsShareOneCalendarData pins
+// cutting-garden#176/#177's decisive parsing requirement: a <C:expand>
+// response packs several occurrence VEVENT components (own DTSTART, own
+// RECURRENCE-ID, no RRULE) sharing one UID into a SINGLE calendar-data
+// blob. ParseAllVEVENTs must recover every one, in document order —
+// unlike ParseVEVENT, which (by design, for capture identity) only ever
+// sees the first.
+func TestParseAllVEVENTs_MultipleComponentsShareOneCalendarData(t *testing.T) {
+	raw := `BEGIN:VCALENDAR
+VERSION:2.0
+BEGIN:VEVENT
+UID:therapy
+SUMMARY:Therapy
+DTSTART:20260730T132000Z
+RECURRENCE-ID:20260730T132000Z
+END:VEVENT
+BEGIN:VEVENT
+UID:therapy
+SUMMARY:Therapy
+DTSTART:20260806T132000Z
+RECURRENCE-ID:20260806T132000Z
+END:VEVENT
+BEGIN:VEVENT
+UID:therapy
+SUMMARY:Therapy
+DTSTART:20260813T132000Z
+RECURRENCE-ID:20260813T132000Z
+END:VEVENT
+END:VCALENDAR`
+
+	events, err := ParseAllVEVENTs(raw)
+	if err != nil {
+		t.Fatalf("ParseAllVEVENTs: %v", err)
+	}
+	if len(events) != 3 {
+		t.Fatalf("got %d events, want 3: %+v", len(events), events)
+	}
+	wantStarts := []string{"20260730T132000Z", "20260806T132000Z", "20260813T132000Z"}
+	for i, e := range events {
+		if e.UID != "therapy" {
+			t.Errorf("event[%d].UID = %q, want therapy", i, e.UID)
+		}
+		if e.RRule != "" {
+			t.Errorf("event[%d].RRule = %q, want empty (expand strips it)", i, e.RRule)
+		}
+		if e.DtStart != wantStarts[i] {
+			t.Errorf("event[%d].DtStart = %q, want %q", i, e.DtStart, wantStarts[i])
+		}
+		if e.RecurrenceID != wantStarts[i] {
+			t.Errorf("event[%d].RecurrenceID = %q, want %q", i, e.RecurrenceID, wantStarts[i])
+		}
+	}
+}
+
+// TestParseAllVEVENTs_NoVEVENTIsEmptyNotError pins the "contributes
+// nothing" degenerate case: a body with no VEVENT component (e.g. an
+// all-VTODO calendar-data projection) returns an empty, non-error slice.
+func TestParseAllVEVENTs_NoVEVENTIsEmptyNotError(t *testing.T) {
+	events, err := ParseAllVEVENTs("BEGIN:VCALENDAR\nEND:VCALENDAR\n")
+	if err != nil {
+		t.Fatalf("ParseAllVEVENTs: %v", err)
+	}
+	if len(events) != 0 {
+		t.Errorf("got %d events, want 0: %+v", len(events), events)
+	}
+}
+
+// TestParseAllVEVENTs_SkipsMalformedComponent pins that one bad
+// occurrence (missing UID, ParseVEVENT's own validity gate) does not hide
+// the others — a single degraded component in an otherwise-good expand
+// response should not make the whole call fail.
+func TestParseAllVEVENTs_SkipsMalformedComponent(t *testing.T) {
+	raw := `BEGIN:VCALENDAR
+BEGIN:VEVENT
+SUMMARY:No UID here
+DTSTART:20260730T132000Z
+END:VEVENT
+BEGIN:VEVENT
+UID:good
+SUMMARY:Fine
+DTSTART:20260806T132000Z
+END:VEVENT
+END:VCALENDAR`
+
+	events, err := ParseAllVEVENTs(raw)
+	if err != nil {
+		t.Fatalf("ParseAllVEVENTs: %v", err)
+	}
+	if len(events) != 1 || events[0].UID != "good" {
+		t.Fatalf("events = %+v, want exactly the one valid component", events)
+	}
+}
+
 func TestParseVEVENT(t *testing.T) {
 	raw := `BEGIN:VCALENDAR
 VERSION:2.0

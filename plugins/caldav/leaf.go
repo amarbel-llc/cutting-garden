@@ -41,6 +41,14 @@ type objectView struct {
 // iCalendar object is a leaf; anything else (a calendar collection answers
 // GET with 404/405, or a body that is not VEVENT/VTODO) is reported ok=false
 // so the consumer falls back to the empty listing.
+//
+// A DERIVED RECURRENCE OCCURRENCE node (cutting-garden#176/#177, a
+// ?recurrence-id= URI from expand.go's occurrenceURI) is handled by
+// readOccurrenceLeaf instead of the plain GET path below: node names the
+// real master href (Phase 1 §c's addressing model), so a plain GET would
+// return the WHOLE series, not the specific instant the caller asked
+// for. readOccurrenceLeaf re-projects it correctly, or reports ok=false
+// if it cannot (rather than silently substituting the wrong instant).
 func (Plugin) ReadLeaf(
 	ctx context.Context,
 	node *url.URL,
@@ -51,11 +59,24 @@ func (Plugin) ReadLeaf(
 		)
 	}
 
-	base, username, password, err := connectionFromArg(node)
+	recurrenceID, isOccurrence := recurrenceIDOf(node)
+	targetNode := node
+	if isOccurrence {
+		// Strip the internal addressing discriminator before it reaches
+		// connectionFromArg/the wire — the server was never meant to see
+		// it (RawQuery would otherwise carry it into an actual HTTP GET).
+		targetNode = stripRecurrenceID(node)
+	}
+
+	base, username, password, err := connectionFromArg(targetNode)
 	if err != nil {
 		return cutting_garden_plugins.LeafContent{}, false, err
 	}
 	c := newClient(base, username, password)
+
+	if isOccurrence {
+		return c.readOccurrenceLeaf(ctx, base, recurrenceID)
+	}
 
 	body, err := c.getResource(ctx, base)
 	if err != nil {
@@ -78,6 +99,57 @@ func (Plugin) ReadLeaf(
 		Raw:         []byte(body),
 		RawMimeType: mimeICalendar,
 	}, true, nil
+}
+
+// readOccurrenceLeaf projects a derived recurrence occurrence's content:
+// it re-runs the SAME default-window <C:expand> REPORT expand.go's
+// expandedEventItems already uses for listing (against masterHref's
+// containing calendar, recovered via parentCollectionHref), and returns
+// the item whose href and RECURRENCE-ID match. This deliberately reuses
+// the server's own expansion rather than any client-side RRULE math
+// (cutting-garden#176/#177 Phase 1's "you do NOT need a client-side RRULE
+// engine" finding) — the richest correct data for one occurrence was
+// already computed once, by the server, the same way listing computed it.
+//
+// ok is false — not an error — when no match is found: the default window
+// may have moved since node was listed (expansionWindowNow advances), or
+// the series may have changed. Either way, fabricating the occurrence's
+// content from the master alone would silently present the wrong instant;
+// reporting ok=false is the same "refuse clearly rather than guess"
+// posture mutate.go's clientForNode applies to writes, applied here to a
+// read that cannot be trusted.
+func (c *client) readOccurrenceLeaf(
+	ctx context.Context, masterHref, recurrenceID string,
+) (cutting_garden_plugins.LeafContent, bool, error) {
+	calendarHref := parentCollectionHref(masterHref)
+	items, err := c.expandedEventItems(ctx, calendarHref)
+	if err != nil {
+		return cutting_garden_plugins.LeafContent{}, false, err
+	}
+
+	wantPath := strings.TrimRight(serverPath(c.resolveHref(masterHref)), "/")
+	for _, item := range items {
+		if strings.TrimRight(serverPath(item.abs), "/") != wantPath {
+			continue
+		}
+		if item.event.RecurrenceID != recurrenceID {
+			continue
+		}
+		view := objectView{Component: "VEVENT", Event: item.event}
+		// Raw is a fresh serialization of JUST this occurrence
+		// (ical.EventToIcal), not a slice of some stored resource's
+		// verbatim bytes — there IS no such resource for a derived
+		// occurrence to be verbatim from (the node-model statement: no
+		// 1:1 stored blob at this URI). It is the same round-tripped
+		// shape normalizeObjectBody/CreateNode already accept as valid
+		// input, so it stays usable the same way a real leaf's Raw would.
+		return cutting_garden_plugins.LeafContent{
+			Structured:  view,
+			Raw:         []byte(ical.EventToIcal(item.event)),
+			RawMimeType: mimeICalendar,
+		}, true, nil
+	}
+	return cutting_garden_plugins.LeafContent{}, false, nil
 }
 
 // parseObjectView parses a raw iCalendar body into the structured object

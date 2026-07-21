@@ -3,8 +3,10 @@
 // default, or several once AddCalendar registers more — the
 // cutting-garden#162 calendar-home discovery scenario), REPORT
 // calendar-query (calendar-data + getetag, filtered by component and scoped
-// to the requested collection), GET (verbatim body), and PUT (records the
-// body and registers it so a subsequent REPORT/GET sees it).
+// to the requested collection — including RFC 4791 §7.4 <C:time-range> and
+// §9.6.5 <C:expand> for VEVENT, cutting-garden#176/#177), GET (verbatim
+// body), and PUT (records the body and registers it so a subsequent
+// REPORT/GET sees it).
 //
 // It exists because Radicale cannot start under the nix test sandbox (it
 // calls socket.socketpair(AF_UNIX), which the sandbox blocks — see
@@ -15,7 +17,13 @@
 //
 // It is NOT a conformant CalDAV implementation and NOT shipped in the
 // cutting-garden release — only enough of RFC 4791 for the plugin's
-// capture/diff/restore round-trip.
+// capture/diff/restore round-trip, plus (as of #176/#177) enough of
+// §7.4/§9.6.5 to simulate a cooperating server's recurrence expansion for
+// the plugin's expansion tests. Its RRULE support (rrule.go) is
+// deliberately minimal — FREQ=DAILY/WEEKLY only — since it exists to
+// drive THIS package's tests, not to be a general RRULE engine (the
+// plugin itself intentionally has none; see
+// docs/plans/2026-07-20-caldav-recurrence-expansion-phase1.md).
 package caldavtestserver
 
 import (
@@ -23,9 +31,13 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
+	"time"
+
+	"code.linenisgreat.com/cutting-garden/plugins/caldav/ical"
 )
 
 // Calendar describes one calendar collection the server advertises via
@@ -195,13 +207,15 @@ func (s *Server) propfind(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) report(w http.ResponseWriter, r *http.Request) {
 	reqBody, _ := io.ReadAll(r.Body)
+	body := string(reqBody)
 	want := "VTODO"
 	switch {
-	case strings.Contains(string(reqBody), `name="VEVENT"`):
+	case strings.Contains(body, `name="VEVENT"`):
 		want = "VEVENT"
-	case strings.Contains(string(reqBody), `name="VJOURNAL"`):
+	case strings.Contains(body, `name="VJOURNAL"`):
 		want = "VJOURNAL"
 	}
+	expandStart, expandEnd, expanding := parseExpandWindow(body)
 
 	s.mu.Lock()
 	hrefs := make([]string, 0, len(s.resources))
@@ -227,6 +241,26 @@ func (s *Server) report(w http.ResponseWriter, r *http.Request) {
 	sb.WriteString(`<?xml version="1.0" encoding="utf-8"?>` + "\n")
 	sb.WriteString(`<d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">` + "\n")
 	for _, href := range hrefs {
+		master := bodies[href]
+		// getetag reflects the STORED resource (the master), never the
+		// projected occurrence set — matching a real server, where etag
+		// is a per-resource property independent of how a given REPORT
+		// happened to render its calendar-data.
+		etag := Etag(master)
+
+		data := master
+		if expanding && want == "VEVENT" {
+			expanded, ok := expandCalendarData(master, expandStart, expandEnd)
+			if !ok {
+				// RFC 4791 §7.4: a conformant server evaluating
+				// <C:time-range> omits a response entirely for a resource
+				// with no occurrence intersecting the window — simulate
+				// that so callers exercise a realistic candidate set.
+				continue
+			}
+			data = expanded
+		}
+
 		fmt.Fprintf(&sb, `  <d:response>
     <d:href>%s</d:href>
     <d:propstat>
@@ -237,13 +271,93 @@ func (s *Server) report(w http.ResponseWriter, r *http.Request) {
       <d:status>HTTP/1.1 200 OK</d:status>
     </d:propstat>
   </d:response>
-`, href, Etag(bodies[href]), bodies[href])
+`, href, etag, data)
 	}
 	sb.WriteString(`</d:multistatus>`)
 
 	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
 	w.WriteHeader(http.StatusMultiStatus)
 	_, _ = io.WriteString(w, sb.String())
+}
+
+// expandWindowPattern matches the plugin's <c:expand start="…" end="…" />
+// element (client.go's calendarExpandQuery) so the fake can tell a
+// windowed, expand-requesting REPORT apart from the plain calendar-query
+// every other caller still sends.
+var expandWindowPattern = regexp.MustCompile(`<c:expand\s+start="([^"]+)"\s+end="([^"]+)"`)
+
+// parseExpandWindow reports whether reqBody requested <C:expand> and, if
+// so, its start/end window. expanding is false (not an error) for any
+// REPORT that doesn't ask for expansion — the server's existing,
+// unmodified behavior for those requests.
+func parseExpandWindow(reqBody string) (start, end time.Time, expanding bool) {
+	m := expandWindowPattern.FindStringSubmatch(reqBody)
+	if m == nil {
+		return time.Time{}, time.Time{}, false
+	}
+	s, ok1 := parseICalUTC(m[1])
+	e, ok2 := parseICalUTC(m[2])
+	if !ok1 || !ok2 {
+		return time.Time{}, time.Time{}, false
+	}
+	return s, e, true
+}
+
+// expandCalendarData simulates RFC 4791 §9.6.5 <C:expand> plus §7.4
+// <C:time-range> evaluation for one VEVENT resource's stored body:
+//
+//   - non-recurring (no RRULE): time-range alone — included verbatim iff
+//     its DTSTART falls in [start, end), excluded (ok=false) otherwise.
+//   - recurring (RRULE present): expandRRule computes every occurrence
+//     instant in [start, end); each becomes its own VEVENT component
+//     (own DTSTART, own RECURRENCE-ID, RRULE stripped — RFC 4791 §9.6.5's
+//     required shape) packed into ONE calendar-data value, mirroring how
+//     the real Fastmail server was observed to respond (issue #176's
+//     probe). ok=false when no occurrence intersects the window.
+func expandCalendarData(raw string, start, end time.Time) (string, bool) {
+	e, err := ical.ParseVEVENT(raw)
+	if err != nil {
+		return "", false
+	}
+
+	if e.RRule == "" {
+		t, ok := parseICalUTC(e.DtStart)
+		if !ok || t.Before(start) || !t.Before(end) {
+			return "", false
+		}
+		return raw, true
+	}
+
+	occurrences := expandRRule(e.DtStart, e.RRule, start, end)
+	if len(occurrences) == 0 {
+		return "", false
+	}
+
+	var b strings.Builder
+	b.WriteString("BEGIN:VCALENDAR\r\nVERSION:2.0\r\n")
+	for _, t := range occurrences {
+		occ := *e
+		stamp := t.UTC().Format("20060102T150405Z")
+		occ.DtStart = stamp
+		occ.RecurrenceID = stamp
+		occ.RRule = "" // §9.6.5: expand strips RRULE per materialized instance
+		b.WriteString(veventBlockOnly(ical.EventToIcal(&occ)))
+	}
+	b.WriteString("END:VCALENDAR\r\n")
+	return b.String(), true
+}
+
+// veventBlockOnly extracts just the "BEGIN:VEVENT…END:VEVENT" span from a
+// full VCALENDAR string (ical.EventToIcal's output), so several
+// occurrences can share one VCALENDAR envelope in expandCalendarData
+// instead of each nesting its own.
+func veventBlockOnly(fullICal string) string {
+	start := strings.Index(fullICal, "BEGIN:VEVENT")
+	end := strings.Index(fullICal, "END:VEVENT")
+	if start < 0 || end < 0 {
+		return ""
+	}
+	return fullICal[start:end] + "END:VEVENT\r\n"
 }
 
 func (s *Server) get(w http.ResponseWriter, r *http.Request) {
