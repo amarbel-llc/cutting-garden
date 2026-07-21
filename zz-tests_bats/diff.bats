@@ -240,14 +240,18 @@ function diff_refuses_dir_arg_that_is_a_file { # @test
 
 function diff_refuses_unparseable_receipt_id { # @test
   # cg surfaces the underlying markl-id parse error verbatim; madder
-  # wraps it with `parse receipt-id %q`. Both exit nonzero; the cg
-  # diagnostic mentions the separator and checksum invariants.
+  # wraps it with `parse receipt-id %q`. Both exit nonzero. The bech32
+  # parser's CHECK ORDER differs across piggy generations (pre/post the
+  # piggy#183 markl move): older parsers report the separator-position
+  # invariant first, newer ones the charset violation. The test's
+  # invariant is the refusal + a parse diagnostic, not the wording —
+  # accept either generation's message.
   init_store
 
   mkdir dir
   run_cg diff -color never "garbage-not-a-markl-id" dir
   assert_failure 2
-  assert_output --partial 'separator'
+  assert_output --regexp 'invalid character|separator'
 }
 
 function diff_refuses_path_escape { # @test
