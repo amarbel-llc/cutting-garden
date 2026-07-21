@@ -155,7 +155,7 @@
     # for its marklid.peg gate. `packages.${system}.default` is the `langlang`
     # CLI (buildGoApplication over cmd/langlang), exposed below as `.#langlang`.
     langlang = {
-      url = "git+ssh://git@github.com/amarbel-llc/langlang";
+      url = "https://code.linenisgreat.com/langlang/archive/master.tar.gz";
       inputs.igloo.follows = "igloo";
       inputs.nixpkgs-master.follows = "nixpkgs-master";
       inputs.utils.follows = "flake-utils";
@@ -179,6 +179,7 @@
     # (go-module-rename playbook Gotchas, cutting-garden hyphence rename).
     hyphence.inputs.langlang.inputs.tap.inputs.crane.follows = "tap/crane";
     hyphence.inputs.langlang.inputs.tap.inputs.rust-overlay.follows = "tap/rust-overlay";
+    hyphence.inputs.langlang.inputs.tap.follows = "tap";
     # piggy's own langlang pin (piggy#183's markl-id framework pulls in the
     # same langlang subtree hyphence does) is bit-identical to hyphence's —
     # doppelgang lint flagged the duplicate node; collapse onto hyphence's
@@ -211,6 +212,7 @@
     # collision handling can silently reassign which dagnabit build the
     # facade-export tooling runs against (piggy#220's hard-won gotcha).
     langlang.inputs.tap.follows = "tap";
+    langlang.inputs.conformist.follows = "conformist";
   };
 
   outputs =
