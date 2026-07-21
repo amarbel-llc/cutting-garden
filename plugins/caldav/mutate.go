@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"maps"
 	"net/url"
+	"slices"
 
 	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
 	"code.linenisgreat.com/cutting-garden/plugins/caldav/ical"
@@ -93,9 +95,11 @@ type objectPatchBody struct {
 // PatchNode partially updates an existing CalDAV object at the node URI. The
 // body MUST be objectView JSON (raw iCalendar is rejected — it cannot express
 // "absent field = unchanged"). Only the fields present in the JSON are written;
-// absent fields are left untouched. Unknown fields are silently ignored. An
-// empty or whitespace-only body is a bad-request error. A valid component with
-// zero patchable fields succeeds as a no-op without issuing a PUT.
+// absent fields are left untouched. Unknown fields are tolerated, but they are
+// NOT reported in applied, so the caller can tell what actually landed
+// (cutting-garden#182). An empty or whitespace-only body is a bad-request
+// error. A body naming zero recognized fields applies nothing and issues no
+// PUT, reporting that as a non-nil empty applied rather than a bare success.
 //
 // Supported patch fields: VEVENT — summary, description, status, dtstart,
 // dtend; VTODO — summary, description, status, dtstart, due; VJOURNAL —
@@ -104,58 +108,62 @@ func (Plugin) PatchNode(
 	ctx context.Context,
 	node *url.URL,
 	body io.Reader,
-) error {
+) ([]string, error) {
 	if node == nil {
-		return errors.ErrorWithStackf("caldav plugin: PatchNode requires a node URI")
+		return nil, errors.ErrorWithStackf("caldav plugin: PatchNode requires a node URI")
 	}
 
 	raw, err := io.ReadAll(body)
 	if err != nil {
-		return errors.Wrap(err)
+		return nil, errors.Wrap(err)
 	}
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 {
-		return errors.BadRequestf("caldav plugin: PatchNode body must be objectView JSON; got empty body")
+		return nil, errors.BadRequestf("caldav plugin: PatchNode body must be objectView JSON; got empty body")
 	}
 
 	var patch objectPatchBody
 	if err := json.Unmarshal(trimmed, &patch); err != nil {
-		return errors.BadRequestf("caldav plugin: invalid patch JSON: %s", err)
+		return nil, errors.BadRequestf("caldav plugin: invalid patch JSON: %s", err)
 	}
 
 	var fields map[string]json.RawMessage
+	var supported []string
 	switch patch.Component {
 	case "VEVENT":
-		fields = patch.Event
+		fields, supported = patch.Event, eventPatchFields
 	case "VTODO":
-		fields = patch.Task
+		fields, supported = patch.Task, taskPatchFields
 	case "VJOURNAL":
-		fields = patch.Journal
+		fields, supported = patch.Journal, journalPatchFields
 	default:
-		return errors.BadRequestf(
+		return nil, errors.BadRequestf(
 			"caldav plugin: patch JSON has unknown component %q (want VEVENT, VTODO, or VJOURNAL)",
 			patch.Component,
 		)
 	}
 
-	// No fields to patch → no-op success (skip the GET/PUT round-trip).
-	if len(fields) == 0 {
-		return nil
+	// Which of the named fields this component actually recognizes is
+	// decided BEFORE any network round-trip, so a body naming nothing we
+	// understand costs no GET/PUT and still reports honestly.
+	applied := recognizedPatchFields(fields, supported)
+	if len(applied) == 0 {
+		return applied, nil
 	}
 
 	c, href, err := clientForNode(node)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	currentBody, err := c.getResource(ctx, href)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	currentView, ok := parseObjectView(currentBody)
 	if !ok {
-		return errors.ErrorWithStackf(
+		return nil, errors.ErrorWithStackf(
 			"caldav plugin: node at %s is not a recognized CalDAV object (VEVENT/VTODO/VJOURNAL)",
 			node,
 		)
@@ -165,124 +173,134 @@ func (Plugin) PatchNode(
 	switch patch.Component {
 	case "VEVENT":
 		if currentView.Event == nil {
-			return errors.ErrorWithStackf(
+			return nil, errors.ErrorWithStackf(
 				"caldav plugin: PatchNode component mismatch: requested VEVENT but node at %s is %s",
 				node, currentView.Component,
 			)
 		}
-		if err := applyEventPatch(currentView.Event, fields); err != nil {
-			return err
+		if err := applyPatch(eventPatchTargets(currentView.Event), fields); err != nil {
+			return nil, err
 		}
 		newBody = ical.EventToIcal(currentView.Event)
 	case "VTODO":
 		if currentView.Task == nil {
-			return errors.ErrorWithStackf(
+			return nil, errors.ErrorWithStackf(
 				"caldav plugin: PatchNode component mismatch: requested VTODO but node at %s is %s",
 				node, currentView.Component,
 			)
 		}
-		if err := applyTaskPatch(currentView.Task, fields); err != nil {
-			return err
+		if err := applyPatch(taskPatchTargets(currentView.Task), fields); err != nil {
+			return nil, err
 		}
 		newBody = ical.TaskToIcal(currentView.Task)
 	case "VJOURNAL":
 		if currentView.Journal == nil {
-			return errors.ErrorWithStackf(
+			return nil, errors.ErrorWithStackf(
 				"caldav plugin: PatchNode component mismatch: requested VJOURNAL but node at %s is %s",
 				node, currentView.Component,
 			)
 		}
-		if err := applyJournalPatch(currentView.Journal, fields); err != nil {
-			return err
+		if err := applyPatch(journalPatchTargets(currentView.Journal), fields); err != nil {
+			return nil, err
 		}
 		newBody = ical.JournalToIcal(currentView.Journal)
 	}
 
-	return c.updateResource(ctx, href, newBody)
+	if err := c.updateResource(ctx, href, newBody); err != nil {
+		return nil, err
+	}
+
+	return applied, nil
 }
 
-// applyEventPatch overlays patch fields onto e. Only keys present in the map
-// are applied; unknown keys are silently ignored per PatchNode contract.
-// Supported: summary, description, status, dtstart, dtend.
-func applyEventPatch(e *ical.Event, fields map[string]json.RawMessage) error {
-	for k, v := range fields {
-		switch k {
-		case "summary":
-			if err := json.Unmarshal(v, &e.Summary); err != nil {
-				return errors.BadRequestf("caldav plugin: patch field %q: %s", k, err)
-			}
-		case "description":
-			if err := json.Unmarshal(v, &e.Description); err != nil {
-				return errors.BadRequestf("caldav plugin: patch field %q: %s", k, err)
-			}
-		case "status":
-			if err := json.Unmarshal(v, &e.Status); err != nil {
-				return errors.BadRequestf("caldav plugin: patch field %q: %s", k, err)
-			}
-		case "dtstart":
-			if err := json.Unmarshal(v, &e.DtStart); err != nil {
-				return errors.BadRequestf("caldav plugin: patch field %q: %s", k, err)
-			}
-		case "dtend":
-			if err := json.Unmarshal(v, &e.DtEnd); err != nil {
-				return errors.BadRequestf("caldav plugin: patch field %q: %s", k, err)
-			}
+// The *PatchTargets functions are the SINGLE declaration of what each
+// component accepts on patch: each maps a patch field key to the destination
+// it decodes into. applyPatch decodes THROUGH one of these maps and the
+// *PatchFields key sets below are DERIVED from them, so the set of fields
+// that actually gets applied and the set reported back in applied cannot
+// drift apart. That matters more than tidiness here: two hand-maintained
+// lists would let someone add a field to the decoder and forget the other
+// list, making applied under-report a field it really did write — a lie in
+// exactly the direction cutting-garden#182 exists to prevent.
+//
+// Adding a patchable field is therefore a one-line change, in one place.
+
+func eventPatchTargets(e *ical.Event) map[string]any {
+	return map[string]any{
+		"summary":     &e.Summary,
+		"description": &e.Description,
+		"status":      &e.Status,
+		"dtstart":     &e.DtStart,
+		"dtend":       &e.DtEnd,
+	}
+}
+
+func taskPatchTargets(t *ical.Task) map[string]any {
+	return map[string]any{
+		"summary":     &t.Summary,
+		"description": &t.Description,
+		"status":      &t.Status,
+		"dtstart":     &t.DtStart,
+		"due":         &t.Due,
+	}
+}
+
+func journalPatchTargets(j *ical.Journal) map[string]any {
+	return map[string]any{
+		"summary":     &j.Summary,
+		"description": &j.Description,
+		"status":      &j.Status,
+		"dtstart":     &j.DtStart,
+	}
+}
+
+// The patchable key set per component, derived once from the target maps
+// above so PatchNode can decide what it recognizes BEFORE fetching the
+// object — a body naming nothing we understand then costs no GET/PUT.
+var (
+	eventPatchFields   = patchFieldKeys(eventPatchTargets(&ical.Event{}))
+	taskPatchFields    = patchFieldKeys(taskPatchTargets(&ical.Task{}))
+	journalPatchFields = patchFieldKeys(journalPatchTargets(&ical.Journal{}))
+)
+
+// patchFieldKeys returns a target map's keys, sorted — the sort is what
+// makes every downstream applied report deterministic, since Go map
+// iteration order is random.
+func patchFieldKeys(targets map[string]any) []string {
+	return slices.Sorted(maps.Keys(targets))
+}
+
+// recognizedPatchFields returns the subset of fields this component knows.
+// supported is already sorted (patchFieldKeys sorts it), so the result is
+// too. Always non-nil: caldav DOES report applied fields, so an empty
+// result is the authoritative "nothing applied" rather than "did not
+// report" (cutting-garden#182).
+func recognizedPatchFields(
+	fields map[string]json.RawMessage, supported []string,
+) []string {
+	recognized := make([]string, 0, min(len(fields), len(supported)))
+	for _, key := range supported {
+		if _, ok := fields[key]; ok {
+			recognized = append(recognized, key)
 		}
 	}
-	return nil
+	return recognized
 }
 
-// applyTaskPatch overlays patch fields onto t. Unknown keys silently ignored.
-// Supported: summary, description, status, dtstart, due.
-func applyTaskPatch(t *ical.Task, fields map[string]json.RawMessage) error {
-	for k, v := range fields {
-		switch k {
-		case "summary":
-			if err := json.Unmarshal(v, &t.Summary); err != nil {
-				return errors.BadRequestf("caldav plugin: patch field %q: %s", k, err)
-			}
-		case "description":
-			if err := json.Unmarshal(v, &t.Description); err != nil {
-				return errors.BadRequestf("caldav plugin: patch field %q: %s", k, err)
-			}
-		case "status":
-			if err := json.Unmarshal(v, &t.Status); err != nil {
-				return errors.BadRequestf("caldav plugin: patch field %q: %s", k, err)
-			}
-		case "dtstart":
-			if err := json.Unmarshal(v, &t.DtStart); err != nil {
-				return errors.BadRequestf("caldav plugin: patch field %q: %s", k, err)
-			}
-		case "due":
-			if err := json.Unmarshal(v, &t.Due); err != nil {
-				return errors.BadRequestf("caldav plugin: patch field %q: %s", k, err)
-			}
+// applyPatch overlays the named fields onto the destinations in targets.
+// A key with no target is TOLERATED and skipped — the PatchNode contract
+// requires that, and recognizedPatchFields has already excluded it from
+// applied, so tolerating it here cannot masquerade as having applied it.
+func applyPatch(
+	targets map[string]any, fields map[string]json.RawMessage,
+) error {
+	for key, raw := range fields {
+		target, ok := targets[key]
+		if !ok {
+			continue
 		}
-	}
-	return nil
-}
-
-// applyJournalPatch overlays patch fields onto j. Unknown keys silently
-// ignored. Supported: summary, description, status, dtstart.
-func applyJournalPatch(j *ical.Journal, fields map[string]json.RawMessage) error {
-	for k, v := range fields {
-		switch k {
-		case "summary":
-			if err := json.Unmarshal(v, &j.Summary); err != nil {
-				return errors.BadRequestf("caldav plugin: patch field %q: %s", k, err)
-			}
-		case "description":
-			if err := json.Unmarshal(v, &j.Description); err != nil {
-				return errors.BadRequestf("caldav plugin: patch field %q: %s", k, err)
-			}
-		case "status":
-			if err := json.Unmarshal(v, &j.Status); err != nil {
-				return errors.BadRequestf("caldav plugin: patch field %q: %s", k, err)
-			}
-		case "dtstart":
-			if err := json.Unmarshal(v, &j.DtStart); err != nil {
-				return errors.BadRequestf("caldav plugin: patch field %q: %s", k, err)
-			}
+		if err := json.Unmarshal(raw, target); err != nil {
+			return errors.BadRequestf("caldav plugin: patch field %q: %s", key, err)
 		}
 	}
 	return nil

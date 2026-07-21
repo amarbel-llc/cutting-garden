@@ -40,7 +40,34 @@ type NodeMutator interface {
 	// explicitly named in the body," in contrast to PutNode which requires the
 	// body to represent the complete desired state. An empty body is a
 	// bad-request error. The body format is plugin-defined.
-	PatchNode(ctx context.Context, uri *url.URL, body io.Reader) error
+	//
+	// applied reports the field keys the implementation ACTUALLY applied — the
+	// mechanism that keeps tolerating an unrecognized field from degenerating
+	// into reporting plain success for a request that was entirely ignored
+	// (cutting-garden#182; the field report is #180). Tolerance buys
+	// forward-compatibility — a newer caller naming a field an older plugin
+	// does not know MUST still succeed — but the caller is then owed the means
+	// to notice, which is this return rather than an error.
+	//
+	// Its nil-ness is load-bearing, exactly as FacetDimension.Values' is:
+	//
+	//   - non-nil, len > 0 — authoritative: precisely these keys were applied.
+	//     Keys the body named but the plugin does not recognize are ABSENT
+	//     here; a caller compares against what it sent to detect a partial
+	//     application and decide for itself whether that is acceptable.
+	//   - non-nil, len == 0 — authoritative: NOTHING was applied. A plugin
+	//     MUST report this rather than a bare success, and it MUST NOT be
+	//     reported as an error at this layer — deciding whether an empty
+	//     patch is a failure belongs to the caller (internal/mcp does treat
+	//     it as one), not to each plugin.
+	//   - nil — the implementation does not report applied fields at all
+	//     (a wire plugin predating the result field). Callers MUST NOT read
+	//     nil as "nothing applied"; it carries no information either way.
+	//
+	// Order is unspecified; callers MUST NOT depend on it.
+	PatchNode(
+		ctx context.Context, uri *url.URL, body io.Reader,
+	) (applied []string, err error)
 
 	// DeleteNode removes the node at uri. node MUST be non-nil.
 	DeleteNode(ctx context.Context, uri *url.URL) error

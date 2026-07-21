@@ -669,11 +669,20 @@ func (s *server) handleNodePatch(
 		}
 	}
 
-	if err := s.mutator.PatchNode(ctx, uri, bytes.NewReader(body)); err != nil {
+	applied, err := s.mutator.PatchNode(ctx, uri, bytes.NewReader(body))
+	if err != nil {
 		return nil, err
 	}
 
-	return struct{}{}, nil
+	// A nil applied means this plugin does not report applied fields; omit
+	// the key entirely rather than serializing an empty list, which the
+	// far side would read as the authoritative "nothing applied"
+	// (cutting-garden#182).
+	if applied == nil {
+		return NodePatchResult{}, nil
+	}
+
+	return NodePatchResult{Applied: &applied}, nil
 }
 
 func (s *server) handleNodeDelete(

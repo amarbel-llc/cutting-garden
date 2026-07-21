@@ -704,25 +704,45 @@ func (w *WirePlugin) PutNode(
 // PatchNode issues node.patch — a partial-field update. The empty-body
 // bad-request rule is enforced wire-side (the plugin answers
 // CodeInvalidParams), so the adapter passes the body through untouched.
+//
+// A peer that omits the result's applied key does not report applied
+// fields; that absence is forwarded as a nil applied rather than an empty
+// one, so a linked consumer cannot mistake it for "nothing was applied"
+// (cutting-garden#182).
 func (w *WirePlugin) PatchNode(
 	ctx context.Context, uri *url.URL, body io.Reader,
-) error {
+) ([]string, error) {
 	sess, err := w.mutationSession()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	encoded, err := encodeBody(body)
 	if err != nil {
-		return errors.Wrapf(
+		return nil, errors.Wrapf(
 			err, "wire plugin %q: read patch body", w.spec.Name,
 		)
 	}
 
-	return w.call(
+	var result NodePatchResult
+	if err := w.call(
 		ctx, sess, MethodNodePatch,
-		NodePatchParams{URI: uri.String(), BodyBase64: encoded}, nil,
-	)
+		NodePatchParams{URI: uri.String(), BodyBase64: encoded},
+		&result,
+	); err != nil {
+		return nil, err
+	}
+
+	// A nil pointer covers BOTH shapes that mean "does not report": the key
+	// omitted, and an explicit JSON null (which encoding/json resolves to a
+	// nil pointer, not a pointer-to-nil-slice — pinned by
+	// TestNodePatchResultDecodeStates). Anything else is a real list the
+	// peer sent, empty or not, and is returned as-is.
+	if result.Applied == nil {
+		return nil, nil
+	}
+
+	return *result.Applied, nil
 }
 
 // DeleteNode issues node.delete.

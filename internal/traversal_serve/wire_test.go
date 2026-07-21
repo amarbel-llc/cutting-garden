@@ -10,6 +10,54 @@ import (
 	"code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
 )
 
+// TestNodePatchResultDecodeStates pins how a node.patch result decodes for
+// every shape a FOREIGN peer can legally send (cutting-garden#182). The
+// adapter's three-state contract rests entirely on these semantics, and
+// encoding/json's pointer-to-slice rules are easy to get backwards from
+// memory — so they are asserted here rather than reasoned about. The peer
+// is arbitrary (RFC 0013's first external implementation is Rust), so
+// "our server never emits null" is NOT an argument about what can arrive.
+func TestNodePatchResultDecodeStates(t *testing.T) {
+	for _, testCase := range []struct {
+		name       string
+		raw        string
+		wantNilPtr bool
+		wantNilVal bool
+		wantLen    int
+	}{
+		{name: "key omitted", raw: `{}`, wantNilPtr: true},
+		{
+			// JSON null sets the POINTER to nil, so it collapses onto the
+			// same "does not report" state as an omitted key.
+			name: "explicit null", raw: `{"applied":null}`, wantNilPtr: true,
+		},
+		{name: "empty list", raw: `{"applied":[]}`, wantLen: 0},
+		{name: "populated", raw: `{"applied":["state"]}`, wantLen: 1},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			var result NodePatchResult
+			if err := json.Unmarshal([]byte(testCase.raw), &result); err != nil {
+				t.Fatalf("decode %s: %v", testCase.raw, err)
+			}
+
+			if (result.Applied == nil) != testCase.wantNilPtr {
+				t.Fatalf("%s: Applied pointer nil = %v, want %v",
+					testCase.raw, result.Applied == nil, testCase.wantNilPtr)
+			}
+			if testCase.wantNilPtr {
+				return
+			}
+			if (*result.Applied == nil) != testCase.wantNilVal {
+				t.Errorf("%s: dereferenced slice nil = %v, want %v",
+					testCase.raw, *result.Applied == nil, testCase.wantNilVal)
+			}
+			if got := len(*result.Applied); got != testCase.wantLen {
+				t.Errorf("%s: len = %d, want %d", testCase.raw, got, testCase.wantLen)
+			}
+		})
+	}
+}
+
 func TestSchemaAndTokens(t *testing.T) {
 	if SchemaV1 != "traversal-plugin/v1" {
 		t.Errorf("SchemaV1 = %q", SchemaV1)

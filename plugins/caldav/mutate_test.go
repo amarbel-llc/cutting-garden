@@ -2,6 +2,7 @@ package caldav
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -156,12 +157,15 @@ func TestPatchNode_PartialFieldChange(t *testing.T) {
 	f, home := startFake(t)
 	arg := objectArg(home, "/dav/cal/task1.ics")
 
-	err := Plugin{}.PatchNode(
+	applied, err := Plugin{}.PatchNode(
 		context.Background(), mustParseURL(t, arg),
 		strings.NewReader(`{"component":"VTODO","task":{"summary":"Buy oat milk"}}`),
 	)
 	if err != nil {
 		t.Fatalf("PatchNode: %v", err)
+	}
+	if !slices.Equal(applied, []string{"summary"}) {
+		t.Errorf("applied = %#v, want [summary]", applied)
 	}
 	got := f.resources["/dav/cal/task1.ics"]
 	if !strings.Contains(got, "SUMMARY:Buy oat milk") {
@@ -173,17 +177,56 @@ func TestPatchNode_PartialFieldChange(t *testing.T) {
 	}
 }
 
-func TestPatchNode_UnknownFieldsIgnored(t *testing.T) {
+// An unknown field is TOLERATED — a newer caller against an older plugin
+// must still succeed — but it is not reported as applied, so the caller can
+// see that only half of what it sent landed (cutting-garden#182).
+func TestPatchNode_UnknownFieldsToleratedButNotReportedApplied(t *testing.T) {
 	_, home := startFake(t)
 	arg := objectArg(home, "/dav/cal/task1.ics")
 
-	// "color" and "priority_emoji" are not recognized caldav fields — must not error.
-	err := Plugin{}.PatchNode(
+	// "color" and "priority_emoji" are not recognized caldav fields.
+	applied, err := Plugin{}.PatchNode(
 		context.Background(), mustParseURL(t, arg),
 		strings.NewReader(`{"component":"VTODO","task":{"summary":"ok","color":"red","priority_emoji":"rocket"}}`),
 	)
 	if err != nil {
 		t.Fatalf("PatchNode with unknown fields must succeed: %v", err)
+	}
+	if !slices.Equal(applied, []string{"summary"}) {
+		t.Errorf("applied = %#v, want [summary] only — the unrecognized"+
+			" fields must not be reported as applied", applied)
+	}
+}
+
+// The cutting-garden#180 shape, reproduced against caldav: a body naming
+// ONLY fields the plugin does not recognize. Nothing is written, and the
+// caller must be able to tell — a non-nil empty applied, not a bare success.
+// A test asserting only "PatchNode returned no error" passes against the
+// defect, so the assertion here is on applied and on the absence of a PUT.
+func TestPatchNode_AllFieldsUnrecognizedReportsNothingApplied(t *testing.T) {
+	f, home := startFake(t)
+	arg := objectArg(home, "/dav/cal/task1.ics")
+	before := f.resources["/dav/cal/task1.ics"]
+
+	applied, err := Plugin{}.PatchNode(
+		context.Background(), mustParseURL(t, arg),
+		strings.NewReader(`{"component":"VTODO","task":{"color":"red"}}`),
+	)
+	if err != nil {
+		t.Fatalf("an unrecognized-only patch must not error: %v", err)
+	}
+	if applied == nil {
+		t.Fatal("applied = nil; caldav DOES report applied fields, so an" +
+			" empty patch must be the authoritative empty slice")
+	}
+	if len(applied) != 0 {
+		t.Errorf("applied = %#v, want empty", applied)
+	}
+	if len(f.puts) != 0 {
+		t.Errorf("nothing-applied patch must not issue a PUT; puts=%v", f.puts)
+	}
+	if got := f.resources["/dav/cal/task1.ics"]; got != before {
+		t.Errorf("stored body changed: %q", got)
 	}
 }
 
@@ -191,12 +234,15 @@ func TestPatchNode_EmptyFieldsIsNoOp(t *testing.T) {
 	f, home := startFake(t)
 	arg := objectArg(home, "/dav/cal/task1.ics")
 
-	err := Plugin{}.PatchNode(
+	applied, err := Plugin{}.PatchNode(
 		context.Background(), mustParseURL(t, arg),
 		strings.NewReader(`{"component":"VTODO","task":{}}`),
 	)
 	if err != nil {
 		t.Fatalf("PatchNode with empty fields must succeed (no-op): %v", err)
+	}
+	if applied == nil || len(applied) != 0 {
+		t.Errorf("applied = %#v, want a non-nil empty slice", applied)
 	}
 	// No PUT should have been issued — the fake's puts map is empty.
 	if len(f.puts) != 0 {
@@ -208,7 +254,7 @@ func TestPatchNode_MissingErrors(t *testing.T) {
 	_, home := startFakeEmpty(t)
 	arg := objectArg(home, "/dav/cal/ghost.ics")
 
-	err := Plugin{}.PatchNode(
+	_, err := Plugin{}.PatchNode(
 		context.Background(), mustParseURL(t, arg),
 		strings.NewReader(`{"component":"VTODO","task":{"summary":"ghost"}}`),
 	)
@@ -221,7 +267,7 @@ func TestPatchNode_EmptyBodyErrors(t *testing.T) {
 	_, home := startFake(t)
 	arg := objectArg(home, "/dav/cal/task1.ics")
 
-	err := Plugin{}.PatchNode(
+	_, err := Plugin{}.PatchNode(
 		context.Background(), mustParseURL(t, arg),
 		strings.NewReader(""),
 	)
@@ -239,7 +285,7 @@ func TestPatchNode_RoundTrip(t *testing.T) {
 	if err := (Plugin{}).CreateNode(ctx, node, strings.NewReader(vtodo("rtp", "v1")), typeObject); err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if err := (Plugin{}).PatchNode(ctx, node,
+	if _, err := (Plugin{}).PatchNode(ctx, node,
 		strings.NewReader(`{"component":"VTODO","task":{"summary":"v2"}}`)); err != nil {
 		t.Fatalf("patch: %v", err)
 	}

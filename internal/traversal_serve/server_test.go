@@ -37,6 +37,9 @@ type fakeFullPlugin struct {
 	createdBody []byte
 	putBody     []byte
 	patchBody   []byte
+	// patchApplied is what PatchNode reports; nil (the zero value) is the
+	// "does not report applied fields" case (cutting-garden#182).
+	patchApplied []string
 }
 
 var (
@@ -219,17 +222,17 @@ func (p *fakeFullPlugin) PutNode(
 
 func (p *fakeFullPlugin) PatchNode(
 	_ context.Context, _ *url.URL, body io.Reader,
-) error {
+) ([]string, error) {
 	data, err := io.ReadAll(body)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.patchBody = data
 
-	return nil
+	return p.patchApplied, nil
 }
 
 func (p *fakeFullPlugin) DeleteNode(
@@ -770,6 +773,53 @@ func TestServeNodePutAndPatch(t *testing.T) {
 
 	if string(plugin.patchBody) != string(patchBody) {
 		t.Errorf("patch body = %q, want %q", plugin.patchBody, patchBody)
+	}
+}
+
+// TestServeNodePatchAppliedRoundTrip pins that node.patch's result keeps
+// "did not report" DISTINCT from "reported nothing applied"
+// (cutting-garden#182). The distinction only survives if the key is omitted
+// rather than serialized as an empty list, so this asserts on the raw JSON:
+// a []string result field would make the first two cases identical on the
+// wire and quietly report every pre-#182 peer's successful patch as a no-op.
+func TestServeNodePatchAppliedRoundTrip(t *testing.T) {
+	for _, testCase := range []struct {
+		name    string
+		applied []string
+		wantRaw string
+	}{
+		{name: "does not report", applied: nil, wantRaw: `{}`},
+		{name: "reports nothing applied", applied: []string{}, wantRaw: `{"applied":[]}`},
+		{
+			name:    "reports applied fields",
+			applied: []string{"state"},
+			wantRaw: `{"applied":["state"]}`,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			plugin := &fakeFullPlugin{patchApplied: testCase.applied}
+			client, _ := startServe(t, fullPluginConfig(plugin))
+			mustInitialize(t, client)
+
+			var raw json.RawMessage
+			if err := client.Call(
+				context.Background(),
+				MethodNodePatch,
+				NodePatchParams{
+					URI: fakeLeafA,
+					BodyBase64: base64.StdEncoding.EncodeToString(
+						[]byte(`{"state":"closed"}`),
+					),
+				},
+				&raw,
+			); err != nil {
+				t.Fatal(err)
+			}
+
+			if string(raw) != testCase.wantRaw {
+				t.Errorf("node.patch result = %s, want %s", raw, testCase.wantRaw)
+			}
+		})
 	}
 }
 

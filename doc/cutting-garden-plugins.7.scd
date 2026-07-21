@@ -98,6 +98,32 @@ your honest "no results" from your silent "I misunderstood the request,"
 that is a bug to fix, not a limitation to document. See RFC 0012 §6 for the
 filter-validation contract this precedent comes from.
 
+# TOLERATE, BUT REPORT
+
+Tolerating input you do not understand is a forward-compatibility measure,
+not permission to answer as though you understood it. *PatchNode* is the
+sharpest case: its contract REQUIRES that an unrecognized field not be an
+error, so that a newer caller stays safe against an older plugin. Paired
+with a bare success that same rule once let a plugin recognize NONE of a
+patch body's fields, call its backend zero times, and answer "patched" —
+which is precisely what shipped, and what a caller had no way to detect
+(cutting-garden#180, contract defect cutting-garden#182).
+
+The resolution generalizes past patch: when you tolerate something, return
+enough for the caller to see what you actually did. *PatchNode* returns the
+field keys it applied — unrecognized keys absent, an empty (non-nil) list
+for "nothing applied", and nil ONLY to mean "I do not report this at all",
+which a caller must never read as nothing. Note what the fix is NOT: it is
+not rejecting unknown fields. Strictness would have removed the false
+success and the forward-compatibility together.
+
+Do not decide, in your plugin, whether an empty application is a failure —
+report the fact and let the consumer judge, so the judgement is made once
+for every scheme rather than differently in each. See RFC 0013's *node.patch*
+result for the wire encoding (the key is OMITTED, never sent as an empty
+list, precisely so the two states stay distinct) and FDR 0020's Settled
+section for the full rationale.
+
 # PER-CHILD-CONTAINER ATTRIBUTION
 
 A *FacetCounter* MAY report which of a summarized node's immediate child

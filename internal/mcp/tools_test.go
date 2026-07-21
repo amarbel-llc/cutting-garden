@@ -19,6 +19,10 @@ import (
 type fakeMutator struct {
 	created, put, patched, deleted []string
 	failCreate                     bool
+	// patchApplied is what PatchNode reports as applied; nil means "does
+	// not report" and a non-nil empty slice means "nothing was applied"
+	// (cutting-garden#182).
+	patchApplied []string
 }
 
 func (*fakeMutator) Schemes() []string                     { return []string{"faketest"} }
@@ -43,9 +47,11 @@ func (f *fakeMutator) PutNode(_ context.Context, u *url.URL, _ io.Reader) error 
 	return nil
 }
 
-func (f *fakeMutator) PatchNode(_ context.Context, u *url.URL, _ io.Reader) error {
+func (f *fakeMutator) PatchNode(
+	_ context.Context, u *url.URL, _ io.Reader,
+) ([]string, error) {
 	f.patched = append(f.patched, u.String())
-	return nil
+	return f.patchApplied, nil
 }
 
 func (f *fakeMutator) DeleteNode(_ context.Context, u *url.URL) error {
@@ -207,6 +213,68 @@ func TestCallTool_PatchDispatches(t *testing.T) {
 	}
 	if len(m.patched) != 1 || m.patched[0] != "faketest://h/x.ics" {
 		t.Errorf("PatchNode not dispatched: patched=%v", m.patched)
+	}
+}
+
+// The three states of PatchNode's applied, as the patch_node tool renders
+// them (cutting-garden#182). The middle case is the one that matters: it is
+// exactly the shape of the cutting-garden#180 field report — the plugin
+// recognized nothing, changed nothing, and previously answered "patched".
+func TestCallTool_PatchReportsAppliedFields(t *testing.T) {
+	args := json.RawMessage(
+		`{"uri":"faketest://h/x.ics","body":"{\"summary\":\"new\",\"bogus\":1}"}`,
+	)
+
+	for _, testCase := range []struct {
+		name       string
+		applied    []string
+		wantErr    bool
+		wantInText string
+	}{
+		{
+			name:       "reported and applied",
+			applied:    []string{"summary"},
+			wantInText: "applied: summary",
+		},
+		{
+			// Plain success here would be the #180 defect: the caller has
+			// no error, no signal, and no reason to re-read.
+			name:       "reported as nothing applied",
+			applied:    []string{},
+			wantErr:    true,
+			wantInText: "nothing was applied",
+		},
+		{
+			// nil carries no information, so the tool must not invent the
+			// no-op verdict for a plugin that never claimed one.
+			name:       "not reported",
+			applied:    nil,
+			wantInText: "patched faketest://h/x.ics",
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			m := &fakeMutator{patchApplied: testCase.applied}
+			tools := newFakeTools(t, m, "faketest://h/")
+
+			res, err := tools.CallTool(context.Background(), "patch_node", args)
+			if err != nil {
+				t.Fatalf("CallTool transport error: %v", err)
+			}
+			if res.IsError != testCase.wantErr {
+				t.Fatalf(
+					"IsError = %v, want %v (content: %+v)",
+					res.IsError, testCase.wantErr, res.Content,
+				)
+			}
+
+			if len(res.Content) == 0 {
+				t.Fatal("empty tool result content")
+			}
+			text := res.Content[0].Text
+			if !strings.Contains(text, testCase.wantInText) {
+				t.Errorf("result %q does not contain %q", text, testCase.wantInText)
+			}
+		})
 	}
 }
 

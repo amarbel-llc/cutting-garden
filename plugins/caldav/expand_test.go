@@ -229,7 +229,7 @@ func TestNodeMutator_RefusesDerivedOccurrenceURI(t *testing.T) {
 	// empty-fields patch legitimately short-circuits as a no-op before
 	// the refusal check (see mutate.go's PatchNode), which is fine since
 	// a no-op changes nothing regardless of target.
-	if err := (Plugin{}).PatchNode(ctx, occ,
+	if _, err := (Plugin{}).PatchNode(ctx, occ,
 		strings.NewReader(`{"component":"VEVENT","event":{"summary":"x"}}`)); err == nil {
 		t.Error("PatchNode on an occurrence URI must error")
 	}

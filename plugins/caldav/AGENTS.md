@@ -125,8 +125,16 @@ credential-free traversal roots for the `RootProvider` capability
   `ReadLeaf`. Strict create (`If-None-Match: *`, errors on collision) and
   strict full-replace put (`If-Match: *`, errors if absent) via the conditional
   PUTs in `client.go` (`createResource`/`updateResource`/`deleteResource`).
-  `PatchNode` does a GET→merge→PUT: reads the current iCal, overlays the JSON
-  patch fields onto the parsed struct, and writes back. Bodies for create/put
+  `PatchNode` returns the field keys it APPLIED (#182) and does a
+  GET→merge→PUT — reads the current iCal, overlays the JSON patch fields onto
+  the parsed struct, writes back — but ONLY once it has recognized at least
+  one field. Which keys it recognizes is decided from the body alone, before
+  any request, so a body naming nothing it understands issues neither GET nor
+  PUT and reports a non-nil empty `applied` (the honest "nothing landed", as
+  opposed to a nil `applied`, which would mean "I don't report this"). The
+  patchable key set per component is DERIVED from the `*PatchTargets` maps
+  that `applyPatch` decodes through, so what gets written and what gets
+  reported cannot drift. Bodies for create/put
   are accepted as raw `.ics` OR the `objectView` JSON (symmetric with
   `ReadLeaf`), normalized to iCalendar via the `ical` writers
   (`normalizeObjectBody`). Patch bodies are JSON only. Creating a calendar

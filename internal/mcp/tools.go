@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/url"
 	"path"
 	"strings"
@@ -266,7 +267,11 @@ func cudToolDefs() []protocol.ToolV1 {
 			Description: "Partially update an existing node: body is a JSON object " +
 				"containing only the fields to change; absent fields are left untouched. " +
 				"Use instead of put_node when you only want to change one field " +
-				"without reading and re-sending the entire object.",
+				"without reading and re-sending the entire object. On success the " +
+				"result names the fields that were actually applied — a field the " +
+				"node type does not accept is ignored rather than applied, and a " +
+				"patch that applies nothing is an error, not a silent no-op. Check " +
+				"describe_node_types for the fields a type accepts.",
 			InputSchema: json.RawMessage(patchNodeSchema),
 			Annotations: annotationFor(mcp_tool_perms.ToolPatchNode),
 		},
@@ -452,10 +457,11 @@ func (t *Tools) call(
 		if err != nil {
 			return "", err
 		}
-		if err := m.PatchNode(ctx, u, strings.NewReader(in.Body)); err != nil {
+		applied, err := m.PatchNode(ctx, u, strings.NewReader(in.Body))
+		if err != nil {
 			return "", err
 		}
-		return "patched " + in.URI, nil
+		return patchOutcome(in.URI, applied)
 
 	case mcp_tool_perms.ToolDeleteNode:
 		var in struct {
@@ -576,6 +582,38 @@ func (t *Tools) call(
 	default:
 		return "", errors.ErrorWithStackf("unknown tool %q", name)
 	}
+}
+
+// patchOutcome turns NodeMutator.PatchNode's applied into the patch_node
+// tool result, and is the single place the framework decides what an
+// entirely-ignored patch means (cutting-garden#182). Plugins report the
+// fact; only this layer judges it, so the judgement is uniform across
+// every scheme instead of relitigated per plugin.
+//
+// An authoritative empty applied is an ERROR here: the caller named fields,
+// nothing was applied, and a "patched <uri>" success is precisely the false
+// signal that let cutting-garden#180 sit undetected — the caller had no
+// reason to re-read. A nil applied carries no information (the plugin does
+// not report applied fields), so it keeps the plain success message rather
+// than being guessed either way.
+func patchOutcome(uri string, applied []string) (string, error) {
+	if applied == nil {
+		return "patched " + uri, nil
+	}
+
+	if len(applied) == 0 {
+		return "", errors.BadRequestf(
+			"patch_node: nothing was applied to %s — the plugin recognized"+
+				" none of the fields in the body, so the node is unchanged."+
+				" Call describe_node_types to see which fields this node"+
+				" type accepts on patch.",
+			uri,
+		)
+	}
+
+	return fmt.Sprintf(
+		"patched %s (applied: %s)", uri, strings.Join(applied, ", "),
+	), nil
 }
 
 // filteredListingView is list_nodes(uri)'s output shape whenever a filter

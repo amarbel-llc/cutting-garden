@@ -291,7 +291,7 @@ func TestWirePluginFullCapabilityRoundTrips(t *testing.T) {
 	); err != nil {
 		t.Fatalf("PutNode: %v", err)
 	}
-	if err := adapter.PatchNode(
+	if _, err := adapter.PatchNode(
 		ctx, leafA, strings.NewReader(`{"state":"closed"}`),
 	); err != nil {
 		t.Fatalf("PatchNode: %v", err)
@@ -317,7 +317,7 @@ func TestWirePluginFullCapabilityRoundTrips(t *testing.T) {
 
 	// A wire error passes through the adapter's wrap: the RPC code is
 	// still extractable (server rejects an empty patch body).
-	err = adapter.PatchNode(ctx, leafA, strings.NewReader(""))
+	_, err = adapter.PatchNode(ctx, leafA, strings.NewReader(""))
 	if code, ok := CodeOf(err); !ok || code != CodeInvalidParams {
 		t.Errorf("empty patch: CodeOf = %d, %t, want %d, true",
 			code, ok, CodeInvalidParams)
@@ -325,6 +325,49 @@ func TestWirePluginFullCapabilityRoundTrips(t *testing.T) {
 
 	if got := dialer.dialCount(); got != 1 {
 		t.Errorf("dials = %d, want 1 — the session must be reused", got)
+	}
+}
+
+// TestWirePluginPatchAppliedSurvivesTheWire is the adapter half of
+// TestServeNodePatchAppliedRoundTrip: what a linked consumer receives from
+// a wire plugin must carry the same three states a linked plugin can express
+// (cutting-garden#182). The middle case is the one the wire could silently
+// destroy — an omitted result key arriving as an empty slice would tell every
+// consumer that a pre-#182 peer's successful patch changed nothing.
+func TestWirePluginPatchAppliedSurvivesTheWire(t *testing.T) {
+	for _, testCase := range []struct {
+		name    string
+		applied []string
+		wantNil bool
+		wantLen int
+	}{
+		{name: "does not report", applied: nil, wantNil: true},
+		{name: "reports nothing applied", applied: []string{}, wantLen: 0},
+		{name: "reports applied fields", applied: []string{"state"}, wantLen: 1},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			plugin := &fakeFullPlugin{patchApplied: testCase.applied}
+			adapter, _ := newTestWirePlugin(
+				t, memSpec(), fullPluginConfig(plugin),
+			)
+
+			applied, err := adapter.PatchNode(
+				context.Background(),
+				mustParseURL(t, fakeLeafA),
+				strings.NewReader(`{"state":"closed"}`),
+			)
+			if err != nil {
+				t.Fatalf("PatchNode: %v", err)
+			}
+
+			if (applied == nil) != testCase.wantNil {
+				t.Fatalf("applied = %#v, wantNil = %v", applied, testCase.wantNil)
+			}
+			if !testCase.wantNil && len(applied) != testCase.wantLen {
+				t.Errorf("applied = %#v, want %d entries",
+					applied, testCase.wantLen)
+			}
+		})
 	}
 }
 
@@ -393,7 +436,8 @@ func TestWirePluginMutationWithoutCapMutateErrors(t *testing.T) {
 			return adapter.PutNode(ctx, uri, strings.NewReader("x"))
 		},
 		"patch": func() error {
-			return adapter.PatchNode(ctx, uri, strings.NewReader("x"))
+			_, err := adapter.PatchNode(ctx, uri, strings.NewReader("x"))
+			return err
 		},
 		"delete": func() error {
 			return adapter.DeleteNode(ctx, uri)

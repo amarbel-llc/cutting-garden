@@ -106,8 +106,12 @@ type NodeMutator interface {
     // uri. body contains only the fields to change; absent fields MUST be
     // left untouched. Implementations MUST NOT error on an absent or
     // unrecognized field. An empty body is a bad-request error. The body
-    // format is plugin-defined.
-    PatchNode(ctx context.Context, uri *url.URL, body io.Reader) error
+    // format is plugin-defined. applied reports which field keys were
+    // actually applied (2026-07-21 amendment, cutting-garden#182): non-nil
+    // is authoritative (empty = nothing applied), nil = does not report.
+    PatchNode(
+        ctx context.Context, uri *url.URL, body io.Reader,
+    ) (applied []string, err error)
 
     // DeleteNode removes the node at uri. Deleting a container removes
     // its subtree (the plugin decides whether that is recursive or
@@ -317,8 +321,47 @@ than inventing its own result shape.
   without removing the strict-replace guarantee that `PutNode` callers depend
   on. The caldav implementation uses an explicit `component` discriminator in
   the patch body and per-field `map[string]json.RawMessage` dispatch — unknown
-  fields are silently ignored per the contract, and an empty field map skips
-  the GET+PUT round-trip as a no-op.
+  fields are tolerated per the contract, and a body naming no recognized field
+  skips the GET+PUT round-trip.
+
+- **`PatchNode` reports which fields it applied (2026-07-21,
+  cutting-garden#182).** The rule above — "MUST NOT error on an unrecognized
+  field" — was written to buy forward-compatibility, and it does. But paired
+  with a bare `error` return it also licensed the opposite of what it
+  intended: a plugin could recognize NONE of the body's fields, call its
+  backend zero times, and answer plain success. That is what happened in
+  nebulous (cutting-garden#180) — `patch_node` reported `patched
+  newsblur://story/…` while the story was byte-for-byte unchanged, and the
+  caller had no error, no signal, and no reason to re-read.
+
+  The rule conflated two things: *tolerating* an unknown field (legitimate,
+  and the whole point) and *reporting plain success for a request that was
+  entirely ignored* (indefensible). The fix separates them by adding a return
+  rather than by removing the tolerance:
+
+  - `applied` non-nil is authoritative — precisely these keys landed.
+    Unrecognized keys are ABSENT from it, so a caller detects partial
+    application by comparing against what it sent.
+  - `applied` non-nil and EMPTY is the honest "I applied nothing." Plugins
+    report this; they do not judge it.
+  - `applied` nil means the implementation does not report applied fields —
+    the state a wire plugin predating the result field lands in. It carries
+    no information and MUST NOT be read as "nothing applied", which is why
+    the wire encoding OMITS the key rather than sending `[]` (RFC 0013
+    §Mutation).
+
+  **Where the judgement lives:** in the consumer, once, not in each plugin.
+  `internal/mcp` treats an authoritative-empty `applied` as an error on
+  `patch_node`, naming `describe_node_types` as the way to find the fields
+  that type does accept. A different consumer may reasonably decide
+  otherwise; the framework's job is to make the fact available.
+
+  This supersedes nebulous's own fix, which reached for
+  `json.Decoder.DisallowUnknownFields()`. That removes the false success but
+  costs exactly the forward-compatibility the original rule existed to
+  protect, and it was non-conformant with the contract as then written.
+  Under this amendment nebulous can relax back to tolerant and report
+  `applied` instead.
 
 - **Create vs. upsert → strict.** `create_node` errors if the node exists
   (caldav PUT `If-None-Match: *`); `put_node` is the explicit overwrite

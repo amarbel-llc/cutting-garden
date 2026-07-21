@@ -270,10 +270,23 @@ type NodePutParams struct {
 // NodePatchParams is the node.patch request payload: a partial-field
 // update of an existing node (NodeMutator.PatchNode — only the fields
 // named in the body change; the body format is plugin-defined). An
-// empty body is a bad-request error. The result is empty.
+// empty body is a bad-request error.
 type NodePatchParams struct {
 	URI        string `json:"uri"`
 	BodyBase64 string `json:"body_base64"`
+}
+
+// NodePatchResult reports which field keys the plugin ACTUALLY applied
+// (NodeMutator.PatchNode's applied, cutting-garden#182). Applied is a
+// POINTER so the three states the Go contract distinguishes survive the
+// wire: a present list (possibly empty) is authoritative, and an OMITTED
+// key means "this plugin does not report applied fields" — the state a
+// peer written against RFC 0013 before this field existed lands in. A
+// plain []string would collapse that absence into an empty list and
+// report every such peer's successful patch as a no-op, which is the
+// very false signal #182 exists to remove.
+type NodePatchResult struct {
+	Applied *[]string `json:"applied,omitempty"`
 }
 
 // NodeDeleteParams is the node.delete request payload. The result is

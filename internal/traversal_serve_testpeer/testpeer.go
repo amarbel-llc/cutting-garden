@@ -566,10 +566,10 @@ func (p *TreePlugin) PutNode(
 
 func (p *TreePlugin) PatchNode(
 	_ context.Context, uri *url.URL, body io.Reader,
-) error {
+) ([]string, error) {
 	data, err := readAllBody(body)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	p.mu.Lock()
@@ -579,11 +579,11 @@ func (p *TreePlugin) PatchNode(
 
 	node, found := p.nodes[key]
 	if !found {
-		return errors.ErrorWithStackf("patch %s: node does not exist", key)
+		return nil, errors.ErrorWithStackf("patch %s: node does not exist", key)
 	}
 
 	if len(data) == 0 {
-		return errors.BadRequestf("patch %s: empty body", key)
+		return nil, errors.BadRequestf("patch %s: empty body", key)
 	}
 
 	// The plugin-defined patch format: a JSON object whose fields merge
@@ -591,7 +591,7 @@ func (p *TreePlugin) PatchNode(
 	// (the NodeMutator contract).
 	var fields map[string]any
 	if err := json.Unmarshal(data, &fields); err != nil {
-		return errors.BadRequestf("patch %s: body is not a JSON object: %s", key, err)
+		return nil, errors.BadRequestf("patch %s: body is not a JSON object: %s", key, err)
 	}
 
 	if node.structured == nil {
@@ -600,7 +600,14 @@ func (p *TreePlugin) PatchNode(
 	maps.Copy(node.structured, fields)
 	p.generation++
 
-	return nil
+	// This peer's structured view accepts any key, so every field named is
+	// a field applied — reported explicitly (never nil) so the wire's
+	// applied round-trip is exercised end-to-end (cutting-garden#182).
+	// Sorted: the wire result is compared verbatim by the
+	// indistinguishability tests, and Go map iteration order is random.
+	applied := slices.Sorted(maps.Keys(fields))
+
+	return applied, nil
 }
 
 func (p *TreePlugin) DeleteNode(_ context.Context, uri *url.URL) error {

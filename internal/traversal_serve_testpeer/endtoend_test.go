@@ -351,10 +351,17 @@ func TestWireIndistinguishableFromLinked(t *testing.T) {
 		t.Errorf("facet token unchanged across a mutation: %q", postToken)
 	}
 
-	if err := wire.PatchNode(
+	applied, err := wire.PatchNode(
 		ctx, delta, strings.NewReader(`{"note":"patched"}`),
-	); err != nil {
+	)
+	if err != nil {
 		t.Fatalf("wire PatchNode: %v", err)
+	}
+	// Indistinguishability extends to the applied report: the linked peer
+	// answers exactly this in testpeer_test (cutting-garden#182), so a
+	// consumer still cannot tell which side of the wire it is talking to.
+	if !slices.Equal(applied, []string{"note"}) {
+		t.Errorf("wire applied = %#v, want [note]", applied)
 	}
 
 	content, ok, err := wire.ReadLeaf(ctx, delta)

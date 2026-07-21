@@ -382,9 +382,27 @@ would in process:
   result `{}`. Full-replace: the body is the complete desired state.
   Non-existent `uri` is an error.
 - `node.patch` params `{ "uri": string, "body_base64": string }` →
-  result `{}`. Partial-field update: only fields named in the body
-  change; the body format is plugin-defined. An empty body is an error
-  (`-32602`).
+  result `{ "applied": [string]? }`. Partial-field update: only fields
+  named in the body change; the body format is plugin-defined. An empty
+  body is an error (`-32602`).
+
+  `applied` reports the field keys the plugin ACTUALLY applied
+  (cutting-garden#182). Tolerating a field the plugin does not
+  recognize is REQUIRED — that is what makes a newer caller safe
+  against an older plugin — but a plugin MUST NOT answer a request it
+  entirely ignored with an indistinguishable plain success, so:
+
+  - `applied` PRESENT (possibly `[]`) is authoritative. A key the body
+    named but the plugin does not recognize MUST be absent from it; a
+    plugin that applied nothing MUST report `[]`, and the host MUST NOT
+    treat that as a transport-level error — judging whether an empty
+    application is a failure belongs to the consumer.
+  - `applied` OMITTED means "this plugin does not report applied
+    fields". A host MUST NOT read the omission as `[]`; the two carry
+    different information and a plugin written against this RFC before
+    `applied` existed lands in the first state, not the second.
+
+  Order is unspecified; a consumer MUST NOT depend on it.
 - `node.delete` params `{ "uri": string }` → result `{}`.
 
 Separately gated on `container-create` (an additive capability token

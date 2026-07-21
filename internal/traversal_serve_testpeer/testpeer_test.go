@@ -3,6 +3,7 @@ package traversal_serve_testpeer
 import (
 	"context"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 
@@ -218,10 +219,14 @@ func TestMutationsRoundTripInMemory(t *testing.T) {
 		t.Errorf("orphan create: err = %v, want bad request", err)
 	}
 
-	if err := plugin.PatchNode(
+	applied, err := plugin.PatchNode(
 		ctx, delta, strings.NewReader(`{"note":"patched"}`),
-	); err != nil {
+	)
+	if err != nil {
 		t.Fatalf("PatchNode: %v", err)
+	}
+	if !slices.Equal(applied, []string{"note"}) {
+		t.Errorf("applied = %#v, want [note] (cutting-garden#182)", applied)
 	}
 
 	content, ok, err := plugin.ReadLeaf(ctx, delta)
@@ -237,7 +242,7 @@ func TestMutationsRoundTripInMemory(t *testing.T) {
 		t.Errorf("raw after patch = %q, want untouched", content.Raw)
 	}
 
-	if err := plugin.PatchNode(
+	if _, err := plugin.PatchNode(
 		ctx, delta, strings.NewReader(""),
 	); !errors.Is400BadRequest(err) {
 		t.Errorf("empty patch: err = %v, want bad request", err)
