@@ -3,6 +3,7 @@ package traversal_serve_testpeer
 import (
 	"context"
 	"net/url"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -117,6 +118,23 @@ func TestFacetCountsFoldsSubtree(t *testing.T) {
 		t.Errorf("month histogram = %+v", result.Summary["month"])
 	}
 
+	// The §13 breakdown attributes DESCENDANTS only: exactly one node
+	// (gamma) lives under the nested box, so its count is 1 — not 2,
+	// which is what counting the container's own trivial empty-filter
+	// self-match would produce (the box's direct leaves belong to no
+	// child container and appear nowhere). Pins the phantom-self-match
+	// bug the #173 review caught (cutting-garden#173).
+	wantBreakdown := []cutting_garden_plugins.FacetContainerBreakdown{
+		{URI: NestedBox, Name: "nested", Count: 1},
+	}
+	if !reflect.DeepEqual(result.ByContainer, wantBreakdown) {
+		t.Errorf("byContainer = %+v, want %+v",
+			result.ByContainer, wantBreakdown)
+	}
+	if result.ByContainerTruncated {
+		t.Error("byContainerTruncated = true, want false")
+	}
+
 	filtered, ok, err := plugin.FacetCounts(
 		ctx, mustParseURL(t, RootBox),
 		cutting_garden_plugins.FacetFilter{
@@ -132,6 +150,15 @@ func TestFacetCountsFoldsSubtree(t *testing.T) {
 	}
 	if filtered.Summary["feed"]["f2"] != 0 || filtered.Summary["feed"]["f1"] != 2 {
 		t.Errorf("filtered feed histogram = %+v", filtered.Summary["feed"])
+	}
+	// Under the filter, gamma (open) still matches: the breakdown carries
+	// the SAME filter as the summary (RFC 0012 §13 attribution scope).
+	wantFiltered := []cutting_garden_plugins.FacetContainerBreakdown{
+		{URI: NestedBox, Name: "nested", Count: 1},
+	}
+	if !reflect.DeepEqual(filtered.ByContainer, wantFiltered) {
+		t.Errorf("filtered byContainer = %+v, want %+v",
+			filtered.ByContainer, wantFiltered)
 	}
 
 	// A leaf is not summarized: the decline, not an error.

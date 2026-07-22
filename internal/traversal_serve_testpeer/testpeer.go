@@ -365,16 +365,23 @@ func (p *TreePlugin) FacetCounts(
 	for _, childURI := range root.children {
 		child := p.nodes[childURI]
 
-		matched := p.foldNode(child, filter, summary)
+		// Summary folding only — the return is deliberately discarded
+		// for the breakdown, because a container is not "under" itself
+		// (FacetContainerBreakdown.Count counts nodes that LIVE UNDER
+		// the container), and with an empty filter Matches is trivially
+		// true even for a facet-less container node, which would add a
+		// phantom self-match to its own bucket. caldav, the reference
+		// FacetCounter, attributes leaf objects only.
+		p.foldNode(child, filter, summary)
 
 		if child.container() {
-			matched += p.foldSubtree(child, filter, summary)
-			if matched > 0 {
+			descendants := p.foldSubtree(child, filter, summary)
+			if descendants > 0 {
 				breakdown = append(breakdown,
 					cutting_garden_plugins.FacetContainerBreakdown{
 						URI:   childURI,
 						Name:  child.name,
-						Count: matched,
+						Count: descendants,
 					})
 			}
 		}
