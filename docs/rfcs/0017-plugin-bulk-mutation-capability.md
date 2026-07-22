@@ -88,7 +88,7 @@ type BulkAtomicity string
 
 const (
 	// BulkBestEffort applies each targeted node independently. Partial
-	// completion is expected and reported via BulkResult.Applied /
+	// completion is expected and reported via BulkResult.AppliedNodes /
 	// BulkResult.Failed. Every BulkMutator implementation MUST support
 	// this mode for every request shape it otherwise accepts — it is
 	// the capability's floor.
@@ -189,18 +189,40 @@ type BulkFailure struct {
 
 // BulkResult is a BulkMutate call's outcome. Its shape differs by
 // Atomicity — see §Atomicity semantics for the normative reading.
+//
+// (2026-07-22, cutting-garden#184: AppliedNodes was named Applied in the
+// original draft. Renamed before any implementation existed, because
+// NodeMutator.PatchNode's applied — cutting-garden#182, which postdates
+// this draft — means "which FIELDS were applied", and one subsystem
+// carrying the same word with two referents is how implementers get the
+// two confused. The bulk name states its unit.)
 type BulkResult struct {
-	// Applied lists every node the operation was successfully applied
-	// to. Credential-free, per the traversal URI contract (FDR 0014).
-	Applied []*url.URL
+	// AppliedNodes lists every node the operation was successfully
+	// applied to. Credential-free, per the traversal URI contract
+	// (FDR 0014). For a BulkPatch, membership here MUST mean what
+	// PatchNode's non-empty applied means (FDR 0020, #182): at least one
+	// recognized field actually landed on that node — a node whose patch
+	// applied NOTHING goes in PatchedNothing, never here, so bulk patch
+	// cannot resurrect the #180 silent false success at fan-out scale.
+	AppliedNodes []*url.URL
+	// PatchedNothing lists every BulkPatch target whose patch was
+	// ACCEPTED but applied zero recognized fields — the bulk carrier of
+	// PatchNode's authoritative-empty applied (#182). It is neither
+	// success (nothing changed) nor failure (nothing was wrong with the
+	// node); the caller judges it, exactly as single-node consumers do.
+	// Empty for the other three verbs, which cannot partially apply.
+	// A sweep whose every match lands here is the loudest form of "your
+	// body named nothing this plugin recognizes" — a consumer SHOULD
+	// surface that distinctly rather than as quiet completion.
+	PatchedNothing []*url.URL
 	// Failed lists every targeted node whose operation did not apply,
-	// with a diagnostic. In best-effort mode, Applied and Failed
-	// together are exactly the request's targeted node set (the
-	// explicit Ops' URIs, or the sweep's resolved match set) — there is
-	// no third "matched but not attempted" bucket in this revision (see
-	// the resource-exhaustion note in §Security Considerations for how
-	// a plugin facing an oversized sweep is expected to behave instead
-	// of silently truncating into this gap).
+	// with a diagnostic. In best-effort mode, AppliedNodes,
+	// PatchedNothing, and Failed together are exactly the request's
+	// targeted node set (the explicit Ops' URIs, or the sweep's resolved
+	// match set) — there is no fourth "matched but not attempted" bucket
+	// in this revision (see the resource-exhaustion note in §Security
+	// Considerations for how a plugin facing an oversized sweep is
+	// expected to behave instead of silently truncating into this gap).
 	Failed []BulkFailure
 	// Atomic reports whether the call committed atomically. It is true
 	// only on an atomic-mode success; false in every best-effort result
@@ -239,9 +261,15 @@ verbatim, with no exceptions:
   atomic mode) if the node already exists.
 - **`BulkPut`** is full-replace — an error if the node does not exist;
   the body MUST represent the complete desired state.
-- **`BulkPatch`** is partial-field — implementations MUST NOT error on
-  an absent or unrecognized field, and an empty body is a bad-request
-  error for that op.
+- **`BulkPatch`** is partial-field, under PatchNode's POST-#182 contract
+  (FDR 0020 §Settled, cutting-garden#182/#185) — not the pre-#182 text
+  this draft originally cited. Absent and unrecognized fields are
+  tolerated, but application is REPORTED per node: a target where at
+  least one recognized field landed goes in `AppliedNodes`, a target
+  whose patch applied nothing goes in `PatchedNothing`, and a RECOGNIZED
+  field carrying an unusable value is a per-op error (`BulkFailure` in
+  best-effort mode), never a tolerated drop. An empty body is a
+  bad-request error for that op.
 - **`BulkDelete`** removes the node.
 
 A `BulkMutator` implementation MUST apply these per-op rules identically
@@ -273,7 +301,7 @@ the same atomicity and result-reporting machinery:
   `BulkSweep.Filter`'s validation (conjunctive AND, reject a repeated or
   undeclared dimension) is RFC 0012 §6 reused verbatim — this RFC
   defines no new filter grammar. A sweep matching zero nodes is NOT an
-  error: `BulkResult.Applied` and `.Failed` are both empty.
+  error: `BulkResult.AppliedNodes` and `.Failed` are both empty.
 - **Explicit changeset (`BulkRequest.Ops`).** A caller names every
   targeted node and its operation directly — a heterogeneous mix of
   `create`/`put`/`patch`/`delete` across distinct URIs, applied
@@ -298,8 +326,9 @@ implementation MUST treat `BulkRequest.Atomicity` as follows:
 - **`BulkBestEffort`** — REQUIRED of every conformant `BulkMutator` for
   every request shape it otherwise accepts. The plugin applies each
   targeted node's operation independently. Partial completion is
-  expected, not an error condition: `BulkResult.Applied` and `.Failed`
-  partition the targeted node set (the explicit `Ops`' URIs, or the
+  expected, not an error condition: `BulkResult.AppliedNodes`,
+  `.PatchedNothing`, and `.Failed` partition the targeted node set (the
+  explicit `Ops`' URIs, or the
   sweep's resolved matches), `BulkResult.Atomic` is `false`, and the
   call's `error` return is nil as long as the call itself executed (a
   request-level validation failure — malformed request shape, not a
@@ -308,15 +337,17 @@ implementation MUST treat `BulkRequest.Atomicity` as follows:
   caller MUST NOT assume any particular application order.
 - **`BulkAtomic`** — OPTIONAL to support, advertised separately
   (`bulk-atomic`, below). On success, every targeted node's operation
-  applied: `BulkResult.Applied` is the full targeted set,
+  applied: `BulkResult.AppliedNodes` (plus, for patch ops that accepted
+  but applied nothing, `.PatchedNothing`) covers the full targeted set,
   `BulkResult.Failed` is empty, `BulkResult.Atomic` is `true`. On ANY
   failure — one node's operation fails validation, a backend
   transaction aborts, the plugin cannot in fact commit this specific
   request atomically — the WHOLE call fails: `BulkMutate` returns a
   non-nil `error` and NOTHING is applied. A caller MUST NOT read
   `BulkResult` when `error != nil`; a plugin MUST NOT return a
-  partially-populated `BulkResult` (a non-empty `Applied` or `Failed`)
-  alongside a non-nil error. There is no partial-atomic result shape —
+  partially-populated `BulkResult` (a non-empty `AppliedNodes` or
+  `Failed`) alongside a non-nil error. There is no partial-atomic result
+  shape —
   atomic mode has exactly two outcomes, not a spectrum.
 - **Unsupported atomic request → reject, never downgrade.** A plugin
   that cannot honor `BulkAtomic` — because it never advertised
@@ -560,8 +591,8 @@ nothing by advertising them to such a host.
   (§The `BulkMutator` capability), a plugin facing a sweep whose match
   set exceeds its bound SHOULD refuse the whole request as a bad
   request rather than silently truncate into an incomplete, unmarked
-  `Applied`/`Failed` split that a caller cannot distinguish from "every
-  matched node was attempted."
+  `AppliedNodes`/`Failed` split that a caller cannot distinguish from
+  "every matched node was attempted."
 - **Resource exhaustion — total body size.** `BulkOp.Body` materializes
   each op's payload as an in-memory byte slice (§The `BulkMutator`
   capability's rationale), so an explicit changeset with many large
@@ -570,8 +601,9 @@ nothing by advertising them to such a host.
   validated up front). A plugin SHOULD bound total request body size and
   reject an oversized request rather than accept unbounded memory
   pressure; this RFC does not mandate a specific limit.
-- **Credential hygiene.** Every URI in `BulkResult.Applied` and
-  `BulkFailure.URI`, and every `BulkSweep.Root`, MUST be credential-free,
+- **Credential hygiene.** Every URI in `BulkResult.AppliedNodes`,
+  `.PatchedNothing`, and `BulkFailure.URI`, and every `BulkSweep.Root`,
+  MUST be credential-free,
   identically to every other surfaced URI in the traversal contract
   (FDR 0014, RFC 0007).
 - **No new trust boundary.** `BulkMutator` is a compile-time Go
@@ -595,7 +627,7 @@ and MUST cover at minimum:
 | Explicit changeset, atomic (on a plugin advertising `bulk-atomic`) | one failing op aborts the whole call with a non-nil error and NO op applied; a fully-valid batch applies all and returns `Atomic: true` |
 | Predicate sweep | `Root` + `Filter` resolves the same match set a `FacetFilter`-narrowed `ListRoots` walk would independently compute, and the op applies to exactly that set |
 | Atomic-unsupported rejection | a plugin advertising only `bulk-mutate` (no `bulk-atomic`) rejects an `atomicity: "atomic"` request outright — never silently applies it as best-effort |
-| Per-op semantics parity | each `BulkOpKind` obeys its `NodeMutator` counterpart's exact contract (strict create, full-replace put, non-erroring patch on absent fields, empty-body patch rejected) |
+| Per-op semantics parity | each `BulkOpKind` obeys its `NodeMutator` counterpart's exact contract (strict create, full-replace put, patch per the post-#182 contract — unrecognized fields tolerated but application reported per node via `AppliedNodes`/`PatchedNothing`, recognized-key-unusable-value a per-op error, empty body rejected) |
 | Wire round-trip (RFC 0013) | a wire-plugin's `node.bulk_mutate` response, adapted through the host, is indistinguishable from the same plugin linked in-process — RFC 0013's existing conformance bar (§Host integration), extended to this method |
 | Non-retry | a host that loses the transport mid-`node.bulk_mutate` does not automatically re-send the request |
 
