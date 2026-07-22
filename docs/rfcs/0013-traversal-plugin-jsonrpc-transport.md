@@ -344,7 +344,9 @@ surface, exactly as the Go contract reserves non-nil `err`.
 ### Facets — `facets.counts`, `facets.version`, `labels.resolve`
 
 `facets.counts` params `{ "uri": string, "filter": FacetFilter? }` →
-result `{ "ok": bool, "summary": FacetSummary?, "complete": bool? }`.
+result `{ "ok": bool, "summary": FacetSummary?, "complete": bool?,
+"by_container": [ContainerBreakdown]?, "by_container_truncated":
+bool? }`.
 `ok: false` means "I do not summarize this node; fall back to the
 framework fold over `nodes.list`" (RFC 0012 §4–§5). Every dimension key
 in `summary` MUST be declared in the `initialize` `facets` block.
@@ -353,6 +355,23 @@ reporting a summary that covers the whole subtree MUST send
 `"complete": true` explicitly. (Absent-means-partial matches the
 conservative default and lets a false value be omitted; receivers MUST
 NOT read absence as exhaustive.)
+
+`by_container` is RFC 0012 §13's per-child-container breakdown
+(cutting-garden#173): each entry `{ "uri": string, "name": string?,
+"count": int }` attributes part of the (possibly filter-narrowed)
+matching set to one immediate child container of the summarized node,
+so a caller descends into exactly the containers that contributed.
+Absent means "no per-container detail" — which, unlike `node.patch`'s
+`applied`, carries the SAME consumer meaning as an empty list (nothing
+to descend into), so no absent-vs-empty distinction is defined and a
+peer predating this field is simply a peer without the detail. The §13
+invariants — only `count > 0` entries, capped at 50, sorted by
+descending count — are the plugin's obligations, but the host does NOT
+extend trust: a non-conformant breakdown is normalized at the boundary
+(zero-count entries dropped, re-sorted, capped, with host-imposed
+truncation OR-ed into `by_container_truncated`), so a consumer cannot
+observe the difference. `by_container_truncated` reports only that the
+breakdown itself was cut; it says nothing about `complete`.
 
 `facets.version` params `{ "uri": string }` → result
 `{ "ok": bool, "token": string? }`. The RFC 0012 §11 change token:

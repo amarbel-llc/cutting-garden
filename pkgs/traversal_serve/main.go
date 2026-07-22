@@ -4,6 +4,12 @@ package traversal_serve
 
 import internal "code.linenisgreat.com/cutting-garden/internal/traversal_serve"
 
+// FacetContainerBreakdownView is the wire form of
+// cutting_garden_plugins.FacetContainerBreakdown (RFC 0012 §13): one
+// immediate child container's contribution to the summary. Name MAY be
+// empty; URI MUST be the container's node URI.
+type FacetContainerBreakdownView = internal.FacetContainerBreakdownView
+
 // FacetCountsParams is the facets.counts request payload
 // (FacetCounter.FacetCounts). An absent/empty Filter matches
 // everything (RFC 0012 §6).
@@ -272,6 +278,10 @@ var DecodePluginStanza = internal.DecodePluginStanza
 var DecodePluginStanzaInto = internal.DecodePluginStanzaInto
 var EncodePluginStanzaFrom = internal.EncodePluginStanzaFrom
 
+// FacetContainerBreakdownViewsFrom projects a breakdown onto the wire,
+// preserving nil-ness so an absent breakdown stays an absent key.
+var FacetContainerBreakdownViewsFrom = internal.FacetContainerBreakdownViewsFrom
+
 // FacetDimensionViewFrom projects a declared dimension onto the wire.
 // RevalidateAfter is truncated to whole seconds (the wire unit).
 var FacetDimensionViewFrom = internal.FacetDimensionViewFrom
@@ -359,6 +369,10 @@ var SectionTOML = internal.SectionTOML
 // before shutdown (host death is cancellation, §Session lifecycle), or
 // a stream error.
 var Serve = internal.Serve
+
+// ToFacetContainerBreakdowns is the inverse of
+// FacetContainerBreakdownViewsFrom.
+var ToFacetContainerBreakdowns = internal.ToFacetContainerBreakdowns
 
 // ValidateStanzas enforces the cross-stanza invariants the aggregated
 // config's Validate delegates here: unique names, unique schemes —

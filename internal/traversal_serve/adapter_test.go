@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/url"
@@ -368,6 +369,64 @@ func TestWirePluginPatchAppliedSurvivesTheWire(t *testing.T) {
 					applied, testCase.wantLen)
 			}
 		})
+	}
+}
+
+// TestWirePluginFacetBreakdownNormalizedAtBoundary pins the host-side
+// enforcement of RFC 0012 §13's breakdown invariants on INBOUND wire data
+// (cutting-garden#173): a peer is not trusted to have honored the
+// only-Count>0 rule or the FacetContainerBreakdownLimit cap, so the
+// adapter normalizes with the same shared helper a linked plugin uses —
+// zero-count entries dropped, the rest sorted by descending count, capped,
+// and host-imposed truncation reported by OR-ing the truncated flag rather
+// than replacing the peer's own.
+func TestWirePluginFacetBreakdownNormalizedAtBoundary(t *testing.T) {
+	// A deliberately non-conformant breakdown: unsorted, one zero-count
+	// entry, and one more non-empty entry than the cap allows.
+	overLimit := make(
+		[]cutting_garden_plugins.FacetContainerBreakdown, 0,
+		cutting_garden_plugins.FacetContainerBreakdownLimit+2,
+	)
+	overLimit = append(overLimit,
+		cutting_garden_plugins.FacetContainerBreakdown{
+			URI: "mem://host/root/empty", Count: 0,
+		})
+	for i := 0; i <= cutting_garden_plugins.FacetContainerBreakdownLimit; i++ {
+		overLimit = append(overLimit,
+			cutting_garden_plugins.FacetContainerBreakdown{
+				URI:   fmt.Sprintf("mem://host/root/c%03d", i),
+				Count: int64(i + 1), // ascending, so sorting is observable
+			})
+	}
+
+	plugin := &fakeFullPlugin{facetBreakdown: overLimit}
+	adapter, _ := newTestWirePlugin(t, memSpec(), fullPluginConfig(plugin))
+
+	result, ok, err := adapter.FacetCounts(
+		context.Background(), mustParseURL(t, fakeRootURI), nil,
+	)
+	if err != nil || !ok {
+		t.Fatalf("FacetCounts = ok %t, err %v", ok, err)
+	}
+
+	limit := cutting_garden_plugins.FacetContainerBreakdownLimit
+	if len(result.ByContainer) != limit {
+		t.Fatalf("breakdown length = %d, want capped at %d",
+			len(result.ByContainer), limit)
+	}
+	if !result.ByContainerTruncated {
+		t.Error("host-imposed truncation must be reported")
+	}
+	// Descending by count: the highest-count entry leads, and the
+	// zero-count entry is gone entirely.
+	if result.ByContainer[0].Count != int64(limit+1) {
+		t.Errorf("first entry count = %d, want %d (sorted descending)",
+			result.ByContainer[0].Count, limit+1)
+	}
+	for _, entry := range result.ByContainer {
+		if entry.Count <= 0 {
+			t.Errorf("zero-count entry survived normalization: %+v", entry)
+		}
 	}
 }
 

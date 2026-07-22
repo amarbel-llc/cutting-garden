@@ -488,6 +488,28 @@ func (w *WirePlugin) FacetCounts(
 	result.Summary = wireResult.Summary
 	result.Complete = wireResult.Complete
 
+	// The RFC 0012 §13 invariants (only Count > 0 entries; capped at
+	// FacetContainerBreakdownLimit) are the PLUGIN's obligations, but the
+	// host does not trust a peer to have honored them: a non-conformant
+	// breakdown is normalized here with the same shared helper a linked
+	// plugin uses, so a consumer cannot tell the difference
+	// (cutting-garden#173). Truncation imposed here is reported as
+	// truncation — OR-ed with the peer's own flag, never replacing it.
+	breakdown := ToFacetContainerBreakdowns(wireResult.ByContainer)
+	if breakdown != nil {
+		nonEmpty := breakdown[:0]
+		for _, entry := range breakdown {
+			if entry.Count > 0 {
+				nonEmpty = append(nonEmpty, entry)
+			}
+		}
+		limited, truncated := cutting_garden_plugins.
+			SortAndLimitContainerBreakdown(nonEmpty)
+		result.ByContainer = limited
+		result.ByContainerTruncated = wireResult.ByContainerTruncated ||
+			truncated
+	}
+
 	return result, true, nil
 }
 

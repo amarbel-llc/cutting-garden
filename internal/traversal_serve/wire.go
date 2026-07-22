@@ -210,6 +210,68 @@ type FacetCountsResult struct {
 	// Complete is false when the summary is known not to cover the
 	// whole subtree (RFC 0012 §5).
 	Complete bool `json:"complete,omitempty"`
+	// ByContainer is the RFC 0012 §13 per-child-container breakdown of
+	// the matching set (cutting-garden#173): which immediate child
+	// containers contributed how many of Summary's matches. Absent when
+	// the plugin computes no per-container detail — and, unlike
+	// node.patch's applied, absent-vs-empty is NOT load-bearing here:
+	// the Go contract documents nil as "honest and normal", includes
+	// only Count > 0 entries, and gives an empty breakdown the same
+	// consumer meaning as none (nothing to descend into), so a plain
+	// omitempty slice suffices where applied needed a pointer.
+	ByContainer []FacetContainerBreakdownView `json:"by_container,omitempty"`
+	// ByContainerTruncated reports that ByContainer was capped and more
+	// non-empty containers contributed (RFC 0012 §13); it says nothing
+	// about whether Summary is complete.
+	ByContainerTruncated bool `json:"by_container_truncated,omitempty"`
+}
+
+// FacetContainerBreakdownView is the wire form of
+// cutting_garden_plugins.FacetContainerBreakdown (RFC 0012 §13): one
+// immediate child container's contribution to the summary. Name MAY be
+// empty; URI MUST be the container's node URI.
+type FacetContainerBreakdownView struct {
+	URI   string `json:"uri"`
+	Name  string `json:"name,omitempty"`
+	Count int64  `json:"count"`
+}
+
+// FacetContainerBreakdownViewsFrom projects a breakdown onto the wire,
+// preserving nil-ness so an absent breakdown stays an absent key.
+func FacetContainerBreakdownViewsFrom(
+	breakdown []cutting_garden_plugins.FacetContainerBreakdown,
+) []FacetContainerBreakdownView {
+	if breakdown == nil {
+		return nil
+	}
+	views := make([]FacetContainerBreakdownView, len(breakdown))
+	for i, entry := range breakdown {
+		views[i] = FacetContainerBreakdownView{
+			URI:   entry.URI,
+			Name:  entry.Name,
+			Count: entry.Count,
+		}
+	}
+	return views
+}
+
+// ToFacetContainerBreakdowns is the inverse of
+// FacetContainerBreakdownViewsFrom.
+func ToFacetContainerBreakdowns(
+	views []FacetContainerBreakdownView,
+) []cutting_garden_plugins.FacetContainerBreakdown {
+	if views == nil {
+		return nil
+	}
+	breakdown := make([]cutting_garden_plugins.FacetContainerBreakdown, len(views))
+	for i, view := range views {
+		breakdown[i] = cutting_garden_plugins.FacetContainerBreakdown{
+			URI:   view.URI,
+			Name:  view.Name,
+			Count: view.Count,
+		}
+	}
+	return breakdown
 }
 
 // FacetVersionParams is the facets.version request payload

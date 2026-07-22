@@ -550,6 +550,10 @@ func (s *server) handleFacetCounts(
 		OK:       true,
 		Summary:  facetResult.Summary,
 		Complete: facetResult.Complete,
+		ByContainer: FacetContainerBreakdownViewsFrom(
+			facetResult.ByContainer,
+		),
+		ByContainerTruncated: facetResult.ByContainerTruncated,
 	}, nil
 }
 

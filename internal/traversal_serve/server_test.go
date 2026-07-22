@@ -43,6 +43,11 @@ type fakeFullPlugin struct {
 	// patchErr, when set, is returned by PatchNode instead of succeeding —
 	// used to drive the error-CLASSIFICATION path (cutting-garden#185).
 	patchErr error
+	// facetBreakdown/-Truncated are returned RAW by FacetCounts (no
+	// conformance normalization), so tests can drive the host-side
+	// bounding of a non-conformant wire breakdown (cutting-garden#173).
+	facetBreakdown          []cutting_garden_plugins.FacetContainerBreakdown
+	facetBreakdownTruncated bool
 }
 
 var (
@@ -155,6 +160,12 @@ func (p *fakeFullPlugin) FacetCounts(
 			"state": {"open": 1, "closed": 1},
 		},
 		Complete: true,
+		// facetBreakdown is returned RAW — deliberately not passed
+		// through SortAndLimitContainerBreakdown — so tests can hand the
+		// wire a NON-conformant breakdown and observe the host-side
+		// normalization (cutting-garden#173).
+		ByContainer:          p.facetBreakdown,
+		ByContainerTruncated: p.facetBreakdownTruncated,
 	}, true, nil
 }
 

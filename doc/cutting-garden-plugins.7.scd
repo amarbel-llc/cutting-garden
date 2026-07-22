@@ -179,11 +179,13 @@ ordering, so every implementation bounds a large fan-out the same way;
 and says nothing about whether *Summary* is complete. See RFC 0012 §13 for
 the full contract.
 
-Caveat for wire-plugin authors: a wire plugin cannot populate
-*ByContainer* today. RFC 0013's *facets.counts* result has no field for
-it yet (cutting-garden#173), so this capability currently reaches linked
-(in-process) plugins only — know that up front, rather than adding the
-field to your wire response and discovering the host silently drops it.
+Wire plugins populate the breakdown via *facets.counts*' *by_container*
+result field (RFC 0013; the gap where the wire had no field for it was
+cutting-garden#173, closed). The §13 bounding invariants are yours to
+honor — only positive counts, capped, sorted — but the host verifies
+rather than trusts: a non-conformant breakdown is normalized at the
+boundary to exactly what the shared helper would have produced, with
+host-imposed truncation reported as truncation.
 
 # SERVE TEXT AS A FIELD, NOT BYTES-ONLY
 

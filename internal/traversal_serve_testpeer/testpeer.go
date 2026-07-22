@@ -353,43 +353,89 @@ func (p *TreePlugin) FacetCounts(
 	}
 
 	summary := cutting_garden_plugins.FacetSummary{}
-	p.foldSubtree(root, filter, summary)
+
+	// Per-child-container attribution (RFC 0012 §13, cutting-garden#173):
+	// this peer's fold already visits each immediate child's subtree
+	// separately, so recording the per-child match count on the way is
+	// recovered information — exactly the "populate it only when you
+	// already compute it" posture the contract asks for. Direct leaf
+	// children contribute to Summary but to no breakdown entry (they live
+	// under no child container).
+	var breakdown []cutting_garden_plugins.FacetContainerBreakdown
+	for _, childURI := range root.children {
+		child := p.nodes[childURI]
+
+		matched := p.foldNode(child, filter, summary)
+
+		if child.container() {
+			matched += p.foldSubtree(child, filter, summary)
+			if matched > 0 {
+				breakdown = append(breakdown,
+					cutting_garden_plugins.FacetContainerBreakdown{
+						URI:   childURI,
+						Name:  child.name,
+						Count: matched,
+					})
+			}
+		}
+	}
+
+	limited, truncated := cutting_garden_plugins.SortAndLimitContainerBreakdown(breakdown)
 
 	return cutting_garden_plugins.FacetResult{
-		Summary:  summary,
-		Complete: true,
+		Summary:              summary,
+		Complete:             true,
+		ByContainer:          limited,
+		ByContainerTruncated: truncated,
 	}, true, nil
 }
 
+// foldNode counts one node's facet membership into summary when it
+// matches filter, reporting 1 if it matched. Caller holds p.mu.
+func (p *TreePlugin) foldNode(
+	node *memNode,
+	filter cutting_garden_plugins.FacetFilter,
+	summary cutting_garden_plugins.FacetSummary,
+) int64 {
+	if !filter.Matches(node.facets) {
+		return 0
+	}
+
+	for dimension, values := range node.facets {
+		histogram := summary[dimension]
+		if histogram == nil {
+			histogram = cutting_garden_plugins.FacetHistogram{}
+			summary[dimension] = histogram
+		}
+
+		for _, value := range values {
+			histogram[value.Key]++
+		}
+	}
+
+	return 1
+}
+
 // foldSubtree counts every descendant node's facet membership into
-// summary, honoring filter — the plugin-side equivalent of the
-// framework fold (RFC 0012 §3). Caller holds p.mu.
+// summary, honoring filter, and reports how many descendants matched —
+// the plugin-side equivalent of the framework fold (RFC 0012 §3).
+// Caller holds p.mu.
 func (p *TreePlugin) foldSubtree(
 	node *memNode,
 	filter cutting_garden_plugins.FacetFilter,
 	summary cutting_garden_plugins.FacetSummary,
-) {
+) (matched int64) {
 	for _, childURI := range node.children {
 		child := p.nodes[childURI]
 
-		if filter.Matches(child.facets) {
-			for dimension, values := range child.facets {
-				histogram := summary[dimension]
-				if histogram == nil {
-					histogram = cutting_garden_plugins.FacetHistogram{}
-					summary[dimension] = histogram
-				}
-
-				for _, value := range values {
-					histogram[value.Key]++
-				}
-			}
-		}
+		matched += p.foldNode(child, filter, summary)
 
 		if child.container() {
-			p.foldSubtree(child, filter, summary)
+			matched += p.foldSubtree(child, filter, summary)
 		}
 	}
+
+	return matched
 }
 
 func (p *TreePlugin) FacetVersion(

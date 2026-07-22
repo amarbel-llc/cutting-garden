@@ -268,6 +268,24 @@ func TestWireIndistinguishableFromLinked(t *testing.T) {
 					t.Errorf("FacetCounts(%s, %v): complete linked %t, wire %t",
 						uriStr, filter, linkedCounts.Complete, wireCounts.Complete)
 				}
+				// The §13 per-container breakdown must survive the wire
+				// intact (cutting-garden#173) — including its ABSENCE: a
+				// node with no breakdown must be nil on both sides, not
+				// nil linked and empty wire.
+				if !reflect.DeepEqual(
+					linkedCounts.ByContainer, wireCounts.ByContainer,
+				) {
+					t.Errorf("FacetCounts(%s, %v): byContainer\nlinked: %+v\nwire:   %+v",
+						uriStr, filter,
+						linkedCounts.ByContainer, wireCounts.ByContainer)
+				}
+				if linkedCounts.ByContainerTruncated !=
+					wireCounts.ByContainerTruncated {
+					t.Errorf("FacetCounts(%s, %v): truncated linked %t, wire %t",
+						uriStr, filter,
+						linkedCounts.ByContainerTruncated,
+						wireCounts.ByContainerTruncated)
+				}
 			}
 		}
 
