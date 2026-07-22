@@ -873,6 +873,24 @@ Consequently a consumer MUST NOT assume entries are literal children of
 the summarized node — only that they are addressable, same-scheme
 containers whose (same-filtered) contents are the attributed subset.
 
+Note the trap the descend-target property implies for LOGICAL-GROUPING
+nodes (2026-07-22, found by nebulous checking its own emission against
+this paragraph within the hour of it landing): the property assumes the
+summarized node's narrowing is reproducible on redescent — either purely
+filter-expressed, or expressible by adding one `dimension=value`
+predicate. A node whose path segment conflates a UNION across facet
+dimensions breaks that assumption: nebulous's `tag/{tag}` selects
+stories carrying the tag in `user_tags` OR `story_tags`, two
+independently-filterable dimensions, and `FacetFilter` composes by AND
+(§6) — so no re-issuable filter reproduces the tag view's membership
+against an owning `feed/{id}`, and any breakdown would attribute nodes a
+redescent cannot reach. Such a node MUST omit `ByContainer` (per
+§Optionality's omit-rather-than-approximate rule) unless and until the
+filter grammar can express its narrowing. The reference caldav case
+cannot exercise this — a calendar-home's children are not narrowed by
+any cross-dimension union — which is exactly why it is stated here
+rather than left to be rediscovered per plugin.
+
 **Attribution scope.** `ByContainer`'s counts are under the SAME filter (or
 its absence) the enclosing `FacetCounts` call received — it is a breakdown
 of exactly what `Summary` aggregates, not a separate, differently-scoped
