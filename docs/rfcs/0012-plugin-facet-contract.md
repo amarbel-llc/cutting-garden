@@ -853,6 +853,26 @@ single-container node (the summarized node has no children of its own to
 attribute across — e.g. a single caldav calendar, not a calendar-home) also
 has nothing to report and MUST leave `ByContainer` nil.
 
+**Attribution target.** An entry's `URI` is ordinarily one of the
+summarized node's immediate child containers — the literal `ListRoots`
+children, as in the calendar-home example below. But the summarized node
+MAY list leaves directly while each leaf belongs to an addressable
+container elsewhere in the same scheme: a newsblur `tag/{tag}` container
+lists `story/{hash}` leaves whose owning `feed/{id}` containers are not
+children of the tag node. A plugin in that position MAY attribute to the
+OWNING container instead (2026-07-22 ruling, prompted by exactly that
+implementation; §Bounding's rationale already named "a newsblur account's
+feed list" as the motivating fan-out, so this is what the section
+anticipated). The normative property is CONSUMER-facing, and it is what
+makes either form valid: **every entry MUST be a working descend target**
+— re-issuing `read_facets`/`list_nodes` against the entry's `URI`, with
+the same filter the enclosing call received, MUST reach the attributed
+nodes. `ByContainer` answers "where do I go next"; an entry that cannot
+be descended into is a label, not an answer, and MUST NOT appear.
+Consequently a consumer MUST NOT assume entries are literal children of
+the summarized node — only that they are addressable, same-scheme
+containers whose (same-filtered) contents are the attributed subset.
+
 **Attribution scope.** `ByContainer`'s counts are under the SAME filter (or
 its absence) the enclosing `FacetCounts` call received — it is a breakdown
 of exactly what `Summary` aggregates, not a separate, differently-scoped
