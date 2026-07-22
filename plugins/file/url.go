@@ -18,15 +18,18 @@ import (
 //   - host other than "" or "localhost" (e.g. file://example.com/x is
 //     not supported; we have no remote-fs semantics).
 func pathFromURL(u *url.URL) (string, error) {
+	// Malformed source URIs are CALLER mistakes: bad requests
+	// (errors.Is400BadRequest true, -32602 over the RFC 0013 wire), not
+	// plugin failures that invite a futile retry (cutting-garden#187).
 	if u.Scheme != "" && u.Scheme != "file" {
-		return "", errors.ErrorWithStackf(
+		return "", errors.BadRequestf(
 			"file plugin: unsupported scheme %q in %q",
 			u.Scheme, u.String(),
 		)
 	}
 
 	if u.Host != "" && u.Host != "localhost" {
-		return "", errors.ErrorWithStackf(
+		return "", errors.BadRequestf(
 			"file plugin: file:// with non-empty host is not supported: %q",
 			u.String(),
 		)

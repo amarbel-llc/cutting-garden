@@ -330,7 +330,9 @@ func checkRootScope(path, raw string) error {
 		if label == "" {
 			label = path
 		}
-		return errors.ErrorWithStackf(
+		// Caller-fixable: the source argument is out of scope
+		// (cutting-garden#187).
+		return errors.BadRequestf(
 			"%s: outside working directory at %s\nhint: cd to a parent directory containing %s, then re-run",
 			label, pwd, label,
 		)
@@ -341,7 +343,8 @@ func checkRootScope(path, raw string) error {
 
 func assertDestinationDoesNotExist(dest string) error {
 	if _, err := os.Lstat(dest); err == nil {
-		return errors.ErrorWithStackf(
+		// Caller-fixable: pick another destination (cutting-garden#187).
+		return errors.BadRequestf(
 			"%s: destination already exists\n"+
 				"hint: choose a destination that does not exist, or remove this one",
 			dest,
@@ -477,7 +480,9 @@ func assertDirectoryExists(dir string) error {
 	info, err := os.Lstat(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return errors.ErrorWithStackf(
+			// "The caller's mistake" (above) now classifies as one:
+			// bad request, EX_USAGE at the CLI (cutting-garden#187).
+			return errors.BadRequestf(
 				"%s: directory does not exist\n"+
 					"hint: pass an existing directory; diff does not "+
 					"materialize anything",
@@ -487,7 +492,7 @@ func assertDirectoryExists(dir string) error {
 		return errors.Wrapf(err, "stat %q", dir)
 	}
 	if !info.IsDir() {
-		return errors.ErrorWithStackf(
+		return errors.BadRequestf(
 			"%s: not a directory (mode %s)", dir, info.Mode(),
 		)
 	}

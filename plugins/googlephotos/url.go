@@ -41,8 +41,11 @@ var googlePhotosHosts = map[string]struct{}{
 // resolved URL is also guarded against a leading `-` so it can never be
 // misread as an option by the gallery-dl child process.
 func sourceURLFromArg(u *url.URL) (string, error) {
+	// Malformed source URIs are CALLER mistakes: bad requests
+	// (errors.Is400BadRequest true, -32602 over the RFC 0013 wire), not
+	// plugin failures that invite a futile retry (cutting-garden#187).
 	if u.Scheme != "gphotos" {
-		return "", errors.ErrorWithStackf(
+		return "", errors.BadRequestf(
 			"google-photos plugin: unsupported scheme %q in %q\n"+
 				"hint: pass `gphotos:<share-url>` or `gphotos://<host>/<path>`",
 			u.Scheme, u.String(),
@@ -81,7 +84,7 @@ func sourceURLFromArg(u *url.URL) (string, error) {
 		raw = rebuilt.String()
 
 	default:
-		return "", errors.ErrorWithStackf(
+		return "", errors.BadRequestf(
 			"google-photos plugin: empty source URL in %q\n"+
 				"hint: pass `gphotos:<share-url>` or `gphotos://<host>/<path>`",
 			u.String(),
@@ -90,14 +93,14 @@ func sourceURLFromArg(u *url.URL) (string, error) {
 
 	parsed, err := url.Parse(raw)
 	if err != nil {
-		return "", errors.ErrorWithStackf(
+		return "", errors.BadRequestf(
 			"google-photos plugin: cannot parse source URL %q: %v", raw, err,
 		)
 	}
 
 	host := strings.ToLower(parsed.Hostname())
 	if _, ok := googlePhotosHosts[host]; !ok {
-		return "", errors.ErrorWithStackf(
+		return "", errors.BadRequestf(
 			"google-photos plugin: host %q is not a Google Photos host\n"+
 				"hint: expected one of photos.app.goo.gl, photos.google.com",
 			parsed.Host,
@@ -105,7 +108,7 @@ func sourceURLFromArg(u *url.URL) (string, error) {
 	}
 
 	if strings.HasPrefix(raw, "-") {
-		return "", errors.ErrorWithStackf(
+		return "", errors.BadRequestf(
 			"google-photos plugin: source %q begins with '-'\n"+
 				"hint: a source must not look like a command-line option",
 			raw,

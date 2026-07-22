@@ -3,6 +3,8 @@ package jira
 import (
 	"net/url"
 	"testing"
+
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
 func mustParseURL(t *testing.T, raw string) *url.URL {
@@ -37,6 +39,13 @@ func TestBaseURLFromArg(t *testing.T) {
 				if err == nil {
 					t.Fatalf("baseURLFromArg(%q) = %q, want error", tc.arg, got)
 				}
+				// Every rejection here is a malformed CALLER argument and
+				// must classify as a bad request, so the wire reports
+				// -32602 rather than "plugin failed" (cutting-garden#187).
+				if !errors.Is400BadRequest(err) {
+					t.Errorf("baseURLFromArg(%q) error must classify as a"+
+						" caller fault: %v", tc.arg, err)
+				}
 				return
 			}
 			if err != nil {
@@ -66,6 +75,9 @@ func TestNodeFromBase(t *testing.T) {
 		if tc.wantErr {
 			if err == nil {
 				t.Errorf("nodeFromBase(%q) = nil error, want error", tc.base)
+			} else if !errors.Is400BadRequest(err) {
+				t.Errorf("nodeFromBase(%q) error must classify as a caller"+
+					" fault (cutting-garden#187): %v", tc.base, err)
 			}
 			continue
 		}

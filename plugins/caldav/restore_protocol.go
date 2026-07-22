@@ -62,7 +62,9 @@ func (Plugin) RestoreProtocol(req cutting_garden_plugins.ProtocolRestoreRequest)
 
 		calHref, ok := hrefByCollection[collection]
 		if !ok {
-			return errors.ErrorWithStackf(
+			// Caller-fixable: create the collection on the destination or
+			// pick a destination that has it (cutting-garden#187).
+			return errors.BadRequestf(
 				"caldav plugin: destination has no collection %q for %s "+
 					"(MKCALENDAR on restore is tracked in #77)",
 				collection, ref.Alias,

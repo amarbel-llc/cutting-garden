@@ -35,8 +35,11 @@ const (
 // instance served under a context path (e.g. https://host/jira) is out of
 // scope, matching the Jira Cloud target.
 func baseURLFromArg(u *url.URL) (string, error) {
+	// Malformed source URIs are CALLER mistakes: bad requests
+	// (errors.Is400BadRequest true, -32602 over the RFC 0013 wire), not
+	// plugin failures that invite a futile retry (cutting-garden#187).
 	if u.Scheme != schemeJira {
-		return "", errors.ErrorWithStackf(
+		return "", errors.BadRequestf(
 			"jira plugin: unsupported scheme %q in %q",
 			u.Scheme, u.String(),
 		)
@@ -51,11 +54,12 @@ func baseURLFromArg(u *url.URL) (string, error) {
 		}
 		parsed, err := url.Parse(inner)
 		if err != nil {
-			return "", errors.Wrapf(err,
-				"jira plugin: parse inner URL %q", inner)
+			return "", errors.BadRequestf(
+				"jira plugin: parse inner URL %q: %s", inner, err,
+			)
 		}
 		if parsed.Scheme != "http" && parsed.Scheme != "https" {
-			return "", errors.ErrorWithStackf(
+			return "", errors.BadRequestf(
 				"jira plugin: inner URL must be http or https, got %q in %q\n"+
 					"hint: use `jira:http://host/PROJECT` or `jira:https://host/PROJECT`",
 				parsed.Scheme, u.String(),
@@ -65,7 +69,7 @@ func baseURLFromArg(u *url.URL) (string, error) {
 	}
 
 	if u.Host == "" {
-		return "", errors.ErrorWithStackf(
+		return "", errors.BadRequestf(
 			"jira plugin: empty host in %q\n"+
 				"hint: pass `jira://host/PROJECT` or `jira:<http-url>`",
 			u.String(),
@@ -140,7 +144,7 @@ func originOf(raw string) (string, bool) {
 func nodeFromBase(base string) (origin, project, issue string, err error) {
 	origin, ok := originOf(base)
 	if !ok {
-		return "", "", "", errors.ErrorWithStackf(
+		return "", "", "", errors.BadRequestf(
 			"jira plugin: %q has no host", base,
 		)
 	}
@@ -159,7 +163,7 @@ func nodeFromBase(base string) (origin, project, issue string, err error) {
 		case issue == "":
 			issue = s
 		default:
-			return "", "", "", errors.ErrorWithStackf(
+			return "", "", "", errors.BadRequestf(
 				"jira plugin: %q has too many path segments; "+
 					"expected jira://host/PROJECT[/ISSUE-KEY]", base,
 			)

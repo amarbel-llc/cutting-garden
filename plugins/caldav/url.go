@@ -29,8 +29,12 @@ const (
 // The returned string may still carry userinfo; connectionFromArg
 // splits credentials off.
 func baseURLFromArg(u *url.URL) (string, error) {
+	// The rejections below are all CALLER mistakes — a malformed node URI
+	// the caller can fix — so they classify as bad requests
+	// (errors.Is400BadRequest true, -32602 over the RFC 0013 wire) rather
+	// than plugin failures that invite a futile retry (cutting-garden#187).
 	if u.Scheme != schemeCalDAV {
-		return "", errors.ErrorWithStackf(
+		return "", errors.BadRequestf(
 			"caldav plugin: unsupported scheme %q in %q",
 			u.Scheme, u.String(),
 		)
@@ -45,11 +49,12 @@ func baseURLFromArg(u *url.URL) (string, error) {
 		}
 		parsed, err := url.Parse(inner)
 		if err != nil {
-			return "", errors.Wrapf(err,
-				"caldav plugin: parse inner URL %q", inner)
+			return "", errors.BadRequestf(
+				"caldav plugin: parse inner URL %q: %s", inner, err,
+			)
 		}
 		if parsed.Scheme != "http" && parsed.Scheme != "https" {
-			return "", errors.ErrorWithStackf(
+			return "", errors.BadRequestf(
 				"caldav plugin: inner URL must be http or https, got %q in %q\n"+
 					"hint: use `caldav:http://host/path` or `caldav:https://host/path`",
 				parsed.Scheme, u.String(),
@@ -59,7 +64,7 @@ func baseURLFromArg(u *url.URL) (string, error) {
 	}
 
 	if u.Host == "" {
-		return "", errors.ErrorWithStackf(
+		return "", errors.BadRequestf(
 			"caldav plugin: empty host in %q\n"+
 				"hint: pass `caldav://host/path` or `caldav:<http-url>`",
 			u.String(),

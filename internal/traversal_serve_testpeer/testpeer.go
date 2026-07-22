@@ -499,8 +499,11 @@ func (p *TreePlugin) CreateNode(
 
 	key := uri.String()
 
+	// Existence violations of the strict create/put/patch/delete contracts
+	// are CALLER mistakes (pick the other verb, or the right URI), matching
+	// caldav's 412-precondition classification (cutting-garden#187).
 	if _, exists := p.nodes[key]; exists {
-		return errors.ErrorWithStackf("create %s: node already exists", key)
+		return errors.BadRequestf("create %s: node already exists", key)
 	}
 
 	if typ != ContainerType && typ != LeafType {
@@ -549,7 +552,7 @@ func (p *TreePlugin) PutNode(
 
 	node, found := p.nodes[key]
 	if !found {
-		return errors.ErrorWithStackf("put %s: node does not exist", key)
+		return errors.BadRequestf("put %s: node does not exist", key)
 	}
 
 	if node.container() {
@@ -579,7 +582,7 @@ func (p *TreePlugin) PatchNode(
 
 	node, found := p.nodes[key]
 	if !found {
-		return nil, errors.ErrorWithStackf("patch %s: node does not exist", key)
+		return nil, errors.BadRequestf("patch %s: node does not exist", key)
 	}
 
 	if len(data) == 0 {
@@ -618,7 +621,7 @@ func (p *TreePlugin) DeleteNode(_ context.Context, uri *url.URL) error {
 
 	node, found := p.nodes[key]
 	if !found {
-		return errors.ErrorWithStackf("delete %s: node does not exist", key)
+		return errors.BadRequestf("delete %s: node does not exist", key)
 	}
 
 	p.deleteSubtree(key, node)

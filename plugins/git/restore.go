@@ -59,7 +59,7 @@ func restoreLocalClone(
 		dest = req.Dest.Path
 	}
 	if dest == "" {
-		return errors.ErrorWithStackf("git plugin: empty restore destination")
+		return errors.BadRequestf("git plugin: empty restore destination")
 	}
 	if err := assertDestAbsent(dest); err != nil {
 		return err
@@ -144,7 +144,8 @@ func restoreRemotePush(
 // local-clone path.)
 func assertDestAbsent(dest string) error {
 	if _, err := os.Lstat(dest); err == nil {
-		return errors.ErrorWithStackf(
+		// Caller-fixable: pick another destination (cutting-garden#187).
+		return errors.BadRequestf(
 			"%s: destination already exists\n"+
 				"hint: choose a destination that does not exist", dest,
 		)

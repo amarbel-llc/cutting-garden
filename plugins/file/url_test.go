@@ -3,6 +3,8 @@ package cutting_garden_plugin_file
 import (
 	"net/url"
 	"testing"
+
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
 func TestPathFromURL(t *testing.T) {
@@ -33,6 +35,13 @@ func TestPathFromURL(t *testing.T) {
 			if tc.wantErr {
 				if err == nil {
 					t.Fatalf("pathFromURL(%q) = %q, want error", tc.input, got)
+				}
+				// Every rejection here is a malformed CALLER argument and
+				// must classify as a bad request, so the wire reports
+				// -32602 rather than "plugin failed" (cutting-garden#187).
+				if !errors.Is400BadRequest(err) {
+					t.Errorf("pathFromURL(%q) error must classify as a"+
+						" caller fault: %v", tc.input, err)
 				}
 				return
 			}

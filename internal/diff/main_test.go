@@ -59,11 +59,13 @@ func TestDiff_InvalidColorValue_Rejected(t *testing.T) {
 }
 
 func TestDiff_ValidColorValues_Accepted(t *testing.T) {
-	// Each valid color value should pass color validation. With a
-	// nonexistent <dir>, ValidateDiffDir errors (FDR §Destination
-	// Preconditions: dir MUST exist), so the dispatch exits with the
-	// "trouble" code (2) — NOT via the color-validation BadRequest
-	// path (64) and NOT via the MismatchError path (1).
+	// Each valid color value should pass color validation. The bogus
+	// receipt id then fails markl parsing — which fires BEFORE
+	// ValidateDiffDir in runDiff — so the dispatch exits with the
+	// "trouble" code (2): NOT via the color-validation BadRequest path
+	// (64) and NOT via the MismatchError path (1). (A nonexistent dir
+	// alone would no longer discriminate here: since cutting-garden#187
+	// ValidateDiffDir's refusal is itself a BadRequest/64.)
 	for _, c := range []string{"auto", "always", "never"} {
 		t.Run(c, func(t *testing.T) {
 			u := makeUtility()
@@ -80,11 +82,12 @@ func TestDiff_ValidColorValues_Accepted(t *testing.T) {
 
 func TestDiff_TwoArgs_BogusInputsReachDispatch(t *testing.T) {
 	// Two positional args should NOT trip the count guard. The
-	// dispatch proceeds into runDiff and errors out further down
-	// (here: ValidateDiffDir refuses a nonexistent "src/"). The
-	// test pins that arg parsing doesn't gate on content and that
-	// the "directory does not exist" error maps to exit 2 (trouble),
-	// not 1 (clean mismatch).
+	// dispatch proceeds into runDiff and errors out further down —
+	// at the unparseable receipt id, which fires before
+	// ValidateDiffDir. The test pins that arg parsing doesn't gate on
+	// content and that the failure maps to exit 2 (trouble), not 1
+	// (clean mismatch). (ValidateDiffDir's own nonexistent-dir refusal
+	// is 64/EX_USAGE since cutting-garden#187 — pinned in diff.bats.)
 	u := makeUtility()
 	code := u.Run([]string{
 		"cutting-garden", "diff",

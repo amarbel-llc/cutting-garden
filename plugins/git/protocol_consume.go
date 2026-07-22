@@ -29,7 +29,12 @@ func loadReceiptPayload(
 		return capture_plugin.Node{}, payloadMeta{}, err
 	}
 	if kind, ok := capture_plugin.KindFromReceiptType(receipt.Type); !ok || kind != captureKind {
-		return capture_plugin.Node{}, payloadMeta{}, errors.ErrorWithStackf(
+		// The caller handed a receipt of the wrong plugin's type — theirs
+		// to fix by picking the right receipt id (cutting-garden#187). A
+		// receipt whose CONTENT is malformed stays unclassified below:
+		// stored receipts are plugin-written, so defects inside one are
+		// not the caller's mistake.
+		return capture_plugin.Node{}, payloadMeta{}, errors.BadRequestf(
 			"git plugin: receipt %s is not a git receipt (type %q)",
 			receiptDigest, receipt.Type,
 		)

@@ -216,8 +216,10 @@ function diff_refuses_nonexistent_dir { # @test
   rid="$(capture_receipt_id src)"
   [[ -n $rid ]] || fail "no receipt id"
 
+  # 64 = EX_USAGE: a nonexistent dir argument is the CALLER's mistake
+  # (Is400BadRequest), not "trouble" (cutting-garden#187).
   run_cg diff -color never "$rid" no-such-dir
-  assert_failure 2
+  assert_failure 64
   assert_output --partial 'directory does not exist'
 }
 
@@ -233,8 +235,9 @@ function diff_refuses_dir_arg_that_is_a_file { # @test
 
   echo "data" >regular-file.txt
 
+  # 64 = EX_USAGE, as above (cutting-garden#187).
   run_cg diff -color never "$rid" regular-file.txt
-  assert_failure 2
+  assert_failure 64
   assert_output --partial 'not a directory'
 }
 

@@ -4,6 +4,8 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
 func TestParseSource(t *testing.T) {
@@ -80,6 +82,13 @@ func TestParseSource(t *testing.T) {
 					if !strings.Contains(err.Error(), snip) {
 						t.Errorf("error %q missing snippet %q", err.Error(), snip)
 					}
+				}
+				// Every rejection here is a malformed CALLER argument and
+				// must classify as a bad request, so the wire reports
+				// -32602 rather than "plugin failed" (cutting-garden#187).
+				if !errors.Is400BadRequest(err) {
+					t.Errorf("parseSource(%q) error must classify as a"+
+						" caller fault: %v", tc.arg, err)
 				}
 				return
 			}

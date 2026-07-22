@@ -53,15 +53,18 @@ type opticalSource struct {
 // rejected: the device is a path, not a host. Returns an error suitable
 // for ValidateSource refusal.
 func parseSource(u *url.URL) (opticalSource, error) {
+	// Malformed source URIs are CALLER mistakes: bad requests
+	// (errors.Is400BadRequest true, -32602 over the RFC 0013 wire), not
+	// plugin failures that invite a futile retry (cutting-garden#187).
 	if u.Scheme != opticalScheme {
-		return opticalSource{}, errors.ErrorWithStackf(
+		return opticalSource{}, errors.BadRequestf(
 			"optical plugin: unsupported scheme %q in %q",
 			u.Scheme, u.String(),
 		)
 	}
 
 	if u.Host != "" {
-		return opticalSource{}, errors.ErrorWithStackf(
+		return opticalSource{}, errors.BadRequestf(
 			"optical plugin: unexpected host %q in %q\n"+
 				"hint: the device is a path — write `optical:/dev/sr0`, not `optical://dev/sr0`",
 			u.Host, u.String(),
@@ -77,14 +80,14 @@ func parseSource(u *url.URL) (opticalSource, error) {
 		device = u.Opaque
 	}
 	if device == "" {
-		return opticalSource{}, errors.ErrorWithStackf(
+		return opticalSource{}, errors.BadRequestf(
 			"optical plugin: empty device path in %q\n"+
 				"hint: pass `optical:/dev/sr0` (your optical drive's device node)",
 			u.String(),
 		)
 	}
 	if !strings.HasPrefix(device, "/") {
-		return opticalSource{}, errors.ErrorWithStackf(
+		return opticalSource{}, errors.BadRequestf(
 			"optical plugin: device path %q must be absolute in %q\n"+
 				"hint: pass `optical:/dev/sr0`",
 			device, u.String(),
@@ -98,7 +101,7 @@ func parseSource(u *url.URL) (opticalSource, error) {
 	switch mode {
 	case modeImage, modeAudio:
 	default:
-		return opticalSource{}, errors.ErrorWithStackf(
+		return opticalSource{}, errors.BadRequestf(
 			"optical plugin: unknown mode %q in %q\n"+
 				"hint: use `?mode=image` (ddrescue, default) or `?mode=audio` (cdparanoia)",
 			mode, u.String(),

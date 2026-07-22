@@ -60,7 +60,10 @@ func sourceURLFromArg(u *url.URL) (string, error) {
 			return rebuilt, nil
 		}
 		if u.Host == "" {
-			return "", errors.ErrorWithStackf(
+			// Malformed source URIs are CALLER mistakes: bad requests
+			// (errors.Is400BadRequest true, -32602 over the RFC 0013
+			// wire), not plugin failures (cutting-garden#187).
+			return "", errors.BadRequestf(
 				"ytdlp plugin: empty source URL in %q\n"+
 					"hint: pass `ytdlp:<full-url>` or `ytdlp://<host>/<path>`",
 				u.String(),
@@ -81,7 +84,7 @@ func sourceURLFromArg(u *url.URL) (string, error) {
 	case "https":
 		host := strings.ToLower(u.Host)
 		if _, ok := httpsAllowlist[host]; !ok {
-			return "", errors.ErrorWithStackf(
+			return "", errors.BadRequestf(
 				"ytdlp plugin: https host %q is not in the bare-https allowlist\n"+
 					"hint: prefix the URL with `ytdlp:` to force the yt-dlp plugin",
 				u.Host,
@@ -90,7 +93,7 @@ func sourceURLFromArg(u *url.URL) (string, error) {
 		return u.String(), nil
 	}
 
-	return "", errors.ErrorWithStackf(
+	return "", errors.BadRequestf(
 		"ytdlp plugin: unsupported scheme %q in %q",
 		u.Scheme, u.String(),
 	)

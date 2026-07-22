@@ -59,7 +59,11 @@ func remoteAndBranchFromArg(u *url.URL) (remote, branch string, err error) {
 		}
 
 	default:
-		return "", "", errors.ErrorWithStackf(
+		// Malformed source URIs are CALLER mistakes: classified as bad
+		// requests (errors.Is400BadRequest true, -32602 over the RFC 0013
+		// wire) rather than plugin failures that invite a futile retry
+		// (cutting-garden#187).
+		return "", "", errors.BadRequestf(
 			"git plugin: empty remote in %q\n"+
 				"hint: pass `git:<remote-url>#<branch>` or "+
 				"`git://<host>/<path>#<branch>`",
@@ -68,19 +72,19 @@ func remoteAndBranchFromArg(u *url.URL) (remote, branch string, err error) {
 	}
 
 	if remote == "" {
-		return "", "", errors.ErrorWithStackf(
+		return "", "", errors.BadRequestf(
 			"git plugin: empty remote in %q", u.String(),
 		)
 	}
 	if strings.HasPrefix(remote, "-") {
-		return "", "", errors.ErrorWithStackf(
+		return "", "", errors.BadRequestf(
 			"git plugin: remote %q begins with '-'\n"+
 				"hint: a remote must not look like a command-line option",
 			remote,
 		)
 	}
 	if strings.HasPrefix(branch, "-") {
-		return "", "", errors.ErrorWithStackf(
+		return "", "", errors.BadRequestf(
 			"git plugin: branch %q begins with '-'\n"+
 				"hint: a branch must not look like a command-line option",
 			branch,

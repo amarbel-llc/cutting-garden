@@ -26,7 +26,7 @@ func (Plugin) Restore(req cutting_garden_plugins.RestoreRequest) error {
 	}
 	origin, ok := originOf(base)
 	if !ok {
-		return errors.ErrorWithStackf(
+		return errors.BadRequestf(
 			"caldav plugin: destination %q has no host", base,
 		)
 	}

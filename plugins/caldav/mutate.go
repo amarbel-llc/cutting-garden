@@ -173,7 +173,9 @@ func (Plugin) PatchNode(
 	switch patch.Component {
 	case "VEVENT":
 		if currentView.Event == nil {
-			return nil, errors.ErrorWithStackf(
+			// The caller declared a component that does not match the node
+			// they addressed — their mistake to fix (cutting-garden#187).
+			return nil, errors.BadRequestf(
 				"caldav plugin: PatchNode component mismatch: requested VEVENT but node at %s is %s",
 				node, currentView.Component,
 			)
@@ -184,7 +186,7 @@ func (Plugin) PatchNode(
 		newBody = ical.EventToIcal(currentView.Event)
 	case "VTODO":
 		if currentView.Task == nil {
-			return nil, errors.ErrorWithStackf(
+			return nil, errors.BadRequestf(
 				"caldav plugin: PatchNode component mismatch: requested VTODO but node at %s is %s",
 				node, currentView.Component,
 			)
@@ -195,7 +197,7 @@ func (Plugin) PatchNode(
 		newBody = ical.TaskToIcal(currentView.Task)
 	case "VJOURNAL":
 		if currentView.Journal == nil {
-			return nil, errors.ErrorWithStackf(
+			return nil, errors.BadRequestf(
 				"caldav plugin: PatchNode component mismatch: requested VJOURNAL but node at %s is %s",
 				node, currentView.Component,
 			)
