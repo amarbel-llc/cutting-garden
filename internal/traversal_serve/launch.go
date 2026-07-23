@@ -57,6 +57,48 @@ type Session struct {
 func Launch(
 	ctx context.Context, argv []string, configTOML string,
 ) (*Session, error) {
+	session, err := LaunchWithoutInitialize(ctx, argv)
+	if err != nil {
+		return nil, err
+	}
+
+	initCtx, cancelInit := context.WithTimeout(ctx, announceTimeout)
+	defer cancelInit()
+
+	var init InitializeResult
+	err = session.Call(initCtx, MethodInitialize, InitializeParams{
+		ProtocolVersions: []string{SchemaV1},
+		ConfigTOML:       configTOML,
+	}, &init)
+	if err != nil {
+		_ = session.Close()
+		return nil, errors.Wrapf(err, "initialize %s", argv[0])
+	}
+
+	if init.Schema != SchemaV1 {
+		_ = session.Close()
+		return nil, errors.ErrorWithStackf(
+			"%s: initialize schema %q, want %q",
+			argv[0], init.Schema, SchemaV1,
+		)
+	}
+
+	session.Init = init
+
+	return session, nil
+}
+
+// LaunchWithoutInitialize performs the RFC 0013 bring-up UP TO the dial
+// — spawn, cookie, announce, version check — and returns a connected
+// Session on which initialize has NOT been issued (Session.Init is the
+// zero value). Production hosts use Launch, which layers the initialize
+// exchange and its validation on top; this half exists for the #186
+// conformance driver, where initialize is itself under test and its raw
+// result must reach the assertions rather than being consumed by
+// bring-up validation.
+func LaunchWithoutInitialize(
+	ctx context.Context, argv []string,
+) (*Session, error) {
 	if len(argv) == 0 {
 		return nil, errors.ErrorWithStackf("traversal launch: empty argv")
 	}
@@ -135,31 +177,7 @@ func Launch(
 	// (RFC 0013 §Framing).
 	peer := NewPeer(conn)
 
-	initCtx, cancelInit := context.WithTimeout(ctx, announceTimeout)
-	defer cancelInit()
-
-	var init InitializeResult
-	err = peer.Call(initCtx, MethodInitialize, InitializeParams{
-		ProtocolVersions: []string{SchemaV1},
-		ConfigTOML:       configTOML,
-	}, &init)
-	if err != nil {
-		_ = peer.Close()
-		abandon()
-		return nil, errors.Wrapf(err, "initialize %s", argv[0])
-	}
-
-	if init.Schema != SchemaV1 {
-		_ = peer.Close()
-		abandon()
-		return nil, errors.ErrorWithStackf(
-			"%s: initialize schema %q, want %q",
-			argv[0], init.Schema, SchemaV1,
-		)
-	}
-
 	return &Session{
-		Init:  init,
 		cmd:   cmd,
 		stdin: stdin,
 		peer:  peer,
