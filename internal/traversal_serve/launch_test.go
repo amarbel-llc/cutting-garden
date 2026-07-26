@@ -25,6 +25,11 @@ const testPeerModeEnv = "CG_TRAVERSAL_SERVE_TESTPEER"
 // initialize response, so the file exists by the time Launch returns).
 const testPeerConfigOutEnv = "CG_TRAVERSAL_SERVE_TESTPEER_CONFIG_OUT"
 
+// testPeerMadderEnvOutEnv names a file the serve-mode peer writes its
+// INHERITED MADDER_XDG_USER_LOCATION_ONLY value to at startup, so a test
+// can assert Launch set it in the spawned env (cutting-garden#131).
+const testPeerMadderEnvOutEnv = "CG_TRAVERSAL_SERVE_TESTPEER_MADDER_ENV_OUT"
+
 func TestMain(m *testing.M) {
 	switch mode := os.Getenv(testPeerModeEnv); mode {
 	case "":
@@ -53,6 +58,15 @@ func TestMain(m *testing.M) {
 // accept) around Serve, with the stdin-EOF lifecycle signal — the same
 // structure the Task 7 testpeer packages for out-of-process lanes.
 func runTestPeerServe() int {
+	// Record the inherited MADDER_XDG_USER_LOCATION_ONLY before anything
+	// else, so a test can prove Launch injected it into the spawned env
+	// (cutting-garden#131). Done at startup, before the blocking Serve.
+	if out := os.Getenv(testPeerMadderEnvOutEnv); out != "" {
+		_ = os.WriteFile(
+			out, []byte(os.Getenv("MADDER_XDG_USER_LOCATION_ONLY")), 0o600,
+		)
+	}
+
 	cookie, err := CookieFromEnv()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -261,6 +275,43 @@ func TestLaunchConfigTOMLPassthrough(t *testing.T) {
 	}
 	if string(received) != configTOML {
 		t.Errorf("ConfigApply received %q, want %q", received, configTOML)
+	}
+}
+
+// TestLaunchInjectsMadderXDGUserLocationOnly pins the EXDEV fix
+// (cutting-garden#131): Launch must set MADDER_XDG_USER_LOCATION_ONLY=1
+// in the spawned plugin's environment, so the plugin's madder resolves
+// its blob-store cache from its OWN HOME/XDG rather than walking up an
+// inherited working directory into the host's `.madder` (which, on a
+// bind-mounted host, makes every plugin blob write EXDEV silently). The
+// serve-mode peer records its inherited value; it must be "1".
+func TestLaunchInjectsMadderXDGUserLocationOnly(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	// Ensure the test process itself does NOT carry the var, so the
+	// value the child sees comes from Launch's append alone (glibc
+	// getenv returns the first occurrence; os.Environ() would win over
+	// the appended one). The var's correct default IS unset.
+	os.Unsetenv("MADDER_XDG_USER_LOCATION_ONLY")
+
+	envOut := filepath.Join(t.TempDir(), "madder-env.txt")
+	t.Setenv(testPeerMadderEnvOutEnv, envOut)
+
+	sess, err := launchSelf(t, ctx, "serve", "")
+	if err != nil {
+		t.Fatalf("Launch: %v", err)
+	}
+	defer func() { _ = sess.Close() }()
+
+	got, err := os.ReadFile(envOut)
+	if err != nil {
+		t.Fatalf("read madder-env output: %v", err)
+	}
+	if string(got) != "1" {
+		t.Errorf(
+			"spawned MADDER_XDG_USER_LOCATION_ONLY = %q, want \"1\"", got,
+		)
 	}
 }
 

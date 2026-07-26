@@ -109,7 +109,33 @@ func LaunchWithoutInitialize(
 	}
 
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
-	cmd.Env = append(os.Environ(), CookieEnv+"="+cookie)
+	// The plugin inherits this process's environment AND working
+	// directory (no cmd.Dir). madder resolves a blob-store write's
+	// temp-staging dir by walking UP the working directory for a
+	// `.madder` (git-`.git` style), falling back to the HOME-derived XDG
+	// location only when the walk finds nothing. A spawned wire plugin
+	// manages its OWN store (a newsblur/fj plugin's blobs live under its
+	// own HOME), so an inherited working directory it never chose must
+	// NOT decide its cache root: on a host that runs cutting-garden under
+	// one state dir and the plugin's store under another (systemd
+	// ReadWritePaths bind mounts), the walk finds the HOST's `.madder`
+	// and every plugin blob write then hardlinks temp→dest ACROSS the
+	// mount boundary and fails EXDEV, silently (circus#131).
+	// MADDER_XDG_USER_LOCATION_ONLY disables the walk-up so the plugin
+	// uses its own HOME/XDG location — same mount as its store, so the
+	// hardlink stays intra-device. This is the same var cutting-garden's
+	// own tests and mcp.bats already set to keep the walk-up off.
+	//
+	// Scoped to this transport deliberately: the capture-plugin spawns
+	// (internal/capture_serve, internal/capture_wire) share this
+	// inherited-cwd shape but pipe blobs to the HOST's store, not a
+	// self-store, so the same var there could redirect cutting-garden's
+	// OWN blob resolution — a separate question, not folded in here.
+	cmd.Env = append(
+		os.Environ(),
+		CookieEnv+"="+cookie,
+		"MADDER_XDG_USER_LOCATION_ONLY=1",
+	)
 	cmd.Stderr = os.Stderr
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
