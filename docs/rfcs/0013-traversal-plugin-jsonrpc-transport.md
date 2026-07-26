@@ -679,6 +679,39 @@ every capability advertised. A non-Go implementation substitutes its
 own binary and MUST pass the same suite unmodified — the suite is the
 cross-implementation ratification gate (RFC 0008 precedent).
 
+### Two levels: launch contract vs. method semantics
+
+The bats cases split along what they can assert from a shell:
+
+- **Launch contract** (the `test_portable_*` cookie/announce/rendezvous
+  cases): what a peer must do to come up — driven directly from bash,
+  because it is observable in the spawn, the announce line, and the
+  exit.
+- **Method semantics** (`node.patch`'s `applied`, caller-fault vs
+  plugin-fault error codes, `facets.counts`' `by_container` invariants):
+  driven by the packaged **conformance driver**
+  (`cutting-garden-conformance-traversal`, `CG_CONFORMANCE_TRAVERSAL`;
+  cutting-garden#186), because they need a full JSON-RPC session that a
+  brittle shell client should not attempt. The driver launches a peer,
+  drives a per-peer **manifest** (patch bodies are plugin-defined, so
+  the protocol cannot supply them generically), asserts against the peer's
+  RAW wire bytes, and emits TAP.
+
+The driver reads raw responses ON PURPOSE — it sits BELOW the host's
+`WirePlugin` adapter, whose boundary normalization (e.g. the §Facets
+`by_container` re-sort/cap/filter) would repair a peer's non-conformance
+before an adapter-mediated check could see it. A driver is only as
+trustworthy as its ability to FAIL: the lane pins that with a
+deliberately-wrong manifest whose run MUST report a failing point.
+
+A non-Go peer runs BOTH levels against its own binary — the launch cases
+via `CG_TEST_TRAVERSAL_SERVE` substitution, the method-semantics driver
+via `nix run .#conformance-traversal -- --manifest <peer>.toml` — and
+supplies its own manifest for the plugin-defined inputs. This is the
+mechanism by which method-level divergence (the kind found by hand
+across three implementations in July 2026 — cutting-garden#182/#185/#173)
+becomes machine-checkable rather than rediscovered.
+
 ### Covered Requirements
 
 | Requirement | Test file | Description |
@@ -690,6 +723,10 @@ cross-implementation ratification gate (RFC 0008 precedent).
 | §initialize: schemes echo validated | transport go tests | misconfigured stanza rejected |
 | §nodes.list / roots.list / leaf.read round trips | transport go tests | fixed-tree equality |
 | §facets: counts/version/labels parity + `ok:false` fallback | transport go tests | against RFC 0012 fixtures |
+| §Mutation: `node.patch` `applied` tri-state (present set / present-empty / omitted) | conformance driver | manifest recognized / unrecognized-only / wrong-typed patch bodies |
+| §Errors: caller-fault `-32602` vs unadvertised-method `-32601` | conformance driver | malformed URI param; a name no revision defines |
+| §Facets: `by_container` RAW invariants (count>0, sorted, capped) + descend-target reachability (RFC 0012 §13) | conformance driver | pre-normalization; re-issue the filter per entry |
+| Driver self-test: a deliberately-wrong manifest MUST fail | conformance driver | the "a passing driver ratifies nothing" acceptance |
 | Indistinguishability: `list` and `mcp` output over the wire peer equals the same tree served by a linked in-process plugin | go end-to-end | the conformance bar |
 
 ## Compatibility

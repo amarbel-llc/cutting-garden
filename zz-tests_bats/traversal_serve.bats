@@ -14,27 +14,30 @@ teardown() {
 
 # bats file_tags=traversal_serve
 
-# RFC 0013 §Conformance Testing — the launch-pattern half of the
-# traversal-plugin transport gate. The suite is split in two sections:
+# RFC 0013 §Conformance Testing — the portable half of the
+# traversal-plugin transport gate. The suite is split in three sections:
 #
-#   PORTABLE (bats test_tags=portable, names test_portable_*): pure
-#   RFC 0013 launch-contract cases every conformant `traversal-serve`
+#   PORTABLE — LAUNCH (bats test_tags=portable, names
+#   test_portable_*, cookie/announce/rendezvous): pure RFC 0013
+#   launch-contract cases every conformant `traversal-serve`
 #   implementation MUST pass. A non-Go peer (e.g. a Rust fj-cg)
 #   substitutes its own binary via CG_TEST_TRAVERSAL_SERVE (bats-emo
-#   require_bin) and runs these unmodified — this file is the
-#   cross-implementation ratification lane.
+#   require_bin) and runs these unmodified.
+#
+#   PORTABLE — CONFORMANCE (test_portable_conformance_*): the
+#   method-semantics half, driven by the compiled conformance DRIVER
+#   binary (CG_CONFORMANCE_TRAVERSAL, cutting-garden#186) rather than a
+#   shell JSON-RPC client. This is the "env var the flake sets" escape
+#   the TESTPEER note below anticipated: the driver owns the AF_UNIX
+#   session + half-close choreography a shell can't do well, so bats
+#   only runs it and checks the TAP verdict. It drives the same
+#   CG_TEST_TRAVERSAL_SERVE peer.
 #
 #   TESTPEER (would be test_tags=testpeer, names test_testpeer_*):
-#   cases pinned to the Go test peer's fixed cgtest tree. Deliberately
-#   EMPTY in v1: exercising the NDJSON JSON-RPC session from bash needs
-#   an AF_UNIX stream client (socat/nc -U, not in this lane) plus
-#   half-close choreography that fights the stdin-EOF lifecycle — a
-#   brittle shell JSON-RPC client adds nothing, because RFC 0013
-#   §Covered Requirements assigns every method-level and tree-content
-#   row to the Go transport tests and the indistinguishability
-#   end-to-end (internal/traversal_serve). If a shell-honest tree case
-#   ever appears, gate it on an env var the flake sets for the in-repo
-#   run so a substituted binary skips it.
+#   fixed-tree cases driven from BASH directly. Still deliberately
+#   EMPTY: a raw shell JSON-RPC client adds nothing over the driver
+#   above and the Go indistinguishability end-to-end
+#   (internal/traversal_serve), which own the tree-content rows.
 #
 # Protocol facts pinned here (RFC 0013 §Launch and rendezvous):
 # cookie env TRAVERSAL_PLUGIN_COOKIE; one stdout announce line
@@ -176,3 +179,97 @@ function test_portable_rendezvous_dir_0700_and_removed_on_exit { # @test
 # the file banner. Tree conformance is pinned by the Go
 # indistinguishability end-to-end (internal/traversal_serve).
 # ---------------------------------------------------------------------
+
+# ---------------------------------------------------------------------
+# CONFORMANCE — session-level METHOD SEMANTICS, driven by the driver
+# BINARY (cutting-garden#186). This is the "shell-honest tree case" the
+# file banner anticipated: rather than a brittle shell JSON-RPC client,
+# a compiled driver (CG_CONFORMANCE_TRAVERSAL) speaks the whole session
+# and emits TAP, so bats only runs it and checks the verdict. It drives
+# the SAME CG_TEST_TRAVERSAL_SERVE peer the launch cases use — the two
+# together are the full lane a substituted non-Go peer runs (that peer
+# supplies its own manifest; this case pins the in-tree testpeer).
+# ---------------------------------------------------------------------
+
+# bats test_tags=portable
+function test_portable_conformance_driver_passes_testpeer { # @test
+  require_bin CG_TEST_TRAVERSAL_SERVE cutting-garden-test-traversal-serve ||
+    skip "cutting-garden-test-traversal-serve not available in this lane"
+  require_bin CG_CONFORMANCE_TRAVERSAL cutting-garden-conformance-traversal ||
+    skip "cutting-garden-conformance-traversal not available in this lane"
+
+  # The testpeer's manifest. command is the ONLY runtime-dependent field
+  # (the peer's built path); the rest is the fixed cgtest tree's shape.
+  # patch_unrecognized_only.body is empty on purpose: the testpeer merges
+  # every patch key, so no unrecognized field is constructible and the
+  # driver SKIPs that point rather than faking it.
+  local manifest="$BATS_TEST_TMPDIR/testpeer.manifest.toml"
+  cat >"$manifest" <<EOF
+command = ["$CG_TEST_TRAVERSAL_SERVE"]
+schemes = ["cgtest"]
+writable_container = "cgtest://fixture/box"
+
+[create]
+type = "cgtest-obj-v1"
+body = "conformance probe body"
+
+[patch_recognized]
+body = "{\"note\":\"patched\"}"
+expect_applied = ["note"]
+
+[patch_unrecognized_only]
+body = ""
+
+[patch_wrong_typed]
+body = "not json"
+
+[facet_container]
+uri = "cgtest://fixture/box"
+filter = "state=open"
+EOF
+
+  run --separate-stderr "$CG_CONFORMANCE_TRAVERSAL" --manifest "$manifest"
+  assert_success
+  # Substring, not --regexp with ^: bats matches a regex against the
+  # whole multi-line output as ONE string (no per-line/multiline flag),
+  # so `^not ok` would never match a mid-output failure — a false-safe
+  # assertion. --partial 'not ok' catches a failing point anywhere.
+  assert_output --partial '1..10'
+  assert_output --partial 'ok 1 - initialize'
+  refute_output --partial 'not ok'
+}
+
+# bats test_tags=portable
+function test_portable_conformance_driver_fails_a_wrong_expectation { # @test
+  # The driver's own acceptance property: it MUST be able to fail. A
+  # manifest asserting an applied set the peer will not report has to
+  # produce a non-ok point and a nonzero exit — a driver that passes
+  # everything ratifies nothing (cutting-garden#186).
+  require_bin CG_TEST_TRAVERSAL_SERVE cutting-garden-test-traversal-serve ||
+    skip "cutting-garden-test-traversal-serve not available in this lane"
+  require_bin CG_CONFORMANCE_TRAVERSAL cutting-garden-conformance-traversal ||
+    skip "cutting-garden-conformance-traversal not available in this lane"
+
+  local manifest="$BATS_TEST_TMPDIR/wrong.manifest.toml"
+  cat >"$manifest" <<EOF
+command = ["$CG_TEST_TRAVERSAL_SERVE"]
+schemes = ["cgtest"]
+writable_container = "cgtest://fixture/box"
+
+[create]
+type = "cgtest-obj-v1"
+body = "conformance probe body"
+
+[patch_recognized]
+body = "{\"note\":\"patched\"}"
+expect_applied = ["this-key-is-never-reported"]
+
+[patch_wrong_typed]
+body = "not json"
+EOF
+
+  run --separate-stderr "$CG_CONFORMANCE_TRAVERSAL" --manifest "$manifest"
+  assert_failure
+  assert_output --partial \
+    'not ok 5 - node.patch: recognized fields reported applied'
+}

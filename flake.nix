@@ -578,6 +578,29 @@
           meta.mainProgram = "cutting-garden-test-traversal-serve";
         };
 
+        # cutting-garden-conformance-traversal is the RFC 0013 SESSION-LEVEL
+        # conformance driver (internal/traversal_conformance via its cmd/):
+        # it launches any traversal peer, drives the method-semantics case
+        # list over raw NDJSON, and emits TAP (cutting-garden#186). Unlike
+        # cutting-garden-test-traversal-serve (which IS a peer, the
+        # launch-contract gate's subject), this DRIVES a peer — the two are
+        # complementary halves of the conformance lane. Exposed as a package
+        # (so an external peer runs `nix run .#conformance-traversal --
+        # --manifest peer.toml` against its own binary) AND injected into the
+        # bats lane; NOT shipped in release artifacts.
+        cuttingGardenConformanceTraversal = pkgs.buildGoApplication {
+          pname = "cutting-garden-conformance-traversal";
+          version = cgVersion;
+          src = ./.;
+          pwd = ./.;
+          modules = ./gomod2nix.toml;
+          inherit goFlakeInputs;
+          subPackages = [ "cmd/cutting-garden-conformance-traversal" ];
+          go = pkgs.go_1_26;
+          GOTOOLCHAIN = "local";
+          meta.mainProgram = "cutting-garden-conformance-traversal";
+        };
+
         # cutting-garden-clown-plugin stages a clown plugin (see
         # clown-plugin-protocol(7) / clown-json(5)) that exposes
         # cutting-garden's capturable trees as MCP resources via
@@ -689,6 +712,13 @@
           # Clown plugin closure for eng's mkCircus (cutting-garden#101).
           cutting-garden-clown-plugin = cuttingGardenClownPlugin;
 
+          # The RFC 0013 session-level conformance driver
+          # (cutting-garden#186), exposed so an external peer runs
+          # `nix run .#conformance-traversal -- --manifest peer.toml`
+          # against its own binary — the cross-implementation ratification
+          # path the bats launch-contract lane cannot reach.
+          conformance-traversal = cuttingGardenConformanceTraversal;
+
           # The store-pinned `conformist --staged --exit-zero-on-fix` hook from
           # the CODEGEN eval (formatters + tommy + dagnabit-facade lanes, no
           # presets.eng). On the devShell PATH as `conformist-pre-commit`; the
@@ -784,6 +814,13 @@
               CG_TEST_TRAVERSAL_SERVE = {
                 base = cuttingGardenTestTraversalServe;
                 name = "cutting-garden-test-traversal-serve";
+              };
+              # The RFC 0013 session-level conformance DRIVER backing the
+              # method-semantics case in zz-tests_bats/traversal_serve.bats
+              # (cutting-garden#186).
+              CG_CONFORMANCE_TRAVERSAL = {
+                base = cuttingGardenConformanceTraversal;
+                name = "cutting-garden-conformance-traversal";
               };
             };
             batsLibPath = [ bats.packages.${system}.bats-libs.batsLibPath ];

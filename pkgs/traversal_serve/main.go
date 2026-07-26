@@ -306,6 +306,16 @@ var FacetValueViewFrom = internal.FacetValueViewFrom
 // (EOF on it is a shutdown signal, sent by Close).
 var Launch = internal.Launch
 
+// LaunchWithoutInitialize performs the RFC 0013 bring-up UP TO the dial
+// — spawn, cookie, announce, version check — and returns a connected
+// Session on which initialize has NOT been issued (Session.Init is the
+// zero value). Production hosts use Launch, which layers the initialize
+// exchange and its validation on top; this half exists for the #186
+// conformance driver, where initialize is itself under test and its raw
+// result must reach the assertions rather than being consumed by
+// bring-up validation.
+var LaunchWithoutInitialize = internal.LaunchWithoutInitialize
+
 // ListenRendezvous binds a fresh unix stream rendezvous socket in a new
 // 0700 temp directory at a path short enough for sun_path. It prefers
 // $XDG_RUNTIME_DIR (user-private tmpfs) and falls back to /tmp; a base

@@ -536,6 +536,45 @@ debug-ytdlp-channel-list URL='https://www.youtube.com/@YouTube/videos' LIMIT='10
 debug-viewport-demo:
     nix develop --command go run ./cmd/capture-viewport-demo
 
+# Run the RFC 0013 conformance driver (cutting-garden#186) against the
+# go-built testpeer over a real socket, exactly as the bats
+# CONFORMANCE case does but via `go build` (fast) and with the peer
+# binary path substituted into the in-tree testpeer manifest. The tight
+# dev-loop for the driver<->real-peer interaction the Go driver_test's
+# re-exec pattern does not cover. Exits 0/1 with the TAP on stdout.
+[group('debug')]
+debug-conformance-traversal:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    tmp="$(mktemp -d)"
+    trap 'rm -rf "$tmp"' EXIT
+    nix develop --command go build -o "$tmp/peer" ./cmd/cutting-garden-test-traversal-serve
+    nix develop --command go build -o "$tmp/driver" ./cmd/cutting-garden-conformance-traversal
+    cat >"$tmp/m.toml" <<EOF
+    command = ["$tmp/peer"]
+    schemes = ["cgtest"]
+    writable_container = "cgtest://fixture/box"
+
+    [create]
+    type = "cgtest-obj-v1"
+    body = "conformance probe body"
+
+    [patch_recognized]
+    body = "{\"note\":\"patched\"}"
+    expect_applied = ["note"]
+
+    [patch_unrecognized_only]
+    body = ""
+
+    [patch_wrong_typed]
+    body = "not json"
+
+    [facet_container]
+    uri = "cgtest://fixture/box"
+    filter = "state=open"
+    EOF
+    "$tmp/driver" --manifest "$tmp/m.toml"
+
 # Run one package's go tests (optionally one test via RUN) without the
 # full `just test` lane — the tight agent dev-loop while iterating on a
 # single package.
