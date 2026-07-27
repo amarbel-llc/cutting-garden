@@ -24,6 +24,13 @@ type mutatorResolveFunc func(
 	uriStr string,
 ) (*url.URL, cutting_garden_plugins.NodeMutator, error)
 
+// bulkResolveFunc resolves a URI string to its BulkMutator — the shape of
+// command_components.ResolveBulkMutatorPlugin, a field on Tools so tests
+// substitute a registry-free fake (RFC 0017, cutting-garden#191).
+type bulkResolveFunc func(
+	uriStr string,
+) (*url.URL, cutting_garden_plugins.BulkMutator, error)
+
 // resourceReader is the read surface the read_node / list_nodes tools wrap —
 // ReadNode, the selector-aware read the resources/read MCP method serves at
 // its default (*Resources satisfies it). Exposing the read tree as tools
@@ -64,7 +71,10 @@ type Tools struct {
 	// (cutting-garden#143): create_node dispatches to CreateChild for
 	// types the plugin declares ServerAssignedIdentity.
 	resolveCreator creatorResolveFunc
-	reader         resourceReader
+	// resolveBulk resolves the BulkMutator capability (RFC 0017): the
+	// bulk_mutate tool's multi-node write surface.
+	resolveBulk bulkResolveFunc
+	reader      resourceReader
 	// facets is the read_facets tool's read surface (cutting-garden#151).
 	facets facetReader
 	// resolveLister resolves the RootLister capability directly
@@ -97,10 +107,26 @@ func newTools(roots []*url.URL, reader readSurface) *Tools {
 		roots:          roots,
 		resolve:        command_components.ResolveNodeMutatorPlugin,
 		resolveCreator: command_components.ResolveContainerCreatorPlugin,
+		resolveBulk:    command_components.ResolveBulkMutatorPlugin,
 		reader:         reader,
 		facets:         reader,
 		resolveLister:  command_components.ResolveRootListerPlugin,
 	}
+}
+
+// hasBulkMutator reports whether any configured root's plugin implements
+// BulkMutator, so the bulk_mutate tool is advertised only where it applies
+// (RFC 0017).
+func (t *Tools) hasBulkMutator() bool {
+	if t.resolveBulk == nil {
+		return false
+	}
+	for _, r := range t.roots {
+		if _, _, err := t.resolveBulk(r.String()); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // hasMutator reports whether any configured root's plugin can mutate —
@@ -136,6 +162,20 @@ const (
 		`"body":{"type":"string","description":"a JSON object with only the fields to change; absent fields are left untouched"}}}`
 	deleteNodeSchema = `{"type":"object","required":["uri"],` +
 		`"properties":{"uri":{"type":"string","description":"the node URI to delete"}}}`
+	bulkMutateSchema = `{"type":"object","properties":{` +
+		`"atomicity":{"type":"string","enum":["best-effort","atomic"],"description":"completion mode (optional, default best-effort): best-effort applies each node independently and reports per-node results; atomic is all-or-nothing and is rejected unless the plugin supports it"},` +
+		`"ops":{"type":"array","description":"an explicit changeset: {kind,uri,body,type} ops on distinct nodes applied together. Exactly ONE of ops or sweep.","items":{"type":"object","required":["kind","uri"],"properties":{` +
+		`"kind":{"type":"string","enum":["create","put","patch","delete"]},` +
+		`"uri":{"type":"string"},` +
+		`"body":{"type":"string","description":"the object/patch body (omit for delete)"},` +
+		`"type":{"type":"string","description":"the node type tag (only for create)"}}}},` +
+		`"sweep":{"type":"object","description":"a predicate sweep: apply one op to every node under root matching filter. Exactly ONE of ops or sweep.","required":["root","op"],"properties":{` +
+		`"root":{"type":"string","description":"the container URI to sweep under"},` +
+		`"filter":{"type":"string","description":"comma-separated dimension=value predicates (AND-composed); empty matches every node under root"},` +
+		`"op":{"type":"object","required":["kind"],"properties":{` +
+		`"kind":{"type":"string","enum":["put","patch","delete"],"description":"the per-match op (create is invalid in a sweep)"},` +
+		`"body":{"type":"string"},` +
+		`"type":{"type":"string"}}}}}}}`
 	describeNodeTypesSchema = `{"type":"object","properties":{}}`
 	readNodeSchema          = `{"type":"object","required":["uri"],` +
 		`"properties":{"uri":{"type":"string","description":"the node URI to read (a leaf returns its parsed fields + a raw-bytes link; a container returns its child listing, plus its own body when it has one)"},` +
@@ -161,6 +201,9 @@ func (t *Tools) toolDefs() []protocol.ToolV1 {
 	defs := readToolDefs()
 	if t.hasMutator() {
 		defs = append(defs, cudToolDefs()...)
+	}
+	if t.hasBulkMutator() {
+		defs = append(defs, bulkMutateToolDef())
 	}
 	return defs
 }
@@ -242,6 +285,25 @@ func readToolDefs() []protocol.ToolV1 {
 			InputSchema: json.RawMessage(readFacetsSchema),
 			Annotations: annotationFor(mcp_tool_perms.ToolReadFacets),
 		},
+	}
+}
+
+// bulkMutateToolDef is the RFC 0017 multi-node write tool
+// (cutting-garden#191): the agent-facing surface that collapses N
+// single-node writes into one call.
+func bulkMutateToolDef() protocol.ToolV1 {
+	return protocol.ToolV1{
+		Name: mcp_tool_perms.ToolBulkMutate,
+		Description: "Apply MANY mutations in ONE call (RFC 0017): either an " +
+			"explicit changeset (ops: a list of create/put/patch/delete on " +
+			"distinct node URIs) or a predicate sweep (apply one op to every " +
+			"node under a container matching a filter). Best-effort by default — " +
+			"each node applies independently and the result reports applied / " +
+			"patchedNothing / failed per node, so a partial failure keeps the " +
+			"successes. Use this instead of N separate patch_node calls (e.g. " +
+			"tagging many stories at once). All targets must share one scheme.",
+		InputSchema: json.RawMessage(bulkMutateSchema),
+		Annotations: annotationFor(mcp_tool_perms.ToolBulkMutate),
 	}
 }
 
@@ -482,6 +544,9 @@ func (t *Tools) call(
 		}
 		return "deleted " + in.URI, nil
 
+	case mcp_tool_perms.ToolBulkMutate:
+		return t.callBulkMutate(ctx, args)
+
 	case mcp_tool_perms.ToolDescribeNodeTypes:
 		body, err := json.MarshalIndent(
 			collectSchema(cutting_garden_plugins.RegisteredPlugins()), "", "  ",
@@ -629,6 +694,149 @@ func patchOutcome(uri string, applied []string) (string, error) {
 	return fmt.Sprintf(
 		"patched %s (applied: %s)", uri, strings.Join(applied, ", "),
 	), nil
+}
+
+// callBulkMutate handles the bulk_mutate tool (RFC 0017): it builds the
+// domain BulkRequest from the ops/sweep JSON, resolves the ONE BulkMutator
+// plugin from the first targeted URI (a bulk call goes to a single
+// plugin), validates the shape, dispatches, and renders the per-node
+// result. atomicity defaults to best-effort at this tool layer (never in
+// the Go zero value, RFC 0017 §Atomicity).
+func (t *Tools) callBulkMutate(
+	ctx context.Context, args json.RawMessage,
+) (string, error) {
+	var in struct {
+		Atomicity string `json:"atomicity"`
+		Ops       []struct {
+			Kind string `json:"kind"`
+			URI  string `json:"uri"`
+			Body string `json:"body"`
+			Type string `json:"type"`
+		} `json:"ops"`
+		Sweep *struct {
+			Root   string `json:"root"`
+			Filter string `json:"filter"`
+			Op     struct {
+				Kind string `json:"kind"`
+				Body string `json:"body"`
+				Type string `json:"type"`
+			} `json:"op"`
+		} `json:"sweep"`
+	}
+	if err := json.Unmarshal(args, &in); err != nil {
+		return "", errors.Wrap(err)
+	}
+
+	atomicity := cutting_garden_plugins.BulkAtomicity(in.Atomicity)
+	if in.Atomicity == "" {
+		atomicity = cutting_garden_plugins.BulkBestEffort
+	}
+	req := cutting_garden_plugins.BulkRequest{Atomicity: atomicity}
+
+	var resolveURI string
+
+	switch {
+	case in.Sweep != nil:
+		filter, err := cutting_garden_plugins.ParseFacetFilter(in.Sweep.Filter)
+		if err != nil {
+			return "", err
+		}
+		root, err := url.Parse(in.Sweep.Root)
+		if err != nil {
+			return "", errors.BadRequestf(
+				"bulk_mutate: sweep.root %q: %s", in.Sweep.Root, err,
+			)
+		}
+		req.Sweep = &cutting_garden_plugins.BulkSweep{
+			Root:   root,
+			Filter: filter,
+			Op: cutting_garden_plugins.BulkOp{
+				Kind: cutting_garden_plugins.BulkOpKind(in.Sweep.Op.Kind),
+				Body: []byte(in.Sweep.Op.Body),
+				Type: in.Sweep.Op.Type,
+			},
+		}
+		resolveURI = in.Sweep.Root
+
+	default:
+		req.Ops = make([]cutting_garden_plugins.BulkOp, 0, len(in.Ops))
+		for i, op := range in.Ops {
+			uri, err := url.Parse(op.URI)
+			if err != nil {
+				return "", errors.BadRequestf(
+					"bulk_mutate: ops[%d] uri %q: %s", i, op.URI, err,
+				)
+			}
+			req.Ops = append(req.Ops, cutting_garden_plugins.BulkOp{
+				Kind: cutting_garden_plugins.BulkOpKind(op.Kind),
+				URI:  uri,
+				Body: []byte(op.Body),
+				Type: op.Type,
+			})
+			if resolveURI == "" {
+				resolveURI = op.URI
+			}
+		}
+	}
+
+	if err := req.Validate(); err != nil {
+		return "", err
+	}
+
+	_, mutator, err := t.resolveBulk(resolveURI)
+	if err != nil {
+		return "", err
+	}
+
+	result, err := mutator.BulkMutate(ctx, req)
+	if err != nil {
+		return "", err
+	}
+
+	return renderBulkResult(result), nil
+}
+
+// renderBulkResult projects a BulkResult to the tool's JSON: applied is
+// always present (an empty array when nothing applied); patchedNothing,
+// failed, and atomic are omitted when empty/false.
+func renderBulkResult(result cutting_garden_plugins.BulkResult) string {
+	type failureView struct {
+		URI string `json:"uri"`
+		Err string `json:"err"`
+	}
+
+	applied := make([]string, 0, len(result.AppliedNodes))
+	for _, uri := range result.AppliedNodes {
+		if uri != nil {
+			applied = append(applied, uri.String())
+		}
+	}
+
+	out := struct {
+		Applied        []string      `json:"applied"`
+		PatchedNothing []string      `json:"patchedNothing,omitempty"`
+		Failed         []failureView `json:"failed,omitempty"`
+		Atomic         bool          `json:"atomic,omitempty"`
+	}{Applied: applied, Atomic: result.Atomic}
+
+	for _, uri := range result.PatchedNothing {
+		if uri != nil {
+			out.PatchedNothing = append(out.PatchedNothing, uri.String())
+		}
+	}
+	for _, failure := range result.Failed {
+		view := failureView{Err: failure.Err}
+		if failure.URI != nil {
+			view.URI = failure.URI.String()
+		}
+		out.Failed = append(out.Failed, view)
+	}
+
+	body, err := json.MarshalIndent(out, "", "  ")
+	if err != nil {
+		return fmt.Sprintf("bulk_mutate: %d applied", len(applied))
+	}
+	return string(body)
 }
 
 // filteredListingView is list_nodes(uri)'s output shape whenever a filter

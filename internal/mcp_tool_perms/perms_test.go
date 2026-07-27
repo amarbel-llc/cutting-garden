@@ -3,7 +3,7 @@ package mcp_tool_perms
 import "testing"
 
 func TestClassify_CUDToolsAreDestructive(t *testing.T) {
-	for _, tool := range []string{ToolCreateNode, ToolPutNode, ToolPatchNode, ToolDeleteNode} {
+	for _, tool := range []string{ToolCreateNode, ToolPutNode, ToolPatchNode, ToolDeleteNode, ToolBulkMutate} {
 		class, ok := Classify(tool)
 		if !ok {
 			t.Errorf("%q should be classified", tool)

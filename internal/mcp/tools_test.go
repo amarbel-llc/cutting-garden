@@ -72,6 +72,104 @@ func fakeMutatorResolve(m *fakeMutator) mutatorResolveFunc {
 	}
 }
 
+// fakeBulkMutator is a registry-free BulkMutator for the bulk_mutate tool
+// test: it records the request it received and returns a canned result.
+type fakeBulkMutator struct {
+	gotReq cutting_garden_plugins.BulkRequest
+	result cutting_garden_plugins.BulkResult
+}
+
+func (fakeBulkMutator) Schemes() []string { return []string{"faketest"} }
+func (fakeBulkMutator) TypeTag() string   { return "fake-bulk-v1" }
+func (fakeBulkMutator) Types() []cutting_garden_plugins.NodeType {
+	return nil
+}
+
+func (fakeBulkMutator) ListRoots(
+	context.Context, *url.URL,
+) ([]cutting_garden_plugins.Node, error) {
+	return nil, nil
+}
+
+func (f *fakeBulkMutator) BulkMutate(
+	_ context.Context, req cutting_garden_plugins.BulkRequest,
+) (cutting_garden_plugins.BulkResult, error) {
+	f.gotReq = req
+	return f.result, nil
+}
+
+func fakeBulkResolve(bm *fakeBulkMutator) bulkResolveFunc {
+	return func(uriStr string) (
+		*url.URL, cutting_garden_plugins.BulkMutator, error,
+	) {
+		u, err := url.Parse(uriStr)
+		if err != nil {
+			return nil, nil, err
+		}
+		if u.Scheme != "faketest" {
+			return nil, nil, errors.ErrorWithStackf(
+				"unknown scheme %q", u.Scheme,
+			)
+		}
+		return u, bm, nil
+	}
+}
+
+func TestCallTool_BulkMutateChangeset(t *testing.T) {
+	bm := &fakeBulkMutator{}
+	applied, _ := url.Parse("faketest://h/a.ics")
+	bm.result = cutting_garden_plugins.BulkResult{
+		AppliedNodes: []*url.URL{applied},
+	}
+	tools := newFakeTools(t, &fakeMutator{}, "faketest://h/")
+	tools.resolveBulk = fakeBulkResolve(bm)
+
+	res, err := tools.CallTool(context.Background(), "bulk_mutate",
+		json.RawMessage(`{"ops":[`+
+			`{"kind":"patch","uri":"faketest://h/a.ics","body":"{\"x\":1}"},`+
+			`{"kind":"delete","uri":"faketest://h/b.ics"}]}`))
+	if err != nil {
+		t.Fatalf("transport error: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("bulk_mutate errored: %+v", res.Content)
+	}
+
+	// atomicity defaulted to best-effort at the tool layer; two ops decoded.
+	if bm.gotReq.Atomicity != cutting_garden_plugins.BulkBestEffort {
+		t.Errorf("atomicity = %q, want best-effort", bm.gotReq.Atomicity)
+	}
+	if len(bm.gotReq.Ops) != 2 ||
+		bm.gotReq.Ops[0].Kind != cutting_garden_plugins.BulkPatch ||
+		bm.gotReq.Ops[1].Kind != cutting_garden_plugins.BulkDelete {
+		t.Fatalf("ops = %+v", bm.gotReq.Ops)
+	}
+	if string(bm.gotReq.Ops[0].Body) != `{"x":1}` {
+		t.Errorf("op body = %q", bm.gotReq.Ops[0].Body)
+	}
+	if !strings.Contains(res.Content[0].Text, "faketest://h/a.ics") {
+		t.Errorf("result missing applied node: %q", res.Content[0].Text)
+	}
+}
+
+// TestListTools_BulkMutateAdvertisedWhenCapable pins that bulk_mutate rides
+// the tool list only when a root's plugin implements BulkMutator.
+func TestListTools_BulkMutateAdvertisedWhenCapable(t *testing.T) {
+	tools := newFakeTools(t, &fakeMutator{}, "faketest://h/")
+	tools.resolveBulk = fakeBulkResolve(&fakeBulkMutator{})
+
+	list, _ := tools.ListTools(context.Background())
+	found := false
+	for _, tl := range list {
+		if tl.Name == "bulk_mutate" {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("bulk_mutate not advertised despite a BulkMutator root")
+	}
+}
+
 func newFakeTools(t *testing.T, m *fakeMutator, rootStrs ...string) *Tools {
 	t.Helper()
 	roots := make([]*url.URL, 0, len(rootStrs))

@@ -31,6 +31,7 @@ const (
 	ToolPutNode           = "put_node"
 	ToolPatchNode         = "patch_node"
 	ToolDeleteNode        = "delete_node"
+	ToolBulkMutate        = "bulk_mutate"
 	ToolDescribeNodeTypes = "describe_node_types"
 	ToolReadNode          = "read_node"
 	ToolListNodes         = "list_nodes"
@@ -48,7 +49,7 @@ const (
 // falls through to normal prompting rather than inventing a decision.
 func Classify(toolName string) (Class, bool) {
 	switch toolName {
-	case ToolCreateNode, ToolPutNode, ToolPatchNode, ToolDeleteNode:
+	case ToolCreateNode, ToolPutNode, ToolPatchNode, ToolDeleteNode, ToolBulkMutate:
 		return ClassDestructive, true
 	case ToolDescribeNodeTypes, ToolReadNode, ToolListNodes, ToolReadFacets:
 		return ClassRead, true

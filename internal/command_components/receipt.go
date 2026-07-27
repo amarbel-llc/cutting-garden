@@ -204,6 +204,31 @@ func ResolveContainerCreatorPlugin(
 	return u, creator, nil
 }
 
+// ResolveBulkMutatorPlugin parses uriStr as a URL and returns the
+// BulkMutator registered for its scheme — the multi-node write capability
+// the mcp bulk_mutate tool consumes (RFC 0017). Resolution mirrors
+// ResolveNodeMutatorPlugin; errors if the plugin implements no BulkMutator.
+func ResolveBulkMutatorPlugin(
+	uriStr string,
+) (*url.URL, cutting_garden_plugins.BulkMutator, error) {
+	u, err := url.Parse(uriStr)
+	if err != nil {
+		return nil, nil, errors.Wrapf(err, "parse uri %q", uriStr)
+	}
+	plugin, err := resolvePluginForScheme(u.Scheme)
+	if err != nil {
+		return nil, nil, err
+	}
+	bulkMutator, ok := plugin.(cutting_garden_plugins.BulkMutator)
+	if !ok {
+		return nil, nil, errors.ErrorWithStackf(
+			"scheme %q does not support bulk mutation (its plugin "+
+				"implements no BulkMutator)", u.Scheme,
+		)
+	}
+	return u, bulkMutator, nil
+}
+
 // ReadReceiptBlob fetches and parses the receipt blob.
 //
 // With storeOverride non-empty: resolve that store, read directly.
