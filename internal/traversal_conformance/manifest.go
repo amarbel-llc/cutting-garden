@@ -72,6 +72,12 @@ type Manifest struct {
 	// resolves through its declared uri_template to a body-declaring type
 	// (§5). Optional — omitting it SKIPs the container-body cases.
 	ContainerBody *ContainerBodySpec
+	// BulkMutate, when non-nil, parameterizes the node.bulk_mutate case
+	// (RFC 0017 / cutting-garden#196): a writable container the case
+	// creates a probe under. Optional — omitting it SKIPs the bulk case
+	// even when the peer advertises bulk-mutate (the manifest author opts
+	// in, as with facet_container / container_body).
+	BulkMutate *BulkMutateSpec
 }
 
 // CreateSpec is the node.create parameterization for the probe node:
@@ -106,6 +112,21 @@ type FacetContainerSpec struct {
 // (RFC 0018 §7 / cutting-garden#168).
 type ContainerBodySpec struct {
 	URI string
+}
+
+// BulkMutateSpec parameterizes the node.bulk_mutate conformance case
+// (RFC 0017 / cutting-garden#196). The case runs a best-effort changeset of
+// [create Container/<probe>, delete Container/<probe>-missing]: the create
+// must land in applied and the deliberately-missing delete in failed,
+// without the call itself erroring. So only the writable Container plus the
+// probe's CreateType/CreateBody are needed; the missing sibling is derived.
+type BulkMutateSpec struct {
+	// Container is the writable container the probe create op targets.
+	Container string
+	// CreateType is the probe node's type (the bulk create op's type).
+	CreateType string
+	// CreateBody is the probe node's body.
+	CreateBody string
 }
 
 // LoadManifest reads and decodes a TOML manifest. Every failure is a
@@ -213,6 +234,22 @@ func LoadManifest(path string) (*Manifest, error) {
 			return nil, err
 		}
 		manifest.ContainerBody = spec
+	}
+
+	if sub, ok, err := decodeTable(model, "bulk_mutate"); err != nil {
+		return nil, err
+	} else if ok {
+		spec := &BulkMutateSpec{}
+		if err := decodeString(sub, "container", &spec.Container); err != nil {
+			return nil, err
+		}
+		if err := decodeString(sub, "create_type", &spec.CreateType); err != nil {
+			return nil, err
+		}
+		if err := decodeString(sub, "create_body", &spec.CreateBody); err != nil {
+			return nil, err
+		}
+		manifest.BulkMutate = spec
 	}
 
 	if leftover := model.Undecoded(); len(leftover) > 0 {

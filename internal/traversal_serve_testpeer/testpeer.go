@@ -132,6 +132,7 @@ var (
 	_ cutting_garden_plugins.FacetVersioner = (*TreePlugin)(nil)
 	_ cutting_garden_plugins.FacetLabeler   = (*TreePlugin)(nil)
 	_ cutting_garden_plugins.NodeMutator    = (*TreePlugin)(nil)
+	_ cutting_garden_plugins.BulkMutator    = (*TreePlugin)(nil)
 	_ cutting_garden_plugins.BodyDescriber  = (*TreePlugin)(nil)
 )
 

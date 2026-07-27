@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"slices"
 	"sort"
 	"strings"
 
@@ -38,6 +39,7 @@ const (
 	nameContainerBody = "leaf.read: container returns its own body beside children"
 	nameURITemplate   = "uri template: container resolves to its body-declaring type"
 	nameFilteredList  = "nodes.list: filter pushdown returns a sound subset"
+	nameBulkMutate    = "node.bulk_mutate: best-effort applies and isolates a failure, atomic and malformed refused"
 )
 
 // malformedURI violates RFC 3986 (an unterminated IP-literal in the
@@ -929,6 +931,150 @@ func (r *runner) caseFilteredList(ctx context.Context) {
 	}
 
 	r.tap.Ok(nameFilteredList)
+}
+
+// caseBulkMutate exercises node.bulk_mutate (RFC 0017) end to end against a
+// bulk-mutate-capable peer, in one aggregated point covering the four
+// contract corners:
+//
+//	(1)+(2) a best-effort changeset of [create probe, delete a missing
+//	        sibling] APPLIES the create and ISOLATES the missing delete as a
+//	        per-node failure — and the CALL itself does not error (a per-node
+//	        failure is a BulkFailure, never a returned error);
+//	(3)     an atomic request against a peer NOT advertising bulk-atomic is
+//	        refused -32003 (the reject-never-downgrade rule every peer that
+//	        cannot transact — fj-cg among them — must honor);
+//	(4)     a malformed request (neither ops nor sweep) is the caller's
+//	        fault, -32602 (cutting-garden#185).
+//
+// Gated on CapBulkMutate AND the manifest's [bulk_mutate] parameterization;
+// either absent SKIPs (a peer need not advertise bulk write, and a manifest
+// author opts the probe in, as with facet_container / container_body).
+func (r *runner) caseBulkMutate(ctx context.Context) {
+	ctx, cancel := context.WithTimeout(ctx, perCaseDeadline)
+	defer cancel()
+
+	spec := r.manifest.BulkMutate
+	if spec == nil {
+		r.tap.Skip(nameBulkMutate, "manifest declares no bulk_mutate")
+
+		return
+	}
+	if !r.hasCapability(traversal_serve.CapBulkMutate) {
+		r.tap.Skip(nameBulkMutate, "bulk-mutate not advertised")
+
+		return
+	}
+
+	problems := map[string]string{}
+
+	container := strings.TrimRight(spec.Container, "/")
+	appliedURI := container + "/" + probeName + "-bulk"
+	missingURI := container + "/" + probeName + "-bulk-missing"
+
+	// Probe hygiene: clear a leftover probe from an aborted run so the
+	// create op below runs against absent state (node.create is strict).
+	_ = r.session.Call(
+		ctx, traversal_serve.MethodNodeDelete,
+		traversal_serve.NodeDeleteParams{URI: appliedURI}, nil,
+	)
+
+	// (1) + (2)
+	var result traversal_serve.BulkMutateResult
+	err := r.session.Call(
+		ctx, traversal_serve.MethodNodeBulkMutate,
+		traversal_serve.BulkMutateParams{
+			Atomicity: string(cutting_garden_plugins.BulkBestEffort),
+			Ops: []traversal_serve.BulkOpView{
+				{
+					Kind:       string(cutting_garden_plugins.BulkCreate),
+					URI:        appliedURI,
+					Type:       spec.CreateType,
+					BodyBase64: encodeBody(spec.CreateBody),
+				},
+				{
+					Kind: string(cutting_garden_plugins.BulkDelete),
+					URI:  missingURI,
+				},
+			},
+		}, &result,
+	)
+	if err != nil {
+		problems["best_effort"] = "changeset call errored (best-effort must" +
+			" not, a per-node failure is a failure entry): " + err.Error()
+	} else {
+		if !slices.Contains(result.Applied, appliedURI) {
+			problems["applied"] = appliedURI + " not reported applied; got [" +
+				strings.Join(result.Applied, ",") + "]"
+		}
+		if !bulkFailureHas(result.Failed, missingURI) {
+			problems["failed"] = missingURI +
+				" (a delete of a missing node) not reported failed"
+		}
+	}
+
+	// Cleanup the probe the changeset created — best-effort, even when the
+	// assertions above failed (they only record verdicts, never abort).
+	_ = r.session.Call(
+		ctx, traversal_serve.MethodNodeDelete,
+		traversal_serve.NodeDeleteParams{URI: appliedURI}, nil,
+	)
+
+	// (3)
+	atomicErr := r.session.Call(
+		ctx, traversal_serve.MethodNodeBulkMutate,
+		traversal_serve.BulkMutateParams{
+			Atomicity: string(cutting_garden_plugins.BulkAtomic),
+			Ops: []traversal_serve.BulkOpView{
+				{
+					Kind: string(cutting_garden_plugins.BulkDelete),
+					URI:  missingURI,
+				},
+			},
+		}, nil,
+	)
+	if code, ok := traversal_serve.CodeOf(atomicErr); !ok ||
+		code != traversal_serve.CodeAtomicUnsupported {
+		problems["atomic"] = fmt.Sprintf(
+			"atomic request want -32003, got %v", atomicErr,
+		)
+	}
+
+	// (4)
+	malformedErr := r.session.Call(
+		ctx, traversal_serve.MethodNodeBulkMutate,
+		traversal_serve.BulkMutateParams{
+			Atomicity: string(cutting_garden_plugins.BulkBestEffort),
+		}, nil,
+	)
+	if code, ok := traversal_serve.CodeOf(malformedErr); !ok ||
+		code != traversal_serve.CodeInvalidParams {
+		problems["malformed"] = fmt.Sprintf(
+			"malformed request (neither ops nor sweep) want -32602, got %v",
+			malformedErr,
+		)
+	}
+
+	if len(problems) > 0 {
+		r.tap.NotOk(nameBulkMutate, problems)
+
+		return
+	}
+
+	r.tap.Ok(nameBulkMutate)
+}
+
+// bulkFailureHas reports whether any failure view names uri.
+func bulkFailureHas(
+	failures []traversal_serve.BulkFailureView, uri string,
+) bool {
+	for _, f := range failures {
+		if f.URI == uri {
+			return true
+		}
+	}
+
+	return false
 }
 
 // listNodesDecoded issues nodes.list (optionally filtered) and decodes the

@@ -86,6 +86,14 @@ func testpeerManifest(t *testing.T) *traversal_conformance.Manifest {
 		ContainerBody: &traversal_conformance.ContainerBodySpec{
 			URI: testpeer.IssueBox,
 		},
+		// The testpeer advertises bulk-mutate (RFC 0017 / cutting-garden#196):
+		// the case creates a probe leaf under RootBox and isolates a
+		// missing-node delete as a failure.
+		BulkMutate: &traversal_conformance.BulkMutateSpec{
+			Container:  testpeer.RootBox,
+			CreateType: testpeer.LeafType,
+			CreateBody: "bulk probe body\n",
+		},
 	}
 }
 
@@ -128,7 +136,9 @@ func TestRunPassesConformantTestpeer(t *testing.T) {
 		"ok 11 - leaf.read: container returns its own body beside children",
 		"ok 12 - uri template: container resolves to its body-declaring type",
 		"ok 13 - nodes.list: filter pushdown returns a sound subset",
-		"1..13",
+		"ok 14 - node.bulk_mutate: best-effort applies and isolates a" +
+			" failure, atomic and malformed refused",
+		"1..14",
 	} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("output missing %q:\n%s", want, out.String())

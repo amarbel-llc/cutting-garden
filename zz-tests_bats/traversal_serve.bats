@@ -229,6 +229,11 @@ filter = "state=open"
 
 [container_body]
 uri = "cgtest://fixture/box/issue-1"
+
+[bulk_mutate]
+container = "cgtest://fixture/box"
+create_type = "cgtest-obj-v1"
+create_body = "bulk probe body"
 EOF
 
   run --separate-stderr "$CG_CONFORMANCE_TRAVERSAL" --manifest "$manifest"
@@ -237,10 +242,11 @@ EOF
   # whole multi-line output as ONE string (no per-line/multiline flag),
   # so `^not ok` would never match a mid-output failure — a false-safe
   # assertion. --partial 'not ok' catches a failing point anywhere.
-  assert_output --partial '1..13'
+  assert_output --partial '1..14'
   assert_output --partial 'ok 1 - initialize'
   assert_output --partial 'ok 11 - leaf.read: container returns its own body'
   assert_output --partial 'ok 13 - nodes.list: filter pushdown returns a sound subset'
+  assert_output --partial 'ok 14 - node.bulk_mutate: best-effort applies'
   refute_output --partial 'not ok'
 }
 
