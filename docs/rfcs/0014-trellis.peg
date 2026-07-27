@@ -161,8 +161,8 @@ TypedBack    <- '<-[' SP? ConjRun SP? ']-'
 //
 // MARKL IDS ARE STRUCTURED TWO-SLOT TERMS (revised 2026-07-18, second
 // amendment — supersedes the earlier interior-@ IdentRune rule): a
-// purpose-full markl id (`[purpose@]format-data`, markl-id(7) / madder
-// RFC 0002) decomposes at the grammar level as MarklTerm — a
+// purpose-full markl id (`[purpose@]format-data`, markl-id(7) / piggy
+// RFC 0011) decomposes at the grammar level as MarklTerm — a
 // purpose slot (bare identifier or quoted string) joined by `@` to a
 // digest slot. The digest is ALWAYS structurally visible (never
 // trapped inside string quoting): pinning an object whose id needs

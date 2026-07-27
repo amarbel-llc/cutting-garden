@@ -975,7 +975,7 @@ is:
 - [RFC 3339: Date and Time on the Internet: Timestamps][rfc-3339]
 - [RFC 8785: JSON Canonicalization Scheme (JCS)][rfc-8785]
 - [dodder RFC 0001: Hyphence Serialization Format][dodder-rfc-0001-hyphence]
-- [dodder RFC 0002: Markl ID Format][dodder-rfc-0002-markl]
+- [piggy RFC 0011: Markl ID Format][piggy-rfc-0011-markl]
 - [dodder FDR-0001: Object Locks (typed blob references)][dodder-fdr-0001]
 - [dodder FDR-0010: Core Types (null type, type-blob config)][dodder-fdr-0010]
 
@@ -997,7 +997,7 @@ is:
 [markl-id]: https://github.com/amarbel-llc/madder/blob/master/docs/man.7/markl-id.md
 [nebulous-rfc-0001]: https://github.com/amarbel-llc/nebulous/blob/master/docs/rfcs/0001-web-capture-archive-protocol.md
 [dodder-rfc-0001-hyphence]: https://github.com/friedenberg/dodder/blob/master/docs/rfcs/0001-hyphence-format.md
-[dodder-rfc-0002-markl]: https://github.com/friedenberg/dodder/blob/master/docs/rfcs/0002-markl-id-format.md
+[piggy-rfc-0011-markl]: https://code.linenisgreat.com/piggy/docs/rfcs/0011-markl-id-format.md
 [dodder-fdr-0001]: https://github.com/friedenberg/dodder/blob/master/docs/features/0001-object-locks.md
 [dodder-fdr-0010]: https://github.com/friedenberg/dodder/blob/master/docs/features/0010-core-types.md
 [dodder-fdr-0014]: https://github.com/friedenberg/dodder/blob/master/docs/features/0014-capture-protocol-ingestion.md
