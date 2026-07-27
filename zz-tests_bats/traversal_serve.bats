@@ -226,6 +226,9 @@ body = "not json"
 [facet_container]
 uri = "cgtest://fixture/box"
 filter = "state=open"
+
+[container_body]
+uri = "cgtest://fixture/box/issue-1"
 EOF
 
   run --separate-stderr "$CG_CONFORMANCE_TRAVERSAL" --manifest "$manifest"
@@ -234,8 +237,9 @@ EOF
   # whole multi-line output as ONE string (no per-line/multiline flag),
   # so `^not ok` would never match a mid-output failure — a false-safe
   # assertion. --partial 'not ok' catches a failing point anywhere.
-  assert_output --partial '1..10'
+  assert_output --partial '1..12'
   assert_output --partial 'ok 1 - initialize'
+  assert_output --partial 'ok 11 - leaf.read: container returns its own body'
   refute_output --partial 'not ok'
 }
 

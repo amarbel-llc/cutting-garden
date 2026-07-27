@@ -80,6 +80,12 @@ func testpeerManifest(t *testing.T) *traversal_conformance.Manifest {
 			URI:    testpeer.RootBox,
 			Filter: "state=open",
 		},
+		// IssueBox is the testpeer's container-with-body: it holds a comment
+		// AND carries a title/state, and declares a uri_template — the
+		// RFC 0018 §7 / cutting-garden#168 fixture.
+		ContainerBody: &traversal_conformance.ContainerBodySpec{
+			URI: testpeer.IssueBox,
+		},
 	}
 }
 
@@ -119,7 +125,9 @@ func TestRunPassesConformantTestpeer(t *testing.T) {
 		"ok 8 - node.delete: probe cleanup",
 		"ok 9 - facets.counts: by_container raw invariants",
 		"ok 10 - facets.counts: descend targets reachable",
-		"1..10",
+		"ok 11 - leaf.read: container returns its own body beside children",
+		"ok 12 - uri template: container resolves to its body-declaring type",
+		"1..12",
 	} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("output missing %q:\n%s", want, out.String())
@@ -243,6 +251,9 @@ body = "not json"
 [facet_container]
 uri = "cgtest://fixture/box"
 filter = "state=open"
+
+[container_body]
+uri = "cgtest://fixture/box/issue-1"
 `
 	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
 		t.Fatalf("write manifest: %v", err)
@@ -290,6 +301,10 @@ filter = "state=open"
 	if manifest.FacetContainer.URI != "cgtest://fixture/box" ||
 		manifest.FacetContainer.Filter != "state=open" {
 		t.Errorf("FacetContainer = %+v", manifest.FacetContainer)
+	}
+	if manifest.ContainerBody == nil ||
+		manifest.ContainerBody.URI != "cgtest://fixture/box/issue-1" {
+		t.Errorf("ContainerBody = %+v", manifest.ContainerBody)
 	}
 }
 

@@ -78,6 +78,8 @@ func Run(
 	entries, filter, descendSkip := r.caseByContainer(ctx)
 	r.caseDescendTargets(ctx, entries, filter, descendSkip)
 
+	r.caseContainerBody(ctx)
+
 	tw.Plan()
 
 	return !tw.HasFailures(), nil

@@ -65,6 +65,13 @@ type Manifest struct {
 	// omitting it skips the breakdown cases (a conformant peer may
 	// simply not emit one).
 	FacetContainer *FacetContainerSpec
+	// ContainerBody, when non-nil, names a CONTAINER that also carries its
+	// own body (RFC 0018 §7 / cutting-garden#168): a node with children
+	// AND a leaf.read body. The driver asserts nodes.list returns children,
+	// leaf.read returns a body despite them (§7.1), and the node's URI
+	// resolves through its declared uri_template to a body-declaring type
+	// (§5). Optional — omitting it SKIPs the container-body cases.
+	ContainerBody *ContainerBodySpec
 }
 
 // CreateSpec is the node.create parameterization for the probe node:
@@ -93,6 +100,12 @@ type FacetContainerSpec struct {
 	// predicates (the RFC 0012 §6 filter, in the same surface grammar
 	// `list --filter` speaks); empty matches everything.
 	Filter string
+}
+
+// ContainerBodySpec names a container that also carries its own body
+// (RFC 0018 §7 / cutting-garden#168).
+type ContainerBodySpec struct {
+	URI string
 }
 
 // LoadManifest reads and decodes a TOML manifest. Every failure is a
@@ -190,6 +203,16 @@ func LoadManifest(path string) (*Manifest, error) {
 			return nil, err
 		}
 		manifest.FacetContainer = spec
+	}
+
+	if sub, ok, err := decodeTable(model, "container_body"); err != nil {
+		return nil, err
+	} else if ok {
+		spec := &ContainerBodySpec{}
+		if err := decodeString(sub, "uri", &spec.URI); err != nil {
+			return nil, err
+		}
+		manifest.ContainerBody = spec
 	}
 
 	if leftover := model.Undecoded(); len(leftover) > 0 {

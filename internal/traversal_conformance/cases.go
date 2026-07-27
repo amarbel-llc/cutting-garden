@@ -12,6 +12,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"sort"
 	"strings"
 
@@ -24,16 +25,18 @@ import (
 // Test point names, fixed so a wrapping lane (the bats portable case,
 // an external peer's CI) can grep for specific verdicts.
 const (
-	nameInitialize   = "initialize: schema echo, schemes, capabilities"
-	nameUnknownCode  = "error code: unknown method is -32601"
-	nameBadURICode   = "error code: malformed nodes.list uri is -32602"
-	namePatchCreate  = "node.create: probe node"
-	namePatchApplied = "node.patch: recognized fields reported applied"
-	namePatchEmpty   = "node.patch: unrecognized-only body reports applied present-empty"
-	namePatchWrong   = "node.patch: wrong-typed body is -32602"
-	namePatchDelete  = "node.delete: probe cleanup"
-	nameByContainer  = "facets.counts: by_container raw invariants"
-	nameDescend      = "facets.counts: descend targets reachable"
+	nameInitialize    = "initialize: schema echo, schemes, capabilities"
+	nameUnknownCode   = "error code: unknown method is -32601"
+	nameBadURICode    = "error code: malformed nodes.list uri is -32602"
+	namePatchCreate   = "node.create: probe node"
+	namePatchApplied  = "node.patch: recognized fields reported applied"
+	namePatchEmpty    = "node.patch: unrecognized-only body reports applied present-empty"
+	namePatchWrong    = "node.patch: wrong-typed body is -32602"
+	namePatchDelete   = "node.delete: probe cleanup"
+	nameByContainer   = "facets.counts: by_container raw invariants"
+	nameDescend       = "facets.counts: descend targets reachable"
+	nameContainerBody = "leaf.read: container returns its own body beside children"
+	nameURITemplate   = "uri template: container resolves to its body-declaring type"
 )
 
 // malformedURI violates RFC 3986 (an unterminated IP-literal in the
@@ -601,6 +604,222 @@ func (r *runner) caseDescendTargets(
 	}
 
 	r.tap.Ok(nameDescend)
+}
+
+// caseContainerBody exercises the RFC 0018 §7 / cutting-garden#168
+// container-body path over the wire, from the manifest's container_body
+// URI: a node that is a container (nodes.list returns children) AND
+// carries its own body (leaf.read returns it despite the children —
+// §7.1), which resolves through its declared uri_template to a
+// body-declaring type (§5, §7.2). A manifest without container_body SKIPs
+// both points (a peer need not model this).
+func (r *runner) caseContainerBody(ctx context.Context) {
+	spec := r.manifest.ContainerBody
+	if spec == nil {
+		r.tap.Skip(nameContainerBody, "manifest declares no container_body")
+		r.tap.Skip(nameURITemplate, "manifest declares no container_body")
+
+		return
+	}
+
+	children, listOK := r.listChildURIs(ctx, spec.URI)
+	hasBody, readOK := r.readOwnBody(ctx, spec.URI)
+
+	// §7.1: a container WITH children also returns its own body.
+	switch {
+	case !listOK:
+		r.tap.NotOk(nameContainerBody, map[string]string{
+			"nodes.list": spec.URI + " did not list as a container",
+		})
+	case len(children) == 0:
+		r.tap.NotOk(nameContainerBody, map[string]string{
+			"nodes.list": "no children — container_body must have children" +
+				" (else it is an ordinary leaf, not the #168 case)",
+		})
+	case !readOK:
+		r.tap.NotOk(nameContainerBody, map[string]string{
+			"leaf.read": "ok=false — a container that declares a body MUST" +
+				" return it even with children (RFC 0018 §7.1)",
+		})
+	case !hasBody:
+		r.tap.NotOk(nameContainerBody, map[string]string{
+			"leaf.read": "ok=true but neither structured nor raw_base64" +
+				" — no body was returned",
+		})
+	default:
+		r.tap.Ok(nameContainerBody)
+	}
+
+	r.caseURITemplateResolves(spec.URI, children)
+}
+
+// caseURITemplateResolves pins RFC 0018 URI→type resolution over the
+// peer's declared templates and emitted URIs: the container's own URI
+// resolves (§5.1 emission — its minted URI matches its type's template)
+// to a type that declares a body (§7.2, the host read gate's basis), and
+// a leaf child does NOT resolve to that same type (§5.2 disjointness). It
+// runs the REAL host resolver (ResolveNodeTypeByURI) over the declared
+// node types, so it fails a peer whose emitted URIs disagree with its own
+// templates.
+func (r *runner) caseURITemplateResolves(
+	containerURI string, childURIs []string,
+) {
+	lister := r.declaredLister()
+
+	resolved, ok := cutting_garden_plugins.ResolveNodeTypeByURI(
+		lister, containerURI,
+	)
+	if !ok {
+		r.tap.NotOk(nameURITemplate, map[string]string{
+			"resolve": containerURI + " resolved to no declared type — a" +
+				" templated container must round-trip (RFC 0018 §5.1)",
+		})
+
+		return
+	}
+
+	if !r.typeDeclaresBody(resolved.Type.Tag) {
+		r.tap.NotOk(nameURITemplate, map[string]string{
+			"resolve": fmt.Sprintf(
+				"%s resolved to %q, which declares no body — the host read"+
+					" gate needs the declaration (RFC 0018 §7.2)",
+				containerURI, resolved.Type.Tag,
+			),
+		})
+
+		return
+	}
+
+	for _, child := range childURIs {
+		childResolved, childOK := cutting_garden_plugins.ResolveNodeTypeByURI(
+			lister, child,
+		)
+		if childOK && childResolved.Type.Tag == resolved.Type.Tag {
+			r.tap.NotOk(nameURITemplate, map[string]string{
+				"resolve": fmt.Sprintf(
+					"child %s wrongly resolved to the container type %q"+
+						" (RFC 0018 §5.2 disjointness)",
+					child, resolved.Type.Tag,
+				),
+			})
+
+			return
+		}
+	}
+
+	r.tap.Ok(nameURITemplate)
+}
+
+// listChildURIs issues nodes.list and returns the child URIs; ok is false
+// on a call or decode failure.
+func (r *runner) listChildURIs(
+	ctx context.Context, uri string,
+) (uris []string, ok bool) {
+	var raw json.RawMessage
+	if err := r.session.Call(
+		ctx, traversal_serve.MethodNodesList,
+		traversal_serve.NodesListParams{URI: uri}, &raw,
+	); err != nil {
+		return nil, false
+	}
+
+	var result struct {
+		Nodes []struct {
+			URI string `json:"uri"`
+		} `json:"nodes"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return nil, false
+	}
+
+	uris = make([]string, 0, len(result.Nodes))
+	for _, node := range result.Nodes {
+		uris = append(uris, node.URI)
+	}
+
+	return uris, true
+}
+
+// readOwnBody issues leaf.read and reports whether the node returned a
+// body (structured or raw) and the leaf.read ok bit — read from the raw
+// wire result so an empty structured object is not conflated with an
+// absent one.
+func (r *runner) readOwnBody(
+	ctx context.Context, uri string,
+) (hasBody bool, ok bool) {
+	var raw json.RawMessage
+	if err := r.session.Call(
+		ctx, traversal_serve.MethodLeafRead,
+		traversal_serve.LeafReadParams{URI: uri}, &raw,
+	); err != nil {
+		return false, false
+	}
+
+	var result struct {
+		OK         bool            `json:"ok"`
+		Structured json.RawMessage `json:"structured"`
+		RawBase64  string          `json:"raw_base64"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return false, false
+	}
+
+	hasBody = len(result.Structured) > 0 || result.RawBase64 != ""
+
+	return hasBody, result.OK
+}
+
+// declaredLister wraps the peer's initialize node_types (with their
+// uri_templates) in a minimal RootLister so the driver can run the real
+// host resolver, ResolveNodeTypeByURI, against them.
+func (r *runner) declaredLister() declaredTypesLister {
+	types := make(
+		[]cutting_garden_plugins.NodeType, 0, len(r.init.NodeTypes),
+	)
+	for _, view := range r.init.NodeTypes {
+		types = append(types, view.ToNodeType())
+	}
+
+	return declaredTypesLister{types: types}
+}
+
+// typeDeclaresBody reports whether the peer's initialize bodies block
+// declares a body for tag — the declaration the host read gate consults
+// (RFC 0018 §7.2).
+func (r *runner) typeDeclaresBody(tag string) bool {
+	for _, body := range r.init.Bodies {
+		if body.Tag == tag {
+			return true
+		}
+	}
+
+	return false
+}
+
+// declaredTypesLister is a RootLister that serves only Types() — the peer's
+// declared node types — so ResolveNodeTypeByURI (which reads only Types)
+// runs against them. Every other method is an inert stub.
+type declaredTypesLister struct {
+	types []cutting_garden_plugins.NodeType
+}
+
+func (declaredTypesLister) Schemes() []string                     { return nil }
+func (declaredTypesLister) TypeTag() string                       { return "" }
+func (declaredTypesLister) ValidateSource(*url.URL, string) error { return nil }
+func (declaredTypesLister) CaptureRoot(
+	cutting_garden_plugins.CaptureRootRequest,
+) cutting_garden_plugins.CaptureRootResult {
+	return cutting_garden_plugins.CaptureRootResult{}
+}
+
+func (l declaredTypesLister) Types() []cutting_garden_plugins.NodeType {
+	return l.types
+}
+
+func (declaredTypesLister) ListRoots(
+	context.Context, *url.URL,
+) ([]cutting_garden_plugins.Node, error) {
+	return nil, nil
 }
 
 // patchRaw issues node.patch with body and returns the raw applied
