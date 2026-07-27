@@ -34,6 +34,16 @@ import (
 // the failure is attributed to a point rather than a silent hang.
 const runDeadline = 2 * time.Minute
 
+// perCaseDeadline bounds a SINGLE case, derived from the run context at the
+// top of each case method. It gives a hang PRECISE attribution
+// (cutting-garden#189): a peer that stalls in one method blows this
+// deadline and the failure lands on THAT case's point, rather than on
+// whichever case happened to be in flight when the whole-run deadline
+// (runDeadline, the outer backstop) blew. Generous — a real peer answers a
+// fixed-tree method in milliseconds — so it never trips a conformant peer;
+// it only converts a silent hang into an attributed NotOk.
+const perCaseDeadline = 20 * time.Second
+
 // Run launches manifest.Command as a traversal peer, drives the slice-1
 // conformance cases against it, and writes TAP 14 to out. passed
 // reports the conformance verdict — true iff every non-SKIP test point

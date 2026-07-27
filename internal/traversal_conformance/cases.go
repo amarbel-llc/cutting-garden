@@ -59,6 +59,9 @@ const probeName = "cg-conformance-probe"
 // IS the assertion subject). A non-nil return means there is no
 // initialized session to run further cases against.
 func (r *runner) caseInitialize(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, perCaseDeadline)
+	defer cancel()
+
 	var raw json.RawMessage
 	err := r.session.Call(
 		ctx, traversal_serve.MethodInitialize,
@@ -169,6 +172,9 @@ func (r *runner) caseInitialize(ctx context.Context) error {
 // things operationally (cutting-garden#185), so a peer collapsing them
 // converts caller mistakes into unretryable retry loops.
 func (r *runner) caseErrorCodes(ctx context.Context) {
+	ctx, cancel := context.WithTimeout(ctx, perCaseDeadline)
+	defer cancel()
+
 	err := r.session.Call(ctx, unknownMethod, struct{}{}, nil)
 	r.assertRPCCode(
 		nameUnknownCode, err, traversal_serve.CodeMethodNotFound,
@@ -190,6 +196,9 @@ func (r *runner) caseErrorCodes(ctx context.Context) {
 // A read-only peer passes with every point SKIPped: RFC 0013 §Method
 // set forbids calling an unadvertised method at all.
 func (r *runner) casePatchTriState(ctx context.Context) {
+	ctx, cancel := context.WithTimeout(ctx, perCaseDeadline)
+	defer cancel()
+
 	mutationPoints := []string{
 		namePatchCreate, namePatchApplied, namePatchEmpty, namePatchWrong,
 		namePatchDelete,
@@ -419,6 +428,9 @@ type breakdownEntry struct {
 func (r *runner) caseByContainer(
 	ctx context.Context,
 ) (entries []breakdownEntry, filter []traversal_serve.PredicateView, descendSkip string) {
+	ctx, cancel := context.WithTimeout(ctx, perCaseDeadline)
+	defer cancel()
+
 	spec := r.manifest.FacetContainer
 	if spec == nil {
 		const reason = "manifest declares no facet_container"
@@ -538,15 +550,19 @@ func (r *runner) caseByContainer(
 // asserts plain REACHABILITY: the listing call succeeds and returns at
 // least one immediate child whenever the entry attributes >= 1 match
 // (a matching descendant necessarily lives under some immediate
-// child). Filter-narrowed membership is the deferred class-B
-// strengthening.
+// child). Filter-narrowed membership — re-issuing nodes.list with the
+// SAME filter and comparing membership — is deferred to
+// cutting-garden#193, which adds the wire filter nodes.list lacks today.
 func (r *runner) caseDescendTargets(
 	ctx context.Context,
 	entries []breakdownEntry,
 	filter []traversal_serve.PredicateView,
 	descendSkip string,
 ) {
-	_ = filter // held for the class-B same-filter re-issue (see above)
+	ctx, cancel := context.WithTimeout(ctx, perCaseDeadline)
+	defer cancel()
+
+	_ = filter // held for the same-filter re-issue (cutting-garden#193)
 
 	if descendSkip != "" {
 		r.tap.Skip(nameDescend, descendSkip)
@@ -614,6 +630,9 @@ func (r *runner) caseDescendTargets(
 // body-declaring type (§5, §7.2). A manifest without container_body SKIPs
 // both points (a peer need not model this).
 func (r *runner) caseContainerBody(ctx context.Context) {
+	ctx, cancel := context.WithTimeout(ctx, perCaseDeadline)
+	defer cancel()
+
 	spec := r.manifest.ContainerBody
 	if spec == nil {
 		r.tap.Skip(nameContainerBody, "manifest declares no container_body")
