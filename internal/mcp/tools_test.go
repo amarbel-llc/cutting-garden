@@ -632,7 +632,9 @@ type fakeReader struct {
 	read *protocol.ResourceReadResult
 }
 
-func (f fakeReader) ReadResource(context.Context, string) (*protocol.ResourceReadResult, error) {
+func (f fakeReader) ReadNode(
+	context.Context, string, string,
+) (*protocol.ResourceReadResult, error) {
 	return f.read, nil
 }
 

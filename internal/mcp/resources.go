@@ -142,33 +142,68 @@ func (r *Resources) ListResources(
 	return out, nil
 }
 
-// ReadResource descends one level under uri: it lists the node's
-// immediate children and returns them as a JSON array of node views, so
-// a client traverses the tree lazily by reading successively deeper
-// container URIs.
-//
-// When the node has no children it is a leaf or an empty container. The
-// plugin is then probed for the LeafReader capability (#85): if it can
-// fetch the object's body, the read returns that object's structured
-// fields as JSON rather than an empty array. A plugin without LeafReader,
-// or a node the plugin does not recognize as a leaf, still reads as an
-// empty array — honest for a genuinely empty container.
+// content selector values (RFC 0018 §7.3): what a read returns for a node
+// that has children, a body, or both.
+const (
+	// contentBoth returns the node's own body AND its child listing.
+	contentBoth = "both"
+	// contentChildren returns the child listing only — the pre-RFC-0018
+	// behavior (cheap browsing, no body fetch).
+	contentChildren = "children"
+	// contentBody returns the node's own body only, skipping the listing.
+	contentBody = "body"
+)
+
+// ReadResource is the MCP resources/read entry (server.ResourceProvider).
+// resources/read carries no selector, so it reads uri with the default
+// `both` (RFC 0018 §7.3): a body-bearing container returns its own body
+// beside its child listing. The read_node tool exposes the other selectors.
 func (r *Resources) ReadResource(
 	ctx context.Context,
 	uri string,
+) (*protocol.ResourceReadResult, error) {
+	return r.ReadNode(ctx, uri, contentBoth)
+}
+
+// ReadNode reads uri under the RFC 0018 §7.3 content selector. `children`
+// is the pre-RFC-0018 read verbatim: list the immediate children, and for
+// a childless node offer the leaf's own body when the plugin can fetch it
+// (#85) — otherwise an empty listing, honest for a genuinely empty
+// container. `both` adds, for a container that HAS children, that
+// container's OWN body beside the listing (RFC 0018 §7): the host fetches
+// it when local URI→type resolution says the type declares a body, or —
+// for a template-less URI — by probe (RFC 0018 §6), and a container with
+// no own body adds nothing. `body` returns the node's own body alone, never
+// a listing.
+func (r *Resources) ReadNode(
+	ctx context.Context,
+	uri string,
+	content string,
 ) (*protocol.ResourceReadResult, error) {
 	u, lister, err := r.resolve(uri)
 	if err != nil {
 		return nil, errors.Wrapf(err, "read resource %s", uri)
 	}
+
+	// body-only: the node's own body, never a listing (RFC 0018 §7.3).
+	if content == contentBody {
+		if result, ok, lerr := r.readLeaf(ctx, lister, uri, u); lerr != nil {
+			return nil, lerr
+		} else if ok {
+			return result, nil
+		}
+		// No own body: an honest empty result (body mode never lists).
+		return &protocol.ResourceReadResult{}, nil
+	}
+
 	nodes, err := r.listings.serve(ctx, lister, uri, u)
 	if err != nil {
 		return nil, errors.Wrapf(err, "list roots under %s", uri)
 	}
 
-	// No children: the node is a leaf or an empty container. Offer the
-	// leaf's body when the plugin can fetch it; otherwise fall through to
-	// the (empty) listing.
+	// Childless: a leaf or an empty container. Offer the leaf's body when
+	// the plugin can fetch it (shared by children and both, unchanged);
+	// otherwise fall through to the (empty) listing.
 	if len(nodes) == 0 {
 		if result, ok, lerr := r.readLeaf(ctx, lister, uri, u); lerr != nil {
 			return nil, lerr
@@ -177,20 +212,34 @@ func (r *Resources) ReadResource(
 		}
 	}
 
-	views := make([]nodeView, 0, len(nodes))
-	for _, n := range nodes {
-		views = append(views, enrichedNodeView(lister, n))
-	}
-	body, err := json.MarshalIndent(views, "", "  ")
-	if err != nil {
-		return nil, errors.Wrap(err)
+	var contents []protocol.ResourceContent
+
+	// both-mode only: a container that HAS children MAY also carry its own
+	// body (RFC 0018 §7). Fetch it declaration-gated (URI→type resolves to a
+	// type that declares a body) or, for a template-less URI, by probe; a
+	// container with no own body adds nothing.
+	if content == contentBoth && len(nodes) > 0 &&
+		r.containerBodyWanted(lister, uri) {
+		bodyContents, ok, berr := r.leafContents(ctx, lister, uri, u)
+		if berr != nil {
+			return nil, berr
+		}
+		if ok {
+			contents = append(contents, bodyContents...)
+		}
 	}
 
-	contents := []protocol.ResourceContent{{
+	// The child listing (children and both).
+	listingJSON, err := renderNodeViews(lister, nodes)
+	if err != nil {
+		return nil, err
+	}
+	contents = append(contents, protocol.ResourceContent{
 		URI:      uri,
 		MimeType: mimeListing,
-		Text:     string(body),
-	}}
+		Text:     listingJSON,
+	})
+
 	// A container carries the hoisted facet summary of its subtree beside the
 	// child listing, when its plugin can summarize it (RFC 0012 §7).
 	if len(nodes) > 0 {
@@ -206,6 +255,59 @@ func (r *Resources) ReadResource(
 	return &protocol.ResourceReadResult{Contents: contents}, nil
 }
 
+// renderNodeViews marshals a container's children as the enriched node-view
+// JSON array that a listing content block carries.
+func renderNodeViews(
+	lister cutting_garden_plugins.RootLister,
+	nodes []cutting_garden_plugins.Node,
+) (string, error) {
+	views := make([]nodeView, 0, len(nodes))
+	for _, n := range nodes {
+		views = append(views, enrichedNodeView(lister, n))
+	}
+	body, err := json.MarshalIndent(views, "", "  ")
+	if err != nil {
+		return "", errors.Wrap(err)
+	}
+	return string(body), nil
+}
+
+// containerBodyWanted decides whether both-mode should fetch a
+// child-bearing container's OWN body (RFC 0018 §7.2). It resolves the URI
+// to its declared type locally: a type that declares a body (BodyDescriber)
+// is read; a type with no body is skipped (no wasted round trip); an
+// unresolved URI (no template, a tie, no match — RFC 0018 §4/§6) falls back
+// to the probe, so a template-less plugin's container body is still exposed.
+func (r *Resources) containerBodyWanted(
+	lister cutting_garden_plugins.RootLister, uri string,
+) bool {
+	resolved, ok := cutting_garden_plugins.ResolveNodeTypeByURI(lister, uri)
+	if !ok {
+		return true
+	}
+	return typeDeclaresBody(lister, resolved.Type.Tag)
+}
+
+// typeDeclaresBody reports whether lister declares a writable body for the
+// given node type (its BodyDescriber lists the tag). A writable body is by
+// construction readable, so this is the RFC 0018 §7.2 single source of
+// truth for "this container type has an own body," reusing the FDR 0020
+// declaration rather than a new capability token.
+func typeDeclaresBody(
+	lister cutting_garden_plugins.RootLister, tag string,
+) bool {
+	bd, ok := lister.(cutting_garden_plugins.BodyDescriber)
+	if !ok {
+		return false
+	}
+	for _, b := range bd.DescribeBodies() {
+		if b.Tag == tag {
+			return true
+		}
+	}
+	return false
+}
+
 // readLeaf returns the structured body of a leaf object when lister can
 // fetch it (the LeafReader capability, #85). ok is false when the plugin
 // has no LeafReader, or does not recognize u as a fetchable leaf, so the
@@ -217,6 +319,26 @@ func (r *Resources) readLeaf(
 	uri string,
 	u *url.URL,
 ) (*protocol.ResourceReadResult, bool, error) {
+	contents, ok, err := r.leafContents(ctx, lister, uri, u)
+	if err != nil || !ok {
+		return nil, ok, err
+	}
+	return &protocol.ResourceReadResult{Contents: contents}, true, nil
+}
+
+// leafContents fetches a node's OWN body as content blocks — its structured
+// fields (mimeObject) plus, when a store is configured, a content-addressed
+// blob link to the verbatim bytes (#85) — and reports ok. It is the shared
+// body-fetch behind both a childless leaf read (readLeaf) and both-mode's
+// container-own-body block (RFC 0018 §7). ok is false when the plugin has
+// no LeafReader or does not recognize u as having an own body; a non-nil
+// error is an unexpected failure to surface, not the ordinary "no body".
+func (r *Resources) leafContents(
+	ctx context.Context,
+	lister cutting_garden_plugins.RootLister,
+	uri string,
+	u *url.URL,
+) ([]protocol.ResourceContent, bool, error) {
 	lr, ok := lister.(cutting_garden_plugins.LeafReader)
 	if !ok {
 		return nil, false, nil
@@ -246,7 +368,7 @@ func (r *Resources) readLeaf(
 		contents = append(contents, *link)
 	}
 
-	return &protocol.ResourceReadResult{Contents: contents}, true, nil
+	return contents, true, nil
 }
 
 // rawBlobLink stores a leaf's verbatim bytes and returns a link-only

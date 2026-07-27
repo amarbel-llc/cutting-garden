@@ -25,16 +25,18 @@ type mutatorResolveFunc func(
 ) (*url.URL, cutting_garden_plugins.NodeMutator, error)
 
 // resourceReader is the read surface the read_node / list_nodes tools wrap —
-// the ReadResource the resources/read MCP method serves (*Resources
-// satisfies it). Exposing the read tree as tools makes it reachable from
-// clients that render only tools, not MCP resources (the claude.ai web UI;
-// circus#29).
+// ReadNode, the selector-aware read the resources/read MCP method serves at
+// its default (*Resources satisfies it). Exposing the read tree as tools
+// makes it reachable from clients that render only tools, not MCP resources
+// (the claude.ai web UI; circus#29).
 type resourceReader interface {
-	ReadResource(ctx context.Context, uri string) (*protocol.ResourceReadResult, error)
+	ReadNode(
+		ctx context.Context, uri string, content string,
+	) (*protocol.ResourceReadResult, error)
 }
 
 // facetReader is the read_facets tool's read surface — Resources.ReadFacets,
-// the facet-view counterpart to resourceReader's ReadResource
+// the facet-view counterpart to resourceReader's ReadNode
 // (cutting-garden#151, RFC 0012 §7/§9). *Resources satisfies it.
 type facetReader interface {
 	ReadFacets(
@@ -68,7 +70,7 @@ type Tools struct {
 	// resolveLister resolves the RootLister capability directly
 	// (cutting-garden#160): list_nodes needs it whenever a filter or the
 	// bare opt-out is requested, since those paths bypass the reader's
-	// ReadResource delegation (which has no filter/bare parameters of its
+	// ReadNode delegation (which has no filter/bare parameters of its
 	// own) and drive ListRoots/EnrichedLister themselves.
 	resolveLister resolveFunc
 	// rootLabels overrides a root's display name in the no-uri list_nodes
@@ -136,7 +138,8 @@ const (
 		`"properties":{"uri":{"type":"string","description":"the node URI to delete"}}}`
 	describeNodeTypesSchema = `{"type":"object","properties":{}}`
 	readNodeSchema          = `{"type":"object","required":["uri"],` +
-		`"properties":{"uri":{"type":"string","description":"the node URI to read (a leaf returns its parsed fields + a raw-bytes link; a container returns its child listing)"}}}`
+		`"properties":{"uri":{"type":"string","description":"the node URI to read (a leaf returns its parsed fields + a raw-bytes link; a container returns its child listing, plus its own body when it has one)"},` +
+		`"content":{"type":"string","enum":["both","children","body"],"description":"what to return for a node that has both a body and children (optional, default both): both = the node's own body AND its child listing; children = the child listing only (cheap, no body fetch); body = the node's own body only, skipping the listing"}}}`
 	listNodesSchema = `{"type":"object","properties":{` +
 		`"uri":{"type":"string","description":"the container/prefix to list children of; omit to list the configured roots (the entry points)"},` +
 		`"limit":{"type":"integer","minimum":0,"description":"max number of child nodes to return (optional). A response SHORTER than limit means you have reached the end of the listing; a full-length response may or may not be the end — pass a larger offset to check."},` +
@@ -490,16 +493,28 @@ func (t *Tools) call(
 
 	case mcp_tool_perms.ToolReadNode:
 		var in struct {
-			URI string `json:"uri"`
+			URI     string `json:"uri"`
+			Content string `json:"content"`
 		}
 		if err := json.Unmarshal(args, &in); err != nil {
 			return "", errors.Wrap(err)
 		}
-		res, err := t.reader.ReadResource(ctx, in.URI)
+		content := in.Content
+		if content == "" {
+			content = contentBoth
+		}
+		switch content {
+		case contentBoth, contentChildren, contentBody:
+		default:
+			return "", errors.ErrorWithStackf(
+				"read_node: content must be both, children, or body",
+			)
+		}
+		res, err := t.reader.ReadNode(ctx, in.URI, content)
 		if err != nil {
 			return "", err
 		}
-		return renderContents(res.Contents), nil
+		return renderReadNode(res.Contents), nil
 
 	case mcp_tool_perms.ToolListNodes:
 		var in struct {
@@ -654,7 +669,10 @@ func (t *Tools) listNodesURI(
 	offset, limit int,
 ) (string, error) {
 	if len(filter) == 0 && !bare {
-		res, err := t.reader.ReadResource(ctx, uri)
+		// list_nodes is pure child enumeration: it never fetches a node's
+		// own body (RFC 0018 §7.3), so it reads children-only — which is
+		// byte-for-byte the pre-RFC-0018 default (cutting-garden#86).
+		res, err := t.reader.ReadNode(ctx, uri, contentChildren)
 		if err != nil {
 			return "", err
 		}
@@ -687,7 +705,7 @@ func (t *Tools) listNodesURI(
 			return "", errors.Wrapf(err, "list roots under %s", uri)
 		}
 		if len(nodes) == 0 {
-			res, err := t.reader.ReadResource(ctx, uri)
+			res, err := t.reader.ReadNode(ctx, uri, contentChildren)
 			if err != nil {
 				return "", err
 			}
@@ -800,6 +818,65 @@ func paginateListingText(text string, offset, limit int) (string, error) {
 // and appending a second JSON object would break that. Facets ride on the
 // resources/read method's Contents[] for MCP resource clients; a structured
 // facet surface for tools-only clients is a separate follow-up.
+// renderReadNode renders a read_node result to a single tool text value.
+// In `both` mode a body-bearing container yields both a body block and a
+// child-listing block; mimeObject and mimeListing are the same media type,
+// so the two are told apart structurally — the child listing is the JSON
+// array, the body the JSON object — and combined into one
+// {"body":…, "children":…} object so the tool text stays a single JSON
+// value. A raw-bytes blob link, when present, is appended as a note line as
+// renderContents does. With only one of the two (a leaf object, or a plain
+// child array) the output is that value alone — byte-for-byte the
+// pre-RFC-0018 read_node shape.
+func renderReadNode(contents []protocol.ResourceContent) string {
+	var bodyText, listingText, rawNote string
+	for _, c := range contents {
+		switch {
+		case c.MimeType == mimeFacets:
+			continue
+		case c.Text != "":
+			if strings.HasPrefix(strings.TrimSpace(c.Text), "[") {
+				listingText = c.Text
+			} else {
+				bodyText = c.Text
+			}
+		case c.URI != "":
+			rawNote = "raw bytes: " + c.URI
+			if c.MimeType != "" {
+				rawNote += " (" + c.MimeType + ")"
+			}
+		}
+	}
+
+	var out string
+	switch {
+	case bodyText != "" && listingText != "":
+		combined, err := json.MarshalIndent(map[string]json.RawMessage{
+			"body":     json.RawMessage(bodyText),
+			"children": json.RawMessage(listingText),
+		}, "", "  ")
+		if err != nil {
+			// Unreachable (both are already valid JSON); fall back to the
+			// generic concatenation rather than dropping content.
+			return renderContents(contents)
+		}
+		out = string(combined)
+	case bodyText != "":
+		out = bodyText
+	default:
+		out = listingText
+	}
+
+	if rawNote != "" {
+		if out != "" {
+			out += "\n"
+		}
+		out += rawNote
+	}
+
+	return out
+}
+
 func renderContents(contents []protocol.ResourceContent) string {
 	var b strings.Builder
 	for _, c := range contents {
