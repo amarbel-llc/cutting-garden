@@ -18,10 +18,16 @@ This is the capture-shaped sibling of the **`sisyphus`** moxin in
 [`amarbel-llc/moxy`](https://code.linenisgreat.com/moxy), which exposes
 the same Jira Cloud REST v3 surface (search-by-JQL, issue GET, project
 enumeration, `JIRA_URL`/`JIRA_USERNAME`/`JIRA_API_TOKEN` basic auth) as
-interactive MCP tools. sisyphus mutates a live tracker; this plugin
-snapshots issue state for archival/backup — it offers no interactive
-mutation, exactly as the caldav plugin re-homes bob's CalDAV MCP tools as a
-read-only capture backend.
+interactive MCP tools. sisyphus mutates a live tracker; this plugin's
+CAPTURE path only snapshots issue state for archival/backup (restore is
+deferred — see below). Its traversal layer now mutates live too, though:
+`NodeMutator` + `ContainerCreator` (`mutate.go`) expose targeted issue
+create/patch/delete through the MCP write tools (RFC 0017 / FDR 0020) — the
+same live-mutation surface the caldav plugin's traversal layer grew. So the
+read-only framing is about the capture snapshot, not the whole plugin, and
+that targeted field-level mutation is distinct from the deferred snapshot
+RESTORE below: it writes only the explicitly-named writable fields, never
+reconstructs a whole issue from a rendered capture.
 
 ## Two capture paths: protocol (default) and flat (fallback)
 

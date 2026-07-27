@@ -178,7 +178,10 @@ func (Plugin) PatchNode(
 	// labels) and the status transition, decoding each with its own type so
 	// a wrong-typed value is a caller-fault error (cutting-garden#185).
 	putFields := map[string]any{}
-	var statusTarget string
+	var (
+		statusTarget string
+		hasStatus    bool
+	)
 	for _, field := range applied {
 		switch field {
 		case "summary":
@@ -200,9 +203,26 @@ func (Plugin) PatchNode(
 			}
 			putFields["labels"] = labels
 		case "status":
+			hasStatus = true
 			if err := json.Unmarshal(patch["status"], &statusTarget); err != nil {
 				return nil, errors.BadRequestf("jira plugin: patch status: %s", err)
 			}
+		}
+	}
+
+	// Resolve the status transition BEFORE any field write. It is a pure GET,
+	// so validating it first means a bad or empty status name fails without a
+	// partial mutation (Jira has no cross-call transaction). It also fixes the
+	// asymmetry where an empty status — recognized and reported in applied —
+	// would otherwise silently do nothing: an empty target matches no
+	// transition and is refused here, so applied never claims a write that did
+	// not happen. Gated on status PRESENCE (hasStatus), not on a non-empty
+	// value.
+	var transitionID string
+	if hasStatus {
+		transitionID, err = resolveStatusTransition(ctx, c, key, statusTarget)
+		if err != nil {
+			return nil, err
 		}
 	}
 
@@ -211,8 +231,8 @@ func (Plugin) PatchNode(
 			return nil, err
 		}
 	}
-	if statusTarget != "" {
-		if err := applyStatusTransition(ctx, c, key, statusTarget); err != nil {
+	if hasStatus {
+		if err := c.doTransition(ctx, key, transitionID); err != nil {
 			return nil, err
 		}
 	}
@@ -229,22 +249,24 @@ func (Plugin) DeleteNode(ctx context.Context, node *url.URL) error {
 	return c.deleteIssue(ctx, key)
 }
 
-// applyStatusTransition moves an issue to the target status by resolving the
-// status NAME to an available workflow transition and applying it. Jira
-// exposes status changes only through these transitions (not a field write),
-// and the available set depends on the issue's current status, so a target
-// with no available transition is a caller-fault bad request naming what WAS
-// available — not a silent no-op.
-func applyStatusTransition(
+// resolveStatusTransition resolves a target status NAME to an available
+// workflow transition id WITHOUT applying it — the pure GET PatchNode runs
+// before any field write so a bad status name fails without a partial
+// mutation. Jira exposes status changes only through these transitions (not
+// a field write), and the available set depends on the issue's current
+// status, so a target with no available transition — an empty or misspelled
+// name — is a caller-fault bad request naming what WAS available, never a
+// silent no-op.
+func resolveStatusTransition(
 	ctx context.Context, c *client, key, target string,
-) error {
+) (string, error) {
 	transitions, err := c.transitions(ctx, key)
 	if err != nil {
-		return err
+		return "", err
 	}
 	for _, t := range transitions {
 		if strings.EqualFold(t.To.Name, target) {
-			return c.doTransition(ctx, key, t.ID)
+			return t.ID, nil
 		}
 	}
 
@@ -252,7 +274,7 @@ func applyStatusTransition(
 	for _, t := range transitions {
 		available = append(available, t.To.Name)
 	}
-	return errors.BadRequestf(
+	return "", errors.BadRequestf(
 		"jira plugin: no workflow transition to status %q is available for %s"+
 			" (available: %s)", target, key, strings.Join(available, ", "),
 	)

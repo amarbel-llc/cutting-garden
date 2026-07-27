@@ -11,20 +11,26 @@
 // unchanged through the filesystem plugin when restored to a local
 // directory.
 //
-// This package carries no Jira write surface — it is a pure capture/diff
-// plugin. Restore is intentionally NOT implemented: re-creating or
-// updating issues on a live tracker is a lossy, destructive mutation
-// (read-only rendered fields, ADF bodies, issue-creation semantics), and a
-// captured snapshot is for archival/backup, not round-trip mutation. The
-// captured JSON files restore to disk through the filesystem plugin. See
+// This package's CAPTURE/diff path carries no write surface — it snapshots
+// issue state read-only, and restore is intentionally NOT implemented:
+// re-creating a whole issue from a rendered snapshot is a lossy, destructive
+// mutation (read-only rendered fields, ADF bodies, issue-creation
+// semantics), and a captured snapshot is for archival/backup, not
+// round-trip mutation. Its TRAVERSAL layer, though, IS write-capable:
+// NodeMutator + ContainerCreator (mutate.go) expose targeted issue
+// create/patch/delete via the MCP write tools (RFC 0017 / FDR 0020) —
+// distinct from the deferred snapshot-restore, writing only explicitly-named
+// writable fields. The captured JSON files restore to disk through the
+// filesystem plugin. See
 // `docs/features/0019-jira-plugin.md` §Restore Deferral — same posture as
 // the google-photos and yt-dlp plugins.
 //
 // The Jira REST surface this plugin speaks (search-by-JQL, issue GET,
 // project enumeration, JIRA_URL/JIRA_USERNAME/JIRA_API_TOKEN auth) mirrors
 // the `sisyphus` moxin in amarbel-llc/moxy, which exposes the same Jira
-// Cloud API as interactive MCP tools. This is the capture-shaped analogue:
-// it snapshots issue state rather than offering interactive mutation.
+// Cloud API as interactive MCP tools. This is the capture-shaped analogue —
+// it snapshots issue state for archival — whose traversal layer now offers
+// interactive mutation too (mutate.go's NodeMutator/ContainerCreator).
 package jira
 
 import (

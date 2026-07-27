@@ -165,6 +165,49 @@ func TestPatchNode_StatusWithoutTransition(t *testing.T) {
 	}
 }
 
+// TestPatchNode_EmptyStatusRefused: an empty status value is recognized
+// (present in the body) but matches no transition, so it is REFUSED rather
+// than reported applied while silently doing nothing — the #182 "not a
+// silent no-op" invariant. status is gated on presence, not on a non-empty
+// value.
+func TestPatchNode_EmptyStatusRefused(t *testing.T) {
+	f, baseURI := startFake(t)
+	f.seed("PROJ-1", "x")
+
+	_, err := (Plugin{}).PatchNode(
+		context.Background(),
+		mustParseURL(t, baseURI+"/PROJ/PROJ-1"),
+		strings.NewReader(`{"status":""}`),
+	)
+	if !errors.Is400BadRequest(err) {
+		t.Errorf("empty status err = %v, want a 400 bad request", err)
+	}
+	if _, transitioned := f.transitioned["PROJ-1"]; transitioned {
+		t.Error("an empty status applied a transition")
+	}
+}
+
+// TestPatchNode_BadStatusDoesNotPartiallyWrite: a combined patch of valid
+// fields plus an UNreachable status must fail WITHOUT writing the fields —
+// the transition is resolved (a pure GET) before any field PUT, so a bad
+// status name never leaves a partial mutation the caller cannot see.
+func TestPatchNode_BadStatusDoesNotPartiallyWrite(t *testing.T) {
+	f, baseURI := startFake(t)
+	f.seed("PROJ-1", "x")
+
+	_, err := (Plugin{}).PatchNode(
+		context.Background(),
+		mustParseURL(t, baseURI+"/PROJ/PROJ-1"),
+		strings.NewReader(`{"summary":"New","status":"Nonexistent"}`),
+	)
+	if !errors.Is400BadRequest(err) {
+		t.Fatalf("combined patch with bad status err = %v, want a 400 bad request", err)
+	}
+	if _, patched := f.patched["PROJ-1"]; patched {
+		t.Error("the field PUT ran despite an unreachable status — partial mutation")
+	}
+}
+
 // TestPatchNode_NotAnIssue: the mutation verbs address issues only, so a
 // project (or root) node is a caller mistake.
 func TestPatchNode_NotAnIssue(t *testing.T) {
