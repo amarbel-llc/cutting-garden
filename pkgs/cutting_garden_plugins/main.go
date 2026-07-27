@@ -449,6 +449,47 @@ type SourceValidator = internal.SourceValidator
 // ParseURITemplate.
 type URITemplate = internal.URITemplate
 
+// ApplyBulkOp applies one op via nm's matching NodeMutator verb and records
+// the outcome into result: AppliedNodes on success, PatchedNothing when a
+// patch was ACCEPTED but landed no recognized field (#182), Failed
+// otherwise. It never returns an error — a per-op failure is a BulkFailure,
+// the best-effort contract (RFC 0017). This is the single dispatch loop
+// caldav, the testpeer, and jira share (cutting-garden#197): its per-node
+// result-collection — the #182 patchedNothing-vs-applied distinction most of
+// all — lives here so a subtle bug cannot be fixed inconsistently across
+// plugins.
+var ApplyBulkOp = internal.ApplyBulkOp
+
+// BestEffortBulkMutate is the whole best-effort BulkMutate for a plugin that
+// is both a NodeMutator and an EnrichedLister — the common shape every
+// current implementer takes (caldav, the testpeer, jira, newsblur are all
+// best-effort-only). It REJECTS an atomic request with
+// ErrBulkAtomicUnsupported (the reject-never-downgrade floor for a plugin
+// that does not advertise bulk-atomic), and otherwise dispatches the
+// changeset or the sweep best-effort. A plugin's whole BulkMutate collapses
+// to one delegating line: `return BestEffortBulkMutate(ctx, p, p, req)`.
+//
+// A plugin that CAN transact atomically implements AtomicBulkMutator and its
+// own atomic path instead, reusing BulkBestEffortOps/Sweep for its
+// best-effort branch. A plugin without an EnrichedLister cannot use this
+// (a sweep has no way to resolve its match set) and dispatches the pieces
+// itself.
+var BestEffortBulkMutate = internal.BestEffortBulkMutate
+
+// BulkBestEffortOps applies an explicit changeset best-effort via nm,
+// returning the partitioned result. It never errors: each op's failure is a
+// BulkFailure entry, never a returned error.
+var BulkBestEffortOps = internal.BulkBestEffortOps
+
+// BulkBestEffortSweep resolves a sweep's match set via el.ListEnriched and
+// applies the op template to each match best-effort (the op template's URI
+// is ignored; each matched node's URI is filled in). On an el DECLINE
+// (ok=false) it REFUSES with a bad request rather than proceeding: a
+// mutation must never silently widen its scope from "matching" to "every
+// child" — the write-safety contract caldav established (cutting-garden#191).
+// A read may degrade a decline to an unfiltered listing; a write may not.
+var BulkBestEffortSweep = internal.BulkBestEffortSweep
+
 // ErrAlreadyRegistered is returned by registry.Register when a
 // scheme is already registered for the given direction (capture
 // or restore).
@@ -521,6 +562,15 @@ var ParseFacetFilter = internal.ParseFacetFilter
 // parses to a variable-free template that matches only itself (a fixed
 // URI, e.g. a singleton).
 var ParseURITemplate = internal.ParseURITemplate
+
+// RecognizedPatchFields returns the subset of supported keys present in
+// fields, preserving supported's order — callers pass a SORTED supported
+// list so the result, and the PatchNode applied report built from it, is
+// deterministic. Always non-nil, so an empty result is the authoritative
+// "nothing recognized" the #182 present-empty applied contract requires,
+// never a nil "did not report". The shared single-node #182 helper caldav
+// and jira use (cutting-garden#197).
+var RecognizedPatchFields = internal.RecognizedPatchFields
 
 // RegisterProtocolDiff installs p under p.ProtocolKind(), returning an
 // error (wrapping ErrAlreadyRegistered) on a clash instead of

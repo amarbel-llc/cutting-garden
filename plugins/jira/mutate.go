@@ -168,7 +168,7 @@ func (Plugin) PatchNode(
 		return nil, errors.BadRequestf("jira plugin: invalid patch JSON: %s", err)
 	}
 
-	applied := recognizedFields(patch, issuePatchFields)
+	applied := cutting_garden_plugins.RecognizedPatchFields(patch, issuePatchFields)
 	if len(applied) == 0 {
 		// Nothing we understand — no network round-trip, honest empty applied.
 		return applied, nil
@@ -350,21 +350,4 @@ func createFieldsFromBody(r io.Reader, project string) (map[string]any, error) {
 		fields["labels"] = cb.Labels
 	}
 	return fields, nil
-}
-
-// recognizedFields returns the subset of supported keys present in the patch
-// body, preserving supported's (sorted) order so the applied report is
-// deterministic. Always non-nil: jira DOES report applied fields, so an
-// empty result is the authoritative "nothing applied" rather than "did not
-// report" (cutting-garden#182).
-func recognizedFields(
-	fields map[string]json.RawMessage, supported []string,
-) []string {
-	recognized := make([]string, 0, min(len(fields), len(supported)))
-	for _, key := range supported {
-		if _, ok := fields[key]; ok {
-			recognized = append(recognized, key)
-		}
-	}
-	return recognized
 }

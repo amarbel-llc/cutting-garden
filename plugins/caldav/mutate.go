@@ -146,7 +146,7 @@ func (Plugin) PatchNode(
 	// Which of the named fields this component actually recognizes is
 	// decided BEFORE any network round-trip, so a body naming nothing we
 	// understand costs no GET/PUT and still reports honestly.
-	applied := recognizedPatchFields(fields, supported)
+	applied := cutting_garden_plugins.RecognizedPatchFields(fields, supported)
 	if len(applied) == 0 {
 		return applied, nil
 	}
@@ -270,23 +270,6 @@ var (
 // iteration order is random.
 func patchFieldKeys(targets map[string]any) []string {
 	return slices.Sorted(maps.Keys(targets))
-}
-
-// recognizedPatchFields returns the subset of fields this component knows.
-// supported is already sorted (patchFieldKeys sorts it), so the result is
-// too. Always non-nil: caldav DOES report applied fields, so an empty
-// result is the authoritative "nothing applied" rather than "did not
-// report" (cutting-garden#182).
-func recognizedPatchFields(
-	fields map[string]json.RawMessage, supported []string,
-) []string {
-	recognized := make([]string, 0, min(len(fields), len(supported)))
-	for _, key := range supported {
-		if _, ok := fields[key]; ok {
-			recognized = append(recognized, key)
-		}
-	}
-	return recognized
 }
 
 // applyPatch overlays the named fields onto the destinations in targets.
