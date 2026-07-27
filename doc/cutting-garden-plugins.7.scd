@@ -202,6 +202,35 @@ in doubt, populate both. See RFC 0013 §Leaf content (*leaf.read*'s
 *LeafReader* contract's *Structured*/*Raw* fields for the linked-plugin
 equivalent.
 
+# A CONTAINER MAY HAVE ITS OWN BODY
+
+A node can be a container AND carry its own body: a forge issue holds
+comments (its children) and has a title/description (its body). If you accept
+a body for such a type - it appears in your *BodyDescriber* declaration, so it
+is writable - then SERVE that body on read too, via *leaf.read*/*ReadLeaf*,
+EVEN WHEN the node has children. The old rule "*leaf.read* only for a
+childless node" is relaxed (RFC 0018 §7.1, RFC 0013 §Leaf content amendment):
+*ok: false* now means "this node has no own body," not "this node is
+childless." A writable container body that cannot be read back is the
+read/write asymmetry cutting-garden#168 exists to close - do not declare one
+you will not serve on read.
+
+# DECLARE A URI TEMPLATE WHEN YOUR URIS ARE POSITIONAL
+
+Give each node type an OPTIONAL *uri_template* (an RFC 6570 Level 1 template,
+e.g. *fj://{host}/{owner}/{repo}/issues/{number}*; RFC 0018 §1-§2). The host
+matches it to answer URI->type LOCALLY, with no round trip - so it reads a
+container's own body only for the types that declare one, instead of probing
+every container. Two obligations if you declare one: every URI you emit for
+that type MUST match its template and resolve back to it (the consistency
+invariant, RFC 0018 §5), and each variable MUST be a single path segment -
+percent-encode an embedded slash (RFC 0018 §3). A type whose identifiers
+cannot be single */*-free segments (an opaque rest-of-path id) OMITS its
+template; the host then falls back to the probe (RFC 0018 §6), so declaring a
+template is an optimization, never a requirement. Roots are NOT part of this -
+they are the host's handles onto your entry points, not nodes of your type
+system (RFC 0018 §5).
+
 # CAPABILITY POSTURE
 
 Every optional capability - *RootProvider*, *RootLabeler*, *LeafReader*,
