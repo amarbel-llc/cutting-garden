@@ -21,6 +21,19 @@
 // _description carrying the box trailer. Groundness is a semantic validity
 // condition, not a separate grammar: espalier parses as trellis.
 
+// ---- imported from piggy (single source of truth) ------------------------
+//
+// String, Char, Format, and DataChar are OWNED by piggy's marklid.peg
+// (RFC 0011) and imported here rather than re-defined, per the 2026-07-22
+// grammar-composition ruling (piggy → trellis → hyphence: one home per
+// grammar unit). String/Char are the doddish quoting rules whose ownership
+// flipped to piggy (piggy#236); Format and DataChar are the markl-id digest
+// primitives (piggy#237). At langlang-validation time marklid.peg is staged
+// beside this file (see `just validate-grammar`); the hand-rolled Go parser
+// (internal/trellis) mirrors these productions directly, kept in lockstep by
+// the shared conformance corpus below.
+@import String, Char, Format, DataChar from "./marklid.peg"
+
 // ---- entry ---------------------------------------------------------------
 
 Query        <- SP? Path SP? EOF
@@ -64,7 +77,7 @@ BasicTerm    <- Group
 QuotedRef    <- String
 
 TypeTerm     <- '!' Ident             // type identity (not genre; dodder FDR 0018)
-DigestTerm   <- '@' Ident             // blob identity — content-addressed exact match
+DigestTerm   <- '@' Digest            // blob identity — content-addressed exact match
 
 // Sigils choose the step's candidate version-set and are combinable
 // (`:.`). A sigil on any term — or bare — scopes the WHOLE step (pair
@@ -172,17 +185,28 @@ TypedBack    <- '<-[' SP? ConjRun SP? ']-'
 // is type-system-side like every identifier; the wire form carries no
 // spaces; presentation layers MAY insert spacing or elide/abbreviate
 // digest payloads (trie abbreviations) for display.
-MarklTerm    <- (String / Ident) '@' Ident
+MarklTerm    <- (String / Ident) '@' Digest
 Ident        <- IdentRune+
 IdentRune    <- '-' / '/' / (SigilRune &IdentRune) / (!Reserved !SP1 .)
 Reserved     <- [\[\]^=,!@<>*$~%#"'] / SigilRune
 
-// Doddish quoting rules verbatim: double or single quotes; backslash
-// escapes \n \t \r \a \b \f \v, \" and \\ round-trip, unknown escapes
-// pass the following character through unchanged.
-String       <- '"' (!'"' Char)* '"'
-              / "'" (!"'" Char)* "'"
-Char         <- '\\' . / .
+// A markl-id digest slot, composed from piggy's imported Format and DataChar
+// primitives (piggy#237). CHARSET-STRICT but LENGTH-AGNOSTIC: a full digest
+// and an abbreviated one (a prefix, e.g. `blake2b256-9ft3x`) differ only in
+// DataChar count; length/checksum completeness is a SEMANTIC (evaluator)
+// concern, not grammar, matching piggy RFC 0011 §4.1's grammar-vs-decoder
+// split (the RFC's ABNF spells DataChar as `charset-char`). The trailing
+// !IdentRune anchor is trellis's OWN composition over piggy's primitives: it
+// rejects junk a bare DataChar+ would leave as trailing garbage —
+// `blake2b256-9bt3` fails because `b` (outside the blech32 alphabet) is an
+// IdentRune right after the `9` DataChar run. This is stricter than the
+// former permissive `Ident` digest slot, which accepted any identifier.
+Digest       <- Format '-' DataChar+ !IdentRune
+
+// String and Char (the doddish quoting rules) are imported from piggy's
+// marklid.peg (see the @import at the top) — piggy owns them (piggy#236).
+// Their definitions were byte-identical here before the ownership flip, so
+// the import is semantically transparent.
 Bareword     <- IdentRune+
 
 SP           <- SP1+

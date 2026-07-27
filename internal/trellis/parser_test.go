@@ -573,6 +573,16 @@ func TestParse_MalformedInputs(t *testing.T) {
 		// combinator genuinely strands "->!done" as trailing garbage.
 		{"combinator without mandatory whitespace", `!task->!done`},
 		{"term-final @ (dangling MarklTerm digest slot)", `done@`},
+		// piggy#237 / charset-strict digest slot: `9bt3` is not blech32 —
+		// `b` is outside the alphabet — so `Format '-' DataChar+ !IdentRune`
+		// rejects it: the `b` right after the `9` DataChar run trips the
+		// !IdentRune anchor. This is the junk-rejection property the imported
+		// DataChar buys over the former permissive `Ident` digest slot; a
+		// valid abbreviated digest (`@blake2b256-9ft3x`) still parses (see the
+		// conformance corpus). Pinned locally per sunny-buckeye's review of
+		// piggy#237 so a regression here surfaces in this repo, not only piggy.
+		{"digest data with non-blech32 char (DigestTerm)", `@blake2b256-9bt3`},
+		{"digest data with non-blech32 char (MarklTerm)", `one/uno@blake2b256-9bt3`},
 		{"unterminated string", `"unterminated`},
 		{"empty group", `[]`},
 		// A leading combinator with NO following step is invalid: the

@@ -282,14 +282,27 @@ validate-generate-dagnabit:
 # -disable-builtins alone still injects Identifier[Spacing] into the AST) —
 # trellis whitespace is semantic, so the validated dialect must match Ford
 # PEG exactly.
+#
+# The grammar @imports String/Char/Format/DataChar from piggy's marklid.peg
+# (the 2026-07-22 single-source composition ruling, piggy#236/#237). langlang
+# resolves @import paths RELATIVE to the importing grammar, so marklid.peg —
+# obtained hermetically from the .#marklid-grammar flake passthrough, NOT
+# vendored — is staged beside a copy of 0014-trellis.peg in a temp dir and
+# langlang runs there. This mirrors piggy's own TestGrammarImportSurface
+# staging. The @import in the .peg is spelled `from "./marklid.peg"`.
 [group('pre-build')]
 validate-grammar:
     #!/usr/bin/env bash
     set -euo pipefail
-    peg="{{ justfile_directory() }}/docs/rfcs/0014-trellis.peg"
+    peg_src="{{ justfile_directory() }}/docs/rfcs/0014-trellis.peg"
     langlang_bin="$(nix build "{{ justfile_directory() }}#langlang" --no-link --print-out-paths)/bin/langlang"
-    "$langlang_bin" -grammar "$peg" -grammar-ast -disable-builtins -disable-spaces >/dev/null
-    gum log --level info "validate-grammar: ok ($peg parses under langlang)"
+    marklid_peg="$(nix build "{{ justfile_directory() }}#marklid-grammar" --no-link --print-out-paths)"
+    stage="$(mktemp -d)"
+    trap 'rm -rf "$stage"' EXIT
+    cp "$marklid_peg" "$stage/marklid.peg"
+    cp "$peg_src" "$stage/0014-trellis.peg"
+    "$langlang_bin" -grammar "$stage/0014-trellis.peg" -grammar-ast -disable-builtins -disable-spaces >/dev/null
+    gum log --level info "validate-grammar: ok (0014-trellis.peg parses under langlang; @import from marklid.peg resolved)"
 
 # Fast `go build` of the CLI into .tmp/cutting-garden for the tight
 # debug dev-loop (skips the full nix build).

@@ -229,20 +229,85 @@ func (p *parser) parseTypeTerm() (TypeTerm, bool) {
 	return TypeTerm{Name: id.Name}, true
 }
 
+// isDataChar reports whether r is in the blech32 alphabet (piggy RFC 0011
+// §3.1 / marklid.peg's DataChar): the 32 characters a markl-id data payload
+// may contain. Mirrors the DataChar rule 0014-trellis.peg imports from piggy;
+// the digest slot's data must be blech32, never arbitrary identifier runes.
+func isDataChar(r rune) bool {
+	switch r {
+	case 'q', 'p', 'z', 'r', 'y', '9', 'x', '8', 'g', 'f', '2', 't', 'v',
+		'd', 'w', '0', 's', '3', 'j', 'n', '5', '4', 'k', 'h', 'c', 'e',
+		'6', 'm', 'u', 'a', '7', 'l':
+		return true
+	}
+	return false
+}
+
+// isFormatChar is marklid.peg's FormatChar ([a-zA-Z0-9_]): the rune class of
+// a markl-id format id.
+func isFormatChar(r rune) bool {
+	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+		(r >= '0' && r <= '9') || r == '_'
+}
+
+// parseDigest scans a markl-id digest slot: Format '-' DataChar+ !IdentRune,
+// the composition 0014-trellis.peg builds from piggy's imported Format and
+// DataChar primitives (piggy#237). Charset-strict but LENGTH-AGNOSTIC: a full
+// digest and an abbreviated prefix (blake2b256-9ft3x) differ only in DataChar
+// count, and length/checksum completeness stays a semantic (evaluator)
+// concern per piggy RFC 0011 §4.1. The trailing !IdentRune anchor is trellis's
+// own: it rejects junk a bare DataChar+ would leave as trailing garbage —
+// `blake2b256-9bt3` fails because `b` (outside blech32) is an IdentRune right
+// after the `9` DataChar run. Stricter than the former permissive Ident slot,
+// which accepted any identifier after the `@`.
+func (p *parser) parseDigest() (string, bool) {
+	save := p.pos
+	fstart := p.pos
+	for !p.atEOF() && isFormatChar(p.src[p.pos]) {
+		p.pos++
+	}
+	if p.pos == fstart {
+		p.pos = save
+		p.fail("expected digest format")
+		return "", false
+	}
+	if p.atEOF() || p.src[p.pos] != '-' {
+		p.pos = save
+		p.fail("expected '-' in digest")
+		return "", false
+	}
+	p.pos++
+	dstart := p.pos
+	for !p.atEOF() && isDataChar(p.src[p.pos]) {
+		p.pos++
+	}
+	if p.pos == dstart {
+		p.pos = save
+		p.fail("expected digest data (blech32)")
+		return "", false
+	}
+	if !p.atEOF() && IsIdentRuneAt(p.src, p.pos) {
+		p.pos = save
+		p.fail("digest data contains a non-blech32 character")
+		return "", false
+	}
+	return string(p.src[save:p.pos]), true
+}
+
 func (p *parser) parseDigestTerm() (DigestTerm, bool) {
 	save := p.pos
 	if !p.literal("@") {
 		return DigestTerm{}, false
 	}
-	id, ok := p.parseIdent()
+	digest, ok := p.parseDigest()
 	if !ok {
 		p.pos = save
 		return DigestTerm{}, false
 	}
-	return DigestTerm{Digest: id.Name}, true
+	return DigestTerm{Digest: digest}, true
 }
 
-// parseMarklTerm: (String / Ident) '@' Ident.
+// parseMarklTerm: (String / Ident) '@' Digest.
 func (p *parser) parseMarklTerm() (MarklTerm, bool) {
 	save := p.pos
 	var purpose string
@@ -258,12 +323,12 @@ func (p *parser) parseMarklTerm() (MarklTerm, bool) {
 		p.pos = save
 		return MarklTerm{}, false
 	}
-	digest, ok := p.parseIdent()
+	digest, ok := p.parseDigest()
 	if !ok {
 		p.pos = save
 		return MarklTerm{}, false
 	}
-	return MarklTerm{Purpose: purpose, PurposeQuoted: quoted, Digest: digest.Name}, true
+	return MarklTerm{Purpose: purpose, PurposeQuoted: quoted, Digest: digest}, true
 }
 
 func (p *parser) parseQuotedRef() (QuotedRef, bool) {

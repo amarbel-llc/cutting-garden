@@ -764,6 +764,17 @@
           # `nix build .#langlang` yields the CLI at result/bin/langlang.
           langlang = langlang.packages.${system}.default;
 
+          # piggy's normative markl-id grammar, re-exposed as a cutting-garden
+          # output so `just validate-grammar` can stage it beside a copy of
+          # 0014-trellis.peg (which @imports String/Char/Format/DataChar from
+          # it — the 2026-07-22 grammar-composition ruling, piggy#236/#237).
+          # langlang resolves @import paths RELATIVE to the importing grammar,
+          # so the recipe copies both files into one temp dir; this passthrough
+          # (mirroring `langlang` above) is how the recipe gets marklid.peg's
+          # bytes hermetically, without vendoring piggy's grammar into the tree.
+          # `nix build .#marklid-grammar` yields the peg file as a store path.
+          marklid-grammar = piggy.packages.${system}.marklid-grammar;
+
           # bats-capture is the hermetic Phase 2 step 9 test lane. It
           # builds a derivation whose only purpose is to run the bats
           # suite under zz-tests_bats/ against a pre-built
