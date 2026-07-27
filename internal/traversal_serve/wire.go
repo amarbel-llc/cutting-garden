@@ -92,6 +92,14 @@ const (
 	// identity creation (ContainerCreator, cutting-garden#143). An
 	// additive capability token under RFC 0013 §Compatibility.
 	CapContainerCreate = "container-create"
+	// CapFilteredList marks a plugin whose nodes.list honors an optional
+	// filter — the wire exposure of EnrichedLister's filter pushdown
+	// (cutting-garden#193, #160). When advertised, the host MAY send
+	// nodes.list a filter and trust the returned set (subject to the
+	// result's ok bit); when absent, the host sends no filter and folds
+	// host-side over the unfiltered listing. Additive under RFC 0013
+	// §Compatibility.
+	CapFilteredList = "filtered-list"
 )
 
 // InitializeParams is the host→plugin initialize request payload
@@ -148,6 +156,12 @@ type InitializeResult struct {
 // CodeInvalidParams.
 type NodesListParams struct {
 	URI string `json:"uri"`
+	// Filter is the OPTIONAL RFC 0012 §6 predicate the host asks the
+	// plugin to narrow the listing by — the wire exposure of
+	// EnrichedLister's filter pushdown (cutting-garden#193). The host
+	// sends it ONLY to a plugin advertising CapFilteredList; absent (the
+	// zero value) is the unfiltered listing, the pre-#193 behavior.
+	Filter []PredicateView `json:"filter,omitempty"`
 }
 
 // NodesListResult is the nodes.list response: the immediate children
@@ -155,6 +169,13 @@ type NodesListParams struct {
 // list.
 type NodesListResult struct {
 	Nodes []NodeView `json:"nodes"`
+	// OK is the filter-handled bit, present ONLY on a response to a
+	// FILTERED request (cutting-garden#193, mirroring EnrichedLister's ok
+	// return): true means the plugin applied the filter and Nodes is the
+	// narrowed set; false means the plugin declined to filter this node,
+	// so the host folds host-side over an unfiltered listing instead.
+	// Absent on an unfiltered response (nil, omitted).
+	OK *bool `json:"ok,omitempty"`
 }
 
 // RootsListResult is the roots.list response: the plugin's top-level

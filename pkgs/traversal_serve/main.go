@@ -407,6 +407,15 @@ const CapContainerCreate = internal.CapContainerCreate
 const CapFacetCounts = internal.CapFacetCounts
 const CapFacetLabels = internal.CapFacetLabels
 const CapFacetVersion = internal.CapFacetVersion
+
+// CapFilteredList marks a plugin whose nodes.list honors an optional
+// filter — the wire exposure of EnrichedLister's filter pushdown
+// (cutting-garden#193, #160). When advertised, the host MAY send
+// nodes.list a filter and trust the returned set (subject to the
+// result's ok bit); when absent, the host sends no filter and folds
+// host-side over the unfiltered listing. Additive under RFC 0013
+// §Compatibility.
+const CapFilteredList = internal.CapFilteredList
 const CapLeafRead = internal.CapLeafRead
 const CapMutate = internal.CapMutate
 const CapRoots = internal.CapRoots

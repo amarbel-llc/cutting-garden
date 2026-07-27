@@ -122,6 +122,7 @@ type server struct {
 	labeler   cutting_garden_plugins.FacetLabeler
 	mutator   cutting_garden_plugins.NodeMutator
 	creator   cutting_garden_plugins.ContainerCreator
+	enriched  cutting_garden_plugins.EnrichedLister
 
 	// schemes indexes the plugin's advertised URI schemes for the
 	// nodes.list scheme gate (RFC 0013 §Traversal).
@@ -222,6 +223,11 @@ func newServer(cfg ServeConfig) (*server, error) {
 	if creator, ok := cfg.Plugin.(cutting_garden_plugins.ContainerCreator); ok {
 		srv.creator = creator
 		capabilities = append(capabilities, CapContainerCreate)
+	}
+
+	if enriched, ok := cfg.Plugin.(cutting_garden_plugins.EnrichedLister); ok {
+		srv.enriched = enriched
+		capabilities = append(capabilities, CapFilteredList)
 	}
 
 	srv.init.Capabilities = capabilities
@@ -448,14 +454,45 @@ func (s *server) handleNodesList(
 		}
 	}
 
-	nodes, err := s.lister.ListRoots(ctx, uri)
-	if err != nil {
-		return nil, err
+	var (
+		nodes   []cutting_garden_plugins.Node
+		handled *bool
+	)
+
+	switch {
+	case len(listParams.Filter) > 0 && s.enriched != nil:
+		// Filter pushdown (cutting-garden#193): the plugin narrows the
+		// listing itself via EnrichedLister. The ok/handled bit rides back
+		// on the wire so the host knows whether to trust the narrowed set
+		// or fall back to folding host-side.
+		enriched, applied, eerr := s.enriched.ListEnriched(
+			ctx, uri, FacetFilterFrom(listParams.Filter),
+		)
+		if eerr != nil {
+			return nil, eerr
+		}
+		nodes = enriched
+		handled = &applied
+
+	default:
+		listed, err := s.lister.ListRoots(ctx, uri)
+		if err != nil {
+			return nil, err
+		}
+		nodes = listed
+		// A filter was requested but this plugin cannot push it down (no
+		// EnrichedLister). Gating means the host should not send a filter
+		// here, but stay honest if it does: report handled=false so the
+		// host folds host-side rather than trusting an unfiltered set.
+		if len(listParams.Filter) > 0 {
+			no := false
+			handled = &no
+		}
 	}
 
 	// A non-nil (possibly empty) slice: a leaf or empty container
 	// answers { "nodes": [] }, never null (RFC 0013 §Traversal).
-	result := NodesListResult{Nodes: make([]NodeView, len(nodes))}
+	result := NodesListResult{Nodes: make([]NodeView, len(nodes)), OK: handled}
 	for i, node := range nodes {
 		result.Nodes[i] = NodeViewFrom(node)
 	}

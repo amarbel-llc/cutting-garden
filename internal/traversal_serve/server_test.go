@@ -56,6 +56,7 @@ type fakeFullPlugin struct {
 
 var (
 	_ cutting_garden_plugins.RootProvider   = (*fakeFullPlugin)(nil)
+	_ cutting_garden_plugins.EnrichedLister = (*fakeFullPlugin)(nil)
 	_ cutting_garden_plugins.LeafReader     = (*fakeFullPlugin)(nil)
 	_ cutting_garden_plugins.FacetDescriber = (*fakeFullPlugin)(nil)
 	_ cutting_garden_plugins.FacetCounter   = (*fakeFullPlugin)(nil)
@@ -114,6 +115,36 @@ func (p *fakeFullPlugin) Roots(
 ) ([]*url.URL, error) {
 	root, _ := url.Parse(fakeRootURI)
 	return []*url.URL{root}, nil
+}
+
+// ListEnriched is the EnrichedLister capability: it filters the root's
+// children by the predicate (cutting-garden#193 pushdown). A non-root
+// node declines (ok=false), so the host folds host-side.
+func (p *fakeFullPlugin) ListEnriched(
+	ctx context.Context,
+	node *url.URL,
+	filter cutting_garden_plugins.FacetFilter,
+) ([]cutting_garden_plugins.Node, bool, error) {
+	if node.String() != fakeRootURI {
+		return nil, false, nil
+	}
+
+	all, err := p.ListRoots(ctx, node)
+	if err != nil {
+		return nil, false, err
+	}
+	if len(filter) == 0 {
+		return all, true, nil
+	}
+
+	var matched []cutting_garden_plugins.Node
+	for _, child := range all {
+		if filter.Matches(child.Facets) {
+			matched = append(matched, child)
+		}
+	}
+
+	return matched, true, nil
 }
 
 func (p *fakeFullPlugin) ReadLeaf(
@@ -406,6 +437,7 @@ func TestServeInitializeFullPluginDeclaration(t *testing.T) {
 	wantCaps := []string{
 		CapRoots, CapLeafRead, CapFacetCounts,
 		CapFacetVersion, CapFacetLabels, CapMutate, CapContainerCreate,
+		CapFilteredList,
 	}
 	gotCaps := slices.Clone(result.Capabilities)
 	slices.Sort(gotCaps)

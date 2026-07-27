@@ -456,6 +456,53 @@ func TestWirePluginFacetCountsEmptySummaryNormalized(t *testing.T) {
 	}
 }
 
+// TestWirePluginListEnrichedPushesFilter pins the cutting-garden#193 filter
+// pushdown: a CapFilteredList peer's WirePlugin.ListEnriched sends the
+// filter over nodes.list and returns the narrowed set with ok=true; an
+// unfiltered call returns everything; a node the peer declines returns
+// ok=false so the host folds host-side.
+func TestWirePluginListEnrichedPushesFilter(t *testing.T) {
+	adapter, _ := newTestWirePlugin(
+		t, memSpec(), fullPluginConfig(&fakeFullPlugin{}),
+	)
+	ctx := context.Background()
+	root := mustParseURL(t, fakeRootURI)
+
+	// Filtered: state=open narrows the two children to just leaf a.
+	nodes, ok, err := adapter.ListEnriched(
+		ctx, root,
+		cutting_garden_plugins.FacetFilter{{Dimension: "state", Value: "open"}},
+	)
+	if err != nil || !ok {
+		t.Fatalf("ListEnriched(state=open) = ok %t, err %v", ok, err)
+	}
+	if len(nodes) != 1 || nodes[0].Name != "a" {
+		t.Fatalf("filtered nodes = %+v, want just leaf a", nodes)
+	}
+
+	// Unfiltered: both children come back.
+	all, ok, err := adapter.ListEnriched(ctx, root, nil)
+	if err != nil || !ok {
+		t.Fatalf("ListEnriched(nil) = ok %t, err %v", ok, err)
+	}
+	if len(all) != 2 {
+		t.Errorf("unfiltered nodes = %+v, want 2", all)
+	}
+
+	// A declined node under a FILTER: the peer's ListEnriched returns
+	// ok=false (it does not filter this node), which crosses the wire as
+	// OK:false and maps to a host-side fallback. (A nil filter has nothing
+	// to push down and routes through ListRoots, so a decline is only
+	// expressible on a filtered call.)
+	if _, ok, err := adapter.ListEnriched(
+		ctx, mustParseURL(t, fakeRootURI+"/leaf"),
+		cutting_garden_plugins.FacetFilter{{Dimension: "state", Value: "open"}},
+	); ok || err != nil {
+		t.Errorf("ListEnriched(declined node) = ok %t, err %v; want false, nil",
+			ok, err)
+	}
+}
+
 // TestWirePluginDeclineGatingSendsNoTraffic pins the decline paths:
 // against a RootLister-only plugin, every optional read capability
 // answers its contract's decline value with NO wire call — the only

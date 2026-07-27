@@ -55,6 +55,7 @@ type WirePlugin struct {
 
 var (
 	_ cutting_garden_plugins.RootProvider     = (*WirePlugin)(nil)
+	_ cutting_garden_plugins.EnrichedLister   = (*WirePlugin)(nil)
 	_ cutting_garden_plugins.LeafReader       = (*WirePlugin)(nil)
 	_ cutting_garden_plugins.FacetDescriber   = (*WirePlugin)(nil)
 	_ cutting_garden_plugins.FacetCounter     = (*WirePlugin)(nil)
@@ -336,25 +337,81 @@ func (w *WirePlugin) ListRoots(
 		return nil, err
 	}
 
-	nodes := make([]cutting_garden_plugins.Node, len(result.Nodes))
-	for i, view := range result.Nodes {
-		if nodes[i], err = view.ToNode(); err != nil {
+	return w.nodesFrom(result.Nodes)
+}
+
+// nodesFrom converts wire node views to domain Nodes and enforces the
+// credential-free URI invariant on plugin output (RFC 0007/0013
+// §Security — the host enforces it rather than trusting the plugin).
+// Shared by ListRoots and ListEnriched (cutting-garden#193).
+func (w *WirePlugin) nodesFrom(
+	views []NodeView,
+) ([]cutting_garden_plugins.Node, error) {
+	nodes := make([]cutting_garden_plugins.Node, len(views))
+	for i, view := range views {
+		node, err := view.ToNode()
+		if err != nil {
 			return nil, errors.Wrapf(err, "wire plugin %q", w.spec.Name)
 		}
 
-		// RFC 0007/0013 §Security: every traversal-emitted URI is
-		// credential-free, and the host enforces it on plugin output
-		// rather than trusting it — same check Roots applies.
-		if nodes[i].URI != nil && nodes[i].URI.User != nil {
+		if node.URI != nil && node.URI.User != nil {
 			return nil, errors.ErrorWithStackf(
 				"wire plugin %q: child %q carries userinfo — traversal"+
 					" URIs MUST be credential-free",
-				w.spec.Name, nodes[i].URI.Redacted(),
+				w.spec.Name, node.URI.Redacted(),
 			)
 		}
+
+		nodes[i] = node
 	}
 
 	return nodes, nil
+}
+
+// ListEnriched is the wire exposure of EnrichedLister (cutting-garden#193,
+// #160): it pushes an RFC 0012 §6 filter down to the plugin over
+// nodes.list. Gated on CapFilteredList — an unadvertised plugin declines
+// (nil, false, nil), so the host's enrichedListing folds host-side
+// instead, exactly as when a linked plugin omits EnrichedLister. The
+// wire result's ok bit is the plugin's handled report: an explicit false
+// (a per-node decline) maps to the same host-side fallback; absent from a
+// cap-advertising peer means it returned the narrowed set (handled).
+func (w *WirePlugin) ListEnriched(
+	ctx context.Context,
+	node *url.URL,
+	filter cutting_garden_plugins.FacetFilter,
+) ([]cutting_garden_plugins.Node, bool, error) {
+	sess, advertised, err := w.liveSessionWithCap(CapFilteredList)
+	if err != nil {
+		return nil, false, err
+	}
+	if !advertised {
+		return nil, false, nil
+	}
+
+	var result NodesListResult
+	err = w.call(
+		ctx, sess, MethodNodesList,
+		NodesListParams{
+			URI:    node.String(),
+			Filter: PredicateViewsFrom(filter),
+		},
+		&result,
+	)
+	if err != nil {
+		return nil, false, err
+	}
+
+	if result.OK != nil && !*result.OK {
+		return nil, false, nil
+	}
+
+	nodes, err := w.nodesFrom(result.Nodes)
+	if err != nil {
+		return nil, false, err
+	}
+
+	return nodes, true, nil
 }
 
 // Roots is gated on CapRoots: unadvertised means (nil, nil) — the
