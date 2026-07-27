@@ -237,9 +237,10 @@ EOF
   # whole multi-line output as ONE string (no per-line/multiline flag),
   # so `^not ok` would never match a mid-output failure — a false-safe
   # assertion. --partial 'not ok' catches a failing point anywhere.
-  assert_output --partial '1..12'
+  assert_output --partial '1..13'
   assert_output --partial 'ok 1 - initialize'
   assert_output --partial 'ok 11 - leaf.read: container returns its own body'
+  assert_output --partial 'ok 13 - nodes.list: filter pushdown returns a sound subset'
   refute_output --partial 'not ok'
 }
 

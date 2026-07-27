@@ -127,7 +127,8 @@ func TestRunPassesConformantTestpeer(t *testing.T) {
 		"ok 10 - facets.counts: descend targets reachable",
 		"ok 11 - leaf.read: container returns its own body beside children",
 		"ok 12 - uri template: container resolves to its body-declaring type",
-		"1..12",
+		"ok 13 - nodes.list: filter pushdown returns a sound subset",
+		"1..13",
 	} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("output missing %q:\n%s", want, out.String())

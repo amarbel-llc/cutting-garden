@@ -315,6 +315,23 @@ AND-composed; the empty array matches everything.
 `{ "nodes": [] }`. `uri` MUST be non-empty; the plugin MUST fail a URI
 whose scheme it did not advertise (`-32602`, invalid params).
 
+> **Amended by cutting-garden#193 (filter pushdown).** `nodes.list` params
+> MAY carry an OPTIONAL `filter` — the RFC 0012 §6 predicate list, the same
+> shape `facets.counts` takes — asking the plugin to return only the
+> children matching it, in ONE data-bearing fetch. This is the wire
+> exposure of the in-process `EnrichedLister` capability (cutting-garden#160).
+> A plugin that can narrow its own listing advertises the `filtered-list`
+> capability; the host sends a `filter` ONLY to such a plugin. A FILTERED
+> response carries an `ok` bit — `{ "nodes": [Node], "ok": bool }` — with
+> the same meaning as `EnrichedLister`'s: `true` means the plugin applied
+> the filter and `nodes` is the narrowed set; `false` means it declined to
+> filter this node, so the host folds host-side over an unfiltered listing.
+> An UNFILTERED `nodes.list` is unchanged (no `filter` sent, no `ok` in the
+> result). Additive under §Compatibility: a plugin omitting `filtered-list`
+> and a host predating #193 both behave exactly as before. The filtered set
+> is a SOUND SUBSET — every returned node matches the filter, and every
+> returned URI is in the unfiltered listing (the §Conformance filter case).
+
 `roots.list` params `{}` → result `{ "roots": [string] }` — the
 plugin's top-level entry points (`RootProvider.Roots`), possibly empty.
 The source of the roots is plugin-defined (typically its `config_toml`

@@ -89,6 +89,7 @@ func Run(
 	r.caseDescendTargets(ctx, entries, filter, descendSkip)
 
 	r.caseContainerBody(ctx)
+	r.caseFilteredList(ctx)
 
 	tw.Plan()
 

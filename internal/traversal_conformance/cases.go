@@ -37,6 +37,7 @@ const (
 	nameDescend       = "facets.counts: descend targets reachable"
 	nameContainerBody = "leaf.read: container returns its own body beside children"
 	nameURITemplate   = "uri template: container resolves to its body-declaring type"
+	nameFilteredList  = "nodes.list: filter pushdown returns a sound subset"
 )
 
 // malformedURI violates RFC 3986 (an unterminated IP-literal in the
@@ -839,6 +840,128 @@ func (declaredTypesLister) ListRoots(
 	context.Context, *url.URL,
 ) ([]cutting_garden_plugins.Node, error) {
 	return nil, nil
+}
+
+// caseFilteredList exercises the cutting-garden#193 filter pushdown over
+// nodes.list: against a CapFilteredList peer, a FILTERED nodes.list on the
+// manifest's facet_container must return a SOUND SUBSET — every returned
+// node genuinely matches the filter (soundness, so the peer did not just
+// hand back an unfiltered listing), and every returned URI appears in the
+// unfiltered listing (subset). SKIPs when the peer does not advertise
+// filtered-list or the manifest declares no facet_container / an empty
+// filter (nothing to narrow).
+func (r *runner) caseFilteredList(ctx context.Context) {
+	ctx, cancel := context.WithTimeout(ctx, perCaseDeadline)
+	defer cancel()
+
+	spec := r.manifest.FacetContainer
+	if spec == nil {
+		r.tap.Skip(nameFilteredList, "manifest declares no facet_container")
+
+		return
+	}
+	if !r.hasCapability(traversal_serve.CapFilteredList) {
+		r.tap.Skip(nameFilteredList, "filtered-list not advertised")
+
+		return
+	}
+
+	filterViews, err := parseFilter(spec.Filter)
+	if err != nil {
+		r.tap.NotOk(nameFilteredList, map[string]string{"manifest": err.Error()})
+
+		return
+	}
+	if len(filterViews) == 0 {
+		r.tap.Skip(nameFilteredList, "facet_container filter is empty")
+
+		return
+	}
+
+	filtered, ok := r.listNodesDecoded(ctx, spec.URI, filterViews)
+	if !ok {
+		r.tap.NotOk(nameFilteredList, map[string]string{
+			"nodes.list": "filtered listing failed or did not decode",
+		})
+
+		return
+	}
+	unfiltered, ok := r.listNodesDecoded(ctx, spec.URI, nil)
+	if !ok {
+		r.tap.NotOk(nameFilteredList, map[string]string{
+			"nodes.list": "unfiltered listing failed or did not decode",
+		})
+
+		return
+	}
+
+	unfilteredURIs := make(map[string]bool, len(unfiltered))
+	for _, node := range unfiltered {
+		unfilteredURIs[node.URIString()] = true
+	}
+
+	domainFilter := traversal_serve.FacetFilterFrom(filterViews)
+	problems := map[string]string{}
+
+	if len(filtered) > len(unfiltered) {
+		problems["length"] = fmt.Sprintf(
+			"%d filtered > %d unfiltered — a filtered set cannot exceed the"+
+				" full listing", len(filtered), len(unfiltered),
+		)
+	}
+
+	for _, node := range filtered {
+		if !domainFilter.Matches(node.Facets) {
+			problems["soundness"] = node.URIString() +
+				" is in the filtered set but does not match the filter —" +
+				" the pushdown returned a non-matching node"
+		}
+		if !unfilteredURIs[node.URIString()] {
+			problems["subset"] = node.URIString() +
+				" is in the filtered set but not the unfiltered listing"
+		}
+	}
+
+	if len(problems) > 0 {
+		r.tap.NotOk(nameFilteredList, problems)
+
+		return
+	}
+
+	r.tap.Ok(nameFilteredList)
+}
+
+// listNodesDecoded issues nodes.list (optionally filtered) and decodes the
+// children to domain Nodes so a caller can re-evaluate the filter over
+// their facets. ok is false on a call or decode failure.
+func (r *runner) listNodesDecoded(
+	ctx context.Context, uri string, filter []traversal_serve.PredicateView,
+) ([]cutting_garden_plugins.Node, bool) {
+	var raw json.RawMessage
+	if err := r.session.Call(
+		ctx, traversal_serve.MethodNodesList,
+		traversal_serve.NodesListParams{URI: uri, Filter: filter}, &raw,
+	); err != nil {
+		return nil, false
+	}
+
+	var result struct {
+		Nodes []traversal_serve.NodeView `json:"nodes"`
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return nil, false
+	}
+
+	nodes := make([]cutting_garden_plugins.Node, 0, len(result.Nodes))
+	for _, view := range result.Nodes {
+		node, err := view.ToNode()
+		if err != nil {
+			return nil, false
+		}
+		nodes = append(nodes, node)
+	}
+
+	return nodes, true
 }
 
 // patchRaw issues node.patch with body and returns the raw applied
