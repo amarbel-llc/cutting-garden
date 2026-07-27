@@ -29,21 +29,22 @@ teardown() {
 # bats file_tags=mcp
 
 # tools/list advertises the four read tools (describe/list/read/read_facets)
-# and the four CUD write tools (create/put/patch/delete), with the right
-# destructive vs read-only annotations (the hint a client gates on, mirrored
-# by the #102 hook).
+# and the write tools — the four CUD verbs (create/put/patch/delete) plus
+# bulk_mutate (RFC 0017, advertised because caldav implements BulkMutator) —
+# with the right destructive vs read-only annotations (the hint a client
+# gates on, mirrored by the #102 hook).
 function mcp_advertises_tools { # @test
   mcp_drive "$CALDAV_SOURCE" '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
 
   local names
   names="$(echo "$output" | jq -r 'select(.id==2) | (.result.tools | map(.name) | sort | join(","))')"
-  assert_equal "$names" "create_node,delete_node,describe_node_types,list_nodes,patch_node,put_node,read_facets,read_node"
+  assert_equal "$names" "bulk_mutate,create_node,delete_node,describe_node_types,list_nodes,patch_node,put_node,read_facets,read_node"
 
-  # The CUD write tools carry destructiveHint=true; the read tools don't.
+  # The write tools carry destructiveHint=true; the read tools don't.
   local destructive
   destructive="$(echo "$output" | jq -r 'select(.id==2) |
     ([.result.tools[] | select(.annotations.destructiveHint==true) | .name] | sort | join(","))')"
-  assert_equal "$destructive" "create_node,delete_node,patch_node,put_node"
+  assert_equal "$destructive" "bulk_mutate,create_node,delete_node,patch_node,put_node"
 
   local readonly_tools
   readonly_tools="$(echo "$output" | jq -r 'select(.id==2) |
