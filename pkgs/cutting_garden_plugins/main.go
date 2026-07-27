@@ -16,6 +16,54 @@ import internal "code.linenisgreat.com/cutting-garden/internal/cutting_garden_pl
 // but not its calendar container, which awaits MKCALENDAR).
 type BodyDescriber = internal.BodyDescriber
 
+// BulkAtomicity selects how a BulkMutate call is expected to complete
+// (RFC 0017 §Atomicity semantics). The zero value is NOT a valid request
+// value — a caller MUST set one of the two constants; a plugin receiving
+// neither MUST reject the request as a bad request. The best-effort
+// DEFAULT for a caller that omits it lives at the tool/parameter layer,
+// never in this Go zero value.
+type BulkAtomicity = internal.BulkAtomicity
+
+// BulkFailure records one targeted node's failure inside a best-effort
+// result.
+type BulkFailure = internal.BulkFailure
+
+// BulkMutator is the OPTIONAL bulk write capability (RFC 0017). Probed by
+// type assertion exactly as NodeMutator. It deliberately does NOT embed
+// NodeMutator: the two are independent narrow capabilities (RFC 0009's
+// growth-by-new-interfaces policy), with BulkMutator's per-op semantics
+// defined as NodeMutator's verbatim regardless of whether NodeMutator is
+// also implemented.
+type BulkMutator = internal.BulkMutator
+
+// BulkOp is one mutation, addressed exactly as a NodeMutator call is. Its
+// per-verb Body/Type meaning is NodeMutator's verbatim (FDR 0020) — this
+// type batches those semantics, it does not redefine them.
+type BulkOp = internal.BulkOp
+
+// BulkOpKind is the mutation verb of one op — the same four verbs
+// NodeMutator defines, applied per targeted node.
+type BulkOpKind = internal.BulkOpKind
+
+// BulkRequest is one bulk-mutate call. EXACTLY ONE of Ops or Sweep MUST be
+// set (both, or neither, is a bad request); Ops, when set, MUST be
+// non-empty.
+type BulkRequest = internal.BulkRequest
+
+// BulkResult is a BulkMutate call's outcome; its shape differs by
+// Atomicity (RFC 0017 §Atomicity semantics). AppliedNodes is named for
+// its unit (NODES) to avoid colliding with PatchNode's field-level applied
+// (#182/#184).
+type BulkResult = internal.BulkResult
+
+// BulkSweep selects a node set by predicate — a container Root plus a
+// FacetFilter (RFC 0012 §6, reused verbatim) — and applies one Op
+// template to every match. The plugin owns the enumeration: the framework
+// MUST NOT resolve the match set and hand over a URI list (RFC 0017
+// §Selection), which is what lets a plugin that expresses "match and
+// apply" as one backend operation genuinely promise bulk-atomic.
+type BulkSweep = internal.BulkSweep
+
 // CapturePlugin walks one capture root into the destination store,
 // emitting entries and live stream events. Plugins MAY support only
 // capture or only restore.
@@ -530,6 +578,20 @@ var ResolveScheme = internal.ResolveScheme
 // breakdown is sorted and possibly resliced in place; callers MUST NOT
 // rely on its pre-call order or capacity afterward.
 var SortAndLimitContainerBreakdown = internal.SortAndLimitContainerBreakdown
+
+// BulkAtomic requires all-or-nothing completion. A plugin that cannot
+// honor it — for this request or at all — MUST reject the request with
+// an error; it MUST NOT silently downgrade to BulkBestEffort.
+const BulkAtomic = internal.BulkAtomic
+
+// BulkBestEffort applies each targeted node independently; partial
+// completion is expected and reported via BulkResult. REQUIRED of
+// every BulkMutator for every request shape it accepts — the floor.
+const BulkBestEffort = internal.BulkBestEffort
+const BulkCreate = internal.BulkCreate
+const BulkDelete = internal.BulkDelete
+const BulkPatch = internal.BulkPatch
+const BulkPut = internal.BulkPut
 
 // FacetCategorical is a plain discrete bucket (status, state, domain).
 const FacetCategorical = internal.FacetCategorical
