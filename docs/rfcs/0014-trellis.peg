@@ -21,18 +21,30 @@
 // _description carrying the box trailer. Groundness is a semantic validity
 // condition, not a separate grammar: espalier parses as trellis.
 
-// ---- imported from piggy (single source of truth) ------------------------
+// ---- grammar composition (single source of truth) ------------------------
 //
-// String, Char, Format, and DataChar are OWNED by piggy's marklid.peg
-// (RFC 0011) and imported here rather than re-defined, per the 2026-07-22
-// grammar-composition ruling (piggy → trellis → hyphence: one home per
-// grammar unit). String/Char are the doddish quoting rules whose ownership
-// flipped to piggy (piggy#236); Format and DataChar are the markl-id digest
-// primitives (piggy#237). At langlang-validation time marklid.peg is staged
-// beside this file (see `just validate-grammar`); the hand-rolled Go parser
+// The 2026-07-22 ruling: one home per grammar unit, composed upstream →
+// downstream. The dependency DAG is piggy → hyphence → trellis: cutting-garden
+// imports hyphence's Go lib, so hyphence is UPSTREAM, and trellis imports
+// hyphence's grammar — never the reverse (that would be a build cycle).
+//
+//   - piggy owns the markl-id PRIMITIVES (marklid.peg). trellis imports String
+//     directly (QuotedRef/Value use it). Char/Format/DataChar are referenced
+//     only inside imported rules, so they resolve transitively — no direct
+//     import needed.
+//   - hyphence owns the DODDISH CONTENT GRAMMAR (Ident, MarklTerm, Digest,
+//     DigestTerm, FieldName, Bareword, SigilRune, SP, …) — these ARE
+//     hyphence RFC 0002's content grammar, not trellis's. trellis imports the
+//     ones its query layer references by name; their internal deps (IdentRune,
+//     Reserved, Digest, SP1) resolve transitively.
+//
+// At langlang-validation time marklid.peg AND hyphence-content.peg are staged
+// beside this file (see `just validate-grammar`) — a 3-file chain langlang
+// resolves transitively (proven empirically). The hand-rolled Go parser
 // (internal/trellis) mirrors these productions directly, kept in lockstep by
 // the shared conformance corpus below.
-@import String, Char, Format, DataChar from "./marklid.peg"
+@import String from "./marklid.peg"
+@import Ident, MarklTerm, DigestTerm, Bareword, FieldName, SigilRune, SP from "./hyphence-content.peg"
 
 // ---- entry ---------------------------------------------------------------
 
@@ -77,7 +89,7 @@ BasicTerm    <- Group
 QuotedRef    <- String
 
 TypeTerm     <- '!' Ident             // type identity (not genre; dodder FDR 0018)
-DigestTerm   <- '@' Digest            // blob identity — content-addressed exact match
+// DigestTerm imported from hyphence-content.peg (see @import at top)
 
 // Sigils choose the step's candidate version-set and are combinable
 // (`:.`). A sigil on any term — or bare — scopes the WHOLE step (pair
@@ -85,8 +97,7 @@ DigestTerm   <- '@' Digest            // blob identity — content-addressed exa
 // Per-term version binding is the version subpath, below.
 //   :  latest (default)   +  history / captured revisions
 //   .  external / local materializations   ?  hidden (host-defined)
-Sigil        <- SigilRune+
-SigilRune    <- [:+.?]
+Sigil        <- SigilRune+            // SigilRune imported from hyphence-content.peg
 
 // ---- groups --------------------------------------------------------------
 
@@ -123,7 +134,7 @@ ConjRun      <- Term (SP !Combinator Term)*
 // framework virtual fields; the reservation applies to the unquoted
 // content and to field-name position only.
 FieldPred    <- FieldName SP? FieldOp SP? (ValueList / Value)
-FieldName    <- String / Ident
+// FieldName imported from hyphence-content.peg (see @import at top)
 
 // Longest-match first. `~=` is RESERVED (regex, deferred): parsed here,
 // rejected at validation.
@@ -172,45 +183,21 @@ TypedBack    <- '<-[' SP? ConjRun SP? ']-'
 // `[:+.?]+` run is always the sigil suffix. Identifiers whose CONTENT
 // ends in a sigil rune (a tag named `c++`) must be quoted (QuotedRef).
 //
-// MARKL IDS ARE STRUCTURED TWO-SLOT TERMS (revised 2026-07-18, second
-// amendment — supersedes the earlier interior-@ IdentRune rule): a
-// purpose-full markl id (`[purpose@]format-data`, markl-id(7) / piggy
-// RFC 0011) decomposes at the grammar level as MarklTerm — a
-// purpose slot (bare identifier or quoted string) joined by `@` to a
-// digest slot. The digest is ALWAYS structurally visible (never
-// trapped inside string quoting): pinning an object whose id needs
-// quoting is spelled `"my thing"@blake2b256-…`, never
-// `"my thing@blake2b256-…"`. Purposes containing `@` are spelled by
-// quoting the purpose (`"a@b"@fmt-x`). Resolution of the purpose slot
-// is type-system-side like every identifier; the wire form carries no
-// spaces; presentation layers MAY insert spacing or elide/abbreviate
-// digest payloads (trie abbreviations) for display.
-MarklTerm    <- (String / Ident) '@' Digest
-Ident        <- IdentRune+
-IdentRune    <- '-' / '/' / (SigilRune &IdentRune) / (!Reserved !SP1 .)
-Reserved     <- [\[\]^=,!@<>*$~%#"'] / SigilRune
-
-// A markl-id digest slot, composed from piggy's imported Format and DataChar
-// primitives (piggy#237). CHARSET-STRICT but LENGTH-AGNOSTIC: a full digest
-// and an abbreviated one (a prefix, e.g. `blake2b256-9ft3x`) differ only in
-// DataChar count; length/checksum completeness is a SEMANTIC (evaluator)
-// concern, not grammar, matching piggy RFC 0011 §4.1's grammar-vs-decoder
-// split (the RFC's ABNF spells DataChar as `charset-char`). The trailing
-// !IdentRune anchor is trellis's OWN composition over piggy's primitives: it
-// rejects junk a bare DataChar+ would leave as trailing garbage —
-// `blake2b256-9bt3` fails because `b` (outside the blech32 alphabet) is an
-// IdentRune right after the `9` DataChar run. This is stricter than the
-// former permissive `Ident` digest slot, which accepted any identifier.
-Digest       <- Format '-' DataChar+ !IdentRune
-
-// String and Char (the doddish quoting rules) are imported from piggy's
-// marklid.peg (see the @import at the top) — piggy owns them (piggy#236).
-// Their definitions were byte-identical here before the ownership flip, so
-// the import is semantically transparent.
-Bareword     <- IdentRune+
-
-SP           <- SP1+
-SP1          <- [ \t\r\n]
+// MARKL TERMS, IDENTIFIERS, AND WHITESPACE are the DODDISH CONTENT GRAMMAR,
+// owned by hyphence-content.peg and imported at the top (hyphence RFC 0002
+// owns the embedding grammar; piggy#236/#237 moved the markl-id primitives to
+// piggy). trellis imports MarklTerm, Ident, DigestTerm, Bareword, FieldName,
+// SigilRune, and SP; their internal deps (IdentRune, Reserved, Digest, SP1)
+// resolve transitively. For reference: a purpose-full markl id
+// (`[purpose@]format-data`, markl-id(7) / piggy RFC 0011) is MarklTerm — a
+// purpose slot (bare identifier or quoted String) joined by `@` to a Digest,
+// the digest always structurally visible (`"my thing"@blake2b256-…`, never
+// `"my thing@blake2b256-…"`; a purpose containing `@` is quoted,
+// `"a@b"@fmt-x`). Digest is charset-strict but length-agnostic (`Format '-'
+// DataChar+ !IdentRune`) — abbreviated digests parse, non-blech32 junk
+// (`blake2b256-9bt3`) is rejected; length/checksum completeness is semantic
+// (piggy RFC 0011 §4.1). The hand-rolled Go parser (internal/trellis) mirrors
+// these directly.
 EOF          <- !.
 
 // ---- conformance vectors (RFC 0014 Examples; each MUST parse) ------------

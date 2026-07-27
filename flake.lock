@@ -233,6 +233,9 @@
         "nixpkgs-master": [
           "nixpkgs-master"
         ],
+        "piggy": [
+          "piggy"
+        ],
         "purse-first": [
           "purse-first"
         ],
@@ -241,10 +244,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1784657717,
-        "narHash": "sha256-O9vKQB4kzbBZOa/VgXUUf7QwQS0KliKVD1Q4oDlJjhY=",
+        "lastModified": 1785158054,
+        "narHash": "sha256-iciiPfWhuDo+G2DueKR1oNTnyTzPLaoUqfj2lMXNP3M=",
+        "rev": "a0e3738f3533d6f3aef010c2fbf4bc3562e8169c",
         "type": "tarball",
-        "url": "https://code.linenisgreat.com/hyphence/archive/aaa123983662db7cab4221f8e5afd3331001cc14.tar.gz"
+        "url": "https://code.linenisgreat.com/hyphence/archive/a0e3738f3533d6f3aef010c2fbf4bc3562e8169c.tar.gz"
       },
       "original": {
         "type": "tarball",

@@ -201,6 +201,10 @@
     # (`--check` fails on stamp skew).
     madder.inputs.piggy.follows = "piggy";
     madder.inputs.tommy.follows = "tommy";
+    # hyphence#11 gave hyphence a grammar-only piggy input (to stage marklid.peg
+    # for its own validate-grammar). It is the same rev as ours; collapse the
+    # duplicate lock node onto our piggy (mirrors madder.inputs.piggy above).
+    hyphence.inputs.piggy.follows = "piggy";
     purse-first.inputs.conformist.follows = "conformist";
     tommy.inputs.conformist.follows = "conformist";
     bats.inputs.conformist.follows = "conformist";
@@ -774,6 +778,14 @@
           # bytes hermetically, without vendoring piggy's grammar into the tree.
           # `nix build .#marklid-grammar` yields the peg file as a store path.
           marklid-grammar = piggy.packages.${system}.marklid-grammar;
+
+          # hyphence's content grammar, re-exposed so `just validate-grammar`
+          # can co-stage it with marklid.peg beside 0014-trellis.peg (the
+          # trellis @import chain trellis → hyphence → piggy; hyphence#11).
+          # hyphence OWNS the doddish content grammar (it is upstream of
+          # cutting-garden), so trellis imports it rather than re-defining it.
+          # Bare file at $out, same shape as marklid-grammar above.
+          hyphence-content-grammar = hyphence.packages.${system}.hyphence-content-grammar;
 
           # bats-capture is the hermetic Phase 2 step 9 test lane. It
           # builds a derivation whose only purpose is to run the bats
