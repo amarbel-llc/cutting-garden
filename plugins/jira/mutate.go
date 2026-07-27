@@ -31,16 +31,21 @@ func (Plugin) DescribeBodies() []cutting_garden_plugins.NodeTypeBody {
 			Tag: typeIssue,
 			Accepts: []string{
 				"application/json — create: {\"issuetype\":…, \"summary\":…," +
-					" \"priority\"?:…, \"labels\"?:[…]}; patch: any of" +
-					" {\"summary\", \"priority\", \"labels\", \"status\"}" +
-					" (status is applied via the workflow transition API)",
+					" \"priority\"?:…, \"labels\"?:[…], \"assignee\"?:…," +
+					" \"description\"?:…}; patch: any of {\"summary\"," +
+					" \"priority\", \"labels\", \"assignee\", \"description\"," +
+					" \"status\"}. assignee is a name/email (resolved to an" +
+					" accountId); description is plain text or a raw ADF object;" +
+					" status is applied via the workflow transition API",
 			},
 			ServerAssignedIdentity: true,
 			Example: map[string]any{
-				"issuetype": "Task",
-				"summary":   "Investigate flaky test",
-				"priority":  "High",
-				"labels":    []string{"triage"},
+				"issuetype":   "Task",
+				"summary":     "Investigate flaky test",
+				"priority":    "High",
+				"labels":      []string{"triage"},
+				"assignee":    "alice@example.com",
+				"description": "Repro steps in the linked CI run.",
 			},
 		},
 	}
@@ -89,12 +94,12 @@ func (Plugin) CreateChild(
 		)
 	}
 
-	fields, err := createFieldsFromBody(body, project)
+	c := newClient(origin, username, token)
+	fields, err := createFieldsFromBody(ctx, c, body, project)
 	if err != nil {
 		return nil, err
 	}
 
-	c := newClient(origin, username, token)
 	key, err := c.createIssue(ctx, fields)
 	if err != nil {
 		return nil, err
@@ -131,19 +136,33 @@ func (Plugin) PutNode(_ context.Context, _ *url.URL, _ io.Reader) error {
 // issuePatchFields is the recognized patch key set (cutting-garden#182),
 // SORTED so the applied report is deterministic. A patch body may name other
 // keys — they are TOLERATED but never reported in applied, so the caller can
-// always tell what actually landed. status is recognized here but applied
-// via the workflow transition API, not a field write (see PatchNode).
-var issuePatchFields = []string{"labels", "priority", "status", "summary"}
+// always tell what actually landed. Two fields are not plain field writes:
+// status is applied via the workflow transition API, and assignee resolves a
+// name/email to an accountId via user search (both pre-resolved before the
+// PUT; see PatchNode).
+var issuePatchFields = []string{
+	"assignee", "description", "labels", "priority", "status", "summary",
+}
 
 // PatchNode partially updates an existing Jira issue. The body is a flat
-// JSON object of the fields to change: summary (string), priority (a
-// priority name, e.g. "High"), labels (string array), status (a target
-// status name, applied via the workflow transition API since status is not
-// a settable field). Only recognized fields present in the body are
-// applied; unknown fields are tolerated but excluded from applied
-// (cutting-garden#182). An empty body is a bad request; a body naming zero
-// recognized fields applies nothing and issues no network call, reporting a
-// non-nil empty applied rather than a bare success.
+// JSON object of the fields to change:
+//
+//   - summary — a string;
+//   - priority — a priority name, e.g. "High";
+//   - labels — a string array;
+//   - assignee — a user name or email; resolved to a Jira accountId via user
+//     search (Jira Cloud addresses users by accountId, not name);
+//   - description — a plain-text string (wrapped in a minimal ADF document)
+//     or a raw ADF object (used verbatim); Jira descriptions are ADF;
+//   - status — a target status name, applied via the workflow transition API
+//     since status is not a settable field.
+//
+// Only recognized fields present in the body are applied; unknown fields are
+// tolerated but excluded from applied (cutting-garden#182). An empty body is
+// a bad request; a body naming zero recognized fields applies nothing and
+// issues no network call, reporting a non-nil empty applied rather than a
+// bare success. status and assignee are pre-resolved (pure GETs) BEFORE the
+// field PUT, so a bad status/assignee fails without a partial mutation.
 func (Plugin) PatchNode(
 	ctx context.Context, node *url.URL, body io.Reader,
 ) ([]string, error) {
@@ -179,8 +198,10 @@ func (Plugin) PatchNode(
 	// a wrong-typed value is a caller-fault error (cutting-garden#185).
 	putFields := map[string]any{}
 	var (
-		statusTarget string
-		hasStatus    bool
+		statusTarget  string
+		hasStatus     bool
+		assigneeQuery string
+		hasAssignee   bool
 	)
 	for _, field := range applied {
 		switch field {
@@ -202,6 +223,19 @@ func (Plugin) PatchNode(
 				return nil, errors.BadRequestf("jira plugin: patch labels: %s", err)
 			}
 			putFields["labels"] = labels
+		case "description":
+			adf, err := descriptionToADF(patch["description"])
+			if err != nil {
+				return nil, err
+			}
+			putFields["description"] = adf
+		case "assignee":
+			// The value is a name/email QUERY; resolving it to an accountId is
+			// a pure GET pre-resolved before the PUT (see below).
+			hasAssignee = true
+			if err := json.Unmarshal(patch["assignee"], &assigneeQuery); err != nil {
+				return nil, errors.BadRequestf("jira plugin: patch assignee: %s", err)
+			}
 		case "status":
 			hasStatus = true
 			if err := json.Unmarshal(patch["status"], &statusTarget); err != nil {
@@ -224,6 +258,13 @@ func (Plugin) PatchNode(
 		if err != nil {
 			return nil, err
 		}
+	}
+	if hasAssignee {
+		accountID, err := resolveAssignee(ctx, c, assigneeQuery)
+		if err != nil {
+			return nil, err
+		}
+		putFields["assignee"] = map[string]any{"accountId": accountID}
 	}
 
 	if len(putFields) > 0 {
@@ -280,6 +321,83 @@ func resolveStatusTransition(
 	)
 }
 
+// resolveAssignee resolves a user name/email query to a single Jira accountId
+// via user search — Jira Cloud addresses users by accountId, not name, so a
+// human-friendly assignee must be looked up. Exactly one match is required:
+// zero is a caller-fault "no such user", and multiple is refused unless the
+// query is an exact email match for one of them (the unambiguous
+// disambiguator). A pure GET, so callers run it before any write.
+func resolveAssignee(ctx context.Context, c *client, query string) (string, error) {
+	users, err := c.searchUsers(ctx, query)
+	if err != nil {
+		return "", err
+	}
+	switch len(users) {
+	case 0:
+		return "", errors.BadRequestf(
+			"jira plugin: no user matches assignee %q", query,
+		)
+	case 1:
+		return users[0].AccountID, nil
+	default:
+		for _, u := range users {
+			if strings.EqualFold(u.EmailAddress, query) {
+				return u.AccountID, nil
+			}
+		}
+		return "", errors.BadRequestf(
+			"jira plugin: assignee %q is ambiguous (%d users match) — use an"+
+				" exact email address to disambiguate", query, len(users),
+		)
+	}
+}
+
+// descriptionToADF converts a description patch/create value to the Atlassian
+// Document Format Jira Cloud requires. A JSON STRING is plain text, wrapped
+// in a minimal single-paragraph ADF document (an empty string produces an
+// empty doc, which clears the description); a JSON OBJECT is a raw ADF
+// document, used verbatim. Anything else is a caller-fault bad request. A
+// richer plain-text mapping (paragraphs on blank lines, hard breaks on
+// newlines) is a future refinement.
+func descriptionToADF(raw json.RawMessage) (any, error) {
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 {
+		return nil, errors.BadRequestf("jira plugin: description is empty")
+	}
+	switch trimmed[0] {
+	case '"':
+		var text string
+		if err := json.Unmarshal(trimmed, &text); err != nil {
+			return nil, errors.BadRequestf("jira plugin: description text: %s", err)
+		}
+		content := []any{}
+		if text != "" {
+			content = []any{
+				map[string]any{
+					"type": "paragraph",
+					"content": []any{
+						map[string]any{"type": "text", "text": text},
+					},
+				},
+			}
+		}
+		return map[string]any{
+			"type": "doc", "version": 1, "content": content,
+		}, nil
+	case '{':
+		var adf map[string]any
+		if err := json.Unmarshal(trimmed, &adf); err != nil {
+			return nil, errors.BadRequestf("jira plugin: description ADF: %s", err)
+		}
+		return adf, nil
+	default:
+		return nil, errors.BadRequestf(
+			"jira plugin: description must be a plain-text string or an ADF" +
+				" object",
+		)
+	}
+}
+
 // clientAndIssueForNode resolves a jira node URI to a credentialed client
 // and the issue key it targets. A node that is not an issue (the bare root
 // or a project) is a caller mistake: the mutation verbs address issues only.
@@ -307,18 +425,24 @@ func clientAndIssueForNode(node *url.URL) (*client, string, error) {
 }
 
 // createBody is the CreateChild issue JSON: the caller-supplied fields of a
-// new issue. issuetype and summary are required; priority and labels are
-// optional.
+// new issue. issuetype and summary are required; priority, labels, assignee
+// (a name/email), and description (plain text or ADF) are optional.
 type createBody struct {
-	IssueType string   `json:"issuetype"`
-	Summary   string   `json:"summary"`
-	Priority  string   `json:"priority"`
-	Labels    []string `json:"labels"`
+	IssueType   string          `json:"issuetype"`
+	Summary     string          `json:"summary"`
+	Priority    string          `json:"priority"`
+	Labels      []string        `json:"labels"`
+	Assignee    string          `json:"assignee"`
+	Description json.RawMessage `json:"description"`
 }
 
 // createFieldsFromBody parses a CreateChild body into the Jira create-issue
-// fields map, injecting the project from the container URI.
-func createFieldsFromBody(r io.Reader, project string) (map[string]any, error) {
+// fields map, injecting the project from the container URI. assignee is
+// resolved to an accountId and description is converted to ADF, exactly as
+// PatchNode does — the create and patch surfaces accept the same field forms.
+func createFieldsFromBody(
+	ctx context.Context, c *client, r io.Reader, project string,
+) (map[string]any, error) {
 	raw, err := io.ReadAll(r)
 	if err != nil {
 		return nil, errors.Wrap(err)
@@ -348,6 +472,20 @@ func createFieldsFromBody(r io.Reader, project string) (map[string]any, error) {
 	}
 	if cb.Labels != nil {
 		fields["labels"] = cb.Labels
+	}
+	if cb.Assignee != "" {
+		accountID, err := resolveAssignee(ctx, c, cb.Assignee)
+		if err != nil {
+			return nil, err
+		}
+		fields["assignee"] = map[string]any{"accountId": accountID}
+	}
+	if len(bytes.TrimSpace(cb.Description)) > 0 {
+		adf, err := descriptionToADF(cb.Description)
+		if err != nil {
+			return nil, err
+		}
+		fields["description"] = adf
 	}
 	return fields, nil
 }

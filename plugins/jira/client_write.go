@@ -130,3 +130,30 @@ func (c *client) doTransition(ctx context.Context, key, transitionID string) err
 	_, err = c.postJSON(ctx, c.issueEndpoint(key)+"/transitions", body)
 	return err
 }
+
+// jiraUser is one result of a user search: the accountId a name/email
+// assignee resolves to, plus the fields resolveAssignee disambiguates on.
+type jiraUser struct {
+	AccountID    string `json:"accountId"`
+	DisplayName  string `json:"displayName"`
+	EmailAddress string `json:"emailAddress"`
+}
+
+// searchUsers resolves a name/email query to candidate users. Jira Cloud
+// addresses users by accountId, not name, so setting a human-friendly
+// assignee requires this lookup first.
+func (c *client) searchUsers(
+	ctx context.Context, query string,
+) ([]jiraUser, error) {
+	endpoint := c.origin + "/rest/api/3/user/search?query=" +
+		url.QueryEscape(query)
+	data, err := c.getJSON(ctx, endpoint)
+	if err != nil {
+		return nil, err
+	}
+	var users []jiraUser
+	if err := json.Unmarshal(data, &users); err != nil {
+		return nil, errors.Wrapf(err, "parse user search response")
+	}
+	return users, nil
+}

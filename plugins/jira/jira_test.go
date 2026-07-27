@@ -33,6 +33,17 @@ type fakeJira struct {
 	transitioned map[string][]string
 	// nextNum assigns deterministic keys to created issues (PROJECT-N).
 	nextNum int
+	// users are the seeded results the user-search endpoint matches an
+	// assignee query against (by display-name substring or exact email).
+	users []jiraUser
+}
+
+func (f *fakeJira) seedUser(accountID, displayName, email string) {
+	f.users = append(f.users, jiraUser{
+		AccountID:    accountID,
+		DisplayName:  displayName,
+		EmailAddress: email,
+	})
 }
 
 func newFakeJira() *fakeJira {
@@ -165,6 +176,20 @@ func (f *fakeJira) handler() http.Handler {
 			values = append(values, map[string]any{"key": p, "name": p + " Project"})
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"values": values, "isLast": true})
+	})
+	mux.HandleFunc("/rest/api/3/user/search", func(w http.ResponseWriter, r *http.Request) {
+		query := r.URL.Query().Get("query")
+		var matched []jiraUser
+		for _, u := range f.users {
+			if query == "" {
+				continue
+			}
+			if strings.Contains(strings.ToLower(u.DisplayName), strings.ToLower(query)) ||
+				strings.EqualFold(u.EmailAddress, query) {
+				matched = append(matched, u)
+			}
+		}
+		_ = json.NewEncoder(w).Encode(matched)
 	})
 	return mux
 }

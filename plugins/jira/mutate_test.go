@@ -2,6 +2,7 @@ package jira
 
 import (
 	"context"
+	"encoding/json"
 	"slices"
 	"strings"
 	"testing"
@@ -220,6 +221,130 @@ func TestPatchNode_NotAnIssue(t *testing.T) {
 	)
 	if !errors.Is400BadRequest(err) {
 		t.Errorf("patch of a project node err = %v, want a 400 bad request", err)
+	}
+}
+
+// TestPatchNode_AssigneeResolvesToAccountId: an assignee name/email is
+// resolved to a Jira accountId (via user search) and written as
+// {accountId:…}, and reported in applied.
+func TestPatchNode_AssigneeResolvesToAccountId(t *testing.T) {
+	f, baseURI := startFake(t)
+	f.seed("PROJ-1", "x")
+	f.seedUser("acc-bob", "Bob Builder", "bob@corp.com")
+
+	applied, err := (Plugin{}).PatchNode(
+		context.Background(),
+		mustParseURL(t, baseURI+"/PROJ/PROJ-1"),
+		strings.NewReader(`{"assignee":"bob@corp.com"}`),
+	)
+	if err != nil {
+		t.Fatalf("PatchNode: %v", err)
+	}
+	if !slices.Contains(applied, "assignee") {
+		t.Errorf("applied = %v, want to contain assignee", applied)
+	}
+	assignee, ok := f.patched["PROJ-1"]["assignee"].(map[string]any)
+	if !ok || assignee["accountId"] != "acc-bob" {
+		t.Errorf("assignee field = %v, want {accountId: acc-bob}", f.patched["PROJ-1"]["assignee"])
+	}
+}
+
+// TestPatchNode_AssigneeAmbiguous: a name matching multiple users with no
+// exact-email tiebreak is a caller-fault bad request, and nothing is written.
+func TestPatchNode_AssigneeAmbiguous(t *testing.T) {
+	f, baseURI := startFake(t)
+	f.seed("PROJ-1", "x")
+	f.seedUser("acc-a", "Alice Anders", "alice.anders@corp.com")
+	f.seedUser("acc-b", "Alice Brown", "alice.brown@corp.com")
+
+	_, err := (Plugin{}).PatchNode(
+		context.Background(),
+		mustParseURL(t, baseURI+"/PROJ/PROJ-1"),
+		strings.NewReader(`{"assignee":"Alice"}`),
+	)
+	if !errors.Is400BadRequest(err) {
+		t.Errorf("ambiguous assignee err = %v, want a 400 bad request", err)
+	}
+	if _, patched := f.patched["PROJ-1"]; patched {
+		t.Error("an ambiguous assignee issued a field PUT")
+	}
+}
+
+// TestPatchNode_AssigneeNoMatch: an assignee matching no user is a
+// caller-fault bad request.
+func TestPatchNode_AssigneeNoMatch(t *testing.T) {
+	f, baseURI := startFake(t)
+	f.seed("PROJ-1", "x")
+
+	_, err := (Plugin{}).PatchNode(
+		context.Background(),
+		mustParseURL(t, baseURI+"/PROJ/PROJ-1"),
+		strings.NewReader(`{"assignee":"Nobody"}`),
+	)
+	if !errors.Is400BadRequest(err) {
+		t.Errorf("no-match assignee err = %v, want a 400 bad request", err)
+	}
+}
+
+// TestPatchNode_DescriptionPlainText: a plain-text description is wrapped in a
+// minimal ADF document.
+func TestPatchNode_DescriptionPlainText(t *testing.T) {
+	f, baseURI := startFake(t)
+	f.seed("PROJ-1", "x")
+
+	applied, err := (Plugin{}).PatchNode(
+		context.Background(),
+		mustParseURL(t, baseURI+"/PROJ/PROJ-1"),
+		strings.NewReader(`{"description":"see the linked run"}`),
+	)
+	if err != nil {
+		t.Fatalf("PatchNode: %v", err)
+	}
+	if !slices.Contains(applied, "description") {
+		t.Errorf("applied = %v, want to contain description", applied)
+	}
+	desc, _ := f.patched["PROJ-1"]["description"].(map[string]any)
+	if desc["type"] != "doc" {
+		t.Errorf("description not an ADF doc: %v", desc)
+	}
+	if enc, _ := json.Marshal(desc); !strings.Contains(string(enc), `"text":"see the linked run"`) {
+		t.Errorf("ADF does not carry the text: %s", enc)
+	}
+}
+
+// TestPatchNode_DescriptionRawADF: a raw ADF object is used verbatim.
+func TestPatchNode_DescriptionRawADF(t *testing.T) {
+	f, baseURI := startFake(t)
+	f.seed("PROJ-1", "x")
+
+	adf := `{"type":"doc","version":1,"content":[{"type":"paragraph","content":[{"type":"text","text":"raw"}]}]}`
+	_, err := (Plugin{}).PatchNode(
+		context.Background(),
+		mustParseURL(t, baseURI+"/PROJ/PROJ-1"),
+		strings.NewReader(`{"description":`+adf+`}`),
+	)
+	if err != nil {
+		t.Fatalf("PatchNode: %v", err)
+	}
+	desc, _ := f.patched["PROJ-1"]["description"].(map[string]any)
+	if enc, _ := json.Marshal(desc); !strings.Contains(string(enc), `"text":"raw"`) {
+		t.Errorf("raw ADF not passed through: %s", enc)
+	}
+}
+
+// TestCreateChild_BadAssigneeFails proves the create path also resolves
+// assignee: a no-match assignee fails the create rather than being ignored.
+func TestCreateChild_BadAssigneeFails(t *testing.T) {
+	_, baseURI := startFake(t)
+
+	_, err := (Plugin{}).CreateChild(
+		context.Background(),
+		mustParseURL(t, baseURI+"/PROJ"),
+		strings.NewReader(`{"issuetype":"Task","summary":"x","assignee":"Nobody"}`),
+		typeIssue,
+	)
+	if !errors.Is400BadRequest(err) {
+		t.Errorf("create with a no-match assignee err = %v, want a 400 bad request", err)
 	}
 }
 
