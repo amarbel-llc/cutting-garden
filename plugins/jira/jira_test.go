@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -24,10 +25,22 @@ type fakeJira struct {
 	issues map[string]string
 	// projects is the ordered list of project keys to advertise.
 	projects []string
+	// patched records the last PUT field payload per issue key (the
+	// non-status half of a PatchNode), for write assertions.
+	patched map[string]map[string]any
+	// transitioned records the applied transition ids per issue key, in
+	// order (the status half of a PatchNode).
+	transitioned map[string][]string
+	// nextNum assigns deterministic keys to created issues (PROJECT-N).
+	nextNum int
 }
 
 func newFakeJira() *fakeJira {
-	return &fakeJira{issues: map[string]string{}}
+	return &fakeJira{
+		issues:       map[string]string{},
+		patched:      map[string]map[string]any{},
+		transitioned: map[string][]string{},
+	}
 }
 
 func (f *fakeJira) seed(key, summary string) {
@@ -61,14 +74,90 @@ func (f *fakeJira) handler() http.Handler {
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{"issues": raws})
 	})
+	// POST /rest/api/3/issue creates an issue: assign a deterministic key
+	// under the requested project and echo it back (Jira assigns keys). The
+	// exact (trailing-slash-free) path plus the method pattern keeps this
+	// distinct from the /issue/{key} subtree below and avoids the
+	// redirect-to-/issue/ that would turn the POST into a GET.
+	mux.HandleFunc("POST /rest/api/3/issue", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Fields struct {
+				Project struct {
+					Key string `json:"key"`
+				} `json:"project"`
+				Summary string `json:"summary"`
+			} `json:"fields"`
+		}
+		body, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(body, &req)
+		f.nextNum++
+		key := req.Fields.Project.Key + "-" + strconv.Itoa(f.nextNum)
+		f.issues[key] = `{"key":"` + key + `","fields":{"summary":"` +
+			req.Fields.Summary + `"}}`
+		w.WriteHeader(http.StatusCreated)
+		_ = json.NewEncoder(w).Encode(map[string]any{"key": key})
+	})
 	mux.HandleFunc("/rest/api/3/issue/", func(w http.ResponseWriter, r *http.Request) {
-		key := strings.TrimPrefix(r.URL.Path, "/rest/api/3/issue/")
-		raw, ok := f.issues[key]
-		if !ok {
-			http.Error(w, `{"errorMessages":["not found"]}`, http.StatusNotFound)
+		rest := strings.TrimPrefix(r.URL.Path, "/rest/api/3/issue/")
+
+		// The transitions subresource: GET lists the canned transitions, POST
+		// applies one (recorded by id).
+		if key, ok := strings.CutSuffix(rest, "/transitions"); ok {
+			switch r.Method {
+			case http.MethodGet:
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"transitions": []map[string]any{
+						{"id": "21", "name": "Start", "to": map[string]any{"name": "In Progress"}},
+						{"id": "31", "name": "Finish", "to": map[string]any{"name": "Done"}},
+					},
+				})
+			case http.MethodPost:
+				var req struct {
+					Transition struct {
+						ID string `json:"id"`
+					} `json:"transition"`
+				}
+				body, _ := io.ReadAll(r.Body)
+				_ = json.Unmarshal(body, &req)
+				f.transitioned[key] = append(f.transitioned[key], req.Transition.ID)
+				w.WriteHeader(http.StatusNoContent)
+			default:
+				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			}
 			return
 		}
-		_, _ = io.WriteString(w, raw)
+
+		key := rest
+		switch r.Method {
+		case http.MethodGet:
+			raw, ok := f.issues[key]
+			if !ok {
+				http.Error(w, `{"errorMessages":["not found"]}`, http.StatusNotFound)
+				return
+			}
+			_, _ = io.WriteString(w, raw)
+		case http.MethodPut:
+			if _, ok := f.issues[key]; !ok {
+				http.Error(w, `{"errorMessages":["not found"]}`, http.StatusNotFound)
+				return
+			}
+			var req struct {
+				Fields map[string]any `json:"fields"`
+			}
+			body, _ := io.ReadAll(r.Body)
+			_ = json.Unmarshal(body, &req)
+			f.patched[key] = req.Fields
+			w.WriteHeader(http.StatusNoContent)
+		case http.MethodDelete:
+			if _, ok := f.issues[key]; !ok {
+				http.Error(w, `{"errorMessages":["not found"]}`, http.StatusNotFound)
+				return
+			}
+			delete(f.issues, key)
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
 	})
 	mux.HandleFunc("/rest/api/3/project/search", func(w http.ResponseWriter, _ *http.Request) {
 		var values []map[string]any
