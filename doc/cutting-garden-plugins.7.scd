@@ -231,12 +231,33 @@ template is an optimization, never a requirement. Roots are NOT part of this -
 they are the host's handles onto your entry points, not nodes of your type
 system (RFC 0018 §5).
 
+# BULK MUTATION IS BEST-EFFORT BY DEFAULT
+
+Implement *BulkMutator* (RFC 0017) when a caller needs to mutate MANY nodes
+in one call - an explicit changeset (a list of create/put/patch/delete on
+distinct URIs) or a predicate sweep (one op applied to every node under a
+container matching a filter, which YOUR plugin resolves - the framework
+never hands you a URI list). Three rules carry the weight. First, per-node
+semantics are *NodeMutator*'s verbatim: a bulk patch reports per node
+exactly as a single patch does (#182), so a node where a recognized field
+landed goes in *AppliedNodes* and one whose patch changed nothing goes in
+*PatchedNothing* - the bulk carrier of the authoritative-empty applied,
+never quiet success. Second, best-effort is the FLOOR every implementation
+MUST support: apply each node independently, and a per-node failure is a
+*BulkFailure* in the result, NEVER a returned error. Third, atomic is
+opt-in and you MUST reject it, never silently downgrade: a plugin whose
+backend cannot transact a request all-or-nothing returns
+*ErrBulkAtomicUnsupported* (the wire's -32003) rather than applying it
+best-effort - a half-applied delta the caller asked to be atomic is worse
+than none. See RFC 0017 for the full contract.
+
 # CAPABILITY POSTURE
 
 Every optional capability - *RootProvider*, *RootLabeler*, *LeafReader*,
 *FacetDescriber*, *FacetCounter*, *FacetVersioner*, *FacetLabeler*,
-*EnrichedLister*, *ListingFieldsDescriber*, *NodeMutator*, *BodyDescriber*,
-*ContainerCreator*, and whatever this list grows to next - is discovered by
+*EnrichedLister*, *ListingFieldsDescriber*, *NodeMutator*, *BulkMutator*,
+*BodyDescriber*, *ContainerCreator*, and whatever this list grows to next -
+is discovered by
 TYPE ASSERTION against an already-resolved plugin (or, on the wire, by a
 capability TOKEN advertised in *initialize*). There is no separate
 registration call and no capability you must implement to be a valid
