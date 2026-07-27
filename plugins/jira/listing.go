@@ -123,9 +123,11 @@ func keyAndSummary(raw json.RawMessage) (key, summary string) {
 }
 
 // jqlForProjectFiltered builds the JQL selecting a project's issues narrowed
-// by the RFC 0012 §6 filter: `project = "KEY"` AND one clause per predicate,
-// ordered by key for determinism. An unknown dimension is a caller-fault bad
-// request (the same contract facets.counts enforces).
+// by the RFC 0012 §6 filter: `project = "KEY"` AND one clause per predicate
+// (in the filter's given order — AND is commutative, so the query is
+// deterministic regardless), with the RESULT SET ordered by issue key
+// (ORDER BY key ASC) for a deterministic listing. An unknown dimension is a
+// caller-fault bad request (the same contract facets.counts enforces).
 func jqlForProjectFiltered(
 	projectKey string, filter cutting_garden_plugins.FacetFilter,
 ) (string, error) {

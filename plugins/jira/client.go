@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -364,7 +363,7 @@ func canonicalJSON(raw []byte) ([]byte, error) {
 // ordered by key so capture output is deterministic. The project key is
 // quoted to tolerate keys that collide with JQL reserved words.
 func jqlForProject(projectKey string) string {
-	return fmt.Sprintf("project = %q ORDER BY key ASC", projectKey)
+	return "project = " + jqlQuote(projectKey) + " ORDER BY key ASC"
 }
 
 // snippet trims an error-body excerpt so diagnostics stay readable.

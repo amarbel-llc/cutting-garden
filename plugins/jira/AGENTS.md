@@ -22,12 +22,17 @@ interactive MCP tools. sisyphus mutates a live tracker; this plugin's
 CAPTURE path only snapshots issue state for archival/backup (restore is
 deferred — see below). Its traversal layer now mutates live too, though:
 `NodeMutator` + `ContainerCreator` (`mutate.go`) expose targeted issue
-create/patch/delete through the MCP write tools (RFC 0017 / FDR 0020) — the
-same live-mutation surface the caldav plugin's traversal layer grew. So the
-read-only framing is about the capture snapshot, not the whole plugin, and
-that targeted field-level mutation is distinct from the deferred snapshot
-RESTORE below: it writes only the explicitly-named writable fields, never
-reconstructs a whole issue from a rendered capture.
+create/patch/delete through the MCP write tools (RFC 0017 / FDR 0020), and
+`BulkMutator` (`bulk_mutate.go`) adds multi-issue bulk mutation — a sweep
+like "transition every Open issue in PROJ to Done" as one filtered JQL
+search (via the `EnrichedLister` in `listing.go`, which pushes the RFC 0012
+§6 facet filter down into JQL) plus N per-issue ops, best-effort only (Jira
+cannot transact, so atomic is rejected). This is the same live-mutation
+surface the caldav plugin's traversal layer grew. So the read-only framing
+is about the capture snapshot, not the whole plugin, and that targeted
+field-level mutation is distinct from the deferred snapshot RESTORE below:
+it writes only the explicitly-named writable fields, never reconstructs a
+whole issue from a rendered capture.
 
 ## Two capture paths: protocol (default) and flat (fallback)
 
