@@ -441,16 +441,12 @@ func (p *TreePlugin) FacetCounts(
 
 	limited, truncated := cutting_garden_plugins.SortAndLimitContainerBreakdown(breakdown)
 
-	// Nothing to summarize — no facet members and no per-container
-	// breakdown in this subtree. Decline (ok=false) so the consumer falls
-	// back to the framework fold (RFC 0012 §4), rather than return an empty
-	// summary whose nil-vs-empty wire encoding a linked and a served peer
-	// could disagree on. This is the case for a facet-less container like
-	// IssueBox (cutting-garden#168).
-	if len(summary) == 0 && len(limited) == 0 {
-		return cutting_garden_plugins.FacetResult{}, false, nil
-	}
-
+	// A summarizable container returns ok=true with a possibly-EMPTY
+	// summary (the caldav convention — a task-free calendar summarizes to
+	// an empty non-nil map). IssueBox is the facet-less summarizable
+	// container that exercises this over the wire: with the #192 wire
+	// normalization in place, its empty summary round-trips
+	// indistinguishably from the linked instance.
 	return cutting_garden_plugins.FacetResult{
 		Summary:              summary,
 		Complete:             true,

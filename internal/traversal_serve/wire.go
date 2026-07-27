@@ -205,7 +205,11 @@ type FacetCountsResult struct {
 	OK bool `json:"ok"`
 	// Summary is the per-dimension aggregate — already
 	// map[string]map[string]int64-shaped, so the domain type crosses
-	// the wire directly.
+	// the wire directly. omitempty drops an EMPTY summary, which then
+	// decodes back to nil on the host; the adapter re-normalizes a nil
+	// summary to an empty non-nil map when OK, so an empty-but-OK summary
+	// (caldav's task-free-calendar shape) is indistinguishable from a
+	// linked plugin's (cutting-garden#192).
 	Summary cutting_garden_plugins.FacetSummary `json:"summary,omitempty"`
 	// Complete is false when the summary is known not to cover the
 	// whole subtree (RFC 0012 §5).

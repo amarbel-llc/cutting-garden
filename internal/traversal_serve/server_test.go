@@ -48,6 +48,10 @@ type fakeFullPlugin struct {
 	// bounding of a non-conformant wire breakdown (cutting-garden#173).
 	facetBreakdown          []cutting_garden_plugins.FacetContainerBreakdown
 	facetBreakdownTruncated bool
+	// emptyFacetSummary makes FacetCounts return ok=true with an EMPTY
+	// non-nil summary (the caldav-for-a-task-free-calendar shape), to drive
+	// the empty-vs-nil wire normalization (cutting-garden#192).
+	emptyFacetSummary bool
 }
 
 var (
@@ -153,6 +157,13 @@ func (p *fakeFullPlugin) FacetCounts(
 ) (cutting_garden_plugins.FacetResult, bool, error) {
 	if node.String() != fakeRootURI {
 		return cutting_garden_plugins.FacetResult{}, false, nil
+	}
+
+	if p.emptyFacetSummary {
+		return cutting_garden_plugins.FacetResult{
+			Summary:  cutting_garden_plugins.FacetSummary{},
+			Complete: true,
+		}, true, nil
 	}
 
 	return cutting_garden_plugins.FacetResult{

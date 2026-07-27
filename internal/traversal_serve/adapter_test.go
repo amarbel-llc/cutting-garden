@@ -430,6 +430,32 @@ func TestWirePluginFacetBreakdownNormalizedAtBoundary(t *testing.T) {
 	}
 }
 
+// TestWirePluginFacetCountsEmptySummaryNormalized pins cutting-garden#192:
+// a peer returning ok=true with an EMPTY summary (caldav's shape for a
+// task-free calendar) must be indistinguishable from a linked plugin. The
+// wire drops the empty map via omitempty, so it decodes to nil; the
+// adapter normalizes it back to a non-nil empty map, matching the linked
+// convention that a summarizable node carries a summary.
+func TestWirePluginFacetCountsEmptySummaryNormalized(t *testing.T) {
+	plugin := &fakeFullPlugin{emptyFacetSummary: true}
+	adapter, _ := newTestWirePlugin(t, memSpec(), fullPluginConfig(plugin))
+
+	result, ok, err := adapter.FacetCounts(
+		context.Background(), mustParseURL(t, fakeRootURI), nil,
+	)
+	if err != nil || !ok {
+		t.Fatalf("FacetCounts = ok %t, err %v", ok, err)
+	}
+
+	if result.Summary == nil {
+		t.Fatal("Summary = nil; want a non-nil empty map (the linked" +
+			" convention — a summarizable node has a summary, #192)")
+	}
+	if len(result.Summary) != 0 {
+		t.Errorf("Summary = %+v, want empty", result.Summary)
+	}
+}
+
 // TestWirePluginDeclineGatingSendsNoTraffic pins the decline paths:
 // against a RootLister-only plugin, every optional read capability
 // answers its contract's decline value with NO wire call — the only

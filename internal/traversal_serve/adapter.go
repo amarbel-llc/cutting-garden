@@ -485,7 +485,19 @@ func (w *WirePlugin) FacetCounts(
 		return result, false, nil
 	}
 
+	// An OK summary is non-nil by the linked convention: a summarizable
+	// node returns a possibly-EMPTY FacetSummary (caldav does exactly this
+	// for a task-free calendar). The wire drops an empty map via omitempty
+	// (FacetCountsResult.Summary), so it decodes back to nil here;
+	// normalize it to an empty non-nil map so a wire plugin is
+	// indistinguishable from a linked one for an empty-but-OK summary
+	// (cutting-garden#192). Absent normalization, a consumer's
+	// nil-vs-empty check — or the indistinguishability e2e's DeepEqual —
+	// would tell the two apart.
 	result.Summary = wireResult.Summary
+	if result.Summary == nil {
+		result.Summary = cutting_garden_plugins.FacetSummary{}
+	}
 	result.Complete = wireResult.Complete
 
 	// The RFC 0012 §13 invariants (only Count > 0 entries; capped at
