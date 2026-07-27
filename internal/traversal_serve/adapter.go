@@ -62,6 +62,7 @@ var (
 	_ cutting_garden_plugins.FacetVersioner   = (*WirePlugin)(nil)
 	_ cutting_garden_plugins.FacetLabeler     = (*WirePlugin)(nil)
 	_ cutting_garden_plugins.NodeMutator      = (*WirePlugin)(nil)
+	_ cutting_garden_plugins.BulkMutator      = (*WirePlugin)(nil)
 	_ cutting_garden_plugins.BodyDescriber    = (*WirePlugin)(nil)
 	_ cutting_garden_plugins.ContainerCreator = (*WirePlugin)(nil)
 )
@@ -641,14 +642,20 @@ func (w *WirePlugin) ResolveFacetLabels(
 	return result.Labels, nil
 }
 
-// mutationSession ensures a live session and requires CapMutate: a
-// write on a plugin that did not advertise mutate is a REAL error,
-// never a silent decline, and nothing is sent on the wire. The respawn
-// allowance was consumed inside liveSession — before the wire call —
-// so no mutation is ever retried after being issued (RFC 0013 §Session
-// lifecycle).
+// mutationSession ensures a live session requiring CapMutate — the
+// single-node NodeMutator verbs. See capSession.
 func (w *WirePlugin) mutationSession() (*Session, error) {
-	sess, advertised, err := w.liveSessionWithCap(CapMutate)
+	return w.capSession(CapMutate)
+}
+
+// capSession ensures a live session and requires the named write
+// capability: a call on a plugin that did not advertise it is a REAL
+// error, never a silent decline, and nothing is sent on the wire. The
+// respawn allowance was consumed inside liveSession — before the wire
+// call — so no mutation is ever retried after being issued (RFC 0013
+// §Session lifecycle).
+func (w *WirePlugin) capSession(capability string) (*Session, error) {
+	sess, advertised, err := w.liveSessionWithCap(capability)
 	if err != nil {
 		return nil, err
 	}
@@ -656,8 +663,8 @@ func (w *WirePlugin) mutationSession() (*Session, error) {
 	if !advertised {
 		return nil, errors.ErrorWithStackf(
 			"wire plugin %q does not advertise the %q capability;"+
-				" refusing the mutation",
-			w.spec.Name, CapMutate,
+				" refusing the operation",
+			w.spec.Name, capability,
 		)
 	}
 
@@ -847,4 +854,33 @@ func (w *WirePlugin) DeleteNode(ctx context.Context, uri *url.URL) error {
 		ctx, sess, MethodNodeDelete,
 		NodeDeleteParams{URI: uri.String()}, nil,
 	)
+}
+
+// BulkMutate issues node.bulk_mutate (RFC 0017), gated on CapBulkMutate —
+// a call on a plugin that did not advertise it is a real error, never a
+// silent decline. The RFC 0017 -32003 (atomic-unsupported) response is
+// mapped back to the domain sentinel so a linked consumer sees the same
+// ErrBulkAtomicUnsupported it would from a linked plugin.
+func (w *WirePlugin) BulkMutate(
+	ctx context.Context, req cutting_garden_plugins.BulkRequest,
+) (cutting_garden_plugins.BulkResult, error) {
+	sess, err := w.capSession(CapBulkMutate)
+	if err != nil {
+		return cutting_garden_plugins.BulkResult{}, err
+	}
+
+	var result BulkMutateResult
+	if err := w.call(
+		ctx, sess, MethodNodeBulkMutate,
+		BulkMutateParamsFrom(req), &result,
+	); err != nil {
+		if code, ok := CodeOf(err); ok && code == CodeAtomicUnsupported {
+			return cutting_garden_plugins.BulkResult{},
+				cutting_garden_plugins.ErrBulkAtomicUnsupported
+		}
+
+		return cutting_garden_plugins.BulkResult{}, err
+	}
+
+	return result.ToBulkResult()
 }

@@ -4,6 +4,29 @@ package traversal_serve
 
 import internal "code.linenisgreat.com/cutting-garden/internal/traversal_serve"
 
+// BulkFailureView is the wire form of one BulkFailure.
+type BulkFailureView = internal.BulkFailureView
+
+// BulkMutateParams is the node.bulk_mutate request. atomicity MUST be
+// present and one of "best-effort"|"atomic"; EXACTLY ONE of ops/sweep is
+// set (the plugin validates the shape — BulkRequest.Validate).
+type BulkMutateParams = internal.BulkMutateParams
+
+// BulkMutateResult is the node.bulk_mutate response. applied /
+// patched_nothing / failed are omitted-as-empty (standard JSON array
+// encoding); atomic is true ONLY on an atomic-mode success.
+type BulkMutateResult = internal.BulkMutateResult
+
+// BulkOpView is the wire form of one BulkOp (RFC 0017 §Wire binding).
+// body_base64 is standard base64, present for create/put/patch and absent
+// for delete; type is present only for kind create; uri is absent inside a
+// sweep.op (the plugin fills each match).
+type BulkOpView = internal.BulkOpView
+
+// BulkSweepView is the wire form of BulkSweep: a Root, an RFC 0012 §6
+// filter, and one op template.
+type BulkSweepView = internal.BulkSweepView
+
 // FacetContainerBreakdownView is the wire form of
 // cutting_garden_plugins.FacetContainerBreakdown (RFC 0012 §13): one
 // immediate child container's contribution to the summary. Name MAY be
@@ -265,6 +288,14 @@ type WirePlugin = internal.WirePlugin
 // rendezvous socket is listening (newline included).
 var AnnounceLine = internal.AnnounceLine
 
+// BulkMutateParamsFrom projects a domain BulkRequest onto the wire (the
+// adapter's request side).
+var BulkMutateParamsFrom = internal.BulkMutateParamsFrom
+
+// BulkMutateResultFrom projects a domain BulkResult onto the wire (the
+// server's response side).
+var BulkMutateResultFrom = internal.BulkMutateResultFrom
+
 // CodeOf extracts the JSON-RPC error code from err's chain; ok is false
 // when no *RPCError is present (a transport-level failure rather than a
 // wire error response).
@@ -400,6 +431,18 @@ var ValidateStanzas = internal.ValidateStanzas
 // CodeMethodNotFound.
 var WithHandler = internal.WithHandler
 
+// CapBulkAtomic is the OPTIONAL additive token a plugin advertises
+// alongside bulk-mutate when it can honor atomic completion for at
+// least some request shapes (RFC 0017 §Atomicity). A plugin omitting
+// it MUST reject every atomic request (-32003). Not yet advertised by
+// any in-tree plugin; the advertisement marker is a followup.
+const CapBulkAtomic = internal.CapBulkAtomic
+
+// CapBulkMutate gates node.bulk_mutate — the BulkMutator capability
+// (RFC 0017), serving best-effort bulk mutation. Additive under
+// RFC 0013 §Compatibility.
+const CapBulkMutate = internal.CapBulkMutate
+
 // CapContainerCreate gates node.create_child — server-assigned
 // identity creation (ContainerCreator, cutting-garden#143). An
 // additive capability token under RFC 0013 §Compatibility.
@@ -419,6 +462,12 @@ const CapFilteredList = internal.CapFilteredList
 const CapLeafRead = internal.CapLeafRead
 const CapMutate = internal.CapMutate
 const CapRoots = internal.CapRoots
+
+// CodeAtomicUnsupported is node.bulk_mutate's own code (RFC 0017
+// §Wire binding): "atomicity": "atomic" was requested against a plugin
+// that cannot honor it for this request — the reject-never-downgrade
+// rule. Distinct from the sibling RFC 0016's -32001.
+const CodeAtomicUnsupported = internal.CodeAtomicUnsupported
 const CodeInternalError = internal.CodeInternalError
 const CodeInvalidConfig = internal.CodeInvalidConfig
 const CodeInvalidParams = internal.CodeInvalidParams
@@ -446,6 +495,7 @@ const MethodFacetVersion = internal.MethodFacetVersion
 const MethodInitialize = internal.MethodInitialize
 const MethodLabelsResolve = internal.MethodLabelsResolve
 const MethodLeafRead = internal.MethodLeafRead
+const MethodNodeBulkMutate = internal.MethodNodeBulkMutate
 const MethodNodeCreate = internal.MethodNodeCreate
 const MethodNodeCreateChild = internal.MethodNodeCreateChild
 const MethodNodeDelete = internal.MethodNodeDelete

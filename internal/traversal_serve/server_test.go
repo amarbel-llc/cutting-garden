@@ -63,6 +63,7 @@ var (
 	_ cutting_garden_plugins.FacetVersioner = (*fakeFullPlugin)(nil)
 	_ cutting_garden_plugins.FacetLabeler   = (*fakeFullPlugin)(nil)
 	_ cutting_garden_plugins.NodeMutator    = (*fakeFullPlugin)(nil)
+	_ cutting_garden_plugins.BulkMutator    = (*fakeFullPlugin)(nil)
 	_ cutting_garden_plugins.BodyDescriber  = (*fakeFullPlugin)(nil)
 )
 
@@ -301,6 +302,41 @@ func (p *fakeFullPlugin) DeleteNode(
 	return nil
 }
 
+// BulkMutate is a best-effort fake: it rejects atomic (via the sentinel),
+// echoes each explicit op's URI into AppliedNodes, and resolves a sweep to
+// the root's children matching the filter. Enough to exercise the wire
+// round-trip of every BulkRequest/BulkResult field.
+func (p *fakeFullPlugin) BulkMutate(
+	ctx context.Context, req cutting_garden_plugins.BulkRequest,
+) (cutting_garden_plugins.BulkResult, error) {
+	if req.Atomicity == cutting_garden_plugins.BulkAtomic {
+		return cutting_garden_plugins.BulkResult{},
+			cutting_garden_plugins.ErrBulkAtomicUnsupported
+	}
+
+	var result cutting_garden_plugins.BulkResult
+
+	if len(req.Ops) > 0 {
+		for _, op := range req.Ops {
+			result.AppliedNodes = append(result.AppliedNodes, op.URI)
+		}
+
+		return result, nil
+	}
+
+	children, err := p.ListRoots(ctx, req.Sweep.Root)
+	if err != nil {
+		return result, err
+	}
+	for _, child := range children {
+		if req.Sweep.Filter.Matches(child.Facets) {
+			result.AppliedNodes = append(result.AppliedNodes, child.URI)
+		}
+	}
+
+	return result, nil
+}
+
 func (p *fakeFullPlugin) DescribeBodies() []cutting_garden_plugins.NodeTypeBody {
 	return []cutting_garden_plugins.NodeTypeBody{
 		{
@@ -437,7 +473,7 @@ func TestServeInitializeFullPluginDeclaration(t *testing.T) {
 	wantCaps := []string{
 		CapRoots, CapLeafRead, CapFacetCounts,
 		CapFacetVersion, CapFacetLabels, CapMutate, CapContainerCreate,
-		CapFilteredList,
+		CapFilteredList, CapBulkMutate,
 	}
 	gotCaps := slices.Clone(result.Capabilities)
 	slices.Sort(gotCaps)

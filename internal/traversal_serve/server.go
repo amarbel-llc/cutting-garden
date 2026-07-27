@@ -115,14 +115,15 @@ type server struct {
 	// the interface, in which case the corresponding method fails with
 	// CodeMethodNotFound (RFC 0013 §Method set: the host MUST NOT call
 	// an unadvertised method).
-	provider  cutting_garden_plugins.RootProvider
-	leaves    cutting_garden_plugins.LeafReader
-	counter   cutting_garden_plugins.FacetCounter
-	versioner cutting_garden_plugins.FacetVersioner
-	labeler   cutting_garden_plugins.FacetLabeler
-	mutator   cutting_garden_plugins.NodeMutator
-	creator   cutting_garden_plugins.ContainerCreator
-	enriched  cutting_garden_plugins.EnrichedLister
+	provider    cutting_garden_plugins.RootProvider
+	leaves      cutting_garden_plugins.LeafReader
+	counter     cutting_garden_plugins.FacetCounter
+	versioner   cutting_garden_plugins.FacetVersioner
+	labeler     cutting_garden_plugins.FacetLabeler
+	mutator     cutting_garden_plugins.NodeMutator
+	creator     cutting_garden_plugins.ContainerCreator
+	enriched    cutting_garden_plugins.EnrichedLister
+	bulkMutator cutting_garden_plugins.BulkMutator
 
 	// schemes indexes the plugin's advertised URI schemes for the
 	// nodes.list scheme gate (RFC 0013 §Traversal).
@@ -228,6 +229,11 @@ func newServer(cfg ServeConfig) (*server, error) {
 	if enriched, ok := cfg.Plugin.(cutting_garden_plugins.EnrichedLister); ok {
 		srv.enriched = enriched
 		capabilities = append(capabilities, CapFilteredList)
+	}
+
+	if bulkMutator, ok := cfg.Plugin.(cutting_garden_plugins.BulkMutator); ok {
+		srv.bulkMutator = bulkMutator
+		capabilities = append(capabilities, CapBulkMutate)
 	}
 
 	srv.init.Capabilities = capabilities
@@ -390,6 +396,12 @@ func (s *server) dispatch(
 			return nil, methodNotAdvertised(method)
 		}
 		return s.handleNodeDelete(ctx, params)
+
+	case MethodNodeBulkMutate:
+		if s.bulkMutator == nil {
+			return nil, methodNotAdvertised(method)
+		}
+		return s.handleNodeBulkMutate(ctx, params)
 
 	default:
 		return nil, &RPCError{
@@ -791,6 +803,43 @@ func (s *server) handleNodeDelete(
 	}
 
 	return struct{}{}, nil
+}
+
+// handleNodeBulkMutate serves node.bulk_mutate (RFC 0017). It decodes the
+// request, validates its shape (BulkRequest.Validate — a bad shape or a
+// malformed uri/body is a caller fault the Handle wrapper maps to -32602),
+// dispatches to the plugin, and maps the atomic-unsupported sentinel to
+// this method's own -32003. A best-effort per-node failure is a
+// BulkFailure in the result, never a JSON-RPC error.
+func (s *server) handleNodeBulkMutate(
+	ctx context.Context, params json.RawMessage,
+) (any, error) {
+	var mutateParams BulkMutateParams
+	if rpcErr := unmarshalParams(params, &mutateParams); rpcErr != nil {
+		return nil, rpcErr
+	}
+
+	req, err := mutateParams.ToBulkRequest()
+	if err != nil {
+		return nil, err
+	}
+	if err := req.Validate(); err != nil {
+		return nil, err
+	}
+
+	result, err := s.bulkMutator.BulkMutate(ctx, req)
+	if err != nil {
+		if errors.Is(err, cutting_garden_plugins.ErrBulkAtomicUnsupported) {
+			return nil, &RPCError{
+				Code:    CodeAtomicUnsupported,
+				Message: err.Error(),
+			}
+		}
+
+		return nil, err
+	}
+
+	return BulkMutateResultFrom(result), nil
 }
 
 // methodNotAdvertised is the RFC 0013 §Method set rejection for a

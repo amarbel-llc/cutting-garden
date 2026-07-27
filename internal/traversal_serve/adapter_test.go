@@ -503,6 +503,74 @@ func TestWirePluginListEnrichedPushesFilter(t *testing.T) {
 	}
 }
 
+// TestWirePluginBulkMutate pins the RFC 0017 node.bulk_mutate round trip
+// through the adapter and server: an explicit changeset echoes its op URIs
+// into applied, a sweep resolves the root's matches, an atomic request maps
+// the -32003 response back to the domain sentinel, and a malformed request
+// shape is a caller-fault error.
+func TestWirePluginBulkMutate(t *testing.T) {
+	adapter, _ := newTestWirePlugin(
+		t, memSpec(), fullPluginConfig(&fakeFullPlugin{}),
+	)
+	ctx := context.Background()
+	a := mustParseURL(t, fakeRootURI+"/a")
+	b := mustParseURL(t, fakeRootURI+"/b")
+
+	// Explicit changeset: both op URIs come back in applied.
+	result, err := adapter.BulkMutate(ctx, cutting_garden_plugins.BulkRequest{
+		Atomicity: cutting_garden_plugins.BulkBestEffort,
+		Ops: []cutting_garden_plugins.BulkOp{
+			{Kind: cutting_garden_plugins.BulkPatch, URI: a, Body: []byte(`{"x":1}`)},
+			{Kind: cutting_garden_plugins.BulkDelete, URI: b},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BulkMutate(ops): %v", err)
+	}
+	if len(result.AppliedNodes) != 2 ||
+		result.AppliedNodes[0].String() != a.String() ||
+		result.AppliedNodes[1].String() != b.String() {
+		t.Fatalf("applied = %v, want [%s %s]", result.AppliedNodes, a, b)
+	}
+	if result.Atomic {
+		t.Error("best-effort result reports atomic = true")
+	}
+
+	// Sweep: the fake resolves the root's state=open children (leaf a).
+	result, err = adapter.BulkMutate(ctx, cutting_garden_plugins.BulkRequest{
+		Atomicity: cutting_garden_plugins.BulkBestEffort,
+		Sweep: &cutting_garden_plugins.BulkSweep{
+			Root:   mustParseURL(t, fakeRootURI),
+			Filter: cutting_garden_plugins.FacetFilter{{Dimension: "state", Value: "open"}},
+			Op:     cutting_garden_plugins.BulkOp{Kind: cutting_garden_plugins.BulkPatch, Body: []byte(`{"state":"closed"}`)},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BulkMutate(sweep): %v", err)
+	}
+	if len(result.AppliedNodes) != 1 || result.AppliedNodes[0].String() != fakeLeafA {
+		t.Fatalf("sweep applied = %v, want [%s]", result.AppliedNodes, fakeLeafA)
+	}
+
+	// Atomic against a best-effort-only plugin: -32003 maps back to the
+	// domain sentinel.
+	if _, err := adapter.BulkMutate(ctx, cutting_garden_plugins.BulkRequest{
+		Atomicity: cutting_garden_plugins.BulkAtomic,
+		Ops:       []cutting_garden_plugins.BulkOp{{Kind: cutting_garden_plugins.BulkDelete, URI: a}},
+	}); !errors.Is(err, cutting_garden_plugins.ErrBulkAtomicUnsupported) {
+		t.Errorf("atomic request err = %v, want ErrBulkAtomicUnsupported", err)
+	}
+
+	// Malformed shape (empty atomicity) is a caller fault: -32602.
+	if _, err := adapter.BulkMutate(ctx, cutting_garden_plugins.BulkRequest{
+		Ops: []cutting_garden_plugins.BulkOp{{Kind: cutting_garden_plugins.BulkDelete, URI: a}},
+	}); err == nil {
+		t.Error("empty atomicity accepted, want a bad-request error")
+	} else if code, ok := CodeOf(err); !ok || code != CodeInvalidParams {
+		t.Errorf("empty atomicity code = %d (%t), want %d", code, ok, CodeInvalidParams)
+	}
+}
+
 // TestWirePluginDeclineGatingSendsNoTraffic pins the decline paths:
 // against a RootLister-only plugin, every optional read capability
 // answers its contract's decline value with NO wire call — the only

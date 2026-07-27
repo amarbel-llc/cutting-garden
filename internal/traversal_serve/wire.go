@@ -17,6 +17,7 @@
 package traversal_serve
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"net/url"
 	"time"
@@ -49,6 +50,7 @@ const (
 	MethodNodePut         = "node.put"
 	MethodNodePatch       = "node.patch"
 	MethodNodeDelete      = "node.delete"
+	MethodNodeBulkMutate  = "node.bulk_mutate"
 )
 
 // JSON-RPC error codes (RFC 0013 §Errors). The first two are RFC-defined
@@ -74,6 +76,11 @@ const (
 	CodeMethodNotFound     = -32601
 	CodeInvalidParams      = -32602
 	CodeInternalError      = -32603
+	// CodeAtomicUnsupported is node.bulk_mutate's own code (RFC 0017
+	// §Wire binding): "atomicity": "atomic" was requested against a plugin
+	// that cannot honor it for this request — the reject-never-downgrade
+	// rule. Distinct from the sibling RFC 0016's -32001.
+	CodeAtomicUnsupported = -32003
 )
 
 // Capability tokens (RFC 0013 §Method set), advertised in
@@ -100,6 +107,16 @@ const (
 	// host-side over the unfiltered listing. Additive under RFC 0013
 	// §Compatibility.
 	CapFilteredList = "filtered-list"
+	// CapBulkMutate gates node.bulk_mutate — the BulkMutator capability
+	// (RFC 0017), serving best-effort bulk mutation. Additive under
+	// RFC 0013 §Compatibility.
+	CapBulkMutate = "bulk-mutate"
+	// CapBulkAtomic is the OPTIONAL additive token a plugin advertises
+	// alongside bulk-mutate when it can honor atomic completion for at
+	// least some request shapes (RFC 0017 §Atomicity). A plugin omitting
+	// it MUST reject every atomic request (-32003). Not yet advertised by
+	// any in-tree plugin; the advertisement marker is a followup.
+	CapBulkAtomic = "bulk-atomic"
 )
 
 // InitializeParams is the host→plugin initialize request payload
@@ -392,6 +409,264 @@ type NodePatchResult struct {
 // empty.
 type NodeDeleteParams struct {
 	URI string `json:"uri"`
+}
+
+// BulkOpView is the wire form of one BulkOp (RFC 0017 §Wire binding).
+// body_base64 is standard base64, present for create/put/patch and absent
+// for delete; type is present only for kind create; uri is absent inside a
+// sweep.op (the plugin fills each match).
+type BulkOpView struct {
+	Kind       string `json:"kind"`
+	URI        string `json:"uri,omitempty"`
+	BodyBase64 string `json:"body_base64,omitempty"`
+	Type       string `json:"type,omitempty"`
+}
+
+// BulkSweepView is the wire form of BulkSweep: a Root, an RFC 0012 §6
+// filter, and one op template.
+type BulkSweepView struct {
+	Root   string          `json:"root"`
+	Filter []PredicateView `json:"filter,omitempty"`
+	Op     BulkOpView      `json:"op"`
+}
+
+// BulkMutateParams is the node.bulk_mutate request. atomicity MUST be
+// present and one of "best-effort"|"atomic"; EXACTLY ONE of ops/sweep is
+// set (the plugin validates the shape — BulkRequest.Validate).
+type BulkMutateParams struct {
+	Atomicity string         `json:"atomicity"`
+	Ops       []BulkOpView   `json:"ops,omitempty"`
+	Sweep     *BulkSweepView `json:"sweep,omitempty"`
+}
+
+// BulkFailureView is the wire form of one BulkFailure.
+type BulkFailureView struct {
+	URI string `json:"uri"`
+	Err string `json:"err"`
+}
+
+// BulkMutateResult is the node.bulk_mutate response. applied /
+// patched_nothing / failed are omitted-as-empty (standard JSON array
+// encoding); atomic is true ONLY on an atomic-mode success.
+type BulkMutateResult struct {
+	Applied        []string          `json:"applied,omitempty"`
+	PatchedNothing []string          `json:"patched_nothing,omitempty"`
+	Failed         []BulkFailureView `json:"failed,omitempty"`
+	Atomic         bool              `json:"atomic,omitempty"`
+}
+
+// bulkOpViewFrom projects a domain BulkOp onto the wire. A nil URI (a
+// sweep.op template) stays absent; an empty Body (a delete) stays absent.
+func bulkOpViewFrom(op cutting_garden_plugins.BulkOp) BulkOpView {
+	view := BulkOpView{Kind: string(op.Kind), Type: op.Type}
+	if op.URI != nil {
+		view.URI = op.URI.String()
+	}
+	if len(op.Body) > 0 {
+		view.BodyBase64 = base64.StdEncoding.EncodeToString(op.Body)
+	}
+	return view
+}
+
+// toBulkOp is the inverse: an absent uri stays a nil URL (valid for a
+// sweep.op template; ops[] URIs are enforced by BulkRequest.Validate), an
+// absent body stays nil. A malformed uri or body_base64 is a caller
+// mistake the server maps to -32602.
+func (v BulkOpView) toBulkOp() (cutting_garden_plugins.BulkOp, error) {
+	op := cutting_garden_plugins.BulkOp{
+		Kind: cutting_garden_plugins.BulkOpKind(v.Kind),
+		Type: v.Type,
+	}
+
+	if v.URI != "" {
+		uri, err := url.Parse(v.URI)
+		if err != nil {
+			return op, errors.BadRequestf(
+				"bulk_mutate: op uri %q: %s", v.URI, err,
+			)
+		}
+		op.URI = uri
+	}
+
+	if v.BodyBase64 != "" {
+		body, err := base64.StdEncoding.DecodeString(v.BodyBase64)
+		if err != nil {
+			return op, errors.BadRequestf(
+				"bulk_mutate: op body_base64: %s", err,
+			)
+		}
+		op.Body = body
+	}
+
+	return op, nil
+}
+
+// BulkMutateParamsFrom projects a domain BulkRequest onto the wire (the
+// adapter's request side).
+func BulkMutateParamsFrom(
+	req cutting_garden_plugins.BulkRequest,
+) BulkMutateParams {
+	params := BulkMutateParams{Atomicity: string(req.Atomicity)}
+
+	if len(req.Ops) > 0 {
+		params.Ops = make([]BulkOpView, len(req.Ops))
+		for i, op := range req.Ops {
+			params.Ops[i] = bulkOpViewFrom(op)
+		}
+	}
+
+	if req.Sweep != nil {
+		sweep := &BulkSweepView{Op: bulkOpViewFrom(req.Sweep.Op)}
+		if req.Sweep.Root != nil {
+			sweep.Root = req.Sweep.Root.String()
+		}
+		sweep.Filter = PredicateViewsFrom(req.Sweep.Filter)
+		params.Sweep = sweep
+	}
+
+	return params
+}
+
+// ToBulkRequest is the inverse of BulkMutateParamsFrom (the server's
+// request side). Shape validation (exactly one of ops/sweep, etc.) is left
+// to BulkRequest.Validate; this only decodes the wire form, surfacing a
+// malformed uri/body as a bad request.
+func (p BulkMutateParams) ToBulkRequest() (
+	cutting_garden_plugins.BulkRequest, error,
+) {
+	req := cutting_garden_plugins.BulkRequest{
+		Atomicity: cutting_garden_plugins.BulkAtomicity(p.Atomicity),
+	}
+
+	if len(p.Ops) > 0 {
+		req.Ops = make([]cutting_garden_plugins.BulkOp, len(p.Ops))
+		for i, view := range p.Ops {
+			op, err := view.toBulkOp()
+			if err != nil {
+				return req, err
+			}
+			req.Ops[i] = op
+		}
+	}
+
+	if p.Sweep != nil {
+		op, err := p.Sweep.Op.toBulkOp()
+		if err != nil {
+			return req, err
+		}
+
+		sweep := &cutting_garden_plugins.BulkSweep{
+			Filter: FacetFilterFrom(p.Sweep.Filter),
+			Op:     op,
+		}
+		if p.Sweep.Root != "" {
+			root, rerr := url.Parse(p.Sweep.Root)
+			if rerr != nil {
+				return req, errors.BadRequestf(
+					"bulk_mutate: sweep.root %q: %s", p.Sweep.Root, rerr,
+				)
+			}
+			sweep.Root = root
+		}
+		req.Sweep = sweep
+	}
+
+	return req, nil
+}
+
+// BulkMutateResultFrom projects a domain BulkResult onto the wire (the
+// server's response side).
+func BulkMutateResultFrom(
+	result cutting_garden_plugins.BulkResult,
+) BulkMutateResult {
+	view := BulkMutateResult{Atomic: result.Atomic}
+
+	view.Applied = uriStrings(result.AppliedNodes)
+	view.PatchedNothing = uriStrings(result.PatchedNothing)
+
+	if len(result.Failed) > 0 {
+		view.Failed = make([]BulkFailureView, len(result.Failed))
+		for i, failure := range result.Failed {
+			bf := BulkFailureView{Err: failure.Err}
+			if failure.URI != nil {
+				bf.URI = failure.URI.String()
+			}
+			view.Failed[i] = bf
+		}
+	}
+
+	return view
+}
+
+// ToBulkResult is the inverse of BulkMutateResultFrom (the adapter's
+// response side).
+func (r BulkMutateResult) ToBulkResult() (
+	cutting_garden_plugins.BulkResult, error,
+) {
+	result := cutting_garden_plugins.BulkResult{Atomic: r.Atomic}
+
+	applied, err := parseURIs(r.Applied)
+	if err != nil {
+		return result, err
+	}
+	result.AppliedNodes = applied
+
+	patchedNothing, err := parseURIs(r.PatchedNothing)
+	if err != nil {
+		return result, err
+	}
+	result.PatchedNothing = patchedNothing
+
+	if len(r.Failed) > 0 {
+		result.Failed = make([]cutting_garden_plugins.BulkFailure, len(r.Failed))
+		for i, view := range r.Failed {
+			bf := cutting_garden_plugins.BulkFailure{Err: view.Err}
+			if view.URI != "" {
+				uri, perr := url.Parse(view.URI)
+				if perr != nil {
+					return result, errors.Wrapf(
+						perr, "bulk_mutate: failed[%d] uri %q", i, view.URI,
+					)
+				}
+				bf.URI = uri
+			}
+			result.Failed[i] = bf
+		}
+	}
+
+	return result, nil
+}
+
+// uriStrings renders a URL slice to strings, omitting nils; a nil/empty
+// slice projects to nil (an omitted array).
+func uriStrings(uris []*url.URL) []string {
+	if len(uris) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(uris))
+	for _, uri := range uris {
+		if uri != nil {
+			out = append(out, uri.String())
+		}
+	}
+	return out
+}
+
+// parseURIs is the inverse of uriStrings; a malformed URI in a plugin's
+// result is the plugin's fault, wrapped (not a caller-fault bad request).
+func parseURIs(raw []string) ([]*url.URL, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	out := make([]*url.URL, 0, len(raw))
+	for _, s := range raw {
+		uri, err := url.Parse(s)
+		if err != nil {
+			return nil, errors.Wrapf(err, "bulk_mutate: result uri %q", s)
+		}
+		out = append(out, uri)
+	}
+	return out, nil
 }
 
 // FacetValueView is the wire form of cutting_garden_plugins.FacetValue
