@@ -148,6 +148,31 @@ type BulkMutator interface {
 	BulkMutate(ctx context.Context, req BulkRequest) (BulkResult, error)
 }
 
+// AtomicBulkMutator marks a BulkMutator whose backend CAN honor BulkAtomic
+// for at least some request shapes — the Go-side signal the server
+// type-asserts to advertise the bulk-atomic capability token (RFC 0017
+// §Atomicity). It is probed by type assertion exactly as BulkMutator and
+// NodeMutator (RFC 0009's growth-by-new-interfaces policy).
+//
+// A BulkMutator WITHOUT this marker MUST reject every atomic request (the
+// reject-never-downgrade floor). WITH it, the plugin advertises bulk-atomic
+// but MAY still reject a SPECIFIC request it cannot transact, returning
+// ErrBulkAtomicUnsupported — the marker is a "can, for some shapes" claim,
+// not "can, for all". BulkAtomicCapable gates the advertisement on runtime
+// state (a backend whose transaction support depends on the account or
+// server); a plugin that can always transact simply returns true, and one
+// that computes it once may cache it — the server calls it when building
+// the initialize capability list, not per request.
+type AtomicBulkMutator interface {
+	BulkMutator
+
+	// BulkAtomicCapable reports whether this plugin can currently honor a
+	// BulkAtomic request for at least some shapes. False makes the plugin
+	// indistinguishable from a plain BulkMutator (bulk-atomic not
+	// advertised); true advertises bulk-atomic.
+	BulkAtomicCapable() bool
+}
+
 // valid reports whether k is one of the four defined verbs.
 func (k BulkOpKind) valid() bool {
 	switch k {

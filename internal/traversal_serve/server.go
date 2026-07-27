@@ -234,6 +234,16 @@ func newServer(cfg ServeConfig) (*server, error) {
 	if bulkMutator, ok := cfg.Plugin.(cutting_garden_plugins.BulkMutator); ok {
 		srv.bulkMutator = bulkMutator
 		capabilities = append(capabilities, CapBulkMutate)
+
+		// bulk-atomic is the additive marker (RFC 0017 §Atomicity): advertise
+		// it only when the plugin is an AtomicBulkMutator that currently
+		// reports itself atomic-capable. A plain BulkMutator — or one whose
+		// BulkAtomicCapable() is false — advertises bulk-mutate ALONE and MUST
+		// reject every atomic request with -32003 (reject-never-downgrade).
+		if atomic, ok := bulkMutator.(cutting_garden_plugins.AtomicBulkMutator); ok &&
+			atomic.BulkAtomicCapable() {
+			capabilities = append(capabilities, CapBulkAtomic)
+		}
 	}
 
 	srv.init.Capabilities = capabilities

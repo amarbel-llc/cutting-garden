@@ -337,6 +337,46 @@ func (p *fakeFullPlugin) BulkMutate(
 	return result, nil
 }
 
+// atomicFakePlugin is a fakeFullPlugin that ALSO advertises bulk-atomic
+// (RFC 0017 §Atomicity, cutting-garden#195): it implements
+// AtomicBulkMutator, so the server advertises CapBulkAtomic, and its
+// BulkMutate HONORS an atomic request all-or-nothing (Atomic: true) instead
+// of rejecting it — the atomic-capable counterpart to fakeFullPlugin's
+// best-effort-only BulkMutator. Best-effort requests delegate unchanged.
+type atomicFakePlugin struct {
+	*fakeFullPlugin
+}
+
+var _ cutting_garden_plugins.AtomicBulkMutator = (*atomicFakePlugin)(nil)
+
+func (*atomicFakePlugin) BulkAtomicCapable() bool { return true }
+
+func (p *atomicFakePlugin) BulkMutate(
+	ctx context.Context, req cutting_garden_plugins.BulkRequest,
+) (cutting_garden_plugins.BulkResult, error) {
+	if req.Atomicity != cutting_garden_plugins.BulkAtomic {
+		return p.fakeFullPlugin.BulkMutate(ctx, req)
+	}
+
+	// Atomic mode: apply every op, commit as a unit, report Atomic true and
+	// nothing failed (the transactional backend a real AtomicBulkMutator
+	// stands in for).
+	var result cutting_garden_plugins.BulkResult
+	for _, op := range req.Ops {
+		result.AppliedNodes = append(result.AppliedNodes, op.URI)
+	}
+	result.Atomic = true
+
+	return result, nil
+}
+
+func atomicPluginConfig(plugin *atomicFakePlugin) ServeConfig {
+	return ServeConfig{
+		Plugin: plugin,
+		Info:   PluginInfo{Name: "fake-mem-atomic", Version: "0.0.1"},
+	}
+}
+
 func (p *fakeFullPlugin) DescribeBodies() []cutting_garden_plugins.NodeTypeBody {
 	return []cutting_garden_plugins.NodeTypeBody{
 		{
@@ -501,6 +541,30 @@ func TestServeInitializeFullPluginDeclaration(t *testing.T) {
 
 	if len(result.Bodies) != 1 || result.Bodies[0].Tag != fakeLeafType {
 		t.Errorf("bodies = %+v, want one entry for %s", result.Bodies, fakeLeafType)
+	}
+}
+
+// TestServeAdvertisesBulkAtomicForAtomicPlugin pins the RFC 0017 §Atomicity
+// advertisement (cutting-garden#195): an AtomicBulkMutator reporting itself
+// capable makes the server advertise bulk-atomic ALONGSIDE bulk-mutate,
+// while a plain BulkMutator advertises bulk-mutate alone (reject-never-
+// downgrade — the -32003 floor).
+func TestServeAdvertisesBulkAtomicForAtomicPlugin(t *testing.T) {
+	client, _ := startServe(t, atomicPluginConfig(
+		&atomicFakePlugin{fakeFullPlugin: &fakeFullPlugin{}},
+	))
+	result := mustInitialize(t, client)
+	if !slices.Contains(result.Capabilities, CapBulkMutate) ||
+		!slices.Contains(result.Capabilities, CapBulkAtomic) {
+		t.Errorf("atomic plugin capabilities = %v, want both %q and %q",
+			result.Capabilities, CapBulkMutate, CapBulkAtomic)
+	}
+
+	best, _ := startServe(t, fullPluginConfig(&fakeFullPlugin{}))
+	bestResult := mustInitialize(t, best)
+	if slices.Contains(bestResult.Capabilities, CapBulkAtomic) {
+		t.Errorf("best-effort plugin advertised %q; caps = %v",
+			CapBulkAtomic, bestResult.Capabilities)
 	}
 }
 

@@ -54,17 +54,18 @@ type WirePlugin struct {
 }
 
 var (
-	_ cutting_garden_plugins.RootProvider     = (*WirePlugin)(nil)
-	_ cutting_garden_plugins.EnrichedLister   = (*WirePlugin)(nil)
-	_ cutting_garden_plugins.LeafReader       = (*WirePlugin)(nil)
-	_ cutting_garden_plugins.FacetDescriber   = (*WirePlugin)(nil)
-	_ cutting_garden_plugins.FacetCounter     = (*WirePlugin)(nil)
-	_ cutting_garden_plugins.FacetVersioner   = (*WirePlugin)(nil)
-	_ cutting_garden_plugins.FacetLabeler     = (*WirePlugin)(nil)
-	_ cutting_garden_plugins.NodeMutator      = (*WirePlugin)(nil)
-	_ cutting_garden_plugins.BulkMutator      = (*WirePlugin)(nil)
-	_ cutting_garden_plugins.BodyDescriber    = (*WirePlugin)(nil)
-	_ cutting_garden_plugins.ContainerCreator = (*WirePlugin)(nil)
+	_ cutting_garden_plugins.RootProvider      = (*WirePlugin)(nil)
+	_ cutting_garden_plugins.EnrichedLister    = (*WirePlugin)(nil)
+	_ cutting_garden_plugins.LeafReader        = (*WirePlugin)(nil)
+	_ cutting_garden_plugins.FacetDescriber    = (*WirePlugin)(nil)
+	_ cutting_garden_plugins.FacetCounter      = (*WirePlugin)(nil)
+	_ cutting_garden_plugins.FacetVersioner    = (*WirePlugin)(nil)
+	_ cutting_garden_plugins.FacetLabeler      = (*WirePlugin)(nil)
+	_ cutting_garden_plugins.NodeMutator       = (*WirePlugin)(nil)
+	_ cutting_garden_plugins.BulkMutator       = (*WirePlugin)(nil)
+	_ cutting_garden_plugins.AtomicBulkMutator = (*WirePlugin)(nil)
+	_ cutting_garden_plugins.BodyDescriber     = (*WirePlugin)(nil)
+	_ cutting_garden_plugins.ContainerCreator  = (*WirePlugin)(nil)
 )
 
 // NewWirePlugin returns the adapter for spec. It does NOT spawn — the
@@ -883,4 +884,23 @@ func (w *WirePlugin) BulkMutate(
 	}
 
 	return result.ToBulkResult()
+}
+
+// BulkAtomicCapable reports whether the wire peer advertised bulk-atomic in
+// its initialize result — the AtomicBulkMutator marker (RFC 0017 §Atomicity)
+// the host re-asserts to know a peer can honor an atomic request for some
+// shapes. Like the other capability probes, an unreachable peer reads as NOT
+// capable (false), never a claim we cannot back: a peer we cannot spawn is
+// not atomic-capable, and the real spawn failure surfaces on the next
+// BulkMutate. This gates the advertisement, not the type assertion, so
+// WirePlugin — which over-matches AtomicBulkMutator like every optional
+// interface — is indistinguishable from a linked plugin under the correct
+// `ok && BulkAtomicCapable()` usage.
+func (w *WirePlugin) BulkAtomicCapable() bool {
+	_, advertised, err := w.liveSessionWithCap(CapBulkAtomic)
+	if err != nil {
+		return false
+	}
+
+	return advertised
 }

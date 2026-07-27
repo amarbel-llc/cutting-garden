@@ -552,6 +552,13 @@ func TestWirePluginBulkMutate(t *testing.T) {
 		t.Fatalf("sweep applied = %v, want [%s]", result.AppliedNodes, fakeLeafA)
 	}
 
+	// A best-effort-only plugin does NOT advertise bulk-atomic, so the
+	// adapter — which over-matches AtomicBulkMutator — reports itself NOT
+	// atomic-capable (the runtime gate, not the type assertion).
+	if adapter.BulkAtomicCapable() {
+		t.Error("best-effort-only peer reports BulkAtomicCapable() = true")
+	}
+
 	// Atomic against a best-effort-only plugin: -32003 maps back to the
 	// domain sentinel.
 	if _, err := adapter.BulkMutate(ctx, cutting_garden_plugins.BulkRequest{
@@ -568,6 +575,58 @@ func TestWirePluginBulkMutate(t *testing.T) {
 		t.Error("empty atomicity accepted, want a bad-request error")
 	} else if code, ok := CodeOf(err); !ok || code != CodeInvalidParams {
 		t.Errorf("empty atomicity code = %d (%t), want %d", code, ok, CodeInvalidParams)
+	}
+}
+
+// TestWirePluginBulkAtomicAdvertisedAndRoundTrips is the RFC 0017 §Atomicity
+// advertisement e2e (cutting-garden#195): against an atomic-CAPABLE peer,
+// the server advertises bulk-atomic, the adapter reports itself
+// BulkAtomicCapable, and an atomic request round-trips a successful atomic
+// result (Atomic: true) rather than the -32003 a best-effort-only peer
+// returns — the whole point of the marker.
+func TestWirePluginBulkAtomicAdvertisedAndRoundTrips(t *testing.T) {
+	plugin := &atomicFakePlugin{fakeFullPlugin: &fakeFullPlugin{}}
+	adapter, _ := newTestWirePlugin(t, memSpec(), atomicPluginConfig(plugin))
+	ctx := context.Background()
+	a := mustParseURL(t, fakeRootURI+"/a")
+	b := mustParseURL(t, fakeRootURI+"/b")
+
+	// The peer advertised bulk-atomic, so the adapter reports it capable.
+	if !adapter.BulkAtomicCapable() {
+		t.Fatal("atomic-capable peer reports BulkAtomicCapable() = false")
+	}
+
+	// An atomic changeset succeeds atomically: every op applied, Atomic true.
+	result, err := adapter.BulkMutate(ctx, cutting_garden_plugins.BulkRequest{
+		Atomicity: cutting_garden_plugins.BulkAtomic,
+		Ops: []cutting_garden_plugins.BulkOp{
+			{Kind: cutting_garden_plugins.BulkPatch, URI: a, Body: []byte(`{"x":1}`)},
+			{Kind: cutting_garden_plugins.BulkDelete, URI: b},
+		},
+	})
+	if err != nil {
+		t.Fatalf("atomic BulkMutate: %v", err)
+	}
+	if !result.Atomic {
+		t.Error("atomic-mode success reports Atomic = false")
+	}
+	if len(result.AppliedNodes) != 2 ||
+		result.AppliedNodes[0].String() != a.String() ||
+		result.AppliedNodes[1].String() != b.String() {
+		t.Fatalf("applied = %v, want [%s %s]", result.AppliedNodes, a, b)
+	}
+
+	// A best-effort request against the same peer still delegates to the
+	// best-effort path (Atomic false).
+	best, err := adapter.BulkMutate(ctx, cutting_garden_plugins.BulkRequest{
+		Atomicity: cutting_garden_plugins.BulkBestEffort,
+		Ops:       []cutting_garden_plugins.BulkOp{{Kind: cutting_garden_plugins.BulkDelete, URI: a}},
+	})
+	if err != nil {
+		t.Fatalf("best-effort BulkMutate against atomic peer: %v", err)
+	}
+	if best.Atomic {
+		t.Error("best-effort result against an atomic peer reports Atomic = true")
 	}
 }
 
