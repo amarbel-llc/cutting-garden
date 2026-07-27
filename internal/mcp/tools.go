@@ -805,25 +805,17 @@ func renderBulkResult(result cutting_garden_plugins.BulkResult) string {
 		Err string `json:"err"`
 	}
 
-	applied := make([]string, 0, len(result.AppliedNodes))
-	for _, uri := range result.AppliedNodes {
-		if uri != nil {
-			applied = append(applied, uri.String())
-		}
-	}
-
 	out := struct {
 		Applied        []string      `json:"applied"`
 		PatchedNothing []string      `json:"patchedNothing,omitempty"`
 		Failed         []failureView `json:"failed,omitempty"`
 		Atomic         bool          `json:"atomic,omitempty"`
-	}{Applied: applied, Atomic: result.Atomic}
-
-	for _, uri := range result.PatchedNothing {
-		if uri != nil {
-			out.PatchedNothing = append(out.PatchedNothing, uri.String())
-		}
+	}{
+		Applied:        nonNilURLStrings(result.AppliedNodes),
+		PatchedNothing: nonNilURLStrings(result.PatchedNothing),
+		Atomic:         result.Atomic,
 	}
+
 	for _, failure := range result.Failed {
 		view := failureView{Err: failure.Err}
 		if failure.URI != nil {
@@ -834,9 +826,22 @@ func renderBulkResult(result cutting_garden_plugins.BulkResult) string {
 
 	body, err := json.MarshalIndent(out, "", "  ")
 	if err != nil {
-		return fmt.Sprintf("bulk_mutate: %d applied", len(applied))
+		return fmt.Sprintf("bulk_mutate: %d applied", len(out.Applied))
 	}
 	return string(body)
+}
+
+// nonNilURLStrings projects a []*url.URL to a non-nil []string of the
+// non-nil URLs' string forms, preserving the "applied is always a present
+// (possibly empty) array" contract renderBulkResult relies on.
+func nonNilURLStrings(uris []*url.URL) []string {
+	out := make([]string, 0, len(uris))
+	for _, uri := range uris {
+		if uri != nil {
+			out = append(out, uri.String())
+		}
+	}
+	return out
 }
 
 // filteredListingView is list_nodes(uri)'s output shape whenever a filter
