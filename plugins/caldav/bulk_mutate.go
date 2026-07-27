@@ -50,9 +50,25 @@ func (p Plugin) bulkOps(
 func (p Plugin) bulkSweep(
 	ctx context.Context, sweep *cutting_garden_plugins.BulkSweep,
 ) (cutting_garden_plugins.BulkResult, error) {
-	matches, _, err := p.ListEnriched(ctx, sweep.Root, sweep.Filter)
+	matches, ok, err := p.ListEnriched(ctx, sweep.Root, sweep.Filter)
 	if err != nil {
 		return cutting_garden_plugins.BulkResult{}, err
+	}
+	if !ok {
+		// ListEnriched declined: sweep.Root is a calendar-HOME whose
+		// immediate children are calendar CONTAINERS, not the objects a
+		// FacetFilter selects. The READ path degrades such a decline to a
+		// plain ListRoots (list_nodes' host-side/no-filter fallback) — but a
+		// MUTATION must never silently widen its scope from "matching" to
+		// "every child", so a sweep REFUSES here rather than returning a
+		// misleading empty success (the decline was NOT "nothing matched")
+		// or, worse, applying the op to every calendar. Sweep each calendar
+		// under the home instead.
+		return cutting_garden_plugins.BulkResult{}, errors.BadRequestf(
+			"caldav plugin: cannot sweep %q: it is a calendar-home whose"+
+				" children are calendars, not objects — sweep each calendar"+
+				" under it instead", sweep.Root,
+		)
 	}
 
 	var result cutting_garden_plugins.BulkResult

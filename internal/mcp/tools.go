@@ -733,10 +733,29 @@ func (t *Tools) callBulkMutate(
 	}
 	req := cutting_garden_plugins.BulkRequest{Atomicity: atomicity}
 
-	var resolveURI string
+	// Build BOTH shapes when present — never branch on sweep first — so a
+	// request that (by caller bug) supplies ops AND sweep reaches
+	// Validate()'s "got both" rejection instead of silently dropping the ops
+	// and executing only the sweep.
+	if len(in.Ops) > 0 {
+		req.Ops = make([]cutting_garden_plugins.BulkOp, 0, len(in.Ops))
+		for i, op := range in.Ops {
+			uri, err := url.Parse(op.URI)
+			if err != nil {
+				return "", errors.BadRequestf(
+					"bulk_mutate: ops[%d] uri %q: %s", i, op.URI, err,
+				)
+			}
+			req.Ops = append(req.Ops, cutting_garden_plugins.BulkOp{
+				Kind: cutting_garden_plugins.BulkOpKind(op.Kind),
+				URI:  uri,
+				Body: []byte(op.Body),
+				Type: op.Type,
+			})
+		}
+	}
 
-	switch {
-	case in.Sweep != nil:
+	if in.Sweep != nil {
 		filter, err := cutting_garden_plugins.ParseFacetFilter(in.Sweep.Filter)
 		if err != nil {
 			return "", err
@@ -756,31 +775,20 @@ func (t *Tools) callBulkMutate(
 				Type: in.Sweep.Op.Type,
 			},
 		}
-		resolveURI = in.Sweep.Root
-
-	default:
-		req.Ops = make([]cutting_garden_plugins.BulkOp, 0, len(in.Ops))
-		for i, op := range in.Ops {
-			uri, err := url.Parse(op.URI)
-			if err != nil {
-				return "", errors.BadRequestf(
-					"bulk_mutate: ops[%d] uri %q: %s", i, op.URI, err,
-				)
-			}
-			req.Ops = append(req.Ops, cutting_garden_plugins.BulkOp{
-				Kind: cutting_garden_plugins.BulkOpKind(op.Kind),
-				URI:  uri,
-				Body: []byte(op.Body),
-				Type: op.Type,
-			})
-			if resolveURI == "" {
-				resolveURI = op.URI
-			}
-		}
 	}
 
 	if err := req.Validate(); err != nil {
 		return "", err
+	}
+
+	// Validate guarantees exactly one of Ops/Sweep is set (Ops non-empty),
+	// so the single plugin a bulk call targets is unambiguous: the sweep
+	// root, else the first op's URI.
+	var resolveURI string
+	if req.Sweep != nil {
+		resolveURI = in.Sweep.Root
+	} else {
+		resolveURI = in.Ops[0].URI
 	}
 
 	_, mutator, err := t.resolveBulk(resolveURI)

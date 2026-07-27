@@ -108,6 +108,30 @@ func TestBulkMutate_PatchNothingReportedDistinctly(t *testing.T) {
 	}
 }
 
+// TestBulkMutate_SweepAtDeclineLevelRefused: a sweep whose Root is a
+// calendar-HOME (ListEnriched declines, ok=false — its children are
+// calendars, not the objects a filter selects) must REFUSE with a bad
+// request, never silently return an empty success. Treating a decline as
+// "nothing matched" would hide a level-mismatched sweep; falling through to
+// the unfiltered children would let a mutation widen its scope to every
+// calendar.
+func TestBulkMutate_SweepAtDeclineLevelRefused(t *testing.T) {
+	_, home := startFake(t) // "/dav/" — a calendar-home, selfIsCalendar=false
+
+	_, err := Plugin{}.BulkMutate(context.Background(),
+		cutting_garden_plugins.BulkRequest{
+			Atomicity: cutting_garden_plugins.BulkBestEffort,
+			Sweep: &cutting_garden_plugins.BulkSweep{
+				Root: mustParseURL(t, home),
+				Op:   cutting_garden_plugins.BulkOp{Kind: cutting_garden_plugins.BulkDelete},
+			},
+		})
+	if !errors.Is400BadRequest(err) {
+		t.Errorf("sweep at a calendar-home err = %v, want a 400 bad request"+
+			" refusal", err)
+	}
+}
+
 // TestBulkMutate_AtomicRejected: CalDAV cannot transact atomically, so an
 // atomic request is rejected with the sentinel — never downgraded.
 func TestBulkMutate_AtomicRejected(t *testing.T) {

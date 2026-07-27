@@ -152,6 +152,33 @@ func TestCallTool_BulkMutateChangeset(t *testing.T) {
 	}
 }
 
+// TestCallTool_BulkMutateRejectsBothOpsAndSweep pins that a request
+// supplying BOTH ops and sweep is rejected (BulkRequest.Validate's "got
+// both") and — the point of the fix — that the ops are NOT silently dropped
+// while the sweep runs: BulkMutate must never be dispatched at all.
+func TestCallTool_BulkMutateRejectsBothOpsAndSweep(t *testing.T) {
+	bm := &fakeBulkMutator{}
+	tools := newFakeTools(t, &fakeMutator{}, "faketest://h/")
+	tools.resolveBulk = fakeBulkResolve(bm)
+
+	res, err := tools.CallTool(context.Background(), "bulk_mutate",
+		json.RawMessage(`{`+
+			`"ops":[{"kind":"delete","uri":"faketest://h/a.ics"}],`+
+			`"sweep":{"root":"faketest://h/","op":{"kind":"delete"}}}`))
+
+	// However the layer surfaces the bad request (transport error or an
+	// IsError result), it must not read as a clean success.
+	if err == nil && !res.IsError {
+		t.Errorf("both ops and sweep accepted as success: %+v", res)
+	}
+	// The zero Atomicity proves BulkMutate was never called — the real call
+	// path always sets a non-empty atomicity before dispatch.
+	if bm.gotReq.Atomicity != "" {
+		t.Errorf("BulkMutate dispatched despite the both-set rejection: %+v",
+			bm.gotReq)
+	}
+}
+
 // TestListTools_BulkMutateAdvertisedWhenCapable pins that bulk_mutate rides
 // the tool list only when a root's plugin implements BulkMutator.
 func TestListTools_BulkMutateAdvertisedWhenCapable(t *testing.T) {
