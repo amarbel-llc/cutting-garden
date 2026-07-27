@@ -614,12 +614,14 @@ nothing by advertising them to such a host.
 
 ## Conformance Testing
 
-No implementation of `BulkMutator` exists yet — this RFC is proposed,
-not accepted, and (unlike RFC 0012/RFC 0013 at the time they were
-written) has no reference plugin landed against it. Conformance tests
-for this capability, when implemented, MUST live in `zz-tests_bats/`
-(extending the existing `mcp.bats` CUD lane per FDR 0020's precedent)
-and MUST cover at minimum:
+The reference `BulkMutator` landed with this RFC's acceptance (caldav,
+cutting-garden#191), and conformance tests for this capability live in
+`zz-tests_bats/` across two lanes: the `mcp.bats` CUD lane (per FDR 0020's
+precedent) pins the `bulk_mutate` MCP tool surface, and the
+`traversal_serve.bats` portable lane drives the RFC 0013 conformance
+driver's session-level `node.bulk_mutate` case (cutting-garden#196), so an
+external wire peer self-verifies against the same tree. They cover at
+minimum:
 
 | Requirement | Description |
 |-------------|--------------|

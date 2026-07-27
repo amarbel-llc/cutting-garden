@@ -434,8 +434,11 @@ var WithHandler = internal.WithHandler
 // CapBulkAtomic is the OPTIONAL additive token a plugin advertises
 // alongside bulk-mutate when it can honor atomic completion for at
 // least some request shapes (RFC 0017 §Atomicity). A plugin omitting
-// it MUST reject every atomic request (-32003). Not yet advertised by
-// any in-tree plugin; the advertisement marker is a followup.
+// it MUST reject every atomic request (-32003). The server advertises
+// it for a plugin implementing AtomicBulkMutator that reports itself
+// capable (cutting-garden#195); no in-tree PRODUCTION plugin does yet
+// (caldav has no multi-object transaction), so every atomic request is
+// still rejected today.
 const CapBulkAtomic = internal.CapBulkAtomic
 
 // CapBulkMutate gates node.bulk_mutate — the BulkMutator capability
