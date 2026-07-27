@@ -913,12 +913,18 @@ type schemeSchema struct {
 // leaf, a leaf's body mimetype, and — for writable types — the accepted
 // create/update payload.
 type typeSchema struct {
-	Tag          string           `json:"tag"`
-	Container    bool             `json:"container"`
-	LeafMimeType string           `json:"leafMimeType,omitempty"`
-	Writable     bool             `json:"writable"`
-	Body         *bodySchema      `json:"body,omitempty"`
-	Facets       []facetDimSchema `json:"facets,omitempty"`
+	Tag          string      `json:"tag"`
+	Container    bool        `json:"container"`
+	LeafMimeType string      `json:"leafMimeType,omitempty"`
+	Writable     bool        `json:"writable"`
+	Body         *bodySchema `json:"body,omitempty"`
+	// URITemplate is the type's OPTIONAL RFC 6570 Level 1 URI template
+	// (RFC 0018 §1): the shape of every URI the plugin mints for this type,
+	// e.g. "fj://{host}/{owner}/{repo}/issues/{number}". Absent when the
+	// type declares none. A caller reads it to construct or recognize a
+	// node's URI without a round trip.
+	URITemplate string           `json:"uriTemplate,omitempty"`
+	Facets      []facetDimSchema `json:"facets,omitempty"`
 	// ListingFields are the human-readable keys a node of this type may
 	// carry in an enriched listing's `fields` (cutting-garden#160) — e.g.
 	// a caldav object's summary/status/dtstart/dtend/duration/location/due.
@@ -1049,6 +1055,7 @@ func collectSchema(plugins []cutting_garden_plugins.Plugin) []schemeSchema {
 				Tag:          nt.Tag,
 				Container:    nt.Container,
 				LeafMimeType: nt.BodyMimeType(),
+				URITemplate:  nt.URITemplate,
 			}
 			if b, ok := bodies[nt.Tag]; ok {
 				ts.Writable = true

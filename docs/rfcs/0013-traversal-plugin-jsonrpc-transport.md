@@ -341,6 +341,18 @@ bytes and their IANA type (absent when there is no raw form). A
 JSON-RPC error is reserved for unexpected failures the consumer should
 surface, exactly as the Go contract reserves non-nil `err`.
 
+> **Amended by RFC 0018 §7.1 (cutting-garden#168).** `leaf.read` returns
+> *this node's own body*, ORTHOGONAL to whether the node also has children:
+> `ok: false` now means "this node has no own body" (fall back to the
+> listing) and no longer implies the node is childless. A container that
+> declares a body (its type appears in the `bodies` block, or — for a
+> template-declaring plugin — resolves via its `uri_template` to a
+> body-declaring type) MAY be asked for its own body via `leaf.read` even
+> when it also has children, closing the read/write asymmetry a writable
+> container body previously had. This is additive within
+> `traversal-plugin/v1`: a plugin that only ever returned `ok: true` for
+> childless nodes still conforms.
+
 ### Facets — `facets.counts`, `facets.version`, `labels.resolve`
 
 `facets.counts` params `{ "uri": string, "filter": FacetFilter? }` →
