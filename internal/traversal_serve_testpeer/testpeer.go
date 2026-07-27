@@ -42,12 +42,25 @@ const (
 	// assigns its identity (cutting-garden#143).
 	AssignedLeafType = "cgtest-assigned-v1"
 	LeafMimeType     = "text/plain"
+	// IssueType is a CONTAINER type that also carries its own body — the
+	// cutting-garden#168 / RFC 0018 case: an IssueBox holds a comment
+	// (its child) AND has a title/state (its body), served by ReadLeaf
+	// even though it has children. It declares a URI template
+	// (IssueURITemplate) so URI→type resolution can gate the body read.
+	IssueType = "cgtest-issue-v1"
+	// IssueURITemplate is IssueType's RFC 6570 Level 1 template. The
+	// "issue-" literal keeps it from matching the sibling leaves
+	// (box/alpha, box/beta) or NestedBox — resolution stays sound
+	// (RFC 0018 §5).
+	IssueURITemplate = "cgtest://fixture/box/issue-{n}"
 
-	RootBox   = "cgtest://fixture/box"
-	NestedBox = "cgtest://fixture/box/nested"
-	LeafAlpha = "cgtest://fixture/box/alpha"
-	LeafBeta  = "cgtest://fixture/box/beta"
-	LeafGamma = "cgtest://fixture/box/nested/gamma"
+	RootBox    = "cgtest://fixture/box"
+	NestedBox  = "cgtest://fixture/box/nested"
+	LeafAlpha  = "cgtest://fixture/box/alpha"
+	LeafBeta   = "cgtest://fixture/box/beta"
+	LeafGamma  = "cgtest://fixture/box/nested/gamma"
+	IssueBox   = "cgtest://fixture/box/issue-1"
+	IssueChild = "cgtest://fixture/box/issue-1/c1"
 )
 
 // facetLabels is the fixed labelled-dimension resolution map behind
@@ -80,7 +93,13 @@ type memNode struct {
 	children []string
 }
 
-func (n *memNode) container() bool { return n.typ == ContainerType }
+// container reports whether this node has children — the descendability
+// signal, keyed on the child list rather than the type tag so a
+// non-ContainerType container (IssueType, a container that ALSO has a
+// body — cutting-garden#168) is still enumerated by ListRoots. For the
+// plain fixture nodes children!=nil is equivalent to typ==ContainerType,
+// so this is behavior-preserving for them.
+func (n *memNode) container() bool { return n.children != nil }
 
 // TreePlugin is the deterministic in-memory RFC 0013 test plugin: the
 // full capability surface over the fixed cgtest tree, with mutations
@@ -154,7 +173,7 @@ func NewPlugin() *TreePlugin {
 			RootBox: {
 				name:     "box",
 				typ:      ContainerType,
-				children: []string{LeafAlpha, LeafBeta, NestedBox},
+				children: []string{LeafAlpha, LeafBeta, NestedBox, IssueBox},
 			},
 			NestedBox: {
 				name:     "nested",
@@ -173,6 +192,27 @@ func NewPlugin() *TreePlugin {
 				"gamma", "open", "2026-07", 202607,
 				[]string{"c"}, "f1", "gamma body\n",
 			),
+			// IssueBox is a container WITH its own body (cutting-garden#168,
+			// RFC 0018 §7): it holds a comment (IssueChild) and carries a
+			// title/state read via ReadLeaf. It has NO facets, so it
+			// contributes nothing to RootBox's facet summary — the existing
+			// facet fixtures are unchanged.
+			IssueBox: {
+				name:       "issue-1",
+				typ:        IssueType,
+				structured: map[string]any{"title": "Fix it", "state": "open"},
+				children:   []string{IssueChild},
+			},
+			// IssueChild is built WITHOUT the leaf() helper so it carries no
+			// facets: it must not perturb RootBox's facet summary. It exists
+			// only to make IssueBox a container WITH children.
+			IssueChild: {
+				name:       "c1",
+				typ:        LeafType,
+				structured: map[string]any{"title": "c1"},
+				raw:        []byte("first comment\n"),
+				rawMime:    LeafMimeType,
+			},
 		},
 	}
 }
@@ -237,6 +277,9 @@ func (p *TreePlugin) Types() []cutting_garden_plugins.NodeType {
 		{Tag: ContainerType, Container: true},
 		{Tag: LeafType, Container: false, MimeType: LeafMimeType},
 		{Tag: AssignedLeafType, Container: false, MimeType: LeafMimeType},
+		// A container type that ALSO declares a URI template and a body
+		// (cutting-garden#168, RFC 0018).
+		{Tag: IssueType, Container: true, URITemplate: IssueURITemplate},
 	}
 }
 
@@ -289,17 +332,26 @@ func (p *TreePlugin) ReadLeaf(
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	leaf, found := p.nodes[node.String()]
-	if !found || leaf.container() {
+	n, found := p.nodes[node.String()]
+	if !found {
 		return content, false, nil
 	}
 
-	if leaf.structured != nil {
-		content.Structured = maps.Clone(leaf.structured)
+	// Decline (ok=false) a node with no own body — a plain container or a
+	// bodyless node — so the consumer falls back to the child listing. A
+	// container that DOES have a body (IssueBox) serves it here even though
+	// it has children: the RFC 0018 §7.1 relaxation of "leaf.read only for
+	// a childless node" (cutting-garden#168).
+	if n.structured == nil && len(n.raw) == 0 {
+		return content, false, nil
 	}
 
-	content.Raw = slices.Clone(leaf.raw)
-	content.RawMimeType = leaf.rawMime
+	if n.structured != nil {
+		content.Structured = maps.Clone(n.structured)
+	}
+
+	content.Raw = slices.Clone(n.raw)
+	content.RawMimeType = n.rawMime
 
 	return content, true, nil
 }
@@ -388,6 +440,16 @@ func (p *TreePlugin) FacetCounts(
 	}
 
 	limited, truncated := cutting_garden_plugins.SortAndLimitContainerBreakdown(breakdown)
+
+	// Nothing to summarize — no facet members and no per-container
+	// breakdown in this subtree. Decline (ok=false) so the consumer falls
+	// back to the framework fold (RFC 0012 §4), rather than return an empty
+	// summary whose nil-vs-empty wire encoding a linked and a served peer
+	// could disagree on. This is the case for a facet-less container like
+	// IssueBox (cutting-garden#168).
+	if len(summary) == 0 && len(limited) == 0 {
+		return cutting_garden_plugins.FacetResult{}, false, nil
+	}
 
 	return cutting_garden_plugins.FacetResult{
 		Summary:              summary,
@@ -488,6 +550,18 @@ func (p *TreePlugin) DescribeBodies() []cutting_garden_plugins.NodeTypeBody {
 			Tag:                    AssignedLeafType,
 			Accepts:                []string{"text/plain (the object body)"},
 			ServerAssignedIdentity: true,
+		},
+		{
+			// A CONTAINER type with a writable — and therefore readable
+			// (RFC 0018 §7.1) — body: this declaration is what the host's
+			// read gate consults to fetch IssueBox's own body beside its
+			// child listing (cutting-garden#168).
+			Tag: IssueType,
+			Accepts: []string{
+				"application/json (patch: fields merged into the" +
+					" structured view)",
+			},
+			Example: map[string]any{"title": "example", "state": "open"},
 		},
 	}
 }

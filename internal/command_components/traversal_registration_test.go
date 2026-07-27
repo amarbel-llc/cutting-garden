@@ -94,8 +94,8 @@ schemes = ["cgtest"]
 	for i, child := range children {
 		names[i] = child.Name
 	}
-	if len(children) != 3 {
-		t.Fatalf("children of root box = %v, want 3", names)
+	if len(children) != 4 {
+		t.Fatalf("children of root box = %v, want 4", names)
 	}
 
 	// The section crossed wrapper-stripped: keys section-relative, no

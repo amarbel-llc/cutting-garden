@@ -41,7 +41,7 @@ func TestFixedTreeShape(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListRoots(box): %v", err)
 	}
-	wantOrder := []string{LeafAlpha, LeafBeta, NestedBox}
+	wantOrder := []string{LeafAlpha, LeafBeta, NestedBox, IssueBox}
 	if len(boxChildren) != len(wantOrder) {
 		t.Fatalf("box children = %+v, want %d", boxChildren, len(wantOrder))
 	}
@@ -91,6 +91,26 @@ func TestFixedTreeShape(t *testing.T) {
 	); ok || err != nil {
 		t.Errorf("ReadLeaf(container) = ok %t, err %v; want false, nil", ok, err)
 	}
+
+	// IssueBox is the cutting-garden#168 / RFC 0018 fixture: a container
+	// that HAS a child AND its own body. ListRoots enumerates its child,
+	// and ReadLeaf returns its body despite it having children.
+	issueChildren, err := plugin.ListRoots(ctx, mustParseURL(t, IssueBox))
+	if err != nil {
+		t.Fatalf("ListRoots(issue): %v", err)
+	}
+	if len(issueChildren) != 1 || issueChildren[0].URI.String() != IssueChild {
+		t.Fatalf("issue children = %+v, want [%s]", issueChildren, IssueChild)
+	}
+	issueBody, ok, err := plugin.ReadLeaf(ctx, mustParseURL(t, IssueBox))
+	if err != nil || !ok {
+		t.Fatalf("ReadLeaf(issue) = ok %t, err %v; want true, nil", ok, err)
+	}
+	fields, isMap := issueBody.Structured.(map[string]any)
+	if !isMap || fields["title"] != "Fix it" {
+		t.Errorf("issue body = %+v, want a map with title \"Fix it\"",
+			issueBody.Structured)
+	}
 }
 
 // TestFacetCountsFoldsSubtree pins the recursive fold: the root summary
@@ -124,7 +144,14 @@ func TestFacetCountsFoldsSubtree(t *testing.T) {
 	// self-match would produce (the box's direct leaves belong to no
 	// child container and appear nowhere). Pins the phantom-self-match
 	// bug the #173 review caught (cutting-garden#173).
+	// Under the nil filter every leaf matches, so each child CONTAINER
+	// contributes its descendant count: nested holds gamma (1) and issue-1
+	// holds its comment (1). Sorted by count desc then uri asc, issue-1
+	// precedes nested. Direct leaves of the box (alpha, beta) belong to no
+	// child container and appear nowhere — the phantom-self-match guard the
+	// #173 review caught (cutting-garden#173).
 	wantBreakdown := []cutting_garden_plugins.FacetContainerBreakdown{
+		{URI: IssueBox, Name: "issue-1", Count: 1},
 		{URI: NestedBox, Name: "nested", Count: 1},
 	}
 	if !reflect.DeepEqual(result.ByContainer, wantBreakdown) {
@@ -219,7 +246,7 @@ func TestMutationsRoundTripInMemory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListRoots: %v", err)
 	}
-	if len(children) != 4 || children[3].URI.String() != delta.String() {
+	if len(children) != 5 || children[4].URI.String() != delta.String() {
 		t.Fatalf("children after create = %+v, want delta appended", children)
 	}
 
@@ -299,8 +326,8 @@ func TestMutationsRoundTripInMemory(t *testing.T) {
 		t.Error("deleted leaf still readable")
 	}
 	children, _ = plugin.ListRoots(ctx, mustParseURL(t, RootBox))
-	if len(children) != 3 {
-		t.Errorf("children after delete = %+v, want the original 3", children)
+	if len(children) != 4 {
+		t.Errorf("children after delete = %+v, want the original 4", children)
 	}
 
 	// Recursive delete: removing nested takes gamma with it.

@@ -310,9 +310,10 @@ func TestWireIndistinguishableFromLinked(t *testing.T) {
 		}
 	}
 
-	// 2 containers + 3 leaves.
-	if visited != 5 {
-		t.Errorf("walk visited %d URIs, want 5", visited)
+	// 3 containers (box, nested, issue-1) + 4 leaves (alpha, beta, gamma,
+	// issue-1's comment).
+	if visited != 7 {
+		t.Errorf("walk visited %d URIs, want 7", visited)
 	}
 
 	linkedLabels, err := linked.ResolveFacetLabels(
@@ -354,9 +355,9 @@ func TestWireIndistinguishableFromLinked(t *testing.T) {
 	if err != nil {
 		t.Fatalf("wire ListRoots after create: %v", err)
 	}
-	if len(children) != 4 ||
-		children[3].URIString() != delta.String() ||
-		children[3].Type != LeafType {
+	if len(children) != 5 ||
+		children[4].URIString() != delta.String() ||
+		children[4].Type != LeafType {
 		t.Fatalf("wire children after create = %+v, want delta appended",
 			children)
 	}
@@ -434,8 +435,8 @@ func TestWireIndistinguishableFromLinked(t *testing.T) {
 	if err != nil {
 		t.Fatalf("wire ListRoots after delete: %v", err)
 	}
-	if len(children) != 3 {
-		t.Errorf("wire children after delete = %+v, want the original 3",
+	if len(children) != 4 {
+		t.Errorf("wire children after delete = %+v, want the original 4",
 			children)
 	}
 	if _, ok, err := wire.ReadLeaf(ctx, delta); ok || err != nil {
@@ -448,7 +449,7 @@ func TestWireIndistinguishableFromLinked(t *testing.T) {
 	if err != nil {
 		t.Fatalf("linked ListRoots after wire mutations: %v", err)
 	}
-	if len(linkedChildren) != 3 {
+	if len(linkedChildren) != 4 {
 		t.Errorf("linked children = %+v; wire mutations leaked into the"+
 			" linked instance", linkedChildren)
 	}
