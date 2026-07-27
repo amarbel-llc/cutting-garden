@@ -247,6 +247,32 @@ func TestWireIndistinguishableFromLinked(t *testing.T) {
 			nil,
 			{{Dimension: "state", Value: "open"}},
 		} {
+			// EnrichedLister filter pushdown (cutting-garden#193): a filtered
+			// listing must be identical linked vs wire — WirePlugin.ListEnriched
+			// pushes the filter over nodes.list, mirroring the linked plugin's
+			// own ListEnriched.
+			linkedEnriched, linkedEnrichedOK, err := linked.ListEnriched(
+				ctx, uri, filter,
+			)
+			if err != nil {
+				t.Fatalf("linked ListEnriched(%s, %v): %v", uriStr, filter, err)
+			}
+			wireEnriched, wireEnrichedOK, err := wire.ListEnriched(
+				ctx, uri, filter,
+			)
+			if err != nil {
+				t.Fatalf("wire ListEnriched(%s, %v): %v", uriStr, filter, err)
+			}
+			if linkedEnrichedOK != wireEnrichedOK {
+				t.Errorf("ListEnriched(%s, %v): ok linked %t, wire %t",
+					uriStr, filter, linkedEnrichedOK, wireEnrichedOK)
+			}
+			if linkedEnrichedOK && wireEnrichedOK {
+				requireNodesEqual(
+					t, uriStr+" enriched", linkedEnriched, wireEnriched,
+				)
+			}
+
 			linkedCounts, linkedOK, err := linked.FacetCounts(ctx, uri, filter)
 			if err != nil {
 				t.Fatalf("linked FacetCounts(%s, %v): %v", uriStr, filter, err)

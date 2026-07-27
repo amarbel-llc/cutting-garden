@@ -125,6 +125,7 @@ type TreePlugin struct {
 
 var (
 	_ cutting_garden_plugins.RootProvider   = (*TreePlugin)(nil)
+	_ cutting_garden_plugins.EnrichedLister = (*TreePlugin)(nil)
 	_ cutting_garden_plugins.LeafReader     = (*TreePlugin)(nil)
 	_ cutting_garden_plugins.FacetDescriber = (*TreePlugin)(nil)
 	_ cutting_garden_plugins.FacetCounter   = (*TreePlugin)(nil)
@@ -324,6 +325,36 @@ func (p *TreePlugin) ListRoots(
 	}
 
 	return children, nil
+}
+
+// ListEnriched is the EnrichedLister capability (cutting-garden#160), the
+// filter-pushdown path #193 exposes over the wire: it returns node's
+// immediate children narrowed by the RFC 0012 §6 filter over each child's
+// facets. A nil/empty filter returns the full listing. ok is always true
+// for this peer — every container it lists, it can filter — so the host
+// trusts the narrowed set rather than folding host-side.
+func (p *TreePlugin) ListEnriched(
+	ctx context.Context,
+	node *url.URL,
+	filter cutting_garden_plugins.FacetFilter,
+) ([]cutting_garden_plugins.Node, bool, error) {
+	children, err := p.ListRoots(ctx, node)
+	if err != nil {
+		return nil, false, err
+	}
+
+	if len(filter) == 0 {
+		return children, true, nil
+	}
+
+	matched := make([]cutting_garden_plugins.Node, 0, len(children))
+	for _, child := range children {
+		if filter.Matches(child.Facets) {
+			matched = append(matched, child)
+		}
+	}
+
+	return matched, true, nil
 }
 
 func (p *TreePlugin) ReadLeaf(
