@@ -293,6 +293,11 @@ type ReportProgress = internal.ReportProgress
 // internal/capture_events for the contract and semantics.
 type Reporter = internal.Reporter
 
+// ResolvedNodeType is the outcome of URI→type resolution (RFC 0018 §4):
+// the node type whose declared URITemplate matched a URI, together with
+// the variable bindings that match captured.
+type ResolvedNodeType = internal.ResolvedNodeType
+
 // RestorePlugin materializes a receipt's entries to the destination.
 type RestorePlugin = internal.RestorePlugin
 
@@ -485,6 +490,20 @@ var ResolveCapture = internal.ResolveCapture
 
 // ResolveDiff is the diff-direction analogue of ResolveCapture.
 var ResolveDiff = internal.ResolveDiff
+
+// ResolveNodeTypeByURI answers RFC 0018's URI→type question locally, with
+// no plugin round trip: it matches uri against the URITemplate of each type
+// lister declares, and returns the winning type and its captured bindings.
+//
+// When several templates match, RFC 0018 §4's most-specific rule selects
+// one — greater literal-character count, then fewer variables, then longer
+// literal prefix. A TRUE tie (no strict winner) returns ok == false: the
+// host MUST fall back (RFC 0018 §6; the #168 gate probes) and MUST NOT
+// guess. A type declaring no template, an unparseable template, and a URI
+// no template matches all likewise return ok == false — the template is an
+// optimization, never a precondition. Roots are outside this scheme
+// (RFC 0018 §5) and are deliberately not resolved through this path.
+var ResolveNodeTypeByURI = internal.ResolveNodeTypeByURI
 
 // ResolveProtocolDiff is the diff-direction analogue of
 // ResolveProtocolRestore.
