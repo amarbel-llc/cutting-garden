@@ -43,6 +43,20 @@ type NodeType struct {
 	// container's MimeType is conventionally empty and consumers MUST
 	// NOT apply the leaf default to containers.
 	MimeType string
+	// URITemplate is an OPTIONAL RFC 6570 Level 1 URI template
+	// (RFC 0018 §1–§2) describing the shape of every URI this plugin
+	// mints for a node of this type, e.g.
+	// "fj://{host}/{owner}/{repo}/issues/{number}". Parse and use it with
+	// ParseURITemplate. Empty means the type declares no template: its
+	// URIs are not locally resolvable, so consumers fall back (the #168
+	// read gate probes; a URI-construction consumer degrades) — the
+	// template is an optimization, never a precondition (RFC 0018 §6). A
+	// non-empty template obliges the plugin to the consistency invariant
+	// of RFC 0018 §5: every URI it emits for a node of this type matches
+	// this template and resolves to this type. A type whose identifiers
+	// cannot be single '/'-free segments MUST omit it rather than declare
+	// an approximate one.
+	URITemplate string
 }
 
 // BodyMimeType resolves the declared MimeType per the contract: a

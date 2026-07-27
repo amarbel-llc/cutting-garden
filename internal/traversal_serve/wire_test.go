@@ -241,6 +241,24 @@ func TestNodeTypeViewRoundTrip(t *testing.T) {
 			},
 			wantJSON: `{"tag":"fj-repo-v1","container":true}`,
 		},
+		{
+			// RFC 0018 §1: the uri_template field rides the node_types
+			// declaration and survives the wire round trip verbatim; a
+			// type without one omits it (the cases above).
+			name: "container with uri_template",
+			domain: cutting_garden_plugins.NodeType{
+				Tag:         "fj-issue-v1",
+				Container:   true,
+				URITemplate: "fj://{host}/{owner}/{repo}/issues/{number}",
+			},
+			wantWire: cutting_garden_plugins.NodeType{
+				Tag:         "fj-issue-v1",
+				Container:   true,
+				URITemplate: "fj://{host}/{owner}/{repo}/issues/{number}",
+			},
+			wantJSON: `{"tag":"fj-issue-v1","container":true,` +
+				`"uri_template":"fj://{host}/{owner}/{repo}/issues/{number}"}`,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			raw, err := json.Marshal(NodeTypeViewFrom(tc.domain))

@@ -494,6 +494,11 @@ type NodeTypeView struct {
 	Tag       string `json:"tag"`
 	Container bool   `json:"container"`
 	MimeType  string `json:"mime_type,omitempty"`
+	// URITemplate is the OPTIONAL RFC 6570 Level 1 template
+	// (RFC 0018 §1) for this type's URIs. Absent (omitempty) means the
+	// type declares none; the additive-field precedent of RFC 0013
+	// §Compatibility applies — a host predating RFC 0018 ignores it.
+	URITemplate string `json:"uri_template,omitempty"`
 }
 
 // NodeTypeViewFrom projects a declared NodeType onto the wire. A leaf
@@ -510,9 +515,10 @@ func NodeTypeViewFrom(
 	}
 
 	return NodeTypeView{
-		Tag:       nodeType.Tag,
-		Container: nodeType.Container,
-		MimeType:  mimeType,
+		Tag:         nodeType.Tag,
+		Container:   nodeType.Container,
+		MimeType:    mimeType,
+		URITemplate: nodeType.URITemplate,
 	}
 }
 
@@ -521,9 +527,10 @@ func NodeTypeViewFrom(
 // NodeType.BodyMimeType, exactly as with a linked plugin.
 func (v NodeTypeView) ToNodeType() cutting_garden_plugins.NodeType {
 	return cutting_garden_plugins.NodeType{
-		Tag:       v.Tag,
-		Container: v.Container,
-		MimeType:  v.MimeType,
+		Tag:         v.Tag,
+		Container:   v.Container,
+		MimeType:    v.MimeType,
+		URITemplate: v.URITemplate,
 	}
 }
 

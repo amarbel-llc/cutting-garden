@@ -360,6 +360,25 @@ type RootProvider = internal.RootProvider
 // it nor CapturePlugin.
 type SourceValidator = internal.SourceValidator
 
+// URITemplate is a parsed, validated RFC 6570 Level 1 URI template
+// (RFC 0018 §2) supporting bidirectional resolution: Expand fills the
+// template's variables to mint a URI, and Match reverses a URI back to
+// its variable bindings. A node type MAY declare one (NodeType.URITemplate)
+// so the host can answer URI→type locally, without a round trip, and so a
+// plugin can mint its own URIs consistently.
+//
+// The Level 1 subset — bare {name} expressions, no operators, prefixes, or
+// explode — is the largest RFC 6570 subset that reverses unambiguously
+// (RFC 0018 §2) and re-exports verbatim as a Model Context Protocol
+// resource template (RFC 0018 §8). A {name} captures exactly one path
+// segment or sub-segment: it never spans '/'. The value it captures is
+// the maximal such run that still lets the remainder match — greedy, so a
+// following literal delimiter binds at its LAST occurrence.
+//
+// The zero value is not usable; obtain a URITemplate only from
+// ParseURITemplate.
+type URITemplate = internal.URITemplate
+
 // ErrAlreadyRegistered is returned by registry.Register when a
 // scheme is already registered for the given direction (capture
 // or restore).
@@ -414,6 +433,14 @@ var NodeTypeFor = internal.NodeTypeFor
 // the mcp read_facets tool's optional filter parameter, so the two surfaces
 // never drift. The empty string (after trimming) is no filter (nil, nil).
 var ParseFacetFilter = internal.ParseFacetFilter
+
+// ParseURITemplate validates s against the Level 1 subset (RFC 0018 §2)
+// and returns the parsed, match-ready template. It rejects an operator or
+// modifier inside an expression, two variables with no intervening
+// literal, a duplicate variable name, and an unclosed '{'. An empty string
+// parses to a variable-free template that matches only itself (a fixed
+// URI, e.g. a singleton).
+var ParseURITemplate = internal.ParseURITemplate
 
 // RegisterProtocolDiff installs p under p.ProtocolKind(), returning an
 // error (wrapping ErrAlreadyRegistered) on a clash instead of
