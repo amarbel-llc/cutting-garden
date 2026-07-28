@@ -3,12 +3,12 @@ default: build test
 [group('build')]
 build: build-gomod2nix build-nix build-nix-check
 
-# Regenerate gomod2nix.toml from go.mod/go.sum (the organic non-bridged deps).
+# regenerate gomod2nix.toml from go.mod/go.sum (the organic non-bridged deps)
 [group('build')]
 build-gomod2nix:
     nix develop --command gomod2nix
 
-# Build the default package (result/bin/cutting-garden) via the flake.
+# build the default package (result/bin/cutting-garden) via the flake
 [group('build')]
 build-nix:
     nix build --show-trace
@@ -26,12 +26,12 @@ build-nix-check:
 [group('post-build')]
 test: validate-generate validate-generate-dagnabit validate-grammar test-go lint-go lint-fmt lint-worktree lint-go-analyzers test-bats
 
-# Run the Go test suite across all packages.
+# run the Go test suite across all packages
 [group('post-build')]
 test-go:
     nix develop --command go test ./...
 
-# Vet the Go sources (the cheap pre-build static-analysis pass).
+# vet the Go sources (the cheap pre-build static-analysis pass)
 [group('pre-build')]
 lint-go:
     nix develop --command go vet ./...
@@ -84,7 +84,7 @@ lint-go-analyzer name:
 [group('pre-build')]
 lint-go-analyzers: (lint-go-analyzer "seqerror") (lint-go-analyzer "repool") (lint-go-analyzer "defererr")
 
-# Run the hermetic bats integration suite (zz-tests_bats) as a nix build.
+# run the hermetic bats integration suite (zz-tests_bats) as a nix build
 [group('post-build')]
 test-bats:
     nix build .#bats-capture --show-trace
@@ -92,12 +92,12 @@ test-bats:
 [group('maintenance')]
 update: update-go update-nix
 
-# Tidy go.mod/go.sum, then regenerate gomod2nix.toml to match.
+# tidy go.mod/go.sum, then regenerate gomod2nix.toml to match
 [group('maintenance')]
 update-go: && build-gomod2nix
     nix develop --command go mod tidy
 
-# Update all flake inputs (flake.lock).
+# update all flake inputs (flake.lock)
 [group('maintenance')]
 update-nix:
     nix flake update
