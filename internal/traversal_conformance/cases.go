@@ -230,7 +230,76 @@ func (r *runner) casePatchTriState(ctx context.Context) {
 		return
 	}
 
-	probe := strings.TrimRight(r.manifest.WritableContainer, "/") +
+	probe, ok := r.createProbe(ctx)
+	if !ok {
+		// The dependent patch points cannot run without the probe;
+		// failing them (rather than skipping) keeps the verdict honest.
+		for _, name := range []string{
+			namePatchApplied, namePatchEmpty, namePatchWrong,
+		} {
+			r.tap.NotOk(name, map[string]string{
+				"error": "probe create failed",
+			})
+		}
+		r.tap.Skip(namePatchDelete, "probe was never created")
+
+		return
+	}
+
+	r.patchRecognized(ctx, probe)
+	r.patchUnrecognizedOnly(ctx, probe)
+	r.patchWrongTyped(ctx, probe)
+
+	// Cleanup runs even when the points above failed — they only emit
+	// verdicts, never abort — honoring "delete the probe node in
+	// cleanup even on failure".
+	err := r.session.Call(
+		ctx, traversal_serve.MethodNodeDelete,
+		traversal_serve.NodeDeleteParams{URI: probe}, nil,
+	)
+	if err != nil {
+		r.tap.NotOk(namePatchDelete, map[string]string{
+			"uri": probe, "error": err.Error(),
+		})
+
+		return
+	}
+	r.tap.Ok(namePatchDelete)
+}
+
+// createProbe establishes the mutation probe under the writable container
+// and returns its URI, emitting the namePatchCreate verdict. For a
+// server-assigned-identity create type (the peer's initialize bodies[]
+// declares server_assigned_identity — fj-cg's Forgejo issues, jira,
+// newsblur), the CALLER cannot name the node, so a concatenated
+// WritableContainer/<probe> URI is un-nameable and a conformant peer
+// rejects it -32602 (cutting-garden#202); the probe goes through
+// node.create_child and the source-minted URI instead. Otherwise the
+// caller names it: node.create at the deterministic WritableContainer/
+// <probeName>, deleting a leftover first (node.create is strict — the
+// #180 probe-hygiene discipline). The point NAME stays "node.create" for
+// both: it labels the create-the-probe STEP, a fixed grep target, not the
+// exact method.
+func (r *runner) createProbe(ctx context.Context) (probe string, ok bool) {
+	if r.serverAssignsIdentity(r.manifest.Create.Type) {
+		created, err := r.createChildProbe(
+			ctx, r.manifest.WritableContainer,
+			r.manifest.Create.Type, r.manifest.Create.Body,
+		)
+		if err != nil {
+			r.tap.NotOk(namePatchCreate, map[string]string{
+				"container": r.manifest.WritableContainer,
+				"error":     err.Error(),
+			})
+
+			return "", false
+		}
+		r.tap.Ok(namePatchCreate)
+
+		return created, true
+	}
+
+	probe = strings.TrimRight(r.manifest.WritableContainer, "/") +
 		"/" + probeName
 
 	// Probe hygiene (the #180 arc): a persistent peer may still hold
@@ -254,40 +323,57 @@ func (r *runner) casePatchTriState(ctx context.Context) {
 		r.tap.NotOk(namePatchCreate, map[string]string{
 			"uri": probe, "error": err.Error(),
 		})
-		// The dependent patch points cannot run without the probe;
-		// failing them (rather than skipping) keeps the verdict honest.
-		for _, name := range []string{
-			namePatchApplied, namePatchEmpty, namePatchWrong,
-		} {
-			r.tap.NotOk(name, map[string]string{
-				"error": "probe create failed",
-			})
-		}
-		r.tap.Skip(namePatchDelete, "probe was never created")
 
-		return
+		return "", false
 	}
 	r.tap.Ok(namePatchCreate)
 
-	r.patchRecognized(ctx, probe)
-	r.patchUnrecognizedOnly(ctx, probe)
-	r.patchWrongTyped(ctx, probe)
+	return probe, true
+}
 
-	// Cleanup runs even when the points above failed — they only emit
-	// verdicts, never abort — honoring "delete the probe node in
-	// cleanup even on failure".
-	err = r.session.Call(
-		ctx, traversal_serve.MethodNodeDelete,
-		traversal_serve.NodeDeleteParams{URI: probe}, nil,
+// createChildProbe mints a server-assigned probe via node.create_child
+// under container and returns the source-assigned URI. A create_child that
+// returns an empty Created is itself a conformance fault (the result MUST
+// name the minted node — RFC 0013 NodeCreateChildResult), surfaced here as
+// an error so the caller's point fails.
+func (r *runner) createChildProbe(
+	ctx context.Context, container, typ, body string,
+) (string, error) {
+	var result traversal_serve.NodeCreateChildResult
+	err := r.session.Call(
+		ctx, traversal_serve.MethodNodeCreateChild,
+		traversal_serve.NodeCreateChildParams{
+			Container:  container,
+			Type:       typ,
+			BodyBase64: encodeBody(body),
+		}, &result,
 	)
 	if err != nil {
-		r.tap.NotOk(namePatchDelete, map[string]string{
-			"uri": probe, "error": err.Error(),
-		})
-
-		return
+		return "", err
 	}
-	r.tap.Ok(namePatchDelete)
+	if result.Created == "" {
+		return "", errors.ErrorWithStackf(
+			"node.create_child returned an empty URI — a server-assigned" +
+				" create MUST report the minted URI",
+		)
+	}
+
+	return result.Created, nil
+}
+
+// serverAssignsIdentity reports whether the peer's initialize bodies[]
+// declares server_assigned_identity for tag — the RFC 0013 signal that
+// the source, not the caller, mints a created node's URI, so a probe of
+// this type must go through node.create_child rather than node.create
+// (cutting-garden#202). An undeclared tag reads as caller-assigned.
+func (r *runner) serverAssignsIdentity(tag string) bool {
+	for _, body := range r.init.Bodies {
+		if body.Tag == tag {
+			return body.ServerAssignedIdentity
+		}
+	}
+
+	return false
 }
 
 // patchRecognized asserts a recognized-fields patch reports EXACTLY the
@@ -968,16 +1054,15 @@ func (r *runner) caseBulkMutate(ctx context.Context) {
 
 	problems := map[string]string{}
 
-	container := strings.TrimRight(spec.Container, "/")
-	appliedURI := container + "/" + probeName + "-bulk"
-	missingURI := container + "/" + probeName + "-bulk-missing"
+	appliedURI, missingURI, appliedOp, ok := r.bulkProbeSetup(ctx, spec)
+	if !ok {
+		r.tap.NotOk(nameBulkMutate, map[string]string{
+			"setup": "could not establish bulk probe URIs — node.create_child" +
+				" setup failed for a server-assigned peer",
+		})
 
-	// Probe hygiene: clear a leftover probe from an aborted run so the
-	// create op below runs against absent state (node.create is strict).
-	_ = r.session.Call(
-		ctx, traversal_serve.MethodNodeDelete,
-		traversal_serve.NodeDeleteParams{URI: appliedURI}, nil,
-	)
+		return
+	}
 
 	// (1) + (2)
 	var result traversal_serve.BulkMutateResult
@@ -986,12 +1071,7 @@ func (r *runner) caseBulkMutate(ctx context.Context) {
 		traversal_serve.BulkMutateParams{
 			Atomicity: string(cutting_garden_plugins.BulkBestEffort),
 			Ops: []traversal_serve.BulkOpView{
-				{
-					Kind:       string(cutting_garden_plugins.BulkCreate),
-					URI:        appliedURI,
-					Type:       spec.CreateType,
-					BodyBase64: encodeBody(spec.CreateBody),
-				},
+				appliedOp,
 				{
 					Kind: string(cutting_garden_plugins.BulkDelete),
 					URI:  missingURI,
@@ -1062,6 +1142,66 @@ func (r *runner) caseBulkMutate(ctx context.Context) {
 	}
 
 	r.tap.Ok(nameBulkMutate)
+}
+
+// bulkProbeSetup establishes the two URIs the best-effort changeset acts
+// on — appliedURI (an op that must land in applied) and missingURI (a
+// delete that must land in failed) — plus the op the changeset applies to
+// appliedURI. For a caller-assigned create type it keeps the original
+// shape: a concatenated probe URI CREATED in the changeset (a bulk create
+// op) and a concatenated -missing sibling. For a server-assigned type
+// (cutting-garden#202) neither URI is nameable by the caller, so the
+// applied probe is pre-minted via node.create_child and the changeset
+// DELETES it (delete-applies rather than create-applies), and the missing
+// URI is a SECOND minted probe deleted out of band — a real minted shape
+// the peer 404s, not a concatenated name a strict peer might reject
+// -32602. ok is false when the create_child setup fails.
+func (r *runner) bulkProbeSetup(
+	ctx context.Context, spec *BulkMutateSpec,
+) (appliedURI, missingURI string, appliedOp traversal_serve.BulkOpView, ok bool) {
+	if r.serverAssignsIdentity(spec.CreateType) {
+		applied, err := r.createChildProbe(
+			ctx, spec.Container, spec.CreateType, spec.CreateBody,
+		)
+		if err != nil {
+			return "", "", traversal_serve.BulkOpView{}, false
+		}
+		missing, err := r.createChildProbe(
+			ctx, spec.Container, spec.CreateType, spec.CreateBody,
+		)
+		if err != nil {
+			return "", "", traversal_serve.BulkOpView{}, false
+		}
+		// Delete the second probe out of band so its (valid, minted) URI is
+		// a genuine absent node the changeset's delete op fails on.
+		_ = r.session.Call(
+			ctx, traversal_serve.MethodNodeDelete,
+			traversal_serve.NodeDeleteParams{URI: missing}, nil,
+		)
+
+		return applied, missing, traversal_serve.BulkOpView{
+			Kind: string(cutting_garden_plugins.BulkDelete),
+			URI:  applied,
+		}, true
+	}
+
+	container := strings.TrimRight(spec.Container, "/")
+	appliedURI = container + "/" + probeName + "-bulk"
+	missingURI = container + "/" + probeName + "-bulk-missing"
+
+	// Probe hygiene: clear a leftover probe from an aborted run so the
+	// create op runs against absent state (node.create is strict).
+	_ = r.session.Call(
+		ctx, traversal_serve.MethodNodeDelete,
+		traversal_serve.NodeDeleteParams{URI: appliedURI}, nil,
+	)
+
+	return appliedURI, missingURI, traversal_serve.BulkOpView{
+		Kind:       string(cutting_garden_plugins.BulkCreate),
+		URI:        appliedURI,
+		Type:       spec.CreateType,
+		BodyBase64: encodeBody(spec.CreateBody),
+	}, true
 }
 
 // bulkFailureHas reports whether any failure view names uri.

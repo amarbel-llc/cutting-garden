@@ -150,6 +150,59 @@ func TestRunPassesConformantTestpeer(t *testing.T) {
 	}
 }
 
+// TestRunPassesServerAssignedPeer drives the case list against the testpeer
+// using its SERVER-ASSIGNED create type (cgtest-assigned-v1): the peer, not
+// the caller, mints the created node's identity, so the driver must route
+// the patch probe AND the bulk applied-probe through node.create_child
+// rather than the caller-named node.create (cutting-garden#202). This is
+// the fix's acceptance test — a concatenated caller-named probe URI is
+// un-nameable for this type, so a conformant peer would reject it -32602
+// and the mutation points would fail, exactly the fj-cg symptom.
+func TestRunPassesServerAssignedPeer(t *testing.T) {
+	ctx, cancel := context.WithTimeout(
+		context.Background(), 120*time.Second,
+	)
+	defer cancel()
+
+	t.Setenv(mainModeEnv, "1")
+
+	manifest := testpeerManifest(t)
+	// Both the patch-probe and the bulk applied-probe now use the
+	// server-assigned type, so the driver must create_child both.
+	manifest.Create.Type = testpeer.AssignedLeafType
+	manifest.BulkMutate.CreateType = testpeer.AssignedLeafType
+
+	var out bytes.Buffer
+	passed, err := traversal_conformance.Run(ctx, manifest, &out)
+	if err != nil {
+		t.Fatalf("Run: %v\noutput:\n%s", err, out.String())
+	}
+
+	if !passed {
+		t.Fatalf("passed = false against the server-assigned testpeer:\n%s",
+			out.String())
+	}
+
+	// The create-the-probe, patch tri-state, delete, and bulk points must
+	// all pass via the create_child path.
+	for _, want := range []string{
+		"ok 4 - node.create: probe node",
+		"ok 5 - node.patch: recognized fields reported applied",
+		"ok 7 - node.patch: wrong-typed body is -32602",
+		"ok 8 - node.delete: probe cleanup",
+		"ok 14 - node.bulk_mutate: best-effort applies and isolates a" +
+			" failure, atomic and malformed refused",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("output missing %q:\n%s", want, out.String())
+		}
+	}
+
+	if strings.Contains(out.String(), "not ok") {
+		t.Errorf("output contains a not-ok point:\n%s", out.String())
+	}
+}
+
 // TestRunFailsMismatchedExpectApplied is the "driver must be able to
 // fail" acceptance requirement (the plan's known-wrong self-test): a
 // manifest whose applied expectation deliberately mismatches the peer's
