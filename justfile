@@ -620,6 +620,8 @@ debug-viewport-demo:
 # binary path substituted into the in-tree testpeer manifest. The tight
 # dev-loop for the driver<->real-peer interaction the Go driver_test's
 # re-exec pattern does not cover. Exits 0/1 with the TAP on stdout.
+#
+# run the RFC 0013 conformance driver against the go-built testpeer
 [group('debug')]
 debug-conformance-traversal:
     #!/usr/bin/env bash
