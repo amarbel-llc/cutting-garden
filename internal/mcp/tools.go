@@ -1049,18 +1049,22 @@ func paginate[T any](items []T, offset, limit int) []T {
 	return items
 }
 
-// paginateListingText applies paginate to a JSON array's text form — the
-// list_nodes(uri) path, where the child listing already arrived as rendered
-// text from t.reader.ReadResource (renderContents). Text that does not
-// decode as a JSON array (a leaf object read, or an empty listing already
-// smaller than any reasonable page) is returned unchanged: pagination is a
-// listing concern, not a leaf-read one.
+// paginateListingText applies paginate to a listing's rendered text — the
+// list_nodes(uri) default path, where the child listing already arrived as
+// text from t.reader.ReadResource (renderContents). Since cutting-garden#203
+// that text is a {nodes, version?} object: the nodes array is sliced and the
+// version block preserved verbatim (a page of a listing is still that
+// listing's snapshot). Text that is not a listing (a leaf object read has no
+// nodes key) is returned unchanged — pagination is a listing concern, not a
+// leaf-read one.
 func paginateListingText(text string, offset, limit int) (string, error) {
-	var raw []json.RawMessage
-	if err := json.Unmarshal([]byte(text), &raw); err != nil {
+	var wrapper listingView
+	if err := json.Unmarshal([]byte(text), &wrapper); err != nil ||
+		wrapper.Nodes == nil {
 		return text, nil
 	}
-	body, err := json.MarshalIndent(paginate(raw, offset, limit), "", "  ")
+	wrapper.Nodes = paginate(wrapper.Nodes, offset, limit)
+	body, err := json.MarshalIndent(wrapper, "", "  ")
 	if err != nil {
 		return "", errors.Wrap(err)
 	}

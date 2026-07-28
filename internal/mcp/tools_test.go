@@ -663,14 +663,17 @@ func TestCallTool_ListNodesRootsPagination(t *testing.T) {
 }
 
 // TestCallTool_ListNodesContainerPagination pins the uri branch: the child
-// listing text (as rendered by renderContents) is decoded, sliced, and
-// re-encoded.
+// listing text (the #203 {nodes,version} wrapper, as rendered by
+// renderContents) has its nodes sliced while the version block rides through.
+// The fake reader returns the wrapper shape production actually produces —
+// feeding a bare array here is what let the #203 pagination regression slip
+// the gate.
 func TestCallTool_ListNodesContainerPagination(t *testing.T) {
 	tools := newFakeTools(t, &fakeMutator{}, "faketest://h/")
 	tools.reader = fakeReader{read: &protocol.ResourceReadResult{Contents: []protocol.ResourceContent{
 		{
 			URI: "faketest://h/work", MimeType: "application/json",
-			Text: `[{"uri":"a"},{"uri":"b"},{"uri":"c"}]`,
+			Text: `{"nodes":[{"uri":"a"},{"uri":"b"},{"uri":"c"}],"version":"v1"}`,
 		},
 	}}}
 
@@ -679,12 +682,15 @@ func TestCallTool_ListNodesContainerPagination(t *testing.T) {
 	if err != nil {
 		t.Fatalf("transport error: %v", err)
 	}
-	var got []map[string]string
+	var got listingView
 	if err := json.Unmarshal([]byte(res.Content[0].Text), &got); err != nil {
 		t.Fatalf("decode %q: %v", res.Content[0].Text, err)
 	}
-	if len(got) != 2 || got[0]["uri"] != "a" || got[1]["uri"] != "b" {
-		t.Fatalf("limit=2 = %+v, want [a, b]", got)
+	if len(got.Nodes) != 2 || got.Nodes[0].URI != "a" || got.Nodes[1].URI != "b" {
+		t.Fatalf("limit=2 = %+v, want nodes [a, b]", got.Nodes)
+	}
+	if got.Version != "v1" {
+		t.Errorf("version %q not preserved through pagination", got.Version)
 	}
 
 	res, err = tools.CallTool(context.Background(), "list_nodes",
@@ -692,8 +698,12 @@ func TestCallTool_ListNodesContainerPagination(t *testing.T) {
 	if err != nil {
 		t.Fatalf("transport error: %v", err)
 	}
-	if res.Content[0].Text != "[]" {
-		t.Errorf("out-of-range offset body = %q, want []", res.Content[0].Text)
+	got = listingView{}
+	if err := json.Unmarshal([]byte(res.Content[0].Text), &got); err != nil {
+		t.Fatalf("decode %q: %v", res.Content[0].Text, err)
+	}
+	if len(got.Nodes) != 0 {
+		t.Errorf("out-of-range offset nodes = %+v, want empty", got.Nodes)
 	}
 }
 

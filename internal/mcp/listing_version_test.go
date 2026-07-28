@@ -136,6 +136,59 @@ func TestListNodesFiltered_CarriesVersion(t *testing.T) {
 	}
 }
 
+// TestPaginateListingText_PaginatesWrapperAndKeepsVersion pins the #203
+// regression fix: paginateListingText must slice the {nodes,version} wrapper's
+// nodes (the pre-#203 code decoded the text as a bare array, which now fails,
+// silently returning the WHOLE listing — limit/offset ignored). The version
+// block rides through unchanged: a page of a listing is still that snapshot.
+func TestPaginateListingText_PaginatesWrapperAndKeepsVersion(t *testing.T) {
+	text := `{
+  "nodes": [
+    {"uri":"x://1"},
+    {"uri":"x://2"},
+    {"uri":"x://3"}
+  ],
+  "version": "v-9",
+  "versionComputedAt": "2026-07-28T00:00:00Z",
+  "freshness": "fresh"
+}`
+
+	got, err := paginateListingText(text, 0, 2)
+	if err != nil {
+		t.Fatalf("paginateListingText: %v", err)
+	}
+
+	var lv listingView
+	if err := json.Unmarshal([]byte(got), &lv); err != nil {
+		t.Fatalf("decode %q: %v", got, err)
+	}
+
+	if len(lv.Nodes) != 2 {
+		t.Errorf("nodes = %d, want 2 (limit applied to the wrapper's nodes)",
+			len(lv.Nodes))
+	}
+	if lv.Version != "v-9" || lv.Freshness != "fresh" ||
+		lv.VersionComputedAt == "" {
+		t.Errorf("version block not preserved through pagination: %+v",
+			lv.listingVersion)
+	}
+}
+
+// TestPaginateListingText_LeafObjectUnchanged: a non-listing text (a leaf
+// object read, no nodes key) is returned verbatim — pagination is a listing
+// concern, and the wrapper decode must not mangle a leaf body.
+func TestPaginateListingText_LeafObjectUnchanged(t *testing.T) {
+	text := `{"summary":"a task","status":"open"}`
+
+	got, err := paginateListingText(text, 0, 2)
+	if err != nil {
+		t.Fatalf("paginateListingText: %v", err)
+	}
+	if got != text {
+		t.Errorf("leaf object was modified: %q -> %q", text, got)
+	}
+}
+
 // TestListNodesFilteredBare_OmitsVersion: bare is the stripped-output path, so
 // even a filtered bare listing carries no version — the rule "the version
 // rides the enriched listing only" holds across filter and bare together.
