@@ -129,10 +129,7 @@ func TestServer_ResourcesReadRoundTrip(t *testing.T) {
 	if len(result.Contents) != 1 {
 		t.Fatalf("got %d content blocks, want 1", len(result.Contents))
 	}
-	var views []nodeView
-	if err := json.Unmarshal([]byte(result.Contents[0].Text), &views); err != nil {
-		t.Fatalf("decode listing %q: %v", result.Contents[0].Text, err)
-	}
+	views := listingNodes(t, result.Contents[0].Text)
 	if len(views) != 1 || views[0].URI != "faketest://h/work/task1.ics" {
 		t.Fatalf("unexpected child listing: %+v", views)
 	}

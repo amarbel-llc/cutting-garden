@@ -58,6 +58,68 @@ func (e *listingCacheEntry) windowExpired(now time.Time) bool {
 		!now.Before(e.computedAt.Add(e.revalidateAfter))
 }
 
+// freshness classifies the entry's provenance, mirroring
+// facetCacheEntry.freshness exactly (the two caches share their expiry
+// semantics — see the type doc): a recorded error or dirty mark, or a
+// lapsed volatile window, is stale; a token verified at/after computation
+// is fresh; anything else is unverified.
+func (e *listingCacheEntry) freshness(now time.Time) string {
+	switch {
+	case e.lastErr != "" || e.dirty:
+		return freshnessStale
+	case e.windowExpired(now):
+		return freshnessStale
+	case e.hasToken && !e.verifiedAt.Before(e.computedAt):
+		return freshnessFresh
+	default:
+		return freshnessUnverified
+	}
+}
+
+// listingProvenance is the snapshot identity of a served listing
+// (cutting-garden#203): the FacetVersion token the entry was computed
+// against, plus when and how fresh. hasVersion is false when the entry's
+// plugin declares no FacetVersioner — the listing then carries no version.
+// The token MUST correspond to the nodes served alongside it (serve returns
+// the entry's own token, never a fresh re-read), so two calls comparing
+// tokens compare the snapshots they actually received.
+type listingProvenance struct {
+	hasVersion bool
+	version    string
+	computedAt time.Time
+	freshness  string
+}
+
+// provenance projects an entry to its served snapshot identity.
+func (e *listingCacheEntry) provenance(now time.Time) listingProvenance {
+	if !e.hasToken {
+		return listingProvenance{}
+	}
+
+	return listingProvenance{
+		hasVersion: true,
+		version:    e.token,
+		computedAt: e.computedAt,
+		freshness:  e.freshness(now),
+	}
+}
+
+// view projects the provenance to the wire-form listingVersion (RFC3339
+// timestamp); the zero (all-omitempty) value when no version is available,
+// so a listing whose plugin declares no FacetVersioner carries no version
+// fields at all.
+func (p listingProvenance) view() listingVersion {
+	if !p.hasVersion {
+		return listingVersion{}
+	}
+
+	return listingVersion{
+		Version:           p.version,
+		VersionComputedAt: p.computedAt.UTC().Format(time.RFC3339),
+		Freshness:         p.freshness,
+	}
+}
+
 func newListingCache() *listingCache {
 	return &listingCache{entries: map[string]*listingCacheEntry{}, now: time.Now}
 }
@@ -74,13 +136,14 @@ func (lc *listingCache) serve(
 	lister cutting_garden_plugins.RootLister,
 	uri string,
 	u *url.URL,
-) ([]cutting_garden_plugins.Node, error) {
+) ([]cutting_garden_plugins.Node, listingProvenance, error) {
 	lc.mu.Lock()
 	entry := lc.entries[uri]
 	if entry != nil && !entry.windowExpired(lc.now()) {
 		nodes := entry.nodes
+		prov := entry.provenance(lc.now())
 		lc.mu.Unlock()
-		return nodes, nil
+		return nodes, prov, nil
 	}
 	lc.mu.Unlock()
 
@@ -96,12 +159,12 @@ func (lc *listingCache) computeAndStore(
 	lister cutting_garden_plugins.RootLister,
 	uri string,
 	u *url.URL,
-) ([]cutting_garden_plugins.Node, error) {
+) ([]cutting_garden_plugins.Node, listingProvenance, error) {
 	token, hasToken := tokenFor(ctx, lister, u)
 
 	nodes, _, err := enrichedListing(ctx, lister, u, nil)
 	if err != nil {
-		return nil, err
+		return nil, listingProvenance{}, err
 	}
 
 	now := lc.now()
@@ -116,7 +179,7 @@ func (lc *listingCache) computeAndStore(
 	lc.mu.Lock()
 	lc.entries[uri] = entry
 	lc.mu.Unlock()
-	return nodes, nil
+	return nodes, entry.provenance(now), nil
 }
 
 // facetKeyPresenceOf builds a presence-only pseudo-summary from a node set's

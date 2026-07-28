@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"path"
 	"strings"
+	"time"
 
 	"code.linenisgreat.com/cutting-garden/internal/command_components"
 	"code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
@@ -232,17 +233,22 @@ func readToolDefs() []protocol.ToolV1 {
 			Description: "Browse the tree: list the child nodes under a container URI " +
 				"(or, with no uri, the configured roots — the entry points). " +
 				"Each node carries its uri, so you descend by listing deeper or read a " +
-				"leaf with read_node. Every entry is ENRICHED BY DEFAULT with its " +
+				"leaf with read_node. A container's listing is returned as a " +
+				"{nodes, version?} object: nodes are ENRICHED BY DEFAULT with their " +
 				"facets and any plugin-declared human-readable fields (e.g. a caldav " +
-				"object's summary/status/dtstart/dtend) inline — pass bare=true to opt out to " +
-				"the cheap {uri,name,type,container,mimeType} shape. An optional " +
-				"filter (the same dimension=value grammar as read_facets) narrows the " +
-				"returned nodes to those matching, wrapping the result as " +
-				"{nodes, filterApplied, filterMode} so you always know whether the " +
-				"nodes were actually narrowed — this is the direct way to retrieve " +
-				"the matching set read_facets can only count. Optional limit/offset " +
-				"page a large listing host-side after enumeration; a response " +
-				"shorter than limit signals the end.",
+				"object's summary/status/dtstart/dtend) inline, and version — present " +
+				"when the plugin tracks a snapshot token — lets you compare two " +
+				"listings of the SAME container to know for certain whether they read " +
+				"the same underlying data (equal version = same snapshot). pass " +
+				"bare=true to opt out to a plain array of the cheap " +
+				"{uri,name,type,container,mimeType} shape (no version); the no-uri " +
+				"roots listing is likewise a plain array. An optional filter (the same " +
+				"dimension=value grammar as read_facets) narrows the returned nodes to " +
+				"those matching and adds filterApplied/filterMode to the object, so " +
+				"you always know whether the nodes were actually narrowed — this is " +
+				"the direct way to retrieve the matching set read_facets can only " +
+				"count. Optional limit/offset page a large listing host-side after " +
+				"enumeration; a response shorter than limit signals the end.",
 			InputSchema: json.RawMessage(listNodesSchema),
 			Annotations: annotationFor(mcp_tool_perms.ToolListNodes),
 		},
@@ -250,8 +256,9 @@ func readToolDefs() []protocol.ToolV1 {
 			Name: mcp_tool_perms.ToolReadNode,
 			Description: "Read one node by URI: a leaf returns its parsed fields (e.g. a " +
 				"calendar event's {component,event|task} JSON) plus a raw-bytes link; a " +
-				"container returns its child listing. The read sibling of create/put/" +
-				"patch/delete_node.",
+				"container returns its child listing as a {nodes, version?} object " +
+				"(version is the container snapshot token, when the plugin tracks " +
+				"one). The read sibling of create/put/patch/delete_node.",
 			InputSchema: json.RawMessage(readNodeSchema),
 			Annotations: annotationFor(mcp_tool_perms.ToolReadNode),
 		},
@@ -867,6 +874,10 @@ func nonNilURLStrings(uris []*url.URL) []string {
 // continuity with the pre-#160 shape and with resources/read's listing.
 type filteredListingView struct {
 	Nodes []nodeView `json:"nodes"`
+	// listingVersion carries the container snapshot token when the plugin is
+	// a FacetVersioner (cutting-garden#203), so a filtered listing is
+	// comparable across calls exactly like the unfiltered one.
+	listingVersion
 	// Filter is the requested filter string, echoed back for clarity.
 	Filter string `json:"filter"`
 	// FilterApplied is true iff Nodes was actually narrowed by Filter
@@ -969,6 +980,25 @@ func (t *Tools) listNodesURI(
 		return "", errors.Wrapf(verr, "list_nodes %s (filtered)", uri)
 	}
 
+	// Resolve the snapshot token BEFORE listing (matching the listing
+	// cache's order, computeAndStore): a data change between token and
+	// listing then makes the NEXT call's token differ — a spurious "changed",
+	// never a missed one — rather than yielding a token newer than the nodes
+	// it labels. Only the enriched output carries a version; bare is the
+	// stripped-output path, so it stays version-free like the unfiltered bare
+	// listing (cutting-garden#203).
+	var prov listingProvenance
+	if !bare {
+		if token, hasToken := tokenFor(ctx, lister, u); hasToken {
+			prov = listingProvenance{
+				hasVersion: true,
+				version:    token,
+				computedAt: time.Now(),
+				freshness:  freshnessFresh,
+			}
+		}
+	}
+
 	nodes, mode, err := enrichedListing(ctx, lister, u, filter)
 	if err != nil {
 		return "", errors.Wrapf(err, "list %s (filtered)", uri)
@@ -983,10 +1013,11 @@ func (t *Tools) listNodesURI(
 	}
 	views = paginate(views, offset, limit)
 	body, err := json.MarshalIndent(filteredListingView{
-		Nodes:         views,
-		Filter:        filterString(filter),
-		FilterApplied: mode != filterModeNone,
-		FilterMode:    mode,
+		Nodes:          views,
+		listingVersion: prov.view(),
+		Filter:         filterString(filter),
+		FilterApplied:  mode != filterModeNone,
+		FilterMode:     mode,
 	}, "", "  ")
 	if err != nil {
 		return "", errors.Wrap(err)
@@ -1055,6 +1086,27 @@ func paginateListingText(text string, offset, limit int) (string, error) {
 // renderContents does. With only one of the two (a leaf object, or a plain
 // child array) the output is that value alone — byte-for-byte the
 // pre-RFC-0018 read_node shape.
+// isListingJSON reports whether text is a container listing (the
+// cutting-garden#203 {"nodes":[...]} wrapper) rather than a leaf body object.
+// A listing and an object body share the application/json media type
+// (mimeListing == mimeObject), so read_node's both-mode must tell them apart
+// by content: pre-#203 that was array-vs-object, but the listing is now an
+// object too, so the discriminator is the wrapper's signature top-level
+// "nodes" ARRAY. A leaf body would need a top-level "nodes" array of its own
+// to collide, which no body format produces.
+func isListingJSON(text string) bool {
+	var probe struct {
+		Nodes json.RawMessage `json:"nodes"`
+	}
+	if err := json.Unmarshal([]byte(text), &probe); err != nil {
+		return false
+	}
+
+	trimmed := strings.TrimSpace(string(probe.Nodes))
+
+	return strings.HasPrefix(trimmed, "[")
+}
+
 func renderReadNode(contents []protocol.ResourceContent) string {
 	var bodyText, listingText, rawNote string
 	for _, c := range contents {
@@ -1062,7 +1114,7 @@ func renderReadNode(contents []protocol.ResourceContent) string {
 		case c.MimeType == mimeFacets:
 			continue
 		case c.Text != "":
-			if strings.HasPrefix(strings.TrimSpace(c.Text), "[") {
+			if isListingJSON(c.Text) {
 				listingText = c.Text
 			} else {
 				bodyText = c.Text

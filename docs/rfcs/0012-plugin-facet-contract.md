@@ -786,6 +786,40 @@ bare. Combining `bare` with a `filter` still pays whatever fetch the filter
 requires (§12.3 branch 1 may need `EnrichedLister`); only the OUTPUT is
 stripped down.
 
+#### 12.6 Binding: the listing carries its snapshot token (cutting-garden#203)
+
+An enriched listing is returned as a `{nodes, version?}` object — the same
+shape for both `resources/read` and the `list_nodes` tool, kept
+byte-identical (the version rides both, not only the tool). `version` is the
+container's `FacetVersion` token (§11.1): the SAME opaque token that gates
+the listing cache (§12.4), surfaced so a consumer can compare two listings
+of the same container and know for certain whether they read the same
+underlying snapshot (equal token ⇒ same snapshot). The token is present only
+when the plugin implements `FacetVersioner`; a plugin that does not carries
+no version. The token returned MUST correspond to the nodes served beside it
+— for a cache hit, the token the cached nodes were computed against, never a
+fresh re-read that could label the served nodes with a newer snapshot.
+
+Unlike a served facet summary (§11.2), which surfaces `freshness`/
+`computedAt`/`validUntil` but keeps the raw token cache-internal, a listing
+exposes the raw token itself: cross-call equality IS the use case, and the
+token is opaque-but-comparable by design and carries nothing secret. A
+listing also carries `versionComputedAt` and `freshness` mirroring §11.2, so
+the two read surfaces report provenance consistently.
+
+**Caveat, documented not hidden.** This is the FACET version token — it
+tracks facet-relevant subtree changes, which for a §12-conformant plugin
+(where `ListEnriched` returns the same set `ListRoots` would, §12's
+level-scoping invariant) equals the listing. A hypothetical plugin whose
+token moved ONLY on facet-relevant changes and not other child changes could
+in principle miss a listing-only change — but such a plugin already violates
+the spirit of "the token gates a cache that folds over the listing," so
+reusing `FacetVersioner` here (rather than inventing a parallel
+listing-versioner for a caveat that only bites a non-conformant plugin) is
+the deliberate, minimal choice. The `bare` opt-out and the no-uri roots
+listing both return a plain array with no version, since neither is the
+enriched container listing the token identifies.
+
 ### 13. Per-child-container attribution (`FacetResult.ByContainer`)
 
 §§1–12 let a consumer *count* across a whole subtree (§4's hoisted summary)

@@ -158,10 +158,7 @@ func TestReadResource_ContainerYieldsChildren(t *testing.T) {
 		t.Errorf("content mimetype = %q, want %q", c.MimeType, mimeListing)
 	}
 
-	var views []nodeView
-	if err := json.Unmarshal([]byte(c.Text), &views); err != nil {
-		t.Fatalf("decode listing %q: %v", c.Text, err)
-	}
+	views := listingNodes(t, c.Text)
 	if len(views) != 1 {
 		t.Fatalf("got %d child views, want 1: %+v", len(views), views)
 	}
@@ -192,10 +189,7 @@ func TestReadResource_LeafYieldsEmptyListing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadResource: %v", err)
 	}
-	var views []nodeView
-	if err := json.Unmarshal([]byte(got.Contents[0].Text), &views); err != nil {
-		t.Fatalf("decode listing: %v", err)
-	}
+	views := listingNodes(t, got.Contents[0].Text)
 	if len(views) != 0 {
 		t.Errorf("leaf read yielded %d children, want 0: %+v", len(views), views)
 	}
@@ -274,10 +268,7 @@ func TestReadResource_LeafReaderDeclineFallsBackToEmpty(t *testing.T) {
 		t.Errorf("declined-leaf mimetype = %q, want listing %q",
 			got.Contents[0].MimeType, mimeListing)
 	}
-	var views []nodeView
-	if err := json.Unmarshal([]byte(got.Contents[0].Text), &views); err != nil {
-		t.Fatalf("decode listing: %v", err)
-	}
+	views := listingNodes(t, got.Contents[0].Text)
 	if len(views) != 0 {
 		t.Errorf("declined leaf yielded %d children, want 0: %+v", len(views), views)
 	}

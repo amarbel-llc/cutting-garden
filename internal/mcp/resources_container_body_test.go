@@ -137,7 +137,7 @@ func TestReadNode_BothReturnsBodyAndChildren_DeclarationGated(t *testing.T) {
 
 	var wrapper struct {
 		Body     map[string]any `json:"body"`
-		Children []any          `json:"children"`
+		Children listingView    `json:"children"`
 	}
 	if err := json.Unmarshal([]byte(text), &wrapper); err != nil {
 		t.Fatalf("both-mode output is not the {body,children} wrapper: %v\n%s",
@@ -146,7 +146,8 @@ func TestReadNode_BothReturnsBodyAndChildren_DeclarationGated(t *testing.T) {
 	if wrapper.Body["title"] != "Fix it" || wrapper.Body["state"] != "open" {
 		t.Errorf("body = %v, want the issue's title/state", wrapper.Body)
 	}
-	if len(wrapper.Children) != 1 {
+	// children is the #203 listing wrapper ({nodes:[...]}), not a bare array.
+	if len(wrapper.Children.Nodes) != 1 {
 		t.Errorf("children = %v, want the one comment", wrapper.Children)
 	}
 }
@@ -159,8 +160,9 @@ func TestReadNode_ChildrenOmitsBody(t *testing.T) {
 
 	text := readNodeText(t, r, issueURI, contentChildren)
 
-	if !strings.HasPrefix(strings.TrimSpace(text), "[") {
-		t.Fatalf("children mode is not a bare listing array:\n%s", text)
+	if !strings.HasPrefix(strings.TrimSpace(text), "{") ||
+		!strings.Contains(text, `"nodes"`) {
+		t.Fatalf("children mode is not the #203 listing wrapper:\n%s", text)
 	}
 	if strings.Contains(text, "Fix it") {
 		t.Errorf("children mode leaked the container body:\n%s", text)
@@ -210,7 +212,9 @@ func TestReadNode_DeclarationGateSkipsUndeclaredBody(t *testing.T) {
 	if strings.Contains(text, "Fix it") {
 		t.Errorf("gate did not skip the undeclared body:\n%s", text)
 	}
-	if !strings.HasPrefix(strings.TrimSpace(text), "[") {
-		t.Errorf("expected a bare listing when the body is skipped:\n%s", text)
+	if !strings.HasPrefix(strings.TrimSpace(text), "{") ||
+		!strings.Contains(text, `"nodes"`) {
+		t.Errorf("expected the #203 listing wrapper when the body is skipped:\n%s",
+			text)
 	}
 }

@@ -77,8 +77,11 @@ const serverName = "cutting-garden"
 // bytes.
 const instructions = "Resources are the capturable trees of cutting-garden " +
 	"plugin endpoints. resources/list returns each endpoint's immediate " +
-	"children; reading a container resource returns its children as a JSON " +
-	"array, so you descend the tree one level per read. Every listing " +
+	"children; reading a container resource returns a {nodes, version?} " +
+	"object — its children under nodes, plus a version snapshot token " +
+	"(when the plugin tracks one) you can compare across two reads of the " +
+	"SAME container to tell whether they saw the same underlying data — so " +
+	"you descend the tree one level per read. Every listing " +
 	"entry is ENRICHED BY DEFAULT: it carries its facets and any " +
 	"plugin-declared human-readable fields (e.g. a caldav object's " +
 	"summary/status/dtstart/dtend) inline, not just {uri,name,type}. Reading a leaf " +

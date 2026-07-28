@@ -19,6 +19,20 @@ func jsonUnmarshalContents(res *protocol.ResourceReadResult, out any) error {
 	return json.Unmarshal([]byte(res.Contents[0].Text), out)
 }
 
+// listingNodes decodes a container listing's child nodes from the #203
+// wrapper shape ({"nodes":[...], "version":...}) that both list_nodes'
+// default path and resources/read now emit (replacing the pre-#203 bare
+// nodeView array). Tests that only care about the nodes use this.
+func listingNodes(t *testing.T, text string) []nodeView {
+	t.Helper()
+	var lv listingView
+	if err := json.Unmarshal([]byte(text), &lv); err != nil {
+		t.Fatalf("decode listing %q: %v", text, err)
+	}
+
+	return lv.Nodes
+}
+
 // countingEnrichedLister is an EnrichedLister that counts invocations and
 // serves a movable change token plus an optional volatile facet dimension —
 // the listingCache counterpart of facet_test.go's countingFacetLister /
@@ -152,10 +166,7 @@ func TestListingCache_TokenGatedRefresh(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read after refresh: %v", err)
 	}
-	var views []nodeView
-	if err := jsonUnmarshalContents(got, &views); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
+	views := listingNodes(t, got.Contents[0].Text)
 	if len(views) != 1 || views[0].Fields["summary"] != "Buy milk" {
 		t.Errorf("served listing after refresh = %+v, want the recomputed nodes", views)
 	}
@@ -219,10 +230,7 @@ func TestListingCache_RefreshFailureKeepsLastGood(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read after failed refresh: %v", err)
 	}
-	var views []nodeView
-	if err := jsonUnmarshalContents(got, &views); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
+	views := listingNodes(t, got.Contents[0].Text)
 	if len(views) != 1 {
 		t.Errorf("last-good listing lost after a failed refresh: %+v", views)
 	}

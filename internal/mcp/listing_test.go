@@ -192,10 +192,7 @@ func TestReadResource_ChildViewsCarryFacetsByDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadResource: %v", err)
 	}
-	var views []nodeView
-	if err := json.Unmarshal([]byte(got.Contents[0].Text), &views); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
+	views := listingNodes(t, got.Contents[0].Text)
 	if len(views) != 1 {
 		t.Fatalf("got %d children, want 1: %+v", len(views), views)
 	}

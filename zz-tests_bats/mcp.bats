@@ -122,9 +122,9 @@ function mcp_browse_and_read { # @test
   mcp_drive "$CALDAV_SOURCE" "$(tools_call 3 list_nodes "$(jq -nc --arg u "$rooturi" '{uri:$u}')")"
   local cals
   cals="$(mcp_result_text "$output" 3)"
-  echo "$cals" | jq -e 'any(.[]; .name=="Personal")' >/dev/null ||
+  echo "$cals" | jq -e 'any(.nodes[]; .name=="Personal")' >/dev/null ||
     fail "list_nodes(root) missing the Personal calendar: $cals"
-  echo "$cals" | jq -e 'any(.[]; .name=="Work")' >/dev/null ||
+  echo "$cals" | jq -e 'any(.nodes[]; .name=="Work")' >/dev/null ||
     fail "list_nodes(root) missing the discovered Work calendar: $cals"
 
   # read_node a seeded VTODO → its parsed task fields. grep (not jq) since a
@@ -156,7 +156,7 @@ function mcp_list_nodes_filter_retrieves_matching_enriched_nodes { # @test
 
   mcp_drive "$CALDAV_SOURCE" "$(tools_call 3 list_nodes "$(jq -nc --arg u "$rooturi" '{uri:$u}')")"
   local personaluri
-  personaluri="$(mcp_result_text "$output" 3 | jq -r 'first(.[] | select(.name=="Personal")) | .uri')"
+  personaluri="$(mcp_result_text "$output" 3 | jq -r 'first(.nodes[] | select(.name=="Personal")) | .uri')"
   [[ -n $personaluri ]] || fail "could not find the Personal calendar: $(mcp_result_text "$output" 3)"
 
   mcp_drive "$CALDAV_SOURCE" "$(tools_call 3 list_nodes \

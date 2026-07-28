@@ -110,7 +110,7 @@ func (r *Resources) startFacetMaintenance(ctx context.Context) {
 		uri := root.String()
 		if u, lister, err := r.resolve(uri); err == nil {
 			_, _ = r.facets.serve(ctx, lister, uri, u)
-			_, _ = r.listings.serve(ctx, lister, uri, u)
+			_, _, _ = r.listings.serve(ctx, lister, uri, u)
 		}
 	}
 	go r.listings.maintain(ctx, r.resolve, facetRefreshInterval)
@@ -196,7 +196,7 @@ func (r *Resources) ReadNode(
 		return &protocol.ResourceReadResult{}, nil
 	}
 
-	nodes, err := r.listings.serve(ctx, lister, uri, u)
+	nodes, prov, err := r.listings.serve(ctx, lister, uri, u)
 	if err != nil {
 		return nil, errors.Wrapf(err, "list roots under %s", uri)
 	}
@@ -230,7 +230,7 @@ func (r *Resources) ReadNode(
 	}
 
 	// The child listing (children and both).
-	listingJSON, err := renderNodeViews(lister, nodes)
+	listingJSON, err := renderNodeViews(lister, nodes, prov)
 	if err != nil {
 		return nil, err
 	}
@@ -255,17 +255,49 @@ func (r *Resources) ReadNode(
 	return &protocol.ResourceReadResult{Contents: contents}, nil
 }
 
-// renderNodeViews marshals a container's children as the enriched node-view
-// JSON array that a listing content block carries.
+// listingVersion is the container snapshot provenance a listing carries
+// when its plugin implements FacetVersioner (cutting-garden#203): the raw
+// FacetVersion token — compare it across two listings to know for certain
+// whether they read the same underlying snapshot — plus when it was
+// resolved and how fresh. Unlike read_facets (facetView), which keeps the
+// raw token cache-internal and surfaces only freshness, a listing exposes
+// the token itself, because cross-call equality IS the use case; the token
+// is opaque-but-comparable by RFC 0012 design and carries nothing secret.
+// All fields omitempty: a listing whose plugin declares no versioner
+// carries no version at all.
+type listingVersion struct {
+	Version           string `json:"version,omitempty"`
+	VersionComputedAt string `json:"versionComputedAt,omitempty"`
+	Freshness         string `json:"freshness,omitempty"`
+}
+
+// listingView is the shape of an enriched (unfiltered) child listing: the
+// nodes plus the optional version block. It is what both list_nodes' default
+// path and resources/read emit for a container (cutting-garden#203 kept the
+// two byte-identical — the version rides both, not just the tool), replacing
+// the pre-#203 bare nodeView array.
+type listingView struct {
+	Nodes []nodeView `json:"nodes"`
+	listingVersion
+}
+
+// renderNodeViews marshals a container's children as the enriched listing
+// JSON — the nodes plus, when the plugin is a FacetVersioner, the version
+// block whose token corresponds to exactly these nodes (prov comes from the
+// same cache entry that produced them).
 func renderNodeViews(
 	lister cutting_garden_plugins.RootLister,
 	nodes []cutting_garden_plugins.Node,
+	prov listingProvenance,
 ) (string, error) {
 	views := make([]nodeView, 0, len(nodes))
 	for _, n := range nodes {
 		views = append(views, enrichedNodeView(lister, n))
 	}
-	body, err := json.MarshalIndent(views, "", "  ")
+	body, err := json.MarshalIndent(listingView{
+		Nodes:          views,
+		listingVersion: prov.view(),
+	}, "", "  ")
 	if err != nil {
 		return "", errors.Wrap(err)
 	}
