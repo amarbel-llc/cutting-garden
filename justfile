@@ -17,6 +17,8 @@ build-nix:
 # gate). `nix build` does NOT evaluate `checks`, so this is a distinct
 # step from build-nix; it's what makes the formatting gate fire in the
 # `just` pre-merge hook. See eng-design_patterns-conformist(7).
+#
+# run nix flake check (the sandboxed conformist formatting gate)
 [group('build')]
 build-nix-check:
     nix flake check --show-trace
@@ -43,6 +45,8 @@ lint-go:
 # sandboxed PURE gate (checks.<sys>.formatting = build.check self) — the same
 # derivation `just build-nix-check` runs via `nix flake check`. The git-state
 # eng checks run in `just lint-worktree`.
+#
+# check formatting and the eng-convention linters without modifying files
 [group('pre-build')]
 lint-fmt:
     nix build ".#checks.$(nix eval --impure --raw --expr builtins.currentSystem).formatting" --no-link
@@ -53,6 +57,8 @@ lint-fmt:
 # .git and host tools are available — they can't run in the sandboxed
 # checks.formatting. Builds the impure config (presets.eng-impure, exposed as
 # .#conformist-impure-config) and runs the raw conformist binary against it.
+#
+# run the impure git-state eng checks against the working tree
 [group('pre-build')]
 lint-worktree:
     #!/usr/bin/env bash
@@ -63,6 +69,8 @@ lint-worktree:
 
 # Run one dewey analyzer (defererr, repool, seqerror) as a go vet -vettool.
 # Built ad-hoc into .tmp/analyzers/<name> from the module cache. See #30.
+#
+# run one dewey analyzer as a go vet -vettool
 [group('pre-build')]
 lint-go-analyzer name:
     #!/usr/bin/env bash
@@ -98,6 +106,8 @@ update-nix:
 # eng-versioning(7) §SINGLE VERSION SOURCE OF TRUTH; flake.nix reads it
 # via builtins.match. No-op if already at target.
 # Usage: just bump-version 0.1.0
+#
+# rewrite version.env to the given semver
 [group('maintenance')]
 bump-version new_version:
     #!/usr/bin/env bash
@@ -119,6 +129,8 @@ bump-version new_version:
 # signature. Standalone callers (without bumping version.env) use this
 # directly; `just release` calls it under the hood.
 # Usage: just tag 0.1.0 "feat: phase-5 polish + release"
+#
+# create a signed annotated tag, push it to origin, and verify the signature
 [group('maintenance')]
 tag version message:
     #!/usr/bin/env bash
@@ -143,6 +155,8 @@ tag version message:
 # Inlines the tag-step here because passing a multi-line message
 # across `just` recipe boundaries was unreliable in madder's history
 # (see madder release-v0.3.0 incident).
+#
+# cut a release from master: bump version.env, then sign and push the tag
 [group('maintenance')]
 release version:
     #!/usr/bin/env bash
@@ -190,6 +204,8 @@ codemod: codemod-fmt codemod-generate codemod-generate-dagnabit
 # is the nix-module-generated conformist.toml (./conformist.nix + the eng
 # preset). The read-only counterpart is `lint-fmt`. Runs the flake `formatter`
 # output (conformistEval.config.build.wrapper, repair mode) via `nix fmt`.
+#
+# format all source via conformist in repair mode
 [group('codemod')]
 codemod-fmt:
     nix fmt
@@ -202,6 +218,8 @@ codemod-fmt:
 # -run tommy scopes this to the tommy directives only, keeping the tommy
 # and dagnabit (`codemod-generate-dagnabit`) codegen lanes distinct so each
 # has its own drift gate.
+#
+# regenerate the tommy TOML-codegen companions (*_tommy.go)
 [group('codemod')]
 codemod-generate:
     nix develop --command go generate -run tommy ./...
@@ -210,6 +228,8 @@ codemod-generate:
 # fail on any drift — a stale or hand-edited generated file, or a tommy
 # version bump (the header stamps the producing tommy build). The
 # go-generate-then-clean-diff form tommy-generate(1) recommends for CI.
+#
+# drift gate: the committed *_tommy.go companions must be current
 [group('pre-build')]
 validate-generate: codemod-generate
     #!/usr/bin/env bash
@@ -237,6 +257,8 @@ validate-generate: codemod-generate
 # that lacks the full formatter roster (nixfmt/goimports/…), leaving the facades
 # UNFORMATTED and drifting from the hermetic check. The CEILING var bounds any
 # upward config walk at the worktree root.
+#
+# regenerate the dagnabit pkgs/ facades
 [group('codemod')]
 codemod-generate-dagnabit:
     #!/usr/bin/env bash
@@ -259,6 +281,8 @@ codemod-generate-dagnabit:
 # formats with cutting-garden's REAL config instead of escalating to a stray
 # ancestor (purse-first#159); the CEILING var bounds any upward walk at the
 # worktree root.
+#
+# drift gate: the committed pkgs/ facades must be current
 [group('pre-build')]
 validate-generate-dagnabit:
     #!/usr/bin/env bash
@@ -295,6 +319,8 @@ validate-generate-dagnabit:
 # TestGrammarImportSurface staging. Imports: 0014-trellis.peg names both
 # `./hyphence-content.peg` and `./marklid.peg`; hyphence-content.peg names
 # `./marklid.peg`.
+#
+# validate docs/rfcs/0014-trellis.peg parses under langlang
 [group('pre-build')]
 validate-grammar:
     #!/usr/bin/env bash
@@ -313,12 +339,16 @@ validate-grammar:
 
 # Fast `go build` of the CLI into .tmp/cutting-garden for the tight
 # debug dev-loop (skips the full nix build).
+#
+# go build the CLI into .tmp/cutting-garden for the debug dev-loop
 [group('debug')]
 debug-build-go:
     nix develop --command go build -o .tmp/cutting-garden ./cmd/cutting-garden
 
 # Create a small two-file capture fixture tree under .tmp/cap-fixture for
 # the capture debug recipes to point at.
+#
+# create a small two-file capture fixture tree under .tmp/cap-fixture
 [group('debug')]
 debug-make-fixture:
     rm -rf .tmp/cap-fixture
@@ -328,6 +358,8 @@ debug-make-fixture:
 
 # Capture the fixture tree with the go-built binary — the tight capture
 # debug dev-loop.
+#
+# capture the fixture tree with the go-built binary
 [group('debug')]
 debug-capture-fixture STORE='.default' FORMAT='auto': debug-build-go debug-make-fixture
     .tmp/cutting-garden capture -format={{ FORMAT }} {{ STORE }} .tmp/cap-fixture
@@ -336,18 +368,24 @@ debug-capture-fixture STORE='.default' FORMAT='auto': debug-build-go debug-make-
 # so the TTY spinner + bar + tail can be eyeballed even off a bare TTY.
 # Viewport renders on stderr; receipt ids land on stdout. (#28; see
 # docs/plans/2026-06-05-capture-progress-protocol-design.md)
+#
+# capture the fixture with the progress viewport forced on
 [group('debug')]
 debug-capture-fixture-progress STORE='.default': debug-build-go debug-make-fixture
     .tmp/cutting-garden capture -progress=always {{ STORE }} .tmp/cap-fixture
 
 # Capture the fixture tree with the nix-built binary (result/bin) — the
 # variant that exercises the release artifact rather than the go build.
+#
+# capture the fixture tree with the nix-built binary
 [group('debug')]
 debug-capture-fixture-nix STORE='.default' FORMAT='auto': build-nix debug-make-fixture
     ./result/bin/cutting-garden capture -format={{ FORMAT }} {{ STORE }} .tmp/cap-fixture
 
 # Initialise a throwaway madder store at STORE for ad-hoc capture/restore
 # probing.
+#
+# initialise a throwaway madder store for ad-hoc capture/restore probing
 [group('debug')]
 debug-madder-init STORE='.test':
     nix develop --command madder init {{ STORE }}
@@ -362,6 +400,8 @@ debug-madder-init STORE='.test':
 # (server-side filtering + client-side expansion of only the matches).
 # READ-ONLY: REPORT only, never PUT/DELETE. Credentials come from piggy
 # (fastmail-caldav.env); the secret is never echoed or written to disk.
+#
+# probe whether the live CalDAV server honors RFC 4791 <C:expand>
 [group('debug')]
 debug-caldav-expand-probe CAL='93fe8ff4-b027-4c5e-a961-96ec236624d8' START='20260720T000000Z' END='20260727T000000Z':
     #!/usr/bin/env bash
@@ -420,6 +460,8 @@ debug-caldav-expand-probe CAL='93fe8ff4-b027-4c5e-a961-96ec236624d8' START='2026
 # Capture a live jira: NODE (READ-ONLY) into a throwaway store, emitting the
 # RFC 0002 merkle receipt — the FDR 0019 protocol-capture smoke loop (#110).
 # NODE is the in-jira path under $JIRA_URL's host (e.g. PROJ or PROJ/PROJ-1).
+#
+# capture a live jira: node read-only into a throwaway store
 [group('debug')]
 debug-capture-jira NODE='PROJ' STORE='.jira': debug-build-go
     #!/usr/bin/env bash
@@ -431,12 +473,16 @@ debug-capture-jira NODE='PROJ' STORE='.jira': debug-build-go
 
 # Cat one node blob from the jira store by digest, to walk the merkle tree by
 # hand. Usage: just debug-jira-cat blake2b256-….
+#
+# cat one node blob from the jira store by digest
 [group('debug')]
 debug-jira-cat DIGEST STORE='.jira':
     nix develop --command madder cat {{ STORE }} {{ DIGEST }}
 
 # Diff a captured RECEIPT against the live jira: NODE (READ-ONLY) — exit 0
 # clean, 1 drift (A/M/D lines on stdout). The FDR 0019 protocol-diff loop.
+#
+# diff a captured receipt against the live jira: node
 [group('debug')]
 debug-diff-jira RECEIPT NODE='PROJ' STORE='.jira': debug-build-go
     #!/usr/bin/env bash
@@ -447,6 +493,8 @@ debug-diff-jira RECEIPT NODE='PROJ' STORE='.jira': debug-build-go
 
 # Create a SECOND fixture tree (.tmp/cap-fixture-2) so the multiroot
 # capture recipe has two roots to walk.
+#
+# create a second fixture tree so multiroot capture has two roots
 [group('debug')]
 debug-make-multiroot-fixture: debug-make-fixture
     rm -rf .tmp/cap-fixture-2
@@ -456,6 +504,8 @@ debug-make-multiroot-fixture: debug-make-fixture
 
 # Capture two fixture roots in one invocation — exercises the multiroot
 # capture path (one receipt per root).
+#
+# capture two fixture roots in one invocation
 [group('debug')]
 debug-capture-multiroot STORE='.default' FORMAT='auto': debug-build-go debug-make-multiroot-fixture
     .tmp/cutting-garden capture -format={{ FORMAT }} {{ STORE }} .tmp/cap-fixture .tmp/cap-fixture-2
@@ -466,6 +516,8 @@ debug-capture-multiroot STORE='.default' FORMAT='auto': debug-build-go debug-mak
 # doc/*.7.scd source file (section 5/7, scdoc — eng-manpages(7) SCDOC
 # PATTERN, cutting-garden#166 / cutting-garden#172). Searches man1, man5,
 # man7 in that order for the first PAGE.<section> match.
+#
+# generate all manpages into .tmp/manpages and render PAGE as text
 [group('debug')]
 debug-manpage PAGE='cutting-garden-capture':
     #!/usr/bin/env bash
@@ -508,6 +560,8 @@ debug-manpage PAGE='cutting-garden-capture':
 # bailout record that follows it). Expected: prompt exit, a
 # "context canceled" failure on the in-flight blob copy plus one on
 # the root, entry count well below total.
+#
+# e2e SIGINT-cancellation probe for the capture walk
 [group('debug')]
 debug-sigint-capture TREE='/home/sasha/Downloads' DELAY='0.7': debug-build-go
     #!/usr/bin/env bash
@@ -540,6 +594,8 @@ debug-sigint-capture TREE='/home/sasha/Downloads' DELAY='0.7': debug-build-go
 # @YouTube channel so the recipe runs without arguments; pass any
 # /@channel, /channel/UC…, or /playlist?list=… URL.
 # Usage: just debug-ytdlp-channel-list 'https://www.youtube.com/@channel/videos'
+#
+# probe whether yt-dlp can enumerate a channel's videos via --flat-playlist
 [group('debug')]
 debug-ytdlp-channel-list URL='https://www.youtube.com/@YouTube/videos' LIMIT='10':
     nix develop --command yt-dlp \
@@ -552,6 +608,8 @@ debug-ytdlp-channel-list URL='https://www.youtube.com/@YouTube/videos' LIMIT='10
 # a real TTY, so the prototype's UX (collapse-on-done, tail height, bar
 # binding) can be eyeballed. Prototype/UX-spike artifact — see
 # docs/plans/2026-06-05-capture-progress-prototype.md. (#28)
+#
+# drive the capture viewport with synthetic events on a real TTY
 [group('debug')]
 debug-viewport-demo:
     nix develop --command go run ./cmd/capture-viewport-demo
@@ -598,6 +656,8 @@ debug-conformance-traversal:
 # Run one package's go tests (optionally one test via RUN) without the
 # full `just test` lane — the tight agent dev-loop while iterating on a
 # single package.
+#
+# run one package's go tests without the full test lane
 [group('debug')]
 debug-test-pkg PKG='./internal/serve' RUN='':
     #!/usr/bin/env bash
@@ -612,6 +672,8 @@ debug-test-pkg PKG='./internal/serve' RUN='':
 # Agent debug dev-loop for the serve/Tailscale bind investigation.
 # Probe port defaults off 53317 so an already-running LocalSend won't
 # confound address detection with EADDRINUSE.
+#
+# inspect why serve's Tailscale auto-detection picks or misses an address
 [group('debug')]
 debug-serve-bind PORT='53399': debug-build-go
     #!/usr/bin/env bash
@@ -630,6 +692,8 @@ debug-serve-bind PORT='53399': debug-build-go
 # SHA-256 matches the advertised fingerprint — the property the app's
 # favorites pinning relies on. Agent debug dev-loop for serve's
 # LocalSend HTTPS mode.
+#
+# probe a live serve with curl as an independent LocalSend client
 [group('debug')]
 debug-localsend-probe PORT='53398': debug-build-go
     #!/usr/bin/env bash
@@ -662,6 +726,8 @@ debug-localsend-probe PORT='53398': debug-build-go
 # ingestion issue). Forces a video+audio merge so ffmpeg's container-
 # header patching is exercised; leaves probe.strace + a summary in
 # .tmp/seekprobe for inspection.
+#
+# strace yt-dlp's writes to see whether the merged file is written sequentially
 [group('debug')]
 debug-ytdlp-seek-probe URL='https://youtu.be/aqz-KE-bpKQ':
     #!/usr/bin/env bash
@@ -684,6 +750,8 @@ debug-ytdlp-seek-probe URL='https://youtu.be/aqz-KE-bpKQ':
 # received undefined". Uses the nix-built binary (result/bin) so the
 # ldflag-burnt version shows; a `go build` binary would report "dev".
 # Agent debug dev-loop for the MCP serverInfo wiring.
+#
+# probe the MCP server's initialize handshake and print serverInfo
 [group('debug')]
 debug-mcp-init: build-nix
     #!/usr/bin/env bash
@@ -703,6 +771,8 @@ debug-mcp-init: build-nix
 # pkgs/ facades land gofumpt-dirty (purse-first#167). pkgs/** is excluded
 # from conformist as the workaround; this recipe confirms when the upstream
 # fix lets the exclusion be dropped.
+#
+# show the diff the store-pinned gofumpt wants for FILE, without modifying it
 [group('debug')]
 debug-gofumpt-diff FILE:
     #!/usr/bin/env bash
