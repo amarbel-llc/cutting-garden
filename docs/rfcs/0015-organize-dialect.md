@@ -227,9 +227,9 @@ Three inputs: **base** (dereferenced `_base` — what the user was shown),
 Surfaced by the first implementation (dodder #374(b)): the base cannot
 contain its own digest. The resolution: **the base blob is an
 `organize-base-v1` hyphence envelope whose metadata carries only
-generation parameters** (`- _group-by="…"` iff grouped; provenance
+generation parameters** (`- _group-by = "…"` iff grouped; provenance
 comment; type line last) **and whose body is the outer document's
-canonical text with exactly one line excised: `- _base=@…`** (the
+canonical text with exactly one line excised: `- _base = @…`** (the
 self-reference). Generation renders the full document without `_base`,
 writes the blob, obtains the digest, then inserts the `_base` line at
 its canonical position. Apply excises the patch's `_base` line
