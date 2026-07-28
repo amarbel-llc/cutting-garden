@@ -1,9 +1,17 @@
 ---
 status: proposed
 date: 2026-07-18
-revised: 2026-07-18 (deletion semantics split by grouped-ness; unresolved
-  intents as a first-class apply outcome — surfaced by the dodder
-  changes.go trace showing today's selection-tag stripping)
+revised: |
+  2026-07-18 — deletion semantics split by grouped-ness; unresolved intents
+    as a first-class apply outcome (surfaced by the dodder changes.go trace
+    showing today's selection-tag stripping).
+  2026-07-28 — two line-planes: data `-` (content-addressed, projects into the
+    base) vs operational `%`/`%:` (stripped from the base). `%:` semantic
+    directives RETRACT the "% MUST NOT carry behavior" rule; `_allow-deletion`
+    and `_dry-run` re-spell as `%:` mutation directives (namespace-optional
+    routing to the driving command). Spaced `=` normative in metadata lines.
+    The syntax carries the field taxonomy, so no prose taxonomy is spec'd.
+    (Grill with Sasha; supersedes the earlier "settings field" framing.)
 ---
 
 # The organize document dialect
@@ -39,30 +47,70 @@ generated the tree.
 
 ## Document structure
 
-A hyphence document. **Metadata section** (RFC 0001 envelope, RFC 0002
-content grammar), governed by the **distribution rule**:
+A hyphence document. The **metadata section** (RFC 0001 envelope, RFC 0002
+content grammar) has **two line-planes**, distinguished by leading rune — and
+the distinction *is* content-addressability. Metadata lines use the spaced
+`key = value` form: whitespace around `=` is NORMATIVE wherever unambiguous
+(matching RFC 0014's spaced field predicate); the dense `key=value` remains
+valid only in dense query predicates.
 
-> Metadata-section terms distribute over the document's objects — except
-> `_`-reserved terms, which address the document/operation itself.
+**`-` lines — the DATA plane.** Content-addressed: they project into the
+`organize-base-v1` base blob and are reproducible from the generating query.
+Governed by the **distribution rule** — a bare `- <identifier>` /
+`- key = value` distributes over every object (dodder's document-tags
+convention, generalized to fields); a `- _`-reserved term is a *framework
+field* addressing the document node itself. (`_` marks a framework field name
+and appears ONLY on the data plane — `_genre`/`_body` on object nodes,
+`_base`/`_group-by` on the document node.)
 
-- `- <bare-identifier>` / `- key=value` — distributed: applied to every
-  object (dodder's document-tags convention, generalized to fields).
-- `- _base=@<digest>` — REQUIRED. The generated document's canonical
-  ground form, stored as a content-addressed blob typed
-  `organize-base-v1`. A document without `_base` is invalid — organize
-  documents are ephemeral action, not durable artifacts; there is no
-  legacy mode. (Divergence: dodder's live-only fork-overlay is
-  superseded; dodder adopts `_base`.)
-- `- _allow-deletion=true` — OPTIONAL settings field; see Deletion.
-  Settings are `_`-reserved document fields, never comments (dodder's
-  `% dry-run:true` is the legacy-to-align spelling; comments are opaque
-  per RFC 0001 and MUST NOT carry behavior).
-- `% …` comments — genuinely inert (provenance, e.g.
-  `% generated: cg organize …`).
-- `! <type>` — LAST line (RFC 0001 canonical order): the **type
-  anchor**, naming the substrate whose mapping gives every heading its
-  meaning, and the default type for created objects (dodder's dual
-  reading, preserved).
+- `- _base = @<digest>` — REQUIRED. The document's own canonical ground form
+  (the self-reference, excised from the base body it names). A document without
+  `_base` is invalid — organize documents are ephemeral action, not durable
+  artifacts; no legacy mode. (Divergence: dodder's live-only fork-overlay is
+  superseded.)
+- `- _group-by = "…"` — the generation grouping (present iff grouped; see
+  §"The base blob's shape"). A substrate MAY declare additional `_`-fields on
+  its organize-document type.
+
+**`%` / `%:` lines — the OPERATIONAL plane.** NOT content-addressed; **stripped
+from the base entirely** — they configure *how the apply behaves*, not what the
+document is, so a document generated with or without them has the same base.
+Two shapes, distinguished by the character *adjacent* to `%`:
+
+- `% <prose>` (bare `%`, then a space) — **inert**: provenance and human notes
+  (`% generated: cg organize :z`). Carries no behavior, ever.
+- `%:<directive> [= value]` (colon adjacent to `%`) — a **semantic directive**.
+  This RETRACTS the prior rule that `%` comments "MUST NOT carry behavior": a
+  `%:` line is behavior-bearing by construction, a bare `%` line is not. The
+  colon is a *visible* marker (unlike a space/no-space rule), so prose and
+  directives can never be confused. Values reuse the spaced `key = value` form;
+  a boolean directive may be spelled by presence (`%:dry-run`) or explicitly
+  (`%:dry-run = true`).
+    - `%:allow-deletion = true` — permits line-removal to delete (§Deletion).
+    - `%:dry-run = true` — suppresses the write.
+
+  **Routing (namespace-optional).** A bare `%:<name>` is a directive of the
+  organize *harness*, governed by the substrate's mutation type. A namespaced
+  `%:<command>/<name>` routes the directive to the *driving command* —
+  `%:checkin/delete = true` is a checkin knob (delete the local file after
+  commit), visibly not the harness's and external to the tree. An unrecognized
+  *bare* directive (no mutation type nor command claims it) is an error;
+  unrecognized *prose* is fine. A substrate MAY declare additional recognized
+  directives on its mutation type; recognition is a type-system question, the
+  rune only marks the plane.
+
+**`! <type>`** — LAST line (RFC 0001 canonical order): the **type anchor**,
+naming the substrate whose mapping gives every heading its meaning, and the
+default type for created objects (dodder's dual reading, preserved).
+
+**The base blob is the document's `-` lines** (with `_base` itself excised);
+every `%` and `%:` line is stripped, so the base digest depends only on the
+data plane — the operational plane never perturbs it. There is no distinct
+"settings-field" primitive: a data-plane `_`-field and an operational-plane
+`%:` directive are both just fields on harness-defined types (the content-
+addressed organize-document type and the chaos mutation type respectively),
+each conforming to a harness protocol; a substrate extends a plane by adding
+fields, and a field shadowing a harness-reserved name is a type error.
 
 **Body**: markdown-style headings + object lines.
 
@@ -250,17 +298,17 @@ deferred id-aliasing ergonomic must survive id churn.
 ### Deletion
 
 Substrate deletion is expressible ONLY when all gates pass: the
-document carries `- _allow-deletion=true`; apply computes the deletion
+document carries `%:allow-deletion = true`; apply computes the deletion
 set (in base and substrate, absent from patch, beyond membership-∅
 semantics) and requires **explicit post-editor confirmation**; in
 `commit-directly` mode a CLI flag is additionally required (double
-assertion for the scripted path). Without the settings field, line
+assertion for the scripted path). Without `%:allow-deletion`, line
 absence never deletes.
 
 The gates guard only substrates with a **true-delete** operation (an
 object ceasing to exist). A substrate whose removals are all
 soft/membership mutations has nothing for them to guard, so
-`_allow-deletion` still parses (round-trip portability across substrates)
+`%:allow-deletion` still parses (round-trip portability across substrates)
 but gates nothing there. dodder is the reference case (ruled dodder-side
 2026-07-19): its `write:many` tag-clears only un-tag a still-
 history-queryable object, and it has no hard-delete primitive at all — so

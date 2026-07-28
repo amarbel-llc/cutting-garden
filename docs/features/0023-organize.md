@@ -58,16 +58,18 @@ record carries the shape, the per-substrate findings, and the ledgers.
 ## Dependencies
 
 - **hyphence#2 / hyphence RFC 0002** — content grammar (drafted in
-  session hyphence/kind-fig; review pending). Load-bearing for `_base`,
-  settings fields, and the metadata distribution rule.
+  session hyphence/kind-fig; review pending). Load-bearing for the two
+  metadata line-planes (`- _base` data-plane fields, `%:` operational-plane
+  directives; RFC 0015 §Document structure) and the distribution rule.
 - **cutting-garden#143 ContainerCreator** — creation with
   substrate-allocated identity (in flight, sharp-hazel).
 - **RFC 0012 write-descriptor extension** — this FDR's own first
   implementation step.
 - **dodder alignment** (tracked in the dodder issue filed alongside
-  this FDR): drop comma headings, adopt `_base`, migrate
-  `% dry-run:true` → `_dry-run=true`, reconcile organize-text(7)'s
-  removal-semantics documentation.
+  this FDR): drop comma headings, adopt `- _base`, re-spell
+  `% dry-run:true` / `_dry-run` / `_allow-deletion` as `%:` operational-plane
+  directives (`%:dry-run`, `%:allow-deletion`; RFC 0015 two-plane revision
+  2026-07-28), reconcile organize-text(7)'s removal-semantics documentation.
 - **Field residence** (dodder design issue, ruled 2026-07-18): every
   field key has one type-declared authored home — body-resident
   (extracted from the typed body) or metadata-resident (hyphence field
@@ -99,7 +101,7 @@ Substrate-native metadata only in v1 — organize can not tag what the
 substrate can not hold; dodder-as-overlay is the named deferred
 direction, not an open question. No output formatting, no aggregation,
 no graph algorithms (FDR 0022's taxonomy applies). Deletion is
-triple-gated (settings field, confirmation, commit-directly flag);
+triple-gated (`%:allow-deletion` directive, confirmation, commit-directly flag);
 filter mode is selection-only.
 
 ## Deferral tiers
