@@ -963,6 +963,29 @@ problem (a 285-entry list). `ByContainer` MUST therefore be bounded:
   per-container breakdown is truncated (more than 50 distinct containers
   contributed).
 
+**Vouchability — structural conformance is not numerical truth.** The
+§Bounding rules constrain a breakdown's SHAPE — positive counts,
+count-descending / uri-ascending order, the cap — never the TRUTH of its
+numbers. A breakdown built on a denormalized or stale counter satisfies
+every one of them while being numerically false, and neither these
+invariants nor any conformance check over them can distinguish a careful
+peer from a confident one: a driver can verify a breakdown's structure, and
+even that its filter was applied, but never that its counts are true. The
+integrity burden therefore sits on the PLUGIN. A `FacetCounter` SHOULD NOT
+emit a `ByContainer` breakdown whose counts it cannot vouch for; when the
+only cheap source is untrustworthy, omission (§Optionality) is not merely
+permitted but PREFERRED over a structurally-valid-but-unvouchable breakdown
+— the omit-rather-than-approximate rule extended from "cannot decompose" to
+"cannot trust the decomposition." Motivating case (2026-07-28,
+forgejo-cli/fj-cg): Forgejo's `Repository.open_issues_count` is denormalized
+and goes stale (forgejo-cli#1 tracks it); an owner-root breakdown built on
+it would be FREE — the repositories are already fetched for the summary —
+and WRONG, so fj-cg omits it, declining for cause, and would pay the real
+cost of a trustworthy breakdown (one issue-count request per repo) only if
+it ever emitted one. The principle generalizes past `ByContainer` to any
+count a plugin surfaces, `Summary` (§4) included: structural conformance is
+necessary, never sufficient, for numerical trust.
+
 **Binding.** The `mcp` `read_facets` tool (FDR 0015) surfaces `ByContainer`
 and `ByContainerTruncated` on `facetView` (`byContainer` /
 `byContainerTruncated`, `omitempty`) exactly as `Complete` is surfaced,
