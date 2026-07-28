@@ -179,6 +179,28 @@ func TestCallTool_BulkMutateRejectsBothOpsAndSweep(t *testing.T) {
 	}
 }
 
+// TestToolInputSchemasAreValidJSON guards every tool's InputSchema const:
+// a malformed schema ships as an unusable tool (MCP clients reject an
+// invalid inputSchema), and nothing else in the suite validates the raw
+// JSON of these hand-written strings.
+func TestToolInputSchemasAreValidJSON(t *testing.T) {
+	for name, schema := range map[string]string{
+		"create_node":         createNodeSchema,
+		"put_node":            putNodeSchema,
+		"patch_node":          patchNodeSchema,
+		"delete_node":         deleteNodeSchema,
+		"bulk_mutate":         bulkMutateSchema,
+		"describe_node_types": describeNodeTypesSchema,
+		"list_nodes":          listNodesSchema,
+		"read_node":           readNodeSchema,
+		"read_facets":         readFacetsSchema,
+	} {
+		if !json.Valid([]byte(schema)) {
+			t.Errorf("%s InputSchema is not valid JSON:\n%s", name, schema)
+		}
+	}
+}
+
 // TestListTools_BulkMutateAdvertisedWhenCapable pins that bulk_mutate rides
 // the tool list only when a root's plugin implements BulkMutator.
 func TestListTools_BulkMutateAdvertisedWhenCapable(t *testing.T) {

@@ -167,14 +167,14 @@ const (
 		`"ops":{"type":"array","description":"an explicit changeset: {kind,uri,body,type} ops on distinct nodes applied together. Exactly ONE of ops or sweep.","items":{"type":"object","required":["kind","uri"],"properties":{` +
 		`"kind":{"type":"string","enum":["create","put","patch","delete"]},` +
 		`"uri":{"type":"string"},` +
-		`"body":{"type":"string","description":"the object/patch body (omit for delete)"},` +
+		`"body":{"type":"string","description":"the create/put/patch body as a STRING (omit for delete). JSON-encode a JSON-bodied type (newsblur, jira) into this string; pass raw text for a raw-format type (caldav iCalendar, fj markdown) — see describe_node_types' accepts per type"},` +
 		`"type":{"type":"string","description":"the node type tag (only for create)"}}}},` +
 		`"sweep":{"type":"object","description":"a predicate sweep: apply one op to every node under root matching filter. Exactly ONE of ops or sweep.","required":["root","op"],"properties":{` +
 		`"root":{"type":"string","description":"the container URI to sweep under"},` +
 		`"filter":{"type":"string","description":"comma-separated dimension=value predicates (AND-composed); empty matches every node under root"},` +
-		`"op":{"type":"object","required":["kind"],"properties":{` +
+		`"op":{"type":"object","required":["kind"],"description":"the op template applied to each match; do NOT set a uri here — each matched node's own URI is substituted","properties":{` +
 		`"kind":{"type":"string","enum":["put","patch","delete"],"description":"the per-match op (create is invalid in a sweep)"},` +
-		`"body":{"type":"string"},` +
+		`"body":{"type":"string","description":"the put/patch body as a STRING, same encoding as ops[].body"},` +
 		`"type":{"type":"string"}}}}}}}`
 	describeNodeTypesSchema = `{"type":"object","properties":{}}`
 	readNodeSchema          = `{"type":"object","required":["uri"],` +
@@ -301,7 +301,13 @@ func bulkMutateToolDef() protocol.ToolV1 {
 			"each node applies independently and the result reports applied / " +
 			"patchedNothing / failed per node, so a partial failure keeps the " +
 			"successes. Use this instead of N separate patch_node calls (e.g. " +
-			"tagging many stories at once). All targets must share one scheme.",
+			"tagging many stories at once). All targets must share one scheme. " +
+			"Omit atomicity for best-effort. Each body is a STRING — JSON-encode " +
+			"a JSON body into it. Example (ops changeset): " +
+			`{"ops":[{"kind":"patch","uri":"newsblur://stories/123","body":"{\"read\":true}"},{"kind":"delete","uri":"newsblur://stories/456"}]}` +
+			". Example (sweep — mark every unread story read): " +
+			`{"sweep":{"root":"newsblur://stories","filter":"read=unread","op":{"kind":"patch","body":"{\"read\":true}"}}}` +
+			" — the sweep op has no uri (each matched node's URI is substituted).",
 		InputSchema: json.RawMessage(bulkMutateSchema),
 		Annotations: annotationFor(mcp_tool_perms.ToolBulkMutate),
 	}
