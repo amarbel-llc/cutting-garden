@@ -5,13 +5,18 @@
 //
 // Positional surface:
 //
-//	list [-format text|json] URI
+//	list [-format text|json] [-facets [-filter PRED]] [-query TRELLIS] [URI]
 //
 // One level per invocation: `list caldav://host/dav/me/` lists the
 // calendar collections; `list caldav://host/dav/me/personal/` lists that
-// calendar's VTODO/VEVENT objects. Read-only — no blob store is touched.
-// Exit 0 on success, 2 on a resolution or traversal error, 64 on a bad
-// -format value or wrong argument count.
+// calendar's VTODO/VEVENT objects. With no URI it lists every plugin's
+// configured roots. `-facets` prints the node's hoisted facet summary
+// instead of its children (narrowed by `-filter`); `-query` filters the
+// listing by a trellis query evaluated against the URI's subtree (RFC 0014,
+// FDR 0022, cutting-garden#164). Both `-facets` and `-query` require a URI.
+// Read-only — no blob store is touched. Exit 0 on success, 2 on a resolution
+// or traversal error, 64 on a bad -format value, a bad query, or a wrong
+// argument count.
 package list
 
 import (
@@ -28,6 +33,8 @@ import (
 	"code.linenisgreat.com/cutting-garden/internal/command"
 	"code.linenisgreat.com/cutting-garden/internal/command_components"
 	"code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
+	"code.linenisgreat.com/cutting-garden/internal/trellis"
+	"code.linenisgreat.com/cutting-garden/internal/trellis_eval"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/interfaces"
 )
@@ -49,6 +56,11 @@ type List struct {
 	// Filter is an optional comma-separated set of dimension=value predicates,
 	// AND-composed, that narrows a --facets summary.
 	Filter string
+	// Query, when set, is a trellis query (RFC 0014) evaluated against the
+	// <uri>'s subtree: the listing becomes the query's matched nodes rather
+	// than the raw child enumeration (FDR 0022, cutting-garden#164). Requires
+	// a <uri>.
+	Query  string
 	output io.Writer
 }
 
@@ -100,6 +112,12 @@ func (cmd *List) SetFlagDefinitions(flagSet interfaces.CLIFlagDefinitions) {
 		"",
 		"comma-separated dimension=value predicates (AND-composed) narrowing --facets",
 	)
+	flagSet.StringVar(
+		&cmd.Query,
+		"query",
+		"",
+		"trellis query filtering the listed nodes (RFC 0014; requires a <uri>)",
+	)
 }
 
 func (cmd *List) Run(req command.Request) {
@@ -132,6 +150,14 @@ func (cmd *List) Run(req command.Request) {
 			// cross-plugin aggregate facet view (FDR 0021).
 			errors.ContextCancelWithBadRequestf(ctx,
 				"list --facets requires a <uri>")
+			return
+		}
+		if cmd.Query != "" {
+			// A query is anchored at an explicit <uri> in slice-1; the
+			// no-URI default-anchor (roots-as-nodes) walk is deferred
+			// (FDR 0022, cutting-garden#164).
+			errors.ContextCancelWithBadRequestf(ctx,
+				"list --query requires a <uri>")
 			return
 		}
 		// No URI: list every configured and intrinsic root across all
@@ -215,8 +241,16 @@ func (cmd *List) runList(ctx errors.Context, uriStr string) error {
 		return err
 	}
 
-	nodes, err := lister.ListRoots(ctx, u)
-	if err != nil {
+	var nodes []cutting_garden_plugins.Node
+	if cmd.Query != "" {
+		q, perr := trellis.Parse(cmd.Query)
+		if perr != nil {
+			return errors.BadRequestf("list %s --query: %s", uriStr, perr)
+		}
+		if nodes, err = trellis_eval.Evaluate(ctx, q, u, lister); err != nil {
+			return errors.Wrapf(err, "list %s --query", uriStr)
+		}
+	} else if nodes, err = lister.ListRoots(ctx, u); err != nil {
 		return errors.Wrapf(err, "list %s", uriStr)
 	}
 

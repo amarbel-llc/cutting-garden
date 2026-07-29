@@ -86,6 +86,34 @@ function list_discovers_multiple_calendars_at_home { # @test
   refute_output --partial 'task1.ics'
 }
 
+# The trellis query evaluator (cutting-garden#164, FDR 0022): `list --query`
+# filters the listed nodes against the real binary. A type predicate over the
+# home keeps both discovered calendars; a non-matching type empties the
+# listing; and a forward-walk step (`-> !caldav-object-v1`) descends BOTH
+# calendars to their objects, proving the multi-level containment walk end to
+# end.
+function list_query_filters_and_walks { # @test
+  # Type predicate over the home's calendar children: both match.
+  run_cg list -query '!caldav-calendar-v1' "$CALDAV_SOURCE"
+  assert_success
+  assert_output --partial 'Personal'
+  assert_output --partial 'Work'
+
+  # A non-matching type predicate filters everything out.
+  run_cg list -query '!no-such-type-v1' "$CALDAV_SOURCE"
+  assert_success
+  refute_output --partial 'Personal'
+  refute_output --partial 'Work'
+
+  # Forward walk: home -> calendars -> their objects. Objects from BOTH the
+  # Personal (task1.ics) and Work (task3.ics) calendars appear, so the walk
+  # descended every matched calendar, not just one.
+  run_cg list -query '!caldav-calendar-v1 -> !caldav-object-v1' "$CALDAV_SOURCE"
+  assert_success
+  assert_output --partial 'task1.ics'
+  assert_output --partial 'task3.ics'
+}
+
 # Round-trip: capture → restore back to the endpoint → diff is clean. The
 # diff exercises the native-identity freshness probe; an unchanged server
 # reports no differences.
