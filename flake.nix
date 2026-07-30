@@ -177,8 +177,6 @@
     # onto our own tap's crane/rust-overlay collapses the duplicate —
     # mirrors madder/flake.nix's identical fix for the same collision
     # (go-module-rename playbook Gotchas, cutting-garden hyphence rename).
-    hyphence.inputs.langlang.inputs.tap.inputs.crane.follows = "tap/crane";
-    hyphence.inputs.langlang.inputs.tap.inputs.rust-overlay.follows = "tap/rust-overlay";
     hyphence.inputs.langlang.inputs.tap.follows = "tap";
     # piggy's own langlang pin (piggy#183's markl-id framework pulls in the
     # same langlang subtree hyphence does) is bit-identical to hyphence's —
