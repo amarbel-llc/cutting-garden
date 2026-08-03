@@ -114,6 +114,29 @@ function list_query_filters_and_walks { # @test
   assert_output --partial 'task3.ics'
 }
 
+# The slice-2a graph combinators (cutting-garden#211): reverse `<-` inverts the
+# child relation over the anchor's subtree, and forward closure `->>` descends
+# transitively. Both run against the real binary over the home->calendars->
+# objects tree.
+function list_query_reverse_and_closure { # @test
+  # Reverse walk `<-`: from the objects back up to the calendars that contain
+  # them. Both calendars hold at least one object, so both come back — proving
+  # the anchor-bounded child-relation inversion end to end.
+  run_cg list -query '!caldav-calendar-v1 -> !caldav-object-v1 <- !caldav-calendar-v1' "$CALDAV_SOURCE"
+  assert_success
+  assert_output --partial 'Personal'
+  assert_output --partial 'Work'
+
+  # Forward closure `->>`: transitive descent from the calendars to every
+  # object beneath them. Over this two-level tree it matches the same objects
+  # as a single `->`, proving the binary accepts and evaluates the closure
+  # combinator (the multi-hop depth is carried by the evaluator unit tests).
+  run_cg list -query '!caldav-calendar-v1 ->> !caldav-object-v1' "$CALDAV_SOURCE"
+  assert_success
+  assert_output --partial 'task1.ics'
+  assert_output --partial 'task3.ics'
+}
+
 # Round-trip: capture → restore back to the endpoint → diff is clean. The
 # diff exercises the native-identity freshness probe; an unchanged server
 # reports no differences.

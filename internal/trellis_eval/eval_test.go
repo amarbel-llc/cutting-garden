@@ -220,16 +220,102 @@ func TestEvaluate_Matches(t *testing.T) {
 	}
 }
 
+// graphTree builds a depth-3 tree with a shared (two-parent) node, exercising
+// the reverse and closure combinators and their URI-dedup:
+//
+//	fake://g/                     (anchor)
+//	  ├─ fake://g/a       group-v1
+//	  │    └─ fake://g/a/x    mid-v1
+//	  │         ├─ fake://g/a/x/leaf1   leaf-v1
+//	  │         └─ fake://g/shared      shared-v1
+//	  └─ fake://g/b       group-v1
+//	       └─ fake://g/b/y    mid-v1
+//	            ├─ fake://g/b/y/leaf2   leaf-v1
+//	            └─ fake://g/shared      shared-v1   (same node, two parents)
+func graphTree(t *testing.T) *fakeTree {
+	shared := node(t, "fake://g/shared", "shared-v1", nil)
+	return &fakeTree{
+		children: map[string][]cgp.Node{
+			"fake://g/": {
+				node(t, "fake://g/a", "group-v1", nil),
+				node(t, "fake://g/b", "group-v1", nil),
+			},
+			"fake://g/a":   {node(t, "fake://g/a/x", "mid-v1", nil)},
+			"fake://g/b":   {node(t, "fake://g/b/y", "mid-v1", nil)},
+			"fake://g/a/x": {node(t, "fake://g/a/x/leaf1", "leaf-v1", nil), shared},
+			"fake://g/b/y": {node(t, "fake://g/b/y/leaf2", "leaf-v1", nil), shared},
+		},
+	}
+}
+
+// TestEvaluate_GraphTraversal exercises slice-2a's untyped graph combinators —
+// reverse `<-`, forward closure `->>`, backward closure `<<-` — including the
+// two-parent (DAG) inversion and the anchor-boundary limitation (a query cannot
+// reverse above its anchor).
+func TestEvaluate_GraphTraversal(t *testing.T) {
+	tree := graphTree(t)
+
+	cases := []struct {
+		name  string
+		query string
+		want  []string
+	}{
+		{
+			name:  "reverse one hop to parents",
+			query: "!group-v1 -> !mid-v1 <- !group-v1",
+			want:  []string{"fake://g/a", "fake://g/b"},
+		},
+		{
+			name:  "reverse yields both parents of a shared node",
+			query: "!group-v1 -> !mid-v1 -> !shared-v1 <- !mid-v1",
+			want:  []string{"fake://g/a/x", "fake://g/b/y"},
+		},
+		{
+			name:  "reverse above the anchor yields nothing",
+			query: "!group-v1 <- !group-v1",
+			want:  nil,
+		},
+		{
+			name:  "forward closure descends every level",
+			query: "!group-v1 ->> !leaf-v1",
+			want:  []string{"fake://g/a/x/leaf1", "fake://g/b/y/leaf2"},
+		},
+		{
+			name:  "forward closure dedups a shared descendant",
+			query: "!group-v1 ->> !shared-v1",
+			want:  []string{"fake://g/shared"},
+		},
+		{
+			name:  "backward closure ascends every level",
+			query: "!group-v1 -> !mid-v1 -> !leaf-v1 <<- !group-v1",
+			want:  []string{"fake://g/a", "fake://g/b"},
+		},
+		{
+			name:  "closure from a terminal frontier is empty",
+			query: "!group-v1 -> !mid-v1 -> !leaf-v1 ->> !leaf-v1",
+			want:  nil,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := evalURIs(t, tree, "fake://g/", tc.query)
+			if !equalStrings(got, tc.want) {
+				t.Errorf("query %q: got %v, want %v", tc.query, got, tc.want)
+			}
+		})
+	}
+}
+
 // TestEvaluate_Rejects pins that every deferred grammar form fails fast with
 // an error rather than silently mismatching.
 func TestEvaluate_Rejects(t *testing.T) {
 	tree := sampleTree(t)
 
 	queries := []string{
-		"!a <- !b",            // reverse combinator
-		"!a ->> !b",           // forward closure
-		"!a <<- !b",           // backward closure
 		"!a -[!x]-> !b",       // typed forward
+		"!a <-[!x]- !b",       // typed backward
+		"!a -[!x]->> !b",      // typed closure (reserved)
 		"component ~= x",      // regex operator
 		"!event-v1+",          // non-`:` sigil
 		"!calendar-v1 [+]",    // version subpath

@@ -2,15 +2,18 @@
 // against a plugin's traversal tree (internal/cutting_garden_plugins),
 // returning the Nodes matched by the query's last step (RFC 0014, FDR 0022).
 //
-// This is the slice-1 evaluator (cutting-garden#164): a forward-containment
-// walk from an explicit anchor, a predicate layer over Node.Type,
-// Node.Facets, and leaf bodies, and `:`-only sigils. Forms the grammar
-// admits but this slice does not yet implement — reverse/closure/typed
-// combinators, non-`:` sigils, the `~=` operator, version subpaths,
-// OR-alternatives, identity terms, bare-tag terms, the default-anchor
-// (leading-combinator) origin — are rejected up front by Validate with a
-// clear "not supported in slice-1" error, never silently mismatched. See
-// docs/features/0022-trellis.md for the boundary taxonomy.
+// This is the slice-2a evaluator (cutting-garden#164, #211): a walk from an
+// explicit anchor over the untyped graph combinators — forward `->`, reverse
+// `<-`, forward closure `->>`, backward closure `<<-` — with a predicate layer
+// over Node.Type, Node.Facets, and leaf bodies, and `:`-only sigils. Reverse
+// and the backward closure invert the child relation over the anchor's
+// reachable subtree (RootLister is forward-only, so parents are computable no
+// other way; FDR 0022 "scan-and-invert"). Forms the grammar admits but the
+// evaluator does not yet implement — typed edges, non-`:` sigils, the `~=`
+// operator, version subpaths, OR-alternatives, identity terms, bare-tag terms,
+// the default-anchor (leading-combinator) origin — are rejected up front by
+// Validate, never silently mismatched. See docs/features/0022-trellis.md for
+// the boundary taxonomy.
 //
 // It lives beside the parser (internal/trellis) rather than inside it so the
 // pure-parser package stays free of the traversal-SDK dependency the
@@ -31,14 +34,16 @@ import (
 
 // Evaluate resolves q against anchor's subtree via lister, returning the
 // Nodes matched by q's last step. The query's first step filters anchor's
-// immediate children (the set `list <anchor>` prints); each subsequent `->`
-// descends one level via ListRoots over the prior step's matches. The result
-// is deduplicated by URI.
+// immediate children (the set `list <anchor>` prints); each subsequent step is
+// reached by its preceding combinator over the prior step's matches — forward
+// `->` descends one level, reverse `<-` ascends one level, `->>`/`<<-` take the
+// transitive closure in that direction — and then filtered. Every frontier is
+// deduplicated by URI.
 //
-// q must be a slice-1 query (see Validate); a query using a deferred form is
-// rejected before any traversal happens. A predicate that needs a leaf fetch
-// against a plugin that is not a LeafReader simply does not match (graceful
-// degradation), rather than erroring.
+// q must be within the evaluator's supported subset (see Validate); a query
+// using a deferred form is rejected before any traversal happens. A predicate
+// that needs a leaf fetch against a plugin that is not a LeafReader simply does
+// not match (graceful degradation), rather than erroring.
 func Evaluate(
 	ctx context.Context,
 	q *trellis.Query,
@@ -49,7 +54,7 @@ func Evaluate(
 		return nil, err
 	}
 
-	ev := newEvaluator(lister)
+	ev := newEvaluator(lister, anchor)
 	steps := q.Path.Steps
 
 	current, err := lister.ListRoots(ctx, anchor)
@@ -61,11 +66,11 @@ func Evaluate(
 	}
 
 	for i := 1; i < len(steps); i++ {
-		descended, err := ev.descend(ctx, current)
+		reached, err := ev.traverse(ctx, current, q.Path.Combinators[i-1].Kind)
 		if err != nil {
 			return nil, err
 		}
-		if current, err = ev.filter(ctx, descended, steps[i]); err != nil {
+		if current, err = ev.filter(ctx, reached, steps[i]); err != nil {
 			return nil, err
 		}
 	}
@@ -76,15 +81,24 @@ func Evaluate(
 // evaluator carries the once-probed optional capabilities of the lister so
 // per-node matching does not repeat the type assertions, plus the facet
 // schema (tag -> declared dimension keys) used to route a field predicate to
-// the cheap Node.Facets path versus a leaf fetch.
+// the cheap Node.Facets path versus a leaf fetch, plus the anchor and a lazily
+// built child->parents index the backward combinators invert against.
 type evaluator struct {
 	lister cgp.RootLister
+	anchor *url.URL
 	leaf   cgp.LeafReader                 // nil when the plugin cannot fetch leaves
 	facets map[string]map[string]struct{} // tag -> set of declared dimension keys
+
+	// parents maps a node's URI to the nodes under anchor whose immediate
+	// children include it. Built on first backward use by scanning anchor's
+	// reachable subtree once (see inverse); parentsBuilt guards the one-time
+	// build so a genuinely empty index is not rebuilt.
+	parents      map[string][]cgp.Node
+	parentsBuilt bool
 }
 
-func newEvaluator(lister cgp.RootLister) *evaluator {
-	ev := &evaluator{lister: lister}
+func newEvaluator(lister cgp.RootLister, anchor *url.URL) *evaluator {
+	ev := &evaluator{lister: lister, anchor: anchor}
 	if lr, ok := lister.(cgp.LeafReader); ok {
 		ev.leaf = lr
 	}
@@ -99,6 +113,29 @@ func newEvaluator(lister cgp.RootLister) *evaluator {
 		}
 	}
 	return ev
+}
+
+// traverse maps the current frontier through one combinator to the next
+// frontier, before the next step's predicate filters it. Only the untyped
+// graph directions reach here; Validate rejects the typed forms.
+func (ev *evaluator) traverse(
+	ctx context.Context, frontier []cgp.Node, kind trellis.CombinatorKind,
+) ([]cgp.Node, error) {
+	switch kind {
+	case trellis.CombinatorFwd:
+		return ev.descend(ctx, frontier)
+	case trellis.CombinatorBack:
+		return ev.ascend(ctx, frontier)
+	case trellis.CombinatorFwdClosure:
+		return ev.descendClosure(ctx, frontier)
+	case trellis.CombinatorBackClosure:
+		return ev.ascendClosure(ctx, frontier)
+	default:
+		// Unreachable: Validate rejects every other combinator kind.
+		return nil, errors.BadRequestf(
+			"trellis: internal: unvalidated combinator %v reached the evaluator", kind,
+		)
+	}
 }
 
 // descend returns the union of the immediate children of every node in nodes,
@@ -126,6 +163,170 @@ func (ev *evaluator) descend(
 		}
 	}
 	return out, nil
+}
+
+// inverse builds (once) and returns the child->parents index over the anchor's
+// reachable subtree: parents[childURI] is the set of nodes whose immediate
+// children include that child. RootLister only lists children, so this scan is
+// the only way to answer a backward hop (FDR 0022 "scan-and-invert"). The scan
+// is bounded by the anchor's subtree, deduplicates parents by URI, and is
+// cycle-safe via a visited set.
+//
+// The anchor itself is a URL, not a Node, so the anchor's immediate children
+// have no entry here — their only parent is the origin, which cannot be
+// materialized as a result Node. Reversing off a depth-1 frontier therefore
+// yields nothing: a query cannot reverse above its anchor.
+func (ev *evaluator) inverse(ctx context.Context) (map[string][]cgp.Node, error) {
+	if ev.parentsBuilt {
+		return ev.parents, nil
+	}
+	parents := make(map[string][]cgp.Node)
+
+	roots, err := ev.lister.ListRoots(ctx, ev.anchor)
+	if err != nil {
+		return nil, errors.Wrap(err)
+	}
+
+	// BFS over the reachable subtree. queue holds nodes whose children have not
+	// yet been listed; visited guards against cycles and shared-child
+	// re-descent while still recording every parent of a shared child.
+	queue := append([]cgp.Node(nil), roots...)
+	visited := make(map[string]struct{}, len(roots))
+	for _, r := range roots {
+		visited[r.URIString()] = struct{}{}
+	}
+
+	for len(queue) > 0 {
+		parent := queue[0]
+		queue = queue[1:]
+		if parent.URI == nil {
+			continue
+		}
+		children, err := ev.lister.ListRoots(ctx, parent.URI)
+		if err != nil {
+			return nil, errors.Wrap(err)
+		}
+		for _, c := range children {
+			key := c.URIString()
+			parents[key] = appendUniqueByURI(parents[key], parent)
+			if _, seen := visited[key]; seen {
+				continue
+			}
+			visited[key] = struct{}{}
+			queue = append(queue, c)
+		}
+	}
+
+	ev.parents = parents
+	ev.parentsBuilt = true
+	return parents, nil
+}
+
+// ascend maps each node in frontier to its parents within the anchor's subtree
+// (the reverse combinator `<-`, one backward hop), deduplicating by URI. Nodes
+// at the anchor's top level have no parent Node and contribute nothing (see
+// inverse).
+func (ev *evaluator) ascend(
+	ctx context.Context, frontier []cgp.Node,
+) ([]cgp.Node, error) {
+	parents, err := ev.inverse(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var out []cgp.Node
+	seen := make(map[string]struct{})
+	for _, n := range frontier {
+		for _, p := range parents[n.URIString()] {
+			key := p.URIString()
+			if _, dup := seen[key]; dup {
+				continue
+			}
+			seen[key] = struct{}{}
+			out = append(out, p)
+		}
+	}
+	return out, nil
+}
+
+// descendClosure returns every transitive descendant of the frontier (the
+// forward closure `->>`, one-or-more hops), deduplicated by URI. The frontier
+// nodes themselves are excluded (one-or-more, not zero) and seed the visited
+// set so a cycle back onto them terminates.
+func (ev *evaluator) descendClosure(
+	ctx context.Context, frontier []cgp.Node,
+) ([]cgp.Node, error) {
+	var out []cgp.Node
+	visited := make(map[string]struct{}, len(frontier))
+	for _, n := range frontier {
+		visited[n.URIString()] = struct{}{}
+	}
+	queue := append([]cgp.Node(nil), frontier...)
+	for len(queue) > 0 {
+		n := queue[0]
+		queue = queue[1:]
+		if n.URI == nil {
+			continue
+		}
+		children, err := ev.lister.ListRoots(ctx, n.URI)
+		if err != nil {
+			return nil, errors.Wrap(err)
+		}
+		for _, c := range children {
+			key := c.URIString()
+			if _, seen := visited[key]; seen {
+				continue
+			}
+			visited[key] = struct{}{}
+			out = append(out, c)
+			queue = append(queue, c)
+		}
+	}
+	return out, nil
+}
+
+// ascendClosure returns every transitive ancestor of the frontier within the
+// anchor's subtree (the backward closure `<<-`, one-or-more hops), deduplicated
+// by URI. Like descendClosure the frontier seeds the visited set and is
+// excluded from the result.
+func (ev *evaluator) ascendClosure(
+	ctx context.Context, frontier []cgp.Node,
+) ([]cgp.Node, error) {
+	parents, err := ev.inverse(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var out []cgp.Node
+	visited := make(map[string]struct{}, len(frontier))
+	for _, n := range frontier {
+		visited[n.URIString()] = struct{}{}
+	}
+	queue := append([]cgp.Node(nil), frontier...)
+	for len(queue) > 0 {
+		n := queue[0]
+		queue = queue[1:]
+		for _, p := range parents[n.URIString()] {
+			key := p.URIString()
+			if _, seen := visited[key]; seen {
+				continue
+			}
+			visited[key] = struct{}{}
+			out = append(out, p)
+			queue = append(queue, p)
+		}
+	}
+	return out, nil
+}
+
+// appendUniqueByURI appends n to nodes unless a node with the same URI is
+// already present, keeping a parent set free of duplicates.
+func appendUniqueByURI(nodes []cgp.Node, n cgp.Node) []cgp.Node {
+	key := n.URIString()
+	for _, existing := range nodes {
+		if existing.URIString() == key {
+			return nodes
+		}
+	}
+	return append(nodes, n)
 }
 
 // filter keeps the nodes for which every term of step matches (space-ANDed).
@@ -189,8 +390,8 @@ func (ev *evaluator) matchBasic(
 		sub := b.Group.Body.(trellis.SubPath)
 		return ev.matchSubPath(ctx, n, sub)
 	case trellis.SigilBasicTerm:
-		// A bare `:` selects the latest version-set (the slice-1 default)
-		// and adds no predicate — a no-op that matches every candidate.
+		// A bare `:` selects the latest version-set (the default) and adds
+		// no predicate — a no-op that matches every candidate.
 		return true, nil
 	default:
 		// Unreachable: Validate rejects every other BasicTerm form.

@@ -6,17 +6,20 @@ import (
 )
 
 // unsupported is the message template for a grammatically-valid query that
-// uses a form this slice defers. The %s names the specific form.
-const unsupported = "trellis: %s is not supported in slice-1 (cutting-garden#164)"
+// uses a form the evaluator defers. The %s names the specific form. The
+// remaining deferrals are tracked in cutting-garden#211 (the slice-2 tracker).
+const unsupported = "trellis: %s is not yet supported by the evaluator (cutting-garden#211)"
 
-// Validate reports whether q is within the slice-1 evaluator's supported
-// subset, returning a descriptive bad-request error for the first deferred
-// form it encounters. Evaluate calls it before any traversal, so a query
-// that reaches for a deferred feature fails fast and loudly rather than
-// silently mismatching. The supported subset: a forward-containment path
-// (steps joined only by `->`) anchored at an explicit URI, whose terms are
-// type predicates, field predicates (any operator but `~=`), and existential
-// single-step forward subpaths, with only the `:` sigil.
+// Validate reports whether q is within the evaluator's supported subset,
+// returning a descriptive bad-request error for the first deferred form it
+// encounters. Evaluate calls it before any traversal, so a query that reaches
+// for a deferred feature fails fast and loudly rather than silently
+// mismatching. The supported subset (slice-2a): a path anchored at an explicit
+// URI whose steps are joined by the untyped combinators `->` / `<-` / `->>` /
+// `<<-`, whose terms are type predicates, field predicates (any operator but
+// `~=`), and existential single-step forward subpaths, with only the `:`
+// sigil. Typed edges, the default-anchor origin, version subpaths,
+// OR-alternatives, and identity/bare-tag terms remain deferred.
 func Validate(q *trellis.Query) error {
 	if q == nil {
 		return errors.BadRequestf("trellis: nil query")
@@ -29,7 +32,14 @@ func Validate(q *trellis.Query) error {
 		return errors.BadRequestf("trellis: empty query")
 	}
 	for _, c := range q.Path.Combinators {
-		if c.Kind != trellis.CombinatorFwd {
+		switch c.Kind {
+		case trellis.CombinatorFwd, trellis.CombinatorBack,
+			trellis.CombinatorFwdClosure, trellis.CombinatorBackClosure:
+			// The untyped graph directions — supported (slice-2a).
+		default:
+			// Typed forward/back/closure combinators (and the invalid zero
+			// value) remain deferred: the edge predicate depends on
+			// edges-as-reference-valued-fields (hyphence#2).
 			return errors.BadRequestf(unsupported, combinatorName(c.Kind))
 		}
 	}
@@ -84,7 +94,7 @@ func validateGroup(g trellis.Group) error {
 		if body.Path != nil {
 			if body.Path.Leading != nil || len(body.Path.Combinators) > 0 {
 				return errors.BadRequestf(unsupported,
-					"a multi-step subpath (slice-1 subpaths are a single existential step)")
+					"a multi-step subpath (subpaths are a single existential step)")
 			}
 			for _, step := range body.Path.Steps {
 				if err := validateStep(step); err != nil {
@@ -103,7 +113,7 @@ func validateGroup(g trellis.Group) error {
 }
 
 // validateSigil accepts only the default `:` (latest) sigil; every other
-// version-set selector is a per-host capability this slice does not
+// version-set selector is a per-host capability the evaluator does not yet
 // implement (FDR 0022 host capability contract).
 func validateSigil(s *trellis.Sigil) error {
 	if s == nil {
@@ -111,7 +121,7 @@ func validateSigil(s *trellis.Sigil) error {
 	}
 	if s.Runes != ":" {
 		return errors.BadRequestf(
-			"trellis: sigil %q is not supported by this host (slice-1: only `:` latest)",
+			"trellis: sigil %q is not supported by this host (only `:` latest)",
 			s.Runes,
 		)
 	}
