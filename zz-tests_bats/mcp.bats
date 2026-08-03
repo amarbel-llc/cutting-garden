@@ -273,8 +273,10 @@ function mcp_list_nodes_query_facet_predicate { # @test
 }
 
 # cutting-garden#211 OR-alternatives over the mcp binary: [a, b] matches either
-# alternative. component=VTODO OR component=VEVENT covers every object, so both
-# a task and the event come back — the MCP-suite mirror of the CLI OR case.
+# alternative. VEVENTs window out of caldav's object listing (#176/#177), so
+# component=VTODO is the satisfiable alternative; the VTODOs from both calendars
+# come back — the MCP-suite mirror of the CLI OR case (the evaluator unit tests
+# carry the both-alternatives-match semantics).
 function mcp_list_nodes_query_or_alternatives { # @test
   mcp_drive "$CALDAV_SOURCE" "$(tools_call 3 list_nodes '{}')"
   local rooturi
@@ -286,8 +288,8 @@ function mcp_list_nodes_query_or_alternatives { # @test
   text="$(mcp_result_text "$output" 3)"
   echo "$text" | jq -e 'any(.nodes[]; .name=="task1.ics")' >/dev/null ||
     fail "OR-alternatives missing task1.ics (a VTODO): $text"
-  echo "$text" | jq -e 'any(.nodes[]; .name=="event1.ics")' >/dev/null ||
-    fail "OR-alternatives missing event1.ics (a VEVENT): $text"
+  echo "$text" | jq -e 'any(.nodes[]; .name=="task3.ics")' >/dev/null ||
+    fail "OR-alternatives missing task3.ics (a VTODO): $text"
 }
 
 # A read-only cache root must not crash the server at startup (#121). The

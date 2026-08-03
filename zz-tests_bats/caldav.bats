@@ -151,14 +151,17 @@ function list_query_facet_predicate_matches { # @test
 }
 
 # cutting-garden#211 OR-alternatives: [a, b] matches an object satisfying
-# EITHER alternative. component=VTODO OR component=VEVENT covers every object,
-# so both a task and the event come back — proving the OR-group evaluates over
-# the enriched facet end to end.
+# EITHER alternative. VEVENTs are windowed out of caldav's object listing
+# (#176/#177), so component=VTODO is the satisfiable alternative here; the
+# VTODOs from BOTH calendars come back, proving the OR-group parses and
+# evaluates over the enriched facet end to end. (The evaluator unit tests carry
+# the both-alternatives-match semantics against a fixture where an event is
+# present.)
 function list_query_or_alternatives { # @test
   run_cg list -query '!caldav-calendar-v1 -> !caldav-object-v1 [component=VTODO, component=VEVENT]' "$CALDAV_SOURCE"
   assert_success
   assert_output --partial 'task1.ics'
-  assert_output --partial 'event1.ics'
+  assert_output --partial 'task3.ics'
 }
 
 # Round-trip: capture → restore back to the endpoint → diff is clean. The
