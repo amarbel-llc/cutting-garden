@@ -272,6 +272,24 @@ function mcp_list_nodes_query_facet_predicate { # @test
     fail "facet-query results not enriched inline: $text"
 }
 
+# cutting-garden#211 OR-alternatives over the mcp binary: [a, b] matches either
+# alternative. component=VTODO OR component=VEVENT covers every object, so both
+# a task and the event come back — the MCP-suite mirror of the CLI OR case.
+function mcp_list_nodes_query_or_alternatives { # @test
+  mcp_drive "$CALDAV_SOURCE" "$(tools_call 3 list_nodes '{}')"
+  local rooturi
+  rooturi="$(mcp_result_text "$output" 3 | jq -r '.[0].uri')"
+
+  mcp_drive "$CALDAV_SOURCE" "$(tools_call 3 list_nodes \
+    "$(jq -nc --arg u "$rooturi" '{uri:$u,query:"!caldav-calendar-v1 -> !caldav-object-v1 [component=VTODO, component=VEVENT]"}')")"
+  local text
+  text="$(mcp_result_text "$output" 3)"
+  echo "$text" | jq -e 'any(.nodes[]; .name=="task1.ics")' >/dev/null ||
+    fail "OR-alternatives missing task1.ics (a VTODO): $text"
+  echo "$text" | jq -e 'any(.nodes[]; .name=="event1.ics")' >/dev/null ||
+    fail "OR-alternatives missing event1.ics (a VEVENT): $text"
+}
+
 # A read-only cache root must not crash the server at startup (#121). The
 # Phase-B blob writer eagerly inits the madder store, which mkdir's
 # <cache>/tmp-<pid>; on an unwritable cache that mkdir fails and madder

@@ -150,6 +150,17 @@ function list_query_facet_predicate_matches { # @test
   refute_output --partial 'event1.ics'
 }
 
+# cutting-garden#211 OR-alternatives: [a, b] matches an object satisfying
+# EITHER alternative. component=VTODO OR component=VEVENT covers every object,
+# so both a task and the event come back — proving the OR-group evaluates over
+# the enriched facet end to end.
+function list_query_or_alternatives { # @test
+  run_cg list -query '!caldav-calendar-v1 -> !caldav-object-v1 [component=VTODO, component=VEVENT]' "$CALDAV_SOURCE"
+  assert_success
+  assert_output --partial 'task1.ics'
+  assert_output --partial 'event1.ics'
+}
+
 # Round-trip: capture → restore back to the endpoint → diff is clean. The
 # diff exercises the native-identity freshness probe; an unchanged server
 # reports no differences.

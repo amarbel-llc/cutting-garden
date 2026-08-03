@@ -1,6 +1,8 @@
 package trellis_eval
 
 import (
+	"regexp"
+
 	"code.linenisgreat.com/cutting-garden/internal/trellis"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
@@ -66,7 +68,16 @@ func validateBasic(basic trellis.BasicTerm) error {
 		return validateSigil(b.Sigil)
 	case trellis.FieldPredBasicTerm:
 		if b.FieldPred.Op == trellis.FieldOpRegex {
-			return errors.BadRequestf(unsupported, "the `~=` (regex) operator")
+			// Reject an invalid pattern up front (fail fast, actionable)
+			// rather than at match time, where the evaluator has no error
+			// path; a valid `~=` is an honest per-node walk.
+			for _, v := range b.FieldPred.Values {
+				if _, err := regexp.Compile(valueString(v)); err != nil {
+					return errors.BadRequestf(
+						"trellis: invalid `~=` regex %q: %v", valueString(v), err,
+					)
+				}
+			}
 		}
 		return nil
 	case trellis.GroupBasicTerm:
@@ -106,7 +117,14 @@ func validateGroup(g trellis.Group) error {
 	case trellis.VersionSub:
 		return errors.BadRequestf(unsupported, "a version subpath [+ ...]")
 	case trellis.Alternatives:
-		return errors.BadRequestf(unsupported, "an OR-alternatives group [a, b]")
+		for _, alt := range body.Alts {
+			for _, term := range alt.Terms {
+				if err := validateBasic(term.Basic); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
 	default:
 		return errors.BadRequestf(unsupported, "this group")
 	}

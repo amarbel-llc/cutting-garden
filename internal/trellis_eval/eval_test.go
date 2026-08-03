@@ -208,6 +208,30 @@ func TestEvaluate_Matches(t *testing.T) {
 			query:  "component=NOPE",
 			want:   nil,
 		},
+		{
+			name:   "OR-alternatives over type",
+			anchor: "fake://cal/personal/",
+			query:  "[!event-v1, !todo-v1]",
+			want:   []string{"fake://cal/personal/e1", "fake://cal/personal/t1"},
+		},
+		{
+			name:   "OR-alternatives over facet",
+			anchor: "fake://cal/personal/",
+			query:  "[component=VEVENT, component=VTODO]",
+			want:   []string{"fake://cal/personal/e1", "fake://cal/personal/t1"},
+		},
+		{
+			name:   "regex on a leaf field (anchored)",
+			anchor: "fake://cal/personal/",
+			query:  `summary~="^stand"`,
+			want:   []string{"fake://cal/personal/e1"},
+		},
+		{
+			name:   "regex on a leaf field (substring)",
+			anchor: "fake://cal/personal/",
+			query:  "summary~=milk",
+			want:   []string{"fake://cal/personal/t1"},
+		},
 	}
 
 	for _, tc := range cases {
@@ -316,10 +340,10 @@ func TestEvaluate_Rejects(t *testing.T) {
 		"!a -[!x]-> !b",       // typed forward
 		"!a <-[!x]- !b",       // typed backward
 		"!a -[!x]->> !b",      // typed closure (reserved)
-		"component ~= x",      // regex operator
+		`summary ~= "("`,      // invalid ~= regex (unbalanced paren)
 		"!event-v1+",          // non-`:` sigil
 		"!calendar-v1 [+]",    // version subpath
-		"!calendar-v1 [a, b]", // OR-alternatives
+		"!calendar-v1 [a, b]", // OR-alternatives of bare tags (tags still deferred)
 		"sometag",             // bare identifier (tag) predicate
 		"@blake2b256-abc",     // object-identity term
 		"-> !calendar-v1",     // leading combinator (default anchor)
@@ -468,6 +492,39 @@ func TestEvaluate_FacetPredicateUsesEnrichedListing(t *testing.T) {
 	got = evalURIs(t, tree, "enr://cal/", "!calendar-v1")
 	if want := []string{"enr://cal/work/"}; !equalStrings(got, want) {
 		t.Errorf("fallback at declined level: got %v, want %v", got, want)
+	}
+}
+
+// TestEvaluate_LeafFieldPrefersInlineFields pins the Node.Fields cheap-path
+// (cutting-garden#211): a leaf-field predicate matches off the inline Fields an
+// enriched listing populated, without a per-node ReadLeaf. The fixture node
+// carries Fields but has NO leaf entry, so a match proves the inline path was
+// taken — a ReadLeaf would find nothing.
+func TestEvaluate_LeafFieldPrefersInlineFields(t *testing.T) {
+	tree := &fakeTree{
+		children: map[string][]cgp.Node{
+			"fake://c/": {{
+				URI:    mustURL(t, "fake://c/x"),
+				Type:   "obj-v1",
+				Fields: map[string]any{"summary": "standup", "due": "20260101"},
+			}},
+		},
+	}
+
+	if got := evalURIs(t, tree, "fake://c/", "summary=standup"); !equalStrings(
+		got, []string{"fake://c/x"},
+	) {
+		t.Errorf("inline Fields match: got %v, want [fake://c/x]", got)
+	}
+	// An ordering operator against an inline field works off Fields alone.
+	if got := evalURIs(t, tree, "fake://c/", "due<=20260601"); !equalStrings(
+		got, []string{"fake://c/x"},
+	) {
+		t.Errorf("inline Fields ordering: got %v, want [fake://c/x]", got)
+	}
+	// A present-but-unmatched inline field returns false without a leaf fetch.
+	if got := evalURIs(t, tree, "fake://c/", "summary=nope"); len(got) != 0 {
+		t.Errorf("inline Fields non-match: got %v, want empty", got)
 	}
 }
 

@@ -24,6 +24,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -96,6 +97,10 @@ type evaluator struct {
 	// build so a genuinely empty index is not rebuilt.
 	parents      map[string][]cgp.Node
 	parentsBuilt bool
+
+	// regex memoizes compiled `~=` patterns so a walk compiles each pattern
+	// once rather than per candidate node. Populated lazily by regexFor.
+	regex map[string]*regexp.Regexp
 }
 
 func newEvaluator(lister cgp.RootLister, anchor *url.URL) *evaluator {
@@ -419,10 +424,18 @@ func (ev *evaluator) matchBasic(
 	case trellis.FieldPredBasicTerm:
 		return ev.matchFieldPred(ctx, n, b.FieldPred)
 	case trellis.GroupBasicTerm:
-		// Validate has guaranteed the group is an existential forward
-		// subpath (SubPath, CombinatorFwd, single-step body).
-		sub := b.Group.Body.(trellis.SubPath)
-		return ev.matchSubPath(ctx, n, sub)
+		// Validate has narrowed the group body to a forward existential
+		// subpath or an OR-alternatives group.
+		switch body := b.Group.Body.(type) {
+		case trellis.SubPath:
+			return ev.matchSubPath(ctx, n, body)
+		case trellis.Alternatives:
+			return ev.matchAlternatives(ctx, n, body)
+		default:
+			return false, errors.BadRequestf(
+				"trellis: internal: unvalidated group body %T reached the evaluator", body,
+			)
+		}
 	case trellis.SigilBasicTerm:
 		// A bare `:` selects the latest version-set (the default) and adds
 		// no predicate — a no-op that matches every candidate.
@@ -465,6 +478,32 @@ func (ev *evaluator) matchSubPath(
 	return false, nil
 }
 
+// matchAlternatives is the OR-group `[a, b]`: the node matches if it satisfies
+// every term of ANY one alternative (each alternative is an AND-run of terms,
+// ConjRun). Reuses matchTerm, so an alternative may itself carry type, field,
+// or subpath predicates.
+func (ev *evaluator) matchAlternatives(
+	ctx context.Context, n cgp.Node, alts trellis.Alternatives,
+) (bool, error) {
+	for _, alt := range alts.Alts {
+		matched := true
+		for _, term := range alt.Terms {
+			ok, err := ev.matchTerm(ctx, n, term)
+			if err != nil {
+				return false, err
+			}
+			if !ok {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // matchFieldPred resolves the field and applies the operator. Resolution:
 // `_body` reads the leaf's raw bytes; a field declared as a facet dimension
 // for this node's type reads the cheap Node.Facets membership; anything else
@@ -479,7 +518,7 @@ func (ev *evaluator) matchFieldPred(
 	case field == bodyField:
 		return ev.matchBody(ctx, n, fp)
 	case ev.isFacetField(n.Type, field):
-		return matchFacet(n.Facets[field], fp), nil
+		return ev.matchFacet(n.Facets[field], fp), nil
 	default:
 		return ev.matchLeafField(ctx, n, field, fp)
 	}
@@ -500,11 +539,11 @@ func (ev *evaluator) isFacetField(tag, field string) bool {
 // The node matches iff, for some query value, some facet-value bucket key
 // satisfies the operator (existential over both). A dimension the node does
 // not contribute to has no bucket keys and so matches nothing.
-func matchFacet(values []cgp.FacetValue, fp trellis.FieldPred) bool {
+func (ev *evaluator) matchFacet(values []cgp.FacetValue, fp trellis.FieldPred) bool {
 	for _, qv := range fp.Values {
 		want := valueString(qv)
 		for _, fv := range values {
-			if compare(fp.Op, fv.Key, want) {
+			if ev.satisfies(fp.Op, fv.Key, want) {
 				return true
 			}
 		}
@@ -512,14 +551,24 @@ func matchFacet(values []cgp.FacetValue, fp trellis.FieldPred) bool {
 	return false
 }
 
-// matchLeafField fetches the node's leaf body and matches fp against the
-// named field of its structured projection (JSON-marshalled, indexed by flat
-// field name — no path walking). A plugin that cannot fetch the leaf, a
-// non-leaf node, a nil structured view, or an absent field all yield no
-// match rather than an error.
+// matchLeafField matches fp against the node's named field. It prefers the
+// inline Node.Fields projection (populated by an enriched listing,
+// cutting-garden#212), falling back to a leaf fetch — ReadLeaf's structured
+// projection, JSON-marshalled and indexed by flat field name — only when the
+// field is not present inline. A plugin that cannot fetch the leaf, a non-leaf
+// node, a nil structured view, or an absent field all yield no match rather
+// than an error.
 func (ev *evaluator) matchLeafField(
 	ctx context.Context, n cgp.Node, field string, fp trellis.FieldPred,
 ) (bool, error) {
+	// Cheap path: the enriched listing may already carry this field inline,
+	// avoiding a per-node leaf fetch. The inline value is authoritative for
+	// the field, so a present-but-unmatched field returns false here rather
+	// than re-reading the same data from the leaf.
+	if raw, present := n.Fields[field]; present {
+		return ev.matchScalar(scalarString(raw), fp), nil
+	}
+
 	if ev.leaf == nil || n.URI == nil {
 		return false, nil
 	}
@@ -539,14 +588,18 @@ func (ev *evaluator) matchLeafField(
 	if !present {
 		return false, nil
 	}
-	got := scalarString(raw)
+	return ev.matchScalar(scalarString(raw), fp), nil
+}
 
+// matchScalar reports whether got satisfies fp for any of fp's values — the
+// value list distributes the operator as OR (RFC 0014).
+func (ev *evaluator) matchScalar(got string, fp trellis.FieldPred) bool {
 	for _, qv := range fp.Values {
-		if compare(fp.Op, got, valueString(qv)) {
-			return true, nil
+		if ev.satisfies(fp.Op, got, valueString(qv)) {
+			return true
 		}
 	}
-	return false, nil
+	return false
 }
 
 // matchBody matches fp against the leaf's raw bytes, treated as text. Binary
@@ -566,13 +619,7 @@ func (ev *evaluator) matchBody(
 	if !ok || content.Raw == nil || !isTextMime(content.RawMimeType) {
 		return false, nil
 	}
-	body := string(content.Raw)
-	for _, qv := range fp.Values {
-		if compare(fp.Op, body, valueString(qv)) {
-			return true, nil
-		}
-	}
-	return false, nil
+	return ev.matchScalar(string(content.Raw), fp), nil
 }
 
 // isTextMime reports whether raw bytes of this IANA type are matchable as
@@ -679,7 +726,40 @@ func compare(op trellis.FieldOp, got, want string) bool {
 	case trellis.FieldOpGte:
 		return got >= want
 	default:
-		// FieldOpRegex / FieldOpInvalid are rejected by Validate.
+		// FieldOpRegex is handled by satisfies before reaching compare;
+		// FieldOpInvalid is rejected by Validate.
 		return false
 	}
+}
+
+// satisfies applies a field operator to two strings, handling the regex
+// operator (`~=`) — compiled once per pattern and cached — and delegating every
+// other operator to compare. Validate has already rejected an invalid regex, so
+// a nil compiled pattern (an impossible compile failure) is treated as a
+// non-match defensively.
+func (ev *evaluator) satisfies(op trellis.FieldOp, got, want string) bool {
+	if op == trellis.FieldOpRegex {
+		re := ev.regexFor(want)
+		return re != nil && re.MatchString(got)
+	}
+	return compare(op, got, want)
+}
+
+// regexFor returns the compiled form of pattern, memoized per evaluator so a
+// walk compiles each pattern once rather than per candidate node. A compile
+// failure (unreachable after Validate) caches and returns nil so a bad pattern
+// is not recompiled per node.
+func (ev *evaluator) regexFor(pattern string) *regexp.Regexp {
+	if re, ok := ev.regex[pattern]; ok {
+		return re
+	}
+	if ev.regex == nil {
+		ev.regex = make(map[string]*regexp.Regexp)
+	}
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		re = nil
+	}
+	ev.regex[pattern] = re
+	return re
 }
