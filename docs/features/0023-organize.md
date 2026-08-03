@@ -2,11 +2,12 @@
 status: exploring
 date: 2026-07-18
 promotion-criteria: |
-  Promote to `proposed` when: hyphence RFC 0002 (hyphence#2) is merged;
-  ContainerCreator (#143) has landed; the write-descriptor extension to
-  RFC 0012's facet schema is specified in Go; and a prototype apply
-  engine has run the caldav scenario (reschedule-by-move) end-to-end
-  against the testserver.
+  Promote to `proposed` when a prototype apply engine has run the caldav
+  scenario (reschedule-by-move) end-to-end against the testserver. The other
+  three original criteria are now MET: hyphence RFC 0002 (hyphence#2) merged,
+  ContainerCreator (#143) landed, and the write-descriptor extension to
+  RFC 0012's facet schema specified in Go (RFC 0012 §14) and implemented
+  (FacetWriteDescriber + caldav reference, 2026-08).
 ---
 
 # organize — cross-substrate facet editing
@@ -57,14 +58,18 @@ record carries the shape, the per-substrate findings, and the ledgers.
 
 ## Dependencies
 
-- **hyphence#2 / hyphence RFC 0002** — content grammar (drafted in
-  session hyphence/kind-fig; review pending). Load-bearing for the two
-  metadata line-planes (`- _base` data-plane fields, `%:` operational-plane
-  directives; RFC 0015 §Document structure) and the distribution rule.
-- **cutting-garden#143 ContainerCreator** — creation with
-  substrate-allocated identity (in flight, sharp-hazel).
-- **RFC 0012 write-descriptor extension** — this FDR's own first
-  implementation step.
+- **hyphence#2 / hyphence RFC 0002** — content grammar. **MERGED** (closed
+  2026-08). Load-bearing for the two metadata line-planes (`- _base` data-plane
+  fields, `%:` operational-plane directives; RFC 0015 §Document structure) and
+  the distribution rule.
+- **cutting-garden#143 ContainerCreator** — creation with substrate-allocated
+  identity. **LANDED** (closed).
+- **RFC 0012 write-descriptor extension** — **LANDED** as RFC 0012 §14 (Write
+  mapping): the `FacetWriteDescriber` capability + `ValidateFacetWrites`
+  (`internal/cutting_garden_plugins/facet_write.go`), caldav's reference
+  declaration (`plugins/caldav/facet_write.go`), and its `describe_node_types`
+  surfacing. This FDR's stated first implementation step — the declarative
+  foundation the apply prototype (below) now builds on.
 - **dodder alignment** (tracked in the dodder issue filed alongside
   this FDR): drop comma headings, adopt `- _base`, re-spell
   `% dry-run:true` / `_dry-run` / `_allow-deletion` as `%:` operational-plane

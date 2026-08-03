@@ -1348,14 +1348,35 @@ type facetDimSchema struct {
 	// memoized summary containing it expires after this many seconds even
 	// with an unmoved change token. Zero (the default, omitted) means pure.
 	RevalidateAfterSeconds int64 `json:"revalidateAfterSeconds,omitempty"`
+	// WriteMode, when present, is how EDITING this dimension maps to a write
+	// (RFC 0012 §Write mapping, FDR 0023's organize mapping capability):
+	// "none" (declared read-only), "one" (a write replaces the membership), or
+	// "many" (a per-value add/remove delta). Absent when the plugin declares no
+	// write mapping for the dimension — the organize consumer's vocabulary.
+	WriteMode string `json:"writeMode,omitempty"`
+	// Field is the node body/metadata field a write to this dimension targets
+	// (present for a writable dimension).
+	Field string `json:"field,omitempty"`
+	// IdentityAffecting is true when a write here changes the node's identity.
+	IdentityAffecting bool `json:"identityAffecting,omitempty"`
+	// CreationRequired is true when a value MUST be supplied to create a node
+	// of this type.
+	CreationRequired bool `json:"creationRequired,omitempty"`
+	// CompletionHint documents the plugin-owned completion a write performs
+	// (e.g. "date-bucket move preserves clock time"); descriptive only — the
+	// plugin, never the framework, computes the value.
+	CompletionHint string `json:"completionHint,omitempty"`
 }
 
 // facetDimSchemas projects a plugin's declared FacetDimensions into their
-// describe_node_types view. A non-nil Values list marks a closed domain and
-// is surfaced verbatim (cutting-garden#161) so a filter value is
-// discoverable rather than guessed.
+// describe_node_types view, folding in the per-dimension write mapping (keyed
+// by dimension key) when the plugin declares one (RFC 0012 §Write mapping). A
+// non-nil Values list marks a closed domain and is surfaced verbatim
+// (cutting-garden#161) so a filter value is discoverable rather than guessed.
+// writes is nil for a plugin with no FacetWriteDescriber.
 func facetDimSchemas(
 	dims []cutting_garden_plugins.FacetDimension,
+	writes map[string]cutting_garden_plugins.FacetWrite,
 ) []facetDimSchema {
 	out := make([]facetDimSchema, 0, len(dims))
 	for _, d := range dims {
@@ -1366,7 +1387,7 @@ func facetDimSchemas(
 				values[i] = v.Key
 			}
 		}
-		out = append(out, facetDimSchema{
+		s := facetDimSchema{
 			Key:                    d.Key,
 			Label:                  d.Label,
 			Kind:                   string(d.Kind),
@@ -1374,7 +1395,15 @@ func facetDimSchemas(
 			Closed:                 d.Values != nil,
 			Values:                 values,
 			RevalidateAfterSeconds: int64(d.RevalidateAfter.Seconds()),
-		})
+		}
+		if w, ok := writes[d.Key]; ok {
+			s.WriteMode = string(w.Mode)
+			s.Field = w.Field
+			s.IdentityAffecting = w.IdentityAffecting
+			s.CreationRequired = w.CreationRequired
+			s.CompletionHint = w.CompletionHint
+		}
+		out = append(out, s)
 	}
 	return out
 }
@@ -1428,6 +1457,19 @@ func collectSchema(plugins []cutting_garden_plugins.Plugin) []schemeSchema {
 				listingFields[ntf.Tag] = ntf.Fields
 			}
 		}
+		// Per-type write mappings (RFC 0012 §Write mapping, FDR 0023), folded
+		// onto each dimension's facet schema by key. Absent for a plugin with
+		// no FacetWriteDescriber.
+		facetWrites := map[string]map[string]cutting_garden_plugins.FacetWrite{}
+		if fwd, ok := p.(cutting_garden_plugins.FacetWriteDescriber); ok {
+			for _, ntw := range fwd.DescribeFacetWrites() {
+				m := make(map[string]cutting_garden_plugins.FacetWrite, len(ntw.Writes))
+				for _, w := range ntw.Writes {
+					m[w.DimensionKey] = w
+				}
+				facetWrites[ntw.Tag] = m
+			}
+		}
 		nts := rl.Types()
 		types := make([]typeSchema, 0, len(nts))
 		for _, nt := range nts {
@@ -1446,7 +1488,7 @@ func collectSchema(plugins []cutting_garden_plugins.Plugin) []schemeSchema {
 				}
 			}
 			if dims, ok := facets[nt.Tag]; ok {
-				ts.Facets = facetDimSchemas(dims)
+				ts.Facets = facetDimSchemas(dims, facetWrites[nt.Tag])
 			}
 			if fields, ok := listingFields[nt.Tag]; ok {
 				ts.ListingFields = listingFieldSchemas(fields)

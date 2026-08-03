@@ -1008,6 +1008,70 @@ prior behavior exactly, and `FacetContainerBreakdown` is a new type. A
 unaffected; a consumer that does not know about it simply never sees the
 field (`omitempty` on the wire).
 
+### 14. Write mapping (`FacetWriteDescriber`)
+
+The read-side schema (§2) says what a dimension IS; a substrate whose metadata
+is editable also declares how editing a dimension maps to a WRITE. This is the
+`organize` feature's mapping capability (FDR 0023) — the write-side extension of
+`FacetDescriber`, an OPTIONAL capability probed by type assertion exactly like
+every other in this contract:
+
+```go
+type FacetWriteDescriber interface {
+    Plugin
+    DescribeFacetWrites() []NodeTypeFacetWrites
+}
+
+type NodeTypeFacetWrites struct {
+    Tag    string       // matches a NodeTypeFacets.Tag
+    Writes []FacetWrite
+}
+
+type FacetWrite struct {
+    DimensionKey      string         // matches a FacetDimension.Key on the same Tag
+    Mode              FacetWriteMode // FacetWriteNone / FacetWriteOne / FacetWriteMany
+    Field             string         // the field a write to this dimension targets
+    IdentityAffecting bool           // a write here changes the node's identity
+    CreationRequired  bool           // a value MUST be supplied to create the node
+    CompletionHint    string         // descriptive note on the plugin-owned completion
+}
+
+type FacetWriteMode string // "none" | "one" | "many"
+```
+
+- **Layered, never re-declared.** A `FacetWrite` MUST name a `(Tag,
+  DimensionKey)` the plugin's `FacetDescriber` already declares; it adds write
+  metadata to that dimension and never re-states its shape, so the read and
+  write schemas cannot drift. `ValidateFacetWrites(reads, writes)` is the
+  normative cross-check: an undeclared tag or key, or a non-`none` `Mode`
+  without a `Field`, is an error.
+- **`none` is DECLARED, not absent.** An explicitly read-only dimension
+  (`FacetWriteNone`) is distinct from a dimension the plugin never mapped: an
+  organize edit targeting a `none` dimension fails loudly ("not writable"),
+  while an unmapped dimension is simply outside the write surface. Writability
+  MUST be declared, never inferred.
+- **Cardinality mirrors `Multi`.** `FacetWriteOne` (a write REPLACES the single
+  membership — a status change, a reschedule-by-move) pairs with a non-`Multi`
+  dimension; `FacetWriteMany` (a per-value add/remove delta — a label or tag)
+  pairs with a `Multi` dimension.
+- **Metadata only; the plugin owns the logic.** The framework has NO concept of
+  domain transitions (FDR 0023): everything is a field patch, and the plugin's
+  own write path (`NodeMutator.PatchNode`, `ContainerCreator.CreateChild`)
+  performs whatever the substrate requires — timezone handling, clock-time
+  preservation, id allocation. `CompletionHint` DESCRIBES that behavior for a
+  caller (surfaced in `describe_node_types`) but the plugin, never the
+  framework, computes the value.
+
+`describe_node_types` folds the write metadata onto each dimension's facet
+schema by key (`writeMode`, `field`, `identityAffecting`, `creationRequired`,
+`completionHint`), so the mapping is the vocabulary an `organize` consumer reads
+to know what an edit can touch.
+
+**Compatibility.** Additive per the usual rule: `FacetWriteDescriber` and its
+types are new; a plugin that does not implement it presents no write metadata
+(the schema's write fields are `omitempty`), and every existing consumer is
+unaffected.
+
 ## Security Considerations
 
 - **Untrusted aggregate data.** Facet keys and resolved labels derive from

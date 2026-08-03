@@ -211,6 +211,29 @@ type FacetValue = internal.FacetValue
 // read. Probed by type assertion, like the other facet capabilities.
 type FacetVersioner = internal.FacetVersioner
 
+// FacetWrite declares how editing ONE facet dimension of a node type maps to a
+// substrate write. It is layered onto the READ-side FacetDimension of the same
+// (Tag, DimensionKey) — it never re-declares the dimension's shape — so the two
+// schemas cannot drift (RFC 0012 §Write mapping). It is metadata only: the
+// framework has no concept of domain transitions (FDR 0023), so the plugin's
+// own write path owns whatever computation the substrate needs (timezone,
+// clock-time preservation, id allocation); this record only DESCRIBES it.
+type FacetWrite = internal.FacetWrite
+
+// FacetWriteDescriber is the OPTIONAL capability that declares how a plugin's
+// facet dimensions map to WRITES — the write-side extension of FacetDescriber's
+// read-side schema (RFC 0012 §Write mapping, FDR 0023's organize mapping
+// capability). Probed by type assertion on an already-resolved plugin, exactly
+// like FacetDescriber. A plugin that serves no writable facets simply does not
+// implement it.
+type FacetWriteDescriber = internal.FacetWriteDescriber
+
+// FacetWriteMode is the cardinality of writes a facet dimension supports — the
+// write-side counterpart to FacetDimension.Multi (RFC 0012 §Write mapping,
+// FDR 0023's organize mapping capability). It says how EDITING a node's
+// membership in this dimension maps to a substrate write.
+type FacetWriteMode = internal.FacetWriteMode
+
 // LeafContent is one leaf node's fetched content, returned by ReadLeaf. It
 // carries two views of the same object: a structured, JSON-marshalable
 // projection a client reads (the parsed fields), and the verbatim source
@@ -286,6 +309,10 @@ type NodeType = internal.NodeType
 // describe_node_types tool, so an agent can construct a valid body without
 // guessing or reading an existing node first.
 type NodeTypeBody = internal.NodeTypeBody
+
+// NodeTypeFacetWrites binds a set of FacetWrites to one node type — the
+// write-side counterpart of NodeTypeFacets.
+type NodeTypeFacetWrites = internal.NodeTypeFacetWrites
 
 // NodeTypeFacets binds a set of facet dimensions to one node type. See
 // RFC 0012 §2.
@@ -656,6 +683,20 @@ var ResolveScheme = internal.ResolveScheme
 // rely on its pre-call order or capacity afterward.
 var SortAndLimitContainerBreakdown = internal.SortAndLimitContainerBreakdown
 
+// ValidateFacetWrites cross-checks write mappings against the read-side facet
+// schema. It returns the first violation (nil when consistent) so a plugin's
+// write schema cannot silently reference a dimension that does not exist:
+//
+//   - every NodeTypeFacetWrites.Tag MUST have a matching NodeTypeFacets entry;
+//   - every FacetWrite.DimensionKey MUST name a dimension that tag declares;
+//   - a non-none Mode MUST carry a Field, and Mode MUST be one of the three
+//     declared values.
+//
+// reads and writes are the plugin's own DescribeFacets / DescribeFacetWrites
+// outputs. It is the loud-rejection mechanism the apply engine uses before
+// writing, and the check a plugin's own tests assert against.
+var ValidateFacetWrites = internal.ValidateFacetWrites
+
 // BulkAtomic requires all-or-nothing completion. A plugin that cannot
 // honor it — for this request or at all — MUST reject the request with
 // an error; it MUST NOT silently downgrade to BulkBestEffort.
@@ -687,6 +728,21 @@ const FacetLabelled = internal.FacetLabelled
 // FacetNumericBucket is a number quantized to an ordered bucket; values
 // carry FacetValue.Order (year, month, size band).
 const FacetNumericBucket = internal.FacetNumericBucket
+
+// FacetWriteMany: several values; a write is a per-value membership delta
+// (add/remove a label or tag). Pairs with a Multi dimension.
+const FacetWriteMany = internal.FacetWriteMany
+
+// FacetWriteNone: the dimension is read-only. It is DECLARED (not merely
+// absent) so an organize edit targeting it fails loudly with "not writable"
+// rather than silently — distinct from a dimension the plugin never mapped
+// at all (FDR 0023 "writability must be declared").
+const FacetWriteNone = internal.FacetWriteNone
+
+// FacetWriteOne: at most one value; a write REPLACES the node's membership
+// (a status change, a reschedule-by-move). Pairs with a non-Multi
+// dimension.
+const FacetWriteOne = internal.FacetWriteOne
 
 // MimeTypeDefault is the mimetype a leaf NodeType speaks when its
 // declaration leaves MimeType empty: opaque bytes, dodder's null-type

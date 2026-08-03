@@ -581,7 +581,7 @@ func TestFacetDimSchemas_RevalidateAfterSeconds(t *testing.T) {
 			RevalidateAfter: 15 * time.Minute,
 		},
 	}
-	schemas := facetDimSchemas(dims)
+	schemas := facetDimSchemas(dims, nil)
 	byKey := map[string]facetDimSchema{}
 	for _, s := range schemas {
 		byKey[s.Key] = s
