@@ -57,7 +57,7 @@ func Evaluate(
 	ev := newEvaluator(lister, anchor)
 	steps := q.Path.Steps
 
-	current, err := lister.ListRoots(ctx, anchor)
+	current, err := ev.listEnriched(ctx, anchor)
 	if err != nil {
 		return nil, errors.Wrap(err)
 	}
@@ -84,10 +84,11 @@ func Evaluate(
 // the cheap Node.Facets path versus a leaf fetch, plus the anchor and a lazily
 // built child->parents index the backward combinators invert against.
 type evaluator struct {
-	lister cgp.RootLister
-	anchor *url.URL
-	leaf   cgp.LeafReader                 // nil when the plugin cannot fetch leaves
-	facets map[string]map[string]struct{} // tag -> set of declared dimension keys
+	lister   cgp.RootLister
+	enriched cgp.EnrichedLister // nil when the plugin serves no enriched listing
+	anchor   *url.URL
+	leaf     cgp.LeafReader                 // nil when the plugin cannot fetch leaves
+	facets   map[string]map[string]struct{} // tag -> set of declared dimension keys
 
 	// parents maps a node's URI to the nodes under anchor whose immediate
 	// children include it. Built on first backward use by scanning anchor's
@@ -99,6 +100,9 @@ type evaluator struct {
 
 func newEvaluator(lister cgp.RootLister, anchor *url.URL) *evaluator {
 	ev := &evaluator{lister: lister, anchor: anchor}
+	if el, ok := lister.(cgp.EnrichedLister); ok {
+		ev.enriched = el
+	}
 	if lr, ok := lister.(cgp.LeafReader); ok {
 		ev.leaf = lr
 	}
@@ -113,6 +117,36 @@ func newEvaluator(lister cgp.RootLister, anchor *url.URL) *evaluator {
 		}
 	}
 	return ev
+}
+
+// listEnriched returns u's children, preferring the plugin's enriched listing
+// (Facets and Fields populated) over the metadata-only ListRoots when the
+// plugin serves one for this node. It passes no filter — the evaluator applies
+// its own predicates — so ListEnriched returns the full, level-scoped child set
+// (RFC 0012 §12.2), and a decline (ok==false, e.g. caldav at a calendar-home
+// whose children are calendars, not the enrichable unit) or a plugin without
+// the capability falls back to ListRoots.
+//
+// This is what makes a facet predicate match against a plugin (caldav) whose
+// plain ListRoots leaves Node.Facets empty, and what enriches the returned
+// nodes for display (cutting-garden#212). matchFacet already reads Node.Facets,
+// so populating them is the whole fix. The cost is one bulk enriched fetch per
+// container rather than a metadata-only listing; a query referencing no facet
+// dimension pays it without needing it — a conditional "enrich only when the
+// query touches a facet field" optimization is possible if that cost bites.
+func (ev *evaluator) listEnriched(
+	ctx context.Context, u *url.URL,
+) ([]cgp.Node, error) {
+	if ev.enriched != nil {
+		nodes, ok, err := ev.enriched.ListEnriched(ctx, u, nil)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			return nodes, nil
+		}
+	}
+	return ev.lister.ListRoots(ctx, u)
 }
 
 // traverse maps the current frontier through one combinator to the next
@@ -149,7 +183,7 @@ func (ev *evaluator) descend(
 		if n.URI == nil {
 			continue
 		}
-		children, err := ev.lister.ListRoots(ctx, n.URI)
+		children, err := ev.listEnriched(ctx, n.URI)
 		if err != nil {
 			return nil, errors.Wrap(err)
 		}
@@ -182,7 +216,7 @@ func (ev *evaluator) inverse(ctx context.Context) (map[string][]cgp.Node, error)
 	}
 	parents := make(map[string][]cgp.Node)
 
-	roots, err := ev.lister.ListRoots(ctx, ev.anchor)
+	roots, err := ev.listEnriched(ctx, ev.anchor)
 	if err != nil {
 		return nil, errors.Wrap(err)
 	}
@@ -202,7 +236,7 @@ func (ev *evaluator) inverse(ctx context.Context) (map[string][]cgp.Node, error)
 		if parent.URI == nil {
 			continue
 		}
-		children, err := ev.lister.ListRoots(ctx, parent.URI)
+		children, err := ev.listEnriched(ctx, parent.URI)
 		if err != nil {
 			return nil, errors.Wrap(err)
 		}
@@ -267,7 +301,7 @@ func (ev *evaluator) descendClosure(
 		if n.URI == nil {
 			continue
 		}
-		children, err := ev.lister.ListRoots(ctx, n.URI)
+		children, err := ev.listEnriched(ctx, n.URI)
 		if err != nil {
 			return nil, errors.Wrap(err)
 		}

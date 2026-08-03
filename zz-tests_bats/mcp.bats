@@ -244,6 +244,34 @@ function mcp_list_nodes_query_guards { # @test
   assert_equal "$(mcp_is_error "$output" 3)" "true"
 }
 
+# cutting-garden#212 over the mcp binary: a facet predicate in a trellis query
+# matches caldav objects (whose Facets are populated only via ListEnriched),
+# and the matched nodes carry the facet inline — proving BOTH halves of the fix
+# (matching + enrichment) end to end, the MCP-suite mirror of the CLI facet
+# case. The VTODOs come back with their component facet; the VEVENT does not.
+function mcp_list_nodes_query_facet_predicate { # @test
+  mcp_drive "$CALDAV_SOURCE" "$(tools_call 3 list_nodes '{}')"
+  local rooturi
+  rooturi="$(mcp_result_text "$output" 3 | jq -r '.[0].uri')"
+
+  mcp_drive "$CALDAV_SOURCE" "$(tools_call 3 list_nodes \
+    "$(jq -nc --arg u "$rooturi" '{uri:$u,query:"!caldav-calendar-v1 -> !caldav-object-v1 component=VTODO"}')")"
+  local text
+  text="$(mcp_result_text "$output" 3)"
+  echo "$text" | jq -e 'any(.nodes[]; .name=="task1.ics")' >/dev/null ||
+    fail "facet query missing task1.ics (a VTODO): $text"
+  echo "$text" | jq -e 'any(.nodes[]; .name=="task3.ics")' >/dev/null ||
+    fail "facet query missing task3.ics (a VTODO): $text"
+  echo "$text" | jq -e 'all(.nodes[]; .name!="event1.ics")' >/dev/null ||
+    fail "facet query leaked event1.ics (a VEVENT): $text"
+
+  # The under-enrichment half of #212: matched nodes carry the component facet
+  # inline (the enriched listing drove the match), so an agent needs no
+  # follow-up read_node.
+  echo "$text" | jq -e 'all(.nodes[]; .facets.component[0]=="VTODO")' >/dev/null ||
+    fail "facet-query results not enriched inline: $text"
+}
+
 # A read-only cache root must not crash the server at startup (#121). The
 # Phase-B blob writer eagerly inits the madder store, which mkdir's
 # <cache>/tmp-<pid>; on an unwritable cache that mkdir fails and madder

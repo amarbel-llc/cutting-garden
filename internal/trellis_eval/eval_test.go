@@ -103,13 +103,13 @@ func sampleTree(t *testing.T) *fakeTree {
 	}
 }
 
-func evalURIs(t *testing.T, tree *fakeTree, anchor, query string) []string {
+func evalURIs(t *testing.T, lister cgp.RootLister, anchor, query string) []string {
 	t.Helper()
 	q, err := trellis.Parse(query)
 	if err != nil {
 		t.Fatalf("parse %q: %v", query, err)
 	}
-	nodes, err := Evaluate(context.Background(), q, mustURL(t, anchor), tree)
+	nodes, err := Evaluate(context.Background(), q, mustURL(t, anchor), lister)
 	if err != nil {
 		t.Fatalf("evaluate %q: %v", query, err)
 	}
@@ -370,6 +370,105 @@ func (*rootOnlyTree) TypeTag() string       { return "fake-v1" }
 func (*rootOnlyTree) Types() []cgp.NodeType { return []cgp.NodeType{{Tag: "thing-v1"}} }
 func (f *rootOnlyTree) ListRoots(_ context.Context, u *url.URL) ([]cgp.Node, error) {
 	return f.children[u.String()], nil
+}
+
+// urlp parses a known-valid URL for a test fixture, panicking on the
+// impossible error so the fixture methods stay signature-clean (no *testing.T).
+func urlp(s string) *url.URL {
+	u, err := url.Parse(s)
+	if err != nil {
+		panic(err)
+	}
+	return u
+}
+
+// enrichOnlyTree models a caldav-shaped plugin whose plain ListRoots is
+// metadata-only (Facets empty) while ListEnriched populates Facets — the exact
+// shape that made facet predicates silently fail before cutting-garden#212. It
+// declares `component` as a facet dimension and serves the enriched listing
+// only at the calendar level, declining at the home (mirroring caldav's
+// level-scoping, RFC 0012 §12.2).
+type enrichOnlyTree struct{}
+
+var (
+	_ cgp.RootLister     = enrichOnlyTree{}
+	_ cgp.EnrichedLister = enrichOnlyTree{}
+	_ cgp.FacetDescriber = enrichOnlyTree{}
+)
+
+func (enrichOnlyTree) Schemes() []string { return []string{"enr"} }
+func (enrichOnlyTree) TypeTag() string   { return "enr-v1" }
+
+func (enrichOnlyTree) Types() []cgp.NodeType {
+	return []cgp.NodeType{
+		{Tag: "calendar-v1", Container: true},
+		{Tag: "todo-v1"},
+		{Tag: "event-v1"},
+	}
+}
+
+func (enrichOnlyTree) DescribeFacets() []cgp.NodeTypeFacets {
+	return []cgp.NodeTypeFacets{
+		{Tag: "todo-v1", Dimensions: []cgp.FacetDimension{{Key: "component"}}},
+		{Tag: "event-v1", Dimensions: []cgp.FacetDimension{{Key: "component"}}},
+	}
+}
+
+// ListRoots is metadata-only: the objects carry no Facets, mirroring caldav's
+// hrefs-only listing (the reason a facet predicate matched nothing pre-#212).
+func (enrichOnlyTree) ListRoots(_ context.Context, u *url.URL) ([]cgp.Node, error) {
+	switch u.String() {
+	case "enr://cal/":
+		return []cgp.Node{{URI: urlp("enr://cal/work/"), Type: "calendar-v1"}}, nil
+	case "enr://cal/work/":
+		return []cgp.Node{
+			{URI: urlp("enr://cal/work/t1"), Type: "todo-v1"},
+			{URI: urlp("enr://cal/work/e1"), Type: "event-v1"},
+		}, nil
+	default:
+		return nil, nil
+	}
+}
+
+// ListEnriched populates Facets, but only at the calendar level — it declines
+// (ok==false) at the home, where the children are calendars rather than the
+// enrichable object unit, exactly as caldav does.
+func (enrichOnlyTree) ListEnriched(
+	_ context.Context, u *url.URL, _ cgp.FacetFilter,
+) ([]cgp.Node, bool, error) {
+	if u.String() != "enr://cal/work/" {
+		return nil, false, nil
+	}
+	comp := func(v string) map[string][]cgp.FacetValue {
+		return map[string][]cgp.FacetValue{"component": {{Key: v}}}
+	}
+	return []cgp.Node{
+		{URI: urlp("enr://cal/work/t1"), Type: "todo-v1", Facets: comp("VTODO")},
+		{URI: urlp("enr://cal/work/e1"), Type: "event-v1", Facets: comp("VEVENT")},
+	}, true, nil
+}
+
+// TestEvaluate_FacetPredicateUsesEnrichedListing pins cutting-garden#212: a
+// facet predicate matches against a plugin whose Facets are populated only by
+// ListEnriched (not plain ListRoots), because the evaluator now prefers the
+// enriched listing. Before the fix this returned empty — the silent,
+// confidently-wrong result an agent could not distinguish from "no matches".
+func TestEvaluate_FacetPredicateUsesEnrichedListing(t *testing.T) {
+	tree := enrichOnlyTree{}
+
+	// Facet predicate over the calendar's objects: only the VTODO matches,
+	// which is only possible if the walk consulted the enriched listing.
+	got := evalURIs(t, tree, "enr://cal/work/", "component=VTODO")
+	if want := []string{"enr://cal/work/t1"}; !equalStrings(got, want) {
+		t.Errorf("facet predicate: got %v, want %v", got, want)
+	}
+
+	// The enriched-listing decline at the home level still falls back to
+	// ListRoots, so a type predicate over the calendars matches.
+	got = evalURIs(t, tree, "enr://cal/", "!calendar-v1")
+	if want := []string{"enr://cal/work/"}; !equalStrings(got, want) {
+		t.Errorf("fallback at declined level: got %v, want %v", got, want)
+	}
 }
 
 func equalStrings(a, b []string) bool {
