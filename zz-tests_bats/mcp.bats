@@ -187,6 +187,63 @@ function mcp_list_nodes_filter_retrieves_matching_enriched_nodes { # @test
     fail "filtered nodes missing inline summary field: $text"
 }
 
+# list_nodes' query param (cutting-garden#211's MCP host): a trellis query
+# anchored at the uri walks the tree through the real mcp binary — the MCP-suite
+# mirror of caldav.bats's `list --query` CLI cases, over the same
+# home->calendars->objects tree. Both surfaces call the same evaluator, so
+# running the matrix on each proves the wirings agree.
+function mcp_list_nodes_query_walks_and_reverses { # @test
+  # The configured root (the caldav home) is the query anchor.
+  mcp_drive "$CALDAV_SOURCE" "$(tools_call 3 list_nodes '{}')"
+  local rooturi
+  rooturi="$(mcp_result_text "$output" 3 | jq -r '.[0].uri')"
+  [[ -n $rooturi ]] || fail "no root uri: $(mcp_result_text "$output" 3)"
+
+  # Forward walk: home -> calendars -> their objects. task1.ics (Personal) and
+  # task3.ics (Work) both come back, wrapped as {query, nodes}, so the walk
+  # descended BOTH discovered calendars.
+  mcp_drive "$CALDAV_SOURCE" "$(tools_call 3 list_nodes \
+    "$(jq -nc --arg u "$rooturi" '{uri:$u,query:"!caldav-calendar-v1 -> !caldav-object-v1"}')")"
+  local text
+  text="$(mcp_result_text "$output" 3)"
+  echo "$text" | jq -e '.query == "!caldav-calendar-v1 -> !caldav-object-v1"' >/dev/null ||
+    fail "query not echoed back: $text"
+  echo "$text" | jq -e 'any(.nodes[]; .name=="task1.ics")' >/dev/null ||
+    fail "walk missing task1.ics (Personal): $text"
+  echo "$text" | jq -e 'any(.nodes[]; .name=="task3.ics")' >/dev/null ||
+    fail "walk missing task3.ics (Work): $text"
+
+  # Reverse `<-`: from the matched objects back up to the calendars that hold
+  # them. Both calendars have objects, so both come back — the anchor-bounded
+  # child-relation inversion, end to end through the mcp binary.
+  mcp_drive "$CALDAV_SOURCE" "$(tools_call 3 list_nodes \
+    "$(jq -nc --arg u "$rooturi" '{uri:$u,query:"!caldav-calendar-v1 -> !caldav-object-v1 <- !caldav-calendar-v1"}')")"
+  text="$(mcp_result_text "$output" 3)"
+  echo "$text" | jq -e 'any(.nodes[]; .name=="Personal")' >/dev/null ||
+    fail "reverse missing the Personal calendar: $text"
+  echo "$text" | jq -e 'any(.nodes[]; .name=="Work")' >/dev/null ||
+    fail "reverse missing the Work calendar: $text"
+}
+
+# The query param's guards over the mcp binary: mutually exclusive with filter,
+# and an unsupported grammar form is a tool error — never a silent empty result.
+function mcp_list_nodes_query_guards { # @test
+  mcp_drive "$CALDAV_SOURCE" "$(tools_call 3 list_nodes '{}')"
+  local rooturi
+  rooturi="$(mcp_result_text "$output" 3 | jq -r '.[0].uri')"
+
+  # query + filter is rejected (the two narrowing surfaces are exclusive).
+  mcp_drive "$CALDAV_SOURCE" "$(tools_call 3 list_nodes \
+    "$(jq -nc --arg u "$rooturi" '{uri:$u,query:"!caldav-calendar-v1",filter:"component=VTODO"}')")"
+  assert_equal "$(mcp_is_error "$output" 3)" "true"
+
+  # A typed combinator (deferred, cutting-garden#211) is a tool error, not a
+  # silent empty listing.
+  mcp_drive "$CALDAV_SOURCE" "$(tools_call 3 list_nodes \
+    "$(jq -nc --arg u "$rooturi" '{uri:$u,query:"!caldav-calendar-v1 -[!x]-> !caldav-object-v1"}')")"
+  assert_equal "$(mcp_is_error "$output" 3)" "true"
+}
+
 # A read-only cache root must not crash the server at startup (#121). The
 # Phase-B blob writer eagerly inits the madder store, which mkdir's
 # <cache>/tmp-<pid>; on an unwritable cache that mkdir fails and madder

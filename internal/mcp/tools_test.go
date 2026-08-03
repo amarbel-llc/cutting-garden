@@ -745,6 +745,81 @@ func TestCallTool_ListNodesNegativeLimitOrOffsetIsToolError(t *testing.T) {
 	}
 }
 
+// TestCallTool_ListNodesQuery drives the list_nodes `query` param (Gap 1,
+// cutting-garden#211's MCP host) through the real CallTool dispatch against the
+// two-level fakeLister tree: a forward walk and a reverse hop, mirroring the
+// CLI `list --query` host so both surfaces evaluate the same query identically.
+func TestCallTool_ListNodesQuery(t *testing.T) {
+	tools := newFakeTools(t, &fakeMutator{}, "faketest://h/")
+	tools.resolveLister = listerResolve(fakeLister{})
+
+	// Forward walk: the calendars -> their objects. Only /work holds one.
+	res, err := tools.CallTool(context.Background(), "list_nodes",
+		json.RawMessage(`{"uri":"faketest://h/","query":"!test-calendar-v1 -> !test-object-v1"}`))
+	if err != nil {
+		t.Fatalf("transport error: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("query walk errored: %+v", res.Content)
+	}
+	var view queriedListingView
+	if err := json.Unmarshal([]byte(res.Content[0].Text), &view); err != nil {
+		t.Fatalf("query output is not a queriedListingView: %v (%q)", err, res.Content[0].Text)
+	}
+	if view.Query != "!test-calendar-v1 -> !test-object-v1" {
+		t.Errorf("query not echoed back: %q", view.Query)
+	}
+	if len(view.Nodes) != 1 || view.Nodes[0].URI != "faketest://h/work/task1.ics" {
+		t.Fatalf("walk = %+v, want the single /work/task1.ics object", view.Nodes)
+	}
+
+	// Reverse: from the matched objects back up to the calendars holding them.
+	res, err = tools.CallTool(context.Background(), "list_nodes",
+		json.RawMessage(`{"uri":"faketest://h/","query":"!test-calendar-v1 -> !test-object-v1 <- !test-calendar-v1"}`))
+	if err != nil {
+		t.Fatalf("transport error: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("query reverse errored: %+v", res.Content)
+	}
+	view = queriedListingView{}
+	if err := json.Unmarshal([]byte(res.Content[0].Text), &view); err != nil {
+		t.Fatalf("reverse output parse: %v (%q)", err, res.Content[0].Text)
+	}
+	if len(view.Nodes) != 1 || view.Nodes[0].URI != "faketest://h/work" {
+		t.Fatalf("reverse = %+v, want the single /work calendar", view.Nodes)
+	}
+}
+
+// TestCallTool_ListNodesQueryGuards pins the query param's usage errors — it
+// requires a uri, is mutually exclusive with filter, and rejects a grammar
+// form the evaluator does not yet support — each surfaced as a tool error, not
+// a silent empty result.
+func TestCallTool_ListNodesQueryGuards(t *testing.T) {
+	tools := newFakeTools(t, &fakeMutator{}, "faketest://h/")
+	tools.resolveLister = listerResolve(fakeLister{})
+
+	cases := []struct {
+		name string
+		args string
+	}{
+		{"anchorless query", `{"query":"!test-calendar-v1"}`},
+		{"query with filter", `{"uri":"faketest://h/","query":"!test-calendar-v1","filter":"status=CONFIRMED"}`},
+		{"unsupported typed combinator", `{"uri":"faketest://h/","query":"!a -[!x]-> !b"}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			res, err := tools.CallTool(context.Background(), "list_nodes", json.RawMessage(tc.args))
+			if err != nil {
+				t.Fatalf("transport error: %v", err)
+			}
+			if !res.IsError {
+				t.Errorf("expected a tool error, got: %+v", res.Content)
+			}
+		})
+	}
+}
+
 func TestPaginate_LimitZeroIsUnbounded(t *testing.T) {
 	items := []int{1, 2, 3, 4}
 	if got := paginate(items, 0, 0); len(got) != 4 {

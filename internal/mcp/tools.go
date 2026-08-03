@@ -12,6 +12,8 @@ import (
 	"code.linenisgreat.com/cutting-garden/internal/command_components"
 	"code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
 	"code.linenisgreat.com/cutting-garden/internal/mcp_tool_perms"
+	"code.linenisgreat.com/cutting-garden/internal/trellis"
+	"code.linenisgreat.com/cutting-garden/internal/trellis_eval"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 	"code.linenisgreat.com/purse-first/libs/go-mcp/protocol"
 	"code.linenisgreat.com/purse-first/libs/go-mcp/server"
@@ -186,6 +188,7 @@ const (
 		`"limit":{"type":"integer","minimum":0,"description":"max number of child nodes to return (optional). A response SHORTER than limit means you have reached the end of the listing; a full-length response may or may not be the end — pass a larger offset to check."},` +
 		`"offset":{"type":"integer","minimum":0,"description":"number of child nodes to skip before applying limit (optional, default 0). An offset past the end yields an empty array, not an error."},` +
 		`"filter":{"type":"string","description":"optional comma-separated dimension=value predicates (AND-composed), e.g. \"due_band=overdue\" or \"status=CONFIRMED,year=2026\" — the SAME grammar and dimension keys as read_facets. Call describe_node_types first to see a type's declared facets: each dimension's key and, when closed=true, its complete valid values array (values); an open dimension (closed=false) accepts any value, discovered at enumeration. An undeclared dimension or an out-of-domain closed-dimension value is a REJECTED, actionable error naming what was wrong — never a silent empty/unfiltered result. When present the result is wrapped as {nodes, filterApplied, filterMode} instead of a bare array — filterApplied is false (filterMode \"none\") on the rare scheme with no way to filter, so the caller always knows whether the returned nodes are actually narrowed."},` +
+		`"query":{"type":"string","description":"optional trellis query (RFC 0014) evaluated with the uri as its anchor — the richer alternative to filter. A path of type/field predicates joined by graph combinators: \"->\" descend one level, \"<-\" reverse one level, \"->>\"/\"<<-\" transitive closure, e.g. \"!caldav-calendar-v1 -> !caldav-object-v1 component=VTODO\" walks from the calendars to their VTODO objects. The result is the nodes matched by the LAST step, wrapped as {query, nodes}. Mutually exclusive with filter, and requires a uri. A grammar form the evaluator does not yet support (typed edges, non-\":\" version sigils, ~=, identity terms, the anchorless roots-as-nodes origin) is a REJECTED, actionable error (cutting-garden#211), never a silent empty result."},` +
 		`"bare":{"type":"boolean","description":"opt out of the default enrichment: true returns the cheap pre-enrichment shape {uri,name,type,container,mimeType} with no facets/fields, skipping any extra data-bearing fetch a plugin would otherwise perform (e.g. caldav skips its per-object body fetch, staying hrefs-only). Combining bare with filter still fetches whatever the filter requires; only the OUTPUT is stripped down. Default false: every entry carries its facets and any plugin-declared human-readable fields (e.g. summary/due/status) inline."}}}`
 	readFacetsSchema = `{"type":"object","required":["uri"],` +
 		`"properties":{` +
@@ -247,8 +250,13 @@ func readToolDefs() []protocol.ToolV1 {
 				"those matching and adds filterApplied/filterMode to the object, so " +
 				"you always know whether the nodes were actually narrowed — this is " +
 				"the direct way to retrieve the matching set read_facets can only " +
-				"count. Optional limit/offset page a large listing host-side after " +
-				"enumeration; a response shorter than limit signals the end.",
+				"count. For a query that spans MORE than one level, pass a trellis " +
+				"query (RFC 0014) instead: it anchors at the uri and walks the tree " +
+				"(-> descend, <- reverse, ->>/<<- transitive closure) with per-step " +
+				"type/field predicates, returning the last step's matches as " +
+				"{query, nodes} — mutually exclusive with filter. Optional " +
+				"limit/offset page a large listing host-side after enumeration; a " +
+				"response shorter than limit signals the end.",
 			InputSchema: json.RawMessage(listNodesSchema),
 			Annotations: annotationFor(mcp_tool_perms.ToolListNodes),
 		},
@@ -600,6 +608,7 @@ func (t *Tools) call(
 			Limit  int    `json:"limit"`
 			Offset int    `json:"offset"`
 			Filter string `json:"filter"`
+			Query  string `json:"query"`
 			Bare   bool   `json:"bare"`
 		}
 		if err := json.Unmarshal(args, &in); err != nil {
@@ -610,6 +619,26 @@ func (t *Tools) call(
 		}
 		if in.Offset < 0 {
 			return "", errors.ErrorWithStackf("list_nodes: offset must be >= 0")
+		}
+		// A trellis query is the multi-level alternative to the single-level
+		// facet filter: it anchors at the uri and walks (cutting-garden#211).
+		// The two narrowing surfaces are mutually exclusive, and the query —
+		// like the filter — has nothing to anchor to without a uri (the
+		// anchorless roots-as-nodes origin is itself deferred).
+		if in.Query != "" {
+			if in.URI == "" {
+				return "", errors.BadRequestf(
+					"list_nodes: query requires a uri; the anchorless " +
+						"(roots-as-nodes) query is not yet supported (cutting-garden#211)",
+				)
+			}
+			if in.Filter != "" {
+				return "", errors.BadRequestf(
+					"list_nodes: query and filter are mutually exclusive; a trellis " +
+						"query subsumes a single-level facet filter",
+				)
+			}
+			return t.listNodesQuery(ctx, in.URI, in.Query, in.Bare, in.Offset, in.Limit)
 		}
 		filter, err := cutting_garden_plugins.ParseFacetFilter(in.Filter)
 		if err != nil {
@@ -892,6 +921,23 @@ type filteredListingView struct {
 	FilterMode string `json:"filterMode"`
 }
 
+// queriedListingView is list_nodes(uri, query)'s output shape: the trellis
+// query echoed back alongside the nodes its last step matched. Unlike
+// filteredListingView it carries no filterApplied/filterMode signal — the
+// evaluator is always a host-side walk (FDR 0022), so a valid query always
+// evaluates and an unsupported one is rejected up front (no "could not apply"
+// degradation to report) — and no version token, since a query's matched set
+// may span several container levels rather than being one container's own
+// child listing.
+type queriedListingView struct {
+	// Query is the trellis query string, echoed back for clarity.
+	Query string `json:"query"`
+	// Nodes is the set matched by the query's last step (RFC 0014),
+	// deduplicated by URI, enriched by default (bare strips to {uri,name,
+	// type,container,mimeType}).
+	Nodes []nodeView `json:"nodes"`
+}
+
 // listNodesURI implements the list_nodes(uri) branch: the byte-for-byte
 // unchanged default (delegates to t.reader.ReadResource, cutting-garden#86)
 // when neither filter nor bare is requested, and the enrichment/filter/bare
@@ -1018,6 +1064,55 @@ func (t *Tools) listNodesURI(
 		Filter:         filterString(filter),
 		FilterApplied:  mode != filterModeNone,
 		FilterMode:     mode,
+	}, "", "  ")
+	if err != nil {
+		return "", errors.Wrap(err)
+	}
+	return string(body), nil
+}
+
+// listNodesQuery implements the list_nodes(uri, query) branch: it parses and
+// evaluates a trellis query (internal/trellis + internal/trellis_eval) anchored
+// at uri against the resolved RootLister, returning the nodes the query's last
+// step matched. It mirrors the CLI `list --query` host (internal/list) so both
+// surfaces evaluate identically. A parse error or an unsupported grammar form
+// (trellis_eval.Validate) surfaces as a bad-request rather than a silent empty
+// result. Enrichment reflects what the plugin's ListRoots populates: an
+// EnrichedLister plugin (e.g. caldav) enriches only via its ListEnriched path,
+// so a query's result nodes may carry fewer inline facets than the filter
+// branch — tracked separately.
+func (t *Tools) listNodesQuery(
+	ctx context.Context,
+	uri, query string,
+	bare bool,
+	offset, limit int,
+) (string, error) {
+	q, err := trellis.Parse(query)
+	if err != nil {
+		return "", errors.BadRequestf(
+			"list_nodes: invalid trellis query %q: %v", query, err,
+		)
+	}
+	u, lister, err := t.resolveLister(uri)
+	if err != nil {
+		return "", err
+	}
+	nodes, err := trellis_eval.Evaluate(ctx, q, u, lister)
+	if err != nil {
+		return "", errors.Wrapf(err, "list_nodes %s (query)", uri)
+	}
+	views := make([]nodeView, 0, len(nodes))
+	for _, n := range nodes {
+		if bare {
+			views = append(views, bareNodeView(lister, n))
+		} else {
+			views = append(views, enrichedNodeView(lister, n))
+		}
+	}
+	views = paginate(views, offset, limit)
+	body, err := json.MarshalIndent(queriedListingView{
+		Query: query,
+		Nodes: views,
 	}, "", "  ")
 	if err != nil {
 		return "", errors.Wrap(err)
