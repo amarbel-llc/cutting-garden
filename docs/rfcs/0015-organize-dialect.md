@@ -12,6 +12,13 @@ revised: |
     routing to the driving command). Spaced `=` normative in metadata lines.
     The syntax carries the field taxonomy, so no prose taxonomy is spec'd.
     (Grill with Sasha; supersedes the earlier "settings field" framing.)
+  2026-08-03 — #210 reconciliation: the operational plane (`%`/`%:`) is
+    declared OUT-OF-ENVELOPE — a control surface parsed outside the hyphence
+    RFC 0001 envelope, aligning with RFC 0002's line-176 glued-`%`-marker
+    carve-out. Only the DATA plane is a hyphence document proper. The glued
+    `%:` form is intentionally not an RFC 0001 metadata line. A future hyphence
+    RFC may promote `%:` into the envelope as a first-class construct (the
+    proper long-term fix); until then this out-of-envelope reading is normative.
 ---
 
 # The organize document dialect
@@ -47,10 +54,13 @@ generated the tree.
 
 ## Document structure
 
-A hyphence document. The **metadata section** (RFC 0001 envelope, RFC 0002
-content grammar) has **two line-planes**, distinguished by leading rune — and
-the distinction *is* content-addressability. Metadata lines use the spaced
-`key = value` form: whitespace around `=` is NORMATIVE wherever unambiguous
+**Two line-planes**, distinguished by leading rune — and the distinction *is*
+content-addressability. The **data plane** (`-`/`@`/`#`/`!`) is a hyphence
+document proper: an RFC 0001 envelope with an RFC 0002 content grammar. The
+**operational plane** (`%`/`%:`) is a separate control surface layered on top,
+parsed *outside* that envelope (§"Envelope status of the operational plane",
+#210) — not itself hyphence metadata. Metadata lines on either plane use the
+spaced `key = value` form: whitespace around `=` is NORMATIVE wherever unambiguous
 (matching RFC 0014's spaced field predicate); the dense `key=value` remains
 valid only in dense query predicates.
 
@@ -98,6 +108,21 @@ Two shapes, distinguished by the character *adjacent* to `%`:
   unrecognized *prose* is fine. A substrate MAY declare additional recognized
   directives on its mutation type; recognition is a type-system question, the
   rune only marks the plane.
+
+**Envelope status of the operational plane (#210).** The `%:<directive>` form —
+colon adjacent to `%`, no space — is deliberately NOT a well-formed hyphence RFC
+0001 metadata line (that grammar is `PREFIX SP CONTENT`, so a conforming decoder
+rejects a glued prefix). This is by design: the operational plane is not hyphence
+metadata but a control surface layered on the document, parsed by the organize
+reader OUTSIDE the envelope grammar — exactly the out-of-envelope
+glued-`%`-marker space hyphence RFC 0002 already reserves (line ~176: "belongs to
+a different surface entirely… never appears on a hyphence metadata line"). So an
+organize document's DATA plane is a strict hyphence document; its OPERATIONAL
+plane rides alongside, RFC-0002-sanctioned but envelope-external, and needs no
+envelope change to be legal (dodder already parses `%:` this way). A future
+hyphence RFC MAY promote `%:` to a first-class envelope construct, making the
+whole document strictly conformant on both planes — the proper long-term fix,
+tracked as hyphence#14; until then this out-of-envelope reading is normative.
 
 **`! <type>`** — LAST line (RFC 0001 canonical order): the **type anchor**,
 naming the substrate whose mapping gives every heading its meaning, and the
