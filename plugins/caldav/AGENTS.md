@@ -33,6 +33,24 @@ surfaced as the capture/diff/restore error.
 credential-free traversal roots for the `RootProvider` capability
 (`list`/`mcp` with no argument). See [RFC 0007](../../docs/rfcs/0007-config-subsystem.md).
 
+## URI forms + account aliases
+
+`baseURLFromArg` (`url.go`) accepts three input forms:
+
+- `caldav://[user@]host/path` — hierarchical (TLS assumed).
+- `caldav:<http(s)-url>` — opaque, the only way to reach a plain-HTTP server.
+- `caldav:<account-name>[/<sub-path>]` — the **account alias**: the first opaque
+  segment, when it names a configured `[[caldav.accounts]]` entry, expands to that
+  account's URL joined with the sub-path (`accountByName` → `expandAccountAlias`).
+  A URL scheme's trailing `:` (`caldav:http://…`) never matches an account name,
+  so the alias and inner-url forms don't collide.
+
+Because an account's `url` may point at EITHER a calendar-home OR a specific
+calendar, a **per-calendar named account is a calendar alias**: configure
+`name = "task"` at the calendar's URL and `caldav:task` addresses it directly —
+no server-side displayname resolution needed. Credentials still resolve through
+`matchAccount` on the expanded base (longest path prefix wins).
+
 ## What lives here
 
 - `Plugin.CaptureRoot` (`capture.go`) — PROPFIND the endpoint for

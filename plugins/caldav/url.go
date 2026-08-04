@@ -40,9 +40,20 @@ func baseURLFromArg(u *url.URL) (string, error) {
 		)
 	}
 
-	// Opaque form: caldav:<inner-url>. url.Parse splits ?query off the
-	// opaque segment, so glue it back.
+	// Opaque form: caldav:<inner-url> OR the account alias caldav:<name>[/<sub>].
 	if u.Opaque != "" {
+		// Account alias: when the first segment names a configured account,
+		// expand it to that account's URL + the remaining sub-path (RFC 0007
+		// aliased roots — a per-calendar named account is a calendar alias). The
+		// inner-URL form (caldav:http://…) never collides: a URL scheme's
+		// trailing ':' cannot be an account name.
+		name, sub, _ := strings.Cut(u.Opaque, "/")
+		if acct, ok := accountByName(name); ok {
+			return expandAccountAlias(acct.Name, acct.URL, sub, u.RawQuery)
+		}
+
+		// Otherwise it is the inner-url form. url.Parse splits ?query off the
+		// opaque segment, so glue it back.
 		inner := u.Opaque
 		if u.RawQuery != "" {
 			inner += "?" + u.RawQuery
@@ -79,6 +90,32 @@ func baseURLFromArg(u *url.URL) (string, error) {
 		RawQuery: u.RawQuery,
 	}
 	return rebuilt.String(), nil
+}
+
+// expandAccountAlias resolves a caldav:<name>[/<sub>] alias: the named account's
+// URL becomes the https base, joined with sub (and any query). The account URL
+// is always a real caldav:// URL (never itself an alias), so re-running
+// baseURLFromArg on it recurses at most one level — through the hierarchical
+// branch. Credentials still resolve downstream via matchAccount on the expanded
+// base's host+path (a per-calendar account matches its own path).
+func expandAccountAlias(name, accountURL, sub, rawQuery string) (string, error) {
+	acctURL, err := url.Parse(accountURL)
+	if err != nil {
+		return "", errors.BadRequestf(
+			"caldav plugin: account %q has unparseable url %q: %s", name, accountURL, err,
+		)
+	}
+	base, err := baseURLFromArg(acctURL)
+	if err != nil {
+		return "", errors.Wrapf(err, "caldav plugin: account %q url", name)
+	}
+	if sub != "" {
+		base = strings.TrimSuffix(base, "/") + "/" + sub
+	}
+	if rawQuery != "" {
+		base += "?" + rawQuery
+	}
+	return base, nil
 }
 
 // connectionFromArg resolves the base URL and the credentials for a CLI

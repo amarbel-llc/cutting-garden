@@ -272,3 +272,16 @@ func matchAccount(host, path string) (config_common.Account, bool) {
 	}
 	return best, bestLen >= 0
 }
+
+// accountByName returns the configured account whose Name equals name — the
+// alias lookup behind the `caldav:<name>[/<sub>]` CLI form (baseURLFromArg).
+// Validate guarantees account names are unique, so the first match is
+// definitive; ok is false when no account carries that name.
+func accountByName(name string) (config_common.Account, bool) {
+	for _, acct := range configuredAccounts {
+		if acct.Name == name {
+			return acct, true
+		}
+	}
+	return config_common.Account{}, false
+}

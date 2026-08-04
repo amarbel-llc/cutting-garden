@@ -87,6 +87,60 @@ func TestConnectionFromArg_EnvFallback(t *testing.T) {
 	}
 }
 
+// TestBaseURLFromArg_AccountAlias pins the caldav:<name>[/<sub>] resolution: a
+// configured account name expands to its URL (+ sub-path); an unknown name and
+// the inner-url form are unaffected.
+func TestBaseURLFromArg_AccountAlias(t *testing.T) {
+	setAccounts(t, acct("fastmail", "caldav://caldav.example/dav/user/me/", "me", "CALDAV_X"))
+
+	cases := []struct {
+		name    string
+		arg     string
+		want    string
+		wantErr bool
+	}{
+		{name: "bare alias -> account base", arg: "caldav:fastmail", want: "https://caldav.example/dav/user/me/"},
+		{name: "alias + sub-path", arg: "caldav:fastmail/7f76.ics", want: "https://caldav.example/dav/user/me/7f76.ics"},
+		{name: "unknown name falls through to inner-url (errors)", arg: "caldav:unknown", wantErr: true},
+		{name: "inner-url form unaffected by alias check", arg: "caldav:http://localhost:5232/dav/", want: "http://localhost:5232/dav/"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := baseURLFromArg(mustParseURL(t, tc.arg))
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("baseURLFromArg(%q) = %q, want error", tc.arg, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("baseURLFromArg(%q): %v", tc.arg, err)
+			}
+			if got != tc.want {
+				t.Errorf("baseURLFromArg(%q) = %q, want %q", tc.arg, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestConnectionFromArg_Alias pins that credentials still resolve through an
+// aliased arg — the expanded base's host+path matches the same account.
+func TestConnectionFromArg_Alias(t *testing.T) {
+	setAccounts(t, acct("fastmail", "caldav://caldav.example/dav/user/me/", "acctuser", "CALDAV_ALIAS_PW"))
+	t.Setenv("CALDAV_ALIAS_PW", "acctsecret")
+
+	base, user, pass, err := connectionFromArg(mustParseURL(t, "caldav:fastmail"))
+	if err != nil {
+		t.Fatalf("connectionFromArg: %v", err)
+	}
+	if base != "https://caldav.example/dav/user/me/" {
+		t.Errorf("base = %q", base)
+	}
+	if user != "acctuser" || pass != "acctsecret" {
+		t.Errorf("creds = %q/%q, want acctuser/acctsecret", user, pass)
+	}
+}
+
 func TestOriginOf(t *testing.T) {
 	cases := map[string]string{
 		"https://host/dav/":       "https://host",

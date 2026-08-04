@@ -96,6 +96,31 @@ func TestGroupNodes_DeclaredBuckets(t *testing.T) {
 	}
 }
 
+// TestCommonURIPrefix pins the anchor derivation that keeps box ids short
+// regardless of the CLI arg form: a single-calendar node set yields the calendar
+// dir, a multi-calendar set the shared ancestor dir, zero nodes the empty string.
+func TestCommonURIPrefix(t *testing.T) {
+	single := []cgp.Node{
+		{URI: mustURL(t, "caldav://h/dav/cal/a.ics")},
+		{URI: mustURL(t, "caldav://h/dav/cal/b.ics")},
+	}
+	if got := commonURIPrefix(single); got != "caldav://h/dav/cal/" {
+		t.Errorf("single-calendar prefix = %q, want caldav://h/dav/cal/", got)
+	}
+
+	multi := []cgp.Node{
+		{URI: mustURL(t, "caldav://h/dav/user/me/cal1/a.ics")},
+		{URI: mustURL(t, "caldav://h/dav/user/me/cal2/b.ics")},
+	}
+	if got := commonURIPrefix(multi); got != "caldav://h/dav/user/me/" {
+		t.Errorf("multi-calendar prefix = %q, want caldav://h/dav/user/me/", got)
+	}
+
+	if got := commonURIPrefix(nil); got != "" {
+		t.Errorf("zero-node prefix = %q, want empty", got)
+	}
+}
+
 // TestDistinctTypes pins the type-set derivation driving the spelling choice.
 func TestDistinctTypes(t *testing.T) {
 	one := []cgp.Node{{Type: "caldav-object-v1"}, {Type: "caldav-object-v1"}}

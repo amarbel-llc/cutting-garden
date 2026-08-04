@@ -30,7 +30,21 @@ func (cmd *Organize) runGenerate(ctx errors.Context, uriStr string) error {
 		return errors.Wrapf(err, "organize %s", uriStr)
 	}
 
-	doc := buildDocument(nodes, uriStr, cmd.Query, cmd.GroupBy, lister)
+	// Anchor the document at the selected nodes' common URI prefix rather than
+	// the raw CLI arg, so box ids shorten regardless of the arg form (a
+	// `caldav:<name>` alias, or the `caldav:https://` vs `caldav://` spelling) —
+	// the prefix is itself a valid re-query anchor (the calendar for a
+	// single-calendar query, the home for a multi). Fall back to the arg when
+	// there is no common prefix (e.g. zero nodes).
+	anchor := commonURIPrefix(nodes)
+	if anchor == "" {
+		anchor = uriStr
+	}
+
+	doc := buildDocument(nodes, anchor, cmd.Query, cmd.GroupBy, lister)
+	// Provenance records what the user actually typed (e.g. the short alias),
+	// even though _anchor is the canonical common prefix.
+	doc.Provenance = provenance(cmd.GroupBy, cmd.Query, uriStr)
 
 	// The canonical form (no `_base`) is the exact bytes hashed and stored; its
 	// digest becomes the pin the emitted form carries.
@@ -114,6 +128,40 @@ func writableBuckets(lister cgp.RootLister, tag, dim string) []string {
 		}
 	}
 	return nil
+}
+
+// commonURIPrefix returns the longest common prefix of the nodes' URIs, trimmed
+// back to the last '/' so it ends at a path boundary — the calendar URL for a
+// single-calendar node set, the home for a multi-calendar one. Empty for zero
+// nodes or nodes with no shared path boundary.
+func commonURIPrefix(nodes []cgp.Node) string {
+	if len(nodes) == 0 {
+		return ""
+	}
+	prefix := nodes[0].URIString()
+	for _, n := range nodes[1:] {
+		prefix = commonStringPrefix(prefix, n.URIString())
+		if prefix == "" {
+			return ""
+		}
+	}
+	if i := strings.LastIndexByte(prefix, '/'); i >= 0 {
+		return prefix[:i+1]
+	}
+	return ""
+}
+
+// commonStringPrefix returns the longest byte-prefix shared by a and b.
+func commonStringPrefix(a, b string) string {
+	n := len(a)
+	if len(b) < n {
+		n = len(b)
+	}
+	i := 0
+	for i < n && a[i] == b[i] {
+		i++
+	}
+	return a[:i]
 }
 
 // provenance renders the inert `%` provenance note recording how the document was
