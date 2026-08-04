@@ -21,13 +21,21 @@ func (Plugin) DescribeFacetWrites() []cutting_garden_plugins.NodeTypeFacetWrites
 	one := cutting_garden_plugins.FacetWriteOne
 	none := cutting_garden_plugins.FacetWriteNone
 
+	// The VTODO STATUS workflow, in progression order. organize pre-renders these
+	// as empty `## =VALUE` buckets so a task is reorganized by moving its line
+	// under an existing heading. It is the task enum specifically (the tracer's
+	// domain); VEVENT/VJOURNAL statuses differ and are simply not pre-listed —
+	// observed values still render (a write-side convenience list, not a closed
+	// read domain). Kept in RFC 5545 §3.8.1.11 order.
+	taskStatuses := []string{"NEEDS-ACTION", "IN-PROCESS", "COMPLETED", "CANCELLED"}
+
 	return []cutting_garden_plugins.NodeTypeFacetWrites{
 		{
 			Tag: typeObject,
 			Writes: []cutting_garden_plugins.FacetWrite{
 				{DimensionKey: facetYear, Mode: one, Field: primaryDate, CompletionHint: dateHint},
 				{DimensionKey: facetMonth, Mode: one, Field: primaryDate, CompletionHint: dateHint},
-				{DimensionKey: facetStatus, Mode: one, Field: "status"},
+				{DimensionKey: facetStatus, Mode: one, Field: "status", Values: taskStatuses},
 				// component is the object's kind (VEVENT/VTODO): changing it
 				// re-creates the object, not an organize field edit.
 				{DimensionKey: facetComponent, Mode: none},

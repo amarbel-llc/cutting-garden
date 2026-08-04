@@ -15,6 +15,7 @@ import (
 	"code.linenisgreat.com/cutting-garden/internal/hook"
 	"code.linenisgreat.com/cutting-garden/internal/list"
 	"code.linenisgreat.com/cutting-garden/internal/mcp"
+	"code.linenisgreat.com/cutting-garden/internal/organize"
 	"code.linenisgreat.com/cutting-garden/internal/restore"
 	"code.linenisgreat.com/cutting-garden/internal/serve"
 	"code.linenisgreat.com/cutting-garden/internal/version"
@@ -54,6 +55,7 @@ func Build() command.Utility {
 	utility.AddCmd("health", health.New())
 	utility.AddCmd("list", list.New())
 	utility.AddCmd("mcp", mcp.New())
+	utility.AddCmd("organize", organize.New())
 	utility.AddCmd("version", version.New())
 	// Hidden plumbing: the RFC 0002 writer-protocol sink a config-
 	// declared capture plugin's v1 capture-batch fallback pipes node

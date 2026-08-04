@@ -473,6 +473,135 @@ debug-caldav-expand-probe CAL='93fe8ff4-b027-4c5e-a961-96ec236624d8' START='2026
       grep -oE '(SUMMARY|DTSTART|RECURRENCE-ID|RRULE)[^[:space:]<]{0,60}' "$tmp/$n.out" || true
     done
 
+# Render the organize document the CLI emits for the caldav testserver's
+# Personal calendar, grouped by GROUP_BY — the eyeball loop for the RFC 0015
+# espalier dialect (FDR 0023). Builds the binary + testserver, isolates state in
+# a throwaway HOME, starts the testserver as a coproc, and prints the generated
+# document (with its content-addressed `- _base` pin) to stdout. READ-ONLY on the
+# server; writes only the base blob into the throwaway store.
+#
+# render the organize document for the caldav testserver's Personal calendar
+[group('debug')]
+debug-organize-fixture GROUP_BY='status': debug-build-go
+    #!/usr/bin/env bash
+    set -euo pipefail
+    root="{{ justfile_directory() }}"
+    cd "$root"
+    nix develop --command go build -o .tmp/cutting-garden-caldav-testserver ./cmd/cutting-garden-caldav-testserver
+    nix develop --command madder init -encryption none .default 2>/dev/null || true
+    coproc SRV { .tmp/cutting-garden-caldav-testserver; }
+    read -r -u "${SRV[0]}" source_url _calpath
+    cal="${source_url%/dav/}/dav/cal/"
+    echo "# cg organize -group-by {{ GROUP_BY }} $cal" >&2
+    echo '# ---------------------------------------------------------------' >&2
+    .tmp/cutting-garden organize -group-by {{ GROUP_BY }} "$cal"
+    exec {SRV[1]}>&- || true
+
+# Render (dry-run, READ-ONLY on the server) the organize document for a LIVE
+# Fastmail calendar, grouped by GROUP_BY. With an empty CAL, lists the calendars
+# under the account home so you can pick the task calendar's UID; with a CAL uid,
+# runs `organize` against that calendar (generate is read-only on caldav; it
+# writes only a base blob into the local madder store — no PUT/DELETE, no
+# -commit). Credentials come from piggy (fastmail-caldav.env); the secret is
+# never echoed or written to disk.
+#
+# render the organize document for a live Fastmail calendar (dry-run)
+[group('debug')]
+debug-organize-live CAL='' GROUP_BY='status': debug-build-go
+    #!/usr/bin/env bash
+    set -euo pipefail
+    set +x
+    set -a
+    . <(piggy pass show fastmail-caldav.env)
+    set +a
+    : "${CALDAV_USERNAME:?fastmail-caldav.env did not define CALDAV_USERNAME}"
+    : "${CALDAV_PASSWORD:?fastmail-caldav.env did not define CALDAV_PASSWORD}"
+    root="{{ justfile_directory() }}"
+    cd "$root"
+    nix develop --command madder init -encryption none .default 2>/dev/null || true
+    home="caldav:https://caldav.fastmail.com/dav/calendars/user/${CALDAV_USERNAME}/"
+    if [[ -z '{{ CAL }}' ]]; then
+      echo "# discovering calendars under the account home (pick the task list's UID)" >&2
+      .tmp/cutting-garden list "$home"
+    else
+      cal="${home}{{ CAL }}/"
+      echo "# cg organize -group-by {{ GROUP_BY }} $cal" >&2
+      echo '# ---------------------------------------------------------------' >&2
+      .tmp/cutting-garden organize -group-by {{ GROUP_BY }} "$cal"
+    fi
+
+# DRY-RUN --apply against a LIVE Fastmail calendar: generate the organize
+# document for CAL, move its first object under a `## =VALUE` bucket, and run
+# `organize -apply` WITHOUT -commit (prints the intended write, PUTs nothing).
+# Proves the full generate -> edit -> three-way-merge path against real data with
+# zero mutation. Credentials come from piggy; the secret is never echoed.
+#
+# dry-run --apply against a live Fastmail calendar (no writes)
+[group('debug')]
+debug-organize-live-apply CAL='zz-ax-vtodo-playground' GROUP_BY='status' VALUE='COMPLETED': debug-build-go
+    #!/usr/bin/env bash
+    set -euo pipefail
+    set +x
+    set -a
+    . <(piggy pass show fastmail-caldav.env)
+    set +a
+    : "${CALDAV_USERNAME:?fastmail-caldav.env did not define CALDAV_USERNAME}"
+    : "${CALDAV_PASSWORD:?fastmail-caldav.env did not define CALDAV_PASSWORD}"
+    root="{{ justfile_directory() }}"
+    cd "$root"
+    nix develop --command madder init -encryption none .default 2>/dev/null || true
+    cal="caldav:https://caldav.fastmail.com/dav/calendars/user/${CALDAV_USERNAME}/{{ CAL }}/"
+    gen="$(mktemp)"; edited="$(mktemp)"
+    trap 'rm -f "$gen" "$edited"' EXIT
+    .tmp/cutting-garden organize -group-by {{ GROUP_BY }} "$cal" >"$gen"
+    first="$(awk '/^- \[/ {print; exit}' "$gen")"
+    if [[ -z "$first" ]]; then echo "# no objects to move in $cal" >&2; exit 0; fi
+    awk -v line="$first" -v h='## ={{ VALUE }}' '
+      $0 == line { next }
+      { print }
+      $0 == h { print ""; print line }
+    ' "$gen" >"$edited"
+    echo "# moved first object under ## ={{ VALUE }}; organize -apply (dry-run, no -commit):" >&2
+    echo '# ---------------------------------------------------------------' >&2
+    .tmp/cutting-garden organize -apply "$edited"
+
+# INTERACTIVE organize against a LIVE Fastmail calendar: generate the document,
+# open it in $EDITOR (vim) so you move object lines between `## =VALUE` buckets by
+# hand, then on save run `organize -apply` and print what would change. Dry-run by
+# default (prints intended writes, PUTs nothing); pass COMMIT=1 to actually write.
+# Run this in a terminal — it needs a TTY for the editor. Credentials come from
+# piggy; the secret is never echoed.
+#
+# interactively edit + apply the organize document for a live Fastmail calendar
+[group('debug')]
+debug-organize-live-edit CAL='zz-ax-vtodo-playground' GROUP_BY='status' COMMIT='':
+    #!/usr/bin/env bash
+    set -euo pipefail
+    set +x
+    set -a
+    . <(piggy pass show fastmail-caldav.env)
+    set +a
+    : "${CALDAV_USERNAME:?fastmail-caldav.env did not define CALDAV_USERNAME}"
+    : "${CALDAV_PASSWORD:?fastmail-caldav.env did not define CALDAV_PASSWORD}"
+    root="{{ justfile_directory() }}"
+    cd "$root"
+    nix develop --command go build -o .tmp/cutting-garden ./cmd/cutting-garden
+    nix develop --command madder init -encryption none .default 2>/dev/null || true
+    cal="caldav:https://caldav.fastmail.com/dav/calendars/user/${CALDAV_USERNAME}/{{ CAL }}/"
+    mkdir -p .tmp
+    doc=".tmp/organize-{{ GROUP_BY }}.txt"
+    .tmp/cutting-garden organize -group-by {{ GROUP_BY }} "$cal" >"$doc"
+    "${EDITOR:-vim}" "$doc"
+    if [[ -n '{{ COMMIT }}' ]]; then
+      echo '# organize -apply -commit (WRITES to the live calendar):' >&2
+      echo '# ---------------------------------------------------------------' >&2
+      .tmp/cutting-garden organize -apply "$doc" -commit
+    else
+      echo '# organize -apply (dry-run — prints intended writes, PUTs nothing):' >&2
+      echo '# ---------------------------------------------------------------' >&2
+      .tmp/cutting-garden organize -apply "$doc"
+    fi
+
 # Capture a live jira: NODE (READ-ONLY) into a throwaway store, emitting the
 # RFC 0002 merkle receipt — the FDR 0019 protocol-capture smoke loop (#110).
 # NODE is the in-jira path under $JIRA_URL's host (e.g. PROJ or PROJ/PROJ-1).

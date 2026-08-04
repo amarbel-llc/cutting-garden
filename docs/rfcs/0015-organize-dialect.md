@@ -19,6 +19,19 @@ revised: |
     `%:` form is intentionally not an RFC 0001 metadata line. A future hyphence
     RFC may promote `%:` into the envelope as a first-class construct (the
     proper long-term fix); until then this out-of-envelope reading is normative.
+  2026-08-04 — IMPLEMENTED dialect (FDR 0023 Slice 2a, `internal/organize`).
+    Settled with Sasha over a mockup iteration and normatively captured in the
+    "Implemented dialect" section below, which SUPERSEDES the pre-implementation
+    prose where they conflict. Load-bearing changes from the earlier draft:
+    the whole document is ONE hyphence `---` envelope (RFC 0001 proper), so the
+    `%` provenance comment lives INSIDE the metadata block (not out-of-envelope)
+    and `_base`/`_anchor`/`_query`/`_type` are envelope `-` fields; the object
+    TYPE is a leading `# !<type>` heading OR a distributed `- _type = !<type>`
+    envelope field (two spellings), and the **trailing `! <type>` type-anchor of
+    the earlier draft was a mistake and is removed**; `_group-by` is removed (the
+    grouped dimension IS the `<dim>=` heading); headings nest arbitrarily deep;
+    a blank line follows every heading. The `%:` operational-directive machinery
+    (deletion gates, dry-run) is not exercised by Slice 2a and is untouched here.
 ---
 
 # The organize document dialect
@@ -40,6 +53,64 @@ schema, which this RFC extends with write descriptors); FDR 0020 /
 ContainerCreator (#143) as the write surface. Precedent throughout is
 dodder's organize (orgie), whose confirmed behaviors this dialect
 preserves or deliberately supersedes — each divergence is marked.
+
+## Implemented dialect (2026-08, FDR 0023 Slice 2a)
+
+The document `cg organize` generates and applies is a single hyphence RFC 0001
+document — the exact bytes presented to and edited by the end-user:
+
+```
+---
+% generated: cg organize -group-by status caldav:https://…/cal/
+- _base = @blake2b256-<digest of this doc with the _base line excised>
+- _anchor = caldav:https://…/cal/
+- _type = !caldav-object-v1            (spelling 2 only; see below)
+! organize-base-v1
+---
+
+# status=                              (spelling 2: dimension at depth 1)
+
+## =NEEDS-ACTION
+
+## =COMPLETED
+
+- [task1.ics] Buy milk
+```
+
+- **Envelope.** The `---`-fenced block is a hyphence envelope (`hyphence.Boundary`).
+  Metadata: a `%` **provenance comment** (a proper RFC 0001 comment, INSIDE the
+  block, buffered as a leading comment); the framework `-` fields `_base` (the
+  content-addressed pin), `_anchor` (the plugin URI apply re-resolves the live
+  state from and against which relative object ids resolve), optional `_query`
+  (the trellis selection), and — for spelling 2 — `_type`; and the
+  `! organize-base-v1` type. The user MAY hand-add distributing `- <term>` /
+  `- <key> = <value>` lines here to apply them to every object (§Object lines
+  distribution). `_base` self-reference: the stored blob is this document with the
+  `- _base` line excised; the emitted document re-inserts the pin (§base-blob shape).
+- **Body: a heading ladder of arbitrary depth.** An object's effective terms are
+  the union of its heading path. The grouped dimension IS a `<dim>=` heading (there
+  is NO `_group-by` field); each `=<value>` sub-heading is a bucket; the plugin's
+  declared `FacetWrite.Values` are pre-rendered as empty buckets so a caller moves
+  an object under an existing state heading. A blank line follows every heading.
+- **Two type spellings** (marker symmetry — the same `!<type>` term, scoped vs
+  distributed):
+  - **Spelling 1 — type as heading**: a leading `# !<type>` scopes objects, then
+    `## <dim>=` → `### =<value>`; object boxes carry inline `!type`.
+  - **Spelling 2 — type in envelope**: `- _type = !<type>` distributes the type to
+    every object; boxes drop `!type`; the ladder is one level shallower. Generation
+    emits spelling 2 for a single-type node set (flatter), spelling 1 for a
+    multi-type set; the parser accepts either.
+- **Object lines** are espalier boxes `- [<id> !<type>] <desc>` with
+  anchor-relative short ids; a bare box that carries only a term (no id/trailer)
+  drops the brackets — which is why a type *heading* is `# !type`, not `# [!type]`.
+- **The trailing `! <type>` type-anchor of the earlier draft is removed** (it was a
+  mistake): the object type is the leading heading or the envelope field, never a
+  trailing line, which is distinct from the envelope's own `! organize-base-v1`.
+
+The rest of this RFC (delta semantics, deletion, modes, write descriptors) is
+unchanged and reads against this dialect; the pre-implementation §Document
+structure / §Headings / §Object-lines prose below predates it and is superseded
+where it conflicts.
 
 ## Core principle
 

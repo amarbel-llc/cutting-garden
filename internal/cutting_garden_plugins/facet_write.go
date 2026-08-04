@@ -54,6 +54,17 @@ type FacetWrite struct {
 	// the write's behavior; the plugin, never the framework, computes the actual
 	// value (FDR 0023: timezone handling lives in the plugin).
 	CompletionHint string
+	// Values, when non-empty, is the ordered set of target buckets organize
+	// pre-renders as (possibly empty) headings for this dimension, so a caller
+	// can move an object under an existing bucket instead of typing the value
+	// (RFC 0015 "make it easy to swap states"). It is a WRITE-SIDE convenience
+	// list, independent of the read-side FacetDimension.Values closed domain
+	// (which governs filter validation): declaring it here neither closes the
+	// read dimension nor rejects observed values outside it — organize appends
+	// observed-but-undeclared buckets after the declared ones. Meaningful only
+	// for a small enumerable write:one/many dimension (a status enum); a
+	// numeric/open dimension (a date bucket) leaves it empty.
+	Values []string
 }
 
 // NodeTypeFacetWrites binds a set of FacetWrites to one node type — the

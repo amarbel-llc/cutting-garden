@@ -1366,6 +1366,12 @@ type facetDimSchema struct {
 	// (e.g. "date-bucket move preserves clock time"); descriptive only — the
 	// plugin, never the framework, computes the value.
 	CompletionHint string `json:"completionHint,omitempty"`
+	// WriteValues, when present, is the ordered set of target buckets an
+	// organize document pre-renders as headings for this dimension (a status
+	// enum), so a caller moves an object under an existing bucket rather than
+	// typing the value. A write-side convenience list, independent of the
+	// read-side closed domain above (FacetWrite.Values, FDR 0023).
+	WriteValues []string `json:"writeValues,omitempty"`
 }
 
 // facetDimSchemas projects a plugin's declared FacetDimensions into their
@@ -1402,6 +1408,7 @@ func facetDimSchemas(
 			s.IdentityAffecting = w.IdentityAffecting
 			s.CreationRequired = w.CreationRequired
 			s.CompletionHint = w.CompletionHint
+			s.WriteValues = w.Values
 		}
 		out = append(out, s)
 	}
