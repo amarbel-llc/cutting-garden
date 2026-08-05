@@ -15,6 +15,7 @@ import (
 	"code.linenisgreat.com/madder/go/pkgs/blob_stores"
 	"code.linenisgreat.com/piggy/go/pkgs/markl"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
+	"github.com/charmbracelet/huh"
 )
 
 // move is one node whose bucket changed between the pinned base and the edited
@@ -26,28 +27,64 @@ type move struct {
 	Node cgp.Node // the live node, carrying the component/type the write needs
 }
 
-// runApply reads an edited organize document, three-way-merges it against the
-// pinned base and the re-queried live state, and writes the resulting bucket
-// moves through the plugin's NodeMutator. Default is dry-run: it prints the
-// intended writes and touches nothing until --commit.
+// confirmThreshold is the change-set size above which an interactive commit asks
+// for a single yes/no confirmation before writing anything.
+const confirmThreshold = 30
+
+// runApply reads an edited organize document from a path (or stdin for "-") and
+// applies it non-interactively. Default is dry-run (prints the intended writes);
+// -commit performs them.
 func (cmd *Organize) runApply(ctx errors.Context, applyPath string) error {
 	editedText, err := readApplyInput(applyPath)
 	if err != nil {
 		return err
 	}
-	edited, err := parseDocument(editedText)
+	_, err = cmd.applyDocument(ctx, editedText, cmd.Commit, false)
+	return err
+}
+
+// runCommitDirectly reads an edited document from stdin and applies it,
+// committing the writes — the scripted re-apply-a-saved-dry-run path (dodder's
+// commit-directly mode). The mode itself is the commit assertion.
+func (cmd *Organize) runCommitDirectly(ctx errors.Context) error {
+	editedText, err := readApplyInput("-")
 	if err != nil {
 		return err
 	}
+	_, err = cmd.applyDocument(ctx, editedText, true, false)
+	return err
+}
+
+// shouldConfirm reports whether an apply warrants the large-batch confirmation
+// gate: an interactive commit whose change set exceeds the threshold. A
+// scripted/piped commit (interactive=false) asserts intent by its mode and is
+// never gated.
+func shouldConfirm(commit, interactive bool, moveCount int) bool {
+	return commit && interactive && moveCount > confirmThreshold
+}
+
+// applyDocument three-way-merges an edited organize document against its pinned
+// base and the re-queried live state, then writes the resulting bucket moves
+// through the plugin's NodeMutator. commit gates dry-run vs writes; interactive
+// enables the large-batch confirmation gate. It returns whether writes were
+// actually performed (the effective commit state after any declined gate), which
+// the interactive caller uses to decide the edited buffer's fate.
+func (cmd *Organize) applyDocument(
+	ctx errors.Context, editedText string, commit, interactive bool,
+) (committed bool, err error) {
+	edited, err := parseDocument(editedText)
+	if err != nil {
+		return false, err
+	}
 	dim := edited.groupedDimension()
 	if edited.Anchor == "" || dim == "" {
-		return errors.BadRequestf(
+		return false, errors.BadRequestf(
 			"organize --apply: document is missing its `- _anchor` field or its " +
 				"`<dim>=` grouping heading",
 		)
 	}
 	if edited.BaseDigest == "" {
-		return errors.BadRequestf(
+		return false, errors.BadRequestf(
 			"organize --apply: document has no `- _base = @<digest>` pin to merge against",
 		)
 	}
@@ -55,33 +92,48 @@ func (cmd *Organize) runApply(ctx errors.Context, applyPath string) error {
 	store := command_components.MakeBlobStoreEnv(ctx).GetDefaultBlobStore()
 	baseBody, err := readBase(store, edited.BaseDigest)
 	if err != nil {
-		return err
+		return false, err
 	}
 	base, err := parseDocument(baseBody)
 	if err != nil {
-		return errors.Wrapf(err, "organize --apply: parse pinned base blob")
+		return false, errors.Wrapf(err, "organize --apply: parse pinned base blob")
 	}
 
 	u, lister, err := command_components.ResolveRootListerPlugin(edited.Anchor)
 	if err != nil {
-		return err
+		return false, err
 	}
 	liveNodes, err := selectNodes(ctx, lister, u, edited.Query)
 	if err != nil {
-		return errors.Wrapf(err, "organize --apply: re-query live state")
+		return false, errors.Wrapf(err, "organize --apply: re-query live state")
 	}
 
 	moves, err := planMoves(edited, base, dim, liveNodes)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	mutator, writes, err := resolveWrites(lister, dim)
 	if err != nil {
-		return err
+		return false, err
 	}
 
-	return cmd.executePlan(ctx, mutator, writes, moves)
+	if shouldConfirm(commit, interactive, len(moves)) {
+		ok, cerr := confirmLargeApply(len(moves))
+		if cerr != nil {
+			return false, cerr
+		}
+		if !ok {
+			commit = false
+			fmt.Fprintln(cmd.output,
+				"organize: large change not confirmed — showing the plan without writing")
+		}
+	}
+
+	if err := cmd.executePlan(ctx, mutator, writes, moves, commit); err != nil {
+		return false, err
+	}
+	return commit, nil
 }
 
 // planMoves computes the three-way merge, keyed by box id. The stored box ids
@@ -182,14 +234,30 @@ func resolveWrites(
 	return mutator, writes, nil
 }
 
-// executePlan writes (or, in dry-run, prints) each move. The mode/readability
-// checks are per-move so a mixed-type node set is validated node by node against
-// its own type's mapping.
+// confirmLargeApply presents the large-batch yes/no gate for an interactive
+// commit exceeding confirmThreshold moves, returning the user's decision.
+func confirmLargeApply(moveCount int) (bool, error) {
+	confirmed := false
+	prompt := huh.NewConfirm().
+		Title(fmt.Sprintf("Apply %d changes?", moveCount)).
+		Affirmative("Apply").
+		Negative("Cancel").
+		Value(&confirmed)
+	if err := prompt.Run(); err != nil {
+		return false, errors.Wrapf(err, "organize: confirmation prompt")
+	}
+	return confirmed, nil
+}
+
+// executePlan writes (or, in dry-run, prints) each move. commit gates the two.
+// The mode/readability checks are per-move so a mixed-type node set is validated
+// node by node against its own type's mapping.
 func (cmd *Organize) executePlan(
 	ctx context.Context,
 	mutator cgp.NodeMutator,
 	writes map[string]cgp.FacetWrite,
 	moves []move,
+	commit bool,
 ) error {
 	if len(moves) == 0 {
 		fmt.Fprintln(cmd.output, "organize: no moves to apply")
@@ -222,7 +290,7 @@ func (cmd *Organize) executePlan(
 			return err
 		}
 
-		if !cmd.Commit {
+		if !commit {
 			fmt.Fprintf(cmd.output, "would move %s: %s %q -> %q\n", mv.URI, w.Field, mv.From, mv.To)
 			continue
 		}

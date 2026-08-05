@@ -565,10 +565,11 @@ debug-organize-live-apply CAL='zz-ax-vtodo-playground' GROUP_BY='status' VALUE='
     echo '# ---------------------------------------------------------------' >&2
     .tmp/cutting-garden organize -apply "$edited"
 
-# INTERACTIVE organize against a LIVE Fastmail calendar: generate the document,
-# open it in $EDITOR (vim) so you move object lines between `## =VALUE` buckets by
-# hand, then on save run `organize -apply` and print what would change. Dry-run by
-# default (prints intended writes, PUTs nothing); pass COMMIT=1 to actually write.
+# INTERACTIVE organize against a LIVE Fastmail calendar, exercising the default
+# interactive round-trip: a bare `organize <cal> -group-by status` on a TTY
+# generates the document, opens it in $EDITOR so you move object lines between
+# `## =VALUE` buckets, and applies on save. Dry-run by default (prints intended
+# writes + a temp-file path to re-apply, PUTs nothing); pass COMMIT=1 to write.
 # Run this in a terminal — it needs a TTY for the editor. Credentials come from
 # piggy; the secret is never echoed.
 #
@@ -588,18 +589,12 @@ debug-organize-live-edit CAL='zz-ax-vtodo-playground' GROUP_BY='status' COMMIT='
     nix develop --command go build -o .tmp/cutting-garden ./cmd/cutting-garden
     nix develop --command madder init -encryption none .default 2>/dev/null || true
     cal="caldav:https://caldav.fastmail.com/dav/calendars/user/${CALDAV_USERNAME}/{{ CAL }}/"
-    mkdir -p .tmp
-    doc=".tmp/organize-{{ GROUP_BY }}.txt"
-    .tmp/cutting-garden organize -group-by {{ GROUP_BY }} "$cal" >"$doc"
-    "${EDITOR:-vim}" "$doc"
+    # No stdout redirect: cg detects the TTY and drives the interactive
+    # generate -> $EDITOR -> apply round-trip itself.
     if [[ -n '{{ COMMIT }}' ]]; then
-      echo '# organize -apply -commit (WRITES to the live calendar):' >&2
-      echo '# ---------------------------------------------------------------' >&2
-      .tmp/cutting-garden organize -apply "$doc" -commit
+      .tmp/cutting-garden organize -group-by {{ GROUP_BY }} -commit "$cal"
     else
-      echo '# organize -apply (dry-run — prints intended writes, PUTs nothing):' >&2
-      echo '# ---------------------------------------------------------------' >&2
-      .tmp/cutting-garden organize -apply "$doc"
+      .tmp/cutting-garden organize -group-by {{ GROUP_BY }} "$cal"
     fi
 
 # Capture a live jira: NODE (READ-ONLY) into a throwaway store, emitting the

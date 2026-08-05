@@ -25,6 +25,19 @@ forgejo/jira, newsblur, fs, dodder-as-regression-check); every decision
 individually confirmed. RFC 0015 carries the normative rules; this
 record carries the shape, the per-substrate findings, and the ledgers.
 
+**2026-08-05 — interactive round-trip (implemented).** A bare
+`organize <uri> -group-by <facet>` on a TTY now generates the document
+into a temp file, opens `$EDITOR` (→ `$VISUAL` → `vi`), and applies on
+save — dodder's interactive default. With stdout piped/redirected it
+prints the document (the MCP/scripting path); `-apply <path>` and
+`-commit-directly < doc` are the scripted apply forms. The dry-run vs
+commit gate is the **`-commit` CLI flag, defaulting to dry-run**: the
+`%:dry-run` directive-in-doc gate the grill designed is deferred until
+`%:` is promoted to a first-class hyphence envelope construct
+(hyphence#14). After a dry-run the edited buffer's path is printed for
+re-apply; an interactive commit whose change set exceeds 30 objects gets
+a single `huh` confirmation. Line-deletion stays out of scope (cg#215).
+
 ## Shape
 
 - `cg organize <uri> [--query <trellis>] [--group-by <facet-key>]

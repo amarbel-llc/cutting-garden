@@ -11,23 +11,24 @@ import (
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
-// runGenerate selects the anchor's nodes, builds the organize document, stores
-// its canonical form as an organize-base-v1 blob, and prints the emitted form
-// (with the `- _base` pin) so a later --apply three-way-merges the edits against
-// the exact pre-edit state.
-func (cmd *Organize) runGenerate(ctx errors.Context, uriStr string) error {
+// buildAndStore selects the anchor's nodes, builds the organize document, stores
+// its canonical form as an organize-base-v1 blob, and returns the emitted form
+// (with the `- _base` pin) so a later apply three-way-merges the edits against
+// the exact pre-edit state. Shared by the stdout (runGenerate) and interactive
+// (runInteractive) paths.
+func (cmd *Organize) buildAndStore(ctx errors.Context, uriStr string) (string, error) {
 	if cmd.GroupBy == "" {
-		return errors.BadRequestf("organize <uri> requires --group-by <facet-key>")
+		return "", errors.BadRequestf("organize <uri> requires --group-by <facet-key>")
 	}
 
 	u, lister, err := command_components.ResolveRootListerPlugin(uriStr)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	nodes, err := selectNodes(ctx, lister, u, cmd.Query)
 	if err != nil {
-		return errors.Wrapf(err, "organize %s", uriStr)
+		return "", errors.Wrapf(err, "organize %s", uriStr)
 	}
 
 	// Anchor the document at the selected nodes' common URI prefix rather than
@@ -50,11 +51,21 @@ func (cmd *Organize) runGenerate(ctx errors.Context, uriStr string) error {
 	// digest becomes the pin the emitted form carries.
 	digest, err := cmd.storeBase(ctx, renderCanonical(doc))
 	if err != nil {
-		return err
+		return "", err
 	}
 	doc.BaseDigest = digest
 
-	if _, err := io.WriteString(cmd.output, render(doc)); err != nil {
+	return render(doc), nil
+}
+
+// runGenerate builds the document and prints the emitted form to stdout — the
+// non-interactive path (a pipe/redirect, or an MCP/scripting consumer).
+func (cmd *Organize) runGenerate(ctx errors.Context, uriStr string) error {
+	rendered, err := cmd.buildAndStore(ctx, uriStr)
+	if err != nil {
+		return err
+	}
+	if _, err := io.WriteString(cmd.output, rendered); err != nil {
 		return errors.Wrap(err)
 	}
 	return nil

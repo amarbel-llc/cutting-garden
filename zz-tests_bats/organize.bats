@@ -103,6 +103,24 @@ function organize_apply_dry_run_does_not_write { # @test
   refute_output --partial 'task1.ics'
 }
 
+# -commit-directly reads the edited document from stdin and commits it — the
+# scripted re-apply path (dodder's commit-directly mode; the mode itself is the
+# commit assertion). Proves stdin ingestion writes through to the live object.
+function organize_commit_directly_from_stdin_writes { # @test
+  generate_doc
+  local edited="$BATS_TEST_TMPDIR/edited.txt"
+  move_task1_under COMPLETED "$edited"
+
+  run_cg organize -commit-directly <"$edited"
+  assert_success
+  assert_output --partial 'task1.ics'
+
+  run_cg list -query 'status=COMPLETED' "$CAL"
+  assert_success
+  assert_output --partial 'task1.ics'
+  refute_output --partial 'task2.ics'
+}
+
 # A pinned base whose live state has drifted is a conflict, not a silent clobber:
 # commit one move, then apply a second edit built against the ORIGINAL base — the
 # merge must reject.

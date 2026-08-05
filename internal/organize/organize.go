@@ -3,19 +3,25 @@
 // substrate writes — dodder's organize upstreamed and generalized across
 // plugins (FDR 0023, RFC 0015).
 //
-// Two modes on one command:
+// Invocation shapes:
 //
-//	organize <uri> --group-by <facet> [--query <trellis>]   generate a document
-//	organize --apply <path> [--commit]                      apply an edited one
+//	organize <uri> --group-by <facet> [--query <trellis>]   interactive (TTY) / generate (pipe)
+//	organize --apply <path> [--commit]                      apply an edited document
+//	organize --commit-directly < doc                        apply from stdin, committing
 //
-// Generate selects the anchor's nodes (a trellis query, or the enriched child
-// listing), groups them by the --group-by facet dimension, pins the pre-edit
-// assignment as a content-addressed organize-base-v1 blob, and prints the
-// document with a `- _base=@<digest>` line. You move object lines between
-// headings and feed the result back with --apply, which three-way-merges your
-// edits against the pinned base and the re-queried live state and writes each
-// bucket move through the plugin's NodeMutator. Apply is dry-run by default
-// (prints the intended writes); --commit performs them.
+// A bare `organize <uri>` on a terminal generates the document into a temp file,
+// opens it in $EDITOR, and applies the result on save (dodder's interactive
+// default); with stdout piped/redirected it just prints the document (the
+// MCP/scripting path). Generate selects the anchor's nodes (a trellis query, or
+// the enriched child listing), groups them by the --group-by facet dimension,
+// pins the pre-edit assignment as a content-addressed organize-base-v1 blob, and
+// emits the document with a `- _base=@<digest>` line. You move object lines
+// between headings; apply three-way-merges your edits against the pinned base and
+// the re-queried live state and writes each bucket move through the plugin's
+// NodeMutator. Apply is dry-run by default (prints the intended writes); --commit
+// performs them (the interim lever pending the `%:dry-run` directive, hyphence#14).
+// An interactive commit whose change set exceeds a threshold gets a single yes/no
+// confirmation before writing.
 //
 // This is the FDR 0023 caldav tracer bullet: the writable dimension it exercises
 // end-to-end is `status` (a passthrough enum). Date reschedule-by-move, which
@@ -25,6 +31,7 @@
 package organize
 
 import (
+	"fmt"
 	"io"
 	"os"
 
@@ -32,6 +39,7 @@ import (
 	"code.linenisgreat.com/cutting-garden/internal/command_components"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/interfaces"
+	"github.com/mattn/go-isatty"
 )
 
 // Organize is the value registered for the `organize` subcommand.
@@ -46,8 +54,13 @@ type Organize struct {
 	// to merge and write, or "-" for stdin. The anchor, group-by, and query are
 	// recovered from the document's directives, so no <uri> is re-passed.
 	Apply string
+	// CommitDirectly reads an edited document from stdin and applies it,
+	// committing the writes (dodder's commit-directly mode) — the scripted
+	// re-apply of a previously-generated dry-run document.
+	CommitDirectly bool
 	// Commit performs the writes; the default is a dry-run that prints the
-	// intended moves and touches nothing.
+	// intended moves and touches nothing. It is the interim dry-run/commit lever
+	// pending the `%:dry-run` directive-in-doc (hyphence#14).
 	Commit bool
 	output io.Writer
 }
@@ -99,6 +112,12 @@ func (cmd *Organize) SetFlagDefinitions(flagSet interfaces.CLIFlagDefinitions) {
 		"apply an edited document instead of generating one (path, or - for stdin)",
 	)
 	flagSet.BoolVar(
+		&cmd.CommitDirectly,
+		"commit-directly",
+		false,
+		"read an edited document from stdin and apply it, committing the writes",
+	)
+	flagSet.BoolVar(
 		&cmd.Commit,
 		"commit",
 		false,
@@ -117,7 +136,19 @@ func (cmd *Organize) Run(req command.Request) {
 		return
 	}
 
-	// Apply mode recovers its anchor from the document, so it takes no <uri>.
+	// Apply modes recover their anchor from the document, so they take no <uri>.
+	if cmd.CommitDirectly && cmd.Apply != "" {
+		errors.ContextCancelWithBadRequestf(ctx,
+			"organize: -commit-directly reads the document from stdin; do not also "+
+				"pass -apply")
+		return
+	}
+	if cmd.CommitDirectly {
+		if err := cmd.runCommitDirectly(ctx); err != nil {
+			errors.ContextCancelWithError(ctx, err)
+		}
+		return
+	}
 	if cmd.Apply != "" {
 		if err := cmd.runApply(ctx, cmd.Apply); err != nil {
 			errors.ContextCancelWithError(ctx, err)
@@ -136,8 +167,81 @@ func (cmd *Organize) Run(req command.Request) {
 			"too many positional arguments; organize takes at most one (<uri>), "+
 				"trailing: %v", args[1:])
 	default:
-		if err := cmd.runGenerate(ctx, args[0]); err != nil {
+		if err := cmd.runGenerateOrInteractive(ctx, args[0]); err != nil {
 			errors.ContextCancelWithError(ctx, err)
 		}
 	}
+}
+
+// runGenerateOrInteractive chooses the default behavior for a bare `organize
+// <uri>` invocation: launch the interactive $EDITOR round-trip when stdout is a
+// terminal, else print the document to stdout (the pipe/redirect and
+// MCP/scripting path).
+func (cmd *Organize) runGenerateOrInteractive(ctx errors.Context, uriStr string) error {
+	if stdoutIsTerminal() {
+		return cmd.runInteractive(ctx, uriStr)
+	}
+	return cmd.runGenerate(ctx, uriStr)
+}
+
+// runInteractive generates the document into a temp file, opens it in the user's
+// editor, and applies the result on save. An unchanged buffer is a no-op; a
+// dry-run keeps the buffer and prints its path so it can be re-applied with
+// -commit-directly; a committed apply removes it.
+func (cmd *Organize) runInteractive(ctx errors.Context, uriStr string) error {
+	rendered, err := cmd.buildAndStore(ctx, uriStr)
+	if err != nil {
+		return err
+	}
+
+	f, err := os.CreateTemp("", "cg-organize-*.txt")
+	if err != nil {
+		return errors.Wrapf(err, "organize: create edit buffer")
+	}
+	tmpPath := f.Name()
+	if _, werr := io.WriteString(f, rendered); werr != nil {
+		_ = f.Close()
+		return errors.Wrap(werr)
+	}
+	if cerr := f.Close(); cerr != nil {
+		return errors.Wrap(cerr)
+	}
+
+	if err := launchEditor(ctx, tmpPath); err != nil {
+		fmt.Fprintf(cmd.output, "organize: editor aborted; document left at %s\n", tmpPath)
+		return err
+	}
+
+	editedBytes, err := os.ReadFile(tmpPath)
+	if err != nil {
+		return errors.Wrapf(err, "organize: read edited buffer")
+	}
+	if string(editedBytes) == rendered {
+		_ = os.Remove(tmpPath)
+		fmt.Fprintln(cmd.output, "organize: no changes; nothing to apply")
+		return nil
+	}
+
+	committed, err := cmd.applyDocument(ctx, string(editedBytes), cmd.Commit, true)
+	if err != nil {
+		// Keep the edited buffer so the user can resolve conflicts and re-apply.
+		fmt.Fprintf(cmd.output, "organize: edited document left at %s\n", tmpPath)
+		return err
+	}
+	if committed {
+		_ = os.Remove(tmpPath)
+		return nil
+	}
+	fmt.Fprintf(cmd.output,
+		"\norganize: dry-run — no writes. Re-apply this edit with:\n"+
+			"  cg organize -commit-directly < %s\n", tmpPath)
+	return nil
+}
+
+// stdoutIsTerminal reports whether stdout is an interactive terminal, gating the
+// interactive-by-default behavior (a pipe/redirect or non-TTY consumer gets the
+// plain generate-to-stdout path).
+func stdoutIsTerminal() bool {
+	fd := os.Stdout.Fd()
+	return isatty.IsTerminal(fd) || isatty.IsCygwinTerminal(fd)
 }
