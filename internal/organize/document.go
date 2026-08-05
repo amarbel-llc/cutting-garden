@@ -150,7 +150,8 @@ func renderCanonical(doc document) string {
 }
 
 // writeBody emits the heading-ladder body: the ungrouped lines, then each section
-// as its heading followed by a blank line and its object lines.
+// as its heading, one blank line, and its object lines run together. Blank lines
+// separate headings and groups of objects — never individual objects.
 func writeBody(b *strings.Builder, doc document) {
 	if len(doc.Ungrouped) > 0 {
 		b.WriteByte('\n')
@@ -161,8 +162,10 @@ func writeBody(b *strings.Builder, doc document) {
 	for _, s := range doc.Sections {
 		b.WriteByte('\n')
 		fmt.Fprintf(b, "%s %s\n", strings.Repeat("#", s.Depth), s.Term)
-		for _, ln := range s.Lines {
+		if len(s.Lines) > 0 {
 			b.WriteByte('\n')
+		}
+		for _, ln := range s.Lines {
 			writeObjectLine(b, ln)
 		}
 	}

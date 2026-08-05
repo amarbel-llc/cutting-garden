@@ -52,6 +52,30 @@ func TestRenderParseRoundTrip(t *testing.T) {
 	}
 }
 
+// TestRenderBlankLineDiscipline pins the newline rule: a single blank separates a
+// heading from its objects, but sibling object lines run together — blanks mark
+// heading/group boundaries, never individual objects.
+func TestRenderBlankLineDiscipline(t *testing.T) {
+	doc := document{
+		Anchor: "caldav://h/c/",
+		Type:   "caldav-object-v1",
+		Sections: []section{
+			{Depth: 1, Term: "status="},
+			{Depth: 2, Term: "=NEEDS-ACTION", Lines: []objectLine{
+				{ID: "a.ics", Desc: "A"},
+				{ID: "b.ics", Desc: "B"},
+			}},
+		},
+	}
+	out := render(doc)
+	if !strings.Contains(out, "## =NEEDS-ACTION\n\n- [a.ics] A") {
+		t.Errorf("a heading must be followed by one blank line then its objects, got:\n%s", out)
+	}
+	if !strings.Contains(out, "- [a.ics] A\n- [b.ics] B") {
+		t.Errorf("sibling object lines must run together (no blank between), got:\n%s", out)
+	}
+}
+
 // TestRenderCanonicalOmitsBasePin pins that the canonical (stored-base) form omits
 // the `- _base` pin while the emitted form carries it — the digest is computed
 // over the pin-less bytes (RFC 0015 §250).
