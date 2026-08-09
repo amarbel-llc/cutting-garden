@@ -48,6 +48,43 @@ type ListingFieldsDescriber interface {
 	DescribeListingFields() []NodeTypeListingFields
 }
 
+// BoxAtom is one rendered field atom in an organize espalier box interior — a
+// friendly, editable presentation of (part of) a node's field. Name is the
+// atom's key as it appears in the box (e.g. "date_start"); Value is its
+// rendered form (e.g. "2026-08-15"). A plugin MAY split one substrate field
+// into several atoms (a caldav DTSTART → date_start + time_start).
+type BoxAtom struct {
+	Name  string
+	Value string
+}
+
+// FieldPresenter is the OPTIONAL capability a plugin implements to present a
+// node's detail fields as organize espalier box-interior atoms (FDR 0023,
+// cutting-garden#47). The framework never parses substrate values — a caldav
+// DTSTART is an iCalendar date-time carrying a timezone — so the plugin owns
+// the transform: it can split one substrate field into several friendly atoms
+// (DTSTART → date_start + time_start), format values ergonomically, and omit
+// atoms that do not apply (an all-day event has no time_start). Probed by type
+// assertion like the other capabilities.
+//
+// This is the RENDER direction only (read-side, cutting-garden#47). The inverse
+// — parsing edited atoms back into a substrate write while preserving the parts
+// the atoms do not carry (a DTSTART's timezone) — is the write-side follow-up
+// and is deliberately NOT part of this capability yet.
+type FieldPresenter interface {
+	Plugin
+
+	// PresentBoxAtoms returns node's ordered box atoms: the friendly, editable
+	// presentation of its detail fields (dates, times, location), NOT its
+	// grouping dimension (which is a heading) or its description (which is the
+	// box trailer). An empty slice means the node contributes no atoms.
+	//
+	// It is a pure projection of node's already-populated Node.Fields (from
+	// enrichment): PresentBoxAtoms MUST NOT re-fetch, mutate the source, or
+	// depend on ambient state — the same node yields the same atoms.
+	PresentBoxAtoms(node Node) []BoxAtom
+}
+
 // EnrichedLister is the OPTIONAL capability a plugin implements to serve a
 // container's children ENRICHED — Facets and Fields populated — and
 // optionally narrowed by filter, in ONE data-bearing fetch

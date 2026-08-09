@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strings"
 
+	cgp "code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
 	"code.linenisgreat.com/hyphence/go/hyphence"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
@@ -54,11 +55,13 @@ const (
 
 // objectLine is one espalier box literal: the anchor-relative node id, its type
 // tag (inline for spelling 1; empty for spelling 2, where the envelope carries
-// it), and the description trailer.
+// it), the plugin-presented detail atoms (date/time/location; FDR 0023,
+// cutting-garden#47), and the description trailer.
 type objectLine struct {
-	ID   string
-	Type string
-	Desc string
+	ID     string
+	Type   string
+	Fields []cgp.BoxAtom
+	Desc   string
 }
 
 // section is one heading and the object lines directly beneath it (before any
@@ -171,12 +174,17 @@ func writeBody(b *strings.Builder, doc document) {
 	}
 }
 
-// writeObjectLine renders one espalier box literal and its description trailer.
+// writeObjectLine renders one espalier box literal and its description trailer:
+// `- [<id> !<type> <name>=<value>…] <desc>`. The detail atoms follow the id/type
+// inside the box, each a ground `name=value` espalier field (cutting-garden#47).
 func writeObjectLine(b *strings.Builder, ln objectLine) {
 	b.WriteString("- [")
 	b.WriteString(ln.ID)
 	if ln.Type != "" {
 		fmt.Fprintf(b, " !%s", ln.Type)
+	}
+	for _, f := range ln.Fields {
+		fmt.Fprintf(b, " %s=%s", f.Name, f.Value)
 	}
 	b.WriteByte(']')
 	if ln.Desc != "" {
@@ -302,12 +310,30 @@ func parseObjectLine(rest string) (objectLine, error) {
 	for _, tok := range interior[1:] {
 		if strings.HasPrefix(tok, "!") {
 			ln.Type = strings.TrimPrefix(tok, "!")
+			continue
+		}
+		// A ground `name=value` espalier field: the plugin-presented detail
+		// atoms (date/time/location; cutting-garden#47). Captured so they
+		// round-trip; splitting on the FIRST '=' keeps any '=' in the value.
+		if name, value, ok := strings.Cut(tok, "="); ok && name != "" {
+			ln.Fields = append(ln.Fields, cgp.BoxAtom{Name: name, Value: value})
 		}
 	}
 	return ln, nil
 }
 
 // --- derived views -----------------------------------------------------------
+
+// objectLines returns every object line in the document — the ungrouped set
+// followed by each section's lines, in document order.
+func (doc document) objectLines() []objectLine {
+	lines := make([]objectLine, 0, len(doc.Ungrouped))
+	lines = append(lines, doc.Ungrouped...)
+	for _, s := range doc.Sections {
+		lines = append(lines, s.Lines...)
+	}
+	return lines
+}
 
 // groupedDimension returns the grouped facet dimension — the `<dim>=` heading
 // term (RFC 0015: the dimension is the heading, not a separate field). Empty when

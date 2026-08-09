@@ -19,15 +19,21 @@ type bucket struct {
 // pre-rendered in order even when empty (RFC 0015 "make it easy to swap states");
 // observed-but-undeclared values follow, sorted ascending. inlineType controls
 // the object box's `!type` tag: true for the type-as-heading spelling (each box
-// self-describes), false when the envelope's `- _type` distributes it.
+// self-describes), false when the envelope's `- _type` distributes it. present,
+// when non-nil, populates each box's detail atoms (date/time/location;
+// cutting-garden#47) from the plugin's FieldPresenter.
 func groupNodes(
 	nodes []cgp.Node, dim, anchor string, declaredValues []string, inlineType bool,
+	present func(cgp.Node) []cgp.BoxAtom,
 ) (ungrouped []objectLine, buckets []bucket) {
 	byValue := map[string][]objectLine{}
 	for _, n := range nodes {
 		ln := objectLine{ID: relativeID(n.URIString(), anchor), Desc: nodeDescription(n)}
 		if inlineType {
 			ln.Type = n.Type
+		}
+		if present != nil {
+			ln.Fields = present(n)
 		}
 		values := n.Facets[dim]
 		if len(values) == 0 {

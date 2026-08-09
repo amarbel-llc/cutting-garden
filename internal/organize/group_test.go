@@ -37,7 +37,7 @@ func TestGroupNodes(t *testing.T) {
 		{URI: mustURL(t, "caldav://h/c/e.ics"), Type: "caldav-object-v1"}, // ungrouped
 	}
 
-	ungrouped, buckets := groupNodes(nodes, "status", anchor, nil, false)
+	ungrouped, buckets := groupNodes(nodes, "status", anchor, nil, false, nil)
 
 	if len(ungrouped) != 1 || ungrouped[0].ID != "e.ics" {
 		t.Fatalf("ungrouped = %+v, want just e.ics", ungrouped)
@@ -77,7 +77,7 @@ func TestGroupNodes_DeclaredBuckets(t *testing.T) {
 	}
 	declared := []string{"NEEDS-ACTION", "IN-PROCESS", "COMPLETED", "CANCELLED"}
 
-	_, buckets := groupNodes(nodes, "status", anchor, declared, true)
+	_, buckets := groupNodes(nodes, "status", anchor, declared, true, nil)
 
 	wantOrder := []string{"NEEDS-ACTION", "IN-PROCESS", "COMPLETED", "CANCELLED", "TENTATIVE"}
 	if len(buckets) != len(wantOrder) {

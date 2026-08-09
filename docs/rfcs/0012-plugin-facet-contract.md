@@ -652,6 +652,36 @@ SHOULD declare an entry for every key it emits in `Node.Fields`; a consumer
 MUST ignore an emitted key with no matching declaration (the same tolerance
 `FacetDescriber` requires of `Facets`).
 
+##### 12.1.1 `FieldPresenter` — box-atom presentation (render direction)
+
+An `organize` document (FDR 0023, RFC 0015) renders each object as an espalier
+box whose interior carries the object's detail fields as ground `name=value`
+atoms. The mapping from raw `Node.Fields` to those atoms is **plugin-owned** —
+the framework never parses a substrate value (a caldav DTSTART is an iCalendar
+date-time with a timezone). `FieldPresenter` is the OPTIONAL capability that
+performs the RENDER direction, probed by type assertion like the others:
+
+```go
+type BoxAtom struct{ Name, Value string }
+
+type FieldPresenter interface {
+    Plugin
+    // PresentBoxAtoms projects node's already-populated Node.Fields into the
+    // ordered box atoms — the friendly, editable detail view (dates, times,
+    // location), NOT the grouping dimension (a heading) or description (the
+    // trailer). Pure: no re-fetch, no mutation, same node ⇒ same atoms.
+    PresentBoxAtoms(node Node) []BoxAtom
+}
+```
+
+A plugin MAY split one substrate field into several atoms (caldav DTSTART →
+`date_start` + `time_start`), format values ergonomically, and omit atoms that
+do not apply (an all-day value emits no time atom). The INVERSE — parsing edited
+atoms back into a substrate write, preserving what the atoms do not carry (a
+DTSTART's timezone) — is the write-side follow-up (cutting-garden#218) and is
+deliberately NOT part of this capability yet; a plugin without `FieldPresenter`
+simply contributes no box atoms.
+
 #### 12.2 `EnrichedLister` — the one-fetch enrichment path
 
 Populating `Fields` (and, for some plugins, `Facets`) often needs a

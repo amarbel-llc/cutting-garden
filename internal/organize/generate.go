@@ -85,13 +85,14 @@ func buildDocument(
 		Provenance: provenance(groupBy, query, anchor),
 	}
 
+	present := boxAtomPresenter(lister)
 	types := distinctTypes(nodes)
 	switch len(types) {
 	case 1:
 		// Spelling 2: type in the envelope, object boxes bare, dimension at depth 1.
 		doc.Type = types[0]
 		declared := writableBuckets(lister, types[0], groupBy)
-		ungrouped, buckets := groupNodes(nodes, groupBy, anchor, declared, false)
+		ungrouped, buckets := groupNodes(nodes, groupBy, anchor, declared, false, present)
 		doc.Ungrouped = ungrouped
 		doc.Sections = dimensionSections(groupBy, buckets, 1)
 	default:
@@ -100,12 +101,23 @@ func buildDocument(
 		for _, typ := range types {
 			typeNodes := nodesOfType(nodes, typ)
 			declared := writableBuckets(lister, typ, groupBy)
-			ungrouped, buckets := groupNodes(typeNodes, groupBy, anchor, declared, true)
+			ungrouped, buckets := groupNodes(typeNodes, groupBy, anchor, declared, true, present)
 			doc.Sections = append(doc.Sections, section{Depth: 1, Term: "!" + typ, Lines: ungrouped})
 			doc.Sections = append(doc.Sections, dimensionSections(groupBy, buckets, 2)...)
 		}
 	}
 	return doc
+}
+
+// boxAtomPresenter returns the plugin's box-atom presentation function when it
+// implements FieldPresenter (cutting-garden#47), or nil — in which case object
+// boxes carry no detail atoms (today's behavior for a plugin without the
+// capability).
+func boxAtomPresenter(lister cgp.RootLister) func(cgp.Node) []cgp.BoxAtom {
+	if p, ok := lister.(cgp.FieldPresenter); ok {
+		return p.PresentBoxAtoms
+	}
+	return nil
 }
 
 // dimensionSections renders the grouped dimension as a `<dim>=` heading at

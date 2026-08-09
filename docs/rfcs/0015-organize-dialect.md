@@ -100,9 +100,15 @@ document — the exact bytes presented to and edited by the end-user:
     every object; boxes drop `!type`; the ladder is one level shallower. Generation
     emits spelling 2 for a single-type node set (flatter), spelling 1 for a
     multi-type set; the parser accepts either.
-- **Object lines** are espalier boxes `- [<id> !<type>] <desc>` with
-  anchor-relative short ids; a bare box that carries only a term (no id/trailer)
-  drops the brackets — which is why a type *heading* is `# !type`, not `# [!type]`.
+- **Object lines** are espalier boxes `- [<id> !<type> <name>=<value>…] <desc>`
+  with anchor-relative short ids and, after the id/type, the object's detail
+  fields as ground `name=value` atoms — the plugin's `FieldPresenter` render
+  (cutting-garden#47): e.g. caldav splits a DATE-TIME into `date_start`/
+  `time_start` (date `YYYY-MM-DD`, time `HH-mm`), so a clock time round-trips as
+  structured data rather than being scraped from `<desc>`. A bare box that
+  carries only a term (no id/trailer) drops the brackets — which is why a type
+  *heading* is `# !type`, not `# [!type]`. (Read-side as of #47: a *changed*
+  atom is surfaced as an apply notice, not yet written back — cutting-garden#218.)
 - **The trailing `! <type>` type-anchor of the earlier draft is removed** (it was a
   mistake): the object type is the leading heading or the envelope field, never a
   trailing line, which is distinct from the envelope's own `! organize-base-v1`.

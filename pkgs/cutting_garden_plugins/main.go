@@ -33,6 +33,13 @@ type AtomicBulkMutator = internal.AtomicBulkMutator
 // but not its calendar container, which awaits MKCALENDAR).
 type BodyDescriber = internal.BodyDescriber
 
+// BoxAtom is one rendered field atom in an organize espalier box interior — a
+// friendly, editable presentation of (part of) a node's field. Name is the
+// atom's key as it appears in the box (e.g. "date_start"); Value is its
+// rendered form (e.g. "2026-08-15"). A plugin MAY split one substrate field
+// into several atoms (a caldav DTSTART → date_start + time_start).
+type BoxAtom = internal.BoxAtom
+
 // BulkAtomicity selects how a BulkMutate call is expected to complete
 // (RFC 0017 §Atomicity semantics). The zero value is NOT a valid request
 // value — a caller MUST set one of the two constants; a plugin receiving
@@ -250,6 +257,21 @@ type FacetWriteDescriber = internal.FacetWriteDescriber
 // FDR 0023's organize mapping capability). It says how EDITING a node's
 // membership in this dimension maps to a substrate write.
 type FacetWriteMode = internal.FacetWriteMode
+
+// FieldPresenter is the OPTIONAL capability a plugin implements to present a
+// node's detail fields as organize espalier box-interior atoms (FDR 0023,
+// cutting-garden#47). The framework never parses substrate values — a caldav
+// DTSTART is an iCalendar date-time carrying a timezone — so the plugin owns
+// the transform: it can split one substrate field into several friendly atoms
+// (DTSTART → date_start + time_start), format values ergonomically, and omit
+// atoms that do not apply (an all-day event has no time_start). Probed by type
+// assertion like the other capabilities.
+//
+// This is the RENDER direction only (read-side, cutting-garden#47). The inverse
+// — parsing edited atoms back into a substrate write while preserving the parts
+// the atoms do not carry (a DTSTART's timezone) — is the write-side follow-up
+// and is deliberately NOT part of this capability yet.
+type FieldPresenter = internal.FieldPresenter
 
 // LeafContent is one leaf node's fetched content, returned by ReadLeaf. It
 // carries two views of the same object: a structured, JSON-marshalable

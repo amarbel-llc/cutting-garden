@@ -55,8 +55,19 @@ function organize_month_generate_buckets { # @test
   assert_line '# month='
   assert_line '## =2026-08'
   assert_line '## =2026-09'
-  assert_output --partial '- [sched1.ics]'
-  assert_output --partial '- [sched2.ics]'
+  assert_output --partial '- [sched1.ics date_due=2026-08-15 time_due=14-30]'
+  assert_output --partial '- [sched2.ics date_due=2026-09-10 time_due=16-30]'
+}
+
+# The read-side field presenter (cutting-garden#47) surfaces each VTODO's DUE as
+# structured date_due/time_due atoms inside the box — split so the clock is its
+# own editable field (HH-mm), not scraped from the description trailer. Proves
+# the FieldPresenter render end to end against the real binary.
+function organize_month_surfaces_due_atoms { # @test
+  generate_month
+  assert_output --partial '[sched1.ics date_due=2026-08-15 time_due=14-30]'
+  # The clock lives in its own atom, never smuggled into the trailer.
+  refute_output --partial 'Book flights 14'
 }
 
 # The core tracer: move sched1 from 2026-08 to 2026-09 and commit. The object

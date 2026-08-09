@@ -54,6 +54,27 @@ which also closed a latent corruption: month/year were already declared
 `FacetWriteOne`, and the old verbatim passthrough would have written a bare
 `"2026-09"` into the date.
 
+**2026-08-09 — detail fields as box atoms, read-side (implemented,
+cutting-garden#47).** An object's detail fields now render as ground
+`name=value` espalier atoms inside the box interior —
+`- [dentist.ics date_start=2026-08-15 time_start=09-30 location=HQ] Dentist` —
+instead of the clock time being smuggled into the description trailer. A new
+plugin-owned **`FieldPresenter`** capability (`PresentBoxAtoms`, render
+direction) owns the transform: the framework never parses substrate values, so
+caldav splits DTSTART/DTEND/DUE into `date_*`/`time_*` atoms (date `YYYY-MM-DD`,
+time `HH-mm` — the hyphen form is grammar-proven a single espalier value token
+AND composes for a future hour/minute heading-join; `:` was rejected for the
+latter), passes `location` through, and emits only the date atom for an all-day
+value. STATUS stays the grouping heading and SUMMARY the trailer, so neither is
+an atom. The atoms round-trip through parse. This slice is **read-side only**: a
+*changed* atom is surfaced as a non-blocking apply notice, not written back.
+The write-side — `ListingField.Writable` as the sole writability source with
+`FacetWrite.Field` validated against it (resolving the
+`FacetWriteDescriber`/`ListingField` duplication), the presenter's inverse
+(atoms → substrate value, TZID-preserving recombine), the field-edit apply path,
+move-vs-edit conflict, fail-hard-on-immutable, and the deferred `%`-prefixed
+read-only atom grammar — is tracked as **cutting-garden#218**.
+
 ## Shape
 
 - `cg organize <uri> [--query <trellis>] [--group-by <facet-key>]

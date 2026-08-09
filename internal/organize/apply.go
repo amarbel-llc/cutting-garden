@@ -98,6 +98,17 @@ func (cmd *Organize) applyDocument(
 		return false, errors.Wrapf(err, "organize --apply: parse pinned base blob")
 	}
 
+	// Read-side only (cutting-garden#47): box field atoms (date/time/location)
+	// are surfaced and round-trip, but writing an edited atom back is the
+	// write-side follow-up (cutting-garden#218). Surface a changed atom as a
+	// non-blocking notice rather than silently dropping the edit.
+	if changed := changedAtomIDs(edited, base); len(changed) > 0 {
+		fmt.Fprintf(cmd.output,
+			"organize: note — box field edits are not applied yet (read-side only, "+
+				"cutting-garden#218); ignored on %d line(s): %s\n",
+			len(changed), strings.Join(changed, ", "))
+	}
+
 	u, lister, err := command_components.ResolveRootListerPlugin(edited.Anchor)
 	if err != nil {
 		return false, err
@@ -313,6 +324,38 @@ func (cmd *Organize) executePlan(
 		fmt.Fprintf(cmd.output, "moved %s: applied %v\n", mv.URI, applied)
 	}
 	return nil
+}
+
+// changedAtomIDs returns the ids of object lines whose box atoms differ between
+// the edited document and the pinned base — the field edits this read-side slice
+// surfaces but does not yet write through (cutting-garden#47/#218). Only ids
+// present in BOTH are compared; an added or removed line is not an atom edit.
+func changedAtomIDs(edited, base document) []string {
+	baseSig := make(map[string]string)
+	for _, ln := range base.objectLines() {
+		baseSig[ln.ID] = atomSignature(ln.Fields)
+	}
+	var changed []string
+	for _, ln := range edited.objectLines() {
+		if b, ok := baseSig[ln.ID]; ok && b != atomSignature(ln.Fields) {
+			changed = append(changed, ln.ID)
+		}
+	}
+	sort.Strings(changed)
+	return changed
+}
+
+// atomSignature is a stable, order-sensitive string form of a box's atoms, for
+// equality comparison between the edited and base renderings.
+func atomSignature(atoms []cgp.BoxAtom) string {
+	var b strings.Builder
+	for _, a := range atoms {
+		b.WriteString(a.Name)
+		b.WriteByte('=')
+		b.WriteString(a.Value)
+		b.WriteByte(0)
+	}
+	return b.String()
 }
 
 // firstFacetKey returns the first bucket key of a Mode-one facet membership, or
