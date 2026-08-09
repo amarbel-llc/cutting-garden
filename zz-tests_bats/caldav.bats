@@ -50,7 +50,11 @@ function capture_caldav_emits_rfc0011_tree { # @test
   run_madder cat "$payload_id"
   assert_success
   assert_line '! jcs-caldav-payload-v1'
-  assert_output --partial 'caldav-object-v1'
+  # The payload refs carry per-component object leaf types in sync with
+  # traversal (caldav-object-<kind>-v1): the seeded set has both VTODOs and a
+  # VEVENT, so both tags appear.
+  assert_output --partial 'caldav-object-vtodo-v1'
+  assert_output --partial 'caldav-object-vevent-v1'
   # Native-identity aliases <collection>/<component>/<UID>, all four seeded
   # resources across both discovered calendars, and the count.
   assert_output --partial 'cal/VTODO/task1'
@@ -89,9 +93,10 @@ function list_discovers_multiple_calendars_at_home { # @test
 # The trellis query evaluator (cutting-garden#164, FDR 0022): `list --query`
 # filters the listed nodes against the real binary. A type predicate over the
 # home keeps both discovered calendars; a non-matching type empties the
-# listing; and a forward-walk step (`-> !caldav-object-v1`) descends BOTH
-# calendars to their objects, proving the multi-level containment walk end to
-# end.
+# listing; and a forward-walk step (`-> :`, descend to every child regardless
+# of type — the per-component split means there is no single object type to
+# name, and subsumption is deferred) descends BOTH calendars to their objects,
+# proving the multi-level containment walk end to end.
 function list_query_filters_and_walks { # @test
   # Type predicate over the home's calendar children: both match.
   run_cg list -query '!caldav-calendar-v1' "$CALDAV_SOURCE"
@@ -108,7 +113,7 @@ function list_query_filters_and_walks { # @test
   # Forward walk: home -> calendars -> their objects. Objects from BOTH the
   # Personal (task1.ics) and Work (task3.ics) calendars appear, so the walk
   # descended every matched calendar, not just one.
-  run_cg list -query '!caldav-calendar-v1 -> !caldav-object-v1' "$CALDAV_SOURCE"
+  run_cg list -query '!caldav-calendar-v1 -> :' "$CALDAV_SOURCE"
   assert_success
   assert_output --partial 'task1.ics'
   assert_output --partial 'task3.ics'
@@ -122,7 +127,7 @@ function list_query_reverse_and_closure { # @test
   # Reverse walk `<-`: from the objects back up to the calendars that contain
   # them. Both calendars hold at least one object, so both come back — proving
   # the anchor-bounded child-relation inversion end to end.
-  run_cg list -query '!caldav-calendar-v1 -> !caldav-object-v1 <- !caldav-calendar-v1' "$CALDAV_SOURCE"
+  run_cg list -query '!caldav-calendar-v1 -> : <- !caldav-calendar-v1' "$CALDAV_SOURCE"
   assert_success
   assert_output --partial 'Personal'
   assert_output --partial 'Work'
@@ -131,7 +136,7 @@ function list_query_reverse_and_closure { # @test
   # object beneath them. Over this two-level tree it matches the same objects
   # as a single `->`, proving the binary accepts and evaluates the closure
   # combinator (the multi-hop depth is carried by the evaluator unit tests).
-  run_cg list -query '!caldav-calendar-v1 ->> !caldav-object-v1' "$CALDAV_SOURCE"
+  run_cg list -query '!caldav-calendar-v1 ->> :' "$CALDAV_SOURCE"
   assert_success
   assert_output --partial 'task1.ics'
   assert_output --partial 'task3.ics'
@@ -143,7 +148,7 @@ function list_query_reverse_and_closure { # @test
 # the lone VEVENT (event1.ics) is excluded — proving the evaluator drives the
 # facet match off the enriched listing end to end, not a silent empty result.
 function list_query_facet_predicate_matches { # @test
-  run_cg list -query '!caldav-calendar-v1 -> !caldav-object-v1 component=VTODO' "$CALDAV_SOURCE"
+  run_cg list -query '!caldav-calendar-v1 -> component=VTODO' "$CALDAV_SOURCE"
   assert_success
   assert_output --partial 'task1.ics'
   assert_output --partial 'task3.ics'
@@ -158,7 +163,7 @@ function list_query_facet_predicate_matches { # @test
 # the both-alternatives-match semantics against a fixture where an event is
 # present.)
 function list_query_or_alternatives { # @test
-  run_cg list -query '!caldav-calendar-v1 -> !caldav-object-v1 [component=VTODO, component=VEVENT]' "$CALDAV_SOURCE"
+  run_cg list -query '!caldav-calendar-v1 -> [component=VTODO, component=VEVENT]' "$CALDAV_SOURCE"
   assert_success
   assert_output --partial 'task1.ics'
   assert_output --partial 'task3.ics'

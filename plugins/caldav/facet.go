@@ -57,66 +57,73 @@ var (
 	_ cutting_garden_plugins.FacetVersioner = (*Plugin)(nil)
 )
 
-// DescribeFacets declares the facet dimensions of a caldav object leaf — the
-// self-describing schema the mcp `describe_node_types` tool surfaces. All
-// three draw from fields the iCalendar parser already exposes (status,
-// dtstart, the component kind), so they are free at the one-shot fetch
-// FacetCounts performs.
+// DescribeFacets declares each object leaf type's facet dimensions — the
+// self-describing schema the mcp `describe_node_types` tool surfaces. Every
+// component carries the shared component/status/year/month dimensions (all drawn
+// from fields the iCalendar parser already exposes, so free at the one-shot
+// FacetCounts fetch), but the component-specific ones differ: due_band is a
+// task-only volatile band (facetsFromView emits it for VTODO alone), and the
+// timezone dimension is populated for tasks and events but never journals — so
+// each type declares only what it can contribute.
 func (Plugin) DescribeFacets() []cutting_garden_plugins.NodeTypeFacets {
+	component := cutting_garden_plugins.FacetDimension{
+		Key:   facetComponent,
+		Label: "Component",
+		Kind:  cutting_garden_plugins.FacetCategorical,
+	}
+	status := cutting_garden_plugins.FacetDimension{
+		Key:   facetStatus,
+		Label: "Status",
+		Kind:  cutting_garden_plugins.FacetCategorical,
+	}
+	year := cutting_garden_plugins.FacetDimension{
+		Key:   facetYear,
+		Label: "Year",
+		Kind:  cutting_garden_plugins.FacetNumericBucket,
+	}
+	month := cutting_garden_plugins.FacetDimension{
+		Key:   facetMonth,
+		Label: "Month",
+		Kind:  cutting_garden_plugins.FacetNumericBucket,
+	}
+	dueBand := cutting_garden_plugins.FacetDimension{
+		// VOLATILE (RFC 0012 §11.3): bucketing is a function of (due date,
+		// today). Each task's day boundary is anchored in its OWN zone — the
+		// date's TZID when loadable, host-local otherwise (#141); the timezone
+		// dimension and the structured due_tzid field are the reconciliation
+		// surface.
+		Key:   facetDueBand,
+		Label: "Due",
+		Kind:  cutting_garden_plugins.FacetNumericBucket,
+		Values: []cutting_garden_plugins.FacetValue{
+			{Key: dueBandOverdue, Order: 4},
+			{Key: dueBandToday, Order: 3},
+			{Key: dueBandThisWeek, Order: 2},
+			{Key: dueBandLater, Order: 1},
+		},
+		RevalidateAfter: dueBandRevalidateAfter,
+	}
+	timezone := cutting_garden_plugins.FacetDimension{
+		// PURE zone visibility (#141, RFC 0012 §11.3 time anchoring): the
+		// explicit, loadable TZID anchoring an object's primary date. Objects
+		// with no explicit zone contribute nothing — host-local is the
+		// documented default anchor, so absence means "anchored to your day".
+		Key:   facetTimezone,
+		Label: "Time zone",
+		Kind:  cutting_garden_plugins.FacetCategorical,
+	}
 	return []cutting_garden_plugins.NodeTypeFacets{
 		{
-			Tag: typeObject,
-			Dimensions: []cutting_garden_plugins.FacetDimension{
-				{
-					Key:   facetComponent,
-					Label: "Component",
-					Kind:  cutting_garden_plugins.FacetCategorical,
-				},
-				{
-					Key:   facetStatus,
-					Label: "Status",
-					Kind:  cutting_garden_plugins.FacetCategorical,
-				},
-				{
-					Key:   facetYear,
-					Label: "Year",
-					Kind:  cutting_garden_plugins.FacetNumericBucket,
-				},
-				{
-					Key:   facetMonth,
-					Label: "Month",
-					Kind:  cutting_garden_plugins.FacetNumericBucket,
-				},
-				{
-					// VOLATILE (RFC 0012 §11.3): bucketing is a function
-					// of (due date, today). Each task's day boundary is
-					// anchored in its OWN zone — the date's TZID when
-					// loadable, host-local otherwise (#141); the
-					// timezone dimension below and the structured
-					// due_tzid field are the reconciliation surface.
-					Key:   facetDueBand,
-					Label: "Due",
-					Kind:  cutting_garden_plugins.FacetNumericBucket,
-					Values: []cutting_garden_plugins.FacetValue{
-						{Key: dueBandOverdue, Order: 4},
-						{Key: dueBandToday, Order: 3},
-						{Key: dueBandThisWeek, Order: 2},
-						{Key: dueBandLater, Order: 1},
-					},
-					RevalidateAfter: dueBandRevalidateAfter,
-				},
-				{
-					// PURE zone visibility (#141, RFC 0012 §11.3 time
-					// anchoring): the explicit, loadable TZID anchoring
-					// an object's primary date. Objects with no explicit
-					// zone contribute nothing — host-local is the
-					// documented default anchor, so absence means
-					// "anchored to your day".
-					Key:   facetTimezone,
-					Label: "Time zone",
-					Kind:  cutting_garden_plugins.FacetCategorical,
-				},
-			},
+			Tag:        typeVTODO,
+			Dimensions: []cutting_garden_plugins.FacetDimension{component, status, year, month, dueBand, timezone},
+		},
+		{
+			Tag:        typeVEVENT,
+			Dimensions: []cutting_garden_plugins.FacetDimension{component, status, year, month, timezone},
+		},
+		{
+			Tag:        typeVJOURNAL,
+			Dimensions: []cutting_garden_plugins.FacetDimension{component, status, year, month},
 		},
 	}
 }

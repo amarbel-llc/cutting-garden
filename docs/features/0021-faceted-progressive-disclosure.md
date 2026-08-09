@@ -195,7 +195,7 @@ Free-text search is **not** a facet; it is a search index, a separate thing.
     # MCP: a container read carries the summary inline
     $ cutting-garden mcp
     #   resources/read caldav://dav.host/dav/me/work/
-    #   → { "nodes": [ {"uri":".../event1.ics","type":"caldav-object-v1",
+    #   → { "nodes": [ {"uri":".../event1.ics","type":"caldav-object-vevent-v1",
     #                    "container":false}, ... ],
     #       "facets": { "status": {"CONFIRMED":142,"CANCELLED":3},
     #                   "category": {"work":88,"personal":51},

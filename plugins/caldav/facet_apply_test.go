@@ -62,7 +62,7 @@ func applyNode(t *testing.T, uri, component string, fields map[string]any) cutti
 	}
 	return cutting_garden_plugins.Node{
 		URI:    u,
-		Type:   typeObject,
+		Type:   objectType(component),
 		Facets: map[string][]cutting_garden_plugins.FacetValue{facetComponent: {{Key: component}}},
 		Fields: fields,
 	}

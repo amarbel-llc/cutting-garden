@@ -76,16 +76,21 @@ no server-side displayname resolution needed. Credentials still resolve through
   **native identity** (UID + component) for the RFC 0011 protocol receipt,
   and by the CUD tools (FDR 0020) for structured create/update. The captured
   component set is `capturedComponents` (capture.go); adding a component
-  means adding its parse/serialize here plus a case in `uidOf` (protocol.go)
-  and `parseObjectView`/`icalFromObjectView` (leaf.go/mutate.go).
+  means adding its parse/serialize here plus a case in `uidOf` (protocol.go),
+  `parseObjectView`/`icalFromObjectView` (leaf.go/mutate.go), a per-component
+  leaf type (`typeVxxx` + an `objectType` case in traversal.go), and its
+  entries in the per-type `Describe{Facets,ListingFields,Bodies,FacetWrites}`
+  schemas.
 - `url.go` — argument coercion (`baseURLFromArg`, `connectionFromArg`),
   origin extraction, and the server-relative `Path` key.
 - `Plugin.CaptureProtocol` (`protocol.go`) — the RFC 0011 protocol path:
-  stores each VTODO/VEVENT body as a `caldav-object-v1` leaf and wraps
-  them in a receipt merkle tree whose payload references each object by
-  **native identity** `<collection>/<component>/<UID>` (parsed via
-  `ical/`) with per-resource etag recorded for the diff freshness probe.
-  Emits `cutting_garden-capture_receipt-caldav-v1`.
+  stores each VTODO/VEVENT/VJOURNAL body as a per-component
+  `caldav-object-<kind>-v1` leaf (the same tag traversal emits; `objectType`
+  in traversal.go maps the component) and wraps them in a receipt merkle tree
+  whose payload references each object by **native identity**
+  `<collection>/<component>/<UID>` (parsed via `ical/`) with per-resource etag
+  recorded for the diff freshness probe. Emits
+  `cutting_garden-capture_receipt-caldav-v1`.
 - `Plugin.DiffProtocol` (`diff_protocol.go`) — the RFC 0011 diff path:
   the freshness probe (`listObjectEtags`) REPORTs getetag + a `calendar-data`
   projection limited to UID (RFC 4791 §9.6), so each live resource's
@@ -108,9 +113,12 @@ no server-side displayname resolution needed. Credentials still resolve through
   diff (and, next, restore) — validates the caldav kind, verifies the
   FDR-0001 type locks, and decodes the payload `{id, href, etag}` records.
 - `types_register.go` — registers the RFC 0011 binding node types into the
-  build-time type-signature registry. `caldav-object-v1` /
+  build-time type-signature registry. The per-component object leaf tags
+  (`caldav-object-vtodo-v1` / `-vevent-v1` / `-vjournal-v1`) and
   `caldav-calendar-v1` are the SAME tags the traversal layer declares
-  (`traversal.go`) — unified per FDR 0018.
+  (`traversal.go`) — unified per FDR 0018 (three sibling object tags moving in
+  sync between traversal and the receipt; the shared `caldav-object-` stem is
+  the conceptual parent until a real type hierarchy lands).
 - `Plugin.ListRoots` / `Plugin.Types` (`traversal.go`) — the FDR 0014
   `RootLister` capability: lazily enumerate a node's children (endpoint →
   calendars → objects) so `list` and the `mcp` server can descend the tree

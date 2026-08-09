@@ -52,8 +52,8 @@ func TestListEnriched_PopulatesFacetsAndFields(t *testing.T) {
 	if !ok {
 		t.Fatalf("missing event1.ics in %+v", byName)
 	}
-	if standup.Type != typeObject {
-		t.Errorf("event1.ics type = %q, want %q", standup.Type, typeObject)
+	if standup.Type != typeVEVENT {
+		t.Errorf("event1.ics type = %q, want %q", standup.Type, typeVEVENT)
 	}
 	if got := standup.Facets[facetStatus]; len(got) != 1 || got[0].Key != "CONFIRMED" {
 		t.Errorf("event1.ics status facet = %+v, want CONFIRMED", standup.Facets[facetStatus])
@@ -117,25 +117,25 @@ func TestListEnriched_NilNodeErrors(t *testing.T) {
 // surface (describe_node_types): every field ListEnriched can populate is
 // declared for the object leaf type.
 func TestDescribeListingFields_DeclaresObjectFields(t *testing.T) {
-	var keys map[string]bool
+	// Each field ListEnriched can populate is declared on SOME object leaf
+	// type — the task-only fields (due, percent_complete) on typeVTODO, the
+	// event-only ones (dtend, duration) on typeVEVENT — so the union across the
+	// per-component schemas covers every populatable field.
+	keys := map[string]bool{}
 	for _, ntf := range (Plugin{}).DescribeListingFields() {
-		if ntf.Tag != typeObject {
-			continue
-		}
-		keys = map[string]bool{}
 		for _, f := range ntf.Fields {
 			keys[f.Key] = true
 		}
 	}
-	if keys == nil {
-		t.Fatalf("no listing fields declared for %q", typeObject)
+	if len(keys) == 0 {
+		t.Fatal("no listing fields declared for any caldav object leaf type")
 	}
 	for _, want := range []string{
 		listingFieldSummary, listingFieldDue, listingFieldStatus, listingFieldDtStart,
 		listingFieldDtEnd, listingFieldDuration, listingFieldLocation, listingFieldPercentComplete,
 	} {
 		if !keys[want] {
-			t.Errorf("listing field %q not declared", want)
+			t.Errorf("listing field %q not declared on any object leaf type", want)
 		}
 	}
 }

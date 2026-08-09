@@ -59,7 +59,7 @@ function organize_generate_emits_envelope { # @test
   generate_doc
   assert_line '---'
   assert_line '! organize-base-v1'
-  assert_line '- _type = !caldav-object-v1'
+  assert_line '- _type = !caldav-object-vtodo-v1'
   assert_line --partial '- _base = @'
   assert_line --partial '- _anchor = '
   assert_line '# status='

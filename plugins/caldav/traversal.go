@@ -10,28 +10,61 @@ import (
 
 const (
 	// typeCalendar is a CalDAV calendar collection — a container whose
-	// children are its VTODO/VEVENT objects.
+	// children are its VTODO/VEVENT/VJOURNAL objects.
 	typeCalendar = "caldav-calendar-v1"
-	// typeObject is a single VTODO/VEVENT resource — a leaf. The SAME tag
-	// names this node in traversal (RootLister/MCP) and the captured
-	// object leaf in the RFC 0011 protocol receipt: the two type-tag
-	// systems are unified on one grammar (FDR 0018 directions #2 + #4),
-	// unblocked now that #79/RFC 0010 settled the versioning rules. Mirrors
-	// the git binding's prefix-less `<kind>-…-v1` leaf convention.
-	typeObject = "caldav-object-v1"
+	// The per-component object leaf types. A single .ics resource is typed
+	// by its iCalendar component — VTODO/VEVENT/VJOURNAL — rather than one
+	// union tag, so a query can scope to a component
+	// (`!caldav-object-vtodo-v1`), organize renders a per-component
+	// heading, and each type declares its own component-correct facets (the
+	// VTODO status enum differs from the VEVENT one). The shared
+	// `caldav-object-` stem is the visible lineage — the conceptual parent —
+	// until a real type hierarchy lands (chaos' type system); subsumption (a
+	// `caldav-object-*` query matching every component) is deferred, so
+	// "every object in a calendar" is spelled by descending WITHOUT a type
+	// predicate (`… -> :`). The SAME tags name these nodes in traversal
+	// (RootLister/MCP) and the captured object leaves in the RFC 0011
+	// receipt: the two type-tag systems stay unified on one grammar
+	// (FDR 0018 directions #2 + #4) — now three sibling tags moving in sync,
+	// not one. Mirrors the git binding's prefix-less `<kind>-…-v1` leaf
+	// convention.
+	typeVTODO    = "caldav-object-vtodo-v1"
+	typeVEVENT   = "caldav-object-vevent-v1"
+	typeVJOURNAL = "caldav-object-vjournal-v1"
 )
+
+// objectType maps an iCalendar component discriminator (a capturedComponents
+// value) to its leaf node type tag. An unrecognized component yields the empty
+// string — callers (traversal, capture) only ever pass a capturedComponents
+// value, so a miss is a programming error, not a runtime condition.
+func objectType(component string) string {
+	switch component {
+	case "VTODO":
+		return typeVTODO
+	case "VEVENT":
+		return typeVEVENT
+	case "VJOURNAL":
+		return typeVJOURNAL
+	default:
+		return ""
+	}
+}
 
 var _ cutting_garden_plugins.RootLister = (*Plugin)(nil)
 
-// Types declares the two node types the caldav tree is built from. The
-// tags are hyphenated and horizontally versioned (issue #79) so a future
-// shape change adds a -v2 tag beside the -v1 rather than breaking it.
+// Types declares the node types the caldav tree is built from: the calendar
+// container plus one leaf type per captured component. The tags are hyphenated
+// and horizontally versioned (issue #79) so a future shape change adds a -v2
+// tag beside the -v1 rather than breaking it.
 func (Plugin) Types() []cutting_garden_plugins.NodeType {
 	return []cutting_garden_plugins.NodeType{
 		{Tag: typeCalendar, Container: true},
-		// A leaf is a single .ics resource (VEVENT/VTODO), captured as
-		// its verbatim bytes — iCalendar's registered mimetype.
-		{Tag: typeObject, Container: false, MimeType: "text/calendar"},
+		// A leaf is a single .ics resource, typed by its component; all
+		// three are captured as verbatim bytes — iCalendar's registered
+		// mimetype.
+		{Tag: typeVTODO, Container: false, MimeType: "text/calendar"},
+		{Tag: typeVEVENT, Container: false, MimeType: "text/calendar"},
+		{Tag: typeVJOURNAL, Container: false, MimeType: "text/calendar"},
 	}
 }
 
@@ -111,7 +144,7 @@ func (c *client) objectNodes(
 				nodes = append(nodes, cutting_garden_plugins.Node{
 					URI:  eventOccurrenceURI(item),
 					Name: eventNodeName(item.rel),
-					Type: typeObject,
+					Type: typeVEVENT,
 				})
 			}
 			continue
@@ -130,7 +163,7 @@ func (c *client) objectNodes(
 			nodes = append(nodes, cutting_garden_plugins.Node{
 				URI:  caldavURIForAbs(abs),
 				Name: eventNodeName(rel),
-				Type: typeObject,
+				Type: objectType(component),
 			})
 		}
 	}

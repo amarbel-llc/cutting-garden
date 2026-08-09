@@ -215,7 +215,7 @@ func TestNodeMutator_RefusesDerivedOccurrenceURI(t *testing.T) {
 	occ := occurrenceURI("https://host.example/dav/cal/therapy.ics", "20260730T132000Z")
 	ctx := context.Background()
 
-	if err := (Plugin{}).CreateNode(ctx, occ, strings.NewReader(vevent("dup", "x")), typeObject); err == nil {
+	if err := (Plugin{}).CreateNode(ctx, occ, strings.NewReader(vevent("dup", "x")), typeVEVENT); err == nil {
 		t.Error("CreateNode on an occurrence URI must error")
 	} else if !strings.Contains(err.Error(), "recurrence") {
 		t.Errorf("CreateNode error does not explain the refusal: %v", err)

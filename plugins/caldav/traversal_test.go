@@ -10,7 +10,7 @@ import (
 	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
 )
 
-func TestTypes_DeclaresCalendarContainerAndObjectLeaf(t *testing.T) {
+func TestTypes_DeclaresCalendarContainerAndObjectLeaves(t *testing.T) {
 	container := map[string]bool{}
 	for _, nt := range (Plugin{}).Types() {
 		container[nt.Tag] = nt.Container
@@ -18,8 +18,10 @@ func TestTypes_DeclaresCalendarContainerAndObjectLeaf(t *testing.T) {
 	if c, ok := container[typeCalendar]; !ok || !c {
 		t.Errorf("%q must be declared as a container; got %+v", typeCalendar, container)
 	}
-	if c, ok := container[typeObject]; !ok || c {
-		t.Errorf("%q must be declared as a leaf; got %+v", typeObject, container)
+	for _, tag := range []string{typeVTODO, typeVEVENT, typeVJOURNAL} {
+		if c, ok := container[tag]; !ok || c {
+			t.Errorf("%q must be declared as a leaf; got %+v", tag, container)
+		}
 	}
 }
 
@@ -51,10 +53,11 @@ func TestListRoots_EndpointThenCalendar(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListRoots(calendar %s): %v", cal.URI, err)
 	}
+	objectLeafType := map[string]bool{typeVTODO: true, typeVEVENT: true, typeVJOURNAL: true}
 	names := make([]string, 0, len(objects))
 	for _, o := range objects {
-		if o.Type != typeObject {
-			t.Errorf("object %q Type = %q, want %q", o.Name, o.Type, typeObject)
+		if !objectLeafType[o.Type] {
+			t.Errorf("object %q Type = %q, want a caldav object leaf type", o.Name, o.Type)
 		}
 		names = append(names, o.Name)
 	}

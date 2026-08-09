@@ -54,7 +54,7 @@ func TestMutate_VJournalCreateAndRead(t *testing.T) {
 	ctx := context.Background()
 
 	body := `{"component":"VJOURNAL","journal":{"uid":"note1","summary":"Trip log","description":"day one"}}`
-	if err := (Plugin{}).CreateNode(ctx, node, strings.NewReader(body), typeObject); err != nil {
+	if err := (Plugin{}).CreateNode(ctx, node, strings.NewReader(body), typeVJOURNAL); err != nil {
 		t.Fatalf("CreateNode(VJOURNAL): %v", err)
 	}
 

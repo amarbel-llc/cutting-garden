@@ -130,6 +130,24 @@ broader unification can generalize from. A future `cutting_garden-capture`
 meta/wrapper namespace (and re-introducing a `capture` infix as a wrapper
 type) was considered and deferred — not shipped here.
 
+**2026-08-09 — caldav's object leaf split per-component (#45).** The single
+`caldav-object-v1` tag became three sibling tags — `caldav-object-vtodo-v1`,
+`caldav-object-vevent-v1`, `caldav-object-vjournal-v1` — typed by iCalendar
+component, so a query can scope to a component and each type declares its own
+component-correct facets and STATUS enum (RFC 5545 gives the three components
+disjoint STATUS domains). Both the traversal `Node.Type` and the receipt's
+per-object refs carry the subtype, moving **in sync** — so directions #2 and #4
+still hold, now with three sibling tags instead of one. No back-compat gate was
+needed (nothing had captured caldav yet). This deliberately does NOT model a
+real parent→subtype hierarchy: the shared `caldav-object-` name stem is the
+only expression of the "these are all caldav objects" lineage, and **subsumption**
+(a parent-tag query matching every component) is deferred to when a real type
+system arrives (the chaos typesystem is the eventual home). Until then, "every
+object in a calendar" is spelled by descending without a type predicate
+(trellis `… -> :`). This is a concrete instance of the parent→subtype notion
+`NodeType` still does not model — a data point for whichever direction the
+unification takes.
+
 ## Open Questions
 
 - **Where do definitions live?** In-binary registry only (1), receipt-

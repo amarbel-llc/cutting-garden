@@ -117,10 +117,10 @@ change the receipt's identity, so etag is carried in the payload body
 
 References: one per stored CalDAV object, sorted by alias. The reference
 alias is the resource's **native identity**; the reference type is the
-caldav object leaf type:
+resource's per-component object leaf type (`caldav-object-<kind>-v1`):
 
 ```
-- <native-id> < @<digest> !caldav-object-v1@<sig>
+- <native-id> < @<digest> !caldav-object-vevent-v1@<sig>
 ```
 
 ### Native identity (the reference alias)
@@ -143,16 +143,21 @@ and a restore host), only the protocol-native identity.
 
 ## Object leaves
 
-Type: `!caldav-object-v1`.
+Type: one per component — `!caldav-object-vtodo-v1`,
+`!caldav-object-vevent-v1`, `!caldav-object-vjournal-v1`.
 
-This is the **same** type tag the traversal layer (`RootLister.Types()`,
+These are the **same** type tags the traversal layer (`RootLister.Types()`,
 FDR 0014) declares for a caldav object node: the receipt-leaf and the
 traversal-node vocabularies are unified on one grammar — the first
 concrete realization of FDR 0018 (unified type namespace) directions #2
 (per-entry node types in receipts) and #4 (one tag grammar), unblocked
-once #79/RFC 0010 settled the versioning rules. The tag drops the
-`cutting_garden-` org prefix (mirroring the git binding's `<kind>-…-v1`
-leaves) and carries no `capture` infix.
+once #79/RFC 0010 settled the versioning rules. The object leaf is typed by
+its iCalendar component rather than one union tag so a query can scope to a
+component and each type carries its own component-correct facets/status enum;
+the shared `caldav-object-` stem names the conceptual parent (subsumption —
+a parent-tag query matching every component — is deferred until a real type
+hierarchy lands). The tags drop the `cutting_garden-` org prefix (mirroring
+the git binding's `<kind>-…-v1` leaves) and carry no `capture` infix.
 
 An object leaf is **not** a hyphence node — it is the verbatim
 `text/calendar` body of the resource (the server's `calendar-data`),
@@ -172,7 +177,9 @@ keys:
 | `cutting_garden-capture_receipt-caldav-v1` | `application/vnd.cutting-garden.capture-receipt-caldav+hyphence` | — |
 | `jcs-caldav-payload-v1` | `application/vnd.cutting-garden.caldav-payload+jcs` | `single` |
 | `jcs-caldav-environment-v1` | `application/vnd.cutting-garden.caldav-environment+jcs` | — |
-| `caldav-object-v1` | `text/calendar` | — |
+| `caldav-object-vtodo-v1` | `text/calendar` | — |
+| `caldav-object-vevent-v1` | `text/calendar` | — |
+| `caldav-object-vjournal-v1` | `text/calendar` | — |
 
 These interim media-type/cardinality keys are documented here pending the
 FDR-0010 graduation noted in RFC 0002 §IANA Media Type Interface.

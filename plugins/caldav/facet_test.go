@@ -80,9 +80,11 @@ func TestFacetVersion_CtagBackedToken(t *testing.T) {
 }
 
 func TestDescribeFacets_DeclaresObjectDimensions(t *testing.T) {
+	// typeVTODO carries every dimension asserted below (component, status,
+	// year, month, due_band); the event/journal subtypes are narrower.
 	var dims map[string]cutting_garden_plugins.FacetKind
 	for _, ntf := range (Plugin{}).DescribeFacets() {
-		if ntf.Tag != typeObject {
+		if ntf.Tag != typeVTODO {
 			continue
 		}
 		dims = map[string]cutting_garden_plugins.FacetKind{}
@@ -91,7 +93,7 @@ func TestDescribeFacets_DeclaresObjectDimensions(t *testing.T) {
 		}
 	}
 	if dims == nil {
-		t.Fatalf("no facet dimensions declared for %q", typeObject)
+		t.Fatalf("no facet dimensions declared for %q", typeVTODO)
 	}
 	if dims[facetComponent] != cutting_garden_plugins.FacetCategorical {
 		t.Errorf("component kind = %q, want categorical", dims[facetComponent])

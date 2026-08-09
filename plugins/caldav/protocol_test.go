@@ -46,13 +46,20 @@ func TestCaptureProtocol_EmitsCaldavReceiptTree(t *testing.T) {
 	}
 
 	// The payload node references each object by native identity
-	// <collection>/<component>/<UID>, all typed caldav-object-v1.
+	// <collection>/<component>/<UID>, each typed by its component
+	// (caldav-object-<kind>-v1) — the receipt carries the same per-component
+	// types traversal emits.
 	payload := payloadOf(t, store, receipt)
 	gotIDs := make([]string, 0, len(payload.Refs))
 	for _, r := range payload.Refs {
 		gotIDs = append(gotIDs, r.Alias)
-		if r.TypeString != typeObject {
-			t.Errorf("object ref %q: type = %q, want %q", r.Alias, r.TypeString, typeObject)
+		parts := strings.Split(r.Alias, "/")
+		var want string
+		if len(parts) == 3 {
+			want = objectType(parts[1])
+		}
+		if want == "" || r.TypeString != want {
+			t.Errorf("object ref %q: type = %q, want %q", r.Alias, r.TypeString, want)
 		}
 	}
 	wantIDs := []string{

@@ -16,12 +16,14 @@ import (
 
 var _ cutting_garden_plugins.NodeMutator = (*Plugin)(nil)
 
-// CreateNode strictly creates one CalDAV object (a VEVENT/VTODO leaf) at the
-// node URI. typ must be the object leaf tag (or empty); creating a calendar
-// container is not yet supported (MKCALENDAR, #77). The body is normalized to
-// iCalendar (accepting raw .ics or the objectView JSON) and PUT with an
-// If-None-Match precondition, so an existing object is rejected rather than
-// overwritten.
+// CreateNode strictly creates one CalDAV object (a VTODO/VEVENT/VJOURNAL leaf)
+// at the node URI. typ must be one of the object leaf tags (or empty); the
+// component the object actually becomes is determined by its BODY, not typ, so
+// any of the three subtypes is accepted as the leaf-family gate. Creating a
+// calendar container is not yet supported (MKCALENDAR, #77). The body is
+// normalized to iCalendar (accepting raw .ics or the objectView JSON) and PUT
+// with an If-None-Match precondition, so an existing object is rejected rather
+// than overwritten.
 func (Plugin) CreateNode(
 	ctx context.Context,
 	node *url.URL,
@@ -35,14 +37,16 @@ func (Plugin) CreateNode(
 	case typeCalendar:
 		return errors.BadRequestf(
 			"caldav plugin: creating a calendar container is not yet supported "+
-				"(MKCALENDAR, #77); create %s leaves only", typeObject,
+				"(MKCALENDAR, #77); create %s / %s / %s leaves only",
+			typeVTODO, typeVEVENT, typeVJOURNAL,
 		)
-	case typeObject, "":
-		// A single object leaf — the supported case.
+	case typeVTODO, typeVEVENT, typeVJOURNAL, "":
+		// A single object leaf — the supported case. The body decides the
+		// component; typ only gates the leaf family.
 	default:
 		return errors.BadRequestf(
-			"caldav plugin: cannot create node of unknown type %q (want %s)",
-			typ, typeObject,
+			"caldav plugin: cannot create node of unknown type %q (want %s / %s / %s)",
+			typ, typeVTODO, typeVEVENT, typeVJOURNAL,
 		)
 	}
 

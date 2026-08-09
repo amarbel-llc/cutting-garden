@@ -222,7 +222,7 @@ deferred to when the pre-RFC API is lifted into the RFC.
     # create a new event (destructive ⇒ clown hook asks first)
     create_node(
       uri  = "caldav://dav.host/dav/me/work/new-standup.ics",
-      type = "caldav-object-v1",
+      type = "caldav-object-vevent-v1",
       body = "BEGIN:VCALENDAR…BEGIN:VEVENT…END:VEVENT…END:VCALENDAR",
     )
 

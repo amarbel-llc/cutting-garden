@@ -221,14 +221,16 @@ Given the tree
 
     caldav://dav.host/dav/me/        endpoint
     ├── personal/  (caldav-calendar-v1)
-    │   ├── task1.ics  (caldav-object-v1)
-    │   └── task2.ics  (caldav-object-v1)
+    │   ├── task1.ics  (caldav-object-vtodo-v1)
+    │   └── task2.ics  (caldav-object-vtodo-v1)
     └── work/      (caldav-calendar-v1)
-        └── event1.ics (caldav-object-v1)
+        └── event1.ics (caldav-object-vevent-v1)
 
 `--split '/*'` and `--split '//caldav-calendar-v1'` both yield two
-receipts (personal, work); `--split '//caldav-object-v1'` yields three
-(one per object); no `--split` yields one (the whole endpoint).
+receipts (personal, work); a `--split` on the per-component object leaf
+type (e.g. `//caldav-object-vtodo-v1`) yields one receipt per object of
+that component; no `--split` yields one (the whole endpoint). (The object
+leaf is typed by component — `caldav-object-<kind>-v1` — since #45.)
 
 ## Limitations / Non-Goals
 

@@ -82,12 +82,13 @@ function mcp_describe_node_types { # @test
   local text
   text="$(mcp_result_text "$output" 3)"
 
-  # The object leaf is writable, with both accepted body formats described.
+  # A per-component object leaf is writable, with both accepted body formats
+  # described (the VTODO subtype is the representative check).
   echo "$text" | jq -e '
-    any(.[].types[]; .tag=="caldav-object-v1"
+    any(.[].types[]; .tag=="caldav-object-vtodo-v1"
         and .container==false and .writable==true
         and (.body.accepts | length) >= 2)' >/dev/null ||
-    fail "describe missing a writable caldav-object-v1 with body: $text"
+    fail "describe missing a writable caldav-object-vtodo-v1 with body: $text"
 
   # The calendar container is present and NOT writable.
   echo "$text" | jq -e '
@@ -203,10 +204,10 @@ function mcp_list_nodes_query_walks_and_reverses { # @test
   # task3.ics (Work) both come back, wrapped as {query, nodes}, so the walk
   # descended BOTH discovered calendars.
   mcp_drive "$CALDAV_SOURCE" "$(tools_call 3 list_nodes \
-    "$(jq -nc --arg u "$rooturi" '{uri:$u,query:"!caldav-calendar-v1 -> !caldav-object-v1"}')")"
+    "$(jq -nc --arg u "$rooturi" '{uri:$u,query:"!caldav-calendar-v1 -> :"}')")"
   local text
   text="$(mcp_result_text "$output" 3)"
-  echo "$text" | jq -e '.query == "!caldav-calendar-v1 -> !caldav-object-v1"' >/dev/null ||
+  echo "$text" | jq -e '.query == "!caldav-calendar-v1 -> :"' >/dev/null ||
     fail "query not echoed back: $text"
   echo "$text" | jq -e 'any(.nodes[]; .name=="task1.ics")' >/dev/null ||
     fail "walk missing task1.ics (Personal): $text"
@@ -217,7 +218,7 @@ function mcp_list_nodes_query_walks_and_reverses { # @test
   # them. Both calendars have objects, so both come back — the anchor-bounded
   # child-relation inversion, end to end through the mcp binary.
   mcp_drive "$CALDAV_SOURCE" "$(tools_call 3 list_nodes \
-    "$(jq -nc --arg u "$rooturi" '{uri:$u,query:"!caldav-calendar-v1 -> !caldav-object-v1 <- !caldav-calendar-v1"}')")"
+    "$(jq -nc --arg u "$rooturi" '{uri:$u,query:"!caldav-calendar-v1 -> : <- !caldav-calendar-v1"}')")"
   text="$(mcp_result_text "$output" 3)"
   echo "$text" | jq -e 'any(.nodes[]; .name=="Personal")' >/dev/null ||
     fail "reverse missing the Personal calendar: $text"
@@ -240,7 +241,7 @@ function mcp_list_nodes_query_guards { # @test
   # A typed combinator (deferred, cutting-garden#211) is a tool error, not a
   # silent empty listing.
   mcp_drive "$CALDAV_SOURCE" "$(tools_call 3 list_nodes \
-    "$(jq -nc --arg u "$rooturi" '{uri:$u,query:"!caldav-calendar-v1 -[!x]-> !caldav-object-v1"}')")"
+    "$(jq -nc --arg u "$rooturi" '{uri:$u,query:"!caldav-calendar-v1 -[!x]-> :"}')")"
   assert_equal "$(mcp_is_error "$output" 3)" "true"
 }
 
@@ -255,7 +256,7 @@ function mcp_list_nodes_query_facet_predicate { # @test
   rooturi="$(mcp_result_text "$output" 3 | jq -r '.[0].uri')"
 
   mcp_drive "$CALDAV_SOURCE" "$(tools_call 3 list_nodes \
-    "$(jq -nc --arg u "$rooturi" '{uri:$u,query:"!caldav-calendar-v1 -> !caldav-object-v1 component=VTODO"}')")"
+    "$(jq -nc --arg u "$rooturi" '{uri:$u,query:"!caldav-calendar-v1 -> component=VTODO"}')")"
   local text
   text="$(mcp_result_text "$output" 3)"
   echo "$text" | jq -e 'any(.nodes[]; .name=="task1.ics")' >/dev/null ||
@@ -283,7 +284,7 @@ function mcp_list_nodes_query_or_alternatives { # @test
   rooturi="$(mcp_result_text "$output" 3 | jq -r '.[0].uri')"
 
   mcp_drive "$CALDAV_SOURCE" "$(tools_call 3 list_nodes \
-    "$(jq -nc --arg u "$rooturi" '{uri:$u,query:"!caldav-calendar-v1 -> !caldav-object-v1 [component=VTODO, component=VEVENT]"}')")"
+    "$(jq -nc --arg u "$rooturi" '{uri:$u,query:"!caldav-calendar-v1 -> [component=VTODO, component=VEVENT]"}')")"
   local text
   text="$(mcp_result_text "$output" 3)"
   echo "$text" | jq -e 'any(.nodes[]; .name=="task1.ics")' >/dev/null ||
@@ -351,7 +352,7 @@ function mcp_cud_round_trips { # @test
   v1="$(printf 'BEGIN:VCALENDAR\nVERSION:2.0\nBEGIN:VEVENT\nUID:e2e\nSUMMARY:E2E v1\nEND:VEVENT\nEND:VCALENDAR\n')"
   v2="$(printf 'BEGIN:VCALENDAR\nVERSION:2.0\nBEGIN:VEVENT\nUID:e2e\nSUMMARY:E2E v2\nEND:VEVENT\nEND:VCALENDAR\n')"
 
-  mcp_call create_node "$(jq -nc --arg u "$obj" --arg b "$v1" '{uri:$u,body:$b,type:"caldav-object-v1"}')"
+  mcp_call create_node "$(jq -nc --arg u "$obj" --arg b "$v1" '{uri:$u,body:$b,type:"caldav-object-vevent-v1"}')"
   assert_equal "$(mcp_is_error "$output" 3)" "false"
   [[ "$(mcp_result_text "$output" 3)" == created* ]] || fail "create: $(mcp_result_text "$output" 3)"
 
@@ -375,7 +376,7 @@ function mcp_create_is_strict { # @test
   obj="$(caldav_object_uri dup.ics)"
   args="$(jq -nc --arg u "$obj" \
     --arg b "$(printf 'BEGIN:VCALENDAR\nBEGIN:VEVENT\nUID:dup\nSUMMARY:dup\nEND:VEVENT\nEND:VCALENDAR\n')" \
-    '{uri:$u,body:$b,type:"caldav-object-v1"}')"
+    '{uri:$u,body:$b,type:"caldav-object-vevent-v1"}')"
 
   mcp_call create_node "$args"
   assert_equal "$(mcp_is_error "$output" 3)" "false"

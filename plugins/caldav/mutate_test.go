@@ -15,7 +15,7 @@ func TestCreateNode_CreatesObject(t *testing.T) {
 
 	err := Plugin{}.CreateNode(
 		context.Background(), mustParseURL(t, arg),
-		strings.NewReader(vevent("u1", "Standup")), typeObject,
+		strings.NewReader(vevent("u1", "Standup")), typeVEVENT,
 	)
 	if err != nil {
 		t.Fatalf("CreateNode: %v", err)
@@ -36,7 +36,7 @@ func TestCreateNode_StrictCollisionErrors(t *testing.T) {
 
 	err := Plugin{}.CreateNode(
 		context.Background(), mustParseURL(t, arg),
-		strings.NewReader(vevent("dup", "Clash")), typeObject,
+		strings.NewReader(vevent("dup", "Clash")), typeVEVENT,
 	)
 	if err == nil {
 		t.Fatal("CreateNode on an existing object must error (strict create)")
@@ -50,7 +50,7 @@ func TestCreateNode_AcceptsObjectViewJSON(t *testing.T) {
 
 	err := Plugin{}.CreateNode(
 		context.Background(), mustParseURL(t, arg),
-		strings.NewReader(body), typeObject,
+		strings.NewReader(body), typeVEVENT,
 	)
 	if err != nil {
 		t.Fatalf("CreateNode(json): %v", err)
@@ -134,7 +134,7 @@ func TestMutate_RoundTrip(t *testing.T) {
 	node := mustParseURL(t, arg)
 	ctx := context.Background()
 
-	if err := (Plugin{}).CreateNode(ctx, node, strings.NewReader(vevent("rt", "v1")), typeObject); err != nil {
+	if err := (Plugin{}).CreateNode(ctx, node, strings.NewReader(vevent("rt", "v1")), typeVEVENT); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	if got := f.resources["/dav/cal/rt.ics"]; !strings.Contains(got, "SUMMARY:v1") {
@@ -326,7 +326,7 @@ func TestPatchNode_RoundTrip(t *testing.T) {
 	node := mustParseURL(t, arg)
 	ctx := context.Background()
 
-	if err := (Plugin{}).CreateNode(ctx, node, strings.NewReader(vtodo("rtp", "v1")), typeObject); err != nil {
+	if err := (Plugin{}).CreateNode(ctx, node, strings.NewReader(vtodo("rtp", "v1")), typeVTODO); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	if _, err := (Plugin{}).PatchNode(ctx, node,

@@ -22,10 +22,10 @@ func TestDescribeFacetWrites_ConsistentAndDeclared(t *testing.T) {
 
 	mode := map[string]cutting_garden_plugins.FacetWriteMode{}
 	field := map[string]string{}
+	// Merge across the three per-component write entries; the shared
+	// dimensions (year/month/status write:one, component/due_band/timezone
+	// read-only) declare consistent modes wherever they appear.
 	for _, nt := range writes {
-		if nt.Tag != typeObject {
-			continue
-		}
 		for _, w := range nt.Writes {
 			mode[w.DimensionKey] = w.Mode
 			field[w.DimensionKey] = w.Field

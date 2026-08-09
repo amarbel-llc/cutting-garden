@@ -139,7 +139,7 @@ working-directory tree as MCP resources out of the box.
     #     account's calendars
     #   resources/read caldav://dav.host/dav/me/work/   (a container)
     #     → [ {"uri":"caldav://dav.host/dav/me/work/event1.ics",
-    #          "name":"event1.ics","type":"caldav-object-v1",
+    #          "name":"event1.ics","type":"caldav-object-vevent-v1",
     #          "container":false}, ... ]
     #   resources/read caldav://dav.host/dav/me/work/event1.ics   (a leaf)
     #     → contents: [

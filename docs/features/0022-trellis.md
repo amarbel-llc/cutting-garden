@@ -36,10 +36,10 @@ settled at implementation, e.g. `root-v1`) with fields (`scheme`,
 `account`) and config-declared tags. Root selection is then ordinary
 predicate machinery — no root/URI syntax in the language:
 
-    !root-v1 scheme=caldav -> !caldav-object-v1 dtstart^="20260718"
+    !root-v1 scheme=caldav -> !caldav-object-vevent-v1 dtstart^="20260718"
         # today's events across ALL caldav accounts
 
-    work -> !caldav-object-v1 component=VEVENT
+    work -> !caldav-object-vevent-v1
         # ... across roots tagged `work` in config.toml
 
     caldav:fastmail -> component=VEVENT

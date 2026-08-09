@@ -64,7 +64,7 @@ document — the exact bytes presented to and edited by the end-user:
 % generated: cg organize -group-by status caldav:https://…/cal/
 - _base = @blake2b256-<digest of this doc with the _base line excised>
 - _anchor = caldav:https://…/cal/
-- _type = !caldav-object-v1            (spelling 2 only; see below)
+- _type = !caldav-object-vtodo-v1      (spelling 2 only; see below)
 ! organize-base-v1
 ---
 

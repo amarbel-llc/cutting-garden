@@ -80,8 +80,9 @@ func TestProbe_CapabilitiesPerPlugin(t *testing.T) {
 	if !r.Capture || r.Restore != "yes" || !r.Diff {
 		t.Errorf("caldav caps = %+v", r)
 	}
-	if strings.Join(r.Traversal, ",") != "caldav-calendar-v1,caldav-object-v1" {
-		t.Errorf("caldav traversal = %v, want the two declared node types", r.Traversal)
+	if strings.Join(r.Traversal, ",") !=
+		"caldav-calendar-v1,caldav-object-vtodo-v1,caldav-object-vevent-v1,caldav-object-vjournal-v1" {
+		t.Errorf("caldav traversal = %v, want the calendar container + three per-component leaf types", r.Traversal)
 	}
 }
 
@@ -116,7 +117,7 @@ func TestRun_JSONRoundTrip(t *testing.T) {
 		got = append(got, r)
 	}
 	rows := rowsByName(got)
-	if r, ok := rows["caldav"]; !ok || len(r.Traversal) != 2 {
+	if r, ok := rows["caldav"]; !ok || len(r.Traversal) != 4 {
 		t.Errorf("caldav json row = %+v (ok=%v)", r, ok)
 	}
 	if r, ok := rows["ytdlp"]; !ok || r.Restore != "no" {

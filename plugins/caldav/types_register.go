@@ -23,10 +23,12 @@ const (
 // type-signature registry (RFC 0002 §Type Signatures mechanism (1)), so
 // every reference into the caldav receipt tree carries an `@<sig>` type
 // lock consumers verify. Media types follow
-// application/vnd.cutting-garden.<thing>+<format>; the object leaf carries
-// the iCalendar media type with no hyphence/jcs framing (it is the
-// verbatim text/calendar body). typeObject is the SAME tag the traversal
-// layer uses (traversal.go) — the unified tag grammar (FDR 0018).
+// application/vnd.cutting-garden.<thing>+<format>; the object leaves carry
+// the iCalendar media type with no hyphence/jcs framing (they are the
+// verbatim text/calendar body). The per-component object leaf tags
+// (typeVTODO/typeVEVENT/typeVJOURNAL) are the SAME tags the traversal layer
+// uses (traversal.go) — the unified tag grammar (FDR 0018), now three sibling
+// tags moving in sync between traversal and the receipt.
 func init() {
 	capture_plugin.RegisterType(capture_plugin.TypeDef{
 		TypeString:    capture_plugin.ReceiptType(captureKind),
@@ -41,8 +43,10 @@ func init() {
 		TypeString:    pluginEnvType,
 		IANAMediaType: "application/vnd.cutting-garden.caldav-environment+jcs",
 	})
-	capture_plugin.RegisterType(capture_plugin.TypeDef{
-		TypeString:    typeObject,
-		IANAMediaType: "text/calendar",
-	})
+	for _, tag := range []string{typeVTODO, typeVEVENT, typeVJOURNAL} {
+		capture_plugin.RegisterType(capture_plugin.TypeDef{
+			TypeString:    tag,
+			IANAMediaType: "text/calendar",
+		})
+	}
 }

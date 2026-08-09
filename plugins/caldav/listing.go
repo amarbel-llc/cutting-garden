@@ -44,24 +44,40 @@ var (
 	_ cutting_garden_plugins.ListingFieldsDescriber = (*Plugin)(nil)
 )
 
-// DescribeListingFields declares the caldav object leaf's listing-field
-// schema — the discoverability half of enrichment (cutting-garden#160),
-// symmetric with DescribeFacets.
+// DescribeListingFields declares each object leaf type's listing-field schema —
+// the discoverability half of enrichment (cutting-garden#160), symmetric with
+// DescribeFacets. Each component declares only the fields listingFieldsOf can
+// populate for it: a VJOURNAL has none of RFC 5545's event-only properties, a
+// VTODO has DUE/percent-complete but no DTEND/RECURRENCE-ID, so their schemas
+// differ.
 func (Plugin) DescribeListingFields() []cutting_garden_plugins.NodeTypeListingFields {
+	summary := cutting_garden_plugins.ListingField{Key: listingFieldSummary, Label: "Summary"}
+	status := cutting_garden_plugins.ListingField{Key: listingFieldStatus, Label: "Status"}
+	dtstart := cutting_garden_plugins.ListingField{Key: listingFieldDtStart, Label: "Start"}
+	location := cutting_garden_plugins.ListingField{Key: listingFieldLocation, Label: "Location"}
 	return []cutting_garden_plugins.NodeTypeListingFields{
 		{
-			Tag: typeObject,
+			Tag: typeVTODO,
 			Fields: []cutting_garden_plugins.ListingField{
-				{Key: listingFieldSummary, Label: "Summary"},
-				{Key: listingFieldStatus, Label: "Status"},
-				{Key: listingFieldDtStart, Label: "Start"},
+				summary, status, dtstart,
+				{Key: listingFieldDue, Label: "Due"},
+				location,
+				{Key: listingFieldPercentComplete, Label: "% Complete"},
+			},
+		},
+		{
+			Tag: typeVEVENT,
+			Fields: []cutting_garden_plugins.ListingField{
+				summary, status, dtstart,
 				{Key: listingFieldDtEnd, Label: "End"},
 				{Key: listingFieldDuration, Label: "Duration"},
-				{Key: listingFieldLocation, Label: "Location"},
-				{Key: listingFieldDue, Label: "Due"},
-				{Key: listingFieldPercentComplete, Label: "% Complete"},
+				location,
 				{Key: listingFieldRecurrenceID, Label: "Recurrence ID"},
 			},
+		},
+		{
+			Tag:    typeVJOURNAL,
+			Fields: []cutting_garden_plugins.ListingField{summary, status, dtstart},
 		},
 	}
 }
@@ -156,7 +172,7 @@ func (c *client) enrichedCalendarNodes(
 				nodes = append(nodes, cutting_garden_plugins.Node{
 					URI:    eventOccurrenceURI(item),
 					Name:   eventNodeName(item.rel),
-					Type:   typeObject,
+					Type:   typeVEVENT,
 					Facets: facets,
 					Fields: listingFieldsOf(view),
 				})
@@ -185,7 +201,7 @@ func (c *client) enrichedCalendarNodes(
 			nodes = append(nodes, cutting_garden_plugins.Node{
 				URI:    caldavURIForAbs(abs),
 				Name:   eventNodeName(rel),
-				Type:   typeObject,
+				Type:   objectType(component),
 				Facets: facets,
 				Fields: listingFieldsOf(view),
 			})

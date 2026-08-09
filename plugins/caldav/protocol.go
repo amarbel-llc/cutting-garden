@@ -64,19 +64,21 @@ func (Plugin) CaptureProtocol(
 	return res, nil
 }
 
-// capturedObject is one stored VTODO/VEVENT: its native-identity alias,
-// the stored leaf's markl digest, and the server etag (the payload
-// freshness record). Collected, sorted by id, then folded into the
+// capturedObject is one stored VTODO/VEVENT/VJOURNAL: its native-identity
+// alias, the iCalendar component (which types the payload ref —
+// caldav-object-<kind>-v1), the stored leaf's markl digest, and the server etag
+// (the payload freshness record). Collected, sorted by id, then folded into the
 // payload node.
 type capturedObject struct {
-	id     string // <collection>/<component>/<UID>
-	href   string // server-relative resource path (the diff probe's key)
-	digest string
-	etag   string
+	id        string // <collection>/<component>/<UID>
+	component string // VTODO / VEVENT / VJOURNAL — types the payload ref
+	href      string // server-relative resource path (the diff probe's key)
+	digest    string
+	etag      string
 }
 
-// storeObjects fetches every VTODO/VEVENT under each calendar, stores its
-// verbatim body as a caldav-object-v1 leaf, and returns one
+// storeObjects fetches every VTODO/VEVENT/VJOURNAL under each calendar, stores
+// its verbatim body as a caldav-object-<component>-v1 leaf, and returns one
 // capturedObject per resource keyed by native identity. Diff and capture
 // MUST derive identity the same way, so the alias construction lives in
 // objectIdentity (shared).
@@ -117,10 +119,11 @@ func storeObjects(
 				}
 
 				objects = append(objects, capturedObject{
-					id:     objectIdentity(collection, component, uid),
-					href:   serverPath(c.resolveHref(res.href)),
-					digest: digest,
-					etag:   res.etag,
+					id:        objectIdentity(collection, component, uid),
+					component: component,
+					href:      serverPath(c.resolveHref(res.href)),
+					digest:    digest,
+					etag:      res.etag,
 				})
 				r.Progress(cutting_garden_plugins.ReportProgress{
 					Item:  label,
@@ -150,7 +153,7 @@ func writeCaldavReceipt(
 	refs := make([]capture_plugin.Ref, 0, len(objects))
 	resourceRecords := make([]map[string]any, 0, len(objects))
 	for _, o := range objects {
-		refs = append(refs, capture_plugin.LockedRef(o.id, o.digest, typeObject))
+		refs = append(refs, capture_plugin.LockedRef(o.id, o.digest, objectType(o.component)))
 		resourceRecords = append(resourceRecords, map[string]any{
 			"id":   o.id,
 			"href": o.href,

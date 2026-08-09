@@ -21,11 +21,11 @@ func TestBulkMutate_BestEffortChangeset(t *testing.T) {
 			Ops: []cutting_garden_plugins.BulkOp{
 				{
 					Kind: cutting_garden_plugins.BulkCreate, URI: mustParseURL(t, a),
-					Type: typeObject, Body: []byte(vevent("u-a", "A")),
+					Type: typeVEVENT, Body: []byte(vevent("u-a", "A")),
 				},
 				{
 					Kind: cutting_garden_plugins.BulkCreate, URI: mustParseURL(t, b),
-					Type: typeObject, Body: []byte(vevent("u-b", "B")),
+					Type: typeVEVENT, Body: []byte(vevent("u-b", "B")),
 				},
 			},
 		})
@@ -58,7 +58,7 @@ func TestBulkMutate_PartialFailureIsBestEffort(t *testing.T) {
 			Ops: []cutting_garden_plugins.BulkOp{
 				{
 					Kind: cutting_garden_plugins.BulkCreate, URI: mustParseURL(t, good),
-					Type: typeObject, Body: []byte(vevent("g", "Good")),
+					Type: typeVEVENT, Body: []byte(vevent("g", "Good")),
 				},
 				{Kind: cutting_garden_plugins.BulkDelete, URI: mustParseURL(t, missing)},
 			},

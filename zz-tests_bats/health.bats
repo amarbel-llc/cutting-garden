@@ -23,12 +23,13 @@ function health_json_is_machine_readable { # @test
   run_cg health -format json
   assert_success
 
-  # caldav is the RootLister reference: two declared traversal node types.
+  # caldav is the RootLister reference: the calendar container plus one leaf
+  # type per component (VTODO/VEVENT/VJOURNAL) — four declared traversal types.
   local n
   n="$(echo "$output" |
     jq -rs 'map(select(.plugin=="caldav")) | .[0].traversal_types | length')"
-  [[ $n -eq 2 ]] ||
-    fail "caldav traversal_types length = '$n', want 2; output:"$'\n'"$output"
+  [[ $n -eq 4 ]] ||
+    fail "caldav traversal_types length = '$n', want 4; output:"$'\n'"$output"
 
   # ytdlp has no restore; git restores via the capture protocol.
   local ytdlp_restore git_protocol
