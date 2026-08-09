@@ -47,6 +47,22 @@ func main() {
 	srv.AddCalendar("/dav/work/", "Work")
 	srv.Seed("/dav/work/task3.ics", "VTODO", vtodo("task3", "Submit report"))
 
+	// A third calendar dedicated to the organize month reschedule-by-move lane
+	// (zz-tests_bats/organize_month.bats, FDR 0023 Slice 2b): VTODOs with
+	// clock-bearing, TZID-stamped DUE dates in DISTINCT months, so grouping by
+	// `month` yields separate buckets and moving one between them exercises the
+	// FacetWriteApplier date splice (day + clock + zone preserved). OPT-IN via
+	// CG_TEST_CALDAV_SCHED so it never inflates the home-capture object count the
+	// caldav.bats / discovery fixtures assert against — only the month lane, which
+	// sets the env var before spawning the server, sees this calendar.
+	if os.Getenv("CG_TEST_CALDAV_SCHED") != "" {
+		srv.AddCalendar("/dav/sched/", "Schedule")
+		srv.Seed("/dav/sched/sched1.ics", "VTODO",
+			vtodoDue("sched1", "Book flights", "20260815T143000", "America/Los_Angeles"))
+		srv.Seed("/dav/sched/sched2.ics", "VTODO",
+			vtodoDue("sched2", "Renew passport", "20260910T163000", "America/Los_Angeles"))
+	}
+
 	// Handshake: the caldav: source arg (opaque form reaches the plain-HTTP
 	// test server) and the calendar path.
 	fmt.Printf("caldav:%s/dav/ %s\n", srv.URL(), srv.CalendarPath)
@@ -65,4 +81,17 @@ func vtodo(uid, summary string) string {
 func vevent(uid, summary string) string {
 	return "BEGIN:VCALENDAR\nVERSION:2.0\nBEGIN:VEVENT\nUID:" + uid +
 		"\nSUMMARY:" + summary + "\nEND:VEVENT\nEND:VCALENDAR\n"
+}
+
+// vtodoDue seeds a VTODO whose DUE carries a clock time and (when tzid is
+// non-empty) a TZID parameter — the shape the month reschedule lane needs to
+// prove day+clock+zone are preserved across a bucket move.
+func vtodoDue(uid, summary, due, tzid string) string {
+	dueProp := "DUE"
+	if tzid != "" {
+		dueProp += ";TZID=" + tzid
+	}
+	dueProp += ":" + due
+	return "BEGIN:VCALENDAR\nVERSION:2.0\nBEGIN:VTODO\nUID:" + uid +
+		"\nSUMMARY:" + summary + "\n" + dueProp + "\nEND:VTODO\nEND:VCALENDAR\n"
 }

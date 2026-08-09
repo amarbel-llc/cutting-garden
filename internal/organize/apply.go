@@ -3,7 +3,6 @@ package organize
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -113,7 +112,7 @@ func (cmd *Organize) applyDocument(
 		return false, err
 	}
 
-	mutator, writes, err := resolveWrites(lister, dim)
+	mutator, applier, writes, err := resolveWrites(lister, dim)
 	if err != nil {
 		return false, err
 	}
@@ -130,7 +129,7 @@ func (cmd *Organize) applyDocument(
 		}
 	}
 
-	if err := cmd.executePlan(ctx, mutator, writes, moves, commit); err != nil {
+	if err := cmd.executePlan(ctx, mutator, applier, writes, moves, commit); err != nil {
 		return false, err
 	}
 	return commit, nil
@@ -197,24 +196,33 @@ func planMoves(edited, base document, dim string, liveNodes []cgp.Node) ([]move,
 }
 
 // resolveWrites resolves the plugin's write surface for the grouped dimension:
-// the NodeMutator that performs writes, and a per-node-type FacetWrite mapping
-// for the dimension. A plugin exposing no writes, or one declaring no mapping for
-// the dimension on any type, is rejected loudly (FDR 0023 "writability must be
-// declared").
+// the NodeMutator that performs writes, the FacetWriteApplier that builds each
+// move's patch, and a per-node-type FacetWrite mapping for the dimension. A plugin
+// exposing no writes, declaring no mapping for the dimension, or declaring
+// writable facets without an applier to build the patch is rejected loudly
+// (FDR 0023 "writability must be declared").
 func resolveWrites(
 	lister cgp.RootLister, dim string,
-) (cgp.NodeMutator, map[string]cgp.FacetWrite, error) {
+) (cgp.NodeMutator, cgp.FacetWriteApplier, map[string]cgp.FacetWrite, error) {
 	mutator, ok := lister.(cgp.NodeMutator)
 	if !ok {
-		return nil, nil, errors.BadRequestf(
+		return nil, nil, nil, errors.BadRequestf(
 			"organize --apply: plugin does not support writes (no NodeMutator)",
 		)
 	}
 	describer, ok := lister.(cgp.FacetWriteDescriber)
 	if !ok {
-		return nil, nil, errors.BadRequestf(
+		return nil, nil, nil, errors.BadRequestf(
 			"organize --apply: plugin declares no writable facets (no "+
 				"FacetWriteDescriber); dimension %q cannot be reorganized", dim,
+		)
+	}
+	applier, ok := lister.(cgp.FacetWriteApplier)
+	if !ok {
+		return nil, nil, nil, errors.BadRequestf(
+			"organize --apply: plugin declares writable facets but no "+
+				"FacetWriteApplier to build the patch; dimension %q cannot be "+
+				"reorganized", dim,
 		)
 	}
 
@@ -227,11 +235,11 @@ func resolveWrites(
 		}
 	}
 	if len(writes) == 0 {
-		return nil, nil, errors.BadRequestf(
+		return nil, nil, nil, errors.BadRequestf(
 			"organize --apply: dimension %q has no write mapping declared", dim,
 		)
 	}
-	return mutator, writes, nil
+	return mutator, applier, writes, nil
 }
 
 // confirmLargeApply presents the large-batch yes/no gate for an interactive
@@ -255,6 +263,7 @@ func confirmLargeApply(moveCount int) (bool, error) {
 func (cmd *Organize) executePlan(
 	ctx context.Context,
 	mutator cgp.NodeMutator,
+	applier cgp.FacetWriteApplier,
 	writes map[string]cgp.FacetWrite,
 	moves []move,
 	commit bool,
@@ -285,16 +294,18 @@ func (cmd *Organize) executePlan(
 			)
 		}
 
-		body, err := buildFieldPatch(mv, w)
-		if err != nil {
-			return err
-		}
-
+		// Dry-run previews the bucket-level move; only a commit invokes the
+		// plugin's applier to build (and possibly compute, e.g. a date splice) the
+		// real patch body.
 		if !commit {
 			fmt.Fprintf(cmd.output, "would move %s: %s %q -> %q\n", mv.URI, w.Field, mv.From, mv.To)
 			continue
 		}
 
+		body, err := applier.BuildFacetWritePatch(ctx, mv.Node, w, mv.To)
+		if err != nil {
+			return errors.Wrapf(err, "organize: build patch for %s", mv.URI)
+		}
 		applied, err := mutator.PatchNode(ctx, mv.Node.URI, bytes.NewReader(body))
 		if err != nil {
 			return errors.Wrapf(err, "organize: patch %s", mv.URI)
@@ -302,50 +313,6 @@ func (cmd *Organize) executePlan(
 		fmt.Fprintf(cmd.output, "moved %s: applied %v\n", mv.URI, applied)
 	}
 	return nil
-}
-
-// buildFieldPatch renders a Mode-one field patch as caldav objectView JSON: the
-// target bucket value goes verbatim into the mapped field, keyed under the
-// component discriminator. Correct for passthrough dimensions whose bucket value
-// IS the field value (a status enum); a dimension needing bucket->value
-// completion (a date reschedule) is the FacetWriteApplier verb's job (Slice 2b).
-func buildFieldPatch(mv move, w cgp.FacetWrite) ([]byte, error) {
-	component := firstFacetKey(mv.Node.Facets["component"])
-	if component == "" {
-		return nil, errors.BadRequestf(
-			"organize: cannot determine the component of %s (no component facet)", mv.URI,
-		)
-	}
-	inner, ok := componentInnerKey(component)
-	if !ok {
-		return nil, errors.BadRequestf(
-			"organize: unsupported component %q for %s", component, mv.URI,
-		)
-	}
-	body := map[string]any{
-		"component": component,
-		inner:       map[string]string{w.Field: mv.To},
-	}
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, errors.Wrap(err)
-	}
-	return buf, nil
-}
-
-// componentInnerKey maps a caldav component discriminator to the objectView field
-// the PatchNode body nests its fields under.
-func componentInnerKey(component string) (string, bool) {
-	switch component {
-	case "VEVENT":
-		return "event", true
-	case "VTODO":
-		return "task", true
-	case "VJOURNAL":
-		return "journal", true
-	default:
-		return "", false
-	}
 }
 
 // firstFacetKey returns the first bucket key of a Mode-one facet membership, or

@@ -220,6 +220,23 @@ type FacetVersioner = internal.FacetVersioner
 // clock-time preservation, id allocation); this record only DESCRIBES it.
 type FacetWrite = internal.FacetWrite
 
+// FacetWriteApplier is the capability that BUILDS the substrate patch for one
+// facet-bucket move — the write-side execution counterpart of
+// FacetWriteDescriber's declaration. It owns any bucket->value COMPLETION the
+// substrate needs: a passthrough dimension (a status enum) writes the target
+// bucket verbatim into the mapped field, while a date dimension splices the
+// target period into the object's existing date, preserving day-of-month, clock
+// time, and time zone (FDR 0023 "reschedule by move"). Because the plugin returns
+// the finished patch body, the organize apply engine needs no knowledge of the
+// substrate's patch shape or of any domain transition — the framework stays free
+// of caldav's (or any plugin's) JSON layout (RFC 0009 no-inversion).
+//
+// Probed by type assertion on an already-resolved plugin, exactly like
+// FacetWriteDescriber. A plugin that declares writable facets (FacetWriteDescriber
+// with a non-none Mode) MUST also implement this — the apply engine rejects a
+// writable-but-applier-less plugin loudly rather than guessing the patch shape.
+type FacetWriteApplier = internal.FacetWriteApplier
+
 // FacetWriteDescriber is the OPTIONAL capability that declares how a plugin's
 // facet dimensions map to WRITES — the write-side extension of FacetDescriber's
 // read-side schema (RFC 0012 §Write mapping, FDR 0023's organize mapping

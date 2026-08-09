@@ -1,13 +1,14 @@
 ---
-status: exploring
+status: proposed
 date: 2026-07-18
 promotion-criteria: |
-  Promote to `proposed` when a prototype apply engine has run the caldav
-  scenario (reschedule-by-move) end-to-end against the testserver. The other
-  three original criteria are now MET: hyphence RFC 0002 (hyphence#2) merged,
-  ContainerCreator (#143) landed, and the write-descriptor extension to
-  RFC 0012's facet schema specified in Go (RFC 0012 §14) and implemented
-  (FacetWriteDescriber + caldav reference, 2026-08).
+  MET 2026-08-05: the apply engine ran the caldav reschedule-by-move scenario
+  end-to-end against the testserver (FacetWriteApplier + caldav month/year date
+  splice; zz-tests_bats/organize_month.bats). The other three original criteria
+  were already MET: hyphence RFC 0002 (hyphence#2) merged, ContainerCreator
+  (#143) landed, and the write-descriptor extension to RFC 0012's facet schema
+  specified in Go (RFC 0012 §14) and implemented (FacetWriteDescriber + caldav
+  reference, 2026-08). Promoted exploring→proposed.
 ---
 
 # organize — cross-substrate facet editing
@@ -37,6 +38,21 @@ commit gate is the **`-commit` CLI flag, defaulting to dry-run**: the
 (hyphence#14). After a dry-run the edited buffer's path is printed for
 re-apply; an interactive commit whose change set exceeds 30 objects gets
 a single `huh` confirmation. Line-deletion stays out of scope (cg#215).
+
+**2026-08-05 — reschedule-by-move (implemented, Slice 2b).** The apply
+engine builds each move's substrate patch through a new plugin-owned
+**`FacetWriteApplier`** capability (`BuildFacetWritePatch`) rather than a
+framework-side patch builder — so the framework carries no substrate JSON
+shape or domain-transition logic (RFC 0009 no-inversion). caldav's applier
+handles the status passthrough AND the `month`/`year` reschedule: it splices
+the target period into the object's existing DTSTART (events) or DUE (tasks),
+preserving the day-of-month, clock time, and TZID (PatchNode's GET +
+re-serialize keeps the zone; only the date value changes), clamping an
+out-of-range day to the target month's last. Writability now requires the
+applier — a plugin declaring writable facets without one is rejected loudly,
+which also closed a latent corruption: month/year were already declared
+`FacetWriteOne`, and the old verbatim passthrough would have written a bare
+`"2026-09"` into the date.
 
 ## Shape
 

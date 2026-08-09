@@ -497,6 +497,39 @@ debug-organize-fixture GROUP_BY='status': debug-build-go
     .tmp/cutting-garden organize -group-by {{ GROUP_BY }} "$cal"
     exec {SRV[1]}>&- || true
 
+# End-to-end reschedule-by-move against the testserver's /dav/sched/ calendar
+# (FDR 0023 Slice 2b): generate the document grouped by month, move sched1 from
+# 2026-08 to 2026-09, apply with --commit, and GET the object back to show the
+# DUE splice preserved its day/clock/TZID. The host-run twin of
+# zz-tests_bats/organize_month.bats — WRITES to the throwaway in-memory server
+# only (nothing persists past the coproc).
+[group('debug')]
+debug-organize-month-reschedule: debug-build-go
+    #!/usr/bin/env bash
+    set -euo pipefail
+    root="{{ justfile_directory() }}"
+    cd "$root"
+    nix develop --command go build -o .tmp/cutting-garden-caldav-testserver ./cmd/cutting-garden-caldav-testserver
+    nix develop --command madder init -encryption none .default 2>/dev/null || true
+    export CG_TEST_CALDAV_SCHED=1
+    coproc SRV { .tmp/cutting-garden-caldav-testserver; }
+    read -r -u "${SRV[0]}" source_url _calpath
+    cal="${source_url%/dav/}/dav/sched/"
+    doc=".tmp/organize-month.txt"
+    echo "# cg organize -group-by month $cal" >&2
+    .tmp/cutting-garden organize -group-by month "$cal" | tee "$doc"
+    line="$(grep sched1.ics "$doc")"
+    awk -v ln="$line" -v h='## =2026-09' '
+      $0 == ln { next }
+      { print }
+      $0 == h { print ""; print ln }
+    ' "$doc" >"$doc.edited"
+    echo '# --- apply --commit (move sched1 2026-08 -> 2026-09) ---' >&2
+    .tmp/cutting-garden organize -apply "$doc.edited" -commit
+    echo '# --- GET sched1.ics (expect DUE;TZID=America/Los_Angeles:20260915T143000) ---' >&2
+    curl -fsS "${source_url#caldav:}sched/sched1.ics"
+    exec {SRV[1]}>&- || true
+
 # Render (dry-run, READ-ONLY on the server) the organize document for a LIVE
 # Fastmail calendar, grouped by GROUP_BY. With an empty CAL, lists the calendars
 # under the account home so you can pick the task calendar's UID; with a CAL uid,

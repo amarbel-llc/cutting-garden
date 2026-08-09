@@ -1,7 +1,6 @@
 package organize
 
 import (
-	"encoding/json"
 	"sort"
 	"testing"
 
@@ -132,30 +131,5 @@ func TestPlanMoves_Conflict(t *testing.T) {
 
 	if _, err := planMoves(edited, base, "status", live); err == nil {
 		t.Fatal("expected a conflict error when live drifted from base")
-	}
-}
-
-// TestBuildFieldPatch_Status pins the objectView JSON a status move produces.
-func TestBuildFieldPatch_Status(t *testing.T) {
-	mv := move{
-		URI:  "caldav://h/c/t1.ics",
-		To:   "COMPLETED",
-		Node: taskNode(t, "caldav://h/c/t1.ics", "NEEDS-ACTION"),
-	}
-	w := cgp.FacetWrite{DimensionKey: "status", Mode: cgp.FacetWriteOne, Field: "status"}
-
-	body, err := buildFieldPatch(mv, w)
-	if err != nil {
-		t.Fatalf("buildFieldPatch: %v", err)
-	}
-	var got struct {
-		Component string            `json:"component"`
-		Task      map[string]string `json:"task"`
-	}
-	if err := json.Unmarshal(body, &got); err != nil {
-		t.Fatalf("unmarshal patch body %s: %v", body, err)
-	}
-	if got.Component != "VTODO" || got.Task["status"] != "COMPLETED" {
-		t.Errorf("patch body = %s, want VTODO task.status=COMPLETED", body)
 	}
 }
