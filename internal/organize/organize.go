@@ -5,7 +5,8 @@
 //
 // Invocation shapes:
 //
-//	organize <uri> --group-by <facet> [--query <trellis>]   interactive (TTY) / generate (pipe)
+//	organize <uri> <group-by> [--query <trellis>]           interactive (TTY) / generate (pipe)
+//	  (<group-by> may be positional as shown, or the --group-by <facet> flag)
 //	organize --apply <path> [--commit]                      apply an edited document
 //	organize --commit-directly < doc                        apply from stdin, committing
 //
@@ -173,14 +174,30 @@ func (cmd *Organize) Run(req command.Request) {
 		errors.ContextCancelWithBadRequestf(ctx,
 			"organize requires a <uri> to generate (or --apply <path> to apply "+
 				"an edited document)")
-	case len(args) > 1:
+		return
+	case len(args) > 2:
 		errors.ContextCancelWithBadRequestf(ctx,
-			"too many positional arguments; organize takes at most one (<uri>), "+
-				"trailing: %v", args[1:])
-	default:
-		if err := cmd.runGenerateOrInteractive(ctx, args[0]); err != nil {
-			errors.ContextCancelWithError(ctx, err)
+			"too many positional arguments; organize takes at most two "+
+				"(<uri> [group-by]), trailing: %v", args[2:])
+		return
+	}
+
+	// A bare second positional is the grouping dimension — sugar for -group-by, so
+	// `cg organize caldav:task priority` works (cutting-garden#216, the ergonomic
+	// step toward a fully trellis selection surface). Giving both the positional
+	// and the flag is an error.
+	if len(args) == 2 {
+		if cmd.GroupBy != "" {
+			errors.ContextCancelWithBadRequestf(ctx,
+				"organize: group-by given twice — positional %q and -group-by %q; use one",
+				args[1], cmd.GroupBy)
+			return
 		}
+		cmd.GroupBy = args[1]
+	}
+
+	if err := cmd.runGenerateOrInteractive(ctx, args[0]); err != nil {
+		errors.ContextCancelWithError(ctx, err)
 	}
 }
 
