@@ -54,6 +54,21 @@ func TestPresentBoxAtoms(t *testing.T) {
 			want:   []cutting_garden_plugins.BoxAtom{atom("date_due", "2026-08-15"), atom("time_due", "14-30")},
 		},
 		{
+			name:   "task priority renders as a raw-number atom (cutting-garden#221)",
+			fields: map[string]any{listingFieldPriority: 3},
+			want:   []cutting_garden_plugins.BoxAtom{atom("priority", "3")},
+		},
+		{
+			name:   "priority survives a json round-trip (float64) from the wire path",
+			fields: map[string]any{listingFieldPriority: float64(5)},
+			want:   []cutting_garden_plugins.BoxAtom{atom("priority", "5")},
+		},
+		{
+			name:   "zero priority emits no atom",
+			fields: map[string]any{listingFieldPriority: 0},
+			want:   nil,
+		},
+		{
 			name:   "no when/where fields contributes nothing",
 			fields: map[string]any{listingFieldStatus: "NEEDS-ACTION", listingFieldSummary: "x"},
 			want:   nil,

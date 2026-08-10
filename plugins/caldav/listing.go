@@ -29,6 +29,7 @@ const (
 	listingFieldLocation        = "location"
 	listingFieldDue             = "due"
 	listingFieldPercentComplete = "percent_complete"
+	listingFieldPriority        = "priority" // a task's raw PRIORITY int (cutting-garden#221)
 	// listingFieldRecurrenceID surfaces a VEVENT node's RECURRENCE-ID when
 	// it has one (cutting-garden#176/#177): present on a derived expanded
 	// occurrence or an explicit stored override, absent on an ordinary
@@ -63,6 +64,7 @@ func (Plugin) DescribeListingFields() []cutting_garden_plugins.NodeTypeListingFi
 				{Key: listingFieldDue, Label: "Due"},
 				location,
 				{Key: listingFieldPercentComplete, Label: "% Complete"},
+				{Key: listingFieldPriority, Label: "Priority"},
 			},
 		},
 		{
@@ -224,7 +226,7 @@ func (c *client) enrichedCalendarNodes(
 // present-but-empty, so a client's presence check is meaningful.
 func listingFieldsOf(view objectView) map[string]any {
 	var summary, status, dtstart, dtend, duration, location, due, recurrenceID string
-	var percentComplete int
+	var percentComplete, priority int
 	switch {
 	case view.Event != nil:
 		summary = view.Event.Summary
@@ -244,6 +246,7 @@ func listingFieldsOf(view objectView) map[string]any {
 		due = view.Task.Due
 		location = view.Task.Location
 		percentComplete = view.Task.PercentComplete
+		priority = view.Task.Priority
 	case view.Journal != nil:
 		summary = view.Journal.Summary
 		status = view.Journal.Status
@@ -273,6 +276,13 @@ func listingFieldsOf(view objectView) map[string]any {
 	}
 	if percentComplete > 0 {
 		fields[listingFieldPercentComplete] = percentComplete
+	}
+	// A task's PRIORITY, reported as the raw RFC 5545 integer (cutting-garden#221)
+	// so the box atom is precise and the deferred write-back (#218) is lossless.
+	// PRIORITY:0 / absent is "undefined" — omitted here (no atom), exactly how the
+	// object is grouped into the 3_unspecified band.
+	if priority > 0 {
+		fields[listingFieldPriority] = priority
 	}
 	if recurrenceID != "" {
 		fields[listingFieldRecurrenceID] = recurrenceID

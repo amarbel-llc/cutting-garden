@@ -1,6 +1,7 @@
 package caldav
 
 import (
+	"strconv"
 	"strings"
 
 	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
@@ -10,10 +11,12 @@ var _ cutting_garden_plugins.FieldPresenter = (*Plugin)(nil)
 
 // PresentBoxAtoms renders a caldav object's detail fields as organize box atoms
 // (FDR 0023, cutting-garden#47): the date and time components of its
-// DTSTART/DTEND/DUE — split so the clock is editable on its own — plus its
-// location. STATUS is the grouping heading and SUMMARY the box trailer, so
-// neither is an atom here. Values format as date `YYYY-MM-DD` and time `HH-mm`
-// (RFC 0015); an all-day / date-only value emits only its date atom.
+// DTSTART/DTEND/DUE — split so the clock is editable on its own — its location,
+// and, for a task, its raw PRIORITY integer (cutting-garden#221). STATUS is the
+// grouping heading and SUMMARY the box trailer, so neither is an atom here.
+// Values format as date `YYYY-MM-DD` and time `HH-mm` (RFC 0015); an all-day /
+// date-only value emits only its date atom. A task with no (or 0) PRIORITY emits
+// no priority atom — the atom's presence signals an explicitly prioritized task.
 //
 // This is the render direction only. Recombining edited atoms back into a
 // DTSTART (preserving the value's TZID) is the write-side follow-up
@@ -38,7 +41,25 @@ func (Plugin) PresentBoxAtoms(
 	if loc := fieldString(node, listingFieldLocation); loc != "" {
 		atoms = append(atoms, cutting_garden_plugins.BoxAtom{Name: listingFieldLocation, Value: loc})
 	}
+	if p, ok := fieldInt(node, listingFieldPriority); ok && p > 0 {
+		atoms = append(atoms, cutting_garden_plugins.BoxAtom{Name: listingFieldPriority, Value: strconv.Itoa(p)})
+	}
 	return atoms
+}
+
+// fieldInt reads an integer listing field, tolerating the float64 an int becomes
+// after a JSON round-trip (the wire/MCP enrichment path) as well as the native
+// int the in-process organize path carries.
+func fieldInt(node cutting_garden_plugins.Node, key string) (int, bool) {
+	switch v := node.Fields[key].(type) {
+	case int:
+		return v, true
+	case int64:
+		return int(v), true
+	case float64:
+		return int(v), true
+	}
+	return 0, false
 }
 
 // splitICalDateTime splits an iCalendar DATE or DATE-TIME value into an organize

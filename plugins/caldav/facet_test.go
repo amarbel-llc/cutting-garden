@@ -3,6 +3,7 @@ package caldav
 import (
 	"context"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 	"time"
 
@@ -20,6 +21,15 @@ func vtodoFull(uid, summary, status, dtstart string) string {
 	return "BEGIN:VCALENDAR\nVERSION:2.0\nBEGIN:VTODO\nUID:" + uid +
 		"\nSUMMARY:" + summary + "\nSTATUS:" + status +
 		"\nDTSTART:" + dtstart + "\nEND:VTODO\nEND:VCALENDAR\n"
+}
+
+// vtodoWithPriority seeds a VTODO carrying an explicit PRIORITY so the priority
+// band facet (cutting-garden#221) has signal.
+func vtodoWithPriority(uid, status string, priority int) string {
+	return "BEGIN:VCALENDAR\nVERSION:2.0\nBEGIN:VTODO\nUID:" + uid +
+		"\nSUMMARY:" + uid + "\nSTATUS:" + status +
+		"\nPRIORITY:" + strconv.Itoa(priority) +
+		"\nEND:VTODO\nEND:VCALENDAR\n"
 }
 
 // startFakeFaceted seeds objects carrying STATUS and DTSTART so the status
@@ -110,6 +120,65 @@ func TestDescribeFacets_DeclaresObjectDimensions(t *testing.T) {
 	if dims[facetDueBand] != cutting_garden_plugins.FacetNumericBucket {
 		t.Errorf("due_band kind = %q, want numeric-bucket", dims[facetDueBand])
 	}
+	if dims[facetPriority] != cutting_garden_plugins.FacetCategorical {
+		t.Errorf("priority kind = %q, want categorical", dims[facetPriority])
+	}
+}
+
+// TestPriorityBandOf pins the RFC 5545 §3.8.1.9 three-level fold onto the four
+// named bands (cutting-garden#221): 1–4 must, 5 should, 6–9 nice, 0/absent/
+// out-of-range unspecified, with urgency-first Order. The canonical 1/5/9 values
+// most clients emit land squarely in must/should/nice.
+func TestPriorityBandOf(t *testing.T) {
+	cases := []struct {
+		in    int
+		key   string
+		order int64
+	}{
+		{1, priorityMust, 4},
+		{4, priorityMust, 4},
+		{5, priorityShould, 3},
+		{6, priorityNice, 2},
+		{9, priorityNice, 2},
+		{0, priorityUnspecified, 1},
+		{10, priorityUnspecified, 1}, // out of range → unspecified
+		{-1, priorityUnspecified, 1},
+	}
+	for _, c := range cases {
+		key, order := priorityBandOf(c.in)
+		if key != c.key || order != c.order {
+			t.Errorf("priorityBandOf(%d) = (%q, %d), want (%q, %d)",
+				c.in, key, order, c.key, c.order)
+		}
+	}
+}
+
+// TestFacetCounts_PriorityBands drives the priority band facet end to end
+// (cutting-garden#221): tasks bucket by their PRIORITY band, a task with no
+// PRIORITY is 3_unspecified, and a COMPLETED task STILL contributes its band —
+// priority is a stable property, unlike due_band which excludes terminal tasks.
+func TestFacetCounts_PriorityBands(t *testing.T) {
+	f := newFakeCalDAV()
+	f.seed("/dav/cal/must.ics", "VTODO", vtodoWithPriority("must", "NEEDS-ACTION", 2))
+	f.seed("/dav/cal/should.ics", "VTODO", vtodoWithPriority("should", "NEEDS-ACTION", 5))
+	f.seed("/dav/cal/nice.ics", "VTODO", vtodoWithPriority("nice", "NEEDS-ACTION", 8))
+	f.seed("/dav/cal/donemust.ics", "VTODO", vtodoWithPriority("donemust", "COMPLETED", 1))
+	f.seed("/dav/cal/none.ics", "VTODO",
+		vtodoFull("none", "No priority", "NEEDS-ACTION", "20260101"))
+
+	srv := httptest.NewServer(f.handler())
+	t.Cleanup(srv.Close)
+	node := mustParseURL(t, "caldav:"+srv.URL+"/dav/")
+
+	result, ok, err := Plugin{}.FacetCounts(context.Background(), node, nil)
+	if err != nil || !ok {
+		t.Fatalf("FacetCounts: ok=%v err=%v", ok, err)
+	}
+
+	assertCount(t, result.Summary, facetPriority, priorityMust, 2) // live p2 + completed p1
+	assertCount(t, result.Summary, facetPriority, priorityShould, 1)
+	assertCount(t, result.Summary, facetPriority, priorityNice, 1)
+	assertCount(t, result.Summary, facetPriority, priorityUnspecified, 1)
 }
 
 // TestDueBandDeclaration pins the RFC 0012 §11.3 obligations on the

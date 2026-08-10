@@ -29,7 +29,43 @@ const (
 	facetMonth     = "month"     // the YYYY-MM bucket of the same date
 	facetDueBand   = "due_band"  // VOLATILE: a task's due date vs today (§11.3)
 	facetTimezone  = "timezone"  // the explicit TZID anchoring the object's date
+	facetPriority  = "priority"  // a task's PRIORITY, banded (cutting-garden#221)
 )
+
+// The priority band domain (cutting-garden#221): a task's RFC 5545 PRIORITY
+// (0=undefined, 1=highest … 9=lowest) folded onto four named, order-prefixed
+// bands in the dodder priority-tag style (priority-0_must, …). The numeric
+// prefix makes the keys self-order lexically AND urgency-first. Every VTODO
+// lands in exactly one band — a task with no (or 0) PRIORITY is 3_unspecified,
+// the triage inbox, rather than falling into organize's ungrouped section.
+const (
+	priorityMust        = "0_must"        // PRIORITY 1–4 (RFC 5545 "high")
+	priorityShould      = "1_should"      // PRIORITY 5 (RFC 5545 "medium")
+	priorityNice        = "2_nice"        // PRIORITY 6–9 (RFC 5545 "low")
+	priorityUnspecified = "3_unspecified" // PRIORITY 0 or absent (RFC "undefined")
+)
+
+// priorityBands is the declaration order (urgency-first) organize pre-renders as
+// empty `## =<band>` headings and read_facets sorts by.
+var priorityBands = []string{priorityMust, priorityShould, priorityNice, priorityUnspecified}
+
+// priorityBandOf folds an RFC 5545 PRIORITY integer onto its band and urgency
+// order (higher order renders first). The RFC's own three-level scheme
+// (§3.8.1.9): 1–4 high, 5 medium, 6–9 low, 0 undefined — which also maps the
+// canonical 1/5/9 values most clients emit onto must/should/nice. Any
+// out-of-range value (a malformed body) is treated as unspecified.
+func priorityBandOf(p int) (key string, order int64) {
+	switch {
+	case p >= 1 && p <= 4:
+		return priorityMust, 4
+	case p == 5:
+		return priorityShould, 3
+	case p >= 6 && p <= 9:
+		return priorityNice, 2
+	default:
+		return priorityUnspecified, 1
+	}
+}
 
 // The due_band closed domain: a total partition of time relative to the
 // current host-local day, so every contributing task occupies exactly
@@ -112,10 +148,25 @@ func (Plugin) DescribeFacets() []cutting_garden_plugins.NodeTypeFacets {
 		Label: "Time zone",
 		Kind:  cutting_garden_plugins.FacetCategorical,
 	}
+	priority := cutting_garden_plugins.FacetDimension{
+		// A task's PRIORITY banded (cutting-garden#221). Categorical over the four
+		// named bands; the declared Values fix the urgency-first order read_facets
+		// renders (must → unspecified). Every task contributes exactly one band, so
+		// there is no informative-zeros/volatility concern (unlike due_band).
+		Key:   facetPriority,
+		Label: "Priority",
+		Kind:  cutting_garden_plugins.FacetCategorical,
+		Values: []cutting_garden_plugins.FacetValue{
+			{Key: priorityMust, Order: 4},
+			{Key: priorityShould, Order: 3},
+			{Key: priorityNice, Order: 2},
+			{Key: priorityUnspecified, Order: 1},
+		},
+	}
 	return []cutting_garden_plugins.NodeTypeFacets{
 		{
 			Tag:        typeVTODO,
-			Dimensions: []cutting_garden_plugins.FacetDimension{component, status, year, month, dueBand, timezone},
+			Dimensions: []cutting_garden_plugins.FacetDimension{component, status, year, month, dueBand, timezone, priority},
 		},
 		{
 			Tag:        typeVEVENT,
@@ -356,6 +407,15 @@ func facetsFromView(view objectView) map[string][]cutting_garden_plugins.FacetVa
 				{Key: key, Order: order},
 			}
 		}
+	}
+
+	// priority: every task lands in exactly one band (cutting-garden#221),
+	// including completed/cancelled ones — PRIORITY is a stable property, not a
+	// volatile function of today (unlike due_band). A task with no PRIORITY, or
+	// PRIORITY:0, is 3_unspecified.
+	if view.Task != nil {
+		key, order := priorityBandOf(view.Task.Priority)
+		facets[facetPriority] = []cutting_garden_plugins.FacetValue{{Key: key, Order: order}}
 	}
 
 	// timezone: the explicit, loadable zone on the object's primary

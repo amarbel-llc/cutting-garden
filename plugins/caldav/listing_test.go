@@ -133,6 +133,7 @@ func TestDescribeListingFields_DeclaresObjectFields(t *testing.T) {
 	for _, want := range []string{
 		listingFieldSummary, listingFieldDue, listingFieldStatus, listingFieldDtStart,
 		listingFieldDtEnd, listingFieldDuration, listingFieldLocation, listingFieldPercentComplete,
+		listingFieldPriority,
 	} {
 		if !keys[want] {
 			t.Errorf("listing field %q not declared on any object leaf type", want)
@@ -220,6 +221,46 @@ func TestListEnriched_PopulatesTimingAndLocationFields(t *testing.T) {
 	}
 	if task.Fields[listingFieldPercentComplete] != 40 {
 		t.Errorf("task1 percent_complete = %v, want 40", task.Fields[listingFieldPercentComplete])
+	}
+}
+
+// TestListEnriched_PopulatesPriority pins the raw-priority listing field
+// (cutting-garden#221): a task with a PRIORITY carries the integer as its
+// "priority" field (the box atom's source), and a task with none carries no
+// priority field — the atom's presence is what signals an explicit value.
+func TestListEnriched_PopulatesPriority(t *testing.T) {
+	f := newFakeCalDAV()
+	f.seed("/dav/cal/pri.ics", "VTODO", vtodoWithPriority("pri", "NEEDS-ACTION", 3))
+	f.seed("/dav/cal/nopri.ics", "VTODO",
+		vtodoFull("nopri", "No priority", "NEEDS-ACTION", "20260101"))
+
+	srv := httptest.NewServer(f.handler())
+	t.Cleanup(srv.Close)
+	arg := "caldav:" + srv.URL + calendarHref
+
+	nodes, ok, err := Plugin{}.ListEnriched(context.Background(), mustParseURL(t, arg), nil)
+	if err != nil || !ok {
+		t.Fatalf("ListEnriched: ok=%v err=%v", ok, err)
+	}
+	byName := map[string]cutting_garden_plugins.Node{}
+	for _, n := range nodes {
+		byName[n.Name] = n
+	}
+
+	pri, ok := byName["pri.ics"]
+	if !ok {
+		t.Fatalf("missing pri.ics in %+v", byName)
+	}
+	if pri.Fields[listingFieldPriority] != 3 {
+		t.Errorf("pri.ics priority field = %v, want 3", pri.Fields[listingFieldPriority])
+	}
+
+	nopri, ok := byName["nopri.ics"]
+	if !ok {
+		t.Fatalf("missing nopri.ics in %+v", byName)
+	}
+	if _, present := nopri.Fields[listingFieldPriority]; present {
+		t.Errorf("nopri.ics carries a priority field though it has no PRIORITY: %+v", nopri.Fields)
 	}
 }
 
