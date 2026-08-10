@@ -52,22 +52,24 @@ var (
 // VTODO has DUE/percent-complete but no DTEND/RECURRENCE-ID, so their schemas
 // differ.
 func (Plugin) DescribeListingFields() []cutting_garden_plugins.NodeTypeListingFields {
-	// summary is the description trailer for every object type (Trailer) and is
-	// writable through PatchNode's SUMMARY target; location is a writable plain
-	// atom (cutting-garden#218 slice 1). status is NOT marked writable here — it
-	// is the grouping heading, written via the FacetWrite bucket path, never a box
-	// atom. Date/time fields stay read-only in this slice (their recombining write
-	// is slice 2).
+	// summary is the description trailer for every object type (Trailer), writable
+	// through PatchNode's SUMMARY target; location is a writable plain atom
+	// (cutting-garden#218 slice 1). The date fields (dtstart here, due/dtend below)
+	// are writable via the slice-2 date_/time_ atom recombination — their split
+	// atoms carry Field = the date field, and the FieldWriteApplier splices them
+	// back into one property preserving the untouched half and the TZID. status is
+	// NOT writable here: it is the grouping heading, written via the FacetWrite
+	// bucket path, never a box atom.
 	summary := cutting_garden_plugins.ListingField{Key: listingFieldSummary, Label: "Summary", Writable: true, Trailer: true}
 	status := cutting_garden_plugins.ListingField{Key: listingFieldStatus, Label: "Status"}
-	dtstart := cutting_garden_plugins.ListingField{Key: listingFieldDtStart, Label: "Start"}
+	dtstart := cutting_garden_plugins.ListingField{Key: listingFieldDtStart, Label: "Start", Writable: true}
 	location := cutting_garden_plugins.ListingField{Key: listingFieldLocation, Label: "Location", Writable: true}
 	return []cutting_garden_plugins.NodeTypeListingFields{
 		{
 			Tag: typeVTODO,
 			Fields: []cutting_garden_plugins.ListingField{
 				summary, status, dtstart,
-				{Key: listingFieldDue, Label: "Due"},
+				{Key: listingFieldDue, Label: "Due", Writable: true},
 				location,
 				{Key: listingFieldPercentComplete, Label: "% Complete"},
 				{Key: listingFieldPriority, Label: "Priority", Writable: true},

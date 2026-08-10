@@ -13,7 +13,13 @@ import (
 // atom, and a node with no when/where fields contributing nothing.
 func TestPresentBoxAtoms(t *testing.T) {
 	atom := func(name, value string) cutting_garden_plugins.BoxAtom {
-		return cutting_garden_plugins.BoxAtom{Name: name, Value: value}
+		// A split date_/time_ atom carries the source field it recombines into
+		// (cutting-garden#218 slice 2); a plain atom (location/priority) has none.
+		// Derived the same way dateTimeAtom classifies the write-back, pinning the
+		// present<->recombine contract: an atom present.go emits must classify back
+		// to the field the applier splices it into.
+		field, _, _ := dateTimeAtom(name)
+		return cutting_garden_plugins.BoxAtom{Name: name, Value: value, Field: field}
 	}
 	cases := []struct {
 		name   string

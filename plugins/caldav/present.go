@@ -25,19 +25,22 @@ func (Plugin) PresentBoxAtoms(
 	node cutting_garden_plugins.Node,
 ) []cutting_garden_plugins.BoxAtom {
 	var atoms []cutting_garden_plugins.BoxAtom
-	add := func(suffix, raw string) {
+	// field is the source listing field the date_/time_ atoms derive from, so the
+	// write-side (cutting-garden#218 slice 2) can recombine both back into one
+	// property governed by that field's Writable flag.
+	add := func(suffix, field, raw string) {
 		date, clock, ok := splitICalDateTime(raw)
 		if !ok {
 			return
 		}
-		atoms = append(atoms, cutting_garden_plugins.BoxAtom{Name: "date_" + suffix, Value: date})
+		atoms = append(atoms, cutting_garden_plugins.BoxAtom{Name: "date_" + suffix, Value: date, Field: field})
 		if clock != "" {
-			atoms = append(atoms, cutting_garden_plugins.BoxAtom{Name: "time_" + suffix, Value: clock})
+			atoms = append(atoms, cutting_garden_plugins.BoxAtom{Name: "time_" + suffix, Value: clock, Field: field})
 		}
 	}
-	add("start", fieldString(node, listingFieldDtStart))
-	add("end", fieldString(node, listingFieldDtEnd))
-	add("due", fieldString(node, listingFieldDue))
+	add("start", listingFieldDtStart, fieldString(node, listingFieldDtStart))
+	add("end", listingFieldDtEnd, fieldString(node, listingFieldDtEnd))
+	add("due", listingFieldDue, fieldString(node, listingFieldDue))
 	if loc := fieldString(node, listingFieldLocation); loc != "" {
 		atoms = append(atoms, cutting_garden_plugins.BoxAtom{Name: listingFieldLocation, Value: loc})
 	}

@@ -117,9 +117,21 @@ func planFieldEdits(
 		wset := writable[live.Type]
 		trailerField := trailer[live.Type]
 
-		var liveAtoms map[string]string
+		// The live atoms carry each atom's source Field (a caldav date_start's
+		// Field is "dtstart", so its writability is governed by the dtstart listing
+		// field); the parsed doc atoms do not, so the gate reads the field from the
+		// live presentation. A plain atom's Field defaults to its own Name.
+		liveAtoms := map[string]string{}
+		liveField := map[string]string{}
 		if present != nil {
-			liveAtoms = atomMap(present(live))
+			for _, a := range present(live) {
+				liveAtoms[a.Name] = a.Value
+				f := a.Field
+				if f == "" {
+					f = a.Name
+				}
+				liveField[a.Name] = f
+			}
 		}
 		editedAtoms := atomMap(eln.Fields)
 		baseAtoms := atomMap(bln.Fields)
@@ -129,9 +141,14 @@ func planFieldEdits(
 			if editedVal == baseVal {
 				return // unchanged
 			}
-			if !wset[name] || editedVal == "" {
-				// read-only field (e.g. a date atom, #218 slice 2), or a clear
-				// (deletion, #215) — surfaced, not applied.
+			field := liveField[name]
+			if field == "" {
+				field = name
+			}
+			if !wset[field] || editedVal == "" {
+				// read-only field, an atom with no live source (e.g. adding a
+				// time to an all-day object — the all-day<->timed conversion is
+				// #222), or a clear (deletion, #215) — surfaced, not applied.
 				noticed[eln.ID] = true
 				return
 			}

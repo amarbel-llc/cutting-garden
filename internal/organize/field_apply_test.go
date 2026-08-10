@@ -100,4 +100,36 @@ func TestPlanFieldEdits(t *testing.T) {
 			t.Errorf("edits = %+v, want none (live already matches the edit)", edits)
 		}
 	})
+
+	t.Run("split date atom is writable via its source field", func(t *testing.T) {
+		// dtstart is writable; date_start is not itself a writable key, but its
+		// live atom carries Field "dtstart", so the gate resolves through it.
+		wr := map[string]map[string]bool{typ: {"dtstart": true}}
+		pr := func(n cgp.Node) []cgp.BoxAtom {
+			ds, _ := n.Fields["dtstart"].(string)
+			return []cgp.BoxAtom{{Name: "date_start", Value: ds, Field: "dtstart"}}
+		}
+		liveDS := cgp.Node{
+			URI:    mustURL(t, "caldav:https://host/dav/cal/t.ics"),
+			Type:   typ,
+			Fields: map[string]any{"dtstart": "2026-08-15"},
+		}
+		b := document{Ungrouped: []objectLine{
+			{ID: "t.ics", Fields: []cgp.BoxAtom{{Name: "date_start", Value: "2026-08-15"}}},
+		}}
+		e := document{Ungrouped: []objectLine{
+			{ID: "t.ics", Fields: []cgp.BoxAtom{{Name: "date_start", Value: "2026-09-01"}}},
+		}}
+		edits, notices, err := planFieldEdits(e, b, []cgp.Node{liveDS}, anchor, wr, nil, pr)
+		if err != nil {
+			t.Fatalf("planFieldEdits: %v", err)
+		}
+		if len(notices) != 0 {
+			t.Errorf("notices = %v, want none", notices)
+		}
+		if len(edits) != 1 || len(edits[0].Edits) != 1 ||
+			edits[0].Edits[0] != (cgp.FieldEdit{Name: "date_start", Value: "2026-09-01"}) {
+			t.Errorf("edits = %+v, want one date_start=2026-09-01 routed via dtstart", edits)
+		}
+	})
 }

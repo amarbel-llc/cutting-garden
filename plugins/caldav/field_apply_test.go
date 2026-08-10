@@ -71,3 +71,69 @@ func TestBuildFieldWritePatch_Rejects(t *testing.T) {
 		t.Error("an empty edit batch must be rejected")
 	}
 }
+
+// TestSpliceDateTime pins the slice-2 recombination (cutting-garden#218): a date
+// edit keeps the clock, a time edit keeps the date and zeroes seconds, both
+// combine, a trailing UTC Z is preserved, an all-day value stays all-day on a
+// date edit, and adding a time to an all-day value is refused (#222).
+func TestSpliceDateTime(t *testing.T) {
+	cases := []struct {
+		name    string
+		current string
+		edit    *dateTimeEdit
+		want    string
+		wantErr bool
+	}{
+		{"date edit keeps clock", "20260815T093000", &dateTimeEdit{date: "2026-09-01", hasDate: true}, "20260901T093000", false},
+		{"time edit keeps date, zeroes seconds", "20260815T093045", &dateTimeEdit{clock: "14-30", hasClock: true}, "20260815T143000", false},
+		{"both halves", "20260815T093000", &dateTimeEdit{date: "2026-09-01", hasDate: true, clock: "14-30", hasClock: true}, "20260901T143000", false},
+		{"utc Z preserved on time edit", "20260815T093000Z", &dateTimeEdit{clock: "14-30", hasClock: true}, "20260815T143000Z", false},
+		{"all-day stays all-day on date edit", "20260703", &dateTimeEdit{date: "2026-09-01", hasDate: true}, "20260901", false},
+		{"hyphenated current date", "2026-08-15", &dateTimeEdit{date: "2026-09-01", hasDate: true}, "20260901", false},
+		{"time edit on all-day is refused (#222)", "20260703", &dateTimeEdit{clock: "09-30", hasClock: true}, "", true},
+		{"empty current is refused", "", &dateTimeEdit{date: "2026-09-01", hasDate: true}, "", true},
+		{"unrecognized current is refused", "garbage", &dateTimeEdit{date: "2026-09-01", hasDate: true}, "", true},
+		{"malformed date edit is refused", "20260815T093000", &dateTimeEdit{date: "2026/09/01", hasDate: true}, "", true},
+	}
+	for _, c := range cases {
+		got, err := spliceDateTime(c.current, c.edit)
+		if c.wantErr {
+			if err == nil {
+				t.Errorf("%s: expected an error, got %q", c.name, got)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("%s: %v", c.name, err)
+			continue
+		}
+		if got != c.want {
+			t.Errorf("%s: got %q, want %q", c.name, got, c.want)
+		}
+	}
+}
+
+// TestBuildFieldWritePatch_DateTime pins that a split date atom recombines
+// against the object's live value: editing date_due splices the new date into
+// the current DUE, preserving its clock.
+func TestBuildFieldWritePatch_DateTime(t *testing.T) {
+	node := vtodoFieldNode(t)
+	node.Fields = map[string]any{listingFieldDue: "20260815T143000"}
+
+	body, err := Plugin{}.BuildFieldWritePatch(context.Background(), node,
+		[]cutting_garden_plugins.FieldEdit{{Name: "date_due", Value: "2026-09-10"}})
+	if err != nil {
+		t.Fatalf("BuildFieldWritePatch: %v", err)
+	}
+	var got struct {
+		Task struct {
+			Due string `json:"due"`
+		} `json:"task"`
+	}
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("unmarshal: %v (%s)", err, body)
+	}
+	if got.Task.Due != "20260910T143000" {
+		t.Errorf("due = %q, want 20260910T143000 (date spliced, clock kept)", got.Task.Due)
+	}
+}

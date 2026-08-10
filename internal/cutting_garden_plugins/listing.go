@@ -71,6 +71,16 @@ type ListingFieldsDescriber interface {
 type BoxAtom struct {
 	Name  string
 	Value string
+	// Field is the listing field this atom derives from — the source of its
+	// writability (cutting-garden#218 slice 2). Empty means the atom IS its own
+	// field (Name is the field key, as for a plain location/priority atom). A
+	// SPLIT atom names its parent field: a caldav date_start and time_start both
+	// carry Field "dtstart", so an edit to either is governed by that field's
+	// ListingField.Writable and recombined into one property by the plugin. It is
+	// a presentation hint only: the document text carries just Name=Value, so a
+	// parsed (base/edited) atom has an empty Field — the writability gate reads it
+	// from the freshly presented LIVE atom.
+	Field string
 }
 
 // FieldPresenter is the OPTIONAL capability a plugin implements to present a
