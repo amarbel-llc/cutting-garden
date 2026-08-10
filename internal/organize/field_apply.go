@@ -230,31 +230,23 @@ func resolveFieldWrites(
 	return mutator, applier, nil
 }
 
-// executeFieldEdits writes (or, in dry-run, prints) each object's batched field
-// edits via one PatchNode per object. commit gates the two.
+// executeFieldEdits writes each object's batched field edits via one PatchNode
+// per object. Called only on a confirmed commit — the diff preview and its
+// confirmation happen in applyDocument.
 func (cmd *Organize) executeFieldEdits(
 	ctx context.Context,
 	mutator cgp.NodeMutator,
 	applier cgp.FieldWriteApplier,
 	edits []objectFieldEdit,
-	commit bool,
 ) error {
 	for _, oe := range edits {
-		if !commit {
-			for _, fe := range oe.Edits {
-				fmt.Fprintf(cmd.output, "would set %s: %s=%q\n", oe.URI, fe.Name, fe.Value)
-			}
-			continue
-		}
 		body, err := applier.BuildFieldWritePatch(ctx, oe.Node, oe.Edits)
 		if err != nil {
 			return errors.Wrapf(err, "organize: build field patch for %s", oe.URI)
 		}
-		applied, err := mutator.PatchNode(ctx, oe.Node.URI, bytes.NewReader(body))
-		if err != nil {
+		if _, err := mutator.PatchNode(ctx, oe.Node.URI, bytes.NewReader(body)); err != nil {
 			return errors.Wrapf(err, "organize: patch %s", oe.URI)
 		}
-		fmt.Fprintf(cmd.output, "set %s: applied %v\n", oe.URI, applied)
 	}
 	return nil
 }

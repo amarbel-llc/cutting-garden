@@ -79,7 +79,13 @@ function organize_apply_status_move_commits { # @test
 
   run_cg organize -apply "$edited" -commit
   assert_success
-  assert_output --partial 'task1.ics'
+  assert_output - <<'EOF'
+organize: 1 change(s):
+
+  - [task1.ics  status={+COMPLETED+}]  Buy milk
+
+organize: wrote 1 change(s)
+EOF
 
   run_cg list -query 'status=COMPLETED' "$CAL"
   assert_success
@@ -96,7 +102,13 @@ function organize_apply_dry_run_does_not_write { # @test
 
   run_cg organize -apply "$edited"
   assert_success
-  assert_output --partial 'would move'
+  assert_output - <<'EOF'
+organize: 1 change(s):
+
+  - [task1.ics  status={+COMPLETED+}]  Buy milk
+
+organize: dry-run — nothing written
+EOF
 
   run_cg list -query 'status=COMPLETED' "$CAL"
   assert_success
@@ -113,7 +125,13 @@ function organize_commit_directly_from_stdin_writes { # @test
 
   run_cg organize -commit-directly <"$edited"
   assert_success
-  assert_output --partial 'task1.ics'
+  assert_output - <<'EOF'
+organize: 1 change(s):
+
+  - [task1.ics  status={+COMPLETED+}]  Buy milk
+
+organize: wrote 1 change(s)
+EOF
 
   run_cg list -query 'status=COMPLETED' "$CAL"
   assert_success

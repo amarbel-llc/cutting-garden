@@ -17,11 +17,11 @@
 // pins the pre-edit assignment as a content-addressed organize-base-v1 blob, and
 // emits the document with a `- _base=@<digest>` line. You move object lines
 // between headings; apply three-way-merges your edits against the pinned base and
-// the re-queried live state and writes each bucket move through the plugin's
-// NodeMutator. Apply is dry-run by default (prints the intended writes); --commit
-// performs them (the interim lever pending the `%:dry-run` directive, hyphence#14).
-// An interactive commit whose change set exceeds a threshold gets a single yes/no
-// confirmation before writing.
+// the re-queried live state and writes each move through the plugin's NodeMutator.
+// Both paths render the change set as a per-object word-diff first (cutting-garden
+// #224); apply is dry-run by default (shows the diff and touches nothing) and
+// --commit performs the writes (the interim lever pending the `%:dry-run`
+// directive, hyphence#14), an interactive commit confirming after the diff.
 //
 // This is the FDR 0023 caldav tracer bullet: the writable dimension it exercises
 // end-to-end is `status` (a passthrough enum). Date reschedule-by-move, which
@@ -233,7 +233,9 @@ func (cmd *Organize) runInteractive(ctx errors.Context, uriStr string) error {
 		return nil
 	}
 
-	committed, err := cmd.applyDocument(ctx, string(editedBytes), cmd.Commit, true)
+	// The interactive path is always a terminal (runInteractive is gated on it),
+	// so the diff renders in color.
+	committed, err := cmd.applyDocument(ctx, string(editedBytes), cmd.Commit, true, true)
 	if err != nil {
 		// Keep the edited buffer so the user can resolve conflicts and re-apply.
 		fmt.Fprintf(cmd.output, "organize: edited document left at %s\n", tmpPath)

@@ -26,10 +26,6 @@ type move struct {
 	Node cgp.Node // the live node, carrying the component/type the write needs
 }
 
-// confirmThreshold is the change-set size above which an interactive commit asks
-// for a single yes/no confirmation before writing anything.
-const confirmThreshold = 30
-
 // runApply reads an edited organize document from a path (or stdin for "-") and
 // applies it non-interactively. Default is dry-run (prints the intended writes);
 // -commit performs them.
@@ -38,7 +34,7 @@ func (cmd *Organize) runApply(ctx errors.Context, applyPath string) error {
 	if err != nil {
 		return err
 	}
-	_, err = cmd.applyDocument(ctx, editedText, cmd.Commit, false)
+	_, err = cmd.applyDocument(ctx, editedText, cmd.Commit, false, stdoutIsTerminal())
 	return err
 }
 
@@ -50,16 +46,8 @@ func (cmd *Organize) runCommitDirectly(ctx errors.Context) error {
 	if err != nil {
 		return err
 	}
-	_, err = cmd.applyDocument(ctx, editedText, true, false)
+	_, err = cmd.applyDocument(ctx, editedText, true, false, stdoutIsTerminal())
 	return err
-}
-
-// shouldConfirm reports whether an apply warrants the large-batch confirmation
-// gate: an interactive commit whose change set exceeds the threshold. A
-// scripted/piped commit (interactive=false) asserts intent by its mode and is
-// never gated.
-func shouldConfirm(commit, interactive bool, moveCount int) bool {
-	return commit && interactive && moveCount > confirmThreshold
 }
 
 // applyDocument three-way-merges an edited organize document against its pinned
@@ -69,7 +57,7 @@ func shouldConfirm(commit, interactive bool, moveCount int) bool {
 // actually performed (the effective commit state after any declined gate), which
 // the interactive caller uses to decide the edited buffer's fate.
 func (cmd *Organize) applyDocument(
-	ctx errors.Context, editedText string, commit, interactive bool,
+	ctx errors.Context, editedText string, commit, interactive, color bool,
 ) (committed bool, err error) {
 	edited, err := parseDocument(editedText)
 	if err != nil {
@@ -131,22 +119,36 @@ func (cmd *Organize) applyDocument(
 			len(notices), strings.Join(notices, ", "))
 	}
 
-	total := len(moves) + len(fieldEdits)
-	if shouldConfirm(commit, interactive, total) {
-		ok, cerr := confirmLargeApply(total)
+	// The diff (cutting-garden#224): fold the moves and field edits into one box
+	// per object and show it BEFORE any write, so the user reviews exactly what
+	// lands. An interactive commit then confirms; a dry-run notes it wrote
+	// nothing; a scripted commit asserts intent by its mode and skips the prompt.
+	changes := buildChanges(edited, base, moves, fieldEdits, dim, trailer, edited.Anchor)
+	if len(changes) == 0 {
+		fmt.Fprintln(cmd.output, "organize: no changes to apply")
+		return commit, nil
+	}
+
+	fmt.Fprintf(cmd.output, "organize: %d change(s):\n\n", len(changes))
+	renderDiff(cmd.output, changes, color)
+	fmt.Fprintln(cmd.output)
+
+	switch {
+	case commit && interactive:
+		ok, cerr := confirmApply(len(changes))
 		if cerr != nil {
 			return false, cerr
 		}
 		if !ok {
 			commit = false
-			fmt.Fprintln(cmd.output,
-				"organize: large change not confirmed — showing the plan without writing")
+			fmt.Fprintln(cmd.output, "organize: not confirmed — nothing written")
 		}
+	case !commit:
+		fmt.Fprintln(cmd.output, "organize: dry-run — nothing written")
 	}
 
-	if total == 0 {
-		fmt.Fprintln(cmd.output, "organize: no changes to apply")
-		return commit, nil
+	if !commit {
+		return false, nil
 	}
 
 	if len(moves) > 0 {
@@ -154,7 +156,7 @@ func (cmd *Organize) applyDocument(
 		if werr != nil {
 			return false, werr
 		}
-		if err := cmd.executePlan(ctx, mutator, applier, writes, moves, commit); err != nil {
+		if err := cmd.executePlan(ctx, mutator, applier, writes, moves); err != nil {
 			return false, err
 		}
 	}
@@ -163,11 +165,12 @@ func (cmd *Organize) applyDocument(
 		if ferr != nil {
 			return false, ferr
 		}
-		if err := cmd.executeFieldEdits(ctx, mutator, applier, fieldEdits, commit); err != nil {
+		if err := cmd.executeFieldEdits(ctx, mutator, applier, fieldEdits); err != nil {
 			return false, err
 		}
 	}
-	return commit, nil
+	fmt.Fprintf(cmd.output, "organize: wrote %d change(s)\n", len(changes))
+	return true, nil
 }
 
 // planMoves computes the three-way merge, keyed by box id. The stored box ids
@@ -277,12 +280,12 @@ func resolveWrites(
 	return mutator, applier, writes, nil
 }
 
-// confirmLargeApply presents the large-batch yes/no gate for an interactive
-// commit exceeding confirmThreshold moves, returning the user's decision.
-func confirmLargeApply(moveCount int) (bool, error) {
+// confirmApply presents the yes/no gate an interactive commit shows after the
+// diff (cutting-garden#224), returning the user's decision.
+func confirmApply(changeCount int) (bool, error) {
 	confirmed := false
 	prompt := huh.NewConfirm().
-		Title(fmt.Sprintf("Apply %d changes?", moveCount)).
+		Title(fmt.Sprintf("Apply these %d change(s)?", changeCount)).
 		Affirmative("Apply").
 		Negative("Cancel").
 		Value(&confirmed)
@@ -292,22 +295,17 @@ func confirmLargeApply(moveCount int) (bool, error) {
 	return confirmed, nil
 }
 
-// executePlan writes (or, in dry-run, prints) each move. commit gates the two.
-// The mode/readability checks are per-move so a mixed-type node set is validated
-// node by node against its own type's mapping.
+// executePlan writes each bucket move through the plugin's applier. It is called
+// only on a confirmed commit — the diff preview and its confirmation happen in
+// applyDocument. Mode/writability is checked per move so a mixed-type node set is
+// validated node by node against its own type's mapping.
 func (cmd *Organize) executePlan(
 	ctx context.Context,
 	mutator cgp.NodeMutator,
 	applier cgp.FacetWriteApplier,
 	writes map[string]cgp.FacetWrite,
 	moves []move,
-	commit bool,
 ) error {
-	if len(moves) == 0 {
-		fmt.Fprintln(cmd.output, "organize: no moves to apply")
-		return nil
-	}
-
 	for _, mv := range moves {
 		w, ok := writes[mv.Node.Type]
 		if !ok {
@@ -329,23 +327,13 @@ func (cmd *Organize) executePlan(
 			)
 		}
 
-		// Dry-run previews the bucket-level move; only a commit invokes the
-		// plugin's applier to build (and possibly compute, e.g. a date splice) the
-		// real patch body.
-		if !commit {
-			fmt.Fprintf(cmd.output, "would move %s: %s %q -> %q\n", mv.URI, w.Field, mv.From, mv.To)
-			continue
-		}
-
 		body, err := applier.BuildFacetWritePatch(ctx, mv.Node, w, mv.To)
 		if err != nil {
 			return errors.Wrapf(err, "organize: build patch for %s", mv.URI)
 		}
-		applied, err := mutator.PatchNode(ctx, mv.Node.URI, bytes.NewReader(body))
-		if err != nil {
+		if _, err := mutator.PatchNode(ctx, mv.Node.URI, bytes.NewReader(body)); err != nil {
 			return errors.Wrapf(err, "organize: patch %s", mv.URI)
 		}
-		fmt.Fprintf(cmd.output, "moved %s: applied %v\n", mv.URI, applied)
 	}
 	return nil
 }

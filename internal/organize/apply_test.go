@@ -17,33 +17,6 @@ func taskNode(t *testing.T, uri, status string) cgp.Node {
 	return cgp.Node{URI: mustURL(t, uri), Type: "caldav-object-v1", Facets: facets}
 }
 
-// TestShouldConfirm pins the large-batch gate predicate: only an interactive
-// commit whose change set exceeds the threshold is gated; dry-runs and
-// scripted/piped commits never are, and the boundary is strictly greater-than.
-func TestShouldConfirm(t *testing.T) {
-	cases := []struct {
-		name        string
-		commit      bool
-		interactive bool
-		moves       int
-		want        bool
-	}{
-		{"interactive commit over threshold", true, true, confirmThreshold + 1, true},
-		{"interactive commit at threshold", true, true, confirmThreshold, false},
-		{"interactive dry-run over threshold", false, true, confirmThreshold + 1, false},
-		{"scripted commit over threshold", true, false, confirmThreshold + 1, false},
-		{"interactive commit zero moves", true, true, 0, false},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := shouldConfirm(tc.commit, tc.interactive, tc.moves); got != tc.want {
-				t.Errorf("shouldConfirm(%v, %v, %d) = %v, want %v",
-					tc.commit, tc.interactive, tc.moves, got, tc.want)
-			}
-		})
-	}
-}
-
 // docWith builds a document from a box-id → bucket assignment: an empty value
 // places the object ungrouped (above the dimension heading), a non-empty value
 // under a `## =<value>` bucket beneath the `# <dim>=` heading.
