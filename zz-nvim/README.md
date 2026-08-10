@@ -30,7 +30,7 @@ Query-string highlighting (the trellis grammar) and a completion/LSP layer
 ```
 grammars/common/{box,markl,metadata,util}.js   shared rule modules (vendored)
 grammars/organize/{grammar.js, src/parser.c}   the organize grammar (committed parser)
-queries/organize/highlights.scm                highlight captures
+queries/cutting_garden_organize/highlights.scm highlight captures (dir must match the parser language name)
 lua/cutting_garden/{init,health}.lua           filetype registration + folding + checkhealth
 plugin/cutting_garden.lua                       auto-setup
 ```
