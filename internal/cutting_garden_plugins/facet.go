@@ -61,6 +61,16 @@ type FacetDimension struct {
 	// (tags, domains). Closed dimensions enable informative zeros and are
 	// exempt from degenerate suppression (RFC 0012 §3, §8).
 	Values []FacetValue
+	// TerminalValues names the Values that mark an object DONE / terminal —
+	// caldav VTODO ["COMPLETED", "CANCELLED"], a jira done-category, newsblur
+	// "read" (cutting-garden#214). Orthogonal to the closed/open Values
+	// machinery: a dimension may be OPEN (caldav keeps status open) yet still
+	// name terminal values. The framework derives a synthetic `_terminal` yes/no
+	// dimension from these — an object is `_terminal=yes` iff it holds a terminal
+	// value in ANY terminal-bearing dimension — which organize excludes by
+	// default (a triage-the-active-work surface). nil / empty means the dimension
+	// has no terminal notion.
+	TerminalValues []string
 	// RevalidateAfter, when nonzero, marks the dimension VOLATILE: its
 	// bucketing is a function of (data, now) — overdue, upcoming, age
 	// bands — so a memoized summary containing it expires after this

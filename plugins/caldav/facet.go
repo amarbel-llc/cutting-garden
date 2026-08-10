@@ -111,6 +111,12 @@ func (Plugin) DescribeFacets() []cutting_garden_plugins.NodeTypeFacets {
 		Key:   facetStatus,
 		Label: "Status",
 		Kind:  cutting_garden_plugins.FacetCategorical,
+		// The terminal (done) statuses (cutting-garden#214): organize excludes
+		// objects in these by default. Shared across components — COMPLETED is a
+		// VTODO status and CANCELLED spans VTODO/VEVENT/VJOURNAL; a component that
+		// never takes a listed value simply never matches it. status stays an OPEN
+		// dimension (Values nil); TerminalValues is orthogonal to that.
+		TerminalValues: []string{"COMPLETED", "CANCELLED"},
 	}
 	year := cutting_garden_plugins.FacetDimension{
 		Key:   facetYear,

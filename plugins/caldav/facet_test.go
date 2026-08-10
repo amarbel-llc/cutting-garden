@@ -125,6 +125,38 @@ func TestDescribeFacets_DeclaresObjectDimensions(t *testing.T) {
 	}
 }
 
+// TestDescribeFacets_StatusTerminalValues pins that caldav names its done
+// statuses on the status dimension (cutting-garden#214) — the primitive
+// organize's default terminal exclusion derives its synthetic `_terminal` from.
+// status stays an OPEN dimension (no closed Values); TerminalValues is
+// orthogonal.
+func TestDescribeFacets_StatusTerminalValues(t *testing.T) {
+	seen := 0
+	for _, ntf := range (Plugin{}).DescribeFacets() {
+		for _, d := range ntf.Dimensions {
+			if d.Key != facetStatus {
+				continue
+			}
+			seen++
+			got := map[string]bool{}
+			for _, v := range d.TerminalValues {
+				got[v] = true
+			}
+			if !got["COMPLETED"] || !got["CANCELLED"] {
+				t.Errorf("%s status TerminalValues = %v, want COMPLETED and CANCELLED",
+					ntf.Tag, d.TerminalValues)
+			}
+			if len(d.Values) != 0 {
+				t.Errorf("%s status is not open (has closed Values %v); TerminalValues "+
+					"is meant to be orthogonal", ntf.Tag, d.Values)
+			}
+		}
+	}
+	if seen == 0 {
+		t.Fatal("no status dimension found to check TerminalValues")
+	}
+}
+
 // TestPriorityBandOf pins the RFC 5545 §3.8.1.9 three-level fold onto the four
 // named bands (cutting-garden#221): 1–4 must, 5 should, 6–9 nice, 0/absent/
 // out-of-range unspecified, with urgency-first Order. The canonical 1/5/9 values

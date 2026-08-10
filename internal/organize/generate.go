@@ -26,7 +26,12 @@ func (cmd *Organize) buildAndStore(ctx errors.Context, uriStr string) (string, e
 		return "", err
 	}
 
-	nodes, err := selectNodes(ctx, lister, u, cmd.Query)
+	// The effective query is the user's query with organize's default
+	// `_terminal=no` exclusion composed in (cutting-garden#214) — echoed into the
+	// document's `_query` below so the default is visible, editable, and re-applies
+	// identically.
+	effective := effectiveQuery(lister, cmd.Query, cmd.IncludeTerminal)
+	nodes, err := selectNodes(ctx, lister, u, effective)
 	if err != nil {
 		return "", errors.Wrapf(err, "organize %s", uriStr)
 	}
@@ -42,10 +47,10 @@ func (cmd *Organize) buildAndStore(ctx errors.Context, uriStr string) (string, e
 		anchor = uriStr
 	}
 
-	doc := buildDocument(nodes, anchor, cmd.Query, cmd.GroupBy, lister)
+	doc := buildDocument(nodes, anchor, effective, cmd.GroupBy, lister)
 	// Provenance records what the user actually typed (e.g. the short alias),
 	// even though _anchor is the canonical common prefix.
-	doc.Provenance = provenance(cmd.GroupBy, cmd.Query, uriStr)
+	doc.Provenance = provenance(cmd.GroupBy, effective, uriStr)
 
 	// The canonical form (no `_base`) is the exact bytes hashed and stored; its
 	// digest becomes the pin the emitted form carries.

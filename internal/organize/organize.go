@@ -62,7 +62,11 @@ type Organize struct {
 	// intended moves and touches nothing. It is the interim dry-run/commit lever
 	// pending the `%:dry-run` directive-in-doc (hyphence#14).
 	Commit bool
-	output io.Writer
+	// IncludeTerminal drops organize's default exclusion of terminal/done
+	// objects (cutting-garden#214): sugar for omitting the `_terminal=no` clause
+	// the generated query otherwise carries.
+	IncludeTerminal bool
+	output          io.Writer
 }
 
 var (
@@ -122,6 +126,13 @@ func (cmd *Organize) SetFlagDefinitions(flagSet interfaces.CLIFlagDefinitions) {
 		"commit",
 		false,
 		"write the moves through to the substrate (default: dry-run)",
+	)
+	flagSet.BoolVar(
+		&cmd.IncludeTerminal,
+		"include-terminal",
+		false,
+		"include terminal/done objects (default: excluded — organize is a "+
+			"triage-the-active-work surface)",
 	)
 }
 

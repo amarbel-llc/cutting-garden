@@ -26,7 +26,11 @@ func selectNodes(
 		if perr != nil {
 			return nil, errors.BadRequestf("organize --query: %s", perr)
 		}
-		return trellis_eval.Evaluate(ctx, q, anchor, lister)
+		// withTerminal makes the synthetic `_terminal` dimension matchable, so a
+		// `_terminal=no`/`_terminal=yes` predicate evaluates through the ordinary
+		// facet path (cutting-garden#214) in both generate and apply; a no-op for a
+		// plugin declaring no terminal values.
+		return trellis_eval.Evaluate(ctx, q, anchor, withTerminal(lister))
 	}
 	return listEnrichedChildren(ctx, lister, anchor)
 }

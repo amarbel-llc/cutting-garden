@@ -432,6 +432,40 @@ first-class; cutting-garden analogs: `cg capture --organize`,
 commit-directly / output-only) are orthogonal and carry over from
 dodder.
 
+## Terminal exclusion (cutting-garden#214)
+
+organize is a triage-the-active-work surface, so it **excludes terminal
+(done) objects by default** — caldav VTODO `COMPLETED`/`CANCELLED`, and
+the analogous done state on other plugins.
+
+- **Marking.** A read-side `FacetDimension.TerminalValues []string`
+  (RFC 0012) names a dimension's done values. It is orthogonal to the
+  closed/open `Values` machinery: caldav keeps `status` OPEN yet names
+  `["COMPLETED", "CANCELLED"]` terminal.
+- **Synthetic `_terminal`.** The framework derives a closed yes/no
+  `_terminal` dimension — an object is `_terminal=yes` iff it holds a
+  terminal value in any terminal-bearing dimension. The `_` prefix marks
+  it framework-synthesized (cf. the `_body` pseudo-field, the `_query`
+  envelope field), keeping the plugin's real-facet namespace clean. It is
+  an ordinary matchable facet predicate — no new grammar.
+- **Default + composition (one rule).** The generated `_query` ALWAYS
+  echoes the full effective query, so the default is visible and editable.
+  organize appends `_terminal=no` UNLESS the plugin declares no terminal
+  values, `--include-terminal` is passed, or the user's `-query` already
+  references `_terminal` (explicit mention wins). Appending applies the
+  clause to the query's last step — the selected objects. apply takes the
+  echoed query verbatim (never re-injecting), so generate and apply agree.
+- **`--include-terminal`** is pure sugar for omitting the default clause
+  (→ everything); `_terminal=yes` selects only the done.
+- **Rendering.** Terminal value *headings* (`## =COMPLETED`) still render
+  as empty drop-targets (sourced from the write descriptor's
+  `FacetWrite.Values`), so an object can still be moved INTO done; only
+  terminal *objects* are filtered from selection.
+- **Future.** Once trellis grows its deferred `?` (dormant/hidden) sigil
+  (cutting-garden#211), `?` becomes the native "include the dormant/done"
+  spelling, defined over the same `TerminalValues`; `_terminal` is the
+  honest interim, no plugin-surface rework.
+
 ## Validation (loud-rejection catalog)
 
 Unmapped metadata for the substrate; moves under `%`/`write:none`
