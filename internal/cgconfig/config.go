@@ -12,6 +12,7 @@ package cgconfig
 import (
 	"code.linenisgreat.com/cutting-garden/internal/traversal_serve"
 	"code.linenisgreat.com/cutting-garden/plugins/caldav"
+	"code.linenisgreat.com/cutting-garden/plugins/fastmail"
 	"code.linenisgreat.com/cutting-garden/plugins/jira"
 )
 
@@ -26,8 +27,9 @@ import (
 //
 //go:generate tommy generate
 type ConfigV0 struct {
-	Caldav caldav.AccountsConfig `toml:"caldav,omitempty"`
-	Jira   jira.AccountsConfig   `toml:"jira,omitempty"`
+	Caldav   caldav.AccountsConfig   `toml:"caldav,omitempty"`
+	Fastmail fastmail.AccountsConfig `toml:"fastmail,omitempty"`
+	Jira     jira.AccountsConfig     `toml:"jira,omitempty"`
 
 	// Plugins is the generalized `[[plugins]]` stanza (cutting-garden#146
 	// slice 2): one entry per plugin binary, declaring which wire
@@ -51,6 +53,9 @@ type ConfigV0 struct {
 // the load (surfaced as EX_USAGE by the loader).
 func (c ConfigV0) Validate() error {
 	if err := c.Caldav.Validate(); err != nil {
+		return err
+	}
+	if err := c.Fastmail.Validate(); err != nil {
 		return err
 	}
 	if err := c.Jira.Validate(); err != nil {

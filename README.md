@@ -53,7 +53,8 @@ build time; `cg` is a thin alias binary.
 
 Capture/restore/diff/traversal backends are keyed by URI scheme and live
 in `plugins/<scheme>/`: **file, git, yt-dlp, caldav, optical, gphotos,
-jira**. Each consumes only the public plugin SDK under `pkgs/`
+jira, fastmail** (the last read-only/traversal-only, JMAP; FDR 0024). Each
+consumes only the public plugin SDK under `pkgs/`
 ([RFC 0009](docs/rfcs/0009-cutting-garden-plugin-sdk.md)) — none reach into
 `internal/` — so an out-of-tree plugin in its own repo bridges the exact
 same surface. Traversal plugins may also run **out of process** over a

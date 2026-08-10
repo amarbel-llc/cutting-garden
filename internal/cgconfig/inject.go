@@ -2,6 +2,7 @@ package cgconfig
 
 import (
 	"code.linenisgreat.com/cutting-garden/plugins/caldav"
+	"code.linenisgreat.com/cutting-garden/plugins/fastmail"
 	"code.linenisgreat.com/cutting-garden/plugins/jira"
 )
 
@@ -17,5 +18,6 @@ import (
 // that keeps the loader out of this package.
 func Inject(cfg *ConfigV0) {
 	caldav.SetConfiguredAccounts(cfg.Caldav.Accounts)
+	fastmail.SetConfiguredAccounts(cfg.Fastmail.Accounts)
 	jira.SetConfiguredAccounts(cfg.Jira.Accounts)
 }

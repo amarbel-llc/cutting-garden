@@ -8,6 +8,7 @@ import (
 
 	"code.linenisgreat.com/cutting-garden/internal/traversal_serve"
 	"code.linenisgreat.com/cutting-garden/plugins/caldav"
+	"code.linenisgreat.com/cutting-garden/plugins/fastmail"
 	"code.linenisgreat.com/cutting-garden/plugins/jira"
 	"code.linenisgreat.com/tommy/pkg/cst"
 	"code.linenisgreat.com/tommy/pkg/document"
@@ -44,6 +45,12 @@ func DecodeConfigV0(input []byte) (*ConfigV0Document, error) {
 		_vCaldav.MarkSeen()
 		if err := caldav.DecodeAccountsConfigInto(&d.data.Caldav, _vCaldav); err != nil {
 			return nil, fmt.Errorf("caldav: %w", err)
+		}
+	}
+	if _vFastmail, _ok := model.Get("fastmail"); _ok && _vFastmail.Kind == cst.VTable {
+		_vFastmail.MarkSeen()
+		if err := fastmail.DecodeAccountsConfigInto(&d.data.Fastmail, _vFastmail); err != nil {
+			return nil, fmt.Errorf("fastmail: %w", err)
 		}
 	}
 	if _vJira, _ok := model.Get("jira"); _ok && _vJira.Kind == cst.VTable {
@@ -100,6 +107,12 @@ func (d *ConfigV0Document) Encode() ([]byte, error) {
 		tableNode := cst.EnsureChildTable(d.cstDoc.Root(), d.cstDoc.Root(), "caldav")
 		if err := caldav.EncodeAccountsConfigFrom(&d.data.Caldav, d.cstDoc, tableNode); err != nil {
 			return nil, fmt.Errorf("caldav: %w", err)
+		}
+	}
+	{
+		tableNode := cst.EnsureChildTable(d.cstDoc.Root(), d.cstDoc.Root(), "fastmail")
+		if err := fastmail.EncodeAccountsConfigFrom(&d.data.Fastmail, d.cstDoc, tableNode); err != nil {
+			return nil, fmt.Errorf("fastmail: %w", err)
 		}
 	}
 	{
@@ -169,6 +182,12 @@ func DecodeConfigV0Into(data *ConfigV0, sub *cst.Value) error {
 			return fmt.Errorf("caldav: %w", err)
 		}
 	}
+	if _vFastmail, _ok := sub.Get("fastmail"); _ok && _vFastmail.Kind == cst.VTable {
+		_vFastmail.MarkSeen()
+		if err := fastmail.DecodeAccountsConfigInto(&data.Fastmail, _vFastmail); err != nil {
+			return fmt.Errorf("fastmail: %w", err)
+		}
+	}
 	if _vJira, _ok := sub.Get("jira"); _ok && _vJira.Kind == cst.VTable {
 		_vJira.MarkSeen()
 		if err := jira.DecodeAccountsConfigInto(&data.Jira, _vJira); err != nil {
@@ -219,6 +238,12 @@ func EncodeConfigV0From(data *ConfigV0, doc *document.Document, container *cst.N
 		tableNode := cst.EnsureChildTable(doc.Root(), container, "caldav")
 		if err := caldav.EncodeAccountsConfigFrom(&data.Caldav, doc, tableNode); err != nil {
 			return fmt.Errorf("caldav: %w", err)
+		}
+	}
+	{
+		tableNode := cst.EnsureChildTable(doc.Root(), container, "fastmail")
+		if err := fastmail.EncodeAccountsConfigFrom(&data.Fastmail, doc, tableNode); err != nil {
+			return fmt.Errorf("fastmail: %w", err)
 		}
 	}
 	{

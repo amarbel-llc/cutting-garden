@@ -20,6 +20,7 @@ import (
 	// All plugins now live outside internal/ and consume the pkgs/ SDK
 	// (RFC 0009 §5 migration complete).
 	_ "code.linenisgreat.com/cutting-garden/plugins/caldav"
+	_ "code.linenisgreat.com/cutting-garden/plugins/fastmail"
 	_ "code.linenisgreat.com/cutting-garden/plugins/file"
 	_ "code.linenisgreat.com/cutting-garden/plugins/git"
 	_ "code.linenisgreat.com/cutting-garden/plugins/googlephotos"
