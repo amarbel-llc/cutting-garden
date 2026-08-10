@@ -45,27 +45,3 @@ func TestObjectLineAtomRoundTrip(t *testing.T) {
 		t.Errorf("round-tripped Fields = %+v, want %+v", parsed.Fields, ln.Fields)
 	}
 }
-
-// TestChangedAtomIDs pins the read-side apply notice's detector: an object whose
-// box atoms differ from the pinned base is reported; an unchanged one, an added
-// line, and a removed line are not.
-func TestChangedAtomIDs(t *testing.T) {
-	mk := func(id string, atoms ...cgp.BoxAtom) objectLine {
-		return objectLine{ID: id, Fields: atoms}
-	}
-	base := document{Ungrouped: []objectLine{
-		mk("a.ics", cgp.BoxAtom{Name: "time_start", Value: "09-30"}),
-		mk("b.ics", cgp.BoxAtom{Name: "time_start", Value: "10-00"}),
-		mk("gone.ics", cgp.BoxAtom{Name: "time_start", Value: "11-00"}),
-	}}
-	edited := document{Ungrouped: []objectLine{
-		mk("a.ics", cgp.BoxAtom{Name: "time_start", Value: "10-45"}),   // changed
-		mk("b.ics", cgp.BoxAtom{Name: "time_start", Value: "10-00"}),   // unchanged
-		mk("new.ics", cgp.BoxAtom{Name: "time_start", Value: "12-00"}), // added
-	}}
-	got := changedAtomIDs(edited, base)
-	want := []string{"a.ics"}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("changedAtomIDs = %v, want %v", got, want)
-	}
-}

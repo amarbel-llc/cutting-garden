@@ -98,17 +98,6 @@ func (cmd *Organize) applyDocument(
 		return false, errors.Wrapf(err, "organize --apply: parse pinned base blob")
 	}
 
-	// Read-side only (cutting-garden#47): box field atoms (date/time/location)
-	// are surfaced and round-trip, but writing an edited atom back is the
-	// write-side follow-up (cutting-garden#218). Surface a changed atom as a
-	// non-blocking notice rather than silently dropping the edit.
-	if changed := changedAtomIDs(edited, base); len(changed) > 0 {
-		fmt.Fprintf(cmd.output,
-			"organize: note — box field edits are not applied yet (read-side only, "+
-				"cutting-garden#218); ignored on %d line(s): %s\n",
-			len(changed), strings.Join(changed, ", "))
-	}
-
 	u, lister, err := command_components.ResolveRootListerPlugin(edited.Anchor)
 	if err != nil {
 		return false, err
@@ -118,18 +107,33 @@ func (cmd *Organize) applyDocument(
 		return false, errors.Wrapf(err, "organize --apply: re-query live state")
 	}
 
+	// Two independent delta kinds merge against the same pinned base and live
+	// state: bucket moves (a facet re-file, applied via FacetWriteApplier) and
+	// field/trailer edits (a box-atom or description change, applied via
+	// FieldWriteApplier, cutting-garden#218). A read-only or cleared field edit
+	// is surfaced as a non-blocking notice rather than silently dropped.
 	moves, err := planMoves(edited, base, dim, liveNodes)
 	if err != nil {
 		return false, err
 	}
-
-	mutator, applier, writes, err := resolveWrites(lister, dim)
+	writable, trailer := fieldWriteSchema(lister)
+	fieldEdits, notices, err := planFieldEdits(
+		edited, base, liveNodes, edited.Anchor, writable, trailer, boxAtomPresenter(lister),
+	)
 	if err != nil {
 		return false, err
 	}
+	if len(notices) > 0 {
+		fmt.Fprintf(cmd.output,
+			"organize: note — some field edits were not applied on %d line(s): %s "+
+				"(read-only fields such as dates are cutting-garden#218 slice 2; "+
+				"clearing a field is #215)\n",
+			len(notices), strings.Join(notices, ", "))
+	}
 
-	if shouldConfirm(commit, interactive, len(moves)) {
-		ok, cerr := confirmLargeApply(len(moves))
+	total := len(moves) + len(fieldEdits)
+	if shouldConfirm(commit, interactive, total) {
+		ok, cerr := confirmLargeApply(total)
 		if cerr != nil {
 			return false, cerr
 		}
@@ -140,8 +144,28 @@ func (cmd *Organize) applyDocument(
 		}
 	}
 
-	if err := cmd.executePlan(ctx, mutator, applier, writes, moves, commit); err != nil {
-		return false, err
+	if total == 0 {
+		fmt.Fprintln(cmd.output, "organize: no changes to apply")
+		return commit, nil
+	}
+
+	if len(moves) > 0 {
+		mutator, applier, writes, werr := resolveWrites(lister, dim)
+		if werr != nil {
+			return false, werr
+		}
+		if err := cmd.executePlan(ctx, mutator, applier, writes, moves, commit); err != nil {
+			return false, err
+		}
+	}
+	if len(fieldEdits) > 0 {
+		mutator, applier, ferr := resolveFieldWrites(lister)
+		if ferr != nil {
+			return false, ferr
+		}
+		if err := cmd.executeFieldEdits(ctx, mutator, applier, fieldEdits, commit); err != nil {
+			return false, err
+		}
 	}
 	return commit, nil
 }
@@ -324,38 +348,6 @@ func (cmd *Organize) executePlan(
 		fmt.Fprintf(cmd.output, "moved %s: applied %v\n", mv.URI, applied)
 	}
 	return nil
-}
-
-// changedAtomIDs returns the ids of object lines whose box atoms differ between
-// the edited document and the pinned base — the field edits this read-side slice
-// surfaces but does not yet write through (cutting-garden#47/#218). Only ids
-// present in BOTH are compared; an added or removed line is not an atom edit.
-func changedAtomIDs(edited, base document) []string {
-	baseSig := make(map[string]string)
-	for _, ln := range base.objectLines() {
-		baseSig[ln.ID] = atomSignature(ln.Fields)
-	}
-	var changed []string
-	for _, ln := range edited.objectLines() {
-		if b, ok := baseSig[ln.ID]; ok && b != atomSignature(ln.Fields) {
-			changed = append(changed, ln.ID)
-		}
-	}
-	sort.Strings(changed)
-	return changed
-}
-
-// atomSignature is a stable, order-sensitive string form of a box's atoms, for
-// equality comparison between the edited and base renderings.
-func atomSignature(atoms []cgp.BoxAtom) string {
-	var b strings.Builder
-	for _, a := range atoms {
-		b.WriteString(a.Name)
-		b.WriteByte('=')
-		b.WriteString(a.Value)
-		b.WriteByte(0)
-	}
-	return b.String()
 }
 
 // firstFacetKey returns the first bucket key of a Mode-one facet membership, or

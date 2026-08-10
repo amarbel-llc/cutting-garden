@@ -258,6 +258,16 @@ type FacetWriteDescriber = internal.FacetWriteDescriber
 // membership in this dimension maps to a substrate write.
 type FacetWriteMode = internal.FacetWriteMode
 
+// FieldEdit is one changed box atom the framework asks a plugin to write: the
+// atom's Name as it appears in the espalier box (e.g. "location", "priority", or
+// a split "date_start"), and its new rendered Value. The description trailer is
+// delivered as a FieldEdit too, named for the node type's declared Trailer field.
+// The plugin maps each Name to a substrate property — recombining split atoms
+// (date_start + time_start -> one DTSTART) and preserving parts the atoms do not
+// carry (a DTSTART's timezone) — so the framework never learns the substrate's
+// shape (RFC 0009 no-inversion).
+type FieldEdit = internal.FieldEdit
+
 // FieldPresenter is the OPTIONAL capability a plugin implements to present a
 // node's detail fields as organize espalier box-interior atoms (FDR 0023,
 // cutting-garden#47). The framework never parses substrate values — a caldav
@@ -272,6 +282,22 @@ type FacetWriteMode = internal.FacetWriteMode
 // the atoms do not carry (a DTSTART's timezone) — is the write-side follow-up
 // and is deliberately NOT part of this capability yet.
 type FieldPresenter = internal.FieldPresenter
+
+// FieldWriteApplier is the capability that BUILDS the substrate patch for a batch
+// of an object's changed box atoms (and/or its description trailer) — the
+// write-side execution counterpart of the ListingField.Writable declaration, and
+// the field-edit sibling of FacetWriteApplier (which handles bucket moves). The
+// organize apply engine collects one node's changed WRITABLE atoms plus any
+// trailer edit and hands them over together, because a plugin may need the whole
+// batch to write correctly (a caldav date_start and time_start recombine into a
+// single DTSTART property). The plugin returns the finished PatchNode body, so the
+// framework stays free of the substrate's JSON layout (RFC 0009).
+//
+// Probed by type assertion on an already-resolved plugin, exactly like
+// FacetWriteApplier. A plugin that declares any writable listing field
+// (ListingField.Writable) MUST also implement this — the apply engine rejects a
+// writable-but-applier-less plugin loudly rather than guessing the patch shape.
+type FieldWriteApplier = internal.FieldWriteApplier
 
 // LeafContent is one leaf node's fetched content, returned by ReadLeaf. It
 // carries two views of the same object: a structured, JSON-marshalable

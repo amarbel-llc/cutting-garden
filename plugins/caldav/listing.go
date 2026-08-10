@@ -52,10 +52,16 @@ var (
 // VTODO has DUE/percent-complete but no DTEND/RECURRENCE-ID, so their schemas
 // differ.
 func (Plugin) DescribeListingFields() []cutting_garden_plugins.NodeTypeListingFields {
-	summary := cutting_garden_plugins.ListingField{Key: listingFieldSummary, Label: "Summary"}
+	// summary is the description trailer for every object type (Trailer) and is
+	// writable through PatchNode's SUMMARY target; location is a writable plain
+	// atom (cutting-garden#218 slice 1). status is NOT marked writable here — it
+	// is the grouping heading, written via the FacetWrite bucket path, never a box
+	// atom. Date/time fields stay read-only in this slice (their recombining write
+	// is slice 2).
+	summary := cutting_garden_plugins.ListingField{Key: listingFieldSummary, Label: "Summary", Writable: true, Trailer: true}
 	status := cutting_garden_plugins.ListingField{Key: listingFieldStatus, Label: "Status"}
 	dtstart := cutting_garden_plugins.ListingField{Key: listingFieldDtStart, Label: "Start"}
-	location := cutting_garden_plugins.ListingField{Key: listingFieldLocation, Label: "Location"}
+	location := cutting_garden_plugins.ListingField{Key: listingFieldLocation, Label: "Location", Writable: true}
 	return []cutting_garden_plugins.NodeTypeListingFields{
 		{
 			Tag: typeVTODO,
@@ -64,7 +70,7 @@ func (Plugin) DescribeListingFields() []cutting_garden_plugins.NodeTypeListingFi
 				{Key: listingFieldDue, Label: "Due"},
 				location,
 				{Key: listingFieldPercentComplete, Label: "% Complete"},
-				{Key: listingFieldPriority, Label: "Priority"},
+				{Key: listingFieldPriority, Label: "Priority", Writable: true},
 			},
 		},
 		{

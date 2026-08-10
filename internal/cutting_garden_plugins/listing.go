@@ -17,6 +17,21 @@ type ListingField struct {
 	// Label is the human field name for display. MAY be empty (consumers
 	// fall back to Key).
 	Label string
+	// Writable declares that an organize edit to this field's box atom (or, for
+	// the Trailer field, the box description) is written back to the substrate,
+	// rather than surfaced as a read-only notice (FDR 0023 write-side, #218). It
+	// is the SINGLE source of field writability; FacetWrite is a mapping layer on
+	// top for the bucket path. A field left false stays read-only: an edit to it
+	// is reported, not applied. A plugin declaring any writable field MUST
+	// implement FieldWriteApplier.
+	Writable bool
+	// Trailer marks this field as the node's description trailer — the free text
+	// rendered after the espalier box (`- [id] <trailer>`), not as a `key=value`
+	// atom. At most one field per node type may set it; the framework renders the
+	// box description from it and, when it is also Writable, routes a description
+	// edit back through this field. Replaces the summary→title→name description
+	// guess with an explicit declaration.
+	Trailer bool
 }
 
 // NodeTypeListingFields binds a set of declared listing fields to one node

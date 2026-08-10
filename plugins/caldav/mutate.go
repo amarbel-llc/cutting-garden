@@ -106,8 +106,8 @@ type objectPatchBody struct {
 // PUT, reporting that as a non-nil empty applied rather than a bare success.
 //
 // Supported patch fields: VEVENT — summary, description, status, dtstart,
-// dtend; VTODO — summary, description, status, dtstart, due; VJOURNAL —
-// summary, description, status, dtstart.
+// dtend, location; VTODO — summary, description, status, dtstart, due, location,
+// priority; VJOURNAL — summary, description, status, dtstart.
 func (Plugin) PatchNode(
 	ctx context.Context,
 	node *url.URL,
@@ -238,6 +238,7 @@ func eventPatchTargets(e *ical.Event) map[string]any {
 		"status":      &e.Status,
 		"dtstart":     &e.DtStart,
 		"dtend":       &e.DtEnd,
+		"location":    &e.Location,
 	}
 }
 
@@ -248,6 +249,8 @@ func taskPatchTargets(t *ical.Task) map[string]any {
 		"status":      &t.Status,
 		"dtstart":     &t.DtStart,
 		"due":         &t.Due,
+		"location":    &t.Location,
+		"priority":    &t.Priority,
 	}
 }
 
