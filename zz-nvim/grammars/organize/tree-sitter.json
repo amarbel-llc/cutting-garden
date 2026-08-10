@@ -1,0 +1,23 @@
+{
+  "grammars": [
+    {
+      "name": "cutting_garden_organize",
+      "camelcase": "CuttingGardenOrganize",
+      "scope": "source.cutting_garden_organize",
+      "path": ".",
+      "file-types": [],
+      "injection-regex": "^cutting_garden_organize$"
+    }
+  ],
+  "metadata": {
+    "version": "0.1.0",
+    "license": "MIT",
+    "description": "tree-sitter grammar for cutting-garden's organize document dialect"
+  },
+  "bindings": {
+    "c": true,
+    "go": true,
+    "node": true,
+    "rust": true
+  }
+}

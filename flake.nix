@@ -785,6 +785,33 @@
           # Bare file at $out, same shape as marklid-grammar above.
           hyphence-content-grammar = hyphence.packages.${system}.hyphence-content-grammar;
 
+          # cutting-garden.nvim (cutting-garden#43): the tree-sitter grammar +
+          # neovim plugin for organize-document syntax highlighting.
+          # buildGrammar compiles the committed src/parser.c (generate = false)
+          # into a parser .so; buildVimPlugin stages the plugin (queries/, lua/,
+          # plugin/) plus the .so under parser/. `nix build .#cutting-garden-nvim`
+          # yields the plugin; add its store path to neovim's runtimepath (or via
+          # home-manager). Grammar modules are vendored from dodder/zz-nvim; the
+          # share-later extraction is a tracked #43 followup.
+          cutting-garden-nvim =
+            let
+              organizeGrammar = pkgs.tree-sitter.buildGrammar {
+                language = "cutting_garden_organize";
+                version = "0.1.0";
+                src = ./zz-nvim/grammars/organize;
+                generate = false;
+              };
+            in
+            pkgs.vimUtils.buildVimPlugin {
+              pname = "cutting-garden-nvim";
+              version = "0.1.0";
+              src = ./zz-nvim;
+              postInstall = ''
+                mkdir -p "$out/parser"
+                cp ${organizeGrammar}/parser "$out/parser/cutting_garden_organize.so"
+              '';
+            };
+
           # bats-capture is the hermetic Phase 2 step 9 test lane. It
           # builds a derivation whose only purpose is to run the bats
           # suite under zz-tests_bats/ against a pre-built

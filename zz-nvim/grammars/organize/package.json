@@ -1,0 +1,7 @@
+{
+  "name": "tree-sitter-cutting_garden_organize",
+  "version": "0.1.0",
+  "description": "tree-sitter grammar for cutting-garden's organize document dialect",
+  "license": "MIT",
+  "main": "bindings/node"
+}

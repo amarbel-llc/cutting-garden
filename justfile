@@ -89,6 +89,16 @@ lint-go-analyzers: (lint-go-analyzer "seqerror") (lint-go-analyzer "repool") (li
 test-bats:
     nix build .#bats-capture --show-trace
 
+# Run the organize tree-sitter grammar's corpus tests (zz-nvim, cutting-garden#43).
+# A debug helper (deliberately NOT the `test` aggregate) so the merge gate stays
+# Go-focused and needs no tree-sitter CLI. Uses `nix shell` (node + tree-sitter)
+# rather than the devshell, so it needs no devshell restart. After a grammar.js
+# edit, regenerate the committed parser first:
+# cd zz-nvim/grammars/organize && nix shell nixpkgs#nodejs nixpkgs#tree-sitter -c tree-sitter generate
+[group('debug')]
+debug-tree-sitter-corpus:
+    cd zz-nvim/grammars/organize && nix shell nixpkgs#nodejs nixpkgs#tree-sitter -c tree-sitter test
+
 [group('maintenance')]
 update: update-go update-nix
 

@@ -1,0 +1,59 @@
+==================
+heading ladder and espalier boxes
+==================
+
+# month=
+
+## =2026-08
+
+- [sched1.ics date_due=2026-08-15 time_due=14-30] Book flights
+
+## =2026-09
+
+- [event1.ics !caldav-object-vevent-v1 date_start=2026-09-10 time_start=16-30 location=HQ] Standup
+
+---
+
+(source_file
+  (blank_line)
+  (heading
+    (heading_marker)
+    (heading_dimension
+      (heading_dim_name)))
+  (blank_line)
+  (heading
+    (heading_marker)
+    (heading_value
+      (heading_value_text)))
+  (blank_line)
+  (object_line
+    (box
+      (box_object_id)
+      (box_field
+        (box_ident)
+        (box_bare_value))
+      (box_field
+        (box_ident)
+        (box_bare_value)))
+    (description))
+  (blank_line)
+  (heading
+    (heading_marker)
+    (heading_value
+      (heading_value_text)))
+  (blank_line)
+  (object_line
+    (box
+      (box_object_id)
+      (box_type
+        (box_ident))
+      (box_field
+        (box_ident)
+        (box_bare_value))
+      (box_field
+        (box_ident)
+        (box_bare_value))
+      (box_field
+        (box_ident)
+        (box_bare_value)))
+    (description)))
