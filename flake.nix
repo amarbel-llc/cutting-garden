@@ -199,6 +199,7 @@
     # (`--check` fails on stamp skew).
     madder.inputs.piggy.follows = "piggy";
     madder.inputs.tommy.follows = "tommy";
+    madder.inputs.langlang.follows = "langlang";
     # hyphence#11 gave hyphence a grammar-only piggy input (to stage marklid.peg
     # for its own validate-grammar). It is the same rev as ours; collapse the
     # duplicate lock node onto our piggy (mirrors madder.inputs.piggy above).
