@@ -41,6 +41,39 @@ func docWith(dim string, assignment map[string]string) document {
 	return doc
 }
 
+// TestApplyMode pins the wet-run-by-default truth table (cutting-garden#213): a
+// terminal writes-with-confirm by default, a pipe stays dry-run unless -commit,
+// and -dry-run forces preview everywhere. The confirm gate (interactive) is armed
+// only at a terminal, so huh's prompt is never run headless.
+func TestApplyMode(t *testing.T) {
+	cases := []struct {
+		name                        string
+		dryRun, commitFlag, tty     bool
+		wantCommit, wantInteractive bool
+	}{
+		{"tty default writes with confirm", false, false, true, true, true},
+		{"tty -commit still confirms", false, true, true, true, true},
+		{"tty -dry-run previews", true, false, true, false, false},
+		{"pipe default dry-run", false, false, false, false, false},
+		{"pipe -commit writes headless", false, true, false, true, false},
+		{"pipe -dry-run previews", true, true, false, false, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			commit, interactive := applyMode(tc.dryRun, tc.commitFlag, tc.tty)
+			if commit != tc.wantCommit || interactive != tc.wantInteractive {
+				t.Errorf("applyMode(dryRun=%v, commit=%v, tty=%v) = (%v, %v), want (%v, %v)",
+					tc.dryRun, tc.commitFlag, tc.tty, commit, interactive,
+					tc.wantCommit, tc.wantInteractive)
+			}
+			if interactive && !tc.tty {
+				t.Errorf("confirm gate armed without a terminal (dryRun=%v, commit=%v, tty=%v)",
+					tc.dryRun, tc.commitFlag, tc.tty)
+			}
+		})
+	}
+}
+
 // TestPlanMoves_CleanMove pins that a node moved in the edit, with the live state
 // still agreeing with the base, yields exactly one move.
 func TestPlanMoves_CleanMove(t *testing.T) {

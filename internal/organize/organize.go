@@ -7,7 +7,7 @@
 //
 //	organize <uri> <group-by> [--query <trellis>]           interactive (TTY) / generate (pipe)
 //	  (<group-by> may be positional as shown, or the --group-by <facet> flag)
-//	organize --apply <path> [--commit]                      apply an edited document
+//	organize --apply <path> [--commit|--dry-run]            apply an edited document
 //	organize --commit-directly < doc                        apply from stdin, committing
 //
 // A bare `organize <uri>` on a terminal generates the document into a temp file,
@@ -19,10 +19,14 @@
 // emits the document with a `- _base=@<digest>` line. You move object lines
 // between headings; apply three-way-merges your edits against the pinned base and
 // the re-queried live state and writes each move through the plugin's NodeMutator.
+//
 // Both paths render the change set as a per-object word-diff first (cutting-garden
-// #224); apply is dry-run by default (shows the diff and touches nothing) and
-// --commit performs the writes (the interim lever pending the `%:dry-run`
-// directive, hyphence#14), an interactive commit confirming after the diff.
+// #224). Apply is wet-run by default AT A TERMINAL: it writes after showing the
+// diff and confirming (the #224 gate). Piped or redirected — the MCP/scripting
+// path — it stays dry-run and requires an explicit --commit, so a headless
+// invocation never writes silently (cutting-garden#213). --dry-run forces preview
+// everywhere. (This TTY-gated default is the interim lever pending the `%:dry-run`
+// directive-in-doc, hyphence#14.)
 //
 // This is the FDR 0023 caldav tracer bullet: the writable dimension it exercises
 // end-to-end is `status` (a passthrough enum). Date reschedule-by-move, which
@@ -59,10 +63,15 @@ type Organize struct {
 	// committing the writes (dodder's commit-directly mode) — the scripted
 	// re-apply of a previously-generated dry-run document.
 	CommitDirectly bool
-	// Commit performs the writes; the default is a dry-run that prints the
-	// intended moves and touches nothing. It is the interim dry-run/commit lever
-	// pending the `%:dry-run` directive-in-doc (hyphence#14).
+	// Commit forces the writes on the non-interactive (piped/redirected) path,
+	// where organize is dry-run by default so a headless invocation never writes
+	// silently. At a terminal organize writes by default (confirming after the
+	// #224 diff), so -commit is redundant there. Interim lever pending the
+	// `%:dry-run` directive-in-doc (hyphence#14, cutting-garden#213).
 	Commit bool
+	// DryRun forces a preview — show the diff and exit without writing — even at a
+	// terminal, the named inverse of the wet-run-by-default rule (#213).
+	DryRun bool
 	// IncludeTerminal drops organize's default exclusion of terminal/done
 	// objects (cutting-garden#214): sugar for omitting the `_terminal=no` clause
 	// the generated query otherwise carries.
@@ -93,7 +102,8 @@ func (*Organize) GetDescription() command.Description {
 			"addressed base; you move object lines between headings and apply " +
 			"the result, which three-way-merges the edits against the base and " +
 			"the re-queried live state and writes each move through the " +
-			"plugin. Apply is a dry-run until \\-commit. See RFC 0015, FDR 0023.",
+			"plugin. At a terminal apply writes by default after confirming; " +
+			"piped it is dry-run until \\-commit. See RFC 0015, FDR 0023.",
 	}
 }
 
@@ -126,7 +136,14 @@ func (cmd *Organize) SetFlagDefinitions(flagSet interfaces.CLIFlagDefinitions) {
 		&cmd.Commit,
 		"commit",
 		false,
-		"write the moves through to the substrate (default: dry-run)",
+		"force writing on the piped/non-terminal path (dry-run by default there); "+
+			"redundant at a terminal, where organize writes by default after confirming",
+	)
+	flagSet.BoolVar(
+		&cmd.DryRun,
+		"dry-run",
+		false,
+		"show the diff and exit without writing, even at a terminal",
 	)
 	flagSet.BoolVar(
 		&cmd.IncludeTerminal,
@@ -251,8 +268,10 @@ func (cmd *Organize) runInteractive(ctx errors.Context, uriStr string) error {
 	}
 
 	// The interactive path is always a terminal (runInteractive is gated on it),
-	// so the diff renders in color.
-	committed, err := cmd.applyDocument(ctx, string(editedBytes), cmd.Commit, true, true)
+	// so it is wet-run by default (writes after the confirm gate) unless -dry-run
+	// forces preview (cutting-garden#213), and the diff renders in color.
+	commit, _ := applyMode(cmd.DryRun, cmd.Commit, true)
+	committed, err := cmd.applyDocument(ctx, string(editedBytes), commit, true, true)
 	if err != nil {
 		// Keep the edited buffer so the user can resolve conflicts and re-apply.
 		fmt.Fprintf(cmd.output, "organize: edited document left at %s\n", tmpPath)

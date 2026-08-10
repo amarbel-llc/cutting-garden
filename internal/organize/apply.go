@@ -27,15 +27,37 @@ type move struct {
 }
 
 // runApply reads an edited organize document from a path (or stdin for "-") and
-// applies it non-interactively. Default is dry-run (prints the intended writes);
-// -commit performs them.
+// applies it. At a terminal it is wet-run by default — showing the #224 diff and
+// confirming before writing; piped or redirected it stays dry-run unless -commit,
+// so a headless invocation never writes silently (cutting-garden#213). -dry-run
+// forces preview everywhere.
 func (cmd *Organize) runApply(ctx errors.Context, applyPath string) error {
 	editedText, err := readApplyInput(applyPath)
 	if err != nil {
 		return err
 	}
-	_, err = cmd.applyDocument(ctx, editedText, cmd.Commit, false, stdoutIsTerminal())
+	tty := stdoutIsTerminal()
+	commit, interactive := applyMode(cmd.DryRun, cmd.Commit, tty)
+	_, err = cmd.applyDocument(ctx, editedText, commit, interactive, tty)
 	return err
+}
+
+// applyMode resolves whether an apply writes (commit) and whether it engages the
+// interactive confirm gate, from the -dry-run/-commit flags and whether stdout is
+// a terminal — the wet-run-by-default rule (cutting-garden#213). At a terminal
+// organize writes by default, confirming after the #224 diff; piped or redirected
+// it stays dry-run unless -commit, so a headless invocation never writes silently;
+// -dry-run forces preview everywhere. interactive is true only at a terminal, so
+// the huh confirm prompt is never run without one.
+func applyMode(dryRun, commitFlag, tty bool) (commit, interactive bool) {
+	switch {
+	case dryRun:
+		return false, false
+	case tty:
+		return true, true
+	default:
+		return commitFlag, false
+	}
 }
 
 // runCommitDirectly reads an edited document from stdin and applies it,
