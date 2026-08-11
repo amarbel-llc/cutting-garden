@@ -51,6 +51,33 @@ optional `tags = [...]` key on RFC 0007 account stanzas (filed as a
 config-subsystem amendment). URIs remain host-layer sugar — compressed
 ground containment paths (RFC 0014 "Isometry").
 
+### Origin resolution (implemented — cutting-garden#37)
+
+The URI-named origin above — a leading identifier resolved to a specific
+anchor (`caldav:fastmail -> component=VEVENT`) — is implemented as the
+evaluator's **origin-in-expression** mode (`EvaluateResolving`, beside the
+explicit-anchor `Evaluate`). A lone leading identity term is handed to an
+injected `OriginResolver` (`Resolve(uri) → (anchor, lister)`, satisfied by
+`command_components.ResolveRootListerPlugin`, so the evaluator stays
+registry-agnostic), and the remainder of the path evaluates against the
+resolved anchor exactly as an explicit-anchor query would: `origin -> step` ≡
+`Evaluate(anchor=origin, "step")`, and a bare `origin` yields the anchor's
+children (the set `list <uri>` prints). The two anchoring modes are mutually
+exclusive by construction — one carries the anchor as a param, the other as the
+leading term — and validation enforces exactly one origin. This is the resolver
+that lets organize's selection surface be a single trellis expression
+(cutting-garden#216, path 2b-full): every consumer (organize, `list`, `mcp`)
+can embed a leading URI, not only those that pre-resolve.
+
+**Still deferred** — this slice resolves a *specific* URI, not the aggregate.
+The **root-aggregate default anchor** (the first two forms above,
+`!root-v1 scheme=caldav -> …` and `work -> …` — the leading-combinator /
+roots-as-nodes origin) still needs the root-node SDK surface and stays deferred,
+as do **mid-query identity predicates** (an id matched against a child, the
+espalier-match reading) and bare-tag predicates. The explicit-anchor param path
+is transitional: the eventual direction is single-mode, dropping the param so the
+origin always lives in the expression.
+
 ## Host capability contract
 
 - **Sigils**: meanings are fixed by the framework; support is per-host

@@ -2,18 +2,20 @@
 // against a plugin's traversal tree (internal/cutting_garden_plugins),
 // returning the Nodes matched by the query's last step (RFC 0014, FDR 0022).
 //
-// This is the slice-2a evaluator (cutting-garden#164, #211): a walk from an
-// explicit anchor over the untyped graph combinators — forward `->`, reverse
-// `<-`, forward closure `->>`, backward closure `<<-` — with a predicate layer
-// over Node.Type, Node.Facets, and leaf bodies, and `:`-only sigils. Reverse
-// and the backward closure invert the child relation over the anchor's
-// reachable subtree (RootLister is forward-only, so parents are computable no
-// other way; FDR 0022 "scan-and-invert"). Forms the grammar admits but the
-// evaluator does not yet implement — typed edges, non-`:` sigils, the `~=`
-// operator, version subpaths, OR-alternatives, identity terms, bare-tag terms,
-// the default-anchor (leading-combinator) origin — are rejected up front by
-// Validate, never silently mismatched. See docs/features/0022-trellis.md for
-// the boundary taxonomy.
+// This is the slice-2 evaluator (cutting-garden#164, #211, #37): a walk over the
+// untyped graph combinators — forward `->`, reverse `<-`, forward closure `->>`,
+// backward closure `<<-` — with a predicate layer over Node.Type, Node.Facets,
+// and leaf bodies, `:`-only sigils, OR-alternatives, and `~=` regex. Reverse and
+// the backward closure invert the child relation over the anchor's reachable
+// subtree (RootLister is forward-only, so parents are computable no other way;
+// FDR 0022 "scan-and-invert"). The anchor comes either from an explicit param
+// (Evaluate) or is resolved from a leading-URI origin term in the query itself
+// (EvaluateResolving, resolve.go, cutting-garden#37). Forms the grammar admits
+// but the evaluator still defers — typed edges, non-`:` sigils, version
+// subpaths, mid-query identity and bare-tag predicates, and the default-anchor
+// (root-aggregate leading-combinator) origin — are rejected up front by Validate,
+// never silently mismatched. See docs/features/0022-trellis.md for the boundary
+// taxonomy.
 //
 // It lives beside the parser (internal/trellis) rather than inside it so the
 // pure-parser package stays free of the traversal-SDK dependency the
@@ -56,18 +58,32 @@ func Evaluate(
 	}
 
 	ev := newEvaluator(lister, anchor)
-	steps := q.Path.Steps
+	return ev.run(ctx, q.Path.Steps, q.Path.Combinators)
+}
 
-	current, err := ev.listEnriched(ctx, anchor)
+// run evaluates a validated steps-and-combinators body against ev.anchor: the
+// first step filters the anchor's children, and each subsequent step is reached
+// by its preceding combinator over the prior frontier and filtered. An empty
+// body (no steps) returns the anchor's children unfiltered — the shape the
+// origin-resolving entry point produces for a bare `<uri>` origin, matching the
+// set `list <uri>` prints (resolve.go, cutting-garden#37). Shared by the
+// explicit-anchor Evaluate and EvaluateResolving so both anchor identically.
+func (ev *evaluator) run(
+	ctx context.Context, steps []trellis.Step, combinators []trellis.Combinator,
+) ([]cgp.Node, error) {
+	current, err := ev.listEnriched(ctx, ev.anchor)
 	if err != nil {
 		return nil, errors.Wrap(err)
+	}
+	if len(steps) == 0 {
+		return current, nil
 	}
 	if current, err = ev.filter(ctx, current, steps[0]); err != nil {
 		return nil, err
 	}
 
 	for i := 1; i < len(steps); i++ {
-		reached, err := ev.traverse(ctx, current, q.Path.Combinators[i-1].Kind)
+		reached, err := ev.traverse(ctx, current, combinators[i-1].Kind)
 		if err != nil {
 			return nil, err
 		}

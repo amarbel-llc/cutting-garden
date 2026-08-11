@@ -12,16 +12,19 @@ import (
 // remaining deferrals are tracked in cutting-garden#211 (the slice-2 tracker).
 const unsupported = "trellis: %s is not yet supported by the evaluator (cutting-garden#211)"
 
-// Validate reports whether q is within the evaluator's supported subset,
-// returning a descriptive bad-request error for the first deferred form it
-// encounters. Evaluate calls it before any traversal, so a query that reaches
-// for a deferred feature fails fast and loudly rather than silently
-// mismatching. The supported subset (slice-2a): a path anchored at an explicit
-// URI whose steps are joined by the untyped combinators `->` / `<-` / `->>` /
-// `<<-`, whose terms are type predicates, field predicates (any operator but
-// `~=`), and existential single-step forward subpaths, with only the `:`
-// sigil. Typed edges, the default-anchor origin, version subpaths,
-// OR-alternatives, and identity/bare-tag terms remain deferred.
+// Validate reports whether q is within the explicit-anchor evaluator's supported
+// subset, returning a descriptive bad-request error for the first deferred form
+// it encounters. Evaluate calls it before any traversal, so a query that reaches
+// for a deferred feature fails fast and loudly rather than silently mismatching.
+// The supported subset: a path anchored at an explicit URI whose steps are
+// joined by the untyped combinators `->` / `<-` / `->>` / `<<-`, whose terms are
+// type predicates, field predicates (any operator, `~=` included),
+// OR-alternatives, and existential single-step forward subpaths, with only the
+// `:` sigil. Typed edges, the default-anchor (root-aggregate leading-combinator)
+// origin, version subpaths, non-`:` sigils, and mid-query identity/bare-tag terms
+// remain deferred. A leading-URI origin term is NOT handled here — resolving it
+// is the origin-in-expression path's job (EvaluateResolving / validateOriginQuery,
+// resolve.go, cutting-garden#37).
 func Validate(q *trellis.Query) error {
 	if q == nil {
 		return errors.BadRequestf("trellis: nil query")
@@ -33,7 +36,16 @@ func Validate(q *trellis.Query) error {
 	if len(q.Path.Steps) == 0 {
 		return errors.BadRequestf("trellis: empty query")
 	}
-	for _, c := range q.Path.Combinators {
+	return validatePathBody(q.Path.Steps, q.Path.Combinators)
+}
+
+// validatePathBody validates the steps-and-combinators body of a path against
+// the evaluator's supported subset, independent of how the path is anchored.
+// Both the explicit-anchor Validate and the origin-resolving path share it —
+// the latter's remainder (after the leading URI origin is peeled off) is an
+// ordinary anchored body (resolve.go, cutting-garden#37).
+func validatePathBody(steps []trellis.Step, combinators []trellis.Combinator) error {
+	for _, c := range combinators {
 		switch c.Kind {
 		case trellis.CombinatorFwd, trellis.CombinatorBack,
 			trellis.CombinatorFwdClosure, trellis.CombinatorBackClosure:
@@ -45,7 +57,7 @@ func Validate(q *trellis.Query) error {
 			return errors.BadRequestf(unsupported, combinatorName(c.Kind))
 		}
 	}
-	for _, step := range q.Path.Steps {
+	for _, step := range steps {
 		if err := validateStep(step); err != nil {
 			return err
 		}
