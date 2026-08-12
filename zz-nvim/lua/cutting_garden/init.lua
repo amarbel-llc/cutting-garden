@@ -9,9 +9,10 @@
 local M = {}
 
 -- The parser language name (parser/cutting_garden_organize.so) and the filetype
--- for organize documents. Organize temp files have no stable extension (the
--- interactive $EDITOR round-trip, #50, writes to a temp file), so the filetype
--- is set programmatically: `:set filetype=cutting-garden-organize`.
+-- for organize documents. The interactive $EDITOR round-trip (#50) writes to a
+-- temp file named `cg-organize-*.txt` (os.CreateTemp), which setup() auto-detects
+-- via vim.filetype.add — so highlighting fires with no manual step. Any other
+-- buffer can still be set by hand: `:set filetype=cutting-garden-organize`.
 local LANG = 'cutting_garden_organize'
 local FT = 'cutting-garden-organize'
 
@@ -26,6 +27,18 @@ end
 
 function M.setup()
   vim.treesitter.language.register(LANG, FT)
+
+  -- Auto-detect the interactive organize buffer. The $EDITOR round-trip (#50)
+  -- writes os.CreateTemp("", "cg-organize-*.txt"), e.g. /tmp/cg-organize-42.txt,
+  -- so match that basename: highlighting then fires without a manual `:set
+  -- filetype`. The `.txt` suffix keeps other tools treating the file as text; the
+  -- explicit priority makes this specific pattern win over any generic `*.txt`
+  -- rule (filetype patterns resolve by priority, then length).
+  vim.filetype.add({
+    pattern = {
+      ['.*/cg%-organize%-.*%.txt'] = { FT, { priority = 100 } },
+    },
+  })
 
   local group =
     vim.api.nvim_create_augroup('cutting_garden_organize', { clear = true })

@@ -43,8 +43,10 @@ nix build .#cutting-garden-nvim
 
 Add the resulting store path to neovim's `runtimepath` (or via home-manager). It
 ships `parser/cutting_garden_organize.so`, so neovim's built-in `vim.treesitter`
-loads it with no `nvim-treesitter` dependency. The organize temp file has no
-stable extension, so set the filetype programmatically:
+loads it with no `nvim-treesitter` dependency. The interactive `cg organize`
+buffer is a temp file named `cg-organize-*.txt`, which the plugin auto-detects
+(`vim.filetype.add`) — highlighting fires with no manual step. For any other
+buffer, set the filetype by hand:
 
 ```vim
 :set filetype=cutting-garden-organize
