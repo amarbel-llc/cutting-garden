@@ -15,6 +15,11 @@ func TestRenderWholeValue(t *testing.T) {
 	if got := renderWholeValue("", "5", false); got != "{+5+}" {
 		t.Errorf("renderWholeValue(empty old) = %q", got)
 	}
+	// With color the markers are WRAPPED in ANSI, not replaced by it (git-style
+	// word-diff shows both), so removed/added spans read even side by side.
+	if got := renderWholeValue("HQ", "Annex", true); got != ansiRed+"[-HQ-]"+ansiReset+ansiGreen+"{+Annex+}"+ansiReset {
+		t.Errorf("renderWholeValue(color) = %q", got)
+	}
 }
 
 // TestRenderWordDiff pins the word-level diff on free text: shared words stay

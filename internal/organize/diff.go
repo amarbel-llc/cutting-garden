@@ -15,9 +15,11 @@ import (
 // the word level. A bucket move is flattened into the box as the grouped
 // dimension, so it reads identically to a field edit.
 
-// ANSI colors, used when the sink is a terminal; otherwise the diff falls back to
-// git-style [-removed-]/{+added+} markers so a piped/dry-run diff stays readable
-// and testable.
+// ANSI colors, layered over the git-style [-removed-]/{+added+} word-diff
+// markers. The markers are ALWAYS present (like git's default `--word-diff`), so
+// the removed/added spans are legible even where color is absent or a whole-value
+// diff renders two values adjacent; on a terminal the color wraps the marked
+// span, off a terminal (piped/dry-run/tests) the markers stand alone.
 const (
 	ansiRed   = "\x1b[31m"
 	ansiGreen = "\x1b[32m"
@@ -28,20 +30,22 @@ func paintRemoved(s string, color bool) string {
 	if s == "" {
 		return ""
 	}
+	marked := "[-" + s + "-]"
 	if color {
-		return ansiRed + s + ansiReset
+		return ansiRed + marked + ansiReset
 	}
-	return "[-" + s + "-]"
+	return marked
 }
 
 func paintAdded(s string, color bool) string {
 	if s == "" {
 		return ""
 	}
+	marked := "{+" + s + "+}"
 	if color {
-		return ansiGreen + s + ansiReset
+		return ansiGreen + marked + ansiReset
 	}
-	return "{+" + s + "+}"
+	return marked
 }
 
 // renderWholeValue diffs a structured atom value as a unit: the old painted
