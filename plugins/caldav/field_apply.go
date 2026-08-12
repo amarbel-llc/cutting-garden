@@ -14,7 +14,8 @@ var _ cutting_garden_plugins.FieldWriteApplier = (*Plugin)(nil)
 
 // BuildFieldWritePatch builds the PatchNode body applying a batch of box-atom
 // edits to a caldav object (FDR 0023 field write-side, cutting-garden#218).
-// Plain atoms write straight through: summary (the trailer), location, priority.
+// Plain atoms write straight through: summary (the trailer), location, status,
+// priority.
 // The split date_/time_ atoms (slice 2) recombine — each edit is spliced into the
 // object's CURRENT DTSTART/DUE/DTEND value, preserving the untouched half
 // (a date edit keeps the clock, a time edit keeps the date) and the TZID (only
@@ -85,7 +86,7 @@ func (Plugin) BuildFieldWritePatch(
 }
 
 // caldavFieldProperty maps one PLAIN box-atom edit to its objectView property
-// name and typed value: summary/location are strings; priority is the raw
+// name and typed value: summary/location/status are strings; priority is the raw
 // integer (an unparseable value is a bad-request). Any other atom name — an
 // unknown field — is rejected rather than silently dropped (date/time atoms are
 // handled before this by dateTimeAtom).
@@ -97,6 +98,8 @@ func caldavFieldProperty(
 		return "summary", e.Value, nil
 	case listingFieldLocation:
 		return "location", e.Value, nil
+	case listingFieldStatus:
+		return "status", e.Value, nil
 	case listingFieldPriority:
 		n, cerr := strconv.Atoi(e.Value)
 		if cerr != nil {

@@ -19,14 +19,15 @@ func vtodoFieldNode(t *testing.T) cutting_garden_plugins.Node {
 }
 
 // TestBuildFieldWritePatch_PlainFields pins the field write-side slice 1
-// (cutting-garden#218): summary (the trailer), location, and priority write
-// straight through to their component-nested iCalendar properties, priority as a
-// JSON number.
+// (cutting-garden#218): summary (the trailer), location, status, and priority
+// write straight through to their component-nested iCalendar properties,
+// priority as a JSON number, status as a plain string (cutting-garden#229).
 func TestBuildFieldWritePatch_PlainFields(t *testing.T) {
 	body, err := Plugin{}.BuildFieldWritePatch(context.Background(), vtodoFieldNode(t),
 		[]cutting_garden_plugins.FieldEdit{
 			{Name: listingFieldSummary, Value: "Buy oat milk"},
 			{Name: listingFieldLocation, Value: "Corner store"},
+			{Name: listingFieldStatus, Value: "COMPLETED"},
 			{Name: listingFieldPriority, Value: "1"},
 		})
 	if err != nil {
@@ -38,6 +39,7 @@ func TestBuildFieldWritePatch_PlainFields(t *testing.T) {
 		Task      struct {
 			Summary  string `json:"summary"`
 			Location string `json:"location"`
+			Status   string `json:"status"`
 			Priority int    `json:"priority"`
 		} `json:"task"`
 	}
@@ -47,8 +49,9 @@ func TestBuildFieldWritePatch_PlainFields(t *testing.T) {
 	if got.Component != "VTODO" {
 		t.Errorf("component = %q, want VTODO", got.Component)
 	}
-	if got.Task.Summary != "Buy oat milk" || got.Task.Location != "Corner store" || got.Task.Priority != 1 {
-		t.Errorf("task = %+v, want {Buy oat milk, Corner store, 1}", got.Task)
+	if got.Task.Summary != "Buy oat milk" || got.Task.Location != "Corner store" ||
+		got.Task.Status != "COMPLETED" || got.Task.Priority != 1 {
+		t.Errorf("task = %+v, want {Buy oat milk, Corner store, COMPLETED, 1}", got.Task)
 	}
 }
 

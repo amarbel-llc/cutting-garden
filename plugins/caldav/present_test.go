@@ -75,8 +75,13 @@ func TestPresentBoxAtoms(t *testing.T) {
 			want:   nil,
 		},
 		{
-			name:   "no when/where fields contributes nothing",
-			fields: map[string]any{listingFieldStatus: "NEEDS-ACTION", listingFieldSummary: "x"},
+			name:   "status renders as a plain field-editable atom (cutting-garden#229)",
+			fields: map[string]any{listingFieldStatus: "NEEDS-ACTION"},
+			want:   []cutting_garden_plugins.BoxAtom{atom("status", "NEEDS-ACTION")},
+		},
+		{
+			name:   "summary (the box trailer) is not an atom",
+			fields: map[string]any{listingFieldSummary: "x"},
 			want:   nil,
 		},
 	}

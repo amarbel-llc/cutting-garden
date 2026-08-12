@@ -58,10 +58,13 @@ func (Plugin) DescribeListingFields() []cutting_garden_plugins.NodeTypeListingFi
 	// are writable via the slice-2 date_/time_ atom recombination — their split
 	// atoms carry Field = the date field, and the FieldWriteApplier splices them
 	// back into one property preserving the untouched half and the TZID. status is
-	// NOT writable here: it is the grouping heading, written via the FacetWrite
-	// bucket path, never a box atom.
+	// writable both ways: as a box atom (a field edit) AND via the FacetWrite
+	// bucket path when it is the grouping dimension. Presenting it as an atom is
+	// what lets a field edit read the live value for three-way-merge conflict
+	// detection; the heading/atom redundancy this creates when grouped BY status
+	// is cutting-garden#229.
 	summary := cutting_garden_plugins.ListingField{Key: listingFieldSummary, Label: "Summary", Writable: true, Trailer: true}
-	status := cutting_garden_plugins.ListingField{Key: listingFieldStatus, Label: "Status"}
+	status := cutting_garden_plugins.ListingField{Key: listingFieldStatus, Label: "Status", Writable: true}
 	dtstart := cutting_garden_plugins.ListingField{Key: listingFieldDtStart, Label: "Start", Writable: true}
 	location := cutting_garden_plugins.ListingField{Key: listingFieldLocation, Label: "Location", Writable: true}
 	return []cutting_garden_plugins.NodeTypeListingFields{
