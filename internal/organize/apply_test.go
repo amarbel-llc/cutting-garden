@@ -74,6 +74,26 @@ func TestApplyMode(t *testing.T) {
 	}
 }
 
+// TestCheckMoveWritable pins the pre-apply writability gate (cutting-garden#221):
+// a writable dimension passes; a read-only (none) dimension and an unmapped type
+// are rejected. This is the check that lets a read-only reorganization refuse
+// before the diff/confirm rather than after the user confirms.
+func TestCheckMoveWritable(t *testing.T) {
+	writes := map[string]cgp.FacetWrite{
+		"caldav-object-vtodo-v1":  {DimensionKey: "priority", Mode: cgp.FacetWriteOne, Field: "priority"},
+		"caldav-object-vevent-v1": {DimensionKey: "component", Mode: cgp.FacetWriteNone},
+	}
+	if err := checkMoveWritable(writes, move{Node: cgp.Node{Type: "caldav-object-vtodo-v1"}}); err != nil {
+		t.Errorf("writable move rejected: %v", err)
+	}
+	if err := checkMoveWritable(writes, move{Node: cgp.Node{Type: "caldav-object-vevent-v1"}}); err == nil {
+		t.Error("read-only (none) dimension move must be rejected")
+	}
+	if err := checkMoveWritable(writes, move{Node: cgp.Node{Type: "unmapped-v1"}}); err == nil {
+		t.Error("unmapped type move must be rejected")
+	}
+}
+
 // TestPlanMoves_CleanMove pins that a node moved in the edit, with the live state
 // still agreeing with the base, yields exactly one move.
 func TestPlanMoves_CleanMove(t *testing.T) {

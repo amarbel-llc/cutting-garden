@@ -6,12 +6,12 @@ var _ cutting_garden_plugins.FacetWriteDescriber = (*Plugin)(nil)
 
 // DescribeFacetWrites declares how each object leaf type's facet dimensions map
 // to writes (RFC 0012 §Write mapping, FDR 0023). In v1 the reschedule-by-move
-// date buckets (year, month) and status write through the object's iCalendar
-// body; the identity/derived/volatile dimensions (component, due_band, timezone)
-// are read-only, as is priority — its bands render as organize buckets but
-// writing a moved band back into PRIORITY is deferred (cutting-garden#218). The
-// date write's clock-time- and zone-preserving completion lives in the plugin's
-// own write path, never in the framework — this only describes it.
+// date buckets (year, month), status, and priority write through the object's
+// iCalendar body; the identity/derived/volatile dimensions (component, due_band,
+// timezone) are read-only. A priority band completes to its canonical RFC 5545
+// PRIORITY value on write (cutting-garden#221 write-side). The date write's
+// clock-time- and zone-preserving completion lives in the plugin's own write
+// path, never in the framework — this only describes it.
 //
 // Splitting the object leaf into per-component types (caldav-object-<kind>-v1)
 // is what lets STATUS carry the CORRECT enum per component: RFC 5545 §3.8.1.11
@@ -32,6 +32,7 @@ func (Plugin) DescribeFacetWrites() []cutting_garden_plugins.NodeTypeFacetWrites
 	// Field here is documentary).
 	dueHint := "reschedule-by-move: preserves the object's clock time and time zone; targets DUE"
 	dtstartHint := "reschedule-by-move: preserves the object's clock time and time zone; targets DTSTART"
+	priorityHint := "reorganize-by-band: writes the canonical RFC 5545 PRIORITY for the band (must→1, should→5, nice→9, unspecified→0/cleared)"
 
 	// The per-component STATUS enums, each in RFC 5545 §3.8.1.11 progression
 	// order.
@@ -55,13 +56,12 @@ func (Plugin) DescribeFacetWrites() []cutting_garden_plugins.NodeTypeFacetWrites
 		{DimensionKey: facetYear, Mode: one, Field: listingFieldDue, CompletionHint: dueHint},
 		{DimensionKey: facetMonth, Mode: one, Field: listingFieldDue, CompletionHint: dueHint},
 		{DimensionKey: facetStatus, Mode: one, Field: listingFieldStatus, Values: taskStatuses},
-		// priority is READ-ONLY in v1 (Mode none) but carries its band Values so
-		// organize pre-renders the four `## =<band>` headings in urgency order — the
-		// triage board. Reorganizing by priority (writing a moved band back into
-		// PRIORITY) is the write-side follow-up (cutting-garden#218/#55); until then a
-		// -commit move onto this none-mode dimension refuses cleanly in the apply
-		// engine.
-		{DimensionKey: facetPriority, Mode: none, Values: priorityBands},
+		// priority reorganizes by writing the moved band back into PRIORITY
+		// (cutting-garden#221 write-side): the applier completes each band to its
+		// canonical RFC 5545 value (must→1, should→5, nice→9, unspecified→0, which the
+		// serializer omits — clearing the property). The band Values also drive
+		// organize's pre-rendered `## =<band>` headings in urgency order.
+		{DimensionKey: facetPriority, Mode: one, Field: listingFieldPriority, CompletionHint: priorityHint, Values: priorityBands},
 	}, readOnly(facetComponent, facetDueBand, facetTimezone)...)
 
 	veventWrites := append([]cutting_garden_plugins.FacetWrite{

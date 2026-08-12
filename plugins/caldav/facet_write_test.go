@@ -9,8 +9,8 @@ import (
 // TestDescribeFacetWrites_ConsistentAndDeclared pins that caldav's write
 // mappings validate against its OWN read-side facet schema (every mapped key is
 // a declared dimension) and declare the expected writability: the
-// reschedule-by-move date buckets and status are write:one through a field, and
-// the derived / identity dimensions are explicitly read-only.
+// reschedule-by-move date buckets, status, and priority are write:one through a
+// field, and the derived / identity dimensions are explicitly read-only.
 func TestDescribeFacetWrites_ConsistentAndDeclared(t *testing.T) {
 	p := Plugin{}
 	reads := p.DescribeFacets()
@@ -32,7 +32,7 @@ func TestDescribeFacetWrites_ConsistentAndDeclared(t *testing.T) {
 		}
 	}
 
-	for _, k := range []string{facetYear, facetMonth, facetStatus} {
+	for _, k := range []string{facetYear, facetMonth, facetStatus, facetPriority} {
 		if mode[k] != cutting_garden_plugins.FacetWriteOne {
 			t.Errorf("dimension %q: mode = %q, want one", k, mode[k])
 		}

@@ -49,7 +49,7 @@ func (Plugin) BuildFacetWritePatch(
 
 	body := map[string]any{
 		"component": component,
-		inner:       map[string]string{field: value},
+		inner:       map[string]any{field: value},
 	}
 	return json.Marshal(body)
 }
@@ -62,27 +62,54 @@ func facetWriteFieldValue(
 	node cutting_garden_plugins.Node,
 	write cutting_garden_plugins.FacetWrite,
 	toBucket string,
-) (field, value string, err error) {
+) (field string, value any, err error) {
 	switch write.DimensionKey {
 	case facetStatus:
 		return write.Field, toBucket, nil
+	case facetPriority:
+		// A band completes to its canonical RFC 5545 PRIORITY integer; the value is
+		// a JSON number (not a string) so it deserializes into the int property.
+		v, verr := priorityValueOf(toBucket)
+		if verr != nil {
+			return "", nil, verr
+		}
+		return write.Field, v, nil
 	case facetYear, facetMonth:
 		f, cur := activeDateField(node)
 		if f == "" {
-			return "", "", errors.BadRequestf(
+			return "", nil, errors.BadRequestf(
 				"caldav plugin: cannot reschedule %s: object carries no DTSTART or DUE",
 				node.URIString(),
 			)
 		}
 		spliced, serr := splicePeriod(cur, write.DimensionKey, toBucket)
 		if serr != nil {
-			return "", "", serr
+			return "", nil, serr
 		}
 		return f, spliced, nil
 	default:
-		return "", "", errors.BadRequestf(
+		return "", nil, errors.BadRequestf(
 			"caldav plugin: dimension %q is not writable via organize", write.DimensionKey,
 		)
+	}
+}
+
+// priorityValueOf completes a priority band to its canonical RFC 5545 PRIORITY
+// value — the write-side inverse of priorityBandOf. must→1 (high), should→5
+// (medium), nice→9 (low), unspecified→0 (undefined): the serializer omits a zero
+// PRIORITY, so moving a task into the unspecified band clears the property.
+func priorityValueOf(band string) (int, error) {
+	switch band {
+	case priorityMust:
+		return 1, nil
+	case priorityShould:
+		return 5, nil
+	case priorityNice:
+		return 9, nil
+	case priorityUnspecified:
+		return 0, nil
+	default:
+		return 0, errors.BadRequestf("caldav plugin: unknown priority band %q", band)
 	}
 }
 

@@ -126,3 +126,49 @@ func TestBuildFacetWritePatch(t *testing.T) {
 		}
 	})
 }
+
+// TestBuildFacetWritePatch_Priority pins the priority write-side (cutting-garden
+// #221): a band move completes to its canonical RFC 5545 PRIORITY number (must→1,
+// should→5, nice→9, unspecified→0, the last clearing the property since the
+// serializer omits a zero PRIORITY), emitted as a JSON NUMBER so it deserializes
+// into the int property. An unknown band is a loud bad request.
+func TestBuildFacetWritePatch_Priority(t *testing.T) {
+	w := cutting_garden_plugins.FacetWrite{
+		DimensionKey: facetPriority, Mode: cutting_garden_plugins.FacetWriteOne, Field: "priority",
+	}
+	node := applyNode(t, "caldav://h/c/t1.ics", "VTODO", map[string]any{"priority": float64(3)})
+
+	cases := []struct {
+		band string
+		want int
+	}{
+		{priorityMust, 1},
+		{priorityShould, 5},
+		{priorityNice, 9},
+		{priorityUnspecified, 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.band, func(t *testing.T) {
+			body, err := (Plugin{}).BuildFacetWritePatch(context.Background(), node, w, tc.band)
+			if err != nil {
+				t.Fatalf("BuildFacetWritePatch(%q): %v", tc.band, err)
+			}
+			var got struct {
+				Component string `json:"component"`
+				Task      struct {
+					Priority int `json:"priority"`
+				} `json:"task"`
+			}
+			if err := json.Unmarshal(body, &got); err != nil {
+				t.Fatalf("unmarshal %s: %v", body, err)
+			}
+			if got.Component != "VTODO" || got.Task.Priority != tc.want {
+				t.Errorf("band %q: patch = %s, want task.priority=%d", tc.band, body, tc.want)
+			}
+		})
+	}
+
+	if _, err := (Plugin{}).BuildFacetWritePatch(context.Background(), node, w, "bogus-band"); err == nil {
+		t.Error("an unknown priority band must be rejected")
+	}
+}

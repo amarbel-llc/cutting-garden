@@ -141,6 +141,28 @@ func (cmd *Organize) applyDocument(
 			len(notices), strings.Join(notices, ", "))
 	}
 
+	// Writability precheck (cutting-garden#221): resolve the move write surface and
+	// validate each move's grouped-dimension mode BEFORE the diff and confirm, so a
+	// move onto a read-only dimension refuses immediately rather than rendering a
+	// diff and prompting "Apply these N change(s)?" only to fail after the user
+	// confirms. The resolved surface is reused by executePlan below.
+	var (
+		moveMutator cgp.NodeMutator
+		moveApplier cgp.FacetWriteApplier
+		moveWrites  map[string]cgp.FacetWrite
+	)
+	if len(moves) > 0 {
+		var werr error
+		if moveMutator, moveApplier, moveWrites, werr = resolveWrites(lister, dim); werr != nil {
+			return false, werr
+		}
+		for _, mv := range moves {
+			if err := checkMoveWritable(moveWrites, mv); err != nil {
+				return false, err
+			}
+		}
+	}
+
 	// The diff (cutting-garden#224): fold the moves and field edits into one box
 	// per object and show it BEFORE any write, so the user reviews exactly what
 	// lands. An interactive commit then confirms; a dry-run notes it wrote
@@ -174,11 +196,7 @@ func (cmd *Organize) applyDocument(
 	}
 
 	if len(moves) > 0 {
-		mutator, applier, writes, werr := resolveWrites(lister, dim)
-		if werr != nil {
-			return false, werr
-		}
-		if err := cmd.executePlan(ctx, mutator, applier, writes, moves); err != nil {
+		if err := cmd.executePlan(ctx, moveMutator, moveApplier, moveWrites, moves); err != nil {
 			return false, err
 		}
 	}
@@ -329,25 +347,10 @@ func (cmd *Organize) executePlan(
 	moves []move,
 ) error {
 	for _, mv := range moves {
-		w, ok := writes[mv.Node.Type]
-		if !ok {
-			return errors.BadRequestf(
-				"organize: type %q declares no write mapping for the grouped dimension",
-				mv.Node.Type,
-			)
+		if err := checkMoveWritable(writes, mv); err != nil {
+			return err
 		}
-		switch w.Mode {
-		case cgp.FacetWriteNone:
-			return errors.BadRequestf(
-				"organize: the grouped dimension is read-only for type %q; it "+
-					"cannot be reorganized", mv.Node.Type,
-			)
-		case cgp.FacetWriteMany:
-			return errors.BadRequestf(
-				"organize: multi-valued (mode many) dimension apply is out of "+
-					"scope in this slice (type %q)", mv.Node.Type,
-			)
-		}
+		w := writes[mv.Node.Type] // presence validated by checkMoveWritable
 
 		body, err := applier.BuildFacetWritePatch(ctx, mv.Node, w, mv.To)
 		if err != nil {
@@ -356,6 +359,37 @@ func (cmd *Organize) executePlan(
 		if _, err := mutator.PatchNode(ctx, mv.Node.URI, bytes.NewReader(body)); err != nil {
 			return errors.Wrapf(err, "organize: patch %s", mv.URI)
 		}
+	}
+	return nil
+}
+
+// checkMoveWritable validates a move's grouped-dimension write mode against its
+// type's mapping: an unmapped type, a read-only (none) dimension, or a
+// multi-valued (many) dimension is a bad request. The apply engine runs it UP
+// FRONT — before rendering the diff and prompting to confirm — so a move onto a
+// read-only dimension refuses immediately rather than after the user confirms
+// changes that can never be written (cutting-garden#221 exposed this: grouping by
+// a read-only dimension and moving a line reached the confirm prompt, then
+// failed).
+func checkMoveWritable(writes map[string]cgp.FacetWrite, mv move) error {
+	w, ok := writes[mv.Node.Type]
+	if !ok {
+		return errors.BadRequestf(
+			"organize: type %q declares no write mapping for the grouped dimension",
+			mv.Node.Type,
+		)
+	}
+	switch w.Mode {
+	case cgp.FacetWriteNone:
+		return errors.BadRequestf(
+			"organize: the grouped dimension is read-only for type %q — you can group "+
+				"by it to view, but its buckets cannot be reorganized", mv.Node.Type,
+		)
+	case cgp.FacetWriteMany:
+		return errors.BadRequestf(
+			"organize: multi-valued (mode many) dimension apply is out of scope in "+
+				"this slice (type %q)", mv.Node.Type,
+		)
 	}
 	return nil
 }
