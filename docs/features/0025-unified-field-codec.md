@@ -1,0 +1,207 @@
+---
+status: proposed
+date: 2026-08-13
+promotion-criteria: |
+  Promote to `experimental` once Slice 1 lands: the unified field descriptor
+  + codec type exists in the SDK, caldav is migrated onto it, and the existing
+  facet/listing-field/box-atom surfaces are re-expressed through it with no
+  behavior change (the current organize bats stay green after the rename).
+  Promote to `testing` once the model delivers a NET-NEW capability end to end —
+  the first of: lowercase status/component (case-fold codec), `--group-by
+  date_start` (#230), or `--group-by categories` with the N-way merge — against
+  the caldav testserver. Promote to `accepted` once every in-tree plugin
+  (nebulous, jira, fastmail, …) is migrated off the legacy facet/listing-field
+  interfaces and those interfaces are deleted, and the N-way merge has gone two
+  weeks without a correctness lever moving.
+---
+
+# Unified field-codec model
+
+## Problem Statement
+
+cutting-garden today carries **two parallel concepts** for a plugin's data:
+
+- **Facets** (`FacetDimension`/`FacetValue`, `FacetDescriber` + `FacetWriteApplier`,
+  RFC 0012) — the *groupable* surface: `## =value` buckets, `-group-by`,
+  `list -query`.
+- **Listing fields / box atoms** (`ListingField`/`BoxAtom`, `FieldPresenter` +
+  `FieldWriteApplier`, FDR 0023) — the *inline* surface: box interiors and
+  field edits.
+
+The two overlap badly. A dimension can be *both* (caldav `status` is, after the
+field-editable-status change) and then renders as **both a grouping heading and
+a box atom at once** — the cutting-garden#229 redundancy, which also opens a
+contradictory-edit footgun. The date "codec" (split `DTSTART` into
+`date_start`/`time_start`, recombine on write) lives ad-hoc on the atom side
+only. There are **two separate write appliers** and two merge paths
+(`planMoves` for facet moves, `planFieldEdits` for field edits). And a run of
+requested features each straddle *both* surfaces at once:
+
+- **lowercase status/component** (presentation only) must apply to bucket
+  headings *and* box atoms, and reverse on both writes;
+- **dates as groupable facets** (#230) — `date_start` should be a grouping
+  dimension, not just an atom;
+- **tags** (caldav `CATEGORIES`) must be readable, writable, *and* groupable —
+  and multi-valued;
+- the **cancel-remap** (move to `cancelled` → write `STATUS:COMPLETED` + append a
+  category) is a facet move that writes *two* stored properties.
+
+Writing each of those against the split model means writing the transform
+twice (facet side + atom side) and keeping two write paths in sync. This record
+proposes collapsing the two into **one field abstraction with a codec**, so the
+renderer — not the plugin, and not two duplicated declarations — decides how a
+field is presented.
+
+## Model
+
+### Two layers, bridged by codecs
+
+A plugin declares **two layers**:
+
+1. **Stored fields** — the raw property slots (`DTSTART`, `STATUS`,
+   `CATEGORIES`). This is the unit of **persistence** and of **three-way
+   conflict detection** (the pinned base and re-queried live are compared here).
+2. **Presentation fields** — the codec-produced components (`date_start`,
+   `time_start`, `status`, each individual tag). Each carries the presentation
+   **metadata**: `key`, `label`, `groupable`, `inline` (presentable as an atom),
+   `writable`, `kind` (categorical / date / numeric-bucket / tag), declared
+   `values`, `terminal-values` (#214), `order`. The presentation field is the
+   unit the **renderer places**, that `-group-by` / `list -query` **name**, and
+   that a **field edit targets**.
+
+**Codecs** bridge the two. A codec is a declared, **reversible, M↔N** transform:
+`format(stored…) → presented…` and `parse(presented…) → stored…`. Cardinalities
+fall out of one mechanism:
+
+| codec | stored ↔ presented |
+|---|---|
+| case-fold | `STATUS` ↔ `status` (1↔1; `COMPLETED`↔`completed`) |
+| date-split | `DTSTART` ↔ `date_start` + `time_start` (1↔2) |
+| tags | `CATEGORIES` ↔ each tag (1↔N) |
+| *future many→one* | `DTSTART` + `TZID` ↔ one zoned datetime; `RRULE`+`EXDATE` ↔ one "repeats" |
+
+The **metadata lives on the presented component, not the stored field** — a
+component sourced from several stored fields has no single stored field to hang
+`groupable`/`label` on, and one stored field feeding two components needs two
+metadata sets. This generalizes today's `BoxAtom{Name, Value, Field}` (the
+`Field` back-reference) into a first-class codec.
+
+### Renderer placement (dissolves #229)
+
+A presentation field declares whether it *can* be a grouping heading
+(`groupable`) and/or an inline atom (`inline`). The **renderer** decides, given
+the current group-by:
+
+- the field that **is** the current group-by → rendered as the **heading ladder
+  only** (never also an atom);
+- every other `inline` field → a box atom;
+- coarse/fine relatives (`month` heading + `date_start` atom) are **distinct
+  fields**, so they coexist — only the *same* field is suppressed.
+
+Nothing is ever both a heading and an atom at once. That is the #229 dissolution.
+
+### Multi-valued grouping + N-way merge
+
+A multi-valued groupable field (tags) forces the general case. An object
+**appears under every heading it matches** (several presentation points); the
+grouping dimension is carried **purely by placement** (never a box atom); the
+box shows only the *other* fields.
+
+- **Membership = placement.** An object's grouping value(s) = the set of
+  headings its line sits under. Single-valued → exactly one (a move is a
+  *replace*); multi-valued → N (adding/removing a line *adds/removes* a member,
+  never a whole-set replace).
+- **N-way merge.** An object may appear at N presentation points; its final
+  state is reconciled — membership from the placement **set-diff**, each atom
+  from **all** its appearances (agree → apply, disagree → conflict) — then still
+  3-way against the pinned base and the re-queried live. Conflict fires on live
+  drift (as today) *or* on two appearances of the same object edited to
+  different values of the same atom. Single-valued grouping is the **N=1
+  degenerate**, so this subsumes today's `planMoves` + `planFieldEdits`.
+
+## Worked example (`-group-by categories`)
+
+Live: **T1** (categories `proj-a`,`proj-b`), **T2** (`proj-a`), **T3** (none).
+
+```
+# categories=
+## =proj-a
+  - [T1.ics  status=needs-action]  Ship release
+  - [T2.ics  status=needs-action]  Write docs
+## =proj-b
+  - [T1.ics  status=needs-action]  Ship release
+```
+
+T1 appears under both categories; the grouping dimension is factored out at each
+point (no `categories=` atom — placement carries it); T3 (no categories) lands
+ungrouped. Editing: delete T1's line under `## =proj-a` → **remove** `proj-a`;
+add T2's line under `## =proj-b` → **add** `proj-b`; edit a `status` atom at any
+point → reconciled across T1's appearances. Result: T1 → `{proj-b}` (+ any atom
+edit), T2 → `{proj-a, proj-b}`.
+
+## Codecs in this model
+
+- **Case-fold** (lowercase status/component) is a 1↔1 codec: present lowercase,
+  write **canonical RFC 5545 uppercase** (never persist lowercase). Presentation
+  normalization only; timezone is a future codec (same mechanism).
+- **Date-split** (existing) becomes a declared codec rather than ad-hoc
+  `present.go` logic; dates additionally become **groupable** fields (#230),
+  with a coarser year/month hierarchy as distinct fields.
+- **Tags** — `CATEGORIES` is a codec-carrying, multi-valued, groupable,
+  read+write field, governed by a pluggable **tag-interpreter plugin**
+  (cutting-garden#231; `naive` + `dodder-hyphen` builtin, config-linkable). The
+  interpreter owns segment hierarchy, the `_`-lift rule (transparent, treated as
+  absent — used across caldav categories, carddav groups, fastmail labels),
+  `namespace → bucket` expansion, bare-tag query matching, and the write-back.
+  Its algebra is deferred to #231's own grill/FDR; this model only needs a tag
+  field to *name* an interpreter.
+- **Cancel-remap** is a codec/write-rule: a move to the `cancelled` status
+  heading desugars to `STATUS:COMPLETED` + append the `zz-archive-task-cancelled`
+  category — one placement, a **multi-stored write**. (Motivated by Tasks.org
+  ignoring `STATUS:CANCELLED`; see the interop note in #229's neighbourhood.)
+
+## Bare-tag → trellis native tag
+
+A bare-identifier trellis term (`proj-cutting_garden`, `project`) matches an
+object's tag set — **un-deferring bare-identifier terms in the evaluator**
+(currently rejected in `internal/trellis_eval/validate.go`) and routing them,
+via the field's tag-interpreter, to the node's designated tag-set field. General
+evaluator feature: any plugin that declares a tag field participates.
+
+## Relationship to existing records
+
+- **RFC 0012 (facet contract)** and **FDR 0023 (organize)** are the two models
+  this unifies; their `FacetDimension`/`FacetWriteApplier` and
+  `ListingField`/`FieldWriteApplier`/`BoxAtom` become the *legacy* surface,
+  re-expressed as unified fields + codecs and eventually deleted.
+- **cutting-garden#229** (heading/atom redundancy) is **subsumed** — renderer
+  placement dissolves it by construction.
+- **#230** (dates as facets), **#231** (tag-interpreter plugin), **#232**
+  (tags-as-editable-objects, dodder `:e`) are linked sub-designs.
+- **RFC 0014 (trellis)** gains bare-tag evaluation (a deferred form); the tag
+  match semantics come from the interpreter, not the grammar.
+
+## Staging / migration
+
+This replaces four SDK surfaces (`FacetDimension`, `ListingField`, `BoxAtom`,
+and the two write appliers) plus the merge, so it lands **incrementally**, never
+big-bang:
+
+1. **Introduce** the unified field descriptor + codec type in the SDK, with the
+   N-way merge, *alongside* the legacy interfaces (the legacy ones become thin
+   adapters onto the unified model).
+2. **Migrate caldav** onto it and re-express its existing facets/fields with no
+   behavior change (organize bats stay green) — the conformance bar for Slice 1.
+3. **Deliver a net-new capability** (case-fold, or `-group-by date_start`, or
+   `-group-by categories`) to prove the model earns its keep.
+4. **Migrate the remaining plugins** (nebulous, jira, fastmail, …) and **delete**
+   the legacy interfaces.
+
+## More information
+
+- cutting-garden#229 (heading/atom redundancy — subsumed)
+- cutting-garden#230 (dates as groupable facets)
+- cutting-garden#231 (tag-interpreter plugin type; dodder-hyphen algebra)
+- cutting-garden#232 (tags editable as objects, dodder `:e`)
+- RFC 0012 (plugin facet contract), FDR 0023 (organize), RFC 0014 / FDR 0022
+  (trellis), FDR 0024 (fastmail — the write:many tag-membership consumer)
