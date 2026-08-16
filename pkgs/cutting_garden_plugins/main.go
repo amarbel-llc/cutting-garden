@@ -105,6 +105,20 @@ type CaptureRootRequest = internal.CaptureRootRequest
 // failures the stream already reported.
 type CaptureRootResult = internal.CaptureRootResult
 
+// Codec is a reversible M<->N bridge between a node type's STORED substrate fields
+// and the PRESENTATION fields the renderer shows (FDR 0025). Format projects the
+// stored fields onto presentation fields (a caldav DTSTART -> date_start +
+// time_start; a lowercase status -> canonical-cased status; CATEGORIES -> tags);
+// Parse inverts an edit back onto the stored fields, preserving the parts the
+// presentation did not carry (a date edit keeps the clock and TZID). The two are
+// reversible: for the fields a codec owns, Parse(Format(stored), stored) restores
+// the stored values.
+//
+// A codec may be M<->N: it reads several stored fields and produces several
+// presentation fields. The identity case (one stored field <-> one presentation
+// field, value unchanged) is IdentityCodec below.
+type Codec = internal.Codec
+
 // ContainerCreator is the OPTIONAL capability for sources that assign a
 // created node's identity server-side (a feed subscription's server-chosen
 // feed id, a forge's issue number, a zettel pool's next id): create a child
@@ -268,6 +282,11 @@ type FacetWriteMode = internal.FacetWriteMode
 // shape (RFC 0009 no-inversion).
 type FieldEdit = internal.FieldEdit
 
+// FieldKind classifies a unified field's value shape. It unifies FacetKind
+// (categorical / numeric-bucket / labelled) with the presentation notions the codec
+// model adds (date, tag, free text), so one enum spans both former surfaces.
+type FieldKind = internal.FieldKind
+
 // FieldPresenter is the OPTIONAL capability a plugin implements to present a
 // node's detail fields as organize espalier box-interior atoms (FDR 0023,
 // cutting-garden#47). The framework never parses substrate values — a caldav
@@ -282,6 +301,11 @@ type FieldEdit = internal.FieldEdit
 // the atoms do not carry (a DTSTART's timezone) — is the write-side follow-up
 // and is deliberately NOT part of this capability yet.
 type FieldPresenter = internal.FieldPresenter
+
+// FieldValue is one declared bucket/enum value of a unified field — the
+// presentation-layer counterpart of FacetValue (RFC 0012 §1). Order renders
+// urgency-/chronology-first (descending); zero for an unordered categorical value.
+type FieldValue = internal.FieldValue
 
 // FieldWriteApplier is the capability that BUILDS the substrate patch for a batch
 // of an object's changed box atoms (and/or its description trailer) — the
@@ -298,6 +322,15 @@ type FieldPresenter = internal.FieldPresenter
 // (ListingField.Writable) MUST also implement this — the apply engine rejects a
 // writable-but-applier-less plugin loudly rather than guessing the patch shape.
 type FieldWriteApplier = internal.FieldWriteApplier
+
+// IdentityCodec is the reusable 1<->1 passthrough codec: one stored field maps to
+// one presentation field, value unchanged (FDR 0025). It reproduces a plain box
+// atom / listing field (a caldav location, status, or summary) — the common case
+// where no transformation is needed. Non-string stored values are rendered with
+// their canonical string form on Format; Parse writes the edited string back
+// verbatim (a plugin needing a typed write, e.g. an integer priority, uses a typed
+// codec instead).
+type IdentityCodec = internal.IdentityCodec
 
 // LeafContent is one leaf node's fetched content, returned by ReadLeaf. It
 // carries two views of the same object: a structured, JSON-marshalable
@@ -387,6 +420,14 @@ type NodeTypeFacets = internal.NodeTypeFacets
 // type — the listing-projection schema, symmetric with NodeTypeFacets. See
 // cutting-garden#160.
 type NodeTypeListingFields = internal.NodeTypeListingFields
+
+// NodeTypeUnifiedFields binds a node type to the codecs producing its unified
+// fields (FDR 0025) — the unified counterpart of NodeTypeFacets /
+// NodeTypeListingFields. Every presentation field a node type carries comes from
+// exactly one codec in Codecs (an identity codec for a plain passthrough field, a
+// split codec for a date, a band codec for a banded priority), so the full field
+// set is the concatenation of each codec's Fields().
+type NodeTypeUnifiedFields = internal.NodeTypeUnifiedFields
 
 // NopReporter is the no-op Stream.
 type NopReporter = internal.NopReporter
@@ -540,6 +581,20 @@ type SourceValidator = internal.SourceValidator
 // The zero value is not usable; obtain a URITemplate only from
 // ParseURITemplate.
 type URITemplate = internal.URITemplate
+
+// UnifiedDescriber is the OPTIONAL capability declaring a plugin's unified
+// field-codec model (FDR 0025). Probed by type assertion like the other
+// schema-describing capabilities. A plugin that implements it can have its legacy
+// FacetDescriber / ListingFieldsDescriber / FieldPresenter / write surfaces DERIVED
+// from the declaration (the following slices) rather than hand-written.
+type UnifiedDescriber = internal.UnifiedDescriber
+
+// UnifiedField describes one PRESENTATION field a codec produces (FDR 0025). It is
+// the superset of FacetDimension (Key/Label/Kind/MultiValued/Values/TerminalValues)
+// and ListingField (Writable, plus the inline/trailer presentation flags): the
+// single declaration from which the renderer and the legacy-surface derivation
+// helpers both read.
+type UnifiedField = internal.UnifiedField
 
 // ApplyBulkOp applies one op via nm's matching NodeMutator verb and records
 // the outcome into result: AppliedNodes on success, PatchedNothing when a
@@ -808,6 +863,32 @@ const FacetWriteNone = internal.FacetWriteNone
 // (a status change, a reschedule-by-move). Pairs with a non-Multi
 // dimension.
 const FacetWriteOne = internal.FacetWriteOne
+
+// FieldCategorical is a plain discrete bucket (status, component, domain) —
+// the FacetCategorical carry-over.
+const FieldCategorical = internal.FieldCategorical
+
+// FieldDate is a calendar date (optionally with a clock), presented split into a
+// date and time component by a SplitDateTime-style codec.
+const FieldDate = internal.FieldDate
+
+// FieldLabelled is an opaque stable key whose human name is resolved out of band
+// (a feed id, an account id) — the FacetLabelled carry-over.
+const FieldLabelled = internal.FieldLabelled
+
+// FieldNumericBucket is a number quantized to an ordered bucket whose values
+// carry FieldValue.Order (year, month, priority band) — the FacetNumericBucket
+// carry-over.
+const FieldNumericBucket = internal.FieldNumericBucket
+
+// FieldTag is a multi-valued category membership (iCalendar CATEGORIES, a
+// carddav group, a fastmail label). MultiValued is set; a tag-interpreter codec
+// maps segment hierarchy to grouping buckets (cutting-garden#231).
+const FieldTag = internal.FieldTag
+
+// FieldText is free text (a summary / description trailer) — diffed at the word
+// level, never bucketed.
+const FieldText = internal.FieldText
 
 // MimeTypeDefault is the mimetype a leaf NodeType speaks when its
 // declaration leaves MimeType empty: opaque bytes, dodder's null-type
