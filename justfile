@@ -540,6 +540,35 @@ debug-organize-month-reschedule: debug-build-go
     curl -fsS "${source_url#caldav:}sched/sched1.ics"
     exec {SRV[1]}>&- || true
 
+# Render + exercise the /dav/fields/ calendar (FDR 0025 Slice 1 Phase 0
+# conformance net): grouped by priority (four pre-rendered bands), then a
+# field-edit apply (location Bank -> Office on field1) and a band move
+# (field2 1_should -> 0_must). The host-run source for the complete-literal
+# heredocs in zz-tests_bats/organize_priority.bats + organize_fields.bats —
+# WRITES to the throwaway in-memory server only.
+[group('debug')]
+debug-organize-fields: debug-build-go
+    #!/usr/bin/env bash
+    set -euo pipefail
+    root="{{ justfile_directory() }}"
+    cd "$root"
+    nix develop --command go build -o .tmp/cutting-garden-caldav-testserver ./cmd/cutting-garden-caldav-testserver
+    nix develop --command madder init -encryption none .default 2>/dev/null || true
+    export CG_TEST_CALDAV_FIELDS=1
+    coproc SRV { .tmp/cutting-garden-caldav-testserver; }
+    read -r -u "${SRV[0]}" source_url _calpath
+    cal="${source_url%/dav/}/dav/fields/"
+    doc=".tmp/organize-fields.txt"
+    echo "# cg organize -group-by priority $cal" >&2
+    echo '# ---------------------------------------------------------------' >&2
+    .tmp/cutting-garden organize -group-by priority "$cal" | tee "$doc"
+    echo '# --- field edit: field1 location=Bank -> location=Office ---' >&2
+    sed 's/location=Bank/location=Office/' "$doc" >"$doc.edited"
+    .tmp/cutting-garden organize -apply "$doc.edited" -commit
+    echo '# --- GET field1.ics (expect LOCATION:Office) ---' >&2
+    curl -fsS "${source_url#caldav:}fields/field1.ics"
+    exec {SRV[1]}>&- || true
+
 # Render (dry-run, READ-ONLY on the server) the organize document for a LIVE
 # Fastmail calendar, grouped by GROUP_BY. With an empty CAL, lists the calendars
 # under the account home so you can pick the task calendar's UID; with a CAL uid,

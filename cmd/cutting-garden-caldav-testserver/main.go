@@ -24,6 +24,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"code.linenisgreat.com/cutting-garden/plugins/caldav/caldavtestserver"
 )
@@ -63,6 +64,30 @@ func main() {
 			vtodoDue("sched2", "Renew passport", "20260910T163000", "America/Los_Angeles"))
 	}
 
+	// A fourth calendar dedicated to the organize field-write lanes (FDR 0025
+	// Slice 1 Phase 0 conformance net): VTODOs carrying banded PRIORITY, LOCATION,
+	// and STATUS so grouping by `priority` yields all four bands and each object's
+	// box surfaces editable location/status/priority atoms plus the SUMMARY
+	// trailer. OPT-IN via CG_TEST_CALDAV_FIELDS so it never inflates the
+	// home-capture object count caldav.bats asserts against — only the priority
+	// and field-edit lanes, which set the env var, see this calendar.
+	//
+	//   field1  Pay rent      PRIORITY 1 (0_must)        LOCATION Bank  STATUS NEEDS-ACTION
+	//   field2  Read book     PRIORITY 5 (1_should)
+	//   field3  Water plants  PRIORITY 9 (2_nice)
+	//   field4  Someday idea  no PRIORITY (3_unspecified)
+	if os.Getenv("CG_TEST_CALDAV_FIELDS") != "" {
+		srv.AddCalendar("/dav/fields/", "Fields")
+		srv.Seed("/dav/fields/field1.ics", "VTODO",
+			vtodoRich("field1", "Pay rent", 1, "Bank", "NEEDS-ACTION"))
+		srv.Seed("/dav/fields/field2.ics", "VTODO",
+			vtodoRich("field2", "Read book", 5, "", ""))
+		srv.Seed("/dav/fields/field3.ics", "VTODO",
+			vtodoRich("field3", "Water plants", 9, "", ""))
+		srv.Seed("/dav/fields/field4.ics", "VTODO",
+			vtodoRich("field4", "Someday idea", 0, "", ""))
+	}
+
 	// Handshake: the caldav: source arg (opaque form reaches the plain-HTTP
 	// test server) and the calendar path.
 	fmt.Printf("caldav:%s/dav/ %s\n", srv.URL(), srv.CalendarPath)
@@ -81,6 +106,29 @@ func vtodo(uid, summary string) string {
 func vevent(uid, summary string) string {
 	return "BEGIN:VCALENDAR\nVERSION:2.0\nBEGIN:VEVENT\nUID:" + uid +
 		"\nSUMMARY:" + summary + "\nEND:VEVENT\nEND:VCALENDAR\n"
+}
+
+// vtodoRich seeds a VTODO carrying the optional detail properties the organize
+// field-edit and priority lanes exercise: a banded PRIORITY (priority <= 0 omits
+// the property, leaving the task unprioritized → the 3_unspecified band), a
+// LOCATION, and a STATUS. It is the richest VTODO shape the fixtures need —
+// organize surfaces priority/location/status as editable box atoms with SUMMARY
+// as the trailer.
+func vtodoRich(uid, summary string, priority int, location, status string) string {
+	var b strings.Builder
+	b.WriteString("BEGIN:VCALENDAR\nVERSION:2.0\nBEGIN:VTODO\nUID:" + uid +
+		"\nSUMMARY:" + summary + "\n")
+	if priority > 0 {
+		fmt.Fprintf(&b, "PRIORITY:%d\n", priority)
+	}
+	if location != "" {
+		b.WriteString("LOCATION:" + location + "\n")
+	}
+	if status != "" {
+		b.WriteString("STATUS:" + status + "\n")
+	}
+	b.WriteString("END:VTODO\nEND:VCALENDAR\n")
+	return b.String()
 }
 
 // vtodoDue seeds a VTODO whose DUE carries a clock time and (when tzid is
