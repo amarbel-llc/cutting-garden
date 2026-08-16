@@ -710,6 +710,28 @@ var ParseFacetFilter = internal.ParseFacetFilter
 // URI, e.g. a singleton).
 var ParseURITemplate = internal.ParseURITemplate
 
+// ParseUnifiedFieldEdits reproduces the stored-field updates half of a
+// FieldWriteApplier from a node type's codecs: each edit is routed to the codec
+// that owns its presentation field, and that codec's Parse inverts the batch onto
+// the substrate fields — a split date_start + time_start recombining into one date
+// property via its shared codec. current carries the node's present stored values so
+// a partial edit preserves the untouched parts. The plugin wraps the returned
+// storedUpdates in whatever substrate patch shape it needs (caldav: a
+// {component, inner} body). An edit whose field no codec produces is a bad request,
+// mirroring the legacy applier's reject-unknown-field behaviour.
+var ParseUnifiedFieldEdits = internal.ParseUnifiedFieldEdits
+
+// PresentUnifiedAtoms reproduces FieldPresenter.PresentBoxAtoms from a node type's
+// codecs: each codec formats the node's stored fields, and every INLINE (non-
+// Trailer) presentation field it produces becomes a box atom, in codec-then-field
+// declaration order. An atom carries its field's Source as BoxAtom.Field (empty =
+// the atom is its own field), so a split date_start/time_start attributes to its
+// parent stored field for the writability gate. It is a resilient read-side
+// projection: a codec whose Format fails on a malformed value contributes no atoms
+// (matching the legacy presenter, which simply skips an unparseable field) rather
+// than aborting the whole box — so it has no error return.
+var PresentUnifiedAtoms = internal.PresentUnifiedAtoms
+
 // RecognizedPatchFields returns the subset of supported keys present in
 // fields, preserving supported's order — callers pass a SORTED supported
 // list so the result, and the PatchNode applied report built from it, is

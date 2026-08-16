@@ -14,11 +14,19 @@ import (
 func TestPresentBoxAtoms(t *testing.T) {
 	atom := func(name, value string) cutting_garden_plugins.BoxAtom {
 		// A split date_/time_ atom carries the source field it recombines into
-		// (cutting-garden#218 slice 2); a plain atom (location/priority) has none.
-		// Derived the same way dateTimeAtom classifies the write-back, pinning the
-		// present<->recombine contract: an atom present.go emits must classify back
-		// to the field the applier splices it into.
-		field, _, _ := dateTimeAtom(name)
+		// (cutting-garden#218 slice 2, the FDR 0025 codec Source); a plain atom
+		// (location/status/priority) has none. This pins the present<->recombine
+		// contract: an atom present.go emits attributes to the stored field the codec
+		// splices it back into.
+		var field string
+		switch name {
+		case "date_start", "time_start":
+			field = listingFieldDtStart
+		case "date_end", "time_end":
+			field = listingFieldDtEnd
+		case "date_due", "time_due":
+			field = listingFieldDue
+		}
 		return cutting_garden_plugins.BoxAtom{Name: name, Value: value, Field: field}
 	}
 	cases := []struct {

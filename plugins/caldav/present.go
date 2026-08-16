@@ -1,7 +1,6 @@
 package caldav
 
 import (
-	"strconv"
 	"strings"
 
 	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
@@ -10,65 +9,19 @@ import (
 var _ cutting_garden_plugins.FieldPresenter = (*Plugin)(nil)
 
 // PresentBoxAtoms renders a caldav object's detail fields as organize box atoms
-// (FDR 0023, cutting-garden#47): the date and time components of its
-// DTSTART/DTEND/DUE — split so the clock is editable on its own — its location,
-// its STATUS (field-editable), and, for a task, its raw PRIORITY integer
-// (cutting-garden#221). SUMMARY is the box trailer, not an atom. STATUS is
-// presented even though it is usually the grouping heading, so a field edit can
+// (FDR 0023, cutting-garden#47) by delegating to the unified field-codec model
+// (FDR 0025): each of caldav's codecs formats the node's stored fields into its
+// presentation atoms, and the SDK helper collects every inline atom in codec order.
+// The DTSTART/DTEND/DUE splits, the location/status passthroughs, and the raw
+// PRIORITY integer are all expressed as codecs in unifiedCodecs (unified.go);
+// SUMMARY is the box trailer, not an atom, so its codec declares Trailer and yields
+// none. STATUS is presented (usually also the grouping heading) so a field edit can
 // read the live value for three-way-merge conflict detection — the heading/atom
-// redundancy this creates when grouped BY status is cutting-garden#229. Values
-// format as date `YYYY-MM-DD` and time `HH-mm` (RFC 0015); an all-day / date-only
-// value emits only its date atom. A task with no (or 0) PRIORITY emits no
-// priority atom — the atom's presence signals an explicitly prioritized task.
-//
-// This is the render direction only. Recombining edited atoms back into a
-// DTSTART (preserving the value's TZID) is the write-side follow-up
-// (cutting-garden#218) and lives nowhere in this method.
+// redundancy this creates when grouped BY status is cutting-garden#229.
 func (Plugin) PresentBoxAtoms(
 	node cutting_garden_plugins.Node,
 ) []cutting_garden_plugins.BoxAtom {
-	var atoms []cutting_garden_plugins.BoxAtom
-	// field is the source listing field the date_/time_ atoms derive from, so the
-	// write-side (cutting-garden#218 slice 2) can recombine both back into one
-	// property governed by that field's Writable flag.
-	add := func(suffix, field, raw string) {
-		date, clock, ok := splitICalDateTime(raw)
-		if !ok {
-			return
-		}
-		atoms = append(atoms, cutting_garden_plugins.BoxAtom{Name: "date_" + suffix, Value: date, Field: field})
-		if clock != "" {
-			atoms = append(atoms, cutting_garden_plugins.BoxAtom{Name: "time_" + suffix, Value: clock, Field: field})
-		}
-	}
-	add("start", listingFieldDtStart, fieldString(node, listingFieldDtStart))
-	add("end", listingFieldDtEnd, fieldString(node, listingFieldDtEnd))
-	add("due", listingFieldDue, fieldString(node, listingFieldDue))
-	if loc := fieldString(node, listingFieldLocation); loc != "" {
-		atoms = append(atoms, cutting_garden_plugins.BoxAtom{Name: listingFieldLocation, Value: loc})
-	}
-	if s := fieldString(node, listingFieldStatus); s != "" {
-		atoms = append(atoms, cutting_garden_plugins.BoxAtom{Name: listingFieldStatus, Value: s})
-	}
-	if p, ok := fieldInt(node, listingFieldPriority); ok && p > 0 {
-		atoms = append(atoms, cutting_garden_plugins.BoxAtom{Name: listingFieldPriority, Value: strconv.Itoa(p)})
-	}
-	return atoms
-}
-
-// fieldInt reads an integer listing field, tolerating the float64 an int becomes
-// after a JSON round-trip (the wire/MCP enrichment path) as well as the native
-// int the in-process organize path carries.
-func fieldInt(node cutting_garden_plugins.Node, key string) (int, bool) {
-	switch v := node.Fields[key].(type) {
-	case int:
-		return v, true
-	case int64:
-		return int(v), true
-	case float64:
-		return int(v), true
-	}
-	return 0, false
+	return cutting_garden_plugins.PresentUnifiedAtoms(unifiedCodecs(), node)
 }
 
 // splitICalDateTime splits an iCalendar DATE or DATE-TIME value into an organize
@@ -77,7 +30,7 @@ func fieldInt(node cutting_garden_plugins.Node, key string) (int, bool) {
 // value. A date-only value ("20260703" or "2026-07-03") returns an empty clock.
 // The trailing UTC "Z" and any seconds are dropped for display — the wall-clock
 // components are what the user reads and edits; timezone preservation is the
-// write-side's concern (cutting-garden#218).
+// write-side's concern (cutting-garden#218). Shared by caldavDateCodec.Format.
 func splitICalDateTime(raw string) (date, clock string, ok bool) {
 	if raw == "" {
 		return "", "", false

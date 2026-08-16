@@ -68,6 +68,14 @@ type UnifiedField struct {
 	// Label is the human field name for display. MAY be empty (consumers fall back
 	// to Key).
 	Label string
+	// Source names the STORED substrate field this presentation field attributes
+	// to — the BoxAtom.Field a rendered atom carries, whose writability the field-
+	// edit path gates on. Empty means the atom IS its own field (Key is the stored
+	// key, as for a plain location/status atom); a SPLIT atom names its parent
+	// stored field (a date_start and time_start both carry Source "dtstart", so an
+	// edit to either is governed by that field's declared writability and recombined
+	// by the owning codec). Mirrors BoxAtom.Field.
+	Source string
 	// Kind classifies value shape and ordering.
 	Kind FieldKind
 	// Groupable declares the field MAY be a grouping dimension (rendered as a

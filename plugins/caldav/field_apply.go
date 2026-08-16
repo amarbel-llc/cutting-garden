@@ -3,7 +3,6 @@ package caldav
 import (
 	"context"
 	"encoding/json"
-	"strconv"
 	"strings"
 
 	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
@@ -12,16 +11,16 @@ import (
 
 var _ cutting_garden_plugins.FieldWriteApplier = (*Plugin)(nil)
 
-// BuildFieldWritePatch builds the PatchNode body applying a batch of box-atom
-// edits to a caldav object (FDR 0023 field write-side, cutting-garden#218).
-// Plain atoms write straight through: summary (the trailer), location, status,
-// priority.
-// The split date_/time_ atoms (slice 2) recombine — each edit is spliced into the
-// object's CURRENT DTSTART/DUE/DTEND value, preserving the untouched half
-// (a date edit keeps the clock, a time edit keeps the date) and the TZID (only
-// the value is patched; PatchNode's GET + re-serialize re-emits the existing
-// TZID). Converting an all-day value to timed by adding a clock is out of scope
-// (cutting-garden#222).
+// BuildFieldWritePatch builds the PatchNode body applying a batch of box-atom edits
+// to a caldav object (FDR 0023 field write-side, cutting-garden#218) by delegating
+// to the unified field-codec model (FDR 0025): the SDK helper routes each edit to
+// the codec that owns its atom and inverts the batch onto the object's stored
+// iCalendar properties — plain atoms (summary/location/status/priority) straight
+// through, split date_/time_ atoms recombined into their DTSTART/DUE/DTEND value
+// preserving the untouched half and the TZID (only the value is patched; PatchNode's
+// GET + re-serialize re-emits the existing TZID). caldav wraps the resulting property
+// updates in its component-nested patch shape. Converting an all-day value to timed
+// by adding a clock is out of scope (cutting-garden#222).
 func (Plugin) BuildFieldWritePatch(
 	ctx context.Context,
 	node cutting_garden_plugins.Node,
@@ -46,36 +45,9 @@ func (Plugin) BuildFieldWritePatch(
 		)
 	}
 
-	props := make(map[string]any, len(edits))
-	dateTimes := map[string]*dateTimeEdit{} // property -> accumulated date/time edit
-
-	for _, e := range edits {
-		if property, kind, isDT := dateTimeAtom(e.Name); isDT {
-			acc := dateTimes[property]
-			if acc == nil {
-				acc = &dateTimeEdit{}
-				dateTimes[property] = acc
-			}
-			if kind == dtKindDate {
-				acc.date, acc.hasDate = e.Value, true
-			} else {
-				acc.clock, acc.hasClock = e.Value, true
-			}
-			continue
-		}
-		property, value, err := caldavFieldProperty(e)
-		if err != nil {
-			return nil, err
-		}
-		props[property] = value
-	}
-
-	for property, acc := range dateTimes {
-		spliced, err := spliceDateTime(fieldString(node, property), acc)
-		if err != nil {
-			return nil, errors.Wrapf(err, "caldav plugin: %s", property)
-		}
-		props[property] = spliced
+	props, err := cutting_garden_plugins.ParseUnifiedFieldEdits(unifiedCodecs(), edits, node.Fields)
+	if err != nil {
+		return nil, err
 	}
 
 	body := map[string]any{
@@ -85,75 +57,14 @@ func (Plugin) BuildFieldWritePatch(
 	return json.Marshal(body)
 }
 
-// caldavFieldProperty maps one PLAIN box-atom edit to its objectView property
-// name and typed value: summary/location/status are strings; priority is the raw
-// integer (an unparseable value is a bad-request). Any other atom name — an
-// unknown field — is rejected rather than silently dropped (date/time atoms are
-// handled before this by dateTimeAtom).
-func caldavFieldProperty(
-	e cutting_garden_plugins.FieldEdit,
-) (property string, value any, err error) {
-	switch e.Name {
-	case listingFieldSummary:
-		return "summary", e.Value, nil
-	case listingFieldLocation:
-		return "location", e.Value, nil
-	case listingFieldStatus:
-		return "status", e.Value, nil
-	case listingFieldPriority:
-		n, cerr := strconv.Atoi(e.Value)
-		if cerr != nil {
-			return "", nil, errors.BadRequestf(
-				"caldav plugin: priority %q is not an integer", e.Value,
-			)
-		}
-		return "priority", n, nil
-	default:
-		return "", nil, errors.BadRequestf(
-			"caldav plugin: field %q is not writable via organize", e.Name,
-		)
-	}
-}
-
-const (
-	dtKindDate = "date"
-	dtKindTime = "time"
-)
-
 // dateTimeEdit accumulates the date and/or clock halves of a single date-time
-// property's edit within one object's batch, so date_start and time_start
-// recombine into one DTSTART splice.
+// property's edit, so a date_start and time_start edit recombine into one DTSTART
+// splice. Populated by caldavDateCodec.Parse; consumed by spliceDateTime.
 type dateTimeEdit struct {
 	date     string // "YYYY-MM-DD" (present when hasDate)
 	clock    string // "HH-mm" (present when hasClock)
 	hasDate  bool
 	hasClock bool
-}
-
-// dateTimeAtom classifies a split date/time atom by its "date_<suffix>" /
-// "time_<suffix>" name, returning the objectView property it targets and whether
-// the date or the clock half was edited. The suffix->property map mirrors
-// present.go's add() calls (start->dtstart, due->due, end->dtend).
-func dateTimeAtom(name string) (property, kind string, ok bool) {
-	var suffix string
-	switch {
-	case strings.HasPrefix(name, "date_"):
-		kind, suffix = dtKindDate, strings.TrimPrefix(name, "date_")
-	case strings.HasPrefix(name, "time_"):
-		kind, suffix = dtKindTime, strings.TrimPrefix(name, "time_")
-	default:
-		return "", "", false
-	}
-	switch suffix {
-	case "start":
-		return listingFieldDtStart, kind, true
-	case "due":
-		return listingFieldDue, kind, true
-	case "end":
-		return listingFieldDtEnd, kind, true
-	default:
-		return "", "", false
-	}
 }
 
 // spliceDateTime rewrites current (an iCalendar DATE or DATE-TIME value) with the

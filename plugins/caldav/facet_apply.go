@@ -128,12 +128,7 @@ func activeDateField(node cutting_garden_plugins.Node) (field, value string) {
 }
 
 func fieldString(node cutting_garden_plugins.Node, key string) string {
-	if v, ok := node.Fields[key]; ok {
-		if s, ok := v.(string); ok {
-			return s
-		}
-	}
-	return ""
+	return stringOf(node.Fields, key)
 }
 
 // componentInnerKey maps a caldav component discriminator to the objectView field
