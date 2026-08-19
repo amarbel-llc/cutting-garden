@@ -99,15 +99,7 @@ var (
 // the iCalendar parser already exposes, so all are free at the one-shot
 // FacetCounts fetch.
 func (Plugin) DescribeFacets() []cutting_garden_plugins.NodeTypeFacets {
-	sets := unifiedFieldSets()
-	out := make([]cutting_garden_plugins.NodeTypeFacets, 0, len(sets))
-	for _, set := range sets {
-		out = append(out, cutting_garden_plugins.NodeTypeFacets{
-			Tag:        set.Tag,
-			Dimensions: cutting_garden_plugins.DeriveFacetDimensions(set.Codecs),
-		})
-	}
-	return out
+	return cutting_garden_plugins.DeriveNodeTypeFacets(unifiedFieldSets())
 }
 
 // FacetCounts summarizes a calendar's (or a calendar-home's) objects in one

@@ -3,6 +3,7 @@ package caldav
 import (
 	"strconv"
 	"strings"
+	"sync"
 
 	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
@@ -68,7 +69,12 @@ const priorityHint = "reorganize-by-band: writes the canonical RFC 5545 PRIORITY
 // for tasks and events but never journals, and a journal carries no
 // end/due/location. The reschedule target differs too: a task's year/month
 // buckets write through DUE, an event's/journal's through DTSTART.
-func unifiedFieldSets() []cutting_garden_plugins.NodeTypeUnifiedFields {
+//
+// Memoized (sync.OnceValue): the declaration is a pure constant, and the derived
+// surfaces call it on per-node paths (an atom render per box, a codec lookup per
+// write). Safe because no consumer mutates the returned slices — the Derive*
+// helpers project into fresh output.
+var unifiedFieldSets = sync.OnceValue(func() []cutting_garden_plugins.NodeTypeUnifiedFields {
 	component := facetOnlyCodec{fields: []cutting_garden_plugins.UnifiedField{{
 		// The object's kind: changing it re-creates the object, not an organize
 		// move, so it stays read-only.
@@ -150,7 +156,7 @@ func unifiedFieldSets() []cutting_garden_plugins.NodeTypeUnifiedFields {
 			summary,
 		}},
 	}
-}
+})
 
 // DescribeUnified declares caldav's unified field-codec model (FDR 0025) — the
 // single declaration the legacy facet / atom / write surfaces derive from.
@@ -178,22 +184,26 @@ func codecsForType(tag string) []cutting_garden_plugins.Codec {
 // VTODO carries DUE not DTEND, a VEVENT the reverse). The groupable-only codecs
 // (component, year/month, due_band, timezone) are excluded: their dimensions are
 // not box atoms, and a field EDIT naming one stays a loud bad request (bucket
-// MOVES reach them through the per-tag sets instead).
-func unifiedCodecs() []cutting_garden_plugins.Codec {
+// MOVES reach them through the per-tag sets instead). A codec is admitted only
+// when EVERY field key it produces is unseen — a partial overlap with an
+// already-admitted codec would give one key two owners (presented by the first,
+// edit-routed to the second), so it is excluded outright; cross-set repeats of
+// the same field set (the per-component status variants) dedup to the first.
+var unifiedCodecs = sync.OnceValue(func() []cutting_garden_plugins.Codec {
 	seen := map[string]bool{}
 	var union []cutting_garden_plugins.Codec
 	for _, set := range unifiedFieldSets() {
 		for _, c := range set.Codecs {
-			inline, fresh := false, false
+			inline, allFresh := false, true
 			for _, f := range c.Fields() {
 				if f.Inline || f.Trailer {
 					inline = true
 				}
-				if !seen[f.Key] {
-					fresh = true
+				if seen[f.Key] {
+					allFresh = false
 				}
 			}
-			if !inline || !fresh {
+			if !inline || !allFresh {
 				continue
 			}
 			for _, f := range c.Fields() {
@@ -203,7 +213,7 @@ func unifiedCodecs() []cutting_garden_plugins.Codec {
 		}
 	}
 	return union
-}
+})
 
 // facetOnlyCodec declares GROUPABLE-only presentation fields with no stored
 // counterpart of their own — caldav's computed facet dimensions (component,
@@ -224,7 +234,7 @@ func (facetOnlyCodec) Format(map[string]any) (map[string][]string, error) {
 }
 
 func (facetOnlyCodec) Parse(map[string][]string, map[string]any) (map[string]any, error) {
-	return nil, errors.BadRequestf("caldav plugin: facet-only dimension is not writable")
+	return nil, errors.BadRequestf("facet-only dimension is not writable")
 }
 
 // caldavRescheduleCodec declares the year/month grouping buckets of an object's
@@ -270,8 +280,10 @@ func (caldavRescheduleCodec) Parse(
 ) (map[string]any, error) {
 	field, value := activeDateStored(current)
 	if field == "" {
+		// No "caldav plugin:" prefix: BuildFacetWritePatch flattens codec
+		// errors into a new root carrying the plugin name and the node URI.
 		return nil, errors.BadRequestf(
-			"caldav plugin: cannot reschedule: object carries no DTSTART or DUE",
+			"cannot reschedule: object carries no DTSTART or DUE",
 		)
 	}
 	for _, dim := range []string{facetYear, facetMonth} {
@@ -400,7 +412,7 @@ func (caldavPriorityCodec) Parse(
 	n, err := strconv.Atoi(v[0])
 	if err != nil {
 		return nil, errors.BadRequestf(
-			"caldav plugin: priority %q is neither an integer nor a priority band", v[0],
+			"priority %q is neither an integer nor a priority band", v[0],
 		)
 	}
 	return map[string]any{listingFieldPriority: n}, nil

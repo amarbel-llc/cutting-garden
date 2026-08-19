@@ -18,13 +18,5 @@ var _ cutting_garden_plugins.FacetWriteDescriber = (*Plugin)(nil)
 // band→PRIORITY) live in the codecs' Parse, never in the framework — this only
 // describes them.
 func (Plugin) DescribeFacetWrites() []cutting_garden_plugins.NodeTypeFacetWrites {
-	sets := unifiedFieldSets()
-	out := make([]cutting_garden_plugins.NodeTypeFacetWrites, 0, len(sets))
-	for _, set := range sets {
-		out = append(out, cutting_garden_plugins.NodeTypeFacetWrites{
-			Tag:    set.Tag,
-			Writes: cutting_garden_plugins.DeriveFacetWrites(set.Codecs),
-		})
-	}
-	return out
+	return cutting_garden_plugins.DeriveNodeTypeFacetWrites(unifiedFieldSets())
 }

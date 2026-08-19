@@ -127,3 +127,14 @@ func TestParseUnifiedFieldEdits_UnknownFieldRejected(t *testing.T) {
 		t.Fatalf("ParseUnifiedFieldEdits of an unknown field: want error, got nil")
 	}
 }
+
+// An edit to a field declared read-only (Writable false) is a bad request even
+// without the framework's own writability gate in front — the declaration is the
+// single source of writability, and a direct SDK caller must not slip past it.
+func TestParseUnifiedFieldEdits_ReadOnlyFieldRejected(t *testing.T) {
+	codecs := []Codec{IdentityCodec{Field: UnifiedField{Key: "etag", Inline: true}}}
+	_, err := ParseUnifiedFieldEdits(codecs, []FieldEdit{{Name: "etag", Value: "x"}}, nil)
+	if err == nil {
+		t.Fatalf("ParseUnifiedFieldEdits of a read-only field: want error, got nil")
+	}
+}

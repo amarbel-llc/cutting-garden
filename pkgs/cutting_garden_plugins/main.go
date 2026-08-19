@@ -652,6 +652,16 @@ var DeriveFacetDimensions = internal.DeriveFacetDimensions
 // the declared closed-domain Values' keys.
 var DeriveFacetWrites = internal.DeriveFacetWrites
 
+// DeriveNodeTypeFacetWrites is DeriveNodeTypeFacets' write-side sibling: a
+// migrated plugin's DescribeFacetWrites is a one-line delegation to this.
+var DeriveNodeTypeFacetWrites = internal.DeriveNodeTypeFacetWrites
+
+// DeriveNodeTypeFacets reproduces a whole FacetDescriber result from a unified
+// declaration (the UnifiedDescriber return shape): one NodeTypeFacets per set,
+// its dimensions derived from the set's codecs. A migrated plugin's
+// DescribeFacets is a one-line delegation to this.
+var DeriveNodeTypeFacets = internal.DeriveNodeTypeFacets
+
 // ErrAlreadyRegistered is returned by registry.Register when a
 // scheme is already registered for the given direction (capture
 // or restore).
@@ -733,8 +743,10 @@ var ParseURITemplate = internal.ParseURITemplate
 // month/year bucket splicing into the object's current date. current carries the
 // node's present stored values for that completion. The plugin wraps the returned
 // storedUpdates in its substrate patch shape, exactly as with
-// ParseUnifiedFieldEdits. A dimension no codec declares groupable, or one
-// declared read-only, is a bad request (the FDR 0023 loud-rejection rule).
+// ParseUnifiedFieldEdits. Loud rejections (the FDR 0023 rule): a dimension no
+// codec declares groupable, one declared read-only, and — for a CLOSED value
+// domain (Values non-nil) — a target bucket outside the declared set (an open
+// domain accepts any bucket; the codec's Parse still validates its shape).
 var ParseUnifiedBucketMove = internal.ParseUnifiedBucketMove
 
 // ParseUnifiedFieldEdits reproduces the stored-field updates half of a
@@ -744,8 +756,12 @@ var ParseUnifiedBucketMove = internal.ParseUnifiedBucketMove
 // property via its shared codec. current carries the node's present stored values so
 // a partial edit preserves the untouched parts. The plugin wraps the returned
 // storedUpdates in whatever substrate patch shape it needs (caldav: a
-// {component, inner} body). An edit whose field no codec produces is a bad request,
-// mirroring the legacy applier's reject-unknown-field behaviour.
+// {component, inner} body). An edit whose field no codec produces, or whose field
+// is declared read-only (Writable false), is a bad request — the reject-unknown
+// gate the legacy applier had, plus the same loud writability gate
+// ParseUnifiedBucketMove applies on the move side, so a direct SDK caller cannot
+// write through a read-only declaration even without the framework's own
+// writability gate in front.
 var ParseUnifiedFieldEdits = internal.ParseUnifiedFieldEdits
 
 // PresentUnifiedAtoms reproduces FieldPresenter.PresentBoxAtoms from a node type's

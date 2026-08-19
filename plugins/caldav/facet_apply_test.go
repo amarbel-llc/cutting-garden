@@ -171,4 +171,12 @@ func TestBuildFacetWritePatch_Priority(t *testing.T) {
 	if _, err := (Plugin{}).BuildFacetWritePatch(context.Background(), node, w, "bogus-band"); err == nil {
 		t.Error("an unknown priority band must be rejected")
 	}
+	// A raw integer is the ATOM presentation, not a band: as a bucket-move target
+	// it is outside the closed band domain and must be rejected loudly (the codec's
+	// leniency toward integer ATOM edits must not leak into moves, where an
+	// accepted "7" would re-bucket under a different band than the heading it was
+	// moved to).
+	if _, err := (Plugin{}).BuildFacetWritePatch(context.Background(), node, w, "7"); err == nil {
+		t.Error("a raw-integer priority bucket must be rejected")
+	}
 }

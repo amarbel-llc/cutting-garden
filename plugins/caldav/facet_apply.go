@@ -51,7 +51,14 @@ func (Plugin) BuildFacetWritePatch(
 		codecsForType(objectType(component)), write.DimensionKey, toBucket, node.Fields,
 	)
 	if err != nil {
-		return nil, errors.Wrapf(err, "caldav plugin: %s", node.URIString())
+		// Flatten into a new bad-request ROOT rather than errors.Wrapf: dewey
+		// renders only the root's message (wrap text lands in a descendant the
+		// CLI/mcp surfaces never print), and the node URI must reach the user so
+		// a failing move among many names WHICH object refused. Every error on
+		// this path is a bad request already, so the reclassification is a no-op.
+		return nil, errors.BadRequestf(
+			"caldav plugin: %s: %s", node.URIString(), err,
+		)
 	}
 
 	body := map[string]any{

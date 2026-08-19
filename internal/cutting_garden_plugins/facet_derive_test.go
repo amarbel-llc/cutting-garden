@@ -154,3 +154,54 @@ func TestParseUnifiedBucketMove(t *testing.T) {
 		t.Fatal("undeclared dimension move: want error, got nil")
 	}
 }
+
+// A CLOSED value domain rejects a move to an undeclared bucket loudly (the
+// FDR 0023 rule) instead of letting the codec write an arbitrary value; an OPEN
+// domain (Values nil) keeps accepting any bucket.
+func TestParseUnifiedBucketMove_ClosedDomainRejectsUnknownBucket(t *testing.T) {
+	codecs := []Codec{
+		IdentityCodec{Field: UnifiedField{
+			Key: "grade", Groupable: true, Writable: true,
+			Values: []FieldValue{{Value: "hi", Order: 2}, {Value: "lo", Order: 1}},
+		}},
+		IdentityCodec{Field: UnifiedField{
+			Key: "status", Groupable: true, Writable: true,
+		}},
+	}
+
+	if _, err := ParseUnifiedBucketMove(codecs, "grade", "mid", nil); err == nil {
+		t.Fatal("closed-domain move to an undeclared bucket: want error, got nil")
+	}
+	if _, err := ParseUnifiedBucketMove(codecs, "grade", "hi", nil); err != nil {
+		t.Fatalf("closed-domain move to a declared bucket: %v", err)
+	}
+	if _, err := ParseUnifiedBucketMove(codecs, "status", "anything", nil); err != nil {
+		t.Fatalf("open-domain move: %v", err)
+	}
+}
+
+// The whole-describer wrappers pair each set's Tag with its derived
+// dimensions/writes — the one-line delegation surface a migrated plugin's
+// DescribeFacets / DescribeFacetWrites call.
+func TestDeriveNodeTypeFacetsAndWrites(t *testing.T) {
+	sets := []NodeTypeUnifiedFields{
+		{Tag: "a", Codecs: []Codec{bucketTestCodec{}}},
+		{Tag: "b", Codecs: nil},
+	}
+
+	facets := DeriveNodeTypeFacets(sets)
+	if len(facets) != 2 || facets[0].Tag != "a" || facets[1].Tag != "b" {
+		t.Fatalf("DeriveNodeTypeFacets tags = %#v", facets)
+	}
+	if len(facets[0].Dimensions) != 2 || facets[0].Dimensions[0].Key != "band" {
+		t.Fatalf("tag a dimensions = %#v", facets[0].Dimensions)
+	}
+
+	writes := DeriveNodeTypeFacetWrites(sets)
+	if len(writes) != 2 || writes[0].Tag != "a" || len(writes[0].Writes) != 2 {
+		t.Fatalf("DeriveNodeTypeFacetWrites = %#v", writes)
+	}
+	if err := ValidateFacetWrites(facets, writes); err != nil {
+		t.Fatalf("derived describer pair inconsistent: %v", err)
+	}
+}

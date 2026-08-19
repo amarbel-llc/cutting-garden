@@ -46,17 +46,23 @@ func PresentUnifiedAtoms(codecs []Codec, node Node) []BoxAtom {
 // property via its shared codec. current carries the node's present stored values so
 // a partial edit preserves the untouched parts. The plugin wraps the returned
 // storedUpdates in whatever substrate patch shape it needs (caldav: a
-// {component, inner} body). An edit whose field no codec produces is a bad request,
-// mirroring the legacy applier's reject-unknown-field behaviour.
+// {component, inner} body). An edit whose field no codec produces, or whose field
+// is declared read-only (Writable false), is a bad request — the reject-unknown
+// gate the legacy applier had, plus the same loud writability gate
+// ParseUnifiedBucketMove applies on the move side, so a direct SDK caller cannot
+// write through a read-only declaration even without the framework's own
+// writability gate in front.
 func ParseUnifiedFieldEdits(
 	codecs []Codec, edits []FieldEdit, current map[string]any,
 ) (map[string]any, error) {
 	// A Codec is an interface over structs that hold a slice (UnifiedField.Values),
 	// so it is not map-comparable; index the owning codec instead.
 	owner := map[string]int{}
+	writable := map[string]bool{}
 	for i, c := range codecs {
 		for _, f := range c.Fields() {
 			owner[f.Key] = i
+			writable[f.Key] = f.Writable
 		}
 	}
 
@@ -66,6 +72,11 @@ func ParseUnifiedFieldEdits(
 		if !ok {
 			return nil, errors.BadRequestf(
 				"field %q is not writable via the unified codec model", e.Name,
+			)
+		}
+		if !writable[e.Name] {
+			return nil, errors.BadRequestf(
+				"field %q is declared read-only", e.Name,
 			)
 		}
 		m := byCodec[i]

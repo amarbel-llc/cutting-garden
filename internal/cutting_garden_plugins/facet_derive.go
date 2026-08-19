@@ -1,6 +1,10 @@
 package cutting_garden_plugins
 
-import "code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
+import (
+	"strings"
+
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
+)
 
 // The unified->legacy FACET derivation helpers (FDR 0025 Option B), completing
 // field_derive.go's atom-present + field-edit pair: a plugin that declares its
@@ -31,7 +35,11 @@ func facetKindOf(kind FieldKind) FacetKind {
 		return FacetLabelled
 	case FieldDate:
 		return FacetNumericBucket
+	case FieldTag, FieldText:
+		return FacetCategorical
 	default:
+		// A future FieldKind must be mapped here explicitly; until it is, it
+		// groups as a plain categorical (no ordering assumption).
 		return FacetCategorical
 	}
 }
@@ -129,8 +137,10 @@ func DeriveFacetWrites(codecs []Codec) []FacetWrite {
 // month/year bucket splicing into the object's current date. current carries the
 // node's present stored values for that completion. The plugin wraps the returned
 // storedUpdates in its substrate patch shape, exactly as with
-// ParseUnifiedFieldEdits. A dimension no codec declares groupable, or one
-// declared read-only, is a bad request (the FDR 0023 loud-rejection rule).
+// ParseUnifiedFieldEdits. Loud rejections (the FDR 0023 rule): a dimension no
+// codec declares groupable, one declared read-only, and — for a CLOSED value
+// domain (Values non-nil) — a target bucket outside the declared set (an open
+// domain accepts any bucket; the codec's Parse still validates its shape).
 func ParseUnifiedBucketMove(
 	codecs []Codec, dimension, toBucket string, current map[string]any,
 ) (map[string]any, error) {
@@ -144,10 +154,63 @@ func ParseUnifiedBucketMove(
 					"dimension %q is not writable via organize", dimension,
 				)
 			}
+			if f.Values != nil && !fieldValuesContain(f.Values, toBucket) {
+				return nil, errors.BadRequestf(
+					"dimension %q has no declared bucket %q; declared buckets: %s",
+					dimension, toBucket, strings.Join(fieldValueKeys(f.Values), ", "),
+				)
+			}
 			return c.Parse(map[string][]string{dimension: {toBucket}}, current)
 		}
 	}
 	return nil, errors.BadRequestf(
 		"dimension %q is not writable via organize", dimension,
 	)
+}
+
+func fieldValuesContain(values []FieldValue, key string) bool {
+	for _, v := range values {
+		if v.Value == key {
+			return true
+		}
+	}
+	return false
+}
+
+// fieldValueKeys projects a closed domain's declared values to their keys,
+// preserving declaration order for a scannable error message.
+func fieldValueKeys(values []FieldValue) []string {
+	keys := make([]string, len(values))
+	for i, v := range values {
+		keys[i] = v.Value
+	}
+	return keys
+}
+
+// DeriveNodeTypeFacets reproduces a whole FacetDescriber result from a unified
+// declaration (the UnifiedDescriber return shape): one NodeTypeFacets per set,
+// its dimensions derived from the set's codecs. A migrated plugin's
+// DescribeFacets is a one-line delegation to this.
+func DeriveNodeTypeFacets(sets []NodeTypeUnifiedFields) []NodeTypeFacets {
+	out := make([]NodeTypeFacets, 0, len(sets))
+	for _, set := range sets {
+		out = append(out, NodeTypeFacets{
+			Tag:        set.Tag,
+			Dimensions: DeriveFacetDimensions(set.Codecs),
+		})
+	}
+	return out
+}
+
+// DeriveNodeTypeFacetWrites is DeriveNodeTypeFacets' write-side sibling: a
+// migrated plugin's DescribeFacetWrites is a one-line delegation to this.
+func DeriveNodeTypeFacetWrites(sets []NodeTypeUnifiedFields) []NodeTypeFacetWrites {
+	out := make([]NodeTypeFacetWrites, 0, len(sets))
+	for _, set := range sets {
+		out = append(out, NodeTypeFacetWrites{
+			Tag:    set.Tag,
+			Writes: DeriveFacetWrites(set.Codecs),
+		})
+	}
+	return out
 }
