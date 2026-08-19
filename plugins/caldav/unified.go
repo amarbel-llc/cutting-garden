@@ -130,7 +130,7 @@ var unifiedFieldSets = sync.OnceValue(func() []cutting_garden_plugins.NodeTypeUn
 		Trailer: true, Writable: true,
 	}}
 	dateStart := caldavDateCodec{storedKey: listingFieldDtStart, suffix: "start", writable: true}
-	dateEnd := caldavDateCodec{storedKey: listingFieldDtEnd, suffix: "end", writable: false}
+	dateEnd := caldavDateCodec{storedKey: listingFieldDtEnd, suffix: "end", writable: false, endFromDuration: true}
 	dateDue := caldavDateCodec{storedKey: listingFieldDue, suffix: "due", writable: true}
 
 	return []cutting_garden_plugins.NodeTypeUnifiedFields{
@@ -324,6 +324,12 @@ type caldavDateCodec struct {
 	storedKey string // "dtstart" / "dtend" / "due"
 	suffix    string // "start" / "end" / "due"
 	writable  bool
+	// endFromDuration derives a missing stored value from DTSTART+DURATION
+	// (cutting-garden#233) — set only on the dtend instance, so a
+	// DURATION-carrying VEVENT presents the same end atoms a DTEND-carrying one
+	// does. Presentation-only: the derived atoms stay read-only (writable is
+	// false on dtend), and the fallback is inert when either input is absent.
+	endFromDuration bool
 }
 
 func (c caldavDateCodec) Fields() []cutting_garden_plugins.UnifiedField {
@@ -334,7 +340,14 @@ func (c caldavDateCodec) Fields() []cutting_garden_plugins.UnifiedField {
 }
 
 func (c caldavDateCodec) Format(stored map[string]any) (map[string][]string, error) {
-	date, clock, ok := splitICalDateTime(stringOf(stored, c.storedKey))
+	raw := stringOf(stored, c.storedKey)
+	if raw == "" && c.endFromDuration {
+		raw = endFromStartAndDuration(
+			stringOf(stored, listingFieldDtStart),
+			stringOf(stored, listingFieldDuration),
+		)
+	}
+	date, clock, ok := splitICalDateTime(raw)
 	if !ok {
 		return map[string][]string{}, nil
 	}

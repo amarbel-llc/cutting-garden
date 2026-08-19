@@ -265,7 +265,7 @@ intentionally plugin-side counting.
 | date (volatile) | `due_band` | — | ✅ facetOnlyCodec + `RevalidateAfter` | — (read-only, declared write:none) |
 | text | `location` | ✅ IdentityCodec | — | ✅ |
 | text (trailer) | `summary` | ✅ IdentityCodec/Trailer | — | ✅ |
-| duration | `duration` (P6D) | ❌ unmodeled (#233) | — | — |
+| duration | `duration` (P6D) | ✅ derived end — the dtend codec falls back to DTSTART+DURATION (#233) | — | — (end atoms read-only) |
 | tag (multi) | `CATEGORIES` | ❌ unmodeled | ❌ unmodeled | ❌ unmodeled (#231/#232) |
 
 ### Option B — collapse the facet surface (landed 2026-08-19)
@@ -285,9 +285,10 @@ completion); their bucket VALUES stay computed by the plugin-side counting path
 (`facetsFromView`) — **`FacetCounter` stays plugin-side** (counting is a
 volatile-count concern, not presentation declaration). The atom/field-edit
 union (`unifiedCodecs`) is now derived from the per-component sets, restricted
-to inline/trailer codecs, so the two can never drift. Still folding into the
-date-codec work: #230 (`--group-by date_start` with prefix-derived, configurable
-granularity) and #233 (present `duration` / all-day event end).
+to inline/trailer codecs, so the two can never drift. #233 (present a
+DURATION-event's end) landed as a dtend-codec fallback deriving the end from
+DTSTART+DURATION. Still folding into the date-codec work: #230 (`--group-by
+date_start` with prefix-derived, configurable granularity).
 
 ## More information
 

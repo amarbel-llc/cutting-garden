@@ -18,8 +18,10 @@ import (
 // arithmetic — the gap dtstart-only listings cannot close. dtend and
 // duration are declared as separate fields (RFC 5545 makes them mutually
 // exclusive on one VEVENT; see listingFieldsOf) rather than one derived
-// "end" value, since computing an end time from DTSTART+DURATION would be
-// new logic beyond the declare-what's-already-parsed scope of #177.
+// "end" value — the LISTING reports what's parsed, per #177's scope. The
+// organize box-atom presentation, by contrast, DOES derive an end from
+// DTSTART+DURATION when DTEND is absent (#233; see caldavDateCodec's
+// endFromDuration in unified.go).
 const (
 	listingFieldSummary         = "summary"
 	listingFieldStatus          = "status"
