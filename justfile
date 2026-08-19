@@ -569,6 +569,34 @@ debug-organize-fields: debug-build-go
     curl -fsS "${source_url#caldav:}fields/field1.ics"
     exec {SRV[1]}>&- || true
 
+# Drop into an interactive shell in a throwaway tempdir with a fresh madder store
+# and the Fastmail caldav creds (CALDAV_USERNAME/PASSWORD) exported — the manual
+# eyeball loop for `cg organize` against a LIVE Fastmail calendar (FDR 0025 Slice 1
+# and beyond). Prepends ~/.nix-profile/bin so `cg` and `madder` are the MATCHED
+# profile pair, sidestepping the store-config skew (#87) spinclass's pinned, newer
+# madder causes against the profile `cg`. $CG_CALDAV_HOME is preset to the account
+# home. The store + creds live only in the tempdir and this shell; exit to leave
+# (the tempdir is a throwaway under /tmp). Uses the INSTALLED profile `cg` — run
+# after installing the version under test.
+[group('debug')]
+debug-caldav-shell:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export PATH="$HOME/.nix-profile/bin:$PATH"
+    tmp="$(mktemp -d)"
+    cd "$tmp"
+    madder init -encryption none .default >/dev/null
+    set -a
+    . <(piggy pass show fastmail-caldav.env)
+    set +a
+    : "${CALDAV_USERNAME:?fastmail-caldav.env did not define CALDAV_USERNAME}"
+    export CG_CALDAV_HOME="caldav:https://caldav.fastmail.com/dav/calendars/user/${CALDAV_USERNAME}/"
+    echo "# tempdir: $tmp (fresh .default store via profile madder)" >&2
+    echo "# creds loaded: CALDAV_USERNAME=$CALDAV_USERNAME; \$CG_CALDAV_HOME is set" >&2
+    echo "# try:  cg list \$CG_CALDAV_HOME" >&2
+    echo "#       cg organize -group-by status \$CG_CALDAV_HOME<uid>/" >&2
+    exec "${SHELL:-fish}"
+
 # Render (dry-run, READ-ONLY on the server) the organize document for a LIVE
 # Fastmail calendar, grouped by GROUP_BY. With an empty CAL, lists the calendars
 # under the account home so you can pick the task calendar's UID; with a CAL uid,
