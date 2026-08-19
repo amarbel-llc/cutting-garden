@@ -329,6 +329,16 @@ type caldavDateCodec struct {
 	// DURATION-carrying VEVENT presents the same end atoms a DTEND-carrying one
 	// does. Presentation-only: the derived atoms stay read-only (writable is
 	// false on dtend), and the fallback is inert when either input is absent.
+	//
+	// The shared instance sits in every component's set for atom-order parity,
+	// but the fallback can only ever fire for VEVENT: listingFieldsOf never
+	// populates duration for a task or journal — and MUST NOT flow a task's
+	// DURATION here if that changes, since RFC 5545 §3.6.2 defines a VTODO's
+	// DURATION as substituting for DUE, not an end. The derived atoms also
+	// carry Source "dtend" though the object stores no DTEND; that is safe
+	// only while dtend stays read-only — a future writable-dtend slice must
+	// special-case the DURATION object or an end edit would splice a DTEND in
+	// beside DURATION, which §3.6.1 forbids on one VEVENT.
 	endFromDuration bool
 }
 
