@@ -15,13 +15,18 @@ import (
 var _ cutting_garden_plugins.FacetWriteApplier = (*Plugin)(nil)
 
 // BuildFacetWritePatch builds the PatchNode body for one facet-bucket move
-// (FDR 0023). A status move writes the target bucket verbatim into STATUS; a
-// year/month move RESCHEDULES the object — it splices the target period into the
-// object's existing DTSTART (events) or DUE (tasks), preserving the day-of-month,
-// clock time, and time zone. The active date property mirrors the read-side
-// preference (DTSTART, then DUE) so an object is written back through the same
-// property its bucket was read from; PatchNode's GET + re-serialize preserves the
-// property's TZID, so only the date VALUE changes here.
+// (FDR 0023) by delegating to the unified field-codec model (FDR 0025 Option B):
+// the SDK helper routes the move to the codec owning the grouped dimension on
+// the object's component type, and that codec's Parse completes the bucket onto
+// the stored property — a status bucket passing through verbatim, a priority
+// band completing to its canonical RFC 5545 integer (a JSON number, so it
+// deserializes into the int property), a year/month bucket RESCHEDULING the
+// object by splicing the target period into its active date (DTSTART, then DUE —
+// the same preference the read-side bucket derivation uses), preserving the
+// day-of-month, clock time, and time zone (PatchNode's GET + re-serialize keeps
+// the property's TZID; only the value changes here). caldav wraps the resulting
+// property updates in its component-nested patch shape, exactly as
+// BuildFieldWritePatch does for field edits.
 func (Plugin) BuildFacetWritePatch(
 	ctx context.Context,
 	node cutting_garden_plugins.Node,
@@ -42,93 +47,18 @@ func (Plugin) BuildFacetWritePatch(
 		)
 	}
 
-	field, value, err := facetWriteFieldValue(node, write, toBucket)
+	updates, err := cutting_garden_plugins.ParseUnifiedBucketMove(
+		codecsForType(objectType(component)), write.DimensionKey, toBucket, node.Fields,
+	)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "caldav plugin: %s", node.URIString())
 	}
 
 	body := map[string]any{
 		"component": component,
-		inner:       map[string]any{field: value},
+		inner:       updates,
 	}
 	return json.Marshal(body)
-}
-
-// facetWriteFieldValue resolves the (patch field, patch value) for a move: a
-// passthrough dimension writes the bucket verbatim into write.Field; a date
-// dimension resolves the active date property and splices the target period into
-// its current value.
-func facetWriteFieldValue(
-	node cutting_garden_plugins.Node,
-	write cutting_garden_plugins.FacetWrite,
-	toBucket string,
-) (field string, value any, err error) {
-	switch write.DimensionKey {
-	case facetStatus:
-		return write.Field, toBucket, nil
-	case facetPriority:
-		// A band completes to its canonical RFC 5545 PRIORITY integer; the value is
-		// a JSON number (not a string) so it deserializes into the int property.
-		v, verr := priorityValueOf(toBucket)
-		if verr != nil {
-			return "", nil, verr
-		}
-		return write.Field, v, nil
-	case facetYear, facetMonth:
-		f, cur := activeDateField(node)
-		if f == "" {
-			return "", nil, errors.BadRequestf(
-				"caldav plugin: cannot reschedule %s: object carries no DTSTART or DUE",
-				node.URIString(),
-			)
-		}
-		spliced, serr := splicePeriod(cur, write.DimensionKey, toBucket)
-		if serr != nil {
-			return "", nil, serr
-		}
-		return f, spliced, nil
-	default:
-		return "", nil, errors.BadRequestf(
-			"caldav plugin: dimension %q is not writable via organize", write.DimensionKey,
-		)
-	}
-}
-
-// priorityValueOf completes a priority band to its canonical RFC 5545 PRIORITY
-// value — the write-side inverse of priorityBandOf. must→1 (high), should→5
-// (medium), nice→9 (low), unspecified→0 (undefined): the serializer omits a zero
-// PRIORITY, so moving a task into the unspecified band clears the property.
-func priorityValueOf(band string) (int, error) {
-	switch band {
-	case priorityMust:
-		return 1, nil
-	case priorityShould:
-		return 5, nil
-	case priorityNice:
-		return 9, nil
-	case priorityUnspecified:
-		return 0, nil
-	default:
-		return 0, errors.BadRequestf("caldav plugin: unknown priority band %q", band)
-	}
-}
-
-// activeDateField returns the object's writable date property and its current
-// value, preferring DTSTART then DUE — the same order objectFacets reads the
-// month/year bucket from, so a reschedule writes back through the property the
-// bucket was derived from.
-func activeDateField(node cutting_garden_plugins.Node) (field, value string) {
-	if s := fieldString(node, listingFieldDtStart); s != "" {
-		return listingFieldDtStart, s
-	}
-	if s := fieldString(node, listingFieldDue); s != "" {
-		return listingFieldDue, s
-	}
-	return "", ""
-}
-
-func fieldString(node cutting_garden_plugins.Node, key string) string {
-	return stringOf(node.Fields, key)
 }
 
 // componentInnerKey maps a caldav component discriminator to the objectView field

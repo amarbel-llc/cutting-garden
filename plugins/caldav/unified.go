@@ -2,51 +2,304 @@ package caldav
 
 import (
 	"strconv"
+	"strings"
 
 	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
-// The unified field-codec model applied to caldav (FDR 0025 Slice 1): caldav's
-// box-atom presentation (present.go) and field-edit write-back (field_apply.go) are
-// expressed as a set of Codecs, and those two methods DELEGATE to the SDK's generic
-// derivation helpers (PresentUnifiedAtoms / ParseUnifiedFieldEdits) over them rather
-// than hand-rolling the date split/recombine and per-field dispatch. The codecs are
-// plugin-local: no caldav knowledge enters the framework, and organize consumes only
-// the generic FieldPresenter / FieldWriteApplier interfaces. The facet surface
-// (grouping dimensions and their counts) is deliberately NOT migrated in this slice.
+// The unified field-codec model applied to caldav (FDR 0025): caldav declares its
+// object leaf types' fields ONCE, as per-component codec sets (unifiedFieldSets /
+// DescribeUnified), and every legacy declaration + write surface DERIVES from
+// them by delegating to the SDK's generic helpers —
+//
+//   - box-atom presentation (present.go) via PresentUnifiedAtoms and the
+//     field-edit write-back (field_apply.go) via ParseUnifiedFieldEdits, both
+//     over the derived component-agnostic union unifiedCodecs (Option A);
+//   - the facet declarations (facet.go DescribeFacets) via
+//     DeriveFacetDimensions, the write mappings (facet_write.go
+//     DescribeFacetWrites) via DeriveFacetWrites, and the bucket-move patch
+//     (facet_apply.go BuildFacetWritePatch) via ParseUnifiedBucketMove
+//     (Option B) —
+//
+// so status / priority / date buckets are no longer described twice (once as a
+// codec, once as a hand-written FacetDimension). The codecs are plugin-local: no
+// caldav knowledge enters the framework, and organize consumes only the generic
+// legacy interfaces. Deliberately NOT derived: the facet COUNTING path
+// (facet.go's FacetCounts / facetsFromView) — computing each object's bucket
+// values (a year from a date, a volatile due band against today) stays
+// plugin-side; only the dimension declarations and the writes derive.
 
 var (
-	_ cutting_garden_plugins.Codec = caldavDateCodec{}
-	_ cutting_garden_plugins.Codec = caldavPriorityCodec{}
+	_ cutting_garden_plugins.Codec            = caldavDateCodec{}
+	_ cutting_garden_plugins.Codec            = caldavPriorityCodec{}
+	_ cutting_garden_plugins.Codec            = caldavRescheduleCodec{}
+	_ cutting_garden_plugins.Codec            = facetOnlyCodec{}
+	_ cutting_garden_plugins.UnifiedDescriber = (*Plugin)(nil)
 )
 
-// unifiedCodecs is caldav's component-agnostic codec set for the inline atom +
-// field-write surface, in the box-atom render order the legacy presenter used
-// (start, end, due, then the plain atoms; summary last as the trailer). It is a
-// UNION across component types: a codec whose stored field is absent on a given
-// object contributes nothing, so one set reproduces every component's atoms without
-// branching on the component — a VTODO carries DUE not DTEND, a VEVENT the reverse,
-// and each simply skips the field it lacks (exactly what the legacy presenter did by
-// trying every field and skipping the empty ones). summary is the description
-// trailer: a writable field that produces no atom.
-func unifiedCodecs() []cutting_garden_plugins.Codec {
-	inlineString := func(key, label string) cutting_garden_plugins.IdentityCodec {
+// The per-component STATUS write enums, each in RFC 5545 §3.8.1.11 progression
+// order — organize pre-renders them as empty `## =VALUE` buckets so an object is
+// reorganized by moving its line under an existing heading. Splitting the object
+// leaf into per-component types is what lets STATUS carry the CORRECT enum per
+// component: the RFC gives VTODO, VEVENT, and VJOURNAL disjoint STATUS domains,
+// so a single union type could only ever pre-list one of them. They are
+// write-side convenience lists (UnifiedField.WriteValues), not closed read
+// domains — an observed out-of-list value still renders and filters.
+var (
+	taskStatuses    = []string{"NEEDS-ACTION", "IN-PROCESS", "COMPLETED", "CANCELLED"}
+	eventStatuses   = []string{"TENTATIVE", "CONFIRMED", "CANCELLED"}
+	journalStatuses = []string{"DRAFT", "FINAL", "CANCELLED"}
+)
+
+// priorityHint documents the band write's completion (cutting-garden#221
+// write-side): the applier completes each band to its canonical RFC 5545 value.
+const priorityHint = "reorganize-by-band: writes the canonical RFC 5545 PRIORITY for the band (must→1, should→5, nice→9, unspecified→0/cleared)"
+
+// unifiedFieldSets is caldav's single field declaration (FDR 0025): one codec set
+// per object leaf type, from which every derived surface reads. Order matters
+// twice over — the groupable fields project into the facet-dimension order
+// describe_node_types renders, and the inline fields into the box-atom render
+// order — so the list is the merge of the two legacy sequences (the dual
+// status/priority fields sit in the same relative position in both).
+//
+// Each component declares only what it can contribute: due_band is a task-only
+// volatile band, priority is a task property, the timezone dimension is populated
+// for tasks and events but never journals, and a journal carries no
+// end/due/location. The reschedule target differs too: a task's year/month
+// buckets write through DUE, an event's/journal's through DTSTART.
+func unifiedFieldSets() []cutting_garden_plugins.NodeTypeUnifiedFields {
+	component := facetOnlyCodec{fields: []cutting_garden_plugins.UnifiedField{{
+		// The object's kind: changing it re-creates the object, not an organize
+		// move, so it stays read-only.
+		Key: facetComponent, Label: "Component",
+		Kind: cutting_garden_plugins.FieldCategorical, Groupable: true,
+	}}}
+	timezone := facetOnlyCodec{fields: []cutting_garden_plugins.UnifiedField{{
+		// PURE zone visibility (#141, RFC 0012 §11.3 time anchoring): the
+		// explicit, loadable TZID anchoring an object's primary date. Zone
+		// reconciliation is not an organize move in v1.
+		Key: facetTimezone, Label: "Time zone",
+		Kind: cutting_garden_plugins.FieldCategorical, Groupable: true,
+	}}}
+	dueBand := facetOnlyCodec{fields: []cutting_garden_plugins.UnifiedField{{
+		// VOLATILE (RFC 0012 §11.3): bucketing is a function of (due date,
+		// today), anchored in the date's OWN zone (#141) — see dueBandOf. Derived
+		// from the date, so read-only: you reschedule by moving the date
+		// (month/year), never by "setting" the band.
+		Key: facetDueBand, Label: "Due",
+		Kind: cutting_garden_plugins.FieldNumericBucket, Groupable: true,
+		Values: []cutting_garden_plugins.FieldValue{
+			{Value: dueBandOverdue, Order: 4},
+			{Value: dueBandToday, Order: 3},
+			{Value: dueBandThisWeek, Order: 2},
+			{Value: dueBandLater, Order: 1},
+		},
+		RevalidateAfter: dueBandRevalidateAfter,
+	}}}
+	status := func(writeEnum []string) cutting_garden_plugins.IdentityCodec {
 		return cutting_garden_plugins.IdentityCodec{Field: cutting_garden_plugins.UnifiedField{
-			Key: key, Label: label, Kind: cutting_garden_plugins.FieldCategorical, Inline: true, Writable: true,
+			Key: listingFieldStatus, Label: "Status",
+			Kind:   cutting_garden_plugins.FieldCategorical,
+			Inline: true, Groupable: true, Writable: true,
+			// The terminal (done) statuses (cutting-garden#214): organize
+			// excludes objects in these by default. Shared across components —
+			// COMPLETED is a VTODO status and CANCELLED spans all three; a
+			// component that never takes a listed value simply never matches it.
+			// status stays an OPEN read domain (Values nil); TerminalValues and
+			// the WriteValues enum are both orthogonal to that.
+			TerminalValues: []string{"COMPLETED", "CANCELLED"},
+			WriteValues:    writeEnum,
 		}}
 	}
-	return []cutting_garden_plugins.Codec{
-		caldavDateCodec{storedKey: listingFieldDtStart, suffix: "start", writable: true},
-		caldavDateCodec{storedKey: listingFieldDtEnd, suffix: "end", writable: false},
-		caldavDateCodec{storedKey: listingFieldDue, suffix: "due", writable: true},
-		inlineString(listingFieldLocation, "Location"),
-		inlineString(listingFieldStatus, "Status"),
-		caldavPriorityCodec{},
-		cutting_garden_plugins.IdentityCodec{Field: cutting_garden_plugins.UnifiedField{
-			Key: listingFieldSummary, Label: "Summary", Kind: cutting_garden_plugins.FieldText, Trailer: true, Writable: true,
+	location := cutting_garden_plugins.IdentityCodec{Field: cutting_garden_plugins.UnifiedField{
+		Key: listingFieldLocation, Label: "Location",
+		Kind:   cutting_garden_plugins.FieldCategorical,
+		Inline: true, Writable: true,
+	}}
+	summary := cutting_garden_plugins.IdentityCodec{Field: cutting_garden_plugins.UnifiedField{
+		// The description trailer: a writable field that produces no atom.
+		Key: listingFieldSummary, Label: "Summary",
+		Kind:    cutting_garden_plugins.FieldText,
+		Trailer: true, Writable: true,
+	}}
+	dateStart := caldavDateCodec{storedKey: listingFieldDtStart, suffix: "start", writable: true}
+	dateEnd := caldavDateCodec{storedKey: listingFieldDtEnd, suffix: "end", writable: false}
+	dateDue := caldavDateCodec{storedKey: listingFieldDue, suffix: "due", writable: true}
+
+	return []cutting_garden_plugins.NodeTypeUnifiedFields{
+		{Tag: typeVTODO, Codecs: []cutting_garden_plugins.Codec{
+			component, dateStart, dateEnd, dateDue, location,
+			status(taskStatuses),
+			caldavRescheduleCodec{target: listingFieldDue},
+			dueBand, timezone,
+			caldavPriorityCodec{},
+			summary,
+		}},
+		{Tag: typeVEVENT, Codecs: []cutting_garden_plugins.Codec{
+			component, dateStart, dateEnd, location,
+			status(eventStatuses),
+			caldavRescheduleCodec{target: listingFieldDtStart},
+			timezone,
+			summary,
+		}},
+		{Tag: typeVJOURNAL, Codecs: []cutting_garden_plugins.Codec{
+			component, dateStart,
+			status(journalStatuses),
+			caldavRescheduleCodec{target: listingFieldDtStart},
+			summary,
 		}},
 	}
+}
+
+// DescribeUnified declares caldav's unified field-codec model (FDR 0025) — the
+// single declaration the legacy facet / atom / write surfaces derive from.
+func (Plugin) DescribeUnified() []cutting_garden_plugins.NodeTypeUnifiedFields {
+	return unifiedFieldSets()
+}
+
+// codecsForType resolves the codec set declared for one object leaf type tag.
+// nil for a tag with no unified declaration.
+func codecsForType(tag string) []cutting_garden_plugins.Codec {
+	for _, set := range unifiedFieldSets() {
+		if set.Tag == tag {
+			return set.Codecs
+		}
+	}
+	return nil
+}
+
+// unifiedCodecs is the ATOM + FIELD-EDIT surface: the component-agnostic union of
+// the per-tag sets, restricted to codecs contributing an inline atom or the
+// trailer, deduplicated by field key in first-seen order. Deriving it keeps the
+// union from drifting against the per-tag declarations. It is a UNION so one set
+// reproduces every component's atoms without branching on the component — a
+// codec whose stored field is absent on a given object contributes nothing (a
+// VTODO carries DUE not DTEND, a VEVENT the reverse). The groupable-only codecs
+// (component, year/month, due_band, timezone) are excluded: their dimensions are
+// not box atoms, and a field EDIT naming one stays a loud bad request (bucket
+// MOVES reach them through the per-tag sets instead).
+func unifiedCodecs() []cutting_garden_plugins.Codec {
+	seen := map[string]bool{}
+	var union []cutting_garden_plugins.Codec
+	for _, set := range unifiedFieldSets() {
+		for _, c := range set.Codecs {
+			inline, fresh := false, false
+			for _, f := range c.Fields() {
+				if f.Inline || f.Trailer {
+					inline = true
+				}
+				if !seen[f.Key] {
+					fresh = true
+				}
+			}
+			if !inline || !fresh {
+				continue
+			}
+			for _, f := range c.Fields() {
+				seen[f.Key] = true
+			}
+			union = append(union, c)
+		}
+	}
+	return union
+}
+
+// facetOnlyCodec declares GROUPABLE-only presentation fields with no stored
+// counterpart of their own — caldav's computed facet dimensions (component,
+// year-derived buckets aside, due_band, timezone). Format is empty because the
+// bucket VALUES are computed by the plugin-side counting path (facetsFromView),
+// not the codec; only the declaration derives. Parse is defensively read-only —
+// the derived write surfaces gate on Writable before ever calling it.
+type facetOnlyCodec struct {
+	fields []cutting_garden_plugins.UnifiedField
+}
+
+func (c facetOnlyCodec) Fields() []cutting_garden_plugins.UnifiedField {
+	return c.fields
+}
+
+func (facetOnlyCodec) Format(map[string]any) (map[string][]string, error) {
+	return map[string][]string{}, nil
+}
+
+func (facetOnlyCodec) Parse(map[string][]string, map[string]any) (map[string]any, error) {
+	return nil, errors.BadRequestf("caldav plugin: facet-only dimension is not writable")
+}
+
+// caldavRescheduleCodec declares the year/month grouping buckets of an object's
+// primary date and implements their bucket-move write: a move RESCHEDULES the
+// object by splicing the target period into its existing date value, preserving
+// the day-of-month (clamped to the target month), clock time, and time zone
+// (FDR 0023 "reschedule by move"). target is the component's declared write
+// property (DUE for a task, DTSTART for an event/journal) — documentary, mirrored
+// into the derived FacetWrite.Field; Parse resolves the ACTIVE property from the
+// object's current values (DTSTART, then DUE — the same preference the read-side
+// bucket derivation uses) so the write goes back through the property the bucket
+// was read from. Format is empty: the bucket values are computed by
+// facetsFromView (yearOf/monthOf), the plugin-side counting path.
+type caldavRescheduleCodec struct {
+	target string // listingFieldDue (tasks) or listingFieldDtStart
+}
+
+func (c caldavRescheduleCodec) Fields() []cutting_garden_plugins.UnifiedField {
+	hint := "reschedule-by-move: preserves the object's clock time and time zone; targets " +
+		strings.ToUpper(c.target)
+	return []cutting_garden_plugins.UnifiedField{
+		{
+			Key: facetYear, Label: "Year",
+			Kind:      cutting_garden_plugins.FieldNumericBucket,
+			Groupable: true, Writable: true,
+			Source: c.target, CompletionHint: hint,
+		},
+		{
+			Key: facetMonth, Label: "Month",
+			Kind:      cutting_garden_plugins.FieldNumericBucket,
+			Groupable: true, Writable: true,
+			Source: c.target, CompletionHint: hint,
+		},
+	}
+}
+
+func (caldavRescheduleCodec) Format(map[string]any) (map[string][]string, error) {
+	return map[string][]string{}, nil
+}
+
+func (caldavRescheduleCodec) Parse(
+	edited map[string][]string, current map[string]any,
+) (map[string]any, error) {
+	field, value := activeDateStored(current)
+	if field == "" {
+		return nil, errors.BadRequestf(
+			"caldav plugin: cannot reschedule: object carries no DTSTART or DUE",
+		)
+	}
+	for _, dim := range []string{facetYear, facetMonth} {
+		v, ok := edited[dim]
+		if !ok || len(v) == 0 {
+			continue
+		}
+		spliced, err := splicePeriod(value, dim, v[0])
+		if err != nil {
+			return nil, err
+		}
+		value = spliced
+	}
+	return map[string]any{field: value}, nil
+}
+
+// activeDateStored returns the object's writable date property and its current
+// value, preferring DTSTART then DUE — the same order the read-side month/year
+// bucket derivation uses, so a reschedule writes back through the property the
+// bucket was read from.
+func activeDateStored(stored map[string]any) (field, value string) {
+	if s := stringOf(stored, listingFieldDtStart); s != "" {
+		return listingFieldDtStart, s
+	}
+	if s := stringOf(stored, listingFieldDue); s != "" {
+		return listingFieldDue, s
+	}
+	return "", ""
 }
 
 // caldavDateCodec splits one iCalendar DATE/DATE-TIME property (DTSTART, DTEND, or
@@ -97,17 +350,30 @@ func (c caldavDateCodec) Parse(
 	return map[string]any{c.storedKey: spliced}, nil
 }
 
-// caldavPriorityCodec presents a task's raw RFC 5545 PRIORITY as a numeric atom and
-// writes an edit back as a JSON integer (cutting-garden#221). PRIORITY 0 / absent is
-// "undefined" and emits no atom — mirroring listingFieldsOf, which omits the field
-// entirely below 1. Distinct from IdentityCodec because the write side must be a
-// JSON number, not a string, for applyPatch to decode it.
+// caldavPriorityCodec presents a task's raw RFC 5545 PRIORITY as a numeric atom
+// and declares its GROUPABLE surface: the four named bands (cutting-garden#221),
+// urgency-first — the band values are computed by the counting path
+// (priorityBandOf); only the declaration and the write derive from here. Kind is
+// categorical, matching the band-shaped grouping domain (the atom presentation
+// carries no kind). PRIORITY 0 / absent is "undefined" and emits no atom —
+// mirroring the legacy presenter, which omits the field entirely below 1.
+// Distinct from IdentityCodec because the write side must be a JSON number, not
+// a string, for applyPatch to decode it.
 type caldavPriorityCodec struct{}
 
 func (caldavPriorityCodec) Fields() []cutting_garden_plugins.UnifiedField {
-	return []cutting_garden_plugins.UnifiedField{
-		{Key: listingFieldPriority, Label: "Priority", Kind: cutting_garden_plugins.FieldNumericBucket, Inline: true, Writable: true},
-	}
+	return []cutting_garden_plugins.UnifiedField{{
+		Key: listingFieldPriority, Label: "Priority",
+		Kind:   cutting_garden_plugins.FieldCategorical,
+		Inline: true, Groupable: true, Writable: true,
+		Values: []cutting_garden_plugins.FieldValue{
+			{Value: priorityMust, Order: 4},
+			{Value: priorityShould, Order: 3},
+			{Value: priorityNice, Order: 2},
+			{Value: priorityUnspecified, Order: 1},
+		},
+		CompletionHint: priorityHint,
+	}}
 }
 
 func (caldavPriorityCodec) Format(stored map[string]any) (map[string][]string, error) {
@@ -118,6 +384,9 @@ func (caldavPriorityCodec) Format(stored map[string]any) (map[string][]string, e
 	return map[string][]string{listingFieldPriority: {strconv.Itoa(p)}}, nil
 }
 
+// Parse accepts either presentation of the field: a band name (a bucket move, or
+// a hand-typed atom edit naming a declared band) completes to its canonical
+// RFC 5545 PRIORITY value; anything else must be the raw integer.
 func (caldavPriorityCodec) Parse(
 	edited map[string][]string, _ map[string]any,
 ) (map[string]any, error) {
@@ -125,11 +394,36 @@ func (caldavPriorityCodec) Parse(
 	if !ok || len(v) == 0 {
 		return map[string]any{}, nil
 	}
+	if n, ok := priorityValueOf(v[0]); ok {
+		return map[string]any{listingFieldPriority: n}, nil
+	}
 	n, err := strconv.Atoi(v[0])
 	if err != nil {
-		return nil, errors.BadRequestf("caldav plugin: priority %q is not an integer", v[0])
+		return nil, errors.BadRequestf(
+			"caldav plugin: priority %q is neither an integer nor a priority band", v[0],
+		)
 	}
 	return map[string]any{listingFieldPriority: n}, nil
+}
+
+// priorityValueOf completes a priority band to its canonical RFC 5545 PRIORITY
+// value — the write-side inverse of priorityBandOf. must→1 (high), should→5
+// (medium), nice→9 (low), unspecified→0 (undefined): the serializer omits a zero
+// PRIORITY, so moving a task into the unspecified band clears the property.
+// ok == false for a value that names no band.
+func priorityValueOf(band string) (value int, ok bool) {
+	switch band {
+	case priorityMust:
+		return 1, true
+	case priorityShould:
+		return 5, true
+	case priorityNice:
+		return 9, true
+	case priorityUnspecified:
+		return 0, true
+	default:
+		return 0, false
+	}
 }
 
 // stringOf reads a string-valued field from a node's stored field map, tolerating

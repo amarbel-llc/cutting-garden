@@ -233,24 +233,24 @@ what's consumed); caldav's date/priority codecs are plugin-local for now.
 
 ### Migration-state matrix
 
-The unified model is so far **additive**: it DERIVES two of caldav's legacy
-interfaces (present + field-write); the facet/grouping surface is untouched and
-still legacy. Every field that is *both* an inline atom *and* a grouping dimension
-is currently described **twice**, in both models — that double-description is what
-Option B removes.
+With Option B landed, caldav's whole DECLARATION and WRITE surface derives from
+one unified declaration — present + field-edit (Option A) and the facet
+dimensions + bucket moves (Option B); no field is described twice. Still legacy:
+the hand-written `ListingFieldsDescriber` (stored-field declarations) and the
+intentionally plugin-side counting.
 
 **SDK surfaces — legacy ↔ unified:**
 
 | Concern | Legacy surface | Unified equivalent | State after Option A |
 |---|---|---|---|
 | Inline field decl | `ListingField` / `ListingFieldsDescriber` | `UnifiedField` / `UnifiedDescriber` | legacy — still hand-written (declares *stored* fields) |
-| Groupable field decl | `FacetDimension` / `FacetDescriber` | `UnifiedField{Groupable}` | **legacy — Option B** |
+| Groupable field decl | `FacetDimension` / `FacetDescriber` | `UnifiedField{Groupable}` + `DeriveFacetDimensions` | **unified-derived** (Option B) |
 | Kind + value types | `FacetKind`, `FacetValue` | `FieldKind`, `FieldValue` | both exist (`FieldKind` is the superset) |
 | Atom presentation | `BoxAtom` / `FieldPresenter` | `Codec.Format` + `PresentUnifiedAtoms` | **unified-derived** (Option A) |
 | Field-edit write | `FieldEdit` / `FieldWriteApplier` | `Codec.Parse` + `ParseUnifiedFieldEdits` | **unified-derived** (Option A) |
-| Bucket-move write | `FacetWrite*` / `FacetWriteDescriber` / `FacetWriteApplier` | `Codec.Parse` (groupable) | **legacy — Option B** |
+| Bucket-move write | `FacetWrite*` / `FacetWriteDescriber` / `FacetWriteApplier` | `DeriveFacetWrites` + `Codec.Parse` via `ParseUnifiedBucketMove` | **unified-derived** (Option B) |
 | Counting | `FacetCounter` / `FacetHistogram` / `FacetSummary` | — (stays plugin-side) | legacy — intentional |
-| Volatility token | `FacetVersioner` | `UnifiedField.RevalidateAfter` (field not added yet) | legacy |
+| Volatility token | `FacetVersioner` | `UnifiedField.RevalidateAfter` (declaration only; the version token stays `FacetVersioner`) | declaration **unified-derived** (Option B) |
 | Opaque-key labels | `FacetLabeler` | `FieldKind=labelled` (not wired) | legacy |
 | Filtering | `FacetPredicate` / `FacetFilter` | reuses facets | legacy |
 
@@ -259,26 +259,35 @@ Option B removes.
 
 | Field kind | Example | Present (atom) | Groupable (heading) | Write |
 |---|---|---|---|---|
-| categorical | `status` | ✅ IdentityCodec | ⛔ FacetDimension | field ✅ · bucket ⛔ |
-| numeric-bucket (band) | `priority` | ✅ priorityCodec | ⛔ FacetDimension | field ✅ · band ⛔ |
-| date | `dtstart`/`due`/`dtend` | ✅ dateCodec (split) | ⛔ month/year FacetDimension | field ✅ (splice) · month/year ⛔ |
-| date (volatile) | `due_band` | — | ⛔ FacetDimension + `RevalidateAfter` | — (read-only) |
+| categorical | `status` | ✅ IdentityCodec | ✅ same field, `Groupable` | field ✅ · bucket ✅ |
+| numeric-bucket (band) | `priority` | ✅ priorityCodec | ✅ same codec, band `Values` | field ✅ · band ✅ (`Parse` completes band→int) |
+| date | `dtstart`/`due`/`dtend` | ✅ dateCodec (split) | ✅ rescheduleCodec (`year`/`month`) | field ✅ (splice) · month/year ✅ (`Parse` splices) |
+| date (volatile) | `due_band` | — | ✅ facetOnlyCodec + `RevalidateAfter` | — (read-only, declared write:none) |
 | text | `location` | ✅ IdentityCodec | — | ✅ |
 | text (trailer) | `summary` | ✅ IdentityCodec/Trailer | — | ✅ |
 | duration | `duration` (P6D) | ❌ unmodeled (#233) | — | — |
 | tag (multi) | `CATEGORIES` | ❌ unmodeled | ❌ unmodeled | ❌ unmodeled (#231/#232) |
 
-### Option B (next slice) — collapse the facet surface
+### Option B — collapse the facet surface (landed 2026-08-19)
 
-Migrate the Groupable/facet-write column onto the codec model: derive
-`FacetDescriber` / `FacetWriteDescriber` / `FacetWriteApplier` from
-`DescribeUnified`, so `status` / `priority` / dates stop being double-described.
-The computed/volatile facets (`year`/`month` from the date, `priority`-band from
-the int, volatile `due_band`) become codec-produced groupable fields;
-**`FacetCounter` stays plugin-side** (counting is a volatile-count concern, not
-presentation declaration). Sequenced by the user AFTER Option A manual testing.
-#230 (`--group-by date_start` with prefix-derived, configurable granularity) and
-#233 (present `duration` / all-day event end) fold into the date-codec work.
+The Groupable/facet-write column is migrated onto the codec model: caldav
+declares per-component codec sets ONCE (`unifiedFieldSets` / `DescribeUnified`,
+in `plugins/caldav/unified.go`), and `DescribeFacets` / `DescribeFacetWrites` /
+`BuildFacetWritePatch` DERIVE from them via the SDK helpers
+(`DeriveFacetDimensions` / `DeriveFacetWrites` / `ParseUnifiedBucketMove`, in
+`internal/cutting_garden_plugins/facet_derive.go`) — so `status` / `priority` /
+dates are no longer double-described. `UnifiedField` grew the write/volatility
+metadata the derivation needs (`WriteValues`, `CompletionHint`,
+`RevalidateAfter`). The computed facets (`year`/`month`, `priority`-band,
+volatile `due_band`) are codec-declared groupable fields whose bucket-move
+writes run through their codec's `Parse` (period splice, band→PRIORITY
+completion); their bucket VALUES stay computed by the plugin-side counting path
+(`facetsFromView`) — **`FacetCounter` stays plugin-side** (counting is a
+volatile-count concern, not presentation declaration). The atom/field-edit
+union (`unifiedCodecs`) is now derived from the per-component sets, restricted
+to inline/trailer codecs, so the two can never drift. Still folding into the
+date-codec work: #230 (`--group-by date_start` with prefix-derived, configurable
+granularity) and #233 (present `duration` / all-day event end).
 
 ## More information
 

@@ -45,10 +45,6 @@ const (
 	priorityUnspecified = "3_unspecified" // PRIORITY 0 or absent (RFC "undefined")
 )
 
-// priorityBands is the declaration order (urgency-first) organize pre-renders as
-// empty `## =<band>` headings and read_facets sorts by.
-var priorityBands = []string{priorityMust, priorityShould, priorityNice, priorityUnspecified}
-
 // priorityBandOf folds an RFC 5545 PRIORITY integer onto its band and urgency
 // order (higher order renders first). The RFC's own three-level scheme
 // (§3.8.1.9): 1–4 high, 5 medium, 6–9 low, 0 undefined — which also maps the
@@ -94,95 +90,24 @@ var (
 )
 
 // DescribeFacets declares each object leaf type's facet dimensions — the
-// self-describing schema the mcp `describe_node_types` tool surfaces. Every
-// component carries the shared component/status/year/month dimensions (all drawn
-// from fields the iCalendar parser already exposes, so free at the one-shot
-// FacetCounts fetch), but the component-specific ones differ: due_band is a
-// task-only volatile band (facetsFromView emits it for VTODO alone), and the
-// timezone dimension is populated for tasks and events but never journals — so
-// each type declares only what it can contribute.
+// self-describing schema the mcp `describe_node_types` tool surfaces — DERIVED
+// from the unified field-codec declaration (FDR 0025 Option B): each type's
+// GROUPABLE fields project into its legacy FacetDimensions via the SDK helper,
+// so the dimensions are no longer described separately from the codecs. Which
+// component declares which dimension (due_band task-only, timezone never on
+// journals, …) lives in unifiedFieldSets. Every dimension is drawn from fields
+// the iCalendar parser already exposes, so all are free at the one-shot
+// FacetCounts fetch.
 func (Plugin) DescribeFacets() []cutting_garden_plugins.NodeTypeFacets {
-	component := cutting_garden_plugins.FacetDimension{
-		Key:   facetComponent,
-		Label: "Component",
-		Kind:  cutting_garden_plugins.FacetCategorical,
+	sets := unifiedFieldSets()
+	out := make([]cutting_garden_plugins.NodeTypeFacets, 0, len(sets))
+	for _, set := range sets {
+		out = append(out, cutting_garden_plugins.NodeTypeFacets{
+			Tag:        set.Tag,
+			Dimensions: cutting_garden_plugins.DeriveFacetDimensions(set.Codecs),
+		})
 	}
-	status := cutting_garden_plugins.FacetDimension{
-		Key:   facetStatus,
-		Label: "Status",
-		Kind:  cutting_garden_plugins.FacetCategorical,
-		// The terminal (done) statuses (cutting-garden#214): organize excludes
-		// objects in these by default. Shared across components — COMPLETED is a
-		// VTODO status and CANCELLED spans VTODO/VEVENT/VJOURNAL; a component that
-		// never takes a listed value simply never matches it. status stays an OPEN
-		// dimension (Values nil); TerminalValues is orthogonal to that.
-		TerminalValues: []string{"COMPLETED", "CANCELLED"},
-	}
-	year := cutting_garden_plugins.FacetDimension{
-		Key:   facetYear,
-		Label: "Year",
-		Kind:  cutting_garden_plugins.FacetNumericBucket,
-	}
-	month := cutting_garden_plugins.FacetDimension{
-		Key:   facetMonth,
-		Label: "Month",
-		Kind:  cutting_garden_plugins.FacetNumericBucket,
-	}
-	dueBand := cutting_garden_plugins.FacetDimension{
-		// VOLATILE (RFC 0012 §11.3): bucketing is a function of (due date,
-		// today). Each task's day boundary is anchored in its OWN zone — the
-		// date's TZID when loadable, host-local otherwise (#141); the timezone
-		// dimension and the structured due_tzid field are the reconciliation
-		// surface.
-		Key:   facetDueBand,
-		Label: "Due",
-		Kind:  cutting_garden_plugins.FacetNumericBucket,
-		Values: []cutting_garden_plugins.FacetValue{
-			{Key: dueBandOverdue, Order: 4},
-			{Key: dueBandToday, Order: 3},
-			{Key: dueBandThisWeek, Order: 2},
-			{Key: dueBandLater, Order: 1},
-		},
-		RevalidateAfter: dueBandRevalidateAfter,
-	}
-	timezone := cutting_garden_plugins.FacetDimension{
-		// PURE zone visibility (#141, RFC 0012 §11.3 time anchoring): the
-		// explicit, loadable TZID anchoring an object's primary date. Objects
-		// with no explicit zone contribute nothing — host-local is the
-		// documented default anchor, so absence means "anchored to your day".
-		Key:   facetTimezone,
-		Label: "Time zone",
-		Kind:  cutting_garden_plugins.FacetCategorical,
-	}
-	priority := cutting_garden_plugins.FacetDimension{
-		// A task's PRIORITY banded (cutting-garden#221). Categorical over the four
-		// named bands; the declared Values fix the urgency-first order read_facets
-		// renders (must → unspecified). Every task contributes exactly one band, so
-		// there is no informative-zeros/volatility concern (unlike due_band).
-		Key:   facetPriority,
-		Label: "Priority",
-		Kind:  cutting_garden_plugins.FacetCategorical,
-		Values: []cutting_garden_plugins.FacetValue{
-			{Key: priorityMust, Order: 4},
-			{Key: priorityShould, Order: 3},
-			{Key: priorityNice, Order: 2},
-			{Key: priorityUnspecified, Order: 1},
-		},
-	}
-	return []cutting_garden_plugins.NodeTypeFacets{
-		{
-			Tag:        typeVTODO,
-			Dimensions: []cutting_garden_plugins.FacetDimension{component, status, year, month, dueBand, timezone, priority},
-		},
-		{
-			Tag:        typeVEVENT,
-			Dimensions: []cutting_garden_plugins.FacetDimension{component, status, year, month, timezone},
-		},
-		{
-			Tag:        typeVJOURNAL,
-			Dimensions: []cutting_garden_plugins.FacetDimension{component, status, year, month},
-		},
-	}
+	return out
 }
 
 // FacetCounts summarizes a calendar's (or a calendar-home's) objects in one

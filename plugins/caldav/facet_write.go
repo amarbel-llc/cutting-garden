@@ -5,80 +5,26 @@ import "code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
 var _ cutting_garden_plugins.FacetWriteDescriber = (*Plugin)(nil)
 
 // DescribeFacetWrites declares how each object leaf type's facet dimensions map
-// to writes (RFC 0012 §Write mapping, FDR 0023). In v1 the reschedule-by-move
-// date buckets (year, month), status, and priority write through the object's
-// iCalendar body; the identity/derived/volatile dimensions (component, due_band,
-// timezone) are read-only. A priority band completes to its canonical RFC 5545
-// PRIORITY value on write (cutting-garden#221 write-side). The date write's
-// clock-time- and zone-preserving completion lives in the plugin's own write
-// path, never in the framework — this only describes it.
-//
-// Splitting the object leaf into per-component types (caldav-object-<kind>-v1)
-// is what lets STATUS carry the CORRECT enum per component: RFC 5545 §3.8.1.11
-// gives VTODO, VEVENT, and VJOURNAL disjoint STATUS domains, so a single union
-// type could only ever pre-list one of them. organize pre-renders these as empty
-// `## =VALUE` buckets so an object is reorganized by moving its line under an
-// existing heading; the values are a write-side convenience list (kept in
-// RFC 5545 order), not a closed read domain — an observed out-of-list value
-// still renders.
+// to writes (RFC 0012 §Write mapping, FDR 0023) — DERIVED from the unified
+// field-codec declaration (FDR 0025 Option B): each type's GROUPABLE fields
+// project into legacy FacetWrites via the SDK helper, a writable field to a
+// write:one through its Source, a read-only one to an explicit write:none. The
+// write-side substance lives on the fields in unifiedFieldSets: the
+// reschedule-by-move date buckets (year, month) target the component's primary
+// date property, status carries the per-component RFC 5545 enum as its
+// pre-rendered bucket list, priority's band list falls out of its closed value
+// domain, and the identity/derived/volatile dimensions (component, due_band,
+// timezone) stay read-only. The write completions themselves (period splice,
+// band→PRIORITY) live in the codecs' Parse, never in the framework — this only
+// describes them.
 func (Plugin) DescribeFacetWrites() []cutting_garden_plugins.NodeTypeFacetWrites {
-	one := cutting_garden_plugins.FacetWriteOne
-	none := cutting_garden_plugins.FacetWriteNone
-
-	// year and month are two granularities of the SAME primary date: grouping by
-	// either and moving an object to a new bucket reschedules that date,
-	// preserving its clock time and zone. The primary date is DUE for a task,
-	// DTSTART for an event/journal (activeDateField resolves it at write time;
-	// Field here is documentary).
-	dueHint := "reschedule-by-move: preserves the object's clock time and time zone; targets DUE"
-	dtstartHint := "reschedule-by-move: preserves the object's clock time and time zone; targets DTSTART"
-	priorityHint := "reorganize-by-band: writes the canonical RFC 5545 PRIORITY for the band (must→1, should→5, nice→9, unspecified→0/cleared)"
-
-	// The per-component STATUS enums, each in RFC 5545 §3.8.1.11 progression
-	// order.
-	taskStatuses := []string{"NEEDS-ACTION", "IN-PROCESS", "COMPLETED", "CANCELLED"}
-	eventStatuses := []string{"TENTATIVE", "CONFIRMED", "CANCELLED"}
-	journalStatuses := []string{"DRAFT", "FINAL", "CANCELLED"}
-
-	// component is the object's kind: changing it re-creates the object, not an
-	// organize field edit. due_band is DERIVED from the due date vs today — you
-	// reschedule by moving the date (month/year), never by "setting" the band.
-	// timezone reconciliation is not an organize move in v1.
-	readOnly := func(dims ...string) []cutting_garden_plugins.FacetWrite {
-		out := make([]cutting_garden_plugins.FacetWrite, 0, len(dims))
-		for _, d := range dims {
-			out = append(out, cutting_garden_plugins.FacetWrite{DimensionKey: d, Mode: none})
-		}
-		return out
+	sets := unifiedFieldSets()
+	out := make([]cutting_garden_plugins.NodeTypeFacetWrites, 0, len(sets))
+	for _, set := range sets {
+		out = append(out, cutting_garden_plugins.NodeTypeFacetWrites{
+			Tag:    set.Tag,
+			Writes: cutting_garden_plugins.DeriveFacetWrites(set.Codecs),
+		})
 	}
-
-	vtodoWrites := append([]cutting_garden_plugins.FacetWrite{
-		{DimensionKey: facetYear, Mode: one, Field: listingFieldDue, CompletionHint: dueHint},
-		{DimensionKey: facetMonth, Mode: one, Field: listingFieldDue, CompletionHint: dueHint},
-		{DimensionKey: facetStatus, Mode: one, Field: listingFieldStatus, Values: taskStatuses},
-		// priority reorganizes by writing the moved band back into PRIORITY
-		// (cutting-garden#221 write-side): the applier completes each band to its
-		// canonical RFC 5545 value (must→1, should→5, nice→9, unspecified→0, which the
-		// serializer omits — clearing the property). The band Values also drive
-		// organize's pre-rendered `## =<band>` headings in urgency order.
-		{DimensionKey: facetPriority, Mode: one, Field: listingFieldPriority, CompletionHint: priorityHint, Values: priorityBands},
-	}, readOnly(facetComponent, facetDueBand, facetTimezone)...)
-
-	veventWrites := append([]cutting_garden_plugins.FacetWrite{
-		{DimensionKey: facetYear, Mode: one, Field: listingFieldDtStart, CompletionHint: dtstartHint},
-		{DimensionKey: facetMonth, Mode: one, Field: listingFieldDtStart, CompletionHint: dtstartHint},
-		{DimensionKey: facetStatus, Mode: one, Field: listingFieldStatus, Values: eventStatuses},
-	}, readOnly(facetComponent, facetTimezone)...)
-
-	vjournalWrites := append([]cutting_garden_plugins.FacetWrite{
-		{DimensionKey: facetYear, Mode: one, Field: listingFieldDtStart, CompletionHint: dtstartHint},
-		{DimensionKey: facetMonth, Mode: one, Field: listingFieldDtStart, CompletionHint: dtstartHint},
-		{DimensionKey: facetStatus, Mode: one, Field: listingFieldStatus, Values: journalStatuses},
-	}, readOnly(facetComponent)...)
-
-	return []cutting_garden_plugins.NodeTypeFacetWrites{
-		{Tag: typeVTODO, Writes: vtodoWrites},
-		{Tag: typeVEVENT, Writes: veventWrites},
-		{Tag: typeVJOURNAL, Writes: vjournalWrites},
-	}
+	return out
 }

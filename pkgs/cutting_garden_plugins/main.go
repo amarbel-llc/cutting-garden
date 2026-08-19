@@ -637,6 +637,21 @@ var BulkBestEffortOps = internal.BulkBestEffortOps
 // A read may degrade a decline to an unfiltered listing; a write may not.
 var BulkBestEffortSweep = internal.BulkBestEffortSweep
 
+// DeriveFacetDimensions reproduces FacetDescriber's per-type dimension list from a
+// node type's codecs: every GROUPABLE presentation field becomes a FacetDimension,
+// in codec-then-field declaration order (the order describe_node_types renders).
+var DeriveFacetDimensions = internal.DeriveFacetDimensions
+
+// DeriveFacetWrites reproduces FacetWriteDescriber's per-type write mappings from
+// a node type's codecs: every GROUPABLE field gets a FacetWrite — Mode none for a
+// read-only field (declared, so an edit fails loudly rather than silently, per
+// FDR 0023), else one/many from MultiValued. The write target is the field's
+// Source (the stored field it attributes to), falling back to Key when the field
+// is its own stored field — the same attribution rule PresentUnifiedAtoms uses
+// for BoxAtom.Field. The pre-rendered bucket list is WriteValues, defaulting to
+// the declared closed-domain Values' keys.
+var DeriveFacetWrites = internal.DeriveFacetWrites
+
 // ErrAlreadyRegistered is returned by registry.Register when a
 // scheme is already registered for the given direction (capture
 // or restore).
@@ -709,6 +724,18 @@ var ParseFacetFilter = internal.ParseFacetFilter
 // parses to a variable-free template that matches only itself (a fixed
 // URI, e.g. a singleton).
 var ParseURITemplate = internal.ParseURITemplate
+
+// ParseUnifiedBucketMove reproduces the stored-field updates half of a
+// FacetWriteApplier from a node type's codecs: a facet-bucket move is routed to
+// the codec owning the GROUPABLE field named by dimension, whose Parse completes
+// the target bucket onto the substrate — a status bucket passing through
+// verbatim, a priority band completing to its canonical stored value, a
+// month/year bucket splicing into the object's current date. current carries the
+// node's present stored values for that completion. The plugin wraps the returned
+// storedUpdates in its substrate patch shape, exactly as with
+// ParseUnifiedFieldEdits. A dimension no codec declares groupable, or one
+// declared read-only, is a bad request (the FDR 0023 loud-rejection rule).
+var ParseUnifiedBucketMove = internal.ParseUnifiedBucketMove
 
 // ParseUnifiedFieldEdits reproduces the stored-field updates half of a
 // FieldWriteApplier from a node type's codecs: each edit is routed to the codec

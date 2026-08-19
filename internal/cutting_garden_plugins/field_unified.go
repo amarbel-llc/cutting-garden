@@ -1,5 +1,7 @@
 package cutting_garden_plugins
 
+import "time"
+
 // The unified field-codec model (FDR 0025): ONE field-with-codec abstraction that
 // supersedes the two parallel plugin data models — FacetDimension (the groupable
 // heading surface, RFC 0012) and ListingField + BoxAtom (the inline atom surface,
@@ -107,6 +109,24 @@ type UnifiedField struct {
 	// TerminalValues names the Values marking a node DONE / terminal (caldav VTODO
 	// ["COMPLETED","CANCELLED"]; cutting-garden#214). Orthogonal to open/closed.
 	TerminalValues []string
+	// WriteValues, when non-empty, is the ordered write-side convenience list for a
+	// groupable+writable field: the target buckets organize pre-renders as headings
+	// (mirrors FacetWrite.Values, which it derives). Independent of Values — a field
+	// may be an OPEN read domain (Values nil, e.g. caldav status) yet still declare
+	// the enum a write completes against. Empty on a writable CLOSED-domain field
+	// means the write list IS the declared Values (DeriveFacetWrites falls back to
+	// their keys).
+	WriteValues []string
+	// CompletionHint is a human/agent note on the plugin-owned completion a write
+	// to this field performs (mirrors FacetWrite.CompletionHint, which it derives;
+	// e.g. "reschedule-by-move preserves the clock time"). Descriptive only.
+	CompletionHint string
+	// RevalidateAfter, when nonzero, marks a GROUPABLE field VOLATILE: its
+	// bucketing is a function of (data, now), so a memoized summary containing it
+	// expires after this duration (mirrors FacetDimension.RevalidateAfter, which it
+	// derives; RFC 0012 §11.3 — the volatile field MUST declare a closed Values
+	// domain). Zero means pure.
+	RevalidateAfter time.Duration
 }
 
 // NodeTypeUnifiedFields binds a node type to the codecs producing its unified
