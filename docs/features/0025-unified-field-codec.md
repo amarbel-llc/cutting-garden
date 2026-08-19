@@ -197,6 +197,89 @@ big-bang:
 4. **Migrate the remaining plugins** (nebulous, jira, fastmail, …) and **delete**
    the legacy interfaces.
 
+## Slice 1 implementation status (2026-08-19)
+
+Slice 1 is landing in phases (bright-olive branch). What has merged, and the
+current legacy↔unified split:
+
+**Merged:**
+
+- **Phase 0** — `zz-tests_bats/organize_priority.bats` + `organize_fields.bats`:
+  the behaviour-neutral conformance net (opt-in `/dav/fields/` caldav testserver
+  calendar, `CG_TEST_CALDAV_FIELDS`). Closes #77.
+- **Phase 1** — the SDK unified types, additive/unconsumed:
+  `UnifiedField{…, Source}`, `FieldValue`, `FieldKind`, `Codec`
+  (`Fields`/`Format`/`Parse`; `Parse` takes `current` so a partial edit preserves
+  the untouched parts), `IdentityCodec`, `UnifiedDescriber`
+  (`internal/cutting_garden_plugins/field_unified.go`, `codec.go`).
+- **Option A** — caldav's PRESENT + FIELD-WRITE surface migrated: `PresentBoxAtoms`
+  and `BuildFieldWritePatch` now DELEGATE to the generic SDK helpers
+  `PresentUnifiedAtoms` / `ParseUnifiedFieldEdits` (`field_derive.go`) over
+  plugin-local codecs (`caldavDateCodec`, `caldavPriorityCodec`, `IdentityCodec`
+  — a component-agnostic union set in `plugins/caldav/unified.go`). The hand-rolled
+  `caldavFieldProperty` / `dateTimeAtom` / `fieldInt` are removed.
+  **`internal/organize` is untouched** — it consumes only the generic
+  `FieldPresenter` / `FieldWriteApplier` interfaces; the codecs are plugin-local
+  and the helpers are generic, so no caldav knowledge enters the framework. This
+  is a HARD invariant: organize (and the framework generally) MUST stay
+  plugin-agnostic — anything caldav-shaped leaking into it is a violation.
+
+**Approach decision:** *plugin-local derivation*, not a generic framework adapter.
+caldav keeps implementing the legacy interfaces but each delegates to the shared
+SDK helper reading its codecs. The generic adapter, and the N-way merge that
+consumes the unified model directly, are later slices. `CaseFold` and a generic
+`SplitDateTime` codec are deferred until a second plugin consumes them (build only
+what's consumed); caldav's date/priority codecs are plugin-local for now.
+
+### Migration-state matrix
+
+The unified model is so far **additive**: it DERIVES two of caldav's legacy
+interfaces (present + field-write); the facet/grouping surface is untouched and
+still legacy. Every field that is *both* an inline atom *and* a grouping dimension
+is currently described **twice**, in both models — that double-description is what
+Option B removes.
+
+**SDK surfaces — legacy ↔ unified:**
+
+| Concern | Legacy surface | Unified equivalent | State after Option A |
+|---|---|---|---|
+| Inline field decl | `ListingField` / `ListingFieldsDescriber` | `UnifiedField` / `UnifiedDescriber` | legacy — still hand-written (declares *stored* fields) |
+| Groupable field decl | `FacetDimension` / `FacetDescriber` | `UnifiedField{Groupable}` | **legacy — Option B** |
+| Kind + value types | `FacetKind`, `FacetValue` | `FieldKind`, `FieldValue` | both exist (`FieldKind` is the superset) |
+| Atom presentation | `BoxAtom` / `FieldPresenter` | `Codec.Format` + `PresentUnifiedAtoms` | **unified-derived** (Option A) |
+| Field-edit write | `FieldEdit` / `FieldWriteApplier` | `Codec.Parse` + `ParseUnifiedFieldEdits` | **unified-derived** (Option A) |
+| Bucket-move write | `FacetWrite*` / `FacetWriteDescriber` / `FacetWriteApplier` | `Codec.Parse` (groupable) | **legacy — Option B** |
+| Counting | `FacetCounter` / `FacetHistogram` / `FacetSummary` | — (stays plugin-side) | legacy — intentional |
+| Volatility token | `FacetVersioner` | `UnifiedField.RevalidateAfter` (field not added yet) | legacy |
+| Opaque-key labels | `FacetLabeler` | `FieldKind=labelled` (not wired) | legacy |
+| Filtering | `FacetPredicate` / `FacetFilter` | reuses facets | legacy |
+
+**Field types × surface × model (caldav today)** — ✅ unified codec · ⛔ legacy ·
+— n/a · ❌ unmodeled:
+
+| Field kind | Example | Present (atom) | Groupable (heading) | Write |
+|---|---|---|---|---|
+| categorical | `status` | ✅ IdentityCodec | ⛔ FacetDimension | field ✅ · bucket ⛔ |
+| numeric-bucket (band) | `priority` | ✅ priorityCodec | ⛔ FacetDimension | field ✅ · band ⛔ |
+| date | `dtstart`/`due`/`dtend` | ✅ dateCodec (split) | ⛔ month/year FacetDimension | field ✅ (splice) · month/year ⛔ |
+| date (volatile) | `due_band` | — | ⛔ FacetDimension + `RevalidateAfter` | — (read-only) |
+| text | `location` | ✅ IdentityCodec | — | ✅ |
+| text (trailer) | `summary` | ✅ IdentityCodec/Trailer | — | ✅ |
+| duration | `duration` (P6D) | ❌ unmodeled (#233) | — | — |
+| tag (multi) | `CATEGORIES` | ❌ unmodeled | ❌ unmodeled | ❌ unmodeled (#231/#232) |
+
+### Option B (next slice) — collapse the facet surface
+
+Migrate the Groupable/facet-write column onto the codec model: derive
+`FacetDescriber` / `FacetWriteDescriber` / `FacetWriteApplier` from
+`DescribeUnified`, so `status` / `priority` / dates stop being double-described.
+The computed/volatile facets (`year`/`month` from the date, `priority`-band from
+the int, volatile `due_band`) become codec-produced groupable fields;
+**`FacetCounter` stays plugin-side** (counting is a volatile-count concern, not
+presentation declaration). Sequenced by the user AFTER Option A manual testing.
+#230 (`--group-by date_start` with prefix-derived, configurable granularity) and
+#233 (present `duration` / all-day event end) fold into the date-codec work.
+
 ## More information
 
 - cutting-garden#229 (heading/atom redundancy — subsumed)
