@@ -2,9 +2,11 @@ package organize
 
 import (
 	"sort"
+	"strings"
 	"testing"
 
 	cgp "code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
 // taskNode builds a live caldav VTODO node with the given status membership; an
@@ -91,6 +93,82 @@ func TestCheckMoveWritable(t *testing.T) {
 	}
 	if err := checkMoveWritable(writes, move{Node: cgp.Node{Type: "unmapped-v1"}}); err == nil {
 		t.Error("unmapped type move must be rejected")
+	}
+}
+
+// categoriesNode builds a live caldav node carrying a MULTI-VALUED `categories`
+// membership — the read-only, multi-appearance dimension of the tags design
+// (docs/plans/2026-08-20-tags-design.md D7). Values are appended in order, so the
+// first argument is firstFacetKey's result. No cats omits the facet entirely.
+func categoriesNode(t *testing.T, uri string, cats ...string) cgp.Node {
+	facets := map[string][]cgp.FacetValue{}
+	for _, c := range cats {
+		facets["categories"] = append(facets["categories"], cgp.FacetValue{Key: c})
+	}
+	return cgp.Node{URI: mustURL(t, uri), Type: "caldav-object-v1", Facets: facets}
+}
+
+// TestApply_MultiValuedModeNoneRejectsMove pins the loud read-only rejection
+// against a MULTI-VALUED dimension (the tags design's read-only `categories`,
+// D7; #231 slice 1): a document move on a Mode-none dimension is refused by
+// checkMoveWritable BEFORE any patch is built, exactly as for a single-valued
+// read-only dimension. The live node's multi-membership — its first value still
+// agreeing with the base bucket — drives planMoves to a real move, which the
+// writability gate then rejects.
+func TestApply_MultiValuedModeNoneRejectsMove(t *testing.T) {
+	base := docWith("categories", map[string]string{"t1.ics": "work"})
+	edited := docWith("categories", map[string]string{"t1.ics": "archived"})
+	base.Anchor, edited.Anchor = "caldav://h/c/", "caldav://h/c/"
+	live := []cgp.Node{categoriesNode(t, "caldav://h/c/t1.ics", "work", "urgent")}
+
+	moves, err := planMoves(edited, base, groupSpec{Dim: "categories"}, live)
+	if err != nil {
+		t.Fatalf("planMoves: %v", err)
+	}
+	if len(moves) != 1 {
+		t.Fatalf("moves = %d, want 1 (%+v)", len(moves), moves)
+	}
+
+	writes := map[string]cgp.FacetWrite{
+		"caldav-object-v1": {DimensionKey: "categories", Mode: cgp.FacetWriteNone},
+	}
+	err = checkMoveWritable(writes, moves[0])
+	if err == nil {
+		t.Fatal("a move on a read-only (Mode-none) multi-valued dimension must be rejected")
+	}
+	if !errors.Is400BadRequest(err) {
+		t.Errorf("expected a bad request, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "read-only") {
+		t.Errorf("error should name the read-only cause: %v", err)
+	}
+}
+
+// TestApply_MultiValuedUnmovedRoundTrips pins that an UNMOVED document for a
+// multi-valued node yields zero moves and zero conflicts, EVEN WHEN the document
+// files the node under a bucket that is NOT its first live facet value
+// (#231 slice 1). planMoves keys the live assignment off firstFacetKey (first
+// value only), but the unmoved short-circuit (edited bucket == base bucket) fires
+// before the live value is consulted — so a node whose live first-membership has
+// drifted or reordered is neither spuriously moved nor spuriously conflicted when
+// the user made no edit. (Per the tags plan, a genuinely multi-APPEARANCE document
+// — the same box id under two `=<value>` buckets, as groupNodes renders — is a
+// separate matter: document.assignments already rejects it loudly as "appears
+// twice"; see the task report.)
+func TestApply_MultiValuedUnmovedRoundTrips(t *testing.T) {
+	base := docWith("categories", map[string]string{"t1.ics": "urgent"})
+	edited := docWith("categories", map[string]string{"t1.ics": "urgent"})
+	base.Anchor, edited.Anchor = "caldav://h/c/", "caldav://h/c/"
+	// firstFacetKey(live) == "work", which DISAGREES with the document's "urgent"
+	// bucket; the unmoved short-circuit must still produce no moves, no conflicts.
+	live := []cgp.Node{categoriesNode(t, "caldav://h/c/t1.ics", "work", "urgent")}
+
+	moves, err := planMoves(edited, base, groupSpec{Dim: "categories"}, live)
+	if err != nil {
+		t.Fatalf("planMoves: %v", err)
+	}
+	if len(moves) != 0 {
+		t.Fatalf("moves = %+v, want none (unmoved multi-valued node, no spurious conflict)", moves)
 	}
 }
 

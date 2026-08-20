@@ -96,6 +96,42 @@ func TestGroupNodes_DeclaredBuckets(t *testing.T) {
 	}
 }
 
+// TestGroupNodes_MultiMembership pins multi-membership rendering (tags design D7,
+// docs/plans/2026-08-20-tags-design.md; #231 slice 1): a node carrying several
+// values for the grouped dimension emits the SAME line under EVERY value bucket,
+// while a node with no value lands ungrouped exactly once. groupNodes already
+// loops over all facet values (group.go), so multi-membership falls out for free
+// — this pins it against a genuinely multi-valued dimension, which nothing did.
+func TestGroupNodes_MultiMembership(t *testing.T) {
+	anchor := "caldav://h/c/"
+	nodes := []cgp.Node{
+		{
+			URI: mustURL(t, "caldav://h/c/t1.ics"), Type: "caldav-object-v1",
+			Facets: map[string][]cgp.FacetValue{"categories": {{Key: "work"}, {Key: "urgent"}}},
+		},
+		{URI: mustURL(t, "caldav://h/c/t2.ics"), Type: "caldav-object-v1"}, // no value → ungrouped
+	}
+
+	ungrouped, buckets := groupNodes(nodes, groupSpec{Dim: "categories"}, anchor, nil, false, nil)
+
+	if len(ungrouped) != 1 || ungrouped[0].ID != "t2.ics" {
+		t.Fatalf("ungrouped = %+v, want just t2.ics once", ungrouped)
+	}
+	wantBuckets := []string{"urgent", "work"} // observed values sort ascending
+	if len(buckets) != len(wantBuckets) {
+		t.Fatalf("bucket count = %d, want %d (%+v)", len(buckets), len(wantBuckets), buckets)
+	}
+	for i, want := range wantBuckets {
+		if buckets[i].Value != want {
+			t.Errorf("bucket[%d] = %q, want %q", i, buckets[i].Value, want)
+		}
+		// The SAME multi-valued node's line appears under every one of its buckets.
+		if len(buckets[i].Lines) != 1 || buckets[i].Lines[0].ID != "t1.ics" {
+			t.Errorf("bucket %q lines = %+v, want the single t1.ics line", want, buckets[i].Lines)
+		}
+	}
+}
+
 // TestCommonURIPrefix pins the anchor derivation that keeps box ids short
 // regardless of the CLI arg form: a single-calendar node set yields the calendar
 // dir, a multi-calendar set the shared ancestor dir, zero nodes the empty string.
