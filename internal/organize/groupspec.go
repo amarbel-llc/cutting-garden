@@ -67,21 +67,21 @@ func parseGroupSpec(
 // type, so a key declared with different kinds on different types would be a
 // plugin-schema inconsistency, not a case to arbitrate here.
 func findDim(dims []cgp.NodeTypeFacets, key string) (cgp.FacetDimension, bool) {
-	for _, nt := range dims {
-		for _, d := range nt.Dimensions {
-			if d.Key == key {
-				return d, true
-			}
-		}
-	}
-	return cgp.FacetDimension{}, false
+	return cgp.FindFacetDimension(dims, key)
 }
 
-// coarsenBucket coarsens a live day-precise bucket value to the document's
-// granularity by prefix truncation — the apply-side twin of groupNodes'
-// generate-side coarsening. Identity for a non-date spec (g == "").
+// coarsenBucket coarsens a live bucket value to the document's granularity by
+// prefix truncation — the apply-side twin of groupNodes' generate-side
+// coarsening. Identity for a non-date spec (g == ""), and identity for any
+// value that is not itself a shape-valid date bucket (YYYY / YYYY-MM /
+// YYYY-MM-DD): a non-ISO key from a (wire) plugin lands verbatim in its own
+// observed bucket instead of being blind-sliced into garbage ("20260815"
+// month-truncated would be "2026-08"-lengthed nonsense like "2026081").
 func coarsenBucket(v string, g cgp.DateGranularity) string {
 	if g == "" {
+		return v
+	}
+	if _, ok := cgp.ParseDateBucket(v); !ok {
 		return v
 	}
 	return cgp.TruncateDateKey(v, g)

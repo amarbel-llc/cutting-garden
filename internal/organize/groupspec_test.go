@@ -114,6 +114,23 @@ func TestParseGroupSpec_UnknownGranularityRejects(t *testing.T) {
 	}
 }
 
+// TestCoarsenBucket_ShapeGated pins that coarsenBucket only truncates a value
+// that itself parses as a date bucket: a non-ISO key from a (wire) plugin
+// lands verbatim in its own observed bucket instead of being blind-sliced
+// into garbage like "2026081" (final-review F5/F10).
+func TestCoarsenBucket_ShapeGated(t *testing.T) {
+	if got := coarsenBucket("20260815", cgp.GranularityMonth); got != "20260815" {
+		t.Errorf("compact non-bucket key = %q, want untouched 20260815", got)
+	}
+	if got := coarsenBucket("2026-08-15", cgp.GranularityMonth); got != "2026-08" {
+		t.Errorf("ISO day key = %q, want 2026-08", got)
+	}
+	// Identity for a non-date spec stays intact.
+	if got := coarsenBucket("2026-08-15", ""); got != "2026-08-15" {
+		t.Errorf("no-granularity identity = %q, want 2026-08-15", got)
+	}
+}
+
 // TestBuildDocument_DateGranularityMonth pins the generate-side coarsening
 // (cutting-garden#230): day-precise per-node values bucket under ONE coarse
 // month heading, and the dimension heading persists the full `dim:granularity`

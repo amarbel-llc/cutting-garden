@@ -243,7 +243,10 @@ func (facetOnlyCodec) Parse(map[string][]string, map[string]any) (map[string]any
 // (#230, date_start/date_due) whose bucket move Parse shape-dispatches: a
 // coarse YYYY / YYYY-MM bucket period-splices the current value ("reschedule
 // by move", preserving the finer components and the clock), a YYYY-MM-DD
-// bucket day-edits it.
+// bucket day-edits it, and anything else falls through to the legacy day-edit
+// path where spliceDateTime does its own validation — so a hand-typed compact
+// date ("20260903") still writes, and garbage still rejects with
+// spliceDateTime's message.
 type caldavDateCodec struct {
 	storedKey string // "dtstart" / "dtend" / "due"
 	suffix    string // "start" / "end" / "due"
@@ -308,15 +311,9 @@ func (c caldavDateCodec) Parse(
 	cur := stringOf(current, c.storedKey)
 	acc := &dateTimeEdit{}
 	if v, ok := edited["date_"+c.suffix]; ok && len(v) > 0 {
-		g, ok := cutting_garden_plugins.ParseDateBucket(v[0])
-		if !ok {
-			return nil, errors.BadRequestf(
-				"%s %q is not YYYY, YYYY-MM, or YYYY-MM-DD", "date_"+c.suffix, v[0],
-			)
-		}
-		if g == cutting_garden_plugins.GranularityDay {
-			acc.date, acc.hasDate = v[0], true
-		} else {
+		g, isBucket := cutting_garden_plugins.ParseDateBucket(v[0])
+		switch {
+		case isBucket && g != cutting_garden_plugins.GranularityDay:
 			// A coarse bucket (a --group-by date_*:month/year move, or a
 			// hand-typed coarse atom edit) period-splices, preserving the
 			// finer components and the clock.
@@ -325,6 +322,12 @@ func (c caldavDateCodec) Parse(
 				return nil, err
 			}
 			cur = spliced
+		default:
+			// A shape-valid day bucket, or any non-bucket-shaped value:
+			// the legacy day-edit path. spliceDateTime validates it —
+			// accepting hyphen-stripped 8-digit dates ("20260903") as it
+			// always did, and rejecting garbage with its own message.
+			acc.date, acc.hasDate = v[0], true
 		}
 	}
 	if v, ok := edited["time_"+c.suffix]; ok && len(v) > 0 {

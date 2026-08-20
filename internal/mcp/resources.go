@@ -536,14 +536,8 @@ func (r *Resources) ReadFacets(
 	// dimension or an out-of-domain closed-dimension value is rejected
 	// with an actionable error, so a filter that genuinely matches
 	// nothing stays distinguishable from a typo'd one.
-	if len(filter) > 0 {
-		var dims []cutting_garden_plugins.NodeTypeFacets
-		if describer, ok := lister.(cutting_garden_plugins.FacetDescriber); ok {
-			dims = describer.DescribeFacets()
-		}
-		if verr := filter.Validate(dims); verr != nil {
-			return nil, errors.Wrapf(verr, "read_facets %s", uri)
-		}
+	if verr := cutting_garden_plugins.ValidateFilterFor(filter, lister); verr != nil {
+		return nil, errors.Wrapf(verr, "read_facets %s", uri)
 	}
 
 	if len(filter) == 0 {

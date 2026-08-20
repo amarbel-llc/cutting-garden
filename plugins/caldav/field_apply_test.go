@@ -140,3 +140,35 @@ func TestBuildFieldWritePatch_DateTime(t *testing.T) {
 		t.Errorf("due = %q, want 20260910T143000 (date spliced, clock kept)", got.Task.Due)
 	}
 }
+
+// TestBuildFieldWritePatch_CompactDate pins that a hand-typed compact date
+// atom ("20260903", not a shape-valid YYYY-MM-DD bucket) still writes via the
+// legacy day-edit path — spliceDateTime accepts hyphen-stripped 8-digit dates
+// as it always did — while garbage keeps rejecting with spliceDateTime's own
+// message (final-review F4: ParseDateBucket must not reject these outright).
+func TestBuildFieldWritePatch_CompactDate(t *testing.T) {
+	node := vtodoFieldNode(t)
+	node.Fields = map[string]any{listingFieldDue: "20260815T143000"}
+
+	body, err := Plugin{}.BuildFieldWritePatch(context.Background(), node,
+		[]cutting_garden_plugins.FieldEdit{{Name: "date_due", Value: "20260903"}})
+	if err != nil {
+		t.Fatalf("BuildFieldWritePatch: %v", err)
+	}
+	var got struct {
+		Task struct {
+			Due string `json:"due"`
+		} `json:"task"`
+	}
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("unmarshal: %v (%s)", err, body)
+	}
+	if got.Task.Due != "20260903T143000" {
+		t.Errorf("due = %q, want 20260903T143000 (compact date spliced, clock kept)", got.Task.Due)
+	}
+
+	if _, err := (Plugin{}).BuildFieldWritePatch(context.Background(), node,
+		[]cutting_garden_plugins.FieldEdit{{Name: "date_due", Value: "sometime"}}); err == nil {
+		t.Error("a non-date value must still reject via spliceDateTime")
+	}
+}

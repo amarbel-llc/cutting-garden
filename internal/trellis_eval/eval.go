@@ -563,10 +563,15 @@ func (ev *evaluator) facetKind(tag, field string) (cgp.FacetKind, bool) {
 // rather than string equality — `date_due=2026-09` matches the day-precise
 // key "2026-09-10" — mirroring FacetPredicate.matches so trellis, `list
 // --filter`, and the mcp read_facets filter agree (the design's uniformity
-// decision, cutting-garden#230). A value that is not shape-valid falls back
-// to exact `=` semantics: the evaluator has no schema-aware validation pass
-// for predicate values (Validate sees only the query), so a malformed date
-// simply matches nothing here, exactly as any other non-existent bucket key
+// decision, cutting-garden#230). `!=` on the same shape is the symmetric
+// negation, keeping the existential structure the generic path has: the node
+// matches iff SOME bucket key does NOT fall inside the bucket — so
+// `date_due!=2026-09` excludes a node whose only key is "2026-09-10" instead
+// of matching it on raw string inequality. A value that is not shape-valid
+// falls back to exact semantics for both operators: the evaluator has no
+// schema-aware validation pass for predicate values (Validate sees only the
+// query), so a malformed date simply matches nothing here (`=`) or behaves
+// as raw inequality (`!=`), exactly as any other non-existent bucket key
 // would. Every other operator keeps trellis's raw string semantics — `^=` on
 // a date key stays an unvalidated string prefix (RFC 0014).
 func (ev *evaluator) matchFacet(
@@ -574,10 +579,12 @@ func (ev *evaluator) matchFacet(
 ) bool {
 	for _, qv := range fp.Values {
 		want := valueString(qv)
-		if kind == cgp.FacetDate && fp.Op == trellis.FieldOpEq {
+		if kind == cgp.FacetDate &&
+			(fp.Op == trellis.FieldOpEq || fp.Op == trellis.FieldOpNotEq) {
 			if _, ok := cgp.ParseDateBucket(want); ok {
 				for _, fv := range values {
-					if cgp.DateBucketMatches(fv.Key, want) {
+					contained := cgp.DateBucketMatches(fv.Key, want)
+					if contained == (fp.Op == trellis.FieldOpEq) {
 						return true
 					}
 				}

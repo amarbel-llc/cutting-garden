@@ -840,6 +840,20 @@ func (t *Tools) callBulkMutate(
 		return "", err
 	}
 
+	// Validate the sweep's parsed filter against the plugin's declared facet
+	// schema before dispatch (cutting-garden#161, same rule as list_nodes /
+	// read_facets): an undeclared dimension or an out-of-domain value is a
+	// loud bad request rather than a sweep that silently matches nothing,
+	// and a date-kind predicate is prefix-armed (cutting-garden#230) so a
+	// coarse `date_due=2026-08` sweep actually narrows by containment.
+	if req.Sweep != nil {
+		if verr := cutting_garden_plugins.ValidateFilterFor(
+			req.Sweep.Filter, mutator,
+		); verr != nil {
+			return "", errors.BadRequestf("bulk_mutate: sweep filter: %s", verr)
+		}
+	}
+
 	result, err := mutator.BulkMutate(ctx, req)
 	if err != nil {
 		return "", err
@@ -1020,11 +1034,7 @@ func (t *Tools) listNodesURI(
 	// (cutting-garden#161, same rule read_facets applies): an undeclared
 	// dimension or an out-of-domain closed-dimension value is rejected
 	// with an actionable error rather than silently narrowing to nothing.
-	var dims []cutting_garden_plugins.NodeTypeFacets
-	if describer, ok := lister.(cutting_garden_plugins.FacetDescriber); ok {
-		dims = describer.DescribeFacets()
-	}
-	if verr := filter.Validate(dims); verr != nil {
+	if verr := cutting_garden_plugins.ValidateFilterFor(filter, lister); verr != nil {
 		return "", errors.Wrapf(verr, "list_nodes %s (filtered)", uri)
 	}
 

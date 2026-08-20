@@ -313,7 +313,7 @@ func (f FacetFilter) Validate(dims []NodeTypeFacets) error {
 	// element mutation through the value receiver must reach the caller's
 	// backing array (f is a slice).
 	for i := range f {
-		dim, ok := findFacetDimension(dims, f[i].Dimension)
+		dim, ok := FindFacetDimension(dims, f[i].Dimension)
 		if !ok {
 			return fmt.Errorf(
 				"filter dimension %q is not declared; valid dimensions: %s "+
@@ -348,11 +348,30 @@ func (f FacetFilter) Validate(dims []NodeTypeFacets) error {
 	return nil
 }
 
-// findFacetDimension looks up key across every NodeTypeFacets in dims — a
+// ValidateFilterFor validates (and prefix-arms) a filter against a lister's
+// declared facet schema: the probe-DescribeFacets-then-Validate dance every
+// host-side filter consumer must perform before Matches, centralized so a new
+// call site cannot forget it (a forgotten Validate silently degrades a
+// date-kind predicate to exact matching). A lister without FacetDescriber has
+// no schema; the filter passes through unchecked, exactly as Validate(nil).
+func ValidateFilterFor(filter FacetFilter, lister RootLister) error {
+	if len(filter) == 0 {
+		return nil
+	}
+	var dims []NodeTypeFacets
+	if fd, ok := lister.(FacetDescriber); ok {
+		dims = fd.DescribeFacets()
+	}
+	return filter.Validate(dims)
+}
+
+// FindFacetDimension looks up key across every NodeTypeFacets in dims — a
 // filter predicate names only a dimension key, not the node type that
 // declares it, since a summarized subtree may fold several leaf types
-// together (RFC 0012 §4.1).
-func findFacetDimension(
+// together (RFC 0012 §4.1). Exported so consumers resolving a dimension by
+// key (organize's group-by spelling resolution) share this lookup instead of
+// duplicating the loop.
+func FindFacetDimension(
 	dims []NodeTypeFacets, key string,
 ) (FacetDimension, bool) {
 	for _, ntf := range dims {

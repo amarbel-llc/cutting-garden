@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	// The embedded IANA zone database (#141): TZID resolution via
@@ -476,7 +477,25 @@ func ensureDueBandPresence(summary cutting_garden_plugins.FacetSummary) {
 // lift at fixed month granularity (design 2026-08-20 §6) — day-precise
 // per-node values would mean one summary bucket per distinct day. Grouping
 // and filtering stay day-precise on the per-node values.
-var dateDimensions = map[string]bool{facetDateStart: true, facetDateDue: true}
+//
+// DERIVED from the single field declaration (unifiedFieldSets): every
+// Groupable field of Kind FieldDate is in the set, so the lift set follows
+// the declaration — a newly-groupable date field month-lifts automatically,
+// and the design's "day buckets never enter a summary" rule cannot silently
+// lapse behind a hand-maintained literal.
+var dateDimensions = sync.OnceValue(func() map[string]bool {
+	dims := map[string]bool{}
+	for _, set := range unifiedFieldSets() {
+		for _, codec := range set.Codecs {
+			for _, f := range codec.Fields() {
+				if f.Groupable && f.Kind == cutting_garden_plugins.FieldDate {
+					dims[f.Key] = true
+				}
+			}
+		}
+	}
+	return dims
+})
 
 // liftFacets folds one object's facet values into summary: +1 per
 // (dimension, value key). The per-node "lift" of RFC 0012 §3.
@@ -492,7 +511,7 @@ func liftFacets(
 		}
 		for _, v := range values {
 			key := v.Key
-			if dateDimensions[dim] {
+			if dateDimensions()[dim] {
 				key = cutting_garden_plugins.TruncateDateKey(key, cutting_garden_plugins.GranularityMonth)
 			}
 			hist[key]++

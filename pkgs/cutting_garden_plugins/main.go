@@ -694,6 +694,14 @@ var ErrBulkAtomicUnsupported = internal.ErrBulkAtomicUnsupported
 // scheme is not registered for the given direction.
 var ErrUnknownScheme = internal.ErrUnknownScheme
 
+// FindFacetDimension looks up key across every NodeTypeFacets in dims — a
+// filter predicate names only a dimension key, not the node type that
+// declares it, since a summarized subtree may fold several leaf types
+// together (RFC 0012 §4.1). Exported so consumers resolving a dimension by
+// key (organize's group-by spelling resolution) share this lookup instead of
+// duplicating the loop.
+var FindFacetDimension = internal.FindFacetDimension
+
 // MustRegisterCapture installs p in the default capture registry
 // under every scheme p.Schemes() returns. Panics on duplicate
 // registration; intended for plugin init() functions where a clash
@@ -908,6 +916,14 @@ var TruncateDateKey = internal.TruncateDateKey
 // outputs. It is the loud-rejection mechanism the apply engine uses before
 // writing, and the check a plugin's own tests assert against.
 var ValidateFacetWrites = internal.ValidateFacetWrites
+
+// ValidateFilterFor validates (and prefix-arms) a filter against a lister's
+// declared facet schema: the probe-DescribeFacets-then-Validate dance every
+// host-side filter consumer must perform before Matches, centralized so a new
+// call site cannot forget it (a forgotten Validate silently degrades a
+// date-kind predicate to exact matching). A lister without FacetDescriber has
+// no schema; the filter passes through unchecked, exactly as Validate(nil).
+var ValidateFilterFor = internal.ValidateFilterFor
 
 // BulkAtomic requires all-or-nothing completion. A plugin that cannot
 // honor it — for this request or at all — MUST reject the request with

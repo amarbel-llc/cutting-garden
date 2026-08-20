@@ -606,6 +606,31 @@ func TestEvaluate_DateFacetEqPrefixMatches(t *testing.T) {
 			query: "^date_due=2026-09",
 			want:  nil,
 		},
+		{
+			// `!=` is `=`'s symmetric negation on a date dimension: the
+			// day-precise key falls inside the containing month, so no
+			// bucket key escapes the bucket and the node does not match.
+			name:  "!= against the containing month does not match",
+			query: "date_due!=2026-09",
+			want:  nil,
+		},
+		{
+			name:  "!= against a sibling month matches",
+			query: "date_due!=2026-08",
+			want:  []string{"fake://d/t1"},
+		},
+		{
+			// A categorical dimension keeps raw `!=` semantics even with a
+			// date-shaped key: exact inequality, no containment.
+			name:  "categorical != exact key does not match",
+			query: "status!=2026-01-15",
+			want:  nil,
+		},
+		{
+			name:  "categorical != coarser prefix stays raw inequality",
+			query: "status!=2026-01",
+			want:  []string{"fake://d/t1"},
+		},
 	}
 
 	for _, tc := range cases {

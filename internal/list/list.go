@@ -334,14 +334,8 @@ func (cmd *List) runFacets(ctx errors.Context, uriStr string) error {
 	// error, and a date-kind predicate is annotated for prefix matching
 	// (cutting-garden#230) — without this, `list --filter date_x=2026`
 	// would silently degrade to exact matching.
-	if len(filter) > 0 {
-		var dims []cutting_garden_plugins.NodeTypeFacets
-		if describer, ok := lister.(cutting_garden_plugins.FacetDescriber); ok {
-			dims = describer.DescribeFacets()
-		}
-		if verr := filter.Validate(dims); verr != nil {
-			return errors.Wrapf(verr, "list --facets %s (filtered)", uriStr)
-		}
+	if verr := cutting_garden_plugins.ValidateFilterFor(filter, lister); verr != nil {
+		return errors.Wrapf(verr, "list --facets %s (filtered)", uriStr)
 	}
 
 	result, ok, err := counter.FacetCounts(ctx, u, filter)

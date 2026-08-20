@@ -179,6 +179,71 @@ func TestCallTool_BulkMutateRejectsBothOpsAndSweep(t *testing.T) {
 	}
 }
 
+// fakeDescribingBulkMutator adds a declared facet schema to the fake bulk
+// mutator so the sweep-filter validation path has a schema to check against.
+type fakeDescribingBulkMutator struct {
+	fakeBulkMutator
+}
+
+func (fakeDescribingBulkMutator) DescribeFacets() []cutting_garden_plugins.NodeTypeFacets {
+	return []cutting_garden_plugins.NodeTypeFacets{{
+		Tag: "fake-obj-v1",
+		Dimensions: []cutting_garden_plugins.FacetDimension{
+			{Key: "status", Kind: cutting_garden_plugins.FacetCategorical},
+		},
+	}}
+}
+
+// TestCallTool_BulkMutateSweepFilterValidated pins that a sweep's parsed
+// filter is validated against the plugin's declared facet schema before
+// dispatch (the same cutting-garden#161 rule list_nodes and read_facets
+// apply): a filter naming an undeclared dimension is a loud rejection and
+// BulkMutate is never called — previously it silently reached the plugin as
+// a filter matching who-knows-what.
+func TestCallTool_BulkMutateSweepFilterValidated(t *testing.T) {
+	bm := &fakeDescribingBulkMutator{}
+	tools := newFakeTools(t, &fakeMutator{}, "faketest://h/")
+	tools.resolveBulk = func(uriStr string) (
+		*url.URL, cutting_garden_plugins.BulkMutator, error,
+	) {
+		u, err := url.Parse(uriStr)
+		if err != nil {
+			return nil, nil, err
+		}
+		return u, bm, nil
+	}
+
+	res, err := tools.CallTool(context.Background(), "bulk_mutate",
+		json.RawMessage(`{"sweep":{"root":"faketest://h/",`+
+			`"filter":"bogus=x","op":{"kind":"delete"}}}`))
+	// However the layer surfaces the bad request, it must not read as a
+	// clean success.
+	if err == nil && !res.IsError {
+		t.Errorf("undeclared sweep filter dimension accepted as success: %+v", res)
+	}
+	// The zero Atomicity proves BulkMutate was never called — the real call
+	// path always sets a non-empty atomicity before dispatch.
+	if bm.gotReq.Atomicity != "" {
+		t.Errorf("BulkMutate dispatched despite the invalid filter: %+v",
+			bm.gotReq)
+	}
+
+	// A filter naming a declared dimension still dispatches: the gate must
+	// reject typos, not valid sweeps.
+	res, err = tools.CallTool(context.Background(), "bulk_mutate",
+		json.RawMessage(`{"sweep":{"root":"faketest://h/",`+
+			`"filter":"status=x","op":{"kind":"delete"}}}`))
+	if err != nil {
+		t.Fatalf("valid sweep filter: transport error: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("valid sweep filter rejected: %+v", res.Content)
+	}
+	if bm.gotReq.Sweep == nil || len(bm.gotReq.Sweep.Filter) != 1 {
+		t.Errorf("valid sweep not dispatched with its filter: %+v", bm.gotReq)
+	}
+}
+
 // TestToolInputSchemasAreValidJSON guards every tool's InputSchema const:
 // a malformed schema ships as an unusable tool (MCP clients reject an
 // invalid inputSchema), and nothing else in the suite validates the raw
