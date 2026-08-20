@@ -34,6 +34,7 @@ var (
 	_ cutting_garden_plugins.Codec            = caldavDateCodec{}
 	_ cutting_garden_plugins.Codec            = caldavPriorityCodec{}
 	_ cutting_garden_plugins.Codec            = facetOnlyCodec{}
+	_ cutting_garden_plugins.Codec            = categoriesCodec{}
 	_ cutting_garden_plugins.UnifiedDescriber = (*Plugin)(nil)
 )
 
@@ -131,11 +132,13 @@ var unifiedFieldSets = sync.OnceValue(func() []cutting_garden_plugins.NodeTypeUn
 	dateStart := caldavDateCodec{storedKey: listingFieldDtStart, suffix: "start", writable: true, groupable: true}
 	dateEnd := caldavDateCodec{storedKey: listingFieldDtEnd, suffix: "end", writable: false, endFromDuration: true}
 	dateDue := caldavDateCodec{storedKey: listingFieldDue, suffix: "due", writable: true, groupable: true}
+	categories := categoriesCodec{}
 
 	return []cutting_garden_plugins.NodeTypeUnifiedFields{
 		{Tag: typeVTODO, Codecs: []cutting_garden_plugins.Codec{
 			component, dateStart, dateEnd, dateDue, location,
 			status(taskStatuses),
+			categories,
 			dueBand, timezone,
 			caldavPriorityCodec{},
 			summary,
@@ -143,12 +146,14 @@ var unifiedFieldSets = sync.OnceValue(func() []cutting_garden_plugins.NodeTypeUn
 		{Tag: typeVEVENT, Codecs: []cutting_garden_plugins.Codec{
 			component, dateStart, dateEnd, location,
 			status(eventStatuses),
+			categories,
 			timezone,
 			summary,
 		}},
 		{Tag: typeVJOURNAL, Codecs: []cutting_garden_plugins.Codec{
 			component, dateStart,
 			status(journalStatuses),
+			categories,
 			summary,
 		}},
 	}
@@ -178,7 +183,7 @@ func codecsForType(tag string) []cutting_garden_plugins.Codec {
 // reproduces every component's atoms without branching on the component — a
 // codec whose stored field is absent on a given object contributes nothing (a
 // VTODO carries DUE not DTEND, a VEVENT the reverse). The groupable-only codecs
-// (component, due_band, timezone) are excluded: their dimensions are
+// (component, due_band, timezone, categories) are excluded: their dimensions are
 // not box atoms, and a field EDIT naming one stays a loud bad request (bucket
 // MOVES reach them through the per-tag sets instead). A codec is admitted only
 // when EVERY field key it produces is unseen — a partial overlap with an
@@ -231,6 +236,41 @@ func (facetOnlyCodec) Format(map[string]any) (map[string][]string, error) {
 
 func (facetOnlyCodec) Parse(map[string][]string, map[string]any) (map[string]any, error) {
 	return nil, errors.BadRequestf("facet-only dimension is not writable")
+}
+
+// categoriesCodec declares the object's CATEGORIES as a read-only, multi-valued,
+// groupable tag dimension with naive (exact-match) semantics (tags slice 1,
+// RFC 0019). It is its OWN type rather than a facetOnlyCodec because — unlike the
+// purely computed facet dimensions — CATEGORIES has a real stored counterpart
+// (ical.Event/Task/Journal.Categories) this codec will read and write once the
+// tag write slice lands; for now it stays read-only. Only the DECLARATION derives
+// from here (a Multi FacetDimension, a Mode-none FacetWrite): the counting path
+// (facetsFromView's categoriesOf loop) computes the per-tag membership VALUES, the
+// same as it does for the other computed dimensions.
+type categoriesCodec struct{}
+
+func (categoriesCodec) Fields() []cutting_garden_plugins.UnifiedField {
+	return []cutting_garden_plugins.UnifiedField{{
+		Key: facetCategories, Label: "Categories",
+		Kind:        cutting_garden_plugins.FieldTag,
+		Groupable:   true,
+		MultiValued: true,
+		Interpreter: "naive",
+	}}
+}
+
+// Format is empty: the per-tag membership values flow through the plugin-side
+// counting path (facetsFromView), like the other computed dimensions — the codec
+// declares the dimension, it does not count.
+func (categoriesCodec) Format(map[string]any) (map[string][]string, error) {
+	return map[string][]string{}, nil
+}
+
+// Parse rejects: categories is read-only in slice 1. The write path also gates on
+// Writable before reaching Parse (ParseUnifiedBucketMove's not-writable guard), so
+// this is a defensive backstop rather than the reject a bucket move actually hits.
+func (categoriesCodec) Parse(map[string][]string, map[string]any) (map[string]any, error) {
+	return nil, errors.BadRequestf("categories is read-only until the tag write slice")
 }
 
 // caldavDateCodec splits one iCalendar DATE/DATE-TIME property (DTSTART, DTEND, or

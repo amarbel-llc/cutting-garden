@@ -206,3 +206,14 @@ func TestBuildFacetWritePatch_Priority(t *testing.T) {
 		t.Error("a raw-integer priority bucket must be rejected")
 	}
 }
+
+// TestBuildFacetWritePatch_CategoriesRejects pins the read-only half of tags
+// slice 1: a bucket move naming the categories dimension rejects loudly — the
+// field is not writable, so the write path never persists a membership change.
+func TestBuildFacetWritePatch_CategoriesRejects(t *testing.T) {
+	node := applyNode(t, "caldav://h/c/t1.ics", "VTODO", map[string]any{})
+	w := cutting_garden_plugins.FacetWrite{DimensionKey: facetCategories, Mode: cutting_garden_plugins.FacetWriteNone}
+	if _, err := (Plugin{}).BuildFacetWritePatch(context.Background(), node, w, "work"); err == nil {
+		t.Error("categories move must reject in slice 1")
+	}
+}

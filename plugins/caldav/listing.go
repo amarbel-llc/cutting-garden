@@ -31,7 +31,8 @@ const (
 	listingFieldLocation        = "location"
 	listingFieldDue             = "due"
 	listingFieldPercentComplete = "percent_complete"
-	listingFieldPriority        = "priority" // a task's raw PRIORITY int (cutting-garden#221)
+	listingFieldPriority        = "priority"   // a task's raw PRIORITY int (cutting-garden#221)
+	listingFieldCategories      = "categories" // the object's CATEGORIES tags (tags slice 1, RFC 0019)
 	// listingFieldRecurrenceID surfaces a VEVENT node's RECURRENCE-ID when
 	// it has one (cutting-garden#176/#177): present on a derived expanded
 	// occurrence or an explicit stored override, absent on an ordinary
@@ -69,6 +70,10 @@ func (Plugin) DescribeListingFields() []cutting_garden_plugins.NodeTypeListingFi
 	status := cutting_garden_plugins.ListingField{Key: listingFieldStatus, Label: "Status", Writable: true}
 	dtstart := cutting_garden_plugins.ListingField{Key: listingFieldDtStart, Label: "Start", Writable: true}
 	location := cutting_garden_plugins.ListingField{Key: listingFieldLocation, Label: "Location", Writable: true}
+	// categories is a read-only tag list (tags slice 1, RFC 0019) on every
+	// component — the CATEGORIES property round-trips on all three, and the
+	// write slice is deferred.
+	categories := cutting_garden_plugins.ListingField{Key: listingFieldCategories, Label: "Categories"}
 	return []cutting_garden_plugins.NodeTypeListingFields{
 		{
 			Tag: typeVTODO,
@@ -78,6 +83,7 @@ func (Plugin) DescribeListingFields() []cutting_garden_plugins.NodeTypeListingFi
 				location,
 				{Key: listingFieldPercentComplete, Label: "% Complete"},
 				{Key: listingFieldPriority, Label: "Priority", Writable: true},
+				categories,
 			},
 		},
 		{
@@ -88,11 +94,12 @@ func (Plugin) DescribeListingFields() []cutting_garden_plugins.NodeTypeListingFi
 				{Key: listingFieldDuration, Label: "Duration"},
 				location,
 				{Key: listingFieldRecurrenceID, Label: "Recurrence ID"},
+				categories,
 			},
 		},
 		{
 			Tag:    typeVJOURNAL,
-			Fields: []cutting_garden_plugins.ListingField{summary, status, dtstart},
+			Fields: []cutting_garden_plugins.ListingField{summary, status, dtstart, categories},
 		},
 	}
 }
@@ -240,6 +247,7 @@ func (c *client) enrichedCalendarNodes(
 func listingFieldsOf(view objectView) map[string]any {
 	var summary, status, dtstart, dtend, duration, location, due, recurrenceID string
 	var percentComplete, priority int
+	var categories []string
 	switch {
 	case view.Event != nil:
 		summary = view.Event.Summary
@@ -248,6 +256,7 @@ func listingFieldsOf(view objectView) map[string]any {
 		dtend = view.Event.DtEnd
 		duration = view.Event.Duration
 		location = view.Event.Location
+		categories = view.Event.Categories
 		// recurrence_id (cutting-garden#176/#177): present on a derived
 		// expanded occurrence or explicit override, absent on an ordinary
 		// event and on a degraded (unexpanded) master.
@@ -260,10 +269,12 @@ func listingFieldsOf(view objectView) map[string]any {
 		location = view.Task.Location
 		percentComplete = view.Task.PercentComplete
 		priority = view.Task.Priority
+		categories = view.Task.Categories
 	case view.Journal != nil:
 		summary = view.Journal.Summary
 		status = view.Journal.Status
 		dtstart = view.Journal.DtStart
+		categories = view.Journal.Categories
 	}
 	fields := map[string]any{}
 	if summary != "" {
@@ -299,6 +310,12 @@ func listingFieldsOf(view objectView) map[string]any {
 	}
 	if recurrenceID != "" {
 		fields[listingFieldRecurrenceID] = recurrenceID
+	}
+	// The object's CATEGORIES tags (tags slice 1, RFC 0019), reported as the raw
+	// []string list. Empty/absent CATEGORIES omits the key, matching the
+	// present-but-empty-omitted convention every other field here follows.
+	if len(categories) > 0 {
+		fields[listingFieldCategories] = categories
 	}
 	return fields
 }

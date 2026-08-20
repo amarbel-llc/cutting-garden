@@ -32,6 +32,16 @@ func vtodoWithPriority(uid, status string, priority int) string {
 		"\nEND:VTODO\nEND:VCALENDAR\n"
 }
 
+// vtodoWithCategories seeds a VTODO carrying a CATEGORIES line so the read-only
+// categories tag dimension (tags slice 1, RFC 0019) has signal. cats is the raw
+// comma-separated CATEGORIES value (the ical parser splits it into the tag list).
+func vtodoWithCategories(uid, status, cats string) string {
+	return "BEGIN:VCALENDAR\nVERSION:2.0\nBEGIN:VTODO\nUID:" + uid +
+		"\nSUMMARY:" + uid + "\nSTATUS:" + status +
+		"\nCATEGORIES:" + cats +
+		"\nEND:VTODO\nEND:VCALENDAR\n"
+}
+
 // startFakeFaceted seeds objects carrying STATUS and DTSTART so the status
 // and date_start facet dimensions have signal (the shared startFake fixtures
 // are bare UID/SUMMARY bodies).
@@ -227,6 +237,62 @@ func TestFacetCounts_PriorityBands(t *testing.T) {
 	assertCount(t, result.Summary, facetPriority, priorityShould, 1)
 	assertCount(t, result.Summary, facetPriority, priorityNice, 1)
 	assertCount(t, result.Summary, facetPriority, priorityUnspecified, 1)
+}
+
+// The categories dimension (tags slice 1, RFC 0019): multi-valued, naive —
+// one facet value per raw tag; a task with no CATEGORIES contributes
+// nothing; counts sum per-tag (a two-tag task counts once under EACH tag).
+func TestFacetCounts_CategoriesNaive(t *testing.T) {
+	f := newFakeCalDAV()
+	f.seed("/dav/cal/t1.ics", "VTODO", vtodoWithCategories("t1", "NEEDS-ACTION", "work,errand"))
+	f.seed("/dav/cal/t2.ics", "VTODO", vtodoWithCategories("t2", "NEEDS-ACTION", "work"))
+	f.seed("/dav/cal/t3.ics", "VTODO", vtodoFull("t3", "Untagged", "NEEDS-ACTION", "20260101"))
+
+	srv := httptest.NewServer(f.handler())
+	t.Cleanup(srv.Close)
+	node := mustParseURL(t, "caldav:"+srv.URL+"/dav/")
+
+	result, ok, err := Plugin{}.FacetCounts(context.Background(), node, nil)
+	if err != nil || !ok {
+		t.Fatalf("FacetCounts: ok=%v err=%v", ok, err)
+	}
+	assertCount(t, result.Summary, facetCategories, "work", 2)
+	assertCount(t, result.Summary, facetCategories, "errand", 1)
+
+	total := int64(0)
+	for _, n := range result.Summary[facetCategories] {
+		total += n
+	}
+	if total != 3 {
+		t.Errorf("categories total = %d, want 3 (untagged contributes nothing)", total)
+	}
+}
+
+// The derived declaration: categories is FacetCategorical + Multi on every
+// component, read-only (Mode none), and never an inline atom.
+func TestDescribeFacets_CategoriesDeclaration(t *testing.T) {
+	for _, ntf := range (Plugin{}).DescribeFacets() {
+		var dim *cutting_garden_plugins.FacetDimension
+		for i := range ntf.Dimensions {
+			if ntf.Dimensions[i].Key == facetCategories {
+				dim = &ntf.Dimensions[i]
+			}
+		}
+		if dim == nil {
+			t.Errorf("%s: categories not declared", ntf.Tag)
+			continue
+		}
+		if !dim.Multi {
+			t.Errorf("%s: categories must be Multi", ntf.Tag)
+		}
+	}
+	for _, ntw := range (Plugin{}).DescribeFacetWrites() {
+		for _, w := range ntw.Writes {
+			if w.DimensionKey == facetCategories && w.Mode != cutting_garden_plugins.FacetWriteNone {
+				t.Errorf("%s: categories write mode = %q, want none (slice 1 read-only)", ntw.Tag, w.Mode)
+			}
+		}
+	}
 }
 
 // TestDueBandDeclaration pins the RFC 0012 §11.3 obligations on the

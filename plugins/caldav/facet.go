@@ -24,13 +24,14 @@ import (
 // from the parsed iCalendar body, all present after one REPORT-with-data per
 // component — no per-object fetch (RFC 0012 §1).
 const (
-	facetComponent = "component"  // VEVENT / VTODO / VJOURNAL
-	facetStatus    = "status"     // the object's STATUS property
-	facetDateStart = "date_start" // the object's DTSTART day bucket (#230)
-	facetDateDue   = "date_due"   // a task's DUE day bucket (#230)
-	facetDueBand   = "due_band"   // VOLATILE: a task's due date vs today (§11.3)
-	facetTimezone  = "timezone"   // the explicit TZID anchoring the object's date
-	facetPriority  = "priority"   // a task's PRIORITY, banded (cutting-garden#221)
+	facetComponent  = "component"  // VEVENT / VTODO / VJOURNAL
+	facetStatus     = "status"     // the object's STATUS property
+	facetDateStart  = "date_start" // the object's DTSTART day bucket (#230)
+	facetDateDue    = "date_due"   // a task's DUE day bucket (#230)
+	facetDueBand    = "due_band"   // VOLATILE: a task's due date vs today (§11.3)
+	facetTimezone   = "timezone"   // the explicit TZID anchoring the object's date
+	facetPriority   = "priority"   // a task's PRIORITY, banded (cutting-garden#221)
+	facetCategories = "categories" // the object's CATEGORIES tags, naive (RFC 0019)
 )
 
 // The priority band domain (cutting-garden#221): a task's RFC 5545 PRIORITY
@@ -348,6 +349,15 @@ func facetsFromView(view objectView) map[string][]cutting_garden_plugins.FacetVa
 		facets[facetPriority] = []cutting_garden_plugins.FacetValue{{Key: key, Order: order}}
 	}
 
+	// categories (tags slice 1, RFC 0019): one membership per raw tag, naive
+	// semantics — no normalization, no hierarchy; the interpreter machinery's
+	// first consumer is the dodder-hyphen slice. Untagged objects contribute
+	// nothing (no informative zeros — an open, non-volatile dimension).
+	for _, tag := range categoriesOf(view) {
+		facets[facetCategories] = append(facets[facetCategories],
+			cutting_garden_plugins.FacetValue{Key: tag})
+	}
+
 	// timezone: the explicit, loadable zone on the object's primary
 	// date (#141's reconciliation surface). No explicit zone means the
 	// object anchors host-local and contributes nothing here.
@@ -530,6 +540,21 @@ func dtstartOf(view objectView) string {
 		return view.Journal.DtStart
 	}
 	return ""
+}
+
+// categoriesOf extracts a parsed object's CATEGORIES tags, whichever component
+// carries them. All three components round-trip the property (ical.Event/Task/
+// Journal.Categories); an untagged object yields nil, contributing nothing.
+func categoriesOf(view objectView) []string {
+	switch {
+	case view.Event != nil:
+		return view.Event.Categories
+	case view.Task != nil:
+		return view.Task.Categories
+	case view.Journal != nil:
+		return view.Journal.Categories
+	}
+	return nil
 }
 
 // dayBucketOf extracts the ISO-day bucket of an iCalendar date-time

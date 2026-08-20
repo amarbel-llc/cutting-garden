@@ -133,7 +133,7 @@ func TestDescribeListingFields_DeclaresObjectFields(t *testing.T) {
 	for _, want := range []string{
 		listingFieldSummary, listingFieldDue, listingFieldStatus, listingFieldDtStart,
 		listingFieldDtEnd, listingFieldDuration, listingFieldLocation, listingFieldPercentComplete,
-		listingFieldPriority,
+		listingFieldPriority, listingFieldCategories,
 	} {
 		if !keys[want] {
 			t.Errorf("listing field %q not declared on any object leaf type", want)
@@ -261,6 +261,50 @@ func TestListEnriched_PopulatesPriority(t *testing.T) {
 	}
 	if _, present := nopri.Fields[listingFieldPriority]; present {
 		t.Errorf("nopri.ics carries a priority field though it has no PRIORITY: %+v", nopri.Fields)
+	}
+}
+
+// TestListEnriched_PopulatesCategories pins the categories listing field (tags
+// slice 1, RFC 0019): a CATEGORIES-bearing object carries its raw tag list as
+// the "categories" []string field, and an untagged object omits the key
+// entirely (mirroring the present-but-empty-omitted convention).
+func TestListEnriched_PopulatesCategories(t *testing.T) {
+	f := newFakeCalDAV()
+	f.seed("/dav/cal/tagged.ics", "VTODO", vtodoWithCategories("tagged", "NEEDS-ACTION", "work,errand"))
+	f.seed("/dav/cal/untagged.ics", "VTODO",
+		vtodoFull("untagged", "No tags", "NEEDS-ACTION", "20260101"))
+
+	srv := httptest.NewServer(f.handler())
+	t.Cleanup(srv.Close)
+	arg := "caldav:" + srv.URL + calendarHref
+
+	nodes, ok, err := Plugin{}.ListEnriched(context.Background(), mustParseURL(t, arg), nil)
+	if err != nil || !ok {
+		t.Fatalf("ListEnriched: ok=%v err=%v", ok, err)
+	}
+	byName := map[string]cutting_garden_plugins.Node{}
+	for _, n := range nodes {
+		byName[n.Name] = n
+	}
+
+	tagged, ok := byName["tagged.ics"]
+	if !ok {
+		t.Fatalf("missing tagged.ics in %+v", byName)
+	}
+	cats, ok := tagged.Fields[listingFieldCategories].([]string)
+	if !ok {
+		t.Fatalf("tagged.ics categories field = %#v, want []string", tagged.Fields[listingFieldCategories])
+	}
+	if len(cats) != 2 || cats[0] != "work" || cats[1] != "errand" {
+		t.Errorf("tagged.ics categories = %v, want [work errand]", cats)
+	}
+
+	untagged, ok := byName["untagged.ics"]
+	if !ok {
+		t.Fatalf("missing untagged.ics in %+v", byName)
+	}
+	if _, present := untagged.Fields[listingFieldCategories]; present {
+		t.Errorf("untagged.ics carries a categories field though it has no CATEGORIES: %+v", untagged.Fields)
 	}
 }
 
