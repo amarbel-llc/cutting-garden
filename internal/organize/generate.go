@@ -26,6 +26,23 @@ func (cmd *Organize) buildAndStore(ctx errors.Context, uriStr string) (string, e
 		return "", err
 	}
 
+	// Resolve the group-by spelling ONCE, at generate time (cutting-garden#230):
+	// a bare date dimension takes the `[organize] date_granularity` config
+	// default, then day, and the resolved spelling is persisted in the
+	// document's dimension heading — so a later --apply never consults config
+	// (which may change in between). The config was already loaded and warned
+	// about by Run's LoadAndInjectConfig; this re-read just fetches the value.
+	cfg, err := command_components.LoadDefaultConfig(nil)
+	if err != nil {
+		return "", err
+	}
+	spec, err := parseGroupSpec(
+		cmd.GroupBy, describedFacets(lister), cfg.Organize.DateGranularity,
+	)
+	if err != nil {
+		return "", err
+	}
+
 	// The effective query is the user's query with organize's default
 	// `_terminal=no` exclusion composed in (cutting-garden#214) — echoed into the
 	// document's `_query` below so the default is visible, editable, and re-applies
@@ -47,10 +64,12 @@ func (cmd *Organize) buildAndStore(ctx errors.Context, uriStr string) (string, e
 		anchor = uriStr
 	}
 
-	doc := buildDocument(nodes, anchor, effective, cmd.GroupBy, lister)
-	// Provenance records what the user actually typed (e.g. the short alias),
-	// even though _anchor is the canonical common prefix.
-	doc.Provenance = provenance(cmd.GroupBy, effective, uriStr)
+	doc := buildDocument(nodes, anchor, effective, spec, lister)
+	// Provenance records what the user actually typed for the URI (e.g. the
+	// short alias), even though _anchor is the canonical common prefix — but
+	// echoes the RESOLVED group-by spelling, so a config-defaulted granularity
+	// is visible.
+	doc.Provenance = provenance(spec.String(), effective, uriStr)
 
 	// The canonical form (no `_base`) is the exact bytes hashed and stored; its
 	// digest becomes the pin the emitted form carries.
@@ -79,15 +98,16 @@ func (cmd *Organize) runGenerate(ctx errors.Context, uriStr string) error {
 // buildDocument assembles the organize document from the selected nodes. A
 // single-type node set uses the flatter envelope-`_type` spelling (spelling 2);
 // a multi-type set uses per-type `# !<type>` headings (spelling 1). The grouped
-// dimension renders as a `<dim>=` heading with a `=<value>` bucket per declared /
-// observed value.
+// dimension renders as a `<spec>=` heading (the full `dim:granularity` spelling
+// for a date grouping, cutting-garden#230) with a `=<value>` bucket per
+// declared / observed value.
 func buildDocument(
-	nodes []cgp.Node, anchor, query, groupBy string, lister cgp.RootLister,
+	nodes []cgp.Node, anchor, query string, spec groupSpec, lister cgp.RootLister,
 ) document {
 	doc := document{
 		Anchor:     anchor,
 		Query:      query,
-		Provenance: provenance(groupBy, query, anchor),
+		Provenance: provenance(spec.String(), query, anchor),
 	}
 
 	present := boxAtomPresenter(lister)
@@ -96,22 +116,32 @@ func buildDocument(
 	case 1:
 		// Spelling 2: type in the envelope, object boxes bare, dimension at depth 1.
 		doc.Type = types[0]
-		declared := writableBuckets(lister, types[0], groupBy)
-		ungrouped, buckets := groupNodes(nodes, groupBy, anchor, declared, false, present)
+		declared := writableBuckets(lister, types[0], spec.Dim)
+		ungrouped, buckets := groupNodes(nodes, spec, anchor, declared, false, present)
 		doc.Ungrouped = ungrouped
-		doc.Sections = dimensionSections(groupBy, buckets, 1)
+		doc.Sections = dimensionSections(spec, buckets, 1)
 	default:
 		// Spelling 1: a `# !<type>` heading per type, each with its own dimension
 		// ladder at depth 2; object boxes carry inline `!type`.
 		for _, typ := range types {
 			typeNodes := nodesOfType(nodes, typ)
-			declared := writableBuckets(lister, typ, groupBy)
-			ungrouped, buckets := groupNodes(typeNodes, groupBy, anchor, declared, true, present)
+			declared := writableBuckets(lister, typ, spec.Dim)
+			ungrouped, buckets := groupNodes(typeNodes, spec, anchor, declared, true, present)
 			doc.Sections = append(doc.Sections, section{Depth: 1, Term: "!" + typ, Lines: ungrouped})
-			doc.Sections = append(doc.Sections, dimensionSections(groupBy, buckets, 2)...)
+			doc.Sections = append(doc.Sections, dimensionSections(spec, buckets, 2)...)
 		}
 	}
 	return doc
+}
+
+// describedFacets probes the plugin's declared facet schema, nil for a plugin
+// without the FacetDescriber capability — a granularity suffix then rejects,
+// since no schema says the dimension is a date.
+func describedFacets(lister cgp.RootLister) []cgp.NodeTypeFacets {
+	if d, ok := lister.(cgp.FacetDescriber); ok {
+		return d.DescribeFacets()
+	}
+	return nil
 }
 
 // boxAtomPresenter returns the plugin's box-atom presentation function when it
@@ -125,11 +155,13 @@ func boxAtomPresenter(lister cgp.RootLister) func(cgp.Node) []cgp.BoxAtom {
 	return nil
 }
 
-// dimensionSections renders the grouped dimension as a `<dim>=` heading at
+// dimensionSections renders the grouped dimension as a `<spec>=` heading at
 // baseDepth followed by a `=<value>` bucket heading (baseDepth+1) per bucket.
-func dimensionSections(groupBy string, buckets []bucket, baseDepth int) []section {
+// The heading term carries the FULL spec spelling (`date_due:month=`) — the
+// persisted granularity a later apply recovers via groupedSpec (#230).
+func dimensionSections(spec groupSpec, buckets []bucket, baseDepth int) []section {
 	secs := make([]section, 0, len(buckets)+1)
-	secs = append(secs, section{Depth: baseDepth, Term: groupBy + "="})
+	secs = append(secs, section{Depth: baseDepth, Term: spec.String() + "="})
 	for _, bk := range buckets {
 		secs = append(secs, section{Depth: baseDepth + 1, Term: "=" + bk.Value, Lines: bk.Lines})
 	}

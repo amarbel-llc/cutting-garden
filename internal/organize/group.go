@@ -13,17 +13,20 @@ type bucket struct {
 	Lines []objectLine
 }
 
-// groupNodes buckets nodes by their membership in facet dimension dim. It returns
-// the ungrouped set (no value for the dimension) and the ordered value buckets.
-// declaredValues are the plugin's write-side target buckets (FacetWrite.Values),
-// pre-rendered in order even when empty (RFC 0015 "make it easy to swap states");
+// groupNodes buckets nodes by their membership in the spec's facet dimension. It
+// returns the ungrouped set (no value for the dimension) and the ordered value
+// buckets. A date spec's granularity coarsens each day-precise per-node value by
+// prefix truncation BEFORE bucketing (cutting-garden#230), so a month grouping
+// folds every day of a month under one `=YYYY-MM` heading. declaredValues are
+// the plugin's write-side target buckets (FacetWrite.Values), pre-rendered in
+// order even when empty (RFC 0015 "make it easy to swap states");
 // observed-but-undeclared values follow, sorted ascending. inlineType controls
 // the object box's `!type` tag: true for the type-as-heading spelling (each box
 // self-describes), false when the envelope's `- _type` distributes it. present,
 // when non-nil, populates each box's detail atoms (date/time/location;
 // cutting-garden#47) from the plugin's FieldPresenter.
 func groupNodes(
-	nodes []cgp.Node, dim, anchor string, declaredValues []string, inlineType bool,
+	nodes []cgp.Node, spec groupSpec, anchor string, declaredValues []string, inlineType bool,
 	present func(cgp.Node) []cgp.BoxAtom,
 ) (ungrouped []objectLine, buckets []bucket) {
 	byValue := map[string][]objectLine{}
@@ -35,13 +38,14 @@ func groupNodes(
 		if present != nil {
 			ln.Fields = present(n)
 		}
-		values := n.Facets[dim]
+		values := n.Facets[spec.Dim]
 		if len(values) == 0 {
 			ungrouped = append(ungrouped, ln)
 			continue
 		}
 		for _, v := range values {
-			byValue[v.Key] = append(byValue[v.Key], ln)
+			key := coarsenBucket(v.Key, spec.Granularity)
+			byValue[key] = append(byValue[key], ln)
 		}
 	}
 

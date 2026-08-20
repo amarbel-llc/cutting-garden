@@ -102,7 +102,7 @@ func TestPlanMoves_CleanMove(t *testing.T) {
 	live := []cgp.Node{taskNode(t, "caldav://h/c/t1.ics", "NEEDS-ACTION")}
 	base.Anchor, edited.Anchor = "caldav://h/c/", "caldav://h/c/"
 
-	moves, err := planMoves(edited, base, "status", live)
+	moves, err := planMoves(edited, base, groupSpec{Dim: "status"}, live)
 	if err != nil {
 		t.Fatalf("planMoves: %v", err)
 	}
@@ -122,7 +122,7 @@ func TestPlanMoves_NullToValue(t *testing.T) {
 	live := []cgp.Node{taskNode(t, "caldav://h/c/t1.ics", "")}
 	base.Anchor, edited.Anchor = "caldav://h/c/", "caldav://h/c/"
 
-	moves, err := planMoves(edited, base, "status", live)
+	moves, err := planMoves(edited, base, groupSpec{Dim: "status"}, live)
 	if err != nil {
 		t.Fatalf("planMoves: %v", err)
 	}
@@ -138,7 +138,7 @@ func TestPlanMoves_Unmoved(t *testing.T) {
 	live := []cgp.Node{taskNode(t, "caldav://h/c/t1.ics", "NEEDS-ACTION")}
 	base.Anchor, edited.Anchor = "caldav://h/c/", "caldav://h/c/"
 
-	moves, err := planMoves(edited, base, "status", live)
+	moves, err := planMoves(edited, base, groupSpec{Dim: "status"}, live)
 	if err != nil {
 		t.Fatalf("planMoves: %v", err)
 	}
@@ -155,7 +155,72 @@ func TestPlanMoves_Conflict(t *testing.T) {
 	live := []cgp.Node{taskNode(t, "caldav://h/c/t1.ics", "CANCELLED")} // drifted
 	base.Anchor, edited.Anchor = "caldav://h/c/", "caldav://h/c/"
 
-	if _, err := planMoves(edited, base, "status", live); err == nil {
+	if _, err := planMoves(edited, base, groupSpec{Dim: "status"}, live); err == nil {
 		t.Fatal("expected a conflict error when live drifted from base")
+	}
+}
+
+// dateDocs builds a base/edited pair grouped `date_due:month=` with t1.ics under
+// the given month buckets — the apply-side date-granularity fixture (#230).
+func dateDocs(baseBucket, editedBucket string) (base, edited document) {
+	base = docWith("date_due:month", map[string]string{"t1.ics": baseBucket})
+	edited = docWith("date_due:month", map[string]string{"t1.ics": editedBucket})
+	base.Anchor, edited.Anchor = "fake://cal/", "fake://cal/"
+	return base, edited
+}
+
+// TestPlanMoves_DateGranularityUnmoved pins the round-trip invariant
+// (cutting-garden#230): a `date_due:month=` document's headings carry the
+// granularity, so the live day-precise value coarsens to the month for the
+// three-way comparison — an unmoved line is neither a move nor a conflict,
+// with NO config consulted on the apply path.
+func TestPlanMoves_DateGranularityUnmoved(t *testing.T) {
+	base, edited := dateDocs("2026-08", "2026-08")
+	live := []cgp.Node{dueNode(t, "t1.ics", "2026-08-15")}
+
+	spec, err := edited.groupedSpec()
+	if err != nil {
+		t.Fatalf("groupedSpec: %v", err)
+	}
+	if spec.Dim != "date_due" || spec.Granularity != cgp.GranularityMonth {
+		t.Fatalf("recovered spec = %+v, want date_due:month", spec)
+	}
+
+	moves, err := planMoves(edited, base, spec, live)
+	if err != nil {
+		t.Fatalf("planMoves: %v", err)
+	}
+	if len(moves) != 0 {
+		t.Fatalf("moves = %+v, want none (live 2026-08-15 coarsens to 2026-08)", moves)
+	}
+}
+
+// TestPlanMoves_DateGranularityMove pins a coarse bucket move: the line moved
+// under `=2026-09` yields exactly one move whose To is the coarse bucket the
+// plugin's shape-dispatching write splices from.
+func TestPlanMoves_DateGranularityMove(t *testing.T) {
+	base, edited := dateDocs("2026-08", "2026-09")
+	live := []cgp.Node{dueNode(t, "t1.ics", "2026-08-15")}
+
+	spec, err := edited.groupedSpec()
+	if err != nil {
+		t.Fatalf("groupedSpec: %v", err)
+	}
+	moves, err := planMoves(edited, base, spec, live)
+	if err != nil {
+		t.Fatalf("planMoves: %v", err)
+	}
+	if len(moves) != 1 || moves[0].From != "2026-08" || moves[0].To != "2026-09" {
+		t.Fatalf("moves = %+v, want one 2026-08 -> 2026-09", moves)
+	}
+}
+
+// TestGroupedSpec_RejectsUnknownGranularity pins the apply-side loud rejection:
+// a document heading spelling an unknown granularity is a bad request, not a
+// silent exact-match degradation.
+func TestGroupedSpec_RejectsUnknownGranularity(t *testing.T) {
+	doc := docWith("date_due:week", map[string]string{"t1.ics": "2026-08"})
+	if _, err := doc.groupedSpec(); err == nil {
+		t.Fatal("a date_due:week= heading must reject loudly")
 	}
 }

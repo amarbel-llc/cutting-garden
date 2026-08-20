@@ -85,7 +85,15 @@ func (cmd *Organize) applyDocument(
 	if err != nil {
 		return false, err
 	}
-	dim := edited.groupedDimension()
+	// The dimension heading carries the whole grouping spec: the bare dimension
+	// AND, for a date grouping, the persisted granularity (`date_due:month=`,
+	// cutting-garden#230) — apply coarsens live values from the document alone,
+	// never from config. The BARE dimension keys the write surface below.
+	spec, err := edited.groupedSpec()
+	if err != nil {
+		return false, err
+	}
+	dim := spec.Dim
 	if edited.Anchor == "" || dim == "" {
 		return false, errors.BadRequestf(
 			"organize --apply: document is missing its `- _anchor` field or its " +
@@ -122,7 +130,7 @@ func (cmd *Organize) applyDocument(
 	// field/trailer edits (a box-atom or description change, applied via
 	// FieldWriteApplier, cutting-garden#218). A read-only or cleared field edit
 	// is surfaced as a non-blocking notice rather than silently dropped.
-	moves, err := planMoves(edited, base, dim, liveNodes)
+	moves, err := planMoves(edited, base, spec, liveNodes)
 	if err != nil {
 		return false, err
 	}
@@ -221,7 +229,12 @@ func (cmd *Organize) applyDocument(
 // drifted from the base — a conflict, reported as a structured rejection rather
 // than silently overwritten (RFC 0015). Additions/deletions vs the base are out
 // of scope this slice and ignored.
-func planMoves(edited, base document, dim string, liveNodes []cgp.Node) ([]move, error) {
+//
+// The base and edited assignments come from the documents' own `=<value>`
+// headings, which a date grouping already rendered coarse — so only the LIVE
+// day-precise value needs coarsening to the spec's granularity for the three
+// sides to compare like for like (cutting-garden#230).
+func planMoves(edited, base document, spec groupSpec, liveNodes []cgp.Node) ([]move, error) {
 	anchor := edited.Anchor
 
 	editedAsg, err := edited.assignments()
@@ -238,7 +251,8 @@ func planMoves(edited, base document, dim string, liveNodes []cgp.Node) ([]move,
 	for _, n := range liveNodes {
 		key := relativeID(n.URIString(), anchor)
 		liveByKey[key] = n
-		liveAsg[key] = firstFacetKey(n.Facets[dim]) // Mode-one: "" or the value
+		// Mode-one: "" or the value, coarsened to the document's granularity.
+		liveAsg[key] = coarsenBucket(firstFacetKey(n.Facets[spec.Dim]), spec.Granularity)
 	}
 
 	var moves []move

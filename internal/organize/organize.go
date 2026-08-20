@@ -53,7 +53,9 @@ type Organize struct {
 	// organize; empty means the anchor's enriched child listing.
 	Query string
 	// GroupBy is the facet dimension the document groups by (required to
-	// generate).
+	// generate). A date-kind dimension may carry a bucket-granularity suffix
+	// (`date_due:month`, one of year/month/day; cutting-garden#230); bare it
+	// resolves the `[organize] date_granularity` config default, then day.
 	GroupBy string
 	// Apply, when set, switches to apply mode: the path of an edited document
 	// to merge and write, or "-" for stdin. The anchor, group-by, and query are
@@ -118,7 +120,8 @@ func (cmd *Organize) SetFlagDefinitions(flagSet interfaces.CLIFlagDefinitions) {
 		&cmd.GroupBy,
 		"group-by",
 		"",
-		"facet dimension to group the nodes by (required to generate)",
+		"facet dimension to group the nodes by, optionally with a date bucket "+
+			"granularity suffix dim:year|month|day (required to generate)",
 	)
 	flagSet.StringVar(
 		&cmd.Apply,

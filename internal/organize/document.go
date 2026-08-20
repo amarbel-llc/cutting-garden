@@ -347,6 +347,32 @@ func (doc document) groupedDimension() string {
 	return ""
 }
 
+// groupedSpec recovers the grouped dimension AND, when the heading spells
+// `<dim>:<granularity>=` (a date grouping, cutting-garden#230), the persisted
+// bucket granularity. The document itself carries the granularity so apply
+// coarsens live values exactly as generate did, without consulting config
+// (which may have changed in between). An unknown granularity spelling is a
+// loud bad request — never a silent exact-match degradation. A bare `<dim>=`
+// heading carries none; the zero spec means no dimension heading at all.
+func (doc document) groupedSpec() (groupSpec, error) {
+	term := doc.groupedDimension()
+	if term == "" {
+		return groupSpec{}, nil
+	}
+	dim, suffix, hasSuffix := strings.Cut(term, ":")
+	if !hasSuffix {
+		return groupSpec{Dim: dim}, nil
+	}
+	g, ok := cgp.ParseDateGranularity(suffix)
+	if !ok {
+		return groupSpec{}, errors.BadRequestf(
+			"organize: dimension heading %q carries granularity %q; expected "+
+				"year, month, or day", term+"=", suffix,
+		)
+	}
+	return groupSpec{Dim: dim, Granularity: g}, nil
+}
+
 // assignments projects the document into a box-id → bucket-value map: each
 // object's value for the grouped dimension, read from the deepest `=<value>`
 // heading in its path (empty when the object sits only under the type/ungrouped).
