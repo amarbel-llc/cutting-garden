@@ -10,6 +10,9 @@
 package cgconfig
 
 import (
+	"fmt"
+
+	cgp "code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
 	"code.linenisgreat.com/cutting-garden/internal/traversal_serve"
 	"code.linenisgreat.com/cutting-garden/plugins/caldav"
 	"code.linenisgreat.com/cutting-garden/plugins/fastmail"
@@ -30,6 +33,9 @@ type ConfigV0 struct {
 	Caldav   caldav.AccountsConfig   `toml:"caldav,omitempty"`
 	Fastmail fastmail.AccountsConfig `toml:"fastmail,omitempty"`
 	Jira     jira.AccountsConfig     `toml:"jira,omitempty"`
+
+	// Organize configures the framework-side organize command (FDR 0023).
+	Organize OrganizeConfig `toml:"organize,omitempty"`
 
 	// Plugins is the generalized `[[plugins]]` stanza (cutting-garden#146
 	// slice 2): one entry per plugin binary, declaring which wire
@@ -61,5 +67,34 @@ func (c ConfigV0) Validate() error {
 	if err := c.Jira.Validate(); err != nil {
 		return err
 	}
+	if err := c.Organize.Validate(); err != nil {
+		return err
+	}
 	return traversal_serve.ValidateStanzas(c.Plugins, c.TraversalPlugins)
+}
+
+// OrganizeConfig configures the organize command (FDR 0023). Not a plugin
+// section — organize is framework-side — so it lives here rather than being
+// delegated.
+//
+//go:generate tommy generate
+type OrganizeConfig struct {
+	// DateGranularity is the default bucket granularity for a bare
+	// `--group-by` on a date-kind facet dimension (cutting-garden#230):
+	// "year", "month", or "day". Empty means the built-in default (day).
+	// A `--group-by dim:granularity` suffix always wins over this.
+	DateGranularity string `toml:"date_granularity,omitempty"`
+}
+
+func (c OrganizeConfig) Validate() error {
+	if c.DateGranularity == "" {
+		return nil
+	}
+	if _, ok := cgp.ParseDateGranularity(c.DateGranularity); !ok {
+		return fmt.Errorf(
+			"organize.date_granularity %q is not one of year, month, day",
+			c.DateGranularity,
+		)
+	}
+	return nil
 }

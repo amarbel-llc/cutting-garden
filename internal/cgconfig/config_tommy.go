@@ -59,6 +59,22 @@ func DecodeConfigV0(input []byte) (*ConfigV0Document, error) {
 			return nil, fmt.Errorf("jira: %w", err)
 		}
 	}
+	if _vOrganize, _ok := model.Get("organize"); _ok && _vOrganize.Kind == cst.VTable {
+		_vOrganize.MarkSeen()
+		if _vOrganizeDateGranularity, _ok := _vOrganize.Get("date_granularity"); _ok && _vOrganizeDateGranularity.Kind == cst.VLeaf {
+			if _x, _xok := cst.ExtractString(_vOrganizeDateGranularity.Leaf); _xok {
+				d.data.Organize.DateGranularity = _x
+				_vOrganizeDateGranularity.MarkConsumed()
+			}
+		}
+	} else {
+		if _vDateGranularity, _ok := model.Get("date_granularity"); _ok && _vDateGranularity.Kind == cst.VLeaf {
+			if _x, _xok := cst.ExtractString(_vDateGranularity.Leaf); _xok {
+				d.data.Organize.DateGranularity = _x
+				_vDateGranularity.MarkConsumed()
+			}
+		}
+	}
 	if _vPlugins, _ok := model.Get("plugins"); _ok && _vPlugins.Kind == cst.VArray {
 		_vPlugins.MarkSeen()
 		d.data.Plugins = make([]traversal_serve.PluginStanza, len(_vPlugins.Items))
@@ -119,6 +135,16 @@ func (d *ConfigV0Document) Encode() ([]byte, error) {
 		tableNode := cst.EnsureChildTable(d.cstDoc.Root(), d.cstDoc.Root(), "jira")
 		if err := jira.EncodeAccountsConfigFrom(&d.data.Jira, d.cstDoc, tableNode); err != nil {
 			return nil, fmt.Errorf("jira: %w", err)
+		}
+	}
+	{
+		tableNode := cst.EnsureChildTable(d.cstDoc.Root(), d.cstDoc.Root(), "organize")
+		if d.data.Organize.DateGranularity != "" {
+			if err := cst.SetAny(tableNode, "date_granularity", d.data.Organize.DateGranularity); err != nil {
+				return nil, fmt.Errorf("%w", err)
+			}
+		} else {
+			cst.DeleteValue(tableNode, "date_granularity")
 		}
 	}
 	{
@@ -194,6 +220,22 @@ func DecodeConfigV0Into(data *ConfigV0, sub *cst.Value) error {
 			return fmt.Errorf("jira: %w", err)
 		}
 	}
+	if _vOrganize, _ok := sub.Get("organize"); _ok && _vOrganize.Kind == cst.VTable {
+		_vOrganize.MarkSeen()
+		if _vOrganizeDateGranularity, _ok := _vOrganize.Get("date_granularity"); _ok && _vOrganizeDateGranularity.Kind == cst.VLeaf {
+			if _x, _xok := cst.ExtractString(_vOrganizeDateGranularity.Leaf); _xok {
+				data.Organize.DateGranularity = _x
+				_vOrganizeDateGranularity.MarkConsumed()
+			}
+		}
+	} else {
+		if _vDateGranularity, _ok := sub.Get("date_granularity"); _ok && _vDateGranularity.Kind == cst.VLeaf {
+			if _x, _xok := cst.ExtractString(_vDateGranularity.Leaf); _xok {
+				data.Organize.DateGranularity = _x
+				_vDateGranularity.MarkConsumed()
+			}
+		}
+	}
 	if _vPlugins, _ok := sub.Get("plugins"); _ok && _vPlugins.Kind == cst.VArray {
 		_vPlugins.MarkSeen()
 		data.Plugins = make([]traversal_serve.PluginStanza, len(_vPlugins.Items))
@@ -253,6 +295,16 @@ func EncodeConfigV0From(data *ConfigV0, doc *document.Document, container *cst.N
 		}
 	}
 	{
+		tableNode := cst.EnsureChildTable(doc.Root(), container, "organize")
+		if data.Organize.DateGranularity != "" {
+			if err := cst.SetAny(tableNode, "date_granularity", data.Organize.DateGranularity); err != nil {
+				return fmt.Errorf("%w", err)
+			}
+		} else {
+			cst.DeleteValue(tableNode, "date_granularity")
+		}
+	}
+	{
 		_apPlugins := container
 		_existPlugins := cst.FindChildArrayTableNodes(doc.Root(), _apPlugins, "plugins")
 		for i := range data.Plugins {
@@ -281,6 +333,107 @@ func EncodeConfigV0From(data *ConfigV0, doc *document.Document, container *cst.N
 				return fmt.Errorf("traversal_plugins[%d]: %w", i, err)
 			}
 		}
+	}
+	return nil
+}
+
+type OrganizeConfigDocument struct {
+	data   OrganizeConfig
+	cstDoc *document.Document
+	model  *cst.Value
+}
+
+func DecodeOrganizeConfig(input []byte) (*OrganizeConfigDocument, error) {
+	doc, err := document.Parse(input)
+	if err != nil {
+		return nil, err
+	}
+	model, err := cst.Decompose(doc.Root())
+	if err != nil {
+		return nil, err
+	}
+
+	d := &OrganizeConfigDocument{
+		cstDoc: doc,
+		model:  model,
+	}
+
+	if _vDateGranularity, _ok := model.Get("date_granularity"); _ok && _vDateGranularity.Kind == cst.VLeaf {
+		if _x, _xok := cst.ExtractString(_vDateGranularity.Leaf); _xok {
+			d.data.DateGranularity = _x
+			_vDateGranularity.MarkConsumed()
+		}
+	}
+	if err := d.data.Validate(); err != nil {
+		return nil, fmt.Errorf("validation failed: %w", err)
+	}
+	return d, nil
+}
+
+func (d *OrganizeConfigDocument) Data() *OrganizeConfig {
+	return &d.data
+}
+
+func (d *OrganizeConfigDocument) Encode() ([]byte, error) {
+	if err := d.data.Validate(); err != nil {
+		return nil, fmt.Errorf("validation failed: %w", err)
+	}
+	if d.data.DateGranularity != "" {
+		if err := cst.SetAny(d.cstDoc.Root(), "date_granularity", d.data.DateGranularity); err != nil {
+			return nil, fmt.Errorf("%w", err)
+		}
+	} else {
+		cst.DeleteValue(d.cstDoc.Root(), "date_granularity")
+	}
+	return d.cstDoc.Bytes(), nil
+}
+
+func (d *OrganizeConfigDocument) Undecoded() []string {
+	if d.model == nil {
+		return nil
+	}
+	return d.model.Undecoded()
+}
+
+func (d *OrganizeConfigDocument) Comment(key string) string {
+	return d.cstDoc.GetComment(key)
+}
+
+func (d *OrganizeConfigDocument) SetComment(key, comment string) {
+	d.cstDoc.SetComment(key, comment)
+}
+
+func (d *OrganizeConfigDocument) InlineComment(key string) string {
+	return d.cstDoc.GetInlineComment(key)
+}
+
+func (d *OrganizeConfigDocument) SetInlineComment(key, comment string) {
+	d.cstDoc.SetInlineComment(key, comment)
+}
+
+func DecodeOrganizeConfigInto(data *OrganizeConfig, sub *cst.Value) error {
+	if _vDateGranularity, _ok := sub.Get("date_granularity"); _ok && _vDateGranularity.Kind == cst.VLeaf {
+		if _x, _xok := cst.ExtractString(_vDateGranularity.Leaf); _xok {
+			data.DateGranularity = _x
+			_vDateGranularity.MarkConsumed()
+		}
+	}
+	if err := data.Validate(); err != nil {
+		return fmt.Errorf("validation failed: %w", err)
+	}
+	return nil
+}
+
+func EncodeOrganizeConfigFrom(data *OrganizeConfig, doc *document.Document, container *cst.Node) error {
+	if err := data.Validate(); err != nil {
+		return fmt.Errorf("validation failed: %w", err)
+	}
+	if data.DateGranularity != "" {
+		if err := cst.SetAny(container, "date_granularity", data.DateGranularity); err != nil {
+			return fmt.Errorf("%w", err)
+		}
+	} else {
+		cst.DeleteValue(container, "date_granularity")
 	}
 	return nil
 }
