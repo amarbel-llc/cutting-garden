@@ -569,6 +569,31 @@ debug-organize-fields: debug-build-go
     curl -fsS "${source_url#caldav:}fields/field1.ics"
     exec {SRV[1]}>&- || true
 
+# Eyeball the read-only categories tag dimension (tags slice 1, RFC 0019) that
+# zz-tests_bats/organize_tags.bats pins: the --facets/--filter histogram over the
+# multi-tag fixture, and the two-tag membership listing. The pure-read lanes need
+# no blob store, so they survive the #87 store-config skew that blocks the
+# store-backed group-by/apply eyeball locally (run those via the hermetic bats
+# build); the group-by/apply reject is left to debug-organize-fields' pattern.
+[group('debug')]
+debug-organize-categories: debug-build-go
+    #!/usr/bin/env bash
+    set -euo pipefail
+    root="{{ justfile_directory() }}"
+    cd "$root"
+    nix develop --command go build -o .tmp/cutting-garden-caldav-testserver ./cmd/cutting-garden-caldav-testserver
+    export CG_TEST_CALDAV_FIELDS=1
+    coproc SRV { .tmp/cutting-garden-caldav-testserver; }
+    read -r -u "${SRV[0]}" source_url _calpath
+    cal="${source_url%/dav/}/dav/fields/"
+    echo '# --- list -facets -filter categories=work (expect VTODO 2; work 2 errand 1) ---' >&2
+    .tmp/cutting-garden list -facets -filter 'categories=work' "$cal"
+    echo '# --- list -facets (full: VTODO 4; work 2 errand 1) ---' >&2
+    .tmp/cutting-garden list -facets "$cal"
+    echo '# --- list -query categories=work (expect field2, field3) ---' >&2
+    .tmp/cutting-garden list -query 'categories=work' "$cal"
+    exec {SRV[1]}>&- || true
+
 # Drop into an interactive shell in a throwaway tempdir with a fresh madder store
 # and the Fastmail caldav creds (CALDAV_USERNAME/PASSWORD) exported — the manual
 # eyeball loop for `cg organize` against a LIVE Fastmail calendar (FDR 0025 Slice 1

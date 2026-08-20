@@ -69,24 +69,31 @@ func main() {
 	// Slice 1 Phase 0 conformance net): VTODOs carrying banded PRIORITY, LOCATION,
 	// and STATUS so grouping by `priority` yields all four bands and each object's
 	// box surfaces editable location/status/priority atoms plus the SUMMARY
-	// trailer. OPT-IN via CG_TEST_CALDAV_FIELDS so it never inflates the
-	// home-capture object count caldav.bats asserts against — only the priority
-	// and field-edit lanes, which set the env var, see this calendar.
+	// trailer. Two of them additionally carry CATEGORIES so the read-only tag
+	// dimension (tags slice 1, RFC 0019) has multi-membership signal: field2 is
+	// a two-tag task (work + errand) and field3 a one-tag task (work), so grouping
+	// by `categories` files field2 under BOTH `## =work` and `## =errand` while
+	// field3 lands under `## =work` only, and the categories histogram reads
+	// work=2, errand=1. CATEGORIES is groupable-only — never a box atom — so the
+	// priority and field-edit lanes' exact box assertions are undisturbed. OPT-IN
+	// via CG_TEST_CALDAV_FIELDS so it never inflates the home-capture object count
+	// caldav.bats asserts against — only the priority, field-edit, and categories
+	// lanes, which set the env var, see this calendar.
 	//
 	//   field1  Pay rent      PRIORITY 1 (0_must)        LOCATION Bank  STATUS NEEDS-ACTION
-	//   field2  Read book     PRIORITY 5 (1_should)
-	//   field3  Water plants  PRIORITY 9 (2_nice)
+	//   field2  Read book     PRIORITY 5 (1_should)      CATEGORIES work,errand
+	//   field3  Water plants  PRIORITY 9 (2_nice)        CATEGORIES work
 	//   field4  Someday idea  no PRIORITY (3_unspecified)
 	if os.Getenv("CG_TEST_CALDAV_FIELDS") != "" {
 		srv.AddCalendar("/dav/fields/", "Fields")
 		srv.Seed("/dav/fields/field1.ics", "VTODO",
-			vtodoRich("field1", "Pay rent", 1, "Bank", "NEEDS-ACTION"))
+			vtodoRich("field1", "Pay rent", 1, "Bank", "NEEDS-ACTION", ""))
 		srv.Seed("/dav/fields/field2.ics", "VTODO",
-			vtodoRich("field2", "Read book", 5, "", ""))
+			vtodoRich("field2", "Read book", 5, "", "", "work,errand"))
 		srv.Seed("/dav/fields/field3.ics", "VTODO",
-			vtodoRich("field3", "Water plants", 9, "", ""))
+			vtodoRich("field3", "Water plants", 9, "", "", "work"))
 		srv.Seed("/dav/fields/field4.ics", "VTODO",
-			vtodoRich("field4", "Someday idea", 0, "", ""))
+			vtodoRich("field4", "Someday idea", 0, "", "", ""))
 	}
 
 	// Handshake: the caldav: source arg (opaque form reaches the plain-HTTP
@@ -112,10 +119,12 @@ func vevent(uid, summary string) string {
 // vtodoRich seeds a VTODO carrying the optional detail properties the organize
 // field-edit and priority lanes exercise: a banded PRIORITY (priority <= 0 omits
 // the property, leaving the task unprioritized → the 3_unspecified band), a
-// LOCATION, and a STATUS. It is the richest VTODO shape the fixtures need —
-// organize surfaces priority/location/status as editable box atoms with SUMMARY
-// as the trailer.
-func vtodoRich(uid, summary string, priority int, location, status string) string {
+// LOCATION, a STATUS, and a raw comma-separated CATEGORIES (empty omits the
+// property → the untagged case). It is the richest VTODO shape the fixtures need
+// — organize surfaces priority/location/status as editable box atoms with SUMMARY
+// as the trailer, while CATEGORIES feeds the read-only tag dimension (RFC 0019)
+// and never renders as an atom.
+func vtodoRich(uid, summary string, priority int, location, status, categories string) string {
 	var b strings.Builder
 	b.WriteString("BEGIN:VCALENDAR\nVERSION:2.0\nBEGIN:VTODO\nUID:" + uid +
 		"\nSUMMARY:" + summary + "\n")
@@ -127,6 +136,9 @@ func vtodoRich(uid, summary string, priority int, location, status string) strin
 	}
 	if status != "" {
 		b.WriteString("STATUS:" + status + "\n")
+	}
+	if categories != "" {
+		b.WriteString("CATEGORIES:" + categories + "\n")
 	}
 	b.WriteString("END:VTODO\nEND:VCALENDAR\n")
 	return b.String()
