@@ -1,0 +1,212 @@
+# Tags: interpreter contract, tag surface, and the N-way merge
+
+**Date:** 2026-08-20 · **Issues:** cutting-garden#231 (tag-interpreter plugin
+type), #232 (tag-object editing — future), plus the FDR 0025 tag/CATEGORIES
+and N-way-merge model sections this delivers · **Parent:** FDR 0025,
+FDR 0023, RFC 0012, RFC 0014, RFC 0015
+
+Approved in the 2026-08-20 design session (cutting-garden/green-chestnut) —
+this session is the grill #231 asked for. Decisions below were made
+explicitly by the user; two are flagged PROVISIONAL at the user's request.
+
+## Problem
+
+Tags (caldav CATEGORIES today; carddav groups and fastmail labels as future
+destinations) are the last unmodeled column of FDR 0025's field matrix:
+multi-valued, groupable, writable, and — critically — their match/group
+semantics vary per user and destination, so the semantics must be pluggable
+(#231). Tags also force organize's general case: multi-membership rendering
+and the N-way merge the FDR specifies.
+
+## Decisions
+
+### D1 — Slicing: read-only → writes → algebra
+
+- **Slice 1:** caldav CATEGORIES as a read-only naive tag surface (field,
+  facets, multi-membership rendering, exact filtering); moves/edits on it
+  loudly rejected.
+- **Slice 2:** the N-way merge write path (membership by placement).
+- **Slice 3:** the interpreter registry wired end to end — dodder-hyphen,
+  tag-term group-by, namespace rollup, bare-tag trellis terms, write-back
+  completion.
+
+Each slice merges independently and is manually testable against real
+tag-heavy data. The #231 RFC (normative contract) is authored alongside
+slice 1, since the contract shapes the field declaration.
+
+### D2 — The interpreter is a wire-shaped contract, bound in-process now
+
+A new SDK plugin type, `TagInterpreter`: pure value types in/out,
+batch-oriented — the exact method set an RFC 0013-style transport can carry
+later. Two builtin implementations in a name registry (`naive`,
+`dodder-hyphen`); the RFC specs the registry, the contract, and a future
+`[[tag_interpreters]]` wire stanza as **defined-but-unimplemented** (added
+when an external interpreter — e.g. dodder shipping its canonical algebra —
+wants in; adding the transport then changes no consumer).
+
+Interpretation always runs **host-side**: the framework (organize grouping,
+trellis matching, write-back computation) applies the interpreter to tag
+VALUES that data plugins emit — so linked plugins, fastmail, and wire
+traversal plugins (fj-cg) are all covered without the interpreter itself
+ever crossing a wire. The wire option exists solely for external SEMANTICS
+providers. What builtins-only would have cost (and why the contract is
+wire-shaped anyway): out-of-tree implementations, and the discipline that
+keeps the interface serializable (no callbacks/iterators/rich types).
+
+Contract method set (names indicative; the RFC finalizes):
+
+- `Normalize(tag) → tag` — the `_`-lift identity rule (D5).
+- `SortKey(tag) → key` — lift-aware ordering.
+- `Buckets(tags []string, namespace string) → []Membership` — namespace
+  expansion + rollup (D4); empty namespace = whole-dimension grouping (each
+  normalized tag its own bucket). `Membership{Bucket string, Via string}` —
+  Via is the full tag that produced the membership (the write path and
+  conflict messages need it).
+- `Matches(tags []string, term string) → bool` — bare-tag query semantics
+  (naive: exact; dodder-hyphen: `project` matches `project-*` transitively).
+- `Complete(tags []string, op Add|Remove, bucket string) → []string` — the
+  write-back: the new full tag set for a membership edit.
+
+All methods take the full tag set (batch by node); a future wire binding
+batches by node-set. No method takes callbacks or context-rich types.
+
+### D3 — Group-by grammar: doddish-convergent term resolution
+
+`--group-by` takes a TERM, converging on doddish/trellis (RFC 0014) and the
+document dialect (whose dimension headings already spell `status=`):
+
+- `<name>=` — explicitly a FIELD dimension (forces field-ness when a tag
+  shadows a dimension name).
+- Bare `<name>` — **type-resolved** (RFC 0014's own rule: semantics from the
+  type system, never token shape): a declared facet dimension → field
+  grouping (today's spellings, including `date_due:month`, keep working);
+  otherwise a TAG TERM evaluated by the type's designated tag field's
+  interpreter (`--group-by project`).
+
+The organize document persists the resolved term in its dimension heading,
+exactly as #230's granularity round-trip does, so apply re-derives the
+semantics from the document, never from config.
+
+### D4 — dodder-hyphen algebra: segment hierarchy, immediate-segment rollup
+
+Hyphen segments form the hierarchy. Grouping by namespace `project` over
+tags `project-cutting_garden`, `project-client-acme`, `project-client-baxter`
+buckets by the IMMEDIATE next segment — deeper tags roll up:
+`-cutting_garden`, `-client` (acme + baxter together). Drill-down is
+grouping by the deeper namespace (`--group-by project-client`). The prefix
+hierarchy deliberately mirrors #230's date granularity (day→month→year).
+
+**PROVISIONAL (user-flagged, modestly uncertain — manual UAT decides):**
+bucket headings render as CONTINUATIONS of the namespace — `## -client`,
+common prefix elided, **no `=`** — tags are continuations, not values. This
+rhymes with doddish dependent-tag syntax (leading-hyphen names, RFC 0014's
+rejected-spellings note), which is a point in its favor, but it is not
+settled until used in anger.
+
+### D5 — The `_` lift rule (conservative v1; rule marked IMMATURE)
+
+A leading `_` on the WHOLE tag lifts it to the top of lexical sort and is
+identity-transparent (`_inbox` groups/matches as `inbox`). Underscores
+WITHIN words are literal characters (`project-cutting_garden`). A `_`
+prefixing a non-leading segment (`project-_urgent`) is OUT OF CONTRACT —
+v1 treats it as literal content. The whole rule is explicitly immature: the
+user anticipates ambiguity with system-level `_`-prefixed fields in
+hyphence metadata (trellis likewise reserves `_` field names), so the RFC
+carries it as provisional with UAT + the hyphence collision question as the
+maturation signals.
+
+### D6 — Interpreter selection: field default + config override
+
+The plugin's UnifiedField names its default interpreter (caldav categories →
+`naive`); config overrides: `[tags] interpreter = "dodder-hyphen"` globally,
+plus an optional per-account key in the account stanza. Unknown names reject
+at config load (bad request). A future `[[tag_interpreters]]` stanza
+registers wire-backed names into the same namespace.
+
+### D7 — Slice 1: caldav CATEGORIES, read-only naive
+
+- CATEGORIES parsed into `Node.Fields` and per-node facets (one FacetValue
+  per normalized tag).
+- Unified field `categories`: `FieldTag`, `MultiValued`, **Groupable and NOT
+  Inline** — membership is carried purely by placement, never a box atom
+  (the FDR's #229 rule; the box shows only the OTHER fields).
+- `groupNodes` already renders one line per matching value — multi-membership
+  rendering falls out.
+- Filtering: exact tag equality (naive) via the existing facet-filter path.
+- Writes: a move/edit naming `categories` rejects loudly (Writable false in
+  slice 1).
+- Summary lift: raw normalized tags — **tuning lever** (see below).
+
+### D8 — Slice 2: the N-way merge SUBSUMES planMoves/planFieldEdits
+
+The FDR's reconciliation, implemented as THE merge (single-valued is the
+N=1 degenerate through the same code — user chose immediate subsumption
+over a parallel path):
+
+- **Membership = placement set-diff.** Adding an object's line under a
+  bucket adds the membership; **deleting a line under a bucket is the
+  first-class remove-membership edit** — no gate — PROVIDED the object still
+  appears elsewhere in the document (unambiguous reorganization). An
+  object's LAST line vanishing remains #215's territory (the
+  `%:allow-deletion` gate, unbuilt) and is rejected as today.
+- **Atoms reconcile across all appearances**: agree → apply once; disagree →
+  conflict naming the appearances.
+- Then the existing 3-way against pinned base + re-queried live, unchanged
+  in spirit.
+- The write completion for a tag membership edit goes through the
+  interpreter's `Complete` (slice 2 ships it for naive; dodder-hyphen
+  arrives with slice 3).
+
+**Rollback:** no dual period (explicit user decision, matching #230): the
+slice lands as one merge; rollback is `git revert` of that merge. The
+subsumption means a revert restores the exact prior planMoves/planFieldEdits
+code — reason it stays safe: the slice must keep every existing
+single-valued organize bats green, so the N=1 degenerate is
+conformance-pinned before tags ever use the general case.
+
+### D9 — Slice 3: dodder-hyphen end to end
+
+The registry + dodder-hyphen builtin; tag-term `--group-by` (D3) with
+namespace rollup + continuation headings (D4); bare-tag trellis terms
+un-deferred in the evaluator (routing through `Matches`, per FDR 0025
+§Bare-tag); membership write-back through `Complete` at namespace buckets
+(moving a line under `-client` appends... the RFC must pin WHAT tag a
+rollup-bucket move appends — the bucket's namespace tag (`project-client`)
+is the only unambiguous choice; drilling deeper is a deeper group-by).
+
+### D10 — #232 stays future
+
+Tag-object editing (rename/edit tag definitions, dodder `:e`-style, fan-out
+across objects) depends on everything above plus a rename-fan-out semantics
+for string-tag substrates; deliberately not designed here.
+
+## Testing
+
+- SDK/RFC: contract unit tests per builtin (normalize/sort/buckets/matches/
+  complete tables; the dodder-hyphen rollup and `_`-lift cases pinned).
+- caldav: CATEGORIES parse + facet emission; declaration derivation.
+- organize: multi-membership render; N-way reconciliation units (add,
+  remove, last-line rejection, cross-appearance atom conflict, N=1
+  degeneracy against the existing single-valued tests); bats lanes per
+  slice against the testserver (fixtures gain CATEGORIES), including the
+  full single-valued regression suite for the D8 subsumption.
+- trellis: bare-tag term evaluation (slice 3).
+
+## Tuning levers
+
+- **Continuation-heading rendering** (`## -client`, no `=`): provisional;
+  signal = the user's manual UAT verdict.
+- **`_`-lift maturity**: leading-only v1; signal = a real hyphence
+  system-field collision or UAT friction.
+- **Tag summary-lift policy**: raw tags in slice 1; signal = summary width
+  in practice (fastmail's ~529 labels will force a namespace-bucketed or
+  suppressed lift before fastmail's tag field lands).
+- **Contract batch shapes**: per-node tag sets now; signal = a wire
+  implementation's measured latency (unmeasurable until one exists).
+
+## Out of scope
+
+Fastmail/carddav tag fields (future destinations — the contract serves
+them; their fields land with their plugins' migrations), #232, the wire
+transport implementation, dodder importing (revisit if the dodder-hyphen
+reimplementation drifts from dodder's behavior).
