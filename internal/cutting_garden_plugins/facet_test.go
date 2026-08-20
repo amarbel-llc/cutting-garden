@@ -123,6 +123,56 @@ func TestFacetFilter_Validate_MultiplePredicatesFirstFailureWins(t *testing.T) {
 	}
 }
 
+// A date-kind predicate prefix-matches by validated shape: =2026 matches the
+// year, =2026-08 the month, =2026-08-15 the day; a malformed shape rejects at
+// Validate. Non-date dimensions keep exact matching.
+func TestFacetFilter_DatePrefixMatching(t *testing.T) {
+	dims := []NodeTypeFacets{{Tag: "t", Dimensions: []FacetDimension{
+		{Key: "date_start", Kind: FacetDate},
+		{Key: "status", Kind: FacetCategorical},
+	}}}
+	facets := map[string][]FacetValue{
+		"date_start": {{Key: "2026-08-15"}},
+		"status":     {{Key: "2026"}}, // exact-match control
+	}
+
+	for _, val := range []string{"2026", "2026-08", "2026-08-15"} {
+		f, err := ParseFacetFilter("date_start=" + val)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := f.Validate(dims); err != nil {
+			t.Fatalf("Validate(%q): %v", val, err)
+		}
+		if !f.Matches(facets) {
+			t.Errorf("date_start=%q should prefix-match 2026-08-15", val)
+		}
+	}
+
+	f, _ := ParseFacetFilter("date_start=2026-09")
+	if err := f.Validate(dims); err != nil {
+		t.Fatal(err)
+	}
+	if f.Matches(facets) {
+		t.Error("date_start=2026-09 must not match 2026-08-15")
+	}
+
+	// Malformed shape rejects loudly at Validate.
+	f, _ = ParseFacetFilter("date_start=aug-2026")
+	if err := f.Validate(dims); err == nil {
+		t.Error("malformed date shape must fail Validate")
+	}
+
+	// Non-date dimension: exact only ("202" must not prefix-match "2026").
+	f, _ = ParseFacetFilter("status=202")
+	if err := f.Validate(dims); err != nil {
+		t.Fatal(err)
+	}
+	if f.Matches(facets) {
+		t.Error("categorical predicate must stay exact-match")
+	}
+}
+
 // TestSortAndLimitContainerBreakdown_OrdersByDescendingCount pins RFC 0012
 // §13's ordering rule: the highest-contributing container comes first, so a
 // truncated breakdown always keeps the most actionable entries.

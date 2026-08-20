@@ -215,6 +215,12 @@ func SortAndLimitContainerBreakdown(
 type FacetPredicate struct {
 	Dimension string
 	Value     string
+	// prefixMatch is set by Validate when Dimension is a FacetDate kind: the
+	// predicate then matches any bucket key the (shape-validated) Value is a
+	// hierarchy prefix of ("2026-08" matches "2026-08-15"). Unexported and
+	// derived per side from the declared schema — it never crosses a wire.
+	// An unvalidated filter (dims unknown) degrades to exact matching.
+	prefixMatch bool
 }
 
 // FacetFilter is a set of predicates, AND-composed. The empty filter matches
@@ -226,11 +232,28 @@ type FacetFilter []FacetPredicate
 // in f. The empty filter matches everything.
 func (f FacetFilter) Matches(facets map[string][]FacetValue) bool {
 	for _, pred := range f {
-		if !containsFacetValue(facets[pred.Dimension], pred.Value) {
+		if !pred.matches(facets[pred.Dimension]) {
 			return false
 		}
 	}
 	return true
+}
+
+// matches reports whether any of the node's values satisfies the predicate —
+// exact equality, or (for a Validate-annotated date predicate) hierarchy-
+// prefix containment: the value must extend the predicate at a "-" boundary,
+// so "2026-08" matches "2026-08-15" but never a hypothetical "2026-081".
+func (p FacetPredicate) matches(values []FacetValue) bool {
+	for _, v := range values {
+		if v.Key == p.Value {
+			return true
+		}
+		if p.prefixMatch && len(v.Key) > len(p.Value) &&
+			strings.HasPrefix(v.Key, p.Value) && v.Key[len(p.Value)] == '-' {
+			return true
+		}
+	}
+	return false
 }
 
 func containsFacetValue(values []FacetValue, key string) bool {
@@ -285,25 +308,38 @@ func (f FacetFilter) Validate(dims []NodeTypeFacets) error {
 	if len(f) == 0 || len(dims) == 0 {
 		return nil
 	}
-	for _, pred := range f {
-		dim, ok := findFacetDimension(dims, pred.Dimension)
+	// By index: a date-kind predicate is ANNOTATED for prefix matching, and
+	// element mutation through the value receiver must reach the caller's
+	// backing array (f is a slice).
+	for i := range f {
+		dim, ok := findFacetDimension(dims, f[i].Dimension)
 		if !ok {
 			return fmt.Errorf(
 				"filter dimension %q is not declared; valid dimensions: %s "+
 					"(see describe_node_types)",
-				pred.Dimension, strings.Join(declaredDimensionKeys(dims), ", "),
+				f[i].Dimension, strings.Join(declaredDimensionKeys(dims), ", "),
 			)
+		}
+		if dim.Kind == FacetDate {
+			if _, ok := ParseDateBucket(f[i].Value); !ok {
+				return fmt.Errorf(
+					"filter value %q is not a date bucket for dimension %q; "+
+						"expected YYYY, YYYY-MM, or YYYY-MM-DD",
+					f[i].Value, f[i].Dimension,
+				)
+			}
+			f[i].prefixMatch = true
 		}
 		if dim.Values == nil {
 			// Open domain: values are discovered at enumeration, not
 			// declared up front, so any value is accepted.
 			continue
 		}
-		if !containsFacetValue(dim.Values, pred.Value) {
+		if !containsFacetValue(dim.Values, f[i].Value) {
 			return fmt.Errorf(
 				"filter value %q is not valid for dimension %q; valid "+
 					"values: %s (see describe_node_types)",
-				pred.Value, pred.Dimension,
+				f[i].Value, f[i].Dimension,
 				strings.Join(declaredValueKeys(dim.Values), ", "),
 			)
 		}
