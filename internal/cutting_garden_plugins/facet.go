@@ -40,6 +40,13 @@ const (
 	// FacetLabelled is an opaque stable key whose human name is resolved out
 	// of band via FacetLabeler (a feed id, an account id).
 	FacetLabelled FacetKind = "labelled"
+	// FacetDate is a calendar-date dimension: bucket keys are ISO days
+	// ("2026-08-15"), chronologically ordered, and PREFIX-COARSENABLE — the
+	// year ("2026") and month ("2026-08") buckets are string prefixes of the
+	// day key, so consumers coarsen by TruncateDateKey with no calendar
+	// knowledge, and filters prefix-match by validated shape (see
+	// FacetFilter.Validate). Introduced for cutting-garden#230.
+	FacetDate FacetKind = "date"
 )
 
 // FacetDimension declares one aggregation axis of a node type. See RFC 0012 §2.
