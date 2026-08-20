@@ -508,11 +508,11 @@ debug-organize-fixture GROUP_BY='status': debug-build-go
     exec {SRV[1]}>&- || true
 
 # End-to-end reschedule-by-move against the testserver's /dav/sched/ calendar
-# (FDR 0023 Slice 2b): generate the document grouped by month, move sched1 from
-# 2026-08 to 2026-09, apply with --commit, and GET the object back to show the
-# DUE splice preserved its day/clock/TZID. The host-run twin of
-# zz-tests_bats/organize_month.bats — WRITES to the throwaway in-memory server
-# only (nothing persists past the coproc).
+# (FDR 0023 Slice 2b, cutting-garden#230): generate the document grouped by
+# date_due:month, move sched1 from 2026-08 to 2026-09, apply with --commit, and
+# GET the object back to show the DUE splice preserved its day/clock/TZID. The
+# host-run twin of zz-tests_bats/organize_date.bats — WRITES to the throwaway
+# in-memory server only (nothing persists past the coproc).
 [group('debug')]
 debug-organize-month-reschedule: debug-build-go
     #!/usr/bin/env bash
@@ -526,8 +526,8 @@ debug-organize-month-reschedule: debug-build-go
     read -r -u "${SRV[0]}" source_url _calpath
     cal="${source_url%/dav/}/dav/sched/"
     doc=".tmp/organize-month.txt"
-    echo "# cg organize -group-by month $cal" >&2
-    .tmp/cutting-garden organize -group-by month "$cal" | tee "$doc"
+    echo "# cg organize -group-by date_due:month $cal" >&2
+    .tmp/cutting-garden organize -group-by date_due:month "$cal" | tee "$doc"
     line="$(grep sched1.ics "$doc")"
     awk -v ln="$line" -v h='## =2026-09' '
       $0 == ln { next }

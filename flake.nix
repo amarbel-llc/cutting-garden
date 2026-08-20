@@ -889,7 +889,7 @@
             # agent). git: the test ssh server execs git's pack helpers
             # (git-upload-pack / git-receive-pack) by name on PATH.
             # jq: lib/common.bash's receipt helpers parse the unified
-            # tap-ndjson capture wire (Stage B). curl: organize_month.bats GETs
+            # tap-ndjson capture wire (Stage B). curl: organize_date.bats GETs
             # a rescheduled VTODO's raw iCalendar off the test server to assert
             # the DUE splice preserved its day, clock time, and TZID (FDR 0023
             # Slice 2b).

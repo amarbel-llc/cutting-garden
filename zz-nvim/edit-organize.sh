@@ -5,7 +5,7 @@
 #
 # Wire it up in .envrc:  export EDITOR="$PWD/zz-nvim/edit-organize.sh"
 # Then run an interactive organize, e.g.:
-#   cutting-garden organize -group-by month caldav:<account>
+#   cutting-garden organize -group-by date_due:month caldav:<account>
 set -euo pipefail
 
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
