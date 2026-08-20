@@ -41,6 +41,21 @@ func TruncateDateKey(key string, g DateGranularity) string {
 	return key[:n]
 }
 
+// DateBucketMatches reports whether a bucket key falls inside a (coarser or
+// equal) date bucket: key equals the bucket, or extends it at a `-` boundary —
+// "2026-08" contains "2026-08-15" but never a hypothetical "2026-081". This is
+// the single hierarchy-containment definition shared by FacetPredicate.matches
+// and the trellis evaluator's date-kind `=` predicate (cutting-garden#230), so
+// the two filter surfaces cannot drift. Callers gate on ParseDateBucket first:
+// a non-shape bucket value means exact semantics, not containment.
+func DateBucketMatches(key, bucket string) bool {
+	if key == bucket {
+		return true
+	}
+	return len(key) > len(bucket) &&
+		key[:len(bucket)] == bucket && key[len(bucket)] == '-'
+}
+
 // ParseDateBucket classifies a value by its date-bucket shape — YYYY,
 // YYYY-MM, or YYYY-MM-DD with in-range month/day — reporting the granularity
 // it addresses. ok == false for any other shape: the loud-rejection gate for

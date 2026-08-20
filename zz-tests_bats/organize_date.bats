@@ -95,14 +95,16 @@ function organize_date_month_reschedule_preserves_datetime { # @test
   assert_success
   assert_output --partial 'sched1.ics'
 
-  # sched1 moved into 2026-09 (joining sched2) and left 2026-08. The trellis
-  # `^=` prefix operator matches the day-precise date_due facet by month.
-  run_cg list -query 'date_due^=2026-09' "$CAL"
+  # sched1 moved into 2026-09 (joining sched2) and left 2026-08. A trellis `=`
+  # on the date-kind date_due dimension prefix-matches the day-precise facet
+  # by validated month shape — the same semantics as `list --filter`, pinning
+  # the design's uniformity decision end to end (#230).
+  run_cg list -query 'date_due=2026-09' "$CAL"
   assert_success
   assert_output --partial 'sched1.ics'
   assert_output --partial 'sched2.ics'
 
-  run_cg list -query 'date_due^=2026-08' "$CAL"
+  run_cg list -query 'date_due=2026-08' "$CAL"
   assert_success
   refute_output --partial 'sched1.ics'
 

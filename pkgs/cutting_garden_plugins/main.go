@@ -641,6 +641,15 @@ var BulkBestEffortOps = internal.BulkBestEffortOps
 // A read may degrade a decline to an unfiltered listing; a write may not.
 var BulkBestEffortSweep = internal.BulkBestEffortSweep
 
+// DateBucketMatches reports whether a bucket key falls inside a (coarser or
+// equal) date bucket: key equals the bucket, or extends it at a `-` boundary —
+// "2026-08" contains "2026-08-15" but never a hypothetical "2026-081". This is
+// the single hierarchy-containment definition shared by FacetPredicate.matches
+// and the trellis evaluator's date-kind `=` predicate (cutting-garden#230), so
+// the two filter surfaces cannot drift. Callers gate on ParseDateBucket first:
+// a non-shape bucket value means exact semantics, not containment.
+var DateBucketMatches = internal.DateBucketMatches
+
 // DeriveFacetDimensions reproduces FacetDescriber's per-type dimension list from a
 // node type's codecs: every GROUPABLE presentation field becomes a FacetDimension,
 // in codec-then-field declaration order (the order describe_node_types renders).

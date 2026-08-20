@@ -104,8 +104,12 @@ type evaluator struct {
 	lister   cgp.RootLister
 	enriched cgp.EnrichedLister // nil when the plugin serves no enriched listing
 	anchor   *url.URL
-	leaf     cgp.LeafReader                 // nil when the plugin cannot fetch leaves
-	facets   map[string]map[string]struct{} // tag -> set of declared dimension keys
+	leaf     cgp.LeafReader // nil when the plugin cannot fetch leaves
+	// facets maps tag -> declared dimension key -> the dimension's Kind. The
+	// Kind is carried (not just presence) so matchFacet can give a FacetDate
+	// dimension's `=` the hierarchy-prefix semantics the rest of the facet
+	// surface has (cutting-garden#230).
+	facets map[string]map[string]cgp.FacetKind
 
 	// parents maps a node's URI to the nodes under anchor whose immediate
 	// children include it. Built on first backward use by scanning anchor's
@@ -128,13 +132,13 @@ func newEvaluator(lister cgp.RootLister, anchor *url.URL) *evaluator {
 		ev.leaf = lr
 	}
 	if fd, ok := lister.(cgp.FacetDescriber); ok {
-		ev.facets = make(map[string]map[string]struct{})
+		ev.facets = make(map[string]map[string]cgp.FacetKind)
 		for _, ntf := range fd.DescribeFacets() {
-			keys := make(map[string]struct{}, len(ntf.Dimensions))
+			kinds := make(map[string]cgp.FacetKind, len(ntf.Dimensions))
 			for _, dim := range ntf.Dimensions {
-				keys[dim.Key] = struct{}{}
+				kinds[dim.Key] = dim.Kind
 			}
-			ev.facets[ntf.Tag] = keys
+			ev.facets[ntf.Tag] = kinds
 		}
 	}
 	return ev
@@ -530,34 +534,56 @@ func (ev *evaluator) matchFieldPred(
 ) (bool, error) {
 	field := fp.Field.Name
 
-	switch {
-	case field == bodyField:
+	if field == bodyField {
 		return ev.matchBody(ctx, n, fp)
-	case ev.isFacetField(n.Type, field):
-		return ev.matchFacet(n.Facets[field], fp), nil
-	default:
-		return ev.matchLeafField(ctx, n, field, fp)
 	}
+	if kind, ok := ev.facetKind(n.Type, field); ok {
+		return ev.matchFacet(n.Facets[field], fp, kind), nil
+	}
+	return ev.matchLeafField(ctx, n, field, fp)
 }
 
 const bodyField = "_body"
 
-func (ev *evaluator) isFacetField(tag, field string) bool {
-	dims, ok := ev.facets[tag]
-	if !ok {
-		return false
-	}
-	_, ok = dims[field]
-	return ok
+// facetKind reports whether field is a declared facet dimension of tag,
+// and that dimension's Kind — matchFacet needs the Kind to give a date
+// dimension's `=` its hierarchy-prefix semantics.
+func (ev *evaluator) facetKind(tag, field string) (cgp.FacetKind, bool) {
+	kind, ok := ev.facets[tag][field]
+	return kind, ok
 }
 
 // matchFacet matches fp against a node's membership in one facet dimension.
 // The node matches iff, for some query value, some facet-value bucket key
 // satisfies the operator (existential over both). A dimension the node does
 // not contribute to has no bucket keys and so matches nothing.
-func (ev *evaluator) matchFacet(values []cgp.FacetValue, fp trellis.FieldPred) bool {
+//
+// On a FacetDate-kind dimension, `=` with a shape-valid date-bucket value
+// (YYYY / YYYY-MM / YYYY-MM-DD, ParseDateBucket) is hierarchy containment
+// rather than string equality — `date_due=2026-09` matches the day-precise
+// key "2026-09-10" — mirroring FacetPredicate.matches so trellis, `list
+// --filter`, and the mcp read_facets filter agree (the design's uniformity
+// decision, cutting-garden#230). A value that is not shape-valid falls back
+// to exact `=` semantics: the evaluator has no schema-aware validation pass
+// for predicate values (Validate sees only the query), so a malformed date
+// simply matches nothing here, exactly as any other non-existent bucket key
+// would. Every other operator keeps trellis's raw string semantics — `^=` on
+// a date key stays an unvalidated string prefix (RFC 0014).
+func (ev *evaluator) matchFacet(
+	values []cgp.FacetValue, fp trellis.FieldPred, kind cgp.FacetKind,
+) bool {
 	for _, qv := range fp.Values {
 		want := valueString(qv)
+		if kind == cgp.FacetDate && fp.Op == trellis.FieldOpEq {
+			if _, ok := cgp.ParseDateBucket(want); ok {
+				for _, fv := range values {
+					if cgp.DateBucketMatches(fv.Key, want) {
+						return true
+					}
+				}
+				continue
+			}
+		}
 		for _, fv := range values {
 			if ev.satisfies(fp.Op, fv.Key, want) {
 				return true

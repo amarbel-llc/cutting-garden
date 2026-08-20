@@ -528,6 +528,96 @@ func TestEvaluate_LeafFieldPrefersInlineFields(t *testing.T) {
 	}
 }
 
+// TestEvaluate_DateFacetEqPrefixMatches pins the date-granularity uniformity
+// decision (cutting-garden#230): a `=` facet predicate on a FacetDate-kind
+// dimension hierarchy-prefix-matches by validated shape, exactly as
+// FacetFilter does for `list --filter` and the mcp read_facets filter — a
+// shape-valid YYYY / YYYY-MM / YYYY-MM-DD value matches a bucket key that
+// equals it or extends it at a `-` boundary. Everything else keeps exact
+// trellis semantics: non-shape values, non-date dimensions (even with
+// date-shaped keys), and every other operator (`^=` stays raw prefix).
+func TestEvaluate_DateFacetEqPrefixMatches(t *testing.T) {
+	tree := &fakeTree{
+		children: map[string][]cgp.Node{
+			"fake://d/": {
+				node(t, "fake://d/t1", "todo-v1", map[string][]cgp.FacetValue{
+					"date_due": {{Key: "2026-09-10"}},
+					// A categorical dimension whose key is coincidentally
+					// date-shaped: shape alone must not trigger prefixing.
+					"status": {{Key: "2026-01-15"}},
+				}),
+			},
+		},
+		facets: []cgp.NodeTypeFacets{
+			{Tag: "todo-v1", Dimensions: []cgp.FacetDimension{
+				{Key: "date_due", Kind: cgp.FacetDate},
+				{Key: "status", Kind: cgp.FacetCategorical},
+			}},
+		},
+	}
+
+	cases := []struct {
+		name  string
+		query string
+		want  []string
+	}{
+		{
+			name:  "month prefix matches the day-precise key",
+			query: "date_due=2026-09",
+			want:  []string{"fake://d/t1"},
+		},
+		{
+			name:  "year prefix matches the day-precise key",
+			query: "date_due=2026",
+			want:  []string{"fake://d/t1"},
+		},
+		{
+			name:  "exact day still matches",
+			query: "date_due=2026-09-10",
+			want:  []string{"fake://d/t1"},
+		},
+		{
+			name:  "sibling month does not match",
+			query: "date_due=2026-08",
+			want:  nil,
+		},
+		{
+			name:  "non-shape value degrades to exact matching",
+			query: "date_due=2026-0",
+			want:  nil,
+		},
+		{
+			name:  "categorical dimension never prefix-matches",
+			query: "status=2026",
+			want:  nil,
+		},
+		{
+			name:  "categorical exact equality still matches",
+			query: "status=2026-01-15",
+			want:  []string{"fake://d/t1"},
+		},
+		{
+			name:  "raw `^=` prefix operator is untouched",
+			query: "date_due^=2026-0",
+			want:  []string{"fake://d/t1"},
+		},
+		{
+			name:  "negation composes with the prefix semantics",
+			query: "^date_due=2026-09",
+			want:  nil,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := evalURIs(t, tree, "fake://d/", tc.query)
+			if !equalStrings(got, tc.want) {
+				t.Errorf("query %q: got %v, want %v", tc.query, got, tc.want)
+			}
+		})
+	}
+}
+
 func equalStrings(a, b []string) bool {
 	if len(a) != len(b) {
 		return false

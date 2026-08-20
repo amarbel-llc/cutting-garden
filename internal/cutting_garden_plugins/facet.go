@@ -240,16 +240,17 @@ func (f FacetFilter) Matches(facets map[string][]FacetValue) bool {
 }
 
 // matches reports whether any of the node's values satisfies the predicate —
-// exact equality, or (for a Validate-annotated date predicate) hierarchy-
-// prefix containment: the value must extend the predicate at a "-" boundary,
-// so "2026-08" matches "2026-08-15" but never a hypothetical "2026-081".
+// exact equality, or (for a Validate-annotated date predicate) hierarchy
+// containment per DateBucketMatches: the value must equal the predicate or
+// extend it at a "-" boundary, so "2026-08" matches "2026-08-15" but never a
+// hypothetical "2026-081".
 func (p FacetPredicate) matches(values []FacetValue) bool {
 	for _, v := range values {
-		if v.Key == p.Value {
-			return true
-		}
-		if p.prefixMatch && len(v.Key) > len(p.Value) &&
-			strings.HasPrefix(v.Key, p.Value) && v.Key[len(p.Value)] == '-' {
+		if p.prefixMatch {
+			if DateBucketMatches(v.Key, p.Value) {
+				return true
+			}
+		} else if v.Key == p.Value {
 			return true
 		}
 	}
