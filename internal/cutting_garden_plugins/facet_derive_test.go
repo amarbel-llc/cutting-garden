@@ -71,8 +71,8 @@ func TestDeriveFacetDimensions(t *testing.T) {
 		t.Fatalf("DeriveFacetDimensions = %#v, want %#v", got, want)
 	}
 
-	if k := facetKindOf(FieldDate); k != FacetNumericBucket {
-		t.Errorf("facetKindOf(date) = %q, want numeric-bucket", k)
+	if k := facetKindOf(FieldDate); k != FacetDate {
+		t.Errorf("facetKindOf(date) = %q, want date", k)
 	}
 }
 

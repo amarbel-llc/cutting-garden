@@ -23,7 +23,8 @@ import (
 
 // facetKindOf maps a unified FieldKind onto the legacy facet-kind enum. The three
 // FacetKind carry-overs map onto themselves; a date field groups as a
-// numeric-bucket (chronological buckets, cutting-garden#230); the remaining kinds
+// prefix-coarsenable FacetDate dimension (ISO-day bucket keys, coarsened and
+// prefix-filtered by pure string prefix, cutting-garden#230); the remaining kinds
 // (tag, text) have no ordered-bucket notion and group as categorical.
 func facetKindOf(kind FieldKind) FacetKind {
 	switch kind {
@@ -34,7 +35,7 @@ func facetKindOf(kind FieldKind) FacetKind {
 	case FieldLabelled:
 		return FacetLabelled
 	case FieldDate:
-		return FacetNumericBucket
+		return FacetDate
 	case FieldTag, FieldText:
 		return FacetCategorical
 	default:

@@ -134,6 +134,10 @@ type Codec = internal.Codec
 // operations report the node's post-operation address.
 type ContainerCreator = internal.ContainerCreator
 
+// DateGranularity is a bucket coarseness for a FacetDate dimension: the
+// --group-by suffix spelling ("date_due:month") and the config default.
+type DateGranularity = internal.DateGranularity
+
 // DiffPlugin enumerates the current state at a location and returns
 // entries in the same shape a CapturePlugin would produce, suitable
 // for comparison against a receipt. Plugins MAY support diff without
@@ -721,6 +725,16 @@ var MustRegisterScheme = internal.MustRegisterScheme
 // the leaf default.
 var NodeTypeFor = internal.NodeTypeFor
 
+// ParseDateBucket classifies a value by its date-bucket shape — YYYY,
+// YYYY-MM, or YYYY-MM-DD with in-range month/day — reporting the granularity
+// it addresses. ok == false for any other shape: the loud-rejection gate for
+// prefix filters and coarse bucket moves.
+var ParseDateBucket = internal.ParseDateBucket
+
+// ParseDateGranularity resolves a granularity spelling. Strict lowercase —
+// a typo rejects loudly at the CLI/config layer.
+var ParseDateGranularity = internal.ParseDateGranularity
+
 // ParseFacetFilter parses "dim=val,dim2=val2" into an AND-composed
 // FacetFilter (RFC 0012 §6) — the shared grammar behind `list --filter` and
 // the mcp read_facets tool's optional filter parameter, so the two surfaces
@@ -868,6 +882,10 @@ var ResolveScheme = internal.ResolveScheme
 // rely on its pre-call order or capacity afterward.
 var SortAndLimitContainerBreakdown = internal.SortAndLimitContainerBreakdown
 
+// TruncateDateKey coarsens a date bucket key to the granularity by prefix
+// truncation. A key already at or coarser than the granularity is unchanged.
+var TruncateDateKey = internal.TruncateDateKey
+
 // ValidateFacetWrites cross-checks write mappings against the read-side facet
 // schema. It returns the first violation (nil when consistent) so a plugin's
 // write schema cannot silently reference a dimension that does not exist:
@@ -905,6 +923,14 @@ const FacetCategorical = internal.FacetCategorical
 // trade one guessing problem (which of 23 calendars?) for another (a
 // 285-entry list to scan). See RFC 0012 §13.
 const FacetContainerBreakdownLimit = internal.FacetContainerBreakdownLimit
+
+// FacetDate is a calendar-date dimension: bucket keys are ISO days
+// ("2026-08-15"), chronologically ordered, and PREFIX-COARSENABLE — the
+// year ("2026") and month ("2026-08") buckets are string prefixes of the
+// day key, so consumers coarsen by TruncateDateKey with no calendar
+// knowledge, and filters prefix-match by validated shape (see
+// FacetFilter.Validate). Introduced for cutting-garden#230.
+const FacetDate = internal.FacetDate
 
 // FacetLabelled is an opaque stable key whose human name is resolved out
 // of band via FacetLabeler (a feed id, an account id).
@@ -954,6 +980,9 @@ const FieldTag = internal.FieldTag
 // FieldText is free text (a summary / description trailer) — diffed at the word
 // level, never bucketed.
 const FieldText = internal.FieldText
+const GranularityDay = internal.GranularityDay
+const GranularityMonth = internal.GranularityMonth
+const GranularityYear = internal.GranularityYear
 
 // MimeTypeDefault is the mimetype a leaf NodeType speaks when its
 // declaration leaves MimeType empty: opaque bytes, dodder's null-type
