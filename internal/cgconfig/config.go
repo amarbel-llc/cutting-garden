@@ -77,7 +77,11 @@ func (c ConfigV0) Validate() error {
 // section — organize is framework-side — so it lives here rather than being
 // delegated.
 //
-//go:generate tommy generate
+// OrganizeConfig carries no tommy codegen directive of its own: it is
+// consumed only as ConfigV0's same-package field, which tommy inlines
+// into ConfigV0's generated codec. A cross-package consumer that
+// delegates to it will add the `//go:generate tommy generate` directive
+// then.
 type OrganizeConfig struct {
 	// DateGranularity is the default bucket granularity for a bare
 	// `--group-by` on a date-kind facet dimension (cutting-garden#230):
