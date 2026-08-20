@@ -269,7 +269,7 @@ intentionally plugin-side counting.
 | text | `location` | ✅ IdentityCodec | — | ✅ |
 | text (trailer) | `summary` | ✅ IdentityCodec/Trailer | — | ✅ |
 | duration | `duration` (P6D) | ✅ derived end — the dtend codec falls back to DTSTART+DURATION (#233) | — | — (end atoms read-only) |
-| tag (multi) | `CATEGORIES` | ❌ unmodeled | ❌ unmodeled | ❌ unmodeled (#231/#232) |
+| tag (multi) | `CATEGORIES` | — | ✅ categoriesCodec, naive (RFC 0019) — read-only | ❌ slice 2 (N-way merge) |
 
 ### Option B — collapse the facet surface (landed 2026-08-19)
 
@@ -320,11 +320,22 @@ CLOSED value domain (`Values` non-nil) is currently out of contract —
 prefix values would be rejected; no in-tree dimension does this, and SDK-level
 enforcement is tracked in #237.
 
+### Tags slice 1 — read-only `categories` grouping (2026-08-20)
+
+Slice 1 of the tags design (`docs/plans/2026-08-20-tags-design.md`) landed: the
+last unmodeled matrix column now has a read-only, naive-interpreter (RFC 0019)
+`categories` grouping dimension on caldav (`categoriesCodec`, multi-valued,
+groupable-only — placement carries membership, so it is never a box atom, the
+#229 rule), with slices 2 (N-way merge / tag write-back) and 3 (dodder-hyphen +
+config-linkable interpreter override) pending.
+
 ## More information
 
 - cutting-garden#229 (heading/atom redundancy — subsumed)
 - cutting-garden#230 (dates as groupable facets — landed 2026-08-20)
 - cutting-garden#231 (tag-interpreter plugin type; dodder-hyphen algebra)
 - cutting-garden#232 (tags editable as objects, dodder `:e`)
+- RFC 0019 (tag-interpreter contract — the `naive` / `dodder-hyphen` interpreter
+  algebra; tags slice 1 uses `naive`)
 - RFC 0012 (plugin facet contract), FDR 0023 (organize), RFC 0014 / FDR 0022
   (trellis), FDR 0024 (fastmail — the write:many tag-membership consumer)
