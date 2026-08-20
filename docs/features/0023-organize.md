@@ -4,7 +4,8 @@ date: 2026-07-18
 promotion-criteria: |
   MET 2026-08-05: the apply engine ran the caldav reschedule-by-move scenario
   end-to-end against the testserver (FacetWriteApplier + caldav month/year date
-  splice; zz-tests_bats/organize_month.bats). The other three original criteria
+  splice; zz-tests_bats/organize_month.bats — since rewritten as
+  organize_date.bats with prefix-granularity lanes, #230). The other three original criteria
   were already MET: hyphence RFC 0002 (hyphence#2) merged, ContainerCreator
   (#143) landed, and the write-descriptor extension to RFC 0012's facet schema
   specified in Go (RFC 0012 §14) and implemented (FacetWriteDescriber + caldav

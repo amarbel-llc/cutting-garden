@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: testing
 date: 2026-08-13
 promotion-criteria: |
   Promote to `experimental` once Slice 1 lands: the unified field descriptor
@@ -9,7 +9,8 @@ promotion-criteria: |
   Promote to `testing` once the model delivers a NET-NEW capability end to end —
   the first of: lowercase status/component (case-fold codec), `--group-by
   date_start` (#230), or `--group-by categories` with the N-way merge — against
-  the caldav testserver. Promote to `accepted` once every in-tree plugin
+  the caldav testserver. MET 2026-08-20: #230 delivered end to end
+  (prefix-granular date grouping/filtering; see the dated status note). Promote to `accepted` once every in-tree plugin
   (nebulous, jira, fastmail, …) is migrated off the legacy facet/listing-field
   interfaces and those interfaces are deleted, and the N-way merge has gone two
   weeks without a correctness lever moving.
@@ -145,8 +146,9 @@ edit), T2 → `{proj-a, proj-b}`.
   write **canonical RFC 5545 uppercase** (never persist lowercase). Presentation
   normalization only; timezone is a future codec (same mechanism).
 - **Date-split** (existing) becomes a declared codec rather than ad-hoc
-  `present.go` logic; dates additionally become **groupable** fields (#230),
-  with a coarser year/month hierarchy as distinct fields.
+  `present.go` logic; dates additionally become **groupable** fields (#230) —
+  delivered as ONE prefix-granular dimension per date property
+  (`dim:year|month|day`), not distinct coarse fields.
 - **Tags** — `CATEGORIES` is a codec-carrying, multi-valued, groupable,
   read+write field, governed by a pluggable **tag-interpreter plugin**
   (cutting-garden#231; `naive` + `dodder-hyphen` builtin, config-linkable). The
@@ -193,7 +195,8 @@ big-bang:
 2. **Migrate caldav** onto it and re-express its existing facets/fields with no
    behavior change (organize bats stay green) — the conformance bar for Slice 1.
 3. **Deliver a net-new capability** (case-fold, or `-group-by date_start`, or
-   `-group-by categories`) to prove the model earns its keep.
+   `-group-by categories`) to prove the model earns its keep — DONE 2026-08-20
+   (#230, prefix-granular date facets; see the dated status note).
 4. **Migrate the remaining plugins** (nebulous, jira, fastmail, …) and **delete**
    the legacy interfaces.
 
@@ -261,7 +264,7 @@ intentionally plugin-side counting.
 |---|---|---|---|---|
 | categorical | `status` | ✅ IdentityCodec | ✅ same field, `Groupable` | field ✅ · bucket ✅ |
 | numeric-bucket (band) | `priority` | ✅ priorityCodec | ✅ same codec, band `Values` | field ✅ · band ✅ (`Parse` completes band→int) |
-| date | `dtstart`/`due`/`dtend` | ✅ dateCodec (split) | ✅ rescheduleCodec (`year`/`month`) | field ✅ (splice) · month/year ✅ (`Parse` splices) |
+| date | `dtstart`/`due`/`dtend` | ✅ dateCodec (split) | ✅ same date codec, prefix-granular (`FacetDate`: `date_start`/`date_due`) | field ✅ (splice) · bucket ✅ (`Parse` shape-dispatches year/month/day splices) |
 | date (volatile) | `due_band` | — | ✅ facetOnlyCodec + `RevalidateAfter` | — (read-only, declared write:none) |
 | text | `location` | ✅ IdentityCodec | — | ✅ |
 | text (trailer) | `summary` | ✅ IdentityCodec/Trailer | — | ✅ |
@@ -287,13 +290,40 @@ volatile-count concern, not presentation declaration). The atom/field-edit
 union (`unifiedCodecs`) is now derived from the per-component sets, restricted
 to inline/trailer codecs, so the two can never drift. #233 (present a
 DURATION-event's end) landed as a dtend-codec fallback deriving the end from
-DTSTART+DURATION. Still folding into the date-codec work: #230 (`--group-by
-date_start` with prefix-derived, configurable granularity).
+DTSTART+DURATION. The `year`/`month` dimensions and `caldavRescheduleCodec`
+described here have since retired/dissolved with #230 (below): the date codecs
+themselves are the groupable, prefix-granular dimensions.
+
+### Prefix-granular date facets — #230 delivered; promoted `testing` (2026-08-20)
+
+The model's net-new capability landed end to end against the caldav testserver
+(organize + `list --filter` + mcp `read_facets`/`list_nodes` filters + the
+trellis `=` operator; the bats lanes pin it), meeting the `testing` promotion
+gate. A new `FacetKind` **`date`** (`FacetDate`): bucket keys are ISO days
+whose year/month buckets are string PREFIXES (`2026` ⊂ `2026-08` ⊂
+`2026-08-15`), so the framework's whole share is prefix truncation — no
+calendar knowledge — and the `FieldDate` derivation now maps onto it. The
+caldav date codecs' `date_start`/`date_due` fields turned `Groupable` (one
+dimension per date property, reading and writing ITS OWN property only);
+`year`/`month` retired in the same slice, and `caldavRescheduleCodec`
+dissolved — bucket moves shape-dispatch in the date codecs' own `Parse`
+(`YYYY` → year splice, `YYYY-MM` → month, `YYYY-MM-DD` → day; clock + TZID
+preserved). organize spells granularity as `--group-by dim[:granularity]`
+(bare date group-bys resolve the `[organize] date_granularity` config default,
+then day) and PERSISTS the resolved spelling in the document's dimension
+heading, so apply coarsens live day-values identically without consulting
+config; filters prefix-match by validated value shape (`date_start=2026-08`);
+summaries lift date dimensions at fixed month granularity while per-node
+values stay day-precise. Known boundary: a `FacetDate` dimension declaring a
+CLOSED value domain (`Values` non-nil) is currently out of contract —
+`FacetFilter.Validate`'s closed-domain check does exact containment, so coarse
+prefix values would be rejected; no in-tree dimension does this, and SDK-level
+enforcement is tracked in #237.
 
 ## More information
 
 - cutting-garden#229 (heading/atom redundancy — subsumed)
-- cutting-garden#230 (dates as groupable facets)
+- cutting-garden#230 (dates as groupable facets — landed 2026-08-20)
 - cutting-garden#231 (tag-interpreter plugin type; dodder-hyphen algebra)
 - cutting-garden#232 (tags editable as objects, dodder `:e`)
 - RFC 0012 (plugin facet contract), FDR 0023 (organize), RFC 0014 / FDR 0022

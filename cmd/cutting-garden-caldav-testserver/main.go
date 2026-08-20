@@ -48,14 +48,15 @@ func main() {
 	srv.AddCalendar("/dav/work/", "Work")
 	srv.Seed("/dav/work/task3.ics", "VTODO", vtodo("task3", "Submit report"))
 
-	// A third calendar dedicated to the organize month reschedule-by-move lane
-	// (zz-tests_bats/organize_month.bats, FDR 0023 Slice 2b): VTODOs with
+	// A third calendar dedicated to the organize date reschedule-by-move lanes
+	// (zz-tests_bats/organize_date.bats, FDR 0023 Slice 2b): VTODOs with
 	// clock-bearing, TZID-stamped DUE dates in DISTINCT months, so grouping by
-	// `month` yields separate buckets and moving one between them exercises the
-	// FacetWriteApplier date splice (day + clock + zone preserved). OPT-IN via
-	// CG_TEST_CALDAV_SCHED so it never inflates the home-capture object count the
-	// caldav.bats / discovery fixtures assert against — only the month lane, which
-	// sets the env var before spawning the server, sees this calendar.
+	// `--group-by date_due:month` yields separate buckets and moving one between
+	// them exercises the FacetWriteApplier date splice (day + clock + zone
+	// preserved). OPT-IN via CG_TEST_CALDAV_SCHED so it never inflates the
+	// home-capture object count the caldav.bats / discovery fixtures assert
+	// against — only the date lanes, which set the env var before spawning the
+	// server, see this calendar.
 	if os.Getenv("CG_TEST_CALDAV_SCHED") != "" {
 		srv.AddCalendar("/dav/sched/", "Schedule")
 		srv.Seed("/dav/sched/sched1.ics", "VTODO",
