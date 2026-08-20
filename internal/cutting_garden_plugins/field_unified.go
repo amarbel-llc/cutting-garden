@@ -29,7 +29,7 @@ const (
 	// the FacetCategorical carry-over.
 	FieldCategorical FieldKind = "categorical"
 	// FieldNumericBucket is a number quantized to an ordered bucket whose values
-	// carry FieldValue.Order (year, month, priority band) — the FacetNumericBucket
+	// carry FieldValue.Order (a size band, priority band) — the FacetNumericBucket
 	// carry-over.
 	FieldNumericBucket FieldKind = "numeric-bucket"
 	// FieldLabelled is an opaque stable key whose human name is resolved out of band

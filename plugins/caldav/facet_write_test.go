@@ -23,8 +23,9 @@ func TestDescribeFacetWrites_ConsistentAndDeclared(t *testing.T) {
 	mode := map[string]cutting_garden_plugins.FacetWriteMode{}
 	field := map[string]string{}
 	// Merge across the three per-component write entries; the shared
-	// dimensions (year/month/status write:one, component/due_band/timezone
-	// read-only) declare consistent modes wherever they appear.
+	// dimensions (date_start/date_due/status write:one,
+	// component/due_band/timezone read-only) declare consistent modes
+	// wherever they appear.
 	for _, nt := range writes {
 		for _, w := range nt.Writes {
 			mode[w.DimensionKey] = w.Mode
@@ -32,7 +33,7 @@ func TestDescribeFacetWrites_ConsistentAndDeclared(t *testing.T) {
 		}
 	}
 
-	for _, k := range []string{facetYear, facetMonth, facetStatus, facetPriority} {
+	for _, k := range []string{facetDateStart, facetDateDue, facetStatus, facetPriority} {
 		if mode[k] != cutting_garden_plugins.FacetWriteOne {
 			t.Errorf("dimension %q: mode = %q, want one", k, mode[k])
 		}

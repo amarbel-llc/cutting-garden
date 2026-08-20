@@ -2,7 +2,6 @@ package caldav
 
 import (
 	"strconv"
-	"strings"
 	"sync"
 
 	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
@@ -28,13 +27,12 @@ import (
 // caldav knowledge enters the framework, and organize consumes only the generic
 // legacy interfaces. Deliberately NOT derived: the facet COUNTING path
 // (facet.go's FacetCounts / facetsFromView) — computing each object's bucket
-// values (a year from a date, a volatile due band against today) stays
+// values (a day bucket from a date, a volatile due band against today) stays
 // plugin-side; only the dimension declarations and the writes derive.
 
 var (
 	_ cutting_garden_plugins.Codec            = caldavDateCodec{}
 	_ cutting_garden_plugins.Codec            = caldavPriorityCodec{}
-	_ cutting_garden_plugins.Codec            = caldavRescheduleCodec{}
 	_ cutting_garden_plugins.Codec            = facetOnlyCodec{}
 	_ cutting_garden_plugins.UnifiedDescriber = (*Plugin)(nil)
 )
@@ -67,8 +65,9 @@ const priorityHint = "reorganize-by-band: writes the canonical RFC 5545 PRIORITY
 // Each component declares only what it can contribute: due_band is a task-only
 // volatile band, priority is a task property, the timezone dimension is populated
 // for tasks and events but never journals, and a journal carries no
-// end/due/location. The reschedule target differs too: a task's year/month
-// buckets write through DUE, an event's/journal's through DTSTART.
+// end/due/location. The date dimensions are PER-PROPERTY (#230): date_start
+// groups every component's DTSTART, date_due a task's DUE — each writes back
+// through its own property, with no cross-property fallback.
 //
 // Memoized (sync.OnceValue): the declaration is a pure constant, and the derived
 // surfaces call it on per-node paths (an atom render per box, a codec lookup per
@@ -92,7 +91,7 @@ var unifiedFieldSets = sync.OnceValue(func() []cutting_garden_plugins.NodeTypeUn
 		// VOLATILE (RFC 0012 §11.3): bucketing is a function of (due date,
 		// today), anchored in the date's OWN zone (#141) — see dueBandOf. Derived
 		// from the date, so read-only: you reschedule by moving the date
-		// (month/year), never by "setting" the band.
+		// (date_due/date_start), never by "setting" the band.
 		Key: facetDueBand, Label: "Due",
 		Kind: cutting_garden_plugins.FieldNumericBucket, Groupable: true,
 		Values: []cutting_garden_plugins.FieldValue{
@@ -129,15 +128,14 @@ var unifiedFieldSets = sync.OnceValue(func() []cutting_garden_plugins.NodeTypeUn
 		Kind:    cutting_garden_plugins.FieldText,
 		Trailer: true, Writable: true,
 	}}
-	dateStart := caldavDateCodec{storedKey: listingFieldDtStart, suffix: "start", writable: true}
+	dateStart := caldavDateCodec{storedKey: listingFieldDtStart, suffix: "start", writable: true, groupable: true}
 	dateEnd := caldavDateCodec{storedKey: listingFieldDtEnd, suffix: "end", writable: false, endFromDuration: true}
-	dateDue := caldavDateCodec{storedKey: listingFieldDue, suffix: "due", writable: true}
+	dateDue := caldavDateCodec{storedKey: listingFieldDue, suffix: "due", writable: true, groupable: true}
 
 	return []cutting_garden_plugins.NodeTypeUnifiedFields{
 		{Tag: typeVTODO, Codecs: []cutting_garden_plugins.Codec{
 			component, dateStart, dateEnd, dateDue, location,
 			status(taskStatuses),
-			caldavRescheduleCodec{target: listingFieldDue},
 			dueBand, timezone,
 			caldavPriorityCodec{},
 			summary,
@@ -145,14 +143,12 @@ var unifiedFieldSets = sync.OnceValue(func() []cutting_garden_plugins.NodeTypeUn
 		{Tag: typeVEVENT, Codecs: []cutting_garden_plugins.Codec{
 			component, dateStart, dateEnd, location,
 			status(eventStatuses),
-			caldavRescheduleCodec{target: listingFieldDtStart},
 			timezone,
 			summary,
 		}},
 		{Tag: typeVJOURNAL, Codecs: []cutting_garden_plugins.Codec{
 			component, dateStart,
 			status(journalStatuses),
-			caldavRescheduleCodec{target: listingFieldDtStart},
 			summary,
 		}},
 	}
@@ -182,7 +178,7 @@ func codecsForType(tag string) []cutting_garden_plugins.Codec {
 // reproduces every component's atoms without branching on the component — a
 // codec whose stored field is absent on a given object contributes nothing (a
 // VTODO carries DUE not DTEND, a VEVENT the reverse). The groupable-only codecs
-// (component, year/month, due_band, timezone) are excluded: their dimensions are
+// (component, due_band, timezone) are excluded: their dimensions are
 // not box atoms, and a field EDIT naming one stays a loud bad request (bucket
 // MOVES reach them through the per-tag sets instead). A codec is admitted only
 // when EVERY field key it produces is unseen — a partial overlap with an
@@ -217,7 +213,7 @@ var unifiedCodecs = sync.OnceValue(func() []cutting_garden_plugins.Codec {
 
 // facetOnlyCodec declares GROUPABLE-only presentation fields with no stored
 // counterpart of their own — caldav's computed facet dimensions (component,
-// year-derived buckets aside, due_band, timezone). Format is empty because the
+// due_band, timezone). Format is empty because the
 // bucket VALUES are computed by the plugin-side counting path (facetsFromView),
 // not the codec; only the declaration derives. Parse is defensively read-only —
 // the derived write surfaces gate on Writable before ever calling it.
@@ -237,93 +233,22 @@ func (facetOnlyCodec) Parse(map[string][]string, map[string]any) (map[string]any
 	return nil, errors.BadRequestf("facet-only dimension is not writable")
 }
 
-// caldavRescheduleCodec declares the year/month grouping buckets of an object's
-// primary date and implements their bucket-move write: a move RESCHEDULES the
-// object by splicing the target period into its existing date value, preserving
-// the day-of-month (clamped to the target month), clock time, and time zone
-// (FDR 0023 "reschedule by move"). target is the component's declared write
-// property (DUE for a task, DTSTART for an event/journal) — documentary, mirrored
-// into the derived FacetWrite.Field; Parse resolves the ACTIVE property from the
-// object's current values (DTSTART, then DUE — the same preference the read-side
-// bucket derivation uses) so the write goes back through the property the bucket
-// was read from. Format is empty: the bucket values are computed by
-// facetsFromView (yearOf/monthOf), the plugin-side counting path.
-type caldavRescheduleCodec struct {
-	target string // listingFieldDue (tasks) or listingFieldDtStart
-}
-
-func (c caldavRescheduleCodec) Fields() []cutting_garden_plugins.UnifiedField {
-	hint := "reschedule-by-move: preserves the object's clock time and time zone; targets " +
-		strings.ToUpper(c.target)
-	return []cutting_garden_plugins.UnifiedField{
-		{
-			Key: facetYear, Label: "Year",
-			Kind:      cutting_garden_plugins.FieldNumericBucket,
-			Groupable: true, Writable: true,
-			Source: c.target, CompletionHint: hint,
-		},
-		{
-			Key: facetMonth, Label: "Month",
-			Kind:      cutting_garden_plugins.FieldNumericBucket,
-			Groupable: true, Writable: true,
-			Source: c.target, CompletionHint: hint,
-		},
-	}
-}
-
-func (caldavRescheduleCodec) Format(map[string]any) (map[string][]string, error) {
-	return map[string][]string{}, nil
-}
-
-func (caldavRescheduleCodec) Parse(
-	edited map[string][]string, current map[string]any,
-) (map[string]any, error) {
-	field, value := activeDateStored(current)
-	if field == "" {
-		// No "caldav plugin:" prefix: BuildFacetWritePatch flattens codec
-		// errors into a new root carrying the plugin name and the node URI.
-		return nil, errors.BadRequestf(
-			"cannot reschedule: object carries no DTSTART or DUE",
-		)
-	}
-	for _, dim := range []string{facetYear, facetMonth} {
-		v, ok := edited[dim]
-		if !ok || len(v) == 0 {
-			continue
-		}
-		spliced, err := splicePeriod(value, dim, v[0])
-		if err != nil {
-			return nil, err
-		}
-		value = spliced
-	}
-	return map[string]any{field: value}, nil
-}
-
-// activeDateStored returns the object's writable date property and its current
-// value, preferring DTSTART then DUE — the same order the read-side month/year
-// bucket derivation uses, so a reschedule writes back through the property the
-// bucket was read from.
-func activeDateStored(stored map[string]any) (field, value string) {
-	if s := stringOf(stored, listingFieldDtStart); s != "" {
-		return listingFieldDtStart, s
-	}
-	if s := stringOf(stored, listingFieldDue); s != "" {
-		return listingFieldDue, s
-	}
-	return "", ""
-}
-
 // caldavDateCodec splits one iCalendar DATE/DATE-TIME property (DTSTART, DTEND, or
 // DUE) into editable date_/time_ atoms and recombines an edit back into the
 // property, preserving the untouched half and the value's TZID (cutting-garden#47,
 // #218 slice 2). It wraps the shared splitICalDateTime (present) and spliceDateTime
 // (write) so the transform lives in one place. writable mirrors the property's
 // declared ListingField.Writable — DTEND is read-only, DTSTART/DUE writable.
+// groupable makes the date_ field a per-property FacetDate grouping dimension
+// (#230, date_start/date_due) whose bucket move Parse shape-dispatches: a
+// coarse YYYY / YYYY-MM bucket period-splices the current value ("reschedule
+// by move", preserving the finer components and the clock), a YYYY-MM-DD
+// bucket day-edits it.
 type caldavDateCodec struct {
 	storedKey string // "dtstart" / "dtend" / "due"
 	suffix    string // "start" / "end" / "due"
 	writable  bool
+	groupable bool // date_start / date_due group (#230); dtend never does
 	// endFromDuration derives a missing stored value from DTSTART+DURATION
 	// (cutting-garden#233) — set only on the dtend instance, so a
 	// DURATION-carrying VEVENT presents the same end atoms a DTEND-carrying one
@@ -343,8 +268,17 @@ type caldavDateCodec struct {
 }
 
 func (c caldavDateCodec) Fields() []cutting_garden_plugins.UnifiedField {
+	dateField := cutting_garden_plugins.UnifiedField{
+		Key: "date_" + c.suffix, Label: "Date",
+		Kind:   cutting_garden_plugins.FieldDate,
+		Inline: true, Groupable: c.groupable, Writable: c.writable,
+		Source: c.storedKey,
+	}
+	if c.groupable {
+		dateField.CompletionHint = "reschedule-by-move: preserves the object's clock time and time zone"
+	}
 	return []cutting_garden_plugins.UnifiedField{
-		{Key: "date_" + c.suffix, Label: "Date", Kind: cutting_garden_plugins.FieldDate, Inline: true, Writable: c.writable, Source: c.storedKey},
+		dateField,
 		{Key: "time_" + c.suffix, Label: "Time", Kind: cutting_garden_plugins.FieldDate, Inline: true, Writable: c.writable, Source: c.storedKey},
 	}
 }
@@ -371,14 +305,32 @@ func (c caldavDateCodec) Format(stored map[string]any) (map[string][]string, err
 func (c caldavDateCodec) Parse(
 	edited map[string][]string, current map[string]any,
 ) (map[string]any, error) {
+	cur := stringOf(current, c.storedKey)
 	acc := &dateTimeEdit{}
 	if v, ok := edited["date_"+c.suffix]; ok && len(v) > 0 {
-		acc.date, acc.hasDate = v[0], true
+		g, ok := cutting_garden_plugins.ParseDateBucket(v[0])
+		if !ok {
+			return nil, errors.BadRequestf(
+				"%s %q is not YYYY, YYYY-MM, or YYYY-MM-DD", "date_"+c.suffix, v[0],
+			)
+		}
+		if g == cutting_garden_plugins.GranularityDay {
+			acc.date, acc.hasDate = v[0], true
+		} else {
+			// A coarse bucket (a --group-by date_*:month/year move, or a
+			// hand-typed coarse atom edit) period-splices, preserving the
+			// finer components and the clock.
+			spliced, err := splicePeriod(cur, g, v[0])
+			if err != nil {
+				return nil, err
+			}
+			cur = spliced
+		}
 	}
 	if v, ok := edited["time_"+c.suffix]; ok && len(v) > 0 {
 		acc.clock, acc.hasClock = v[0], true
 	}
-	spliced, err := spliceDateTime(stringOf(current, c.storedKey), acc)
+	spliced, err := spliceDateTime(cur, acc)
 	if err != nil {
 		return nil, errors.Wrapf(err, "caldav plugin: %s", c.storedKey)
 	}

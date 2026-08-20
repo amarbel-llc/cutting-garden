@@ -23,13 +23,13 @@ import (
 // from the parsed iCalendar body, all present after one REPORT-with-data per
 // component — no per-object fetch (RFC 0012 §1).
 const (
-	facetComponent = "component" // VEVENT / VTODO / VJOURNAL
-	facetStatus    = "status"    // the object's STATUS property
-	facetYear      = "year"      // the year bucket of DTSTART (DUE for a task)
-	facetMonth     = "month"     // the YYYY-MM bucket of the same date
-	facetDueBand   = "due_band"  // VOLATILE: a task's due date vs today (§11.3)
-	facetTimezone  = "timezone"  // the explicit TZID anchoring the object's date
-	facetPriority  = "priority"  // a task's PRIORITY, banded (cutting-garden#221)
+	facetComponent = "component"  // VEVENT / VTODO / VJOURNAL
+	facetStatus    = "status"     // the object's STATUS property
+	facetDateStart = "date_start" // the object's DTSTART day bucket (#230)
+	facetDateDue   = "date_due"   // a task's DUE day bucket (#230)
+	facetDueBand   = "due_band"   // VOLATILE: a task's due date vs today (§11.3)
+	facetTimezone  = "timezone"   // the explicit TZID anchoring the object's date
+	facetPriority  = "priority"   // a task's PRIORITY, banded (cutting-garden#221)
 )
 
 // The priority band domain (cutting-garden#221): a task's RFC 5545 PRIORITY
@@ -286,32 +286,37 @@ func objectFacets(raw string) map[string][]cutting_garden_plugins.FacetValue {
 // caller that already holds a parsed objectView (listing.go's VEVENT
 // expansion path, which parses via ical.ParseAllVEVENTs rather than
 // re-parsing raw text) can compute the same facet values without a second
-// parse. Behavior is byte-for-byte identical to objectFacets' prior
-// (pre-split) body — this is a pure refactor.
+// parse.
 func facetsFromView(view objectView) map[string][]cutting_garden_plugins.FacetValue {
 	facets := map[string][]cutting_garden_plugins.FacetValue{
 		facetComponent: {{Key: view.Component}},
 	}
 
-	var status, date string
+	var status string
 	switch {
 	case view.Event != nil:
-		status, date = view.Event.Status, view.Event.DtStart
+		status = view.Event.Status
 	case view.Task != nil:
-		status, date = view.Task.Status, firstNonEmpty(view.Task.DtStart, view.Task.Due)
+		status = view.Task.Status
 	case view.Journal != nil:
-		status, date = view.Journal.Status, view.Journal.DtStart
+		status = view.Journal.Status
 	}
 
 	if status != "" {
 		facets[facetStatus] = []cutting_garden_plugins.FacetValue{{Key: status}}
 	}
-	if year := yearOf(date); year != "" {
-		order, _ := strconv.ParseInt(year, 10, 64)
-		facets[facetYear] = []cutting_garden_plugins.FacetValue{{Key: year, Order: order}}
+
+	// Per-property day buckets (#230): date_start from DTSTART (any
+	// component), date_due from a task's DUE — no cross-property fallback;
+	// a DUE-only task simply has no date_start. due_band keeps its own
+	// DUE-then-DTSTART fallback (unchanged; it answers a different question).
+	if key, order := dayBucketOf(dtstartOf(view)); key != "" {
+		facets[facetDateStart] = []cutting_garden_plugins.FacetValue{{Key: key, Order: order}}
 	}
-	if key, order := monthOf(date); key != "" {
-		facets[facetMonth] = []cutting_garden_plugins.FacetValue{{Key: key, Order: order}}
+	if view.Task != nil {
+		if key, order := dayBucketOf(view.Task.Due); key != "" {
+			facets[facetDateDue] = []cutting_garden_plugins.FacetValue{{Key: key, Order: order}}
+		}
 	}
 
 	// due_band: open tasks only — a completed or cancelled task cannot
@@ -466,6 +471,12 @@ func ensureDueBandPresence(summary cutting_garden_plugins.FacetSummary) {
 	}
 }
 
+// dateDimensions names the FacetDate-kind dimensions whose SUMMARY buckets
+// lift at fixed month granularity (design 2026-08-20 §6) — day-precise
+// per-node values would mean one summary bucket per distinct day. Grouping
+// and filtering stay day-precise on the per-node values.
+var dateDimensions = map[string]bool{facetDateStart: true, facetDateDue: true}
+
 // liftFacets folds one object's facet values into summary: +1 per
 // (dimension, value key). The per-node "lift" of RFC 0012 §3.
 func liftFacets(
@@ -479,24 +490,39 @@ func liftFacets(
 			summary[dim] = hist
 		}
 		for _, v := range values {
-			hist[v.Key]++
+			key := v.Key
+			if dateDimensions[dim] {
+				key = cutting_garden_plugins.TruncateDateKey(key, cutting_garden_plugins.GranularityMonth)
+			}
+			hist[key]++
 		}
 	}
 }
 
-// monthOf extracts the year-month bucket prefixing an iCalendar date-time
-// (e.g. "20260224T150000Z" or "2026-02-24" → key "2026-02", order 202602).
-// Empty key when the value has no leading YYYYMM. The YYYY-MM key with a
-// YYYYMM order sorts months chronologically across year boundaries —
-// answering "summarize June" class queries directly from the summary.
-func monthOf(date string) (key string, order int64) {
+// dtstartOf extracts a parsed object's DTSTART, whichever component carries it.
+func dtstartOf(view objectView) string {
+	switch {
+	case view.Event != nil:
+		return view.Event.DtStart
+	case view.Task != nil:
+		return view.Task.DtStart
+	case view.Journal != nil:
+		return view.Journal.DtStart
+	}
+	return ""
+}
+
+// dayBucketOf extracts the ISO-day bucket of an iCalendar date-time
+// ("20260224T150000Z" or "2026-02-24" → key "2026-02-24", order 20260224).
+// Empty key when the value has no valid leading YYYYMMDD.
+func dayBucketOf(date string) (key string, order int64) {
 	var digits strings.Builder
 scan:
 	for _, r := range date {
 		switch {
 		case r >= '0' && r <= '9':
 			digits.WriteRune(r)
-			if digits.Len() == 6 {
+			if digits.Len() == 8 {
 				break scan
 			}
 		case r == '-':
@@ -506,44 +532,13 @@ scan:
 			break scan
 		}
 	}
-	if digits.Len() < 6 {
+	if digits.Len() < 8 {
 		return "", 0
 	}
 	s := digits.String()
-	month := s[4:6]
-	if month < "01" || month > "12" {
+	if s[4:6] < "01" || s[4:6] > "12" || s[6:8] < "01" || s[6:8] > "31" {
 		return "", 0
 	}
 	order, _ = strconv.ParseInt(s, 10, 64)
-	return s[:4] + "-" + month, order
-}
-
-// yearOf extracts the four-digit year prefixing an iCalendar date-time
-// (e.g. "20260224T150000Z" or "2026-02-24" → "2026"). Empty when the value
-// has no leading year.
-func yearOf(date string) string {
-	var year strings.Builder
-	for _, r := range date {
-		switch {
-		case r >= '0' && r <= '9':
-			year.WriteRune(r)
-			if year.Len() == 4 {
-				return year.String()
-			}
-		case r == '-':
-			// tolerate a hyphenated date prefix
-		default:
-			return ""
-		}
-	}
-	return ""
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, v := range values {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
+	return s[:4] + "-" + s[4:6] + "-" + s[6:8], order
 }

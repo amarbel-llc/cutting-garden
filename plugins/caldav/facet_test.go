@@ -91,17 +91,18 @@ func TestFacetVersion_CtagBackedToken(t *testing.T) {
 
 func TestDescribeFacets_DeclaresObjectDimensions(t *testing.T) {
 	// typeVTODO carries every dimension asserted below (component, status,
-	// year, month, due_band); the event/journal subtypes are narrower.
-	var dims map[string]cutting_garden_plugins.FacetKind
+	// date_start, date_due, due_band, priority); the event/journal subtypes
+	// are narrower — date_due is task-only, and the retired year/month
+	// dimensions (#230) are declared NOWHERE.
+	byTag := map[string]map[string]cutting_garden_plugins.FacetKind{}
 	for _, ntf := range (Plugin{}).DescribeFacets() {
-		if ntf.Tag != typeVTODO {
-			continue
-		}
-		dims = map[string]cutting_garden_plugins.FacetKind{}
+		dims := map[string]cutting_garden_plugins.FacetKind{}
 		for _, d := range ntf.Dimensions {
 			dims[d.Key] = d.Kind
 		}
+		byTag[ntf.Tag] = dims
 	}
+	dims := byTag[typeVTODO]
 	if dims == nil {
 		t.Fatalf("no facet dimensions declared for %q", typeVTODO)
 	}
@@ -111,17 +112,32 @@ func TestDescribeFacets_DeclaresObjectDimensions(t *testing.T) {
 	if dims[facetStatus] != cutting_garden_plugins.FacetCategorical {
 		t.Errorf("status kind = %q, want categorical", dims[facetStatus])
 	}
-	if dims[facetYear] != cutting_garden_plugins.FacetNumericBucket {
-		t.Errorf("year kind = %q, want numeric-bucket", dims[facetYear])
+	if dims[facetDateStart] != cutting_garden_plugins.FacetDate {
+		t.Errorf("date_start kind = %q, want date", dims[facetDateStart])
 	}
-	if dims[facetMonth] != cutting_garden_plugins.FacetNumericBucket {
-		t.Errorf("month kind = %q, want numeric-bucket", dims[facetMonth])
+	if dims[facetDateDue] != cutting_garden_plugins.FacetDate {
+		t.Errorf("date_due kind = %q, want date", dims[facetDateDue])
 	}
 	if dims[facetDueBand] != cutting_garden_plugins.FacetNumericBucket {
 		t.Errorf("due_band kind = %q, want numeric-bucket", dims[facetDueBand])
 	}
 	if dims[facetPriority] != cutting_garden_plugins.FacetCategorical {
 		t.Errorf("priority kind = %q, want categorical", dims[facetPriority])
+	}
+	for _, tag := range []string{typeVEVENT, typeVJOURNAL} {
+		if byTag[tag][facetDateStart] != cutting_garden_plugins.FacetDate {
+			t.Errorf("%s date_start kind = %q, want date", tag, byTag[tag][facetDateStart])
+		}
+		if _, present := byTag[tag][facetDateDue]; present {
+			t.Errorf("%s declares date_due; DUE is task-only", tag)
+		}
+	}
+	for tag, d := range byTag {
+		for _, retired := range []string{"year", "month"} {
+			if _, present := d[retired]; present {
+				t.Errorf("%s still declares retired dimension %q (#230)", tag, retired)
+			}
+		}
 	}
 }
 
@@ -423,29 +439,62 @@ func TestFacetCounts_NoTasksNoDueBand(t *testing.T) {
 	}
 }
 
-// TestMonthOf pins the YYYY-MM bucket derivation across the iCalendar
-// date shapes the parser sees, including the chronological Order and the
-// reject paths (short values, out-of-range months).
-func TestMonthOf(t *testing.T) {
+// TestDayBucketOf pins the ISO-day bucket derivation across the iCalendar
+// date shapes the parser sees, including the numeric Order and the reject
+// paths (short values, out-of-range months/days).
+func TestDayBucketOf(t *testing.T) {
 	cases := []struct {
 		in    string
 		key   string
 		order int64
 	}{
-		{"20260224T150000Z", "2026-02", 202602},
-		{"2026-06-13", "2026-06", 202606},
-		{"20251231", "2025-12", 202512},
+		{"20260224T150000Z", "2026-02-24", 20260224},
+		{"2026-06-13", "2026-06-13", 20260613},
+		{"20251231", "2025-12-31", 20251231},
 		{"2026", "", 0},
+		{"2026-02", "", 0},
 		{"20261324T000000Z", "", 0}, // month 13: reject
+		{"20260232", "", 0},         // day 32: reject
 		{"", "", 0},
 		{"garbage", "", 0},
 	}
 	for _, c := range cases {
-		key, order := monthOf(c.in)
+		key, order := dayBucketOf(c.in)
 		if key != c.key || order != c.order {
-			t.Errorf("monthOf(%q) = (%q, %d), want (%q, %d)",
+			t.Errorf("dayBucketOf(%q) = (%q, %d), want (%q, %d)",
 				c.in, key, order, c.key, c.order)
 		}
+	}
+}
+
+// Facet values are day-precise per property; the SUMMARY lifts date
+// dimensions at fixed month granularity (design 2026-08-20 §6).
+func TestFacetCounts_DateDimensionsMonthLift(t *testing.T) {
+	f := newFakeCalDAV()
+	f.seed("/dav/cal/e1.ics", "VEVENT",
+		veventFull("e1", "Standup", "CONFIRMED", "20260224T150000Z"))
+	f.seed("/dav/cal/t1.ics", "VTODO",
+		"BEGIN:VCALENDAR\nVERSION:2.0\nBEGIN:VTODO\nUID:t1\nSUMMARY:Due only\n"+
+			"STATUS:NEEDS-ACTION\nDUE:20260101\nEND:VTODO\nEND:VCALENDAR\n")
+
+	srv := httptest.NewServer(f.handler())
+	t.Cleanup(srv.Close)
+	node := mustParseURL(t, "caldav:"+srv.URL+"/dav/")
+
+	result, ok, err := Plugin{}.FacetCounts(context.Background(), node, nil)
+	if err != nil || !ok {
+		t.Fatalf("FacetCounts: ok=%v err=%v", ok, err)
+	}
+	assertCount(t, result.Summary, "date_start", "2026-02", 1) // month key, not day
+	assertCount(t, result.Summary, "date_due", "2026-01", 1)
+	if _, present := result.Summary["date_start"]["2026-02-24"]; present {
+		t.Error("summary must not carry day-granularity buckets")
+	}
+	if _, present := result.Summary["year"]; present {
+		t.Error("the year dimension is retired")
+	}
+	if _, present := result.Summary["date_start"]["2026-01"]; present {
+		t.Error("a DUE-only task contributes no date_start (per-property, no fallback)")
 	}
 }
 
@@ -470,11 +519,9 @@ func TestFacetCounts_AggregatesAcrossComponents(t *testing.T) {
 	assertCount(t, result.Summary, facetStatus, "CONFIRMED", 1)
 	assertCount(t, result.Summary, facetStatus, "CANCELLED", 1)
 	assertCount(t, result.Summary, facetStatus, "NEEDS-ACTION", 1)
-	assertCount(t, result.Summary, facetYear, "2026", 2)
-	assertCount(t, result.Summary, facetYear, "2025", 1)
-	assertCount(t, result.Summary, facetMonth, "2026-02", 1)
-	assertCount(t, result.Summary, facetMonth, "2026-01", 1)
-	assertCount(t, result.Summary, facetMonth, "2025-01", 1)
+	assertCount(t, result.Summary, facetDateStart, "2026-02", 1)
+	assertCount(t, result.Summary, facetDateStart, "2026-01", 1)
+	assertCount(t, result.Summary, facetDateStart, "2025-01", 1)
 }
 
 func TestFacetCounts_FilterNarrowsListingAndSummary(t *testing.T) {
@@ -494,9 +541,9 @@ func TestFacetCounts_FilterNarrowsListingAndSummary(t *testing.T) {
 	if _, present := result.Summary[facetComponent]["VTODO"]; present {
 		t.Error("VTODO should be excluded under the component=VEVENT filter")
 	}
-	// Year is re-hoisted over only the two events.
-	assertCount(t, result.Summary, facetYear, "2026", 1)
-	assertCount(t, result.Summary, facetYear, "2025", 1)
+	// date_start is re-hoisted over only the two events.
+	assertCount(t, result.Summary, facetDateStart, "2026-02", 1)
+	assertCount(t, result.Summary, facetDateStart, "2025-01", 1)
 }
 
 // startFakeFacetedMultiCalendar seeds THREE calendars under one

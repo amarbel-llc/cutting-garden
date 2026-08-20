@@ -968,7 +968,7 @@ const FieldDate = internal.FieldDate
 const FieldLabelled = internal.FieldLabelled
 
 // FieldNumericBucket is a number quantized to an ordered bucket whose values
-// carry FieldValue.Order (year, month, priority band) — the FacetNumericBucket
+// carry FieldValue.Order (a size band, priority band) — the FacetNumericBucket
 // carry-over.
 const FieldNumericBucket = internal.FieldNumericBucket
 

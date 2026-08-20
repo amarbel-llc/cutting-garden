@@ -16,25 +16,25 @@ func TestSplicePeriod(t *testing.T) {
 	cases := []struct {
 		name  string
 		value string
-		dim   string
+		g     cutting_garden_plugins.DateGranularity
 		to    string
 		want  string
 	}{
-		{"month, floating datetime", "20260815T143000", facetMonth, "2026-09", "20260915T143000"},
-		{"month, UTC datetime keeps Z", "20260815T143000Z", facetMonth, "2026-09", "20260915T143000Z"},
-		{"month, date-only", "20260815", facetMonth, "2026-09", "20260915"},
-		{"month, hyphenated date-only -> compact", "2026-08-15", facetMonth, "2026-09", "20260915"},
-		{"month, day clamps to short month", "20260131", facetMonth, "2026-02", "20260228"},
-		{"year keeps month+day+clock", "20260815T143000", facetYear, "2027", "20270815T143000"},
+		{"month, floating datetime", "20260815T143000", cutting_garden_plugins.GranularityMonth, "2026-09", "20260915T143000"},
+		{"month, UTC datetime keeps Z", "20260815T143000Z", cutting_garden_plugins.GranularityMonth, "2026-09", "20260915T143000Z"},
+		{"month, date-only", "20260815", cutting_garden_plugins.GranularityMonth, "2026-09", "20260915"},
+		{"month, hyphenated date-only -> compact", "2026-08-15", cutting_garden_plugins.GranularityMonth, "2026-09", "20260915"},
+		{"month, day clamps to short month", "20260131", cutting_garden_plugins.GranularityMonth, "2026-02", "20260228"},
+		{"year keeps month+day+clock", "20260815T143000", cutting_garden_plugins.GranularityYear, "2027", "20270815T143000"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := splicePeriod(tc.value, tc.dim, tc.to)
+			got, err := splicePeriod(tc.value, tc.g, tc.to)
 			if err != nil {
-				t.Fatalf("splicePeriod(%q,%q,%q): %v", tc.value, tc.dim, tc.to, err)
+				t.Fatalf("splicePeriod(%q,%q,%q): %v", tc.value, tc.g, tc.to, err)
 			}
 			if got != tc.want {
-				t.Errorf("splicePeriod(%q,%q,%q) = %q, want %q", tc.value, tc.dim, tc.to, got, tc.want)
+				t.Errorf("splicePeriod(%q,%q,%q) = %q, want %q", tc.value, tc.g, tc.to, got, tc.want)
 			}
 		})
 	}
@@ -43,13 +43,13 @@ func TestSplicePeriod(t *testing.T) {
 // TestSplicePeriod_BadBucket rejects a malformed target bucket loudly rather than
 // producing a garbage date.
 func TestSplicePeriod_BadBucket(t *testing.T) {
-	if _, err := splicePeriod("20260815", facetMonth, "2026"); err == nil {
+	if _, err := splicePeriod("20260815", cutting_garden_plugins.GranularityMonth, "2026"); err == nil {
 		t.Error("month splice with a YYYY bucket: want error")
 	}
-	if _, err := splicePeriod("20260815", facetYear, "2026-09"); err == nil {
+	if _, err := splicePeriod("20260815", cutting_garden_plugins.GranularityYear, "2026-09"); err == nil {
 		t.Error("year splice with a YYYY-MM bucket: want error")
 	}
-	if _, err := splicePeriod("nonsense", facetMonth, "2026-09"); err == nil {
+	if _, err := splicePeriod("nonsense", cutting_garden_plugins.GranularityMonth, "2026-09"); err == nil {
 		t.Error("unrecognized date value: want error")
 	}
 }
@@ -68,9 +68,11 @@ func applyNode(t *testing.T, uri, component string, fields map[string]any) cutti
 	}
 }
 
-// TestBuildFacetWritePatch pins the three write shapes: a status passthrough, a
-// month reschedule of a task (writing DUE — its active date property), and a
-// month reschedule of an event (writing DTSTART, preserving the UTC clock).
+// TestBuildFacetWritePatch pins the write shapes through the per-property date
+// dimensions (#230): a status passthrough, and shape-dispatched reschedules —
+// a YYYY-MM bucket month-splices, a YYYY bucket year-splices, a YYYY-MM-DD
+// bucket day-edits — each writing the dimension's OWN property (date_due →
+// DUE, date_start → DTSTART) with no cross-property fallback.
 func TestBuildFacetWritePatch(t *testing.T) {
 	type patch struct {
 		Component string            `json:"component"`
@@ -94,9 +96,9 @@ func TestBuildFacetWritePatch(t *testing.T) {
 		}
 	})
 
-	t.Run("task month reschedule writes DUE", func(t *testing.T) {
+	t.Run("task month reschedule via date_due", func(t *testing.T) {
 		node := applyNode(t, "caldav://h/c/t1.ics", "VTODO", map[string]any{"due": "20260815T143000"})
-		w := cutting_garden_plugins.FacetWrite{DimensionKey: facetMonth, Mode: cutting_garden_plugins.FacetWriteOne, Field: "dtstart"}
+		w := cutting_garden_plugins.FacetWrite{DimensionKey: "date_due", Mode: cutting_garden_plugins.FacetWriteOne, Field: "due"}
 		body, err := (Plugin{}).BuildFacetWritePatch(context.Background(), node, w, "2026-09")
 		if err != nil {
 			t.Fatalf("BuildFacetWritePatch: %v", err)
@@ -106,14 +108,14 @@ func TestBuildFacetWritePatch(t *testing.T) {
 			t.Fatalf("unmarshal %s: %v", body, err)
 		}
 		if got.Component != "VTODO" || got.Task["due"] != "20260915T143000" {
-			t.Errorf("patch = %s, want VTODO task.due=20260915T143000", body)
+			t.Errorf("patch = %s, want task.due=20260915T143000", body)
 		}
 	})
 
-	t.Run("event month reschedule writes DTSTART", func(t *testing.T) {
+	t.Run("event year reschedule via date_start", func(t *testing.T) {
 		node := applyNode(t, "caldav://h/c/e1.ics", "VEVENT", map[string]any{"dtstart": "20260820T100000Z"})
-		w := cutting_garden_plugins.FacetWrite{DimensionKey: facetMonth, Mode: cutting_garden_plugins.FacetWriteOne, Field: "dtstart"}
-		body, err := (Plugin{}).BuildFacetWritePatch(context.Background(), node, w, "2026-09")
+		w := cutting_garden_plugins.FacetWrite{DimensionKey: "date_start", Mode: cutting_garden_plugins.FacetWriteOne, Field: "dtstart"}
+		body, err := (Plugin{}).BuildFacetWritePatch(context.Background(), node, w, "2027")
 		if err != nil {
 			t.Fatalf("BuildFacetWritePatch: %v", err)
 		}
@@ -121,8 +123,32 @@ func TestBuildFacetWritePatch(t *testing.T) {
 		if err := json.Unmarshal(body, &got); err != nil {
 			t.Fatalf("unmarshal %s: %v", body, err)
 		}
-		if got.Component != "VEVENT" || got.Event["dtstart"] != "20260920T100000Z" {
-			t.Errorf("patch = %s, want VEVENT event.dtstart=20260920T100000Z", body)
+		if got.Component != "VEVENT" || got.Event["dtstart"] != "20270820T100000Z" {
+			t.Errorf("patch = %s, want event.dtstart=20270820T100000Z", body)
+		}
+	})
+
+	t.Run("event day reschedule via date_start preserves clock", func(t *testing.T) {
+		node := applyNode(t, "caldav://h/c/e1.ics", "VEVENT", map[string]any{"dtstart": "20260820T100000Z"})
+		w := cutting_garden_plugins.FacetWrite{DimensionKey: "date_start", Mode: cutting_garden_plugins.FacetWriteOne, Field: "dtstart"}
+		body, err := (Plugin{}).BuildFacetWritePatch(context.Background(), node, w, "2026-09-03")
+		if err != nil {
+			t.Fatalf("BuildFacetWritePatch: %v", err)
+		}
+		var got patch
+		if err := json.Unmarshal(body, &got); err != nil {
+			t.Fatalf("unmarshal %s: %v", body, err)
+		}
+		if got.Event["dtstart"] != "20260903T100000Z" {
+			t.Errorf("patch = %s, want event.dtstart=20260903T100000Z", body)
+		}
+	})
+
+	t.Run("date move on a property-less object rejects", func(t *testing.T) {
+		node := applyNode(t, "caldav://h/c/t2.ics", "VTODO", map[string]any{"due": "20260815"})
+		w := cutting_garden_plugins.FacetWrite{DimensionKey: "date_start", Mode: cutting_garden_plugins.FacetWriteOne, Field: "dtstart"}
+		if _, err := (Plugin{}).BuildFacetWritePatch(context.Background(), node, w, "2026-09"); err == nil {
+			t.Error("date_start move on a DTSTART-less task must reject (group by date_due instead)")
 		}
 	})
 }

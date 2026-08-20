@@ -20,12 +20,13 @@ var _ cutting_garden_plugins.FacetWriteApplier = (*Plugin)(nil)
 // the object's component type, and that codec's Parse completes the bucket onto
 // the stored property — a status bucket passing through verbatim, a priority
 // band completing to its canonical RFC 5545 integer (a JSON number, so it
-// deserializes into the int property), a year/month bucket RESCHEDULING the
-// object by splicing the target period into its active date (DTSTART, then DUE —
-// the same preference the read-side bucket derivation uses), preserving the
-// day-of-month, clock time, and time zone (PatchNode's GET + re-serialize keeps
-// the property's TZID; only the value changes here). caldav wraps the resulting
-// property updates in its component-nested patch shape, exactly as
+// deserializes into the int property), a date_start/date_due bucket RESCHEDULING
+// the object through that dimension's OWN property (#230): a coarse YYYY /
+// YYYY-MM bucket splices the target period into the current value, preserving
+// the day-of-month, clock time, and time zone (PatchNode's GET + re-serialize
+// keeps the property's TZID; only the value changes here), while a YYYY-MM-DD
+// bucket sets the day outright, preserving the clock. caldav wraps the
+// resulting property updates in its component-nested patch shape, exactly as
 // BuildFieldWritePatch does for field edits.
 func (Plugin) BuildFacetWritePatch(
 	ctx context.Context,
@@ -90,12 +91,15 @@ func firstFacetKey(values []cutting_garden_plugins.FacetValue) string {
 	return values[0].Key
 }
 
-// splicePeriod rewrites the year (facetYear) or year+month (facetMonth) of an
-// iCalendar DATE / DATE-TIME value to the target bucket, preserving the
-// day-of-month and any time-of-day suffix (Thhmmss[Z]). The day is CLAMPED to the
-// target month's last day so a 31st never rolls into the next month. TZID lives
-// on a separate property parameter and is untouched (PatchNode preserves it).
-func splicePeriod(value, dimension, bucket string) (string, error) {
+// splicePeriod rewrites the year (GranularityYear) or year+month
+// (GranularityMonth) of an iCalendar DATE / DATE-TIME value to the target
+// bucket, preserving the day-of-month and any time-of-day suffix (Thhmmss[Z]).
+// The day is CLAMPED to the target month's last day so a 31st never rolls into
+// the next month. TZID lives on a separate property parameter and is untouched
+// (PatchNode preserves it).
+func splicePeriod(
+	value string, g cutting_garden_plugins.DateGranularity, bucket string,
+) (string, error) {
 	datePart, suffix := value, ""
 	if i := strings.IndexAny(value, "Tt"); i >= 0 {
 		datePart, suffix = value[:i], value[i:]
@@ -103,13 +107,13 @@ func splicePeriod(value, dimension, bucket string) (string, error) {
 	digits := strings.ReplaceAll(datePart, "-", "")
 	if len(digits) < 8 {
 		return "", errors.BadRequestf(
-			"caldav plugin: cannot reschedule %q: unrecognized date value %q", dimension, value,
+			"caldav plugin: cannot reschedule to the %s bucket: unrecognized date value %q", g, value,
 		)
 	}
 	year, month, day := digits[0:4], digits[4:6], digits[6:8]
 
-	switch dimension {
-	case facetMonth:
+	switch g {
+	case cutting_garden_plugins.GranularityMonth:
 		by, bm, ok := splitYearMonth(bucket)
 		if !ok {
 			return "", errors.BadRequestf(
@@ -117,7 +121,7 @@ func splicePeriod(value, dimension, bucket string) (string, error) {
 			)
 		}
 		year, month = by, bm
-	case facetYear:
+	case cutting_garden_plugins.GranularityYear:
 		if len(bucket) != 4 || !allDigits(bucket) {
 			return "", errors.BadRequestf(
 				"caldav plugin: year bucket %q is not YYYY", bucket,
@@ -126,7 +130,7 @@ func splicePeriod(value, dimension, bucket string) (string, error) {
 		year = bucket
 	default:
 		return "", errors.BadRequestf(
-			"caldav plugin: splice does not handle dimension %q", dimension,
+			"caldav plugin: splice does not handle granularity %q", g,
 		)
 	}
 
