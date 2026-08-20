@@ -43,7 +43,8 @@ func (bucketTestCodec) Parse(
 
 // DeriveFacetDimensions projects only the GROUPABLE fields, in codec-then-field
 // order, carrying the closed domain, terminal values, and volatility through to
-// the legacy shape — and maps a date-kind field onto numeric-bucket.
+// the legacy shape — and maps a date-kind field onto the prefix-coarsenable
+// date kind (cutting-garden#230).
 func TestDeriveFacetDimensions(t *testing.T) {
 	codecs := []Codec{
 		IdentityCodec{Field: UnifiedField{

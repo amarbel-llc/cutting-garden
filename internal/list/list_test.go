@@ -111,6 +111,33 @@ func (listFake) ListRoots(
 	}, nil
 }
 
+// facetFake extends listFake with the facet capabilities (FacetCounter +
+// FacetDescriber), declaring one FacetDate dimension, to exercise the
+// runFacets filter-Validate gate (cutting-garden#161 applied to the CLI
+// --facets path, #230). It claims its own scheme so the plain listFake
+// keeps exercising the no-facets paths.
+type facetFake struct{ listFake }
+
+func (facetFake) Schemes() []string { return []string{"facettest"} }
+
+func (facetFake) DescribeFacets() []cutting_garden_plugins.NodeTypeFacets {
+	return []cutting_garden_plugins.NodeTypeFacets{{
+		Tag: "test-object-v1",
+		Dimensions: []cutting_garden_plugins.FacetDimension{
+			{Key: "date_x", Kind: cutting_garden_plugins.FacetDate},
+		},
+	}}
+}
+
+func (facetFake) FacetCounts(
+	_ context.Context, _ *url.URL, _ cutting_garden_plugins.FacetFilter,
+) (cutting_garden_plugins.FacetResult, bool, error) {
+	return cutting_garden_plugins.FacetResult{
+		Summary:  cutting_garden_plugins.FacetSummary{"date_x": {"2026-08-15": 1}},
+		Complete: true,
+	}, true, nil
+}
+
 // captureOnlyFake claims a scheme but is NOT a RootLister, to exercise
 // the "does not support listing" path.
 type captureOnlyFake struct{}
@@ -124,7 +151,29 @@ func (captureOnlyFake) CaptureRoot(cutting_garden_plugins.CaptureRootRequest) cu
 
 func init() {
 	cutting_garden_plugins.MustRegisterCapture(listFake{})
+	cutting_garden_plugins.MustRegisterCapture(facetFake{})
 	cutting_garden_plugins.MustRegisterCapture(captureOnlyFake{})
+}
+
+// TestRunFacets_FilterValidateGate pins the runFacets Validate addition
+// (cutting-garden#161 applied to the CLI --facets path, #230): a malformed
+// date-bucket filter value is rejected loudly BEFORE FacetCounts runs, and a
+// well-shaped one passes through to the summary.
+func TestRunFacets_FilterValidateGate(t *testing.T) {
+	ctx := errors.MakeContextDefault()
+
+	bad := newWithOutput(io.Discard)
+	bad.Filter = "date_x=bogus"
+	err := bad.runFacets(ctx, "facettest://h/dav/")
+	if err == nil || !strings.Contains(err.Error(), "not a date bucket") {
+		t.Fatalf("malformed date filter: want a date-bucket rejection, got %v", err)
+	}
+
+	good := newWithOutput(io.Discard)
+	good.Filter = "date_x=2026"
+	if err := good.runFacets(ctx, "facettest://h/dav/"); err != nil {
+		t.Fatalf("valid date filter: want nil, got %v", err)
+	}
 }
 
 // driveList dispatches the list subcommand through a fresh Utility (flag
