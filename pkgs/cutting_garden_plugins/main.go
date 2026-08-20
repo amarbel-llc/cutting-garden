@@ -567,6 +567,30 @@ type RootProvider = internal.RootProvider
 // it nor CapturePlugin.
 type SourceValidator = internal.SourceValidator
 
+// TagInterpreter governs the match/group/write-back semantics of one tag field
+// (RFC 0019 §1). It is applied HOST-side over the raw tag strings a data plugin
+// emits (RFC 0019 §2); a data plugin — linked or wire (RFC 0013) — never
+// implements it. Every method is a pure function of its arguments: same inputs,
+// same outputs, no side effects, no hidden state, no I/O.
+//
+// The contract is wire-shaped and this is normative (RFC 0019 §2): every
+// method's arguments and results are plain values (strings, string slices,
+// TagMembership, TagMembershipOp) precisely so a future RFC 0013-style JSON-RPC
+// transport (RFC 0019 §8) can carry the exact method set unchanged. An
+// implementation MUST keep this interface serializable — no method may take or
+// return a callback, an iterator/Seq, a channel, a context.Context, or any
+// interface whose behavior cannot be reduced to values on a wire.
+type TagInterpreter = internal.TagInterpreter
+
+// TagMembership is one node's placement in one grouping bucket, as computed by
+// TagInterpreter.Buckets (RFC 0019 §1). It is a pure value pair, safe to
+// serialize.
+type TagMembership = internal.TagMembership
+
+// TagMembershipOp selects the direction of a membership edit passed to
+// TagInterpreter.Complete (RFC 0019 §1).
+type TagMembershipOp = internal.TagMembershipOp
+
 // URITemplate is a parsed, validated RFC 6570 Level 1 URI template
 // (RFC 0018 §2) supporting bidirectional resolution: Expand fills the
 // template's variables to mint a URI, and Match reverses a URI back to
@@ -701,6 +725,12 @@ var ErrUnknownScheme = internal.ErrUnknownScheme
 // key (organize's group-by spelling resolution) share this lookup instead of
 // duplicating the loop.
 var FindFacetDimension = internal.FindFacetDimension
+
+// LookupTagInterpreter resolves a registered interpreter by name (RFC 0019 §3).
+// ok is false for an unregistered name; a consumer MUST NOT fall back to a
+// default on a miss (that decision belongs to selection, RFC 0019 §4) — a miss
+// at a point that required a named interpreter is a bad request.
+var LookupTagInterpreter = internal.LookupTagInterpreter
 
 // MustRegisterCapture installs p in the default capture registry
 // under every scheme p.Schemes() returns. Panics on duplicate
@@ -1014,3 +1044,11 @@ const GranularityYear = internal.GranularityYear
 // posture. Consumers MUST apply this default rather than propagating
 // the empty string.
 const MimeTypeDefault = internal.MimeTypeDefault
+
+// TagAdd adds a membership: the returned tag set includes whatever tag the
+// bucket edit implies, if not already present.
+const TagAdd = internal.TagAdd
+
+// TagRemove removes a membership: the returned tag set drops whatever tag
+// the bucket edit implies, if present.
+const TagRemove = internal.TagRemove

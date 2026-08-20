@@ -127,6 +127,12 @@ type UnifiedField struct {
 	// derives; RFC 0012 §11.3 — the volatile field MUST declare a closed Values
 	// domain). Zero means pure.
 	RevalidateAfter time.Duration
+	// Interpreter names the TagInterpreter (RFC 0019) governing a FieldTag
+	// field's match/group/write-back semantics — the field's DEFAULT, which
+	// config MAY override (RFC 0019 §selection; the override lands with the
+	// dodder-hyphen slice). Empty on non-tag fields, and means "naive" on a
+	// tag field.
+	Interpreter string
 }
 
 // NodeTypeUnifiedFields binds a node type to the codecs producing its unified
