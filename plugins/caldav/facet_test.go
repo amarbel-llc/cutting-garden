@@ -33,8 +33,8 @@ func vtodoWithPriority(uid, status string, priority int) string {
 }
 
 // startFakeFaceted seeds objects carrying STATUS and DTSTART so the status
-// and year facet dimensions have signal (the shared startFake fixtures are
-// bare UID/SUMMARY bodies).
+// and date_start facet dimensions have signal (the shared startFake fixtures
+// are bare UID/SUMMARY bodies).
 func startFakeFaceted(t *testing.T) (*fakeCalDAV, string) {
 	t.Helper()
 	f := newFakeCalDAV()
@@ -544,6 +544,47 @@ func TestFacetCounts_FilterNarrowsListingAndSummary(t *testing.T) {
 	// date_start is re-hoisted over only the two events.
 	assertCount(t, result.Summary, facetDateStart, "2026-02", 1)
 	assertCount(t, result.Summary, facetDateStart, "2025-01", 1)
+}
+
+// TestFacetCounts_DateFilterNarrowsIndependentOfLift pins the
+// filter-vs-lift decoupling (#230): a MONTH-granularity date_start filter
+// prefix-matches the DAY-precise per-node values (narrowing to the one
+// matching event), while the returned summary still lifts date_start at
+// fixed month granularity — the two granularities are independent. The
+// filter is parsed and Validated against the declared schema, mirroring
+// the mcp layer, because Validate is what arms prefix matching.
+func TestFacetCounts_DateFilterNarrowsIndependentOfLift(t *testing.T) {
+	_, arg := startFakeFaceted(t)
+
+	filter, err := cutting_garden_plugins.ParseFacetFilter("date_start=2026-02")
+	if err != nil {
+		t.Fatalf("ParseFacetFilter: %v", err)
+	}
+	if err := filter.Validate((Plugin{}).DescribeFacets()); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+
+	result, ok, err := Plugin{}.FacetCounts(
+		context.Background(), mustParseURL(t, arg), filter,
+	)
+	if err != nil || !ok {
+		t.Fatalf("FacetCounts: ok=%v err=%v", ok, err)
+	}
+
+	// Only event1 (DTSTART 20260224T150000Z) matches the month prefix.
+	assertCount(t, result.Summary, facetComponent, "VEVENT", 1)
+	if _, present := result.Summary[facetComponent]["VTODO"]; present {
+		t.Error("the 2026-01 task must be excluded by the date_start=2026-02 filter")
+	}
+	assertCount(t, result.Summary, facetDateStart, "2026-02", 1)
+	for key := range result.Summary[facetDateStart] {
+		if _, ok := cutting_garden_plugins.ParseDateBucket(key); !ok {
+			t.Errorf("summary date_start key %q is not a date bucket", key)
+		}
+		if len(key) > len("2026-02") {
+			t.Errorf("summary date_start key %q is day-granularity; the lift is month-fixed", key)
+		}
+	}
 }
 
 // startFakeFacetedMultiCalendar seeds THREE calendars under one

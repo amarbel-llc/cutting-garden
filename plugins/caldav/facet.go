@@ -265,7 +265,7 @@ func (c *client) foldCalendarFacets(
 // NOTE (cutting-garden#176/#177): this stays UNWINDOWED and master-only for
 // VEVENT — foldCalendarFacets (below) still fetches every VEVENT via the
 // shared listResources, exactly as before Phase 2. A recurring VEVENT's
-// year/month facet buckets therefore still key on its master's original
+// date_start facet bucket therefore still keys on its master's original
 // DTSTART, not any expanded occurrence's instant. This is a KNOWN,
 // documented limitation, not an oversight: issue #176's own investigation
 // explicitly redirected recurrence-correct calendar answers away from a
@@ -321,9 +321,10 @@ func facetsFromView(view objectView) map[string][]cutting_garden_plugins.FacetVa
 
 	// due_band: open tasks only — a completed or cancelled task cannot
 	// become overdue, and counting it there forever would be noise. DUE
-	// is the due date; DTSTART is the task fallback (inverse of the
-	// year/month preference, where start dominates). The band anchors in
-	// the date's own zone (#141).
+	// is the due date; DTSTART is the task fallback — unlike the
+	// per-property date dimensions above, due_band keeps this fallback
+	// because it answers "when is this actionable", not "which property
+	// holds a date". The band anchors in the date's own zone (#141).
 	if view.Task != nil &&
 		status != "COMPLETED" && status != "CANCELLED" {
 		due, dueTZID := view.Task.Due, view.Task.DueTZID
