@@ -195,14 +195,49 @@ for string-tag substrates; deliberately not designed here.
 ## Tuning levers
 
 - **Continuation-heading rendering** (`## -client`, no `=`): provisional;
-  signal = the user's manual UAT verdict.
+  signal = the user's manual UAT verdict. 2026-08-25 UAT: the `=` prefix on
+  tag buckets read awkwardly (`## =_ inbox`) — a point toward the no-`=`
+  form; and space-bearing tags must be quoted (see UAT feedback below).
 - **`_`-lift maturity**: leading-only v1; signal = a real hyphence
-  system-field collision or UAT friction.
+  system-field collision or UAT friction. 2026-08-25 UAT surfaced the live
+  `_ inbox` underscore-SPACE pin-to-top convention, which D5 as written does
+  not cover (see UAT feedback below).
 - **Tag summary-lift policy**: raw tags in slice 1; signal = summary width
   in practice (fastmail's ~529 labels will force a namespace-bucketed or
   suppressed lift before fastmail's tag field lands).
 - **Contract batch shapes**: per-node tag sets now; signal = a wire
   implementation's measured latency (unmeasurable until one exists).
+
+## UAT feedback (2026-08-25, slice-1 categories)
+
+Manual UAT of the slice-1 read-only `categories` surface against live caldav
+(`caldav:task`) surfaced three slice-3 rendering inputs. Recorded as
+verdicts-so-far — they refine D3/D4/D5/D9; none is a slice-1 defect (slice 1
+renders `categories` through the generic FacetValue dimension path, which the
+tag-kind rendering of D9 supersedes).
+
+- **No dimension heading for a tag-kind group-by (refines D3/D9).** Grouping
+  by `categories` today emits the generic `# categories=` dimension heading
+  above the buckets. Verdict: a tag-kind dimension is *hoisted* — the tag
+  buckets are the headings, with no `<dim>=` parent ("categories are treated
+  as tags for free"). The generic dimension-heading spelling stays for value
+  dimensions (status, date); tag dimensions skip it.
+
+- **Tag headings MUST quote values with spaces / reserved runes (refines
+  D4/D9).** A real category `_ inbox` (embedded space) rendered as a bare
+  heading (`## =_ inbox`) — ambiguous and non-round-tripping. Tag values
+  containing a space (or any heading-reserved rune) must be quoted. This is a
+  rendering-correctness requirement, not a preference, and applies wherever a
+  tag renders as a heading.
+
+- **Live tags use a leading `_ ` (underscore-space) pin-to-top convention —
+  stresses D5.** The user's tags include `_ inbox`, where the leading `_ `
+  is a manual "sort to top" marker. D5 as written lifts `_inbox` (no space) →
+  `inbox` and says nothing about the underscore-SPACE form actually in use.
+  Open question the RFC must settle before slice 3: either the `_`-lift
+  covers the `_ ` spelling too (lift + identity-transparent to `inbox`), or
+  it explicitly excludes it and the `_ ` stays literal content. This is the
+  concrete collision D5 anticipated — it raises the bar on settling D5.
 
 ## Out of scope
 
