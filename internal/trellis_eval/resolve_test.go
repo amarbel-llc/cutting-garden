@@ -123,6 +123,70 @@ func TestEvaluateResolving_MatchesExplicitAnchor(t *testing.T) {
 	}
 }
 
+// TestEvaluateResolving_BareTagMatchesExplicitAnchorUnderOverride pins the mode
+// equivalence for a bare-tag step under a global [tags] override (#231 slice 3):
+// `origin -> project` with WithTagsInterpreter resolves to the same nodes as the
+// explicit-anchor Evaluate(anchor=origin, "project") with the same option — the
+// equivalence that would break if EvaluateResolving ignored the override and fell
+// back to the field default (here naive, which would not match transitively).
+func TestEvaluateResolving_BareTagMatchesExplicitAnchorUnderOverride(t *testing.T) {
+	tree := &tagTree{
+		dim: "categories", // naive default; the override flips it transitive
+		children: map[string][]cgp.Node{
+			"tag://o/": {
+				node(t, "tag://o/a", "obj-v1", tagFacets("categories", "project-client-acme")),
+				node(t, "tag://o/b", "obj-v1", tagFacets("categories", "other")),
+			},
+		},
+	}
+	resolver := fakeResolver{
+		lister:  tree,
+		anchors: map[string]string{"tag:root": "tag://o/"},
+	}
+
+	uris := func(nodes []cgp.Node) []string {
+		out := make([]string, 0, len(nodes))
+		for _, n := range nodes {
+			out = append(out, n.URIString())
+		}
+		sort.Strings(out)
+		return out
+	}
+
+	qr, err := trellis.Parse("tag:root -> project")
+	if err != nil {
+		t.Fatalf("parse resolving: %v", err)
+	}
+	resolving, err := EvaluateResolving(
+		context.Background(), qr, resolver, WithTagsInterpreter("dodder-hyphen"),
+	)
+	if err != nil {
+		t.Fatalf("resolving: %v", err)
+	}
+
+	qe, err := trellis.Parse("project")
+	if err != nil {
+		t.Fatalf("parse explicit: %v", err)
+	}
+	explicit, err := Evaluate(
+		context.Background(), qe, mustURL(t, "tag://o/"), tree,
+		WithTagsInterpreter("dodder-hyphen"),
+	)
+	if err != nil {
+		t.Fatalf("explicit: %v", err)
+	}
+
+	got, want := uris(resolving), uris(explicit)
+	if !equalStrings(got, want) {
+		t.Errorf("origin-mode %v != explicit-anchor %v", got, want)
+	}
+	// Not a vacuous both-empty equivalence: the override took effect, matching
+	// project-client-acme transitively in both modes.
+	if !equalStrings(got, []string{"tag://o/a"}) {
+		t.Errorf("override transitive under both modes: got %v, want [tag://o/a]", got)
+	}
+}
+
 // TestEvaluateResolving_Rejects pins origin-mode validation: a malformed or
 // out-of-slice origin query is a loud bad request, never a silent mismatch.
 func TestEvaluateResolving_Rejects(t *testing.T) {

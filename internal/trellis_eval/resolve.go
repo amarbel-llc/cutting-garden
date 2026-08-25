@@ -37,10 +37,18 @@ type OriginResolver interface {
 // enforces exactly that, so a missing origin here (or, symmetrically, a leading
 // URI handed to Evaluate, which rejects an identity term) is a loud bad request
 // rather than a silent mismatch.
+//
+// opts apply to the resolved-anchor evaluator exactly as Evaluate's do, so the
+// two modes stay equivalent under the same options: in particular a bare-tag
+// step resolves through the same WithTagsInterpreter override in either entry
+// point (#231 slice 3). EvaluateResolving has no production caller yet
+// (origin-in-expression is wired only in tests), so threading opts here is what
+// keeps that equivalence honest rather than serving a live override consumer.
 func EvaluateResolving(
 	ctx context.Context,
 	q *trellis.Query,
 	resolver OriginResolver,
+	opts ...EvaluateOption,
 ) ([]cgp.Node, error) {
 	if err := validateOriginQuery(q); err != nil {
 		return nil, err
@@ -67,7 +75,7 @@ func EvaluateResolving(
 		remCombinators = q.Path.Combinators[1:]
 	}
 
-	ev := newEvaluator(lister, anchor)
+	ev := newEvaluator(lister, anchor, opts...)
 	return ev.run(ctx, remSteps, remCombinators)
 }
 

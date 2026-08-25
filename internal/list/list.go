@@ -247,7 +247,15 @@ func (cmd *List) runList(ctx errors.Context, uriStr string) error {
 		if perr != nil {
 			return errors.BadRequestf("list %s --query: %s", uriStr, perr)
 		}
-		if nodes, err = trellis_eval.Evaluate(ctx, q, u, lister); err != nil {
+		// The [tags] interpreter override resolves a bare-tag term's dimension
+		// interpreter (RFC 0019 §4, #231 slice 3); a missing config yields "".
+		cfg, cerr := command_components.LoadDefaultConfig(nil)
+		if cerr != nil {
+			return errors.Wrapf(cerr, "list %s --query", uriStr)
+		}
+		if nodes, err = trellis_eval.Evaluate(
+			ctx, q, u, lister, trellis_eval.WithTagsInterpreter(cfg.Tags.Interpreter),
+		); err != nil {
 			return errors.Wrapf(err, "list %s --query", uriStr)
 		}
 	} else if nodes, err = lister.ListRoots(ctx, u); err != nil {

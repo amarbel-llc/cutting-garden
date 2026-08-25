@@ -18,11 +18,14 @@ const unsupported = "trellis: %s is not yet supported by the evaluator (cutting-
 // for a deferred feature fails fast and loudly rather than silently mismatching.
 // The supported subset: a path anchored at an explicit URI whose steps are
 // joined by the untyped combinators `->` / `<-` / `->>` / `<<-`, whose terms are
-// type predicates, field predicates (any operator, `~=` included),
-// OR-alternatives, and existential single-step forward subpaths, with only the
-// `:` sigil. Typed edges, the default-anchor (root-aggregate leading-combinator)
-// origin, version subpaths, non-`:` sigils, and mid-query identity/bare-tag terms
-// remain deferred. A leading-URI origin term is NOT handled here — resolving it
+// type predicates, field predicates (any operator, `~=` included), bare-identifier
+// (tag) predicates, OR-alternatives, and existential single-step forward subpaths,
+// with only the `:` sigil. Typed edges, the default-anchor (root-aggregate
+// leading-combinator) origin, version subpaths, non-`:` sigils, and mid-query
+// object-identity terms remain deferred. A bare-identifier term is NOT deferred
+// (#231 slice 3): it evaluates as a tag predicate through the node's
+// tag-dimension interpreter (RFC 0014's deferred bare term, RFC 0019 §5/§6.2).
+// A leading-URI origin term is NOT handled here — resolving it
 // is the origin-in-expression path's job (EvaluateResolving / validateOriginQuery,
 // resolve.go, cutting-garden#37).
 func Validate(q *trellis.Query) error {
@@ -97,8 +100,11 @@ func validateBasic(basic trellis.BasicTerm) error {
 	case trellis.SigilBasicTerm:
 		return validateSigil(&b.Sigil)
 	case trellis.IdentBasicTerm:
-		return errors.BadRequestf(unsupported,
-			"a bare identifier (tag) predicate")
+		// A bare identifier is a tag predicate (#231 slice 3): the evaluator
+		// matches it against the node's tag-dimension values through the
+		// dimension's resolved interpreter. Only its optional version sigil is
+		// still a per-host deferral; a bare `project` carries none.
+		return validateSigil(b.Sigil)
 	case trellis.DigestBasicTerm, trellis.MarklBasicTerm, trellis.QuotedRefBasicTerm:
 		return errors.BadRequestf(unsupported,
 			"an object-identity term (@digest, purpose@digest, or a quoted reference)")

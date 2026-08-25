@@ -1109,7 +1109,15 @@ func (t *Tools) listNodesQuery(
 	if err != nil {
 		return "", err
 	}
-	nodes, err := trellis_eval.Evaluate(ctx, q, u, lister)
+	// The [tags] interpreter override resolves a bare-tag term's dimension
+	// interpreter (RFC 0019 §4, #231 slice 3); a missing config yields "".
+	cfg, cerr := command_components.LoadDefaultConfig(nil)
+	if cerr != nil {
+		return "", errors.Wrapf(cerr, "list_nodes %s (query)", uri)
+	}
+	nodes, err := trellis_eval.Evaluate(
+		ctx, q, u, lister, trellis_eval.WithTagsInterpreter(cfg.Tags.Interpreter),
+	)
 	if err != nil {
 		return "", errors.Wrapf(err, "list_nodes %s (query)", uri)
 	}

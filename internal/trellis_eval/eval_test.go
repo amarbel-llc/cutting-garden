@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/url"
 	"sort"
+	"strings"
 	"testing"
 
 	cgp "code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
@@ -337,16 +338,14 @@ func TestEvaluate_Rejects(t *testing.T) {
 	tree := sampleTree(t)
 
 	queries := []string{
-		"!a -[!x]-> !b",       // typed forward
-		"!a <-[!x]- !b",       // typed backward
-		"!a -[!x]->> !b",      // typed closure (reserved)
-		`summary ~= "("`,      // invalid ~= regex (unbalanced paren)
-		"!event-v1+",          // non-`:` sigil
-		"!calendar-v1 [+]",    // version subpath
-		"!calendar-v1 [a, b]", // OR-alternatives of bare tags (tags still deferred)
-		"sometag",             // bare identifier (tag) predicate
-		"@blake2b256-abc",     // object-identity term
-		"-> !calendar-v1",     // leading combinator (default anchor)
+		"!a -[!x]-> !b",    // typed forward
+		"!a <-[!x]- !b",    // typed backward
+		"!a -[!x]->> !b",   // typed closure (reserved)
+		`summary ~= "("`,   // invalid ~= regex (unbalanced paren)
+		"!event-v1+",       // non-`:` sigil
+		"!calendar-v1 [+]", // version subpath
+		"@blake2b256-abc",  // object-identity term
+		"-> !calendar-v1",  // leading combinator (default anchor)
 	}
 
 	for _, query := range queries {
@@ -640,6 +639,169 @@ func TestEvaluate_DateFacetEqPrefixMatches(t *testing.T) {
 				t.Errorf("query %q: got %v, want %v", tc.query, got, tc.want)
 			}
 		})
+	}
+}
+
+// tagTree is a RootLister + UnifiedDescriber test double whose obj-v1 nodes
+// carry a single FieldTag dimension, exercising the bare-identifier (tag) term.
+// The dimension key and its declared interpreter are fixture parameters so one
+// shape pins both the naive (exact) and dodder-hyphen (transitive) match lanes,
+// and — with WithTagsInterpreter — the config-override precedence.
+type tagTree struct {
+	children    map[string][]cgp.Node
+	dim         string // the FieldTag dimension key (also the Node.Facets key)
+	interpreter string // the field's declared interpreter ("" -> naive default)
+}
+
+var (
+	_ cgp.RootLister       = (*tagTree)(nil)
+	_ cgp.UnifiedDescriber = (*tagTree)(nil)
+)
+
+func (*tagTree) Schemes() []string     { return []string{"tag"} }
+func (*tagTree) TypeTag() string       { return "tag-v1" }
+func (*tagTree) Types() []cgp.NodeType { return []cgp.NodeType{{Tag: "obj-v1"}} }
+
+func (f *tagTree) ListRoots(_ context.Context, u *url.URL) ([]cgp.Node, error) {
+	return f.children[u.String()], nil
+}
+
+func (f *tagTree) DescribeUnified() []cgp.NodeTypeUnifiedFields {
+	return []cgp.NodeTypeUnifiedFields{{
+		Tag: "obj-v1",
+		Codecs: []cgp.Codec{cgp.IdentityCodec{Field: cgp.UnifiedField{
+			Key:         f.dim,
+			Kind:        cgp.FieldTag,
+			MultiValued: true,
+			Interpreter: f.interpreter,
+		}}},
+	}}
+}
+
+// tagFacets builds a node's membership in one tag dimension — each tag becomes a
+// FacetValue.Key under the dimension, the shape matchTag reads.
+func tagFacets(dim string, tags ...string) map[string][]cgp.FacetValue {
+	vals := make([]cgp.FacetValue, 0, len(tags))
+	for _, tag := range tags {
+		vals = append(vals, cgp.FacetValue{Key: tag})
+	}
+	return map[string][]cgp.FacetValue{dim: vals}
+}
+
+// TestEvaluate_BareTagMatchesThroughInterpreter pins #231 slice 3: a
+// bare-identifier term matches through the node's tag-dimension interpreter —
+// exact under naive, transitive under dodder-hyphen, with the [tags] config
+// override (WithTagsInterpreter) winning over a field's declared default.
+func TestEvaluate_BareTagMatchesThroughInterpreter(t *testing.T) {
+	// naive (the field default): exact set membership only. `work` matches the
+	// exactly-tagged node, never the segment-extended `work-urgent`.
+	naive := &tagTree{
+		dim: "categories",
+		children: map[string][]cgp.Node{
+			"tag://r/": {
+				node(t, "tag://r/a", "obj-v1", tagFacets("categories", "work")),
+				node(t, "tag://r/b", "obj-v1", tagFacets("categories", "work-urgent")),
+				node(t, "tag://r/c", "obj-v1", nil),
+			},
+		},
+	}
+	if got := evalURIs(t, naive, "tag://r/", "work"); !equalStrings(
+		got, []string{"tag://r/a"},
+	) {
+		t.Errorf("naive bare tag: got %v, want [tag://r/a] (exact, not work-urgent)", got)
+	}
+	if got := evalURIs(t, naive, "tag://r/", "nope"); len(got) != 0 {
+		t.Errorf("naive bare tag no-match: got %v, want empty", got)
+	}
+
+	// dodder-hyphen (declared via the field's Interpreter): transitive along the
+	// segment path. `project` matches both the segment-extended and the exact
+	// node; `pro` matches neither (not a segment boundary).
+	hyphen := &tagTree{
+		dim:         "labels",
+		interpreter: "dodder-hyphen",
+		children: map[string][]cgp.Node{
+			"tag://h/": {
+				node(t, "tag://h/a", "obj-v1", tagFacets("labels", "project-client-acme")),
+				node(t, "tag://h/b", "obj-v1", tagFacets("labels", "project")),
+				node(t, "tag://h/c", "obj-v1", tagFacets("labels", "other")),
+			},
+		},
+	}
+	if got := evalURIs(t, hyphen, "tag://h/", "project"); !equalStrings(
+		got, []string{"tag://h/a", "tag://h/b"},
+	) {
+		t.Errorf("dodder-hyphen transitive: got %v, want [a b]", got)
+	}
+	if got := evalURIs(t, hyphen, "tag://h/", "pro"); len(got) != 0 {
+		t.Errorf("dodder-hyphen non-boundary: got %v, want empty (pro !~ project)", got)
+	}
+
+	// Config override: a naive-default dimension matches transitively when the
+	// global [tags] override selects dodder-hyphen (RFC 0019 §4) — and stays
+	// exact-only without it.
+	naiveDefault := &tagTree{
+		dim: "categories", // Interpreter "" -> naive default
+		children: map[string][]cgp.Node{
+			"tag://o/": {
+				node(t, "tag://o/a", "obj-v1", tagFacets("categories", "project-client-acme")),
+			},
+		},
+	}
+	q, err := trellis.Parse("project")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	nodes, err := Evaluate(
+		context.Background(), q, mustURL(t, "tag://o/"), naiveDefault,
+		WithTagsInterpreter("dodder-hyphen"),
+	)
+	if err != nil {
+		t.Fatalf("evaluate with override: %v", err)
+	}
+	if len(nodes) != 1 || nodes[0].URIString() != "tag://o/a" {
+		t.Errorf("override transitive: got %v, want [tag://o/a]", nodes)
+	}
+	if got := evalURIs(t, naiveDefault, "tag://o/", "project"); len(got) != 0 {
+		t.Errorf("naive default without override: got %v, want empty (exact only)", got)
+	}
+}
+
+// TestEvaluate_BareTagUnknownOverrideErrors pins that an unknown [tags]
+// interpreter override surfaces as a loud bad request through
+// matchBasic -> matchTag -> resolveTagInterpreter -> Evaluate, naming the bad
+// value, rather than being swallowed or silently defaulted (RFC 0019 §3).
+func TestEvaluate_BareTagUnknownOverrideErrors(t *testing.T) {
+	tree := &tagTree{
+		dim: "categories",
+		children: map[string][]cgp.Node{
+			"tag://e/": {node(t, "tag://e/a", "obj-v1", tagFacets("categories", "work"))},
+		},
+	}
+	q, err := trellis.Parse("work")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	_, err = Evaluate(
+		context.Background(), q, mustURL(t, "tag://e/"), tree,
+		WithTagsInterpreter("bogus"),
+	)
+	if err == nil {
+		t.Fatal("unknown override interpreter: expected an error, got nil")
+	}
+	if !strings.Contains(err.Error(), "bogus") {
+		t.Errorf("error %q does not name the bad interpreter %q", err.Error(), "bogus")
+	}
+}
+
+// TestEvaluate_BareTagWithoutUnifiedFieldsMatchesNothing pins that a plugin
+// declaring no unified fields (no UnifiedDescriber) has no tag dimension, so a
+// bare tag term is valid but matches nothing rather than erroring — fakeTree
+// implements FacetDescriber but not UnifiedDescriber.
+func TestEvaluate_BareTagWithoutUnifiedFieldsMatchesNothing(t *testing.T) {
+	tree := sampleTree(t)
+	if got := evalURIs(t, tree, "fake://cal/personal/", "anytag"); len(got) != 0 {
+		t.Errorf("bare tag without unified fields: got %v, want empty", got)
 	}
 }
 

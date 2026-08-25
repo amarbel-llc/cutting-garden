@@ -5,17 +5,25 @@
 // This is the slice-2 evaluator (cutting-garden#164, #211, #37): a walk over the
 // untyped graph combinators — forward `->`, reverse `<-`, forward closure `->>`,
 // backward closure `<<-` — with a predicate layer over Node.Type, Node.Facets,
-// and leaf bodies, `:`-only sigils, OR-alternatives, and `~=` regex. Reverse and
+// tag-dimension membership, and leaf bodies, `:`-only sigils, OR-alternatives,
+// and `~=` regex. Reverse and
 // the backward closure invert the child relation over the anchor's reachable
 // subtree (RootLister is forward-only, so parents are computable no other way;
 // FDR 0022 "scan-and-invert"). The anchor comes either from an explicit param
 // (Evaluate) or is resolved from a leading-URI origin term in the query itself
 // (EvaluateResolving, resolve.go, cutting-garden#37). Forms the grammar admits
 // but the evaluator still defers — typed edges, non-`:` sigils, version
-// subpaths, mid-query identity and bare-tag predicates, and the default-anchor
+// subpaths, mid-query object-identity predicates, and the default-anchor
 // (root-aggregate leading-combinator) origin — are rejected up front by Validate,
 // never silently mismatched. See docs/features/0022-trellis.md for the boundary
 // taxonomy.
+//
+// A bare-identifier (tag) term is NOT deferred (#231 slice 3): it matches
+// against the subject node's tag-dimension values through the dimension's
+// resolved TagInterpreter — exact under naive, transitive along the segment
+// path under dodder-hyphen (RFC 0019 §5/§6.2). A tag dimension is a FieldTag
+// field the plugin declares via the optional UnifiedDescriber capability; a
+// plugin declaring none has no tag dimension, so a bare tag matches nothing.
 //
 // It lives beside the parser (internal/trellis) rather than inside it so the
 // pure-parser package stays free of the traversal-SDK dependency the
@@ -52,13 +60,29 @@ func Evaluate(
 	q *trellis.Query,
 	anchor *url.URL,
 	lister cgp.RootLister,
+	opts ...EvaluateOption,
 ) ([]cgp.Node, error) {
 	if err := Validate(q); err != nil {
 		return nil, err
 	}
 
-	ev := newEvaluator(lister, anchor)
+	ev := newEvaluator(lister, anchor, opts...)
 	return ev.run(ctx, q.Path.Steps, q.Path.Combinators)
+}
+
+// EvaluateOption configures an evaluation. The zero-option call preserves each
+// tag field's plugin-declared interpreter default; the only option so far layers
+// the global [tags] config override on top (RFC 0019 §4).
+type EvaluateOption func(*evaluator)
+
+// WithTagsInterpreter sets the global [tags] interpreter override the evaluator
+// applies when resolving a tag field's interpreter for a bare-identifier term
+// (#231 slice 3). The override wins over the field's declared default; an empty
+// override (the default) leaves each field's declared interpreter in force. A
+// caller wires it from cfg.Tags.Interpreter (command_components.LoadDefaultConfig),
+// the same value organize's membership path resolves through.
+func WithTagsInterpreter(override string) EvaluateOption {
+	return func(ev *evaluator) { ev.tagsInterpreterOverride = override }
 }
 
 // run evaluates a validated steps-and-combinators body against ev.anchor: the
@@ -111,6 +135,16 @@ type evaluator struct {
 	// surface has (cutting-garden#230).
 	facets map[string]map[string]cgp.FacetKind
 
+	// unified is the plugin's once-probed UnifiedDescriber, letting a bare-tag
+	// term enumerate a node type's FieldTag dimensions (#231 slice 3). nil when
+	// the plugin declares no unified fields — a bare tag then matches nothing.
+	unified cgp.UnifiedDescriber
+	// tagsInterpreterOverride is the global [tags] interpreter override
+	// (RFC 0019 §4) a bare-tag term layers over each tag field's declared
+	// default. "" (the WithTagsInterpreter-unset default) leaves the field's
+	// declared interpreter in force.
+	tagsInterpreterOverride string
+
 	// parents maps a node's URI to the nodes under anchor whose immediate
 	// children include it. Built on first backward use by scanning anchor's
 	// reachable subtree once (see inverse); parentsBuilt guards the one-time
@@ -123,13 +157,18 @@ type evaluator struct {
 	regex map[string]*regexp.Regexp
 }
 
-func newEvaluator(lister cgp.RootLister, anchor *url.URL) *evaluator {
+func newEvaluator(
+	lister cgp.RootLister, anchor *url.URL, opts ...EvaluateOption,
+) *evaluator {
 	ev := &evaluator{lister: lister, anchor: anchor}
 	if el, ok := lister.(cgp.EnrichedLister); ok {
 		ev.enriched = el
 	}
 	if lr, ok := lister.(cgp.LeafReader); ok {
 		ev.leaf = lr
+	}
+	if ud, ok := lister.(cgp.UnifiedDescriber); ok {
+		ev.unified = ud
 	}
 	if fd, ok := lister.(cgp.FacetDescriber); ok {
 		ev.facets = make(map[string]map[string]cgp.FacetKind)
@@ -140,6 +179,9 @@ func newEvaluator(lister cgp.RootLister, anchor *url.URL) *evaluator {
 			}
 			ev.facets[ntf.Tag] = kinds
 		}
+	}
+	for _, opt := range opts {
+		opt(ev)
 	}
 	return ev
 }
@@ -456,6 +498,12 @@ func (ev *evaluator) matchBasic(
 				"trellis: internal: unvalidated group body %T reached the evaluator", body,
 			)
 		}
+	case trellis.IdentBasicTerm:
+		// A bare identifier is a tag predicate (#231 slice 3): match it against
+		// the node's tag-dimension membership through the resolved interpreter.
+		// Ident.Name carries the tag without decoration; its version sigil, if
+		// any, is a no-op `:` (Validate rejects every other).
+		return ev.matchTag(n, b.Ident.Name)
 	case trellis.SigilBasicTerm:
 		// A bare `:` selects the latest version-set (the default) and adds
 		// no predicate — a no-op that matches every candidate.
@@ -522,6 +570,88 @@ func (ev *evaluator) matchAlternatives(
 		}
 	}
 	return false, nil
+}
+
+// matchTag evaluates a bare-identifier (tag) term against the node's tag
+// dimensions (#231 slice 3): the RFC 0014 bare term the parser leaves for the
+// type system to interpret. For each FieldTag dimension the node type declares
+// (via the plugin's optional UnifiedDescriber), it resolves the dimension's tag
+// interpreter — the field's declared default (UnifiedField.Interpreter, "" ->
+// naive) with the global [tags] override layered on top — reads the node's tags
+// for that dimension from Node.Facets, and asks the interpreter whether term
+// matches (naive: exact, RFC 0019 §5; dodder-hyphen: transitive along the
+// segment path, §6.2). Any dimension matching makes the node match. A plugin
+// that declares no unified fields has no tag dimension and so matches nothing.
+// An unknown interpreter name (from either the field or the override) is a loud
+// bad request, surfaced rather than defaulted (RFC 0019 §3).
+func (ev *evaluator) matchTag(n cgp.Node, term string) (bool, error) {
+	if ev.unified == nil {
+		return false, nil
+	}
+	for _, ntf := range ev.unified.DescribeUnified() {
+		if ntf.Tag != n.Type {
+			continue
+		}
+		for _, codec := range ntf.Codecs {
+			for _, field := range codec.Fields() {
+				if field.Kind != cgp.FieldTag {
+					continue
+				}
+				interp, err := resolveTagInterpreter(
+					field.Interpreter, ev.tagsInterpreterOverride,
+				)
+				if err != nil {
+					return false, err
+				}
+				if interp.Matches(tagKeys(n.Facets[field.Key]), term) {
+					return true, nil
+				}
+			}
+		}
+	}
+	return false, nil
+}
+
+// tagKeys projects a facet dimension's membership values onto the raw tag
+// strings the interpreter matches against — each FacetValue.Key is one tag the
+// node carries in that dimension.
+func tagKeys(values []cgp.FacetValue) []string {
+	tags := make([]string, 0, len(values))
+	for _, v := range values {
+		tags = append(tags, v.Key)
+	}
+	return tags
+}
+
+// resolveTagInterpreter selects a tag dimension's interpreter under RFC 0019 §4
+// precedence: the global [tags] override when set, else the field's declared
+// default, else "naive". The resolved name MUST name a registered interpreter —
+// an unknown name is a loud bad request, never a silent default (RFC 0019 §3).
+// It matches command_components.ResolveTagInterpreter's precedence (tags slice 3
+// Task A2) PLUS an empty->"naive" fallback A2 lacks: A2's callers pre-default the
+// field to "naive" before calling, whereas matchTag passes the field's possibly-
+// empty UnifiedField.Interpreter straight through (a FieldTag field may declare no
+// explicit interpreter), so the default belongs here. Reimplemented over
+// cgp.LookupTagInterpreter rather than importing the CLI seam so the evaluator
+// keeps its lean dependency surface (cgp/trellis/errors) for a six-line resolution.
+func resolveTagInterpreter(
+	fieldDefault, override string,
+) (cgp.TagInterpreter, error) {
+	name := override
+	if name == "" {
+		name = fieldDefault
+	}
+	if name == "" {
+		name = "naive"
+	}
+	interp, ok := cgp.LookupTagInterpreter(name)
+	if !ok {
+		return nil, errors.BadRequestf(
+			"tag interpreter %q is not registered (builtins: naive, dodder-hyphen)",
+			name,
+		)
+	}
+	return interp, nil
 }
 
 // matchFieldPred resolves the field and applies the operator. Resolution:
