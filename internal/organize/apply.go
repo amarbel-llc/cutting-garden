@@ -136,8 +136,17 @@ func (cmd *Organize) applyDocument(
 		return false, err
 	}
 	if multiValued {
+		// The grouped dimension's tag interpreter is resolved from the field's
+		// declared default plus the global [tags] config override (RFC 0019 §4,
+		// #231 slice 3). Load the config here — on the membership path only — the
+		// same way generate does; the single-valued facet path needs no interpreter.
+		cfg, err := command_components.LoadDefaultConfig(nil)
+		if err != nil {
+			return false, err
+		}
 		return cmd.applyMemberships(
-			ctx, edited, base, liveNodes, lister, dim, commit, interactive, color,
+			ctx, edited, base, liveNodes, lister, dim, cfg.Tags.Interpreter,
+			commit, interactive, color,
 		)
 	}
 
@@ -451,6 +460,45 @@ func (cmd *Organize) executePlan(
 	return nil
 }
 
+// interpreterForDimension resolves the tag interpreter a grouped dimension uses
+// (RFC 0019 §4 selection): the field's plugin-declared default (its
+// UnifiedField.Interpreter, read via the optional UnifiedDescriber capability)
+// with the global [tags] config override layered on top — the override wins,
+// per A2's ResolveTagInterpreter. A lister that declares no unified fields, no
+// field for the dimension, or an empty declared interpreter defaults the
+// field-default to "naive" (the RFC 0019 §4 default and the Slice-1/2 behavior),
+// NOT an error; only an unknown interpreter NAME (from either source) is the
+// loud bad request ResolveTagInterpreter raises.
+func interpreterForDimension(
+	lister cgp.RootLister, dim string, tagsOverride string,
+) (cgp.TagInterpreter, error) {
+	fieldDefault := "naive"
+	if describer, ok := lister.(cgp.UnifiedDescriber); ok {
+		if declared := declaredTagInterpreter(describer, dim); declared != "" {
+			fieldDefault = declared
+		}
+	}
+	return command_components.ResolveTagInterpreter(fieldDefault, tagsOverride)
+}
+
+// declaredTagInterpreter returns the interpreter a plugin declares for the
+// dimension's unified field — the first field whose Key == dim across the node
+// types' codecs — or "" when no such field is declared (or it names no
+// interpreter). A tag field's interpreter is a property of the dimension, so the
+// first Key match is authoritative; caller defaults "" to naive.
+func declaredTagInterpreter(describer cgp.UnifiedDescriber, dim string) string {
+	for _, nt := range describer.DescribeUnified() {
+		for _, codec := range nt.Codecs {
+			for _, field := range codec.Fields() {
+				if field.Key == dim {
+					return field.Interpreter
+				}
+			}
+		}
+	}
+	return ""
+}
+
 // applyMemberships is the multi-valued-dimension apply path (RFC 0019, #231 slice
 // 2): it three-way-merges each object's tag SET via planMemberships and writes the
 // resulting full-set replacements through the plugin's MembershipWriteApplier,
@@ -466,17 +514,18 @@ func (cmd *Organize) applyMemberships(
 	liveNodes []cgp.Node,
 	lister cgp.RootLister,
 	dim string,
+	tagsOverride string,
 	commit, interactive, color bool,
 ) (committed bool, err error) {
-	// Slice 2 uses the field default interpreter (naive). RFC 0019 §4 interpreter
-	// selection (reading the field's declared interpreter) and the [organize]
-	// config override are slice 3; until then every multi-valued dimension folds
-	// through naive.
-	interp, ok := cgp.LookupTagInterpreter("naive")
-	if !ok {
-		return false, errors.ErrorWithStackf(
-			"organize --apply: the naive tag interpreter is not registered",
-		)
+	// Resolve the grouped dimension's tag interpreter from the field's declared
+	// default plus the global [tags] config override (RFC 0019 §4, #231 slice 3).
+	// For whole-dimension categories grouping dodder-hyphen folds identically to
+	// naive (its whole-dimension Buckets and exact Complete match naive's); the
+	// observable difference only appears in namespace grouping and transitive
+	// matching (later slices), so this wires SELECTION, not a behavior change here.
+	interp, err := interpreterForDimension(lister, dim, tagsOverride)
+	if err != nil {
+		return false, err
 	}
 
 	memberships, err := planMemberships(edited, base, liveNodes, edited.Anchor, interp, dim)
