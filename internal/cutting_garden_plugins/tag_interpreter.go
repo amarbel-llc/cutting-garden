@@ -1,6 +1,10 @@
 package cutting_garden_plugins
 
-import "code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
+import (
+	"strings"
+
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
+)
 
 // TagMembership is one node's placement in one grouping bucket, as computed by
 // TagInterpreter.Buckets (RFC 0019 §1). It is a pure value pair, safe to
@@ -95,7 +99,8 @@ type TagInterpreter interface {
 // names into this SAME namespace, indistinguishable to a consumer from a
 // builtin.
 var tagInterpreterRegistry = map[string]TagInterpreter{
-	"naive": naiveTagInterpreter{},
+	"naive":         naiveTagInterpreter{},
+	"dodder-hyphen": dodderHyphenTagInterpreter{},
 }
 
 // LookupTagInterpreter resolves a registered interpreter by name (RFC 0019 §3).
@@ -105,6 +110,23 @@ var tagInterpreterRegistry = map[string]TagInterpreter{
 func LookupTagInterpreter(name string) (ti TagInterpreter, ok bool) {
 	ti, ok = tagInterpreterRegistry[name]
 	return ti, ok
+}
+
+// wholeDimensionBuckets is the empty-namespace grouping shared by every
+// interpreter (RFC 0019 §1): one TagMembership per distinct tag, with
+// Bucket == Via == the tag, deduplicated in first-occurrence order. Both
+// builtins' empty-namespace path is exactly this.
+func wholeDimensionBuckets(tags []string) []TagMembership {
+	ms := make([]TagMembership, 0, len(tags))
+	seen := make(map[string]struct{}, len(tags))
+	for _, tag := range tags {
+		if _, dup := seen[tag]; dup {
+			continue
+		}
+		seen[tag] = struct{}{}
+		ms = append(ms, TagMembership{Bucket: tag, Via: tag})
+	}
+	return ms
 }
 
 // naiveTagInterpreter is the exact-match degenerate (RFC 0019 §5) — the
@@ -135,16 +157,7 @@ func (naiveTagInterpreter) Buckets(
 			"tag interpreter %q declares no namespaces", "naive",
 		)
 	}
-	ms := make([]TagMembership, 0, len(tags))
-	seen := make(map[string]struct{}, len(tags))
-	for _, tag := range tags {
-		if _, dup := seen[tag]; dup {
-			continue
-		}
-		seen[tag] = struct{}{}
-		ms = append(ms, TagMembership{Bucket: tag, Via: tag})
-	}
-	return ms, nil
+	return wholeDimensionBuckets(tags), nil
 }
 
 // Matches is exact set membership: true iff term equals some tag in the node's
@@ -194,6 +207,131 @@ func (naiveTagInterpreter) Complete(
 	default:
 		return nil, errors.BadRequestf(
 			"tag interpreter %q: unknown membership op %q", "naive", op,
+		)
+	}
+}
+
+// dodderHyphenTagInterpreter imports dodder's tag algebra (RFC 0019 §6): hyphen
+// (`-`) separated segments form a hierarchy, grouping by a namespace rolls
+// deeper tags up to their immediate next segment (§6.1), bare-term matching is
+// transitive along the segment path (§6.2), and write-back removes a bucket's
+// whole segment subtree (§6.2). `_` is literal — no lift, no alias (§7) — so
+// Normalize and SortKey stay the identity exactly as naive's do.
+type dodderHyphenTagInterpreter struct{}
+
+var _ TagInterpreter = dodderHyphenTagInterpreter{}
+
+// Normalize is the identity: dodder-hyphen imposes no canonical form, and `_`
+// is literal (no lift), so `_inbox` and `inbox` are distinct tags (RFC 0019
+// §6, §7).
+func (dodderHyphenTagInterpreter) Normalize(tag string) string { return tag }
+
+// SortKey is the identity: ordering is plain lexical over the tag string. A
+// leading `_`/`_ ` sorts high as a natural consequence of ASCII order, needing
+// no special lift (RFC 0019 §7).
+func (dodderHyphenTagInterpreter) SortKey(tag string) string { return tag }
+
+// Buckets rolls the node's tags up to their immediate next segment beneath the
+// namespace (RFC 0019 §6.1). The empty namespace is whole-dimension grouping —
+// one membership per distinct tag, Bucket == Via — exactly as naive's is. A
+// non-empty namespace N buckets each tag of the form `N-<rest>` by its first
+// rest segment: Bucket is the continuation form "-<segment>" (§6.3), Via is the
+// producing tag. A tag equal to N (no segment beneath it) or not under N
+// contributes nothing. The result is deduplicated by Bucket per node — several
+// tags rolling to the same bucket (project-client-acme, project-client-baxter
+// → both -client) yield one membership, whose Via is the first contributor —
+// and an empty result (no tags under the namespace) is normal, not an error.
+func (dodderHyphenTagInterpreter) Buckets(
+	tags []string,
+	namespace string,
+) ([]TagMembership, error) {
+	if namespace == "" {
+		return wholeDimensionBuckets(tags), nil
+	}
+
+	ms := make([]TagMembership, 0, len(tags))
+	seen := make(map[string]struct{}, len(tags))
+	prefix := namespace + "-"
+	for _, tag := range tags {
+		rest, under := strings.CutPrefix(tag, prefix)
+		if !under || rest == "" {
+			continue
+		}
+		segment := rest
+		if i := strings.IndexByte(rest, '-'); i >= 0 {
+			segment = rest[:i]
+		}
+		bucket := "-" + segment
+		if _, dup := seen[bucket]; dup {
+			continue
+		}
+		seen[bucket] = struct{}{}
+		ms = append(ms, TagMembership{Bucket: bucket, Via: tag})
+	}
+	return ms, nil
+}
+
+// Matches is transitive along the segment path: true iff some tag equals term
+// or has term as a segment-prefix — i.e. starts with `term-` (RFC 0019 §6.2).
+// So `project` matches `project-client-acme`, `project-client` matches it, but
+// a non-segment-boundary prefix (`pro`) does not match `project`. naive's exact
+// match is the degenerate where the only matching prefix is the whole tag.
+func (dodderHyphenTagInterpreter) Matches(tags []string, term string) bool {
+	prefix := term + "-"
+	for _, tag := range tags {
+		if tag == term || strings.HasPrefix(tag, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// Complete edits the node's full tag set with EXACT add/remove of the bucket
+// tag — identical to naive's (RFC 0019 §6.2 normatively pins only the exact
+// append). It is deliberately NOT transitive: Complete receives a full tag
+// string and cannot tell a whole-dimension bucket (`work`) from a reconstructed
+// rollup tag (`project-client`), so a segment-prefix removal would wrongly strip
+// an independent sibling like `work-urgent` when a node is removed from `work`.
+// The hierarchy lives in Buckets (rollup) and Matches (transitive); the
+// rollup-bucket write-back mechanics — reconstructing a bucket's namespace tag
+// for an add (`-client` under namespace `project` → `project-client`) and
+// enumerating a node's realizing tags for a remove — are the apply layer's
+// responsibility (it holds the node's tags plus the namespace), so Complete
+// always receives a full tag and edits it exactly. Both ops are idempotent and
+// never mutate the input: the result is always a fresh slice.
+func (dodderHyphenTagInterpreter) Complete(
+	tags []string,
+	op TagMembershipOp,
+	bucket string,
+) ([]string, error) {
+	present := false
+	for _, tag := range tags {
+		if tag == bucket {
+			present = true
+			break
+		}
+	}
+
+	switch op {
+	case TagAdd:
+		if present {
+			return append([]string{}, tags...), nil
+		}
+		return append(append([]string{}, tags...), bucket), nil
+	case TagRemove:
+		if !present {
+			return append([]string{}, tags...), nil
+		}
+		out := make([]string, 0, len(tags))
+		for _, tag := range tags {
+			if tag != bucket {
+				out = append(out, tag)
+			}
+		}
+		return out, nil
+	default:
+		return nil, errors.BadRequestf(
+			"tag interpreter %q: unknown membership op %q", "dodder-hyphen", op,
 		)
 	}
 }
