@@ -69,8 +69,8 @@ func main() {
 	// Slice 1 Phase 0 conformance net): VTODOs carrying banded PRIORITY, LOCATION,
 	// and STATUS so grouping by `priority` yields all four bands and each object's
 	// box surfaces editable location/status/priority atoms plus the SUMMARY
-	// trailer. Two of them additionally carry CATEGORIES so the read-only tag
-	// dimension (tags slice 1, RFC 0019) has multi-membership signal: field2 is
+	// trailer. Two of them additionally carry CATEGORIES so the tag
+	// dimension (RFC 0019) has multi-membership signal: field2 is
 	// a two-tag task (work + errand) and field3 a one-tag task (work), so grouping
 	// by `categories` files field2 under BOTH `## =work` and `## =errand` while
 	// field3 lands under `## =work` only, and the categories histogram reads
@@ -122,7 +122,7 @@ func vevent(uid, summary string) string {
 // LOCATION, a STATUS, and a raw comma-separated CATEGORIES (empty omits the
 // property → the untagged case). It is the richest VTODO shape the fixtures need
 // — organize surfaces priority/location/status as editable box atoms with SUMMARY
-// as the trailer, while CATEGORIES feeds the read-only tag dimension (RFC 0019)
+// as the trailer, while CATEGORIES feeds the tag dimension (RFC 0019)
 // and never renders as an atom.
 func vtodoRich(uid, summary string, priority int, location, status, categories string) string {
 	var b strings.Builder

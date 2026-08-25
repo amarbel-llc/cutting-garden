@@ -569,7 +569,7 @@ debug-organize-fields: debug-build-go
     curl -fsS "${source_url#caldav:}fields/field1.ics"
     exec {SRV[1]}>&- || true
 
-# Eyeball the read-only categories tag dimension (tags slice 1, RFC 0019) that
+# Eyeball the categories tag dimension (RFC 0019) that
 # zz-tests_bats/organize_tags.bats pins: the --facets/--filter histogram over the
 # multi-tag fixture, and the two-tag membership listing. The pure-read lanes need
 # no blob store, so they survive the #87 store-config skew that blocks the

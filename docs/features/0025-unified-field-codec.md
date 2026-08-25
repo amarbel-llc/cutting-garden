@@ -270,7 +270,7 @@ intentionally plugin-side counting.
 | text | `location` | ✅ IdentityCodec | — | ✅ |
 | text (trailer) | `summary` | ✅ IdentityCodec/Trailer | — | ✅ |
 | duration | `duration` (P6D) | ✅ derived end — the dtend codec falls back to DTSTART+DURATION (#233) | — | — (end atoms read-only) |
-| tag (multi) | `CATEGORIES` | — | ✅ categoriesCodec, naive (RFC 0019) — read-only | ❌ slice 2 (N-way merge) |
+| tag (multi) | `CATEGORIES` | — | ✅ categoriesCodec, naive (RFC 0019) | ✅ write:many, full-set replace (slice 2, N-way merge) |
 
 ### Option B — collapse the facet surface (landed 2026-08-19)
 
