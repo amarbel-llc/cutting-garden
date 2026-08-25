@@ -237,7 +237,7 @@ Two interpreters are builtin and MUST be registered:
 | Name | Semantics | Status |
 |------|-----------|--------|
 | `naive` | Exact, whole-dimension; no hierarchy, no lift (§5) | Implemented (slice 1) |
-| `dodder-hyphen` | Hyphen-segment hierarchy, namespace rollup, transitive matching; `_` literal, no lift (§6, §7) | Specified here; implemented later (slice 3) |
+| `dodder-hyphen` | Hyphen-segment hierarchy, namespace rollup, transitive matching; `_` literal, no lift (§6, §7) | Implemented (slice 3 Part A: interpreter + config selection + bare-tag matching); namespace-grouping UI is Part B |
 
 A future `[[tag_interpreters]]` wire stanza (§8) registers wire-backed names
 into this SAME namespace; a name so registered is indistinguishable to a

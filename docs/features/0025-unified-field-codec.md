@@ -181,8 +181,9 @@ evaluator feature: any plugin that declares a tag field participates.
   placement dissolves it by construction.
 - **#230** (dates as facets), **#231** (tag-interpreter plugin), **#232**
   (tags-as-editable-objects, dodder `:e`) are linked sub-designs.
-- **RFC 0014 (trellis)** gains bare-tag evaluation (a deferred form); the tag
-  match semantics come from the interpreter, not the grammar.
+- **RFC 0014 (trellis)** gained bare-tag evaluation (previously a deferred form;
+  un-deferred in tags slice 3); the tag match semantics come from the
+  interpreter, not the grammar.
 
 ## Staging / migration
 
