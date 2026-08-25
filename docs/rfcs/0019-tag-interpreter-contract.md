@@ -348,6 +348,19 @@ prefix.
   Placing an object one level deeper is a deeper group-by
   (`--group-by project-client`), where the bucket names the leaf directly. This
   is the design's D9 resolution and MUST be implemented as stated.
+- **`Complete` is EXACT; the apply layer owns rollup reconstruction.** The
+  namespace-tag reconstruction above is the APPLY layer's responsibility, not
+  `Complete`'s: apply knows the namespace (the `--group-by` argument), forms the
+  full tag (`project` + `-client` → `project-client`), and calls
+  `Complete(tags, TagAdd, "project-client")`. `Complete` therefore adds — and,
+  for `TagRemove`, drops — the given full tag EXACTLY, never a subtree. Removing
+  an object from a rollup bucket is likewise apply's job: it enumerates the
+  object's tags under the bucket's namespace path and calls
+  `Complete(TagRemove, <tag>)` for each. A subtree-transitive `Complete.TagRemove`
+  is DISALLOWED — it would strip an independent whole-dimension sibling (`work`
+  vs a coincidentally hyphen-sharing `work-urgent`). `Complete`'s exactness is
+  thus uniform across both builtins; the hierarchy lives in `Buckets` and
+  `Matches`.
 
 #### 6.3 Continuation-heading rendering (presentation-layer; RESOLVED — decision A)
 
