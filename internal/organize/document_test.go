@@ -1,6 +1,7 @@
 package organize
 
 import (
+	"sort"
 	"strings"
 	"testing"
 )
@@ -200,6 +201,102 @@ func TestAssignmentsRejectDuplicate(t *testing.T) {
 	}}
 	if _, err := doc.assignments(); err == nil {
 		t.Error("expected an error for an object under two buckets")
+	}
+}
+
+// TestMemberships_MultiValued pins the cardinality-aware projection for a
+// multi-valued dimension: one object legally appears under several distinct
+// buckets (accumulated), but the same bucket twice for one id is malformed.
+func TestMemberships_MultiValued(t *testing.T) {
+	doc := document{Sections: []section{
+		{Depth: 1, Term: "categories="},
+		{Depth: 2, Term: "=work", Lines: []objectLine{{ID: "t1.ics"}}},
+		{Depth: 2, Term: "=urgent", Lines: []objectLine{{ID: "t1.ics"}}},
+	}}
+	m, err := doc.memberships(true)
+	if err != nil {
+		t.Fatalf("multi membership must be legal: %v", err)
+	}
+	got := append([]string(nil), m["t1.ics"]...)
+	sort.Strings(got)
+	if len(got) != 2 || got[0] != "urgent" || got[1] != "work" {
+		t.Errorf("t1 memberships = %v, want [urgent work]", got)
+	}
+
+	dup := document{Sections: []section{
+		{Depth: 1, Term: "categories="},
+		{Depth: 2, Term: "=work", Lines: []objectLine{{ID: "t1.ics"}, {ID: "t1.ics"}}},
+	}}
+	if _, err := dup.memberships(true); err == nil {
+		t.Error("same bucket twice for one id must reject")
+	}
+}
+
+// TestMemberships_SingleValuedRejectsTwoBuckets pins that a single-valued
+// dimension keeps the "appears twice" rejection — a second distinct bucket for
+// one id is a malformed edit.
+func TestMemberships_SingleValuedRejectsTwoBuckets(t *testing.T) {
+	doc := document{Sections: []section{
+		{Depth: 1, Term: "status="},
+		{Depth: 2, Term: "=A", Lines: []objectLine{{ID: "x.ics"}}},
+		{Depth: 2, Term: "=B", Lines: []objectLine{{ID: "x.ics"}}},
+	}}
+	if _, err := doc.memberships(false); err == nil {
+		t.Error("single-valued object under two buckets must reject")
+	}
+}
+
+// TestMemberships_Ungrouped pins that an object above the first heading yields an
+// empty membership set (present in the map, no value), never an error.
+func TestMemberships_Ungrouped(t *testing.T) {
+	doc := document{
+		Ungrouped: []objectLine{{ID: "u.ics", Desc: "loose"}},
+		Sections: []section{
+			{Depth: 1, Term: "categories="},
+			{Depth: 2, Term: "=work", Lines: []objectLine{{ID: "t1.ics"}}},
+		},
+	}
+	m, err := doc.memberships(true)
+	if err != nil {
+		t.Fatalf("ungrouped membership must be legal: %v", err)
+	}
+	got, present := m["u.ics"]
+	if !present {
+		t.Error("ungrouped object must be present in the membership map")
+	}
+	if len(got) != 0 {
+		t.Errorf("ungrouped memberships = %v, want empty", got)
+	}
+}
+
+// TestMemberships_UngroupedPlusBucketedRejects pins that an id appearing BOTH
+// ungrouped and under a bucket is a malformed edit in both cardinality modes —
+// the occupancy check must fire even though the ungrouped placement carries no
+// bucket payload.
+func TestMemberships_UngroupedPlusBucketedRejects(t *testing.T) {
+	mk := func() document {
+		return document{
+			Ungrouped: []objectLine{{ID: "t1.ics"}},
+			Sections: []section{
+				{Depth: 1, Term: "categories="},
+				{Depth: 2, Term: "=work", Lines: []objectLine{{ID: "t1.ics"}}},
+			},
+		}
+	}
+	if _, err := mk().memberships(true); err == nil {
+		t.Error("multi: object both ungrouped and bucketed must reject")
+	}
+	if _, err := mk().memberships(false); err == nil {
+		t.Error("single: object both ungrouped and bucketed must reject")
+	}
+}
+
+// TestMemberships_DuplicateUngroupedRejects pins that two identical ungrouped
+// lines for one id reject rather than silently dedupe.
+func TestMemberships_DuplicateUngroupedRejects(t *testing.T) {
+	doc := document{Ungrouped: []objectLine{{ID: "t1.ics"}, {ID: "t1.ics"}}}
+	if _, err := doc.memberships(true); err == nil {
+		t.Error("duplicate ungrouped line for one id must reject")
 	}
 }
 

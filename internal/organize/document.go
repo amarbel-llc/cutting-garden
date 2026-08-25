@@ -420,6 +420,99 @@ func (doc document) assignments() (map[string]string, error) {
 	return out, nil
 }
 
+// memberships is the cardinality-aware sibling of assignments: it projects the
+// document into a box-id → bucket-value SET, mirroring assignments' traversal
+// (ungrouped objects first, then the flat sections walked as a depth stack, each
+// object's value the deepest `=<value>` term on its enclosing heading path) but
+// collecting a []string per id instead of a single string. It is the foundation
+// the N-way merge for a multi-valued dimension builds on.
+//
+// When multi is true (a multi-valued dimension like categories) an object may
+// legally appear under several DISTINCT buckets — all are accumulated in document
+// order. When multi is false (a single-valued dimension) a second distinct bucket
+// for one id is the same malformed-edit rejection assignments makes. In BOTH
+// modes the SAME bucket value appearing twice for one id is a duplicated line and
+// rejects loudly. An ungrouped object (value "") is recorded with an empty set.
+func (doc document) memberships(multi bool) (map[string][]string, error) {
+	out := make(map[string][]string)
+	// placed is the occupancy ledger — every value placed for an id INCLUDING the
+	// ungrouped "" — kept separate from out (the non-empty membership payload) so
+	// the duplicate guard fires even for ids whose only membership is empty. Any id
+	// placed more than once is an error, UNLESS multi AND every placement (prior and
+	// current) is a distinct non-empty bucket.
+	placed := make(map[string][]string)
+	place := func(ln objectLine, value string) error {
+		prior, seen := placed[ln.ID]
+		if seen {
+			priorHasEmpty := false
+			priorHasValue := false
+			for _, p := range prior {
+				if p == "" {
+					priorHasEmpty = true
+				}
+				if value != "" && p == value {
+					priorHasValue = true
+				}
+			}
+			switch {
+			case priorHasValue:
+				return errors.BadRequestf(
+					"organize: object %s appears twice under bucket %q", ln.ID, value,
+				)
+			case value == "" || priorHasEmpty:
+				return errors.BadRequestf(
+					"organize: object %s appears both ungrouped and grouped, or twice", ln.ID,
+				)
+			case !multi:
+				return errors.BadRequestf(
+					"organize: object %s appears twice (buckets %q and %q)",
+					ln.ID, prior[len(prior)-1], value,
+				)
+			}
+		}
+		placed[ln.ID] = append(prior, value)
+		if value == "" {
+			// An ungrouped object (no `=<value>` on its path) contributes no
+			// membership; record the id present with an empty set. Mirrors how
+			// assignments records the ungrouped case with value "".
+			if _, ok := out[ln.ID]; !ok {
+				out[ln.ID] = []string{}
+			}
+			return nil
+		}
+		out[ln.ID] = append(out[ln.ID], value)
+		return nil
+	}
+
+	for _, ln := range doc.Ungrouped {
+		if err := place(ln, ""); err != nil {
+			return nil, err
+		}
+	}
+
+	// Walk the flat sections as a depth stack, so each object's value is the
+	// value term on its enclosing heading path.
+	var stack []section
+	for _, s := range doc.Sections {
+		for len(stack) > 0 && stack[len(stack)-1].Depth >= s.Depth {
+			stack = stack[:len(stack)-1]
+		}
+		stack = append(stack, s)
+		value := ""
+		for _, anc := range stack {
+			if isValueTerm(anc.Term) {
+				value = valueName(anc.Term)
+			}
+		}
+		for _, ln := range s.Lines {
+			if err := place(ln, value); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return out, nil
+}
+
 // --- id resolution -----------------------------------------------------------
 
 // relativeID renders a node URI relative to the anchor when it sits under it (the
