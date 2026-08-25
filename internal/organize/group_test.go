@@ -216,6 +216,120 @@ func TestGroupNodes_KeepsAtomUnderCoarserHeading(t *testing.T) {
 	}
 }
 
+// TestGroupNodesByNamespace pins the dodder-hyphen rollup grouping (RFC 0019
+// tags slice 3 B2, #231): a namespace grouping over the categories tag dimension
+// rolls each node's deeper tags up to their immediate next segment. Two nodes
+// under project-client-* fold into one `-client` bucket, a project-cutting_garden
+// node into `-cutting_garden`, and a node whose only tag (`other`) is not under
+// `project` lands ungrouped. Buckets order by their `-<segment>` key.
+func TestGroupNodesByNamespace(t *testing.T) {
+	interp, ok := cgp.LookupTagInterpreter("dodder-hyphen")
+	if !ok {
+		t.Fatal("dodder-hyphen interpreter not registered")
+	}
+	anchor := "caldav://h/c/"
+	nodes := []cgp.Node{
+		{
+			URI: mustURL(t, "caldav://h/c/acme.ics"), Type: "caldav-object-v1",
+			Facets: map[string][]cgp.FacetValue{"categories": {{Key: "project-client-acme"}}},
+		},
+		{
+			URI: mustURL(t, "caldav://h/c/baxter.ics"), Type: "caldav-object-v1",
+			Facets: map[string][]cgp.FacetValue{"categories": {{Key: "project-client-baxter"}}},
+		},
+		{
+			URI: mustURL(t, "caldav://h/c/cg.ics"), Type: "caldav-object-v1",
+			Facets: map[string][]cgp.FacetValue{"categories": {{Key: "project-cutting_garden"}}},
+		},
+		{
+			URI: mustURL(t, "caldav://h/c/other.ics"), Type: "caldav-object-v1",
+			Facets: map[string][]cgp.FacetValue{"categories": {{Key: "other"}}},
+		},
+	}
+	spec := groupSpec{Dim: "categories", Namespace: "project", Kind: groupKindTagNamespace}
+
+	ungrouped, buckets, err := groupNodesByNamespace(nodes, spec, anchor, interp, false, nil)
+	if err != nil {
+		t.Fatalf("groupNodesByNamespace: %v", err)
+	}
+
+	if len(ungrouped) != 1 || ungrouped[0].ID != "other.ics" {
+		t.Fatalf("ungrouped = %+v, want just other.ics (not under project)", ungrouped)
+	}
+	wantBuckets := []string{"-client", "-cutting_garden"}
+	if len(buckets) != len(wantBuckets) {
+		t.Fatalf("bucket count = %d, want %d (%+v)", len(buckets), len(wantBuckets), buckets)
+	}
+	for i, want := range wantBuckets {
+		if buckets[i].Value != want {
+			t.Errorf("bucket[%d] = %q, want %q", i, buckets[i].Value, want)
+		}
+	}
+	client := buckets[0].Lines
+	if len(client) != 2 || client[0].ID != "acme.ics" || client[1].ID != "baxter.ics" {
+		t.Fatalf("-client lines not the id-sorted client nodes: %+v", client)
+	}
+	cg := buckets[1].Lines
+	if len(cg) != 1 || cg[0].ID != "cg.ics" {
+		t.Fatalf("-cutting_garden lines = %+v, want just cg.ics", cg)
+	}
+}
+
+// TestGroupNodesByNamespace_Coalesces pins per-node bucket dedup: a single node
+// tagged with two tags that roll to the SAME segment (project-client-acme,
+// project-client-baxter → both -client) contributes ONE line to a SINGLE
+// -client bucket, relying on the interpreter's per-node dedup by bucket.
+func TestGroupNodesByNamespace_Coalesces(t *testing.T) {
+	interp, _ := cgp.LookupTagInterpreter("dodder-hyphen")
+	anchor := "caldav://h/c/"
+	nodes := []cgp.Node{
+		{
+			URI: mustURL(t, "caldav://h/c/multi.ics"), Type: "caldav-object-v1",
+			Facets: map[string][]cgp.FacetValue{
+				"categories": {{Key: "project-client-acme"}, {Key: "project-client-baxter"}},
+			},
+		},
+	}
+	spec := groupSpec{Dim: "categories", Namespace: "project", Kind: groupKindTagNamespace}
+
+	ungrouped, buckets, err := groupNodesByNamespace(nodes, spec, anchor, interp, false, nil)
+	if err != nil {
+		t.Fatalf("groupNodesByNamespace: %v", err)
+	}
+	if len(ungrouped) != 0 {
+		t.Fatalf("ungrouped = %+v, want none", ungrouped)
+	}
+	if len(buckets) != 1 || buckets[0].Value != "-client" {
+		t.Fatalf("buckets = %+v, want a single -client bucket", buckets)
+	}
+	if lines := buckets[0].Lines; len(lines) != 1 || lines[0].ID != "multi.ics" {
+		t.Errorf("-client lines = %+v, want the single multi.ics line (coalesced)", lines)
+	}
+}
+
+// TestGroupNodesByNamespace_NaiveRejects pins that a namespace grouping under the
+// naive interpreter — which declares no namespaces — propagates the interpreter's
+// bad-request rather than swallowing it or silently grouping.
+func TestGroupNodesByNamespace_NaiveRejects(t *testing.T) {
+	interp, ok := cgp.LookupTagInterpreter("naive")
+	if !ok {
+		t.Fatal("naive interpreter not registered")
+	}
+	anchor := "caldav://h/c/"
+	nodes := []cgp.Node{
+		{
+			URI: mustURL(t, "caldav://h/c/a.ics"), Type: "caldav-object-v1",
+			Facets: map[string][]cgp.FacetValue{"categories": {{Key: "project-client-acme"}}},
+		},
+	}
+	spec := groupSpec{Dim: "categories", Namespace: "project", Kind: groupKindTagNamespace}
+
+	_, _, err := groupNodesByNamespace(nodes, spec, anchor, interp, false, nil)
+	if err == nil {
+		t.Fatal("naive namespace grouping should error (naive declares no namespaces)")
+	}
+}
+
 // TestCommonURIPrefix pins the anchor derivation that keeps box ids short
 // regardless of the CLI arg form: a single-calendar node set yields the calendar
 // dir, a multi-calendar set the shared ancestor dir, zero nodes the empty string.

@@ -88,6 +88,65 @@ func groupNodes(
 	return ungrouped, buckets
 }
 
+// groupNodesByNamespace buckets nodes by their tag-namespace ROLLUP memberships
+// (RFC 0019 tags slice 3 B2, cutting-garden#231) rather than by raw facet values.
+// It mirrors groupNodes' line-building and sorting exactly — only the bucketing
+// source differs: each node's tags for spec.Dim are handed to the resolved
+// TagInterpreter's Buckets, which rolls a namespace's deeper tags up to their
+// immediate next segment (dodder-hyphen's project-client-acme → -client). The
+// interpreter deduplicates by bucket per node, so a node carrying several tags
+// that roll to one bucket (project-client-acme, project-client-baxter → both
+// -client) contributes a single line to that bucket. A node with no memberships
+// (its tags aren't under the namespace) lands ungrouped, mirroring groupNodes'
+// no-value case. An interpreter that declares no namespaces (naive) rejects a
+// non-empty namespace — that error is propagated, not swallowed. The grouped
+// dimension is not itself a box atom for a tag grouping, so no #229-style atom
+// stripping applies; the box carries its other fields unchanged. Buckets are the
+// open set of observed rollup keys (no declared/pre-rendered values), ordered by
+// their `-<segment>` string.
+func groupNodesByNamespace(
+	nodes []cgp.Node, spec groupSpec, anchor string, interp cgp.TagInterpreter,
+	inlineType bool, present func(cgp.Node) []cgp.BoxAtom,
+) (ungrouped []objectLine, buckets []bucket, err error) {
+	byBucket := map[string][]objectLine{}
+	for _, n := range nodes {
+		ln := objectLine{ID: relativeID(n.URIString(), anchor), Desc: nodeDescription(n)}
+		if inlineType {
+			ln.Type = n.Type
+		}
+		if present != nil {
+			ln.Fields = present(n)
+		}
+		mems, e := interp.Buckets(facetKeys(n.Facets[spec.Dim]), spec.Namespace)
+		if e != nil {
+			return nil, nil, e
+		}
+		if len(mems) == 0 {
+			ungrouped = append(ungrouped, ln)
+			continue
+		}
+		for _, m := range mems {
+			byBucket[m.Bucket] = append(byBucket[m.Bucket], ln)
+		}
+	}
+
+	sort.Slice(ungrouped, func(i, j int) bool { return ungrouped[i].ID < ungrouped[j].ID })
+
+	order := make([]string, 0, len(byBucket))
+	for k := range byBucket {
+		order = append(order, k)
+	}
+	sort.Strings(order)
+
+	buckets = make([]bucket, 0, len(order))
+	for _, k := range order {
+		lines := byBucket[k]
+		sort.Slice(lines, func(i, j int) bool { return lines[i].ID < lines[j].ID })
+		buckets = append(buckets, bucket{Value: k, Lines: lines})
+	}
+	return ungrouped, buckets, nil
+}
+
 // findAtom returns the box atom named name, or ok=false when the box carries no
 // such atom (e.g. a groupable-but-not-inline dimension like categories).
 func findAtom(atoms []cgp.BoxAtom, name string) (cgp.BoxAtom, bool) {
