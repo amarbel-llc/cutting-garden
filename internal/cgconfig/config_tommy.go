@@ -75,6 +75,22 @@ func DecodeConfigV0(input []byte) (*ConfigV0Document, error) {
 			}
 		}
 	}
+	if _vTags, _ok := model.Get("tags"); _ok && _vTags.Kind == cst.VTable {
+		_vTags.MarkSeen()
+		if _vTagsInterpreter, _ok := _vTags.Get("interpreter"); _ok && _vTagsInterpreter.Kind == cst.VLeaf {
+			if _x, _xok := cst.ExtractString(_vTagsInterpreter.Leaf); _xok {
+				d.data.Tags.Interpreter = _x
+				_vTagsInterpreter.MarkConsumed()
+			}
+		}
+	} else {
+		if _vInterpreter, _ok := model.Get("interpreter"); _ok && _vInterpreter.Kind == cst.VLeaf {
+			if _x, _xok := cst.ExtractString(_vInterpreter.Leaf); _xok {
+				d.data.Tags.Interpreter = _x
+				_vInterpreter.MarkConsumed()
+			}
+		}
+	}
 	if _vPlugins, _ok := model.Get("plugins"); _ok && _vPlugins.Kind == cst.VArray {
 		_vPlugins.MarkSeen()
 		d.data.Plugins = make([]traversal_serve.PluginStanza, len(_vPlugins.Items))
@@ -145,6 +161,16 @@ func (d *ConfigV0Document) Encode() ([]byte, error) {
 			}
 		} else {
 			cst.DeleteValue(tableNode, "date_granularity")
+		}
+	}
+	{
+		tableNode := cst.EnsureChildTable(d.cstDoc.Root(), d.cstDoc.Root(), "tags")
+		if d.data.Tags.Interpreter != "" {
+			if err := cst.SetAny(tableNode, "interpreter", d.data.Tags.Interpreter); err != nil {
+				return nil, fmt.Errorf("%w", err)
+			}
+		} else {
+			cst.DeleteValue(tableNode, "interpreter")
 		}
 	}
 	{
@@ -236,6 +262,22 @@ func DecodeConfigV0Into(data *ConfigV0, sub *cst.Value) error {
 			}
 		}
 	}
+	if _vTags, _ok := sub.Get("tags"); _ok && _vTags.Kind == cst.VTable {
+		_vTags.MarkSeen()
+		if _vTagsInterpreter, _ok := _vTags.Get("interpreter"); _ok && _vTagsInterpreter.Kind == cst.VLeaf {
+			if _x, _xok := cst.ExtractString(_vTagsInterpreter.Leaf); _xok {
+				data.Tags.Interpreter = _x
+				_vTagsInterpreter.MarkConsumed()
+			}
+		}
+	} else {
+		if _vInterpreter, _ok := sub.Get("interpreter"); _ok && _vInterpreter.Kind == cst.VLeaf {
+			if _x, _xok := cst.ExtractString(_vInterpreter.Leaf); _xok {
+				data.Tags.Interpreter = _x
+				_vInterpreter.MarkConsumed()
+			}
+		}
+	}
 	if _vPlugins, _ok := sub.Get("plugins"); _ok && _vPlugins.Kind == cst.VArray {
 		_vPlugins.MarkSeen()
 		data.Plugins = make([]traversal_serve.PluginStanza, len(_vPlugins.Items))
@@ -302,6 +344,16 @@ func EncodeConfigV0From(data *ConfigV0, doc *document.Document, container *cst.N
 			}
 		} else {
 			cst.DeleteValue(tableNode, "date_granularity")
+		}
+	}
+	{
+		tableNode := cst.EnsureChildTable(doc.Root(), container, "tags")
+		if data.Tags.Interpreter != "" {
+			if err := cst.SetAny(tableNode, "interpreter", data.Tags.Interpreter); err != nil {
+				return fmt.Errorf("%w", err)
+			}
+		} else {
+			cst.DeleteValue(tableNode, "interpreter")
 		}
 	}
 	{

@@ -37,6 +37,10 @@ type ConfigV0 struct {
 	// Organize configures the framework-side organize command (FDR 0023).
 	Organize OrganizeConfig `toml:"organize,omitempty"`
 
+	// Tags carries the global tag-interpreter override (RFC 0019 §4 /
+	// design D6).
+	Tags TagsConfig `toml:"tags,omitempty"`
+
 	// Plugins is the generalized `[[plugins]]` stanza (cutting-garden#146
 	// slice 2): one entry per plugin binary, declaring which wire
 	// protocol(s) it speaks via PluginStanza.Protocols — the host
@@ -70,6 +74,9 @@ func (c ConfigV0) Validate() error {
 	if err := c.Organize.Validate(); err != nil {
 		return err
 	}
+	if err := c.Tags.Validate(); err != nil {
+		return err
+	}
 	return traversal_serve.ValidateStanzas(c.Plugins, c.TraversalPlugins)
 }
 
@@ -98,6 +105,39 @@ func (c OrganizeConfig) Validate() error {
 		return errors.BadRequestf(
 			"organize.date_granularity %q is not one of year, month, day",
 			c.DateGranularity,
+		)
+	}
+	return nil
+}
+
+// TagsConfig carries the global tag-interpreter override (RFC 0019 §4 /
+// design D6): the interpreter every tag dimension resolves to, superseding
+// each field's plugin-declared default (UnifiedField.Interpreter). Empty
+// means no override — each field keeps its declared default. Like
+// OrganizeConfig this is framework-side, not a delegated plugin section, so
+// it lives here and tommy inlines it into ConfigV0's generated codec.
+//
+// The per-account interpreter override (design D6's optional per-account key
+// in the account stanza) is a deferred follow-up — it touches each plugin's
+// account config, and the global override here covers the primary use.
+type TagsConfig struct {
+	// Interpreter names the tag interpreter every dimension resolves to,
+	// overriding each field's declared default. Empty is valid (no
+	// override); a non-empty value MUST be a registered interpreter name
+	// (a cutting_garden_plugins builtin — "naive" or "dodder-hyphen" — or
+	// a future registered name).
+	Interpreter string `toml:"interpreter,omitempty"`
+}
+
+func (c TagsConfig) Validate() error {
+	if c.Interpreter == "" {
+		return nil
+	}
+	if _, ok := cgp.LookupTagInterpreter(c.Interpreter); !ok {
+		return errors.BadRequestf(
+			"tags.interpreter %q is not a registered interpreter "+
+				"(builtins: naive, dodder-hyphen)",
+			c.Interpreter,
 		)
 	}
 	return nil
