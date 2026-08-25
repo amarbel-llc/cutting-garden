@@ -7,7 +7,8 @@ FDR 0023, RFC 0012, RFC 0014, RFC 0015
 
 Approved in the 2026-08-20 design session (cutting-garden/green-chestnut) —
 this session is the grill #231 asked for. Decisions below were made
-explicitly by the user; two are flagged PROVISIONAL at the user's request.
+explicitly by the user; two were flagged PROVISIONAL at the user's request and
+RESOLVED by 2026-08-25 UAT (D4 → decision A; D5 → no `_` lift).
 
 ## Problem
 
@@ -55,8 +56,8 @@ keeps the interface serializable (no callbacks/iterators/rich types).
 
 Contract method set (names indicative; the RFC finalizes):
 
-- `Normalize(tag) → tag` — the `_`-lift identity rule (D5).
-- `SortKey(tag) → key` — lift-aware ordering.
+- `Normalize(tag) → tag` — identity for both builtins (no `_` lift, D5).
+- `SortKey(tag) → key` — plain lexical order (D5; `_`/`_ ` sorts high naturally).
 - `Buckets(tags []string, namespace string) → []Membership` — namespace
   expansion + rollup (D4); empty namespace = whole-dimension grouping (each
   normalized tag its own bucket). `Membership{Bucket string, Via string}` —
@@ -96,24 +97,26 @@ buckets by the IMMEDIATE next segment — deeper tags roll up:
 grouping by the deeper namespace (`--group-by project-client`). The prefix
 hierarchy deliberately mirrors #230's date granularity (day→month→year).
 
-**PROVISIONAL (user-flagged, modestly uncertain — manual UAT decides):**
-bucket headings render as CONTINUATIONS of the namespace — `## -client`,
-common prefix elided, **no `=`** — tags are continuations, not values. This
-rhymes with doddish dependent-tag syntax (leading-hyphen names, RFC 0014's
-rejected-spellings note), which is a point in its favor, but it is not
-settled until used in anger.
+**RESOLVED (2026-08-25 UAT — decision A):** bucket headings render as
+CONTINUATIONS of the namespace — `## -client`, common prefix elided, **no
+`=`** — tags are continuations, not values. The same no-`=` rule applies to
+whole-dimension buckets: a flat tag renders bare (`## work`), quoted when it
+carries a space (`## "_ inbox"`). This rhymes with doddish dependent-tag
+syntax (leading-hyphen names, RFC 0014's rejected-spellings note); the `=`
+spelling read awkwardly on real tags in UAT (`## =_ inbox`), which the
+decision resolves. Presentation-layer (RFC 0015), not the interpreter contract.
 
-### D5 — The `_` lift rule (conservative v1; rule marked IMMATURE)
+### D5 — No `_` lift; `_` is literal (RESOLVED — 2026-08-25 UAT)
 
-A leading `_` on the WHOLE tag lifts it to the top of lexical sort and is
-identity-transparent (`_inbox` groups/matches as `inbox`). Underscores
-WITHIN words are literal characters (`project-cutting_garden`). A `_`
-prefixing a non-leading segment (`project-_urgent`) is OUT OF CONTRACT —
-v1 treats it as literal content. The whole rule is explicitly immature: the
-user anticipates ambiguity with system-level `_`-prefixed fields in
-hyphence metadata (trellis likewise reserves `_` field names), so the RFC
-carries it as provisional with UAT + the hyphence collision question as the
-maturation signals.
+**Decided: no `_`-lift magic.** A leading `_`, a leading `_ ` (underscore +
+space — the user's real pin-to-top convention, `_ inbox`), in-word `_`, and
+interior-segment `_` are ALL literal characters. Nothing lifts, rewrites, or
+aliases them: `_inbox` and `inbox` are distinct tags, `_ inbox` is its own
+tag. Pin-to-top falls out of plain lexical sort (a `_`/`_ ` prefix sorts high
+in ASCII order), so no special-case key is needed — and dropping the mechanism
+sidesteps the hyphence/trellis `_`-reserved-field collision entirely. An
+explicit lift/alias can be reconsidered later if a real need appears; out of
+contract now.
 
 ### D6 — Interpreter selection: field default + config override
 
@@ -183,7 +186,7 @@ for string-tag substrates; deliberately not designed here.
 ## Testing
 
 - SDK/RFC: contract unit tests per builtin (normalize/sort/buckets/matches/
-  complete tables; the dodder-hyphen rollup and `_`-lift cases pinned).
+  complete tables; the dodder-hyphen rollup and `_`-is-literal cases pinned).
 - caldav: CATEGORIES parse + facet emission; declaration derivation.
 - organize: multi-membership render; N-way reconciliation units (add,
   remove, last-line rejection, cross-appearance atom conflict, N=1
@@ -194,14 +197,11 @@ for string-tag substrates; deliberately not designed here.
 
 ## Tuning levers
 
-- **Continuation-heading rendering** (`## -client`, no `=`): provisional;
-  signal = the user's manual UAT verdict. 2026-08-25 UAT: the `=` prefix on
-  tag buckets read awkwardly (`## =_ inbox`) — a point toward the no-`=`
-  form; and space-bearing tags must be quoted (see UAT feedback below).
-- **`_`-lift maturity**: leading-only v1; signal = a real hyphence
-  system-field collision or UAT friction. 2026-08-25 UAT surfaced the live
-  `_ inbox` underscore-SPACE pin-to-top convention, which D5 as written does
-  not cover (see UAT feedback below).
+- **Continuation-heading rendering** (`## -client`, no `=`): RESOLVED
+  2026-08-25 UAT → decision A (no `=`, continuation; flat tags bare,
+  space-bearing tags quoted). See D4.
+- **`_` lift**: RESOLVED 2026-08-25 UAT → dropped. `_` is literal for all
+  interpreters; pin-to-top falls out of plain lexical sort. See D5.
 - **Tag summary-lift policy**: raw tags in slice 1; signal = summary width
   in practice (fastmail's ~529 labels will force a namespace-bucketed or
   suppressed lift before fastmail's tag field lands).
@@ -238,6 +238,8 @@ tag-kind rendering of D9 supersedes).
   covers the `_ ` spelling too (lift + identity-transparent to `inbox`), or
   it explicitly excludes it and the `_ ` stays literal content. This is the
   concrete collision D5 anticipated — it raises the bar on settling D5.
+  **Resolved 2026-08-25: no lift** — `_` and `_ ` stay literal everywhere;
+  pin-to-top rides plain lexical sort. See D5.
 
 ## Out of scope
 

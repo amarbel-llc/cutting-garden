@@ -53,9 +53,10 @@ document normativizes). Slice 1 implements the contract, the registry, and the
 `naive` builtin, and declares caldav `CATEGORIES` as a read-only naive tag
 field. The `dodder-hyphen` builtin, the config override, the tag-term
 `--group-by` grammar, and the write-back are specified here with normative
-force but implemented in later slices; where a decision is the user's and
-flagged PROVISIONAL in the design, this document carries that flag rather than
-presenting it as settled.
+force but implemented in later slices. Two decisions the design carried as
+PROVISIONAL (§6.3 continuation rendering, §7 the `_` lift) were RESOLVED by
+2026-08-25 UAT — decision A and "no lift" respectively — and this document
+reflects those resolutions.
 
 ### Scope
 
@@ -64,8 +65,8 @@ Specifies: the `TagInterpreter` interface and its `TagMembership` /
 wire-readiness constraint (§2); the named-interpreter registry and its two
 builtins (§3); interpreter selection — a tag field's default plus the config
 overrides (§4); the normative `naive` semantics (§5); the normative
-`dodder-hyphen` semantics (§6), the leading-`_` lift rule (§7), and the
-PROVISIONAL continuation-heading rendering it feeds (§6.3); the
+`dodder-hyphen` semantics (§6), the `_`-is-literal rule (§7, no lift), and the
+continuation-heading rendering (§6.3); the
 defined-but-unimplemented wire binding (§8); and the design's tuning levers
 (§9). Does not specify: the unified field-codec model itself (FDR 0025, a
 normative dependency — this contract is named by a `FieldTag` field's
@@ -130,14 +131,16 @@ const (
 type TagInterpreter interface {
     // Normalize returns the canonical form of a single tag. It MUST be
     // idempotent: Normalize(Normalize(t)) == Normalize(t). It is the identity
-    // for interpreters that impose no canonical form (naive); it applies the
-    // leading-`_` lift's identity-transparency for dodder-hyphen (§7).
+    // for both builtins (naive and dodder-hyphen impose no canonical rewrite —
+    // `_` is literal, no lift, §7); a future interpreter MAY define a
+    // non-identity canonicalization.
     Normalize(tag string) string
 
     // SortKey returns the lexical sort key for a single tag — the string a
-    // consumer orders normalized tags and buckets by. It MAY differ from the
-    // tag itself to hoist certain tags (dodder-hyphen's leading-`_` lift,
-    // §7); it is the identity where sort order is plain lexical (naive).
+    // consumer orders normalized tags and buckets by. Both builtins use plain
+    // lexical order (a leading `_`/`_ ` sorts high as a natural consequence of
+    // ASCII order, needing no special lift, §7); a future interpreter MAY
+    // return a key that differs from the tag for interpreter-specific ordering.
     SortKey(tag string) string
 
     // Buckets computes the node's grouping memberships for a grouping
@@ -186,8 +189,10 @@ grouping (`Buckets`), ordering (`SortKey`, applied to normalized tags and
 buckets), query matching (`Matches`), and write-back (`Complete`), with
 `Normalize` the canonicalization every other method is defined in terms of. A
 consumer MUST apply `Normalize` before comparing, displaying, or counting a
-tag, so that two spellings the interpreter considers equal (dodder-hyphen's
-`_inbox` and `inbox`, §7) never fragment a histogram or a bucket.
+tag, so that any two spellings the interpreter considers equal never fragment a
+histogram or a bucket. (Both builtins normalize to the identity — §5, §7, `_`
+literal — so this discipline is a no-op for them and a guard for any future
+interpreter that canonicalizes.)
 
 ### 2. Host-side application and wire-readiness
 
@@ -232,7 +237,7 @@ Two interpreters are builtin and MUST be registered:
 | Name | Semantics | Status |
 |------|-----------|--------|
 | `naive` | Exact, whole-dimension; no hierarchy, no lift (§5) | Implemented (slice 1) |
-| `dodder-hyphen` | Hyphen-segment hierarchy, namespace rollup, transitive matching, leading-`_` lift (§6, §7) | Specified here; implemented later (slice 3) |
+| `dodder-hyphen` | Hyphen-segment hierarchy, namespace rollup, transitive matching; `_` literal, no lift (§6, §7) | Specified here; implemented later (slice 3) |
 
 A future `[[tag_interpreters]]` wire stanza (§8) registers wire-backed names
 into this SAME namespace; a name so registered is indistinguishable to a
@@ -344,57 +349,49 @@ prefix.
   (`--group-by project-client`), where the bucket names the leaf directly. This
   is the design's D9 resolution and MUST be implemented as stated.
 
-#### 6.3 Continuation-heading rendering (presentation-layer; PROVISIONAL)
+#### 6.3 Continuation-heading rendering (presentation-layer; RESOLVED — decision A)
 
-The design (D4) proposes that a namespace grouping's bucket headings render as
-CONTINUATIONS of the namespace — the common prefix elided and NO `=` sign
-(`## -client` rather than `## project=client` or `## =project-client`) — on the
-grounds that a hyphen tag is a continuation of its namespace, not a value of it,
-rhyming with doddish dependent-tag syntax (RFC 0014's leading-hyphen names).
+A namespace grouping's bucket headings render as CONTINUATIONS of the namespace
+— the common prefix elided and NO `=` sign (`## -client` rather than
+`## project=client` or `## =project-client`) — on the grounds that a hyphen tag
+is a continuation of its namespace, not a value of it, rhyming with doddish
+dependent-tag syntax (RFC 0014's leading-hyphen names). The same no-`=` rule
+applies to whole-dimension tag buckets: a flat tag renders bare (`## work`),
+quoted when it carries a space (`## "_ inbox"`).
 
 This rendering is **outside this contract**: it is a presentation-layer choice
 of the organize dialect (RFC 0015), not a property of the `TagInterpreter`
 value transform, which produces `TagMembership.Bucket` strings and never a
-heading. It is further flagged **PROVISIONAL** per the design — the user's
-explicit uncertainty, to be settled by manual UAT, not by this RFC. An
-implementation of the rendering MUST treat it as unsettled; this section
-records the intent so the interpreter's `Bucket` values (`-client`) and the
-proposed heading rendering stay legible to each other, without pinning the
-rendering normatively.
+heading. The design's D4 uncertainty was **RESOLVED by 2026-08-25 UAT to
+decision A** (no `=`, continuation form) — the `=`-prefixed spelling read
+awkwardly on real tags (`## =_ inbox`). This section records the settled intent
+so the interpreter's `Bucket` values (`-client`) and the heading rendering stay
+legible to each other; RFC 0015 owns the normative rendering.
 
-### 7. The leading-`_` lift rule (normative for `dodder-hyphen`; IMMATURE)
+### 7. No `_` lift — `_` is literal (RESOLVED — 2026-08-25 UAT)
 
-For this user, a leading `_` is a lexical lift-to-top that is otherwise
-identity-transparent. The rule is normative for `dodder-hyphen` and is
-explicitly, deliberately IMMATURE — a conservative v1 the design marks for
-maturation.
+An earlier draft proposed a leading-`_` lexical lift-to-top that was otherwise
+identity-transparent (`_inbox` sorting first but grouping/matching as `inbox`),
+carried as IMMATURE against the hyphence/trellis reservation of `_`-prefixed
+names for SYSTEM fields. **2026-08-25 UAT resolved this: no `_` lift, for any
+interpreter.**
 
-- **Leading-`_` whole-tag lift.** A `_` at the START of a WHOLE tag lifts it to
-  the top of lexical sort and is identity-transparent for grouping and
-  matching: `_inbox` sorts before every non-lifted tag, and otherwise
-  `Normalize`, `Buckets`, and `Matches` MUST treat `_inbox` exactly as `inbox`.
-  Concretely, `Normalize("_inbox")` yields the identity-transparent form so a
-  histogram/bucket does not fragment `_inbox` from `inbox`, while
-  `SortKey("_inbox")` yields a key that sorts first.
-- **In-word underscores are literal.** An underscore WITHIN a word or segment
-  is an ordinary literal character with no lift meaning:
-  `project-cutting_garden` is a normal tag; its `_` is content.
-- **Interior-segment `_` prefix is OUT OF CONTRACT.** A `_` prefixing a
-  non-leading segment (`project-_urgent`) is NOT specified in v1 and MUST be
-  treated as literal content — no segment-level lift. Whether an interior
-  segment lift is meaningful is left open.
+- **`_` is literal everywhere.** A leading `_`, a leading `_ ` (underscore +
+  space — the user's real pin-to-top convention, e.g. `_ inbox`), an in-word
+  `_`, and an interior-segment `_` are all ordinary literal characters. No
+  interpreter rewrites, lifts, or aliases them. `_inbox` and `inbox` are
+  DISTINCT tags; `_ inbox` is its own distinct tag.
+- **Pin-to-top falls out of plain sort.** `Normalize` and `SortKey` stay the
+  identity over `_`: a `_`/`_ ` prefix already sorts high in plain lexical
+  (ASCII) order, which is all the convention needs — no special-case key.
+- **Collision sidestepped.** Because `_` carries no interpreter meaning, the
+  reservation of `_`-prefixed names for hyphence/trellis system fields is not
+  in tension with tag content; the question the draft left open is closed by
+  removing the mechanism.
 
-**Maturation signal (carried from the design).** The whole rule is provisional
-because a leading `_` collides with the reservation of `_`-prefixed names for
-SYSTEM-level fields in hyphence metadata (and trellis likewise reserves `_`
-field names, RFC 0014). The design anticipates ambiguity there and does not
-resolve it. The maturation signals are (a) a real hyphence system-field
-collision and (b) UAT friction; until one appears, v1 stays leading-`_`-only
-with interior segments literal. An implementation MUST NOT extend the lift
-beyond the leading-whole-tag case on its own initiative.
-
-`naive` has no lift: its `Normalize` and `SortKey` are the identity (§5), so
-`_inbox` is a distinct, plainly-sorted tag under `naive`.
+An explicit lift/alias convention MAY be reconsidered in a future revision if a
+concrete need appears, but it is OUT OF CONTRACT now. `naive` and
+`dodder-hyphen` both treat `_` as literal.
 
 ### 8. Wire binding — defined, unimplemented
 
@@ -424,15 +421,15 @@ shape and explicitly DEFERS its implementation.
 
 ### 9. Tuning levers
 
-The design records four points held deliberately open, to be resolved by use
-rather than by this specification. They are recorded here so an implementer
-knows what is settled and what is not:
+The design records four points held open, to be resolved by use rather than by
+this specification. Two were RESOLVED by 2026-08-25 UAT (marked below); they are
+kept here so an implementer sees what is now settled and what is not:
 
-- **Continuation-heading rendering** (`## -client`, no `=`, §6.3): PROVISIONAL;
-  the settling signal is the user's manual UAT verdict.
-- **`_`-lift maturity** (§7): leading-whole-tag only in v1, interior segments
-  literal; the settling signals are a real hyphence system-field collision or
-  UAT friction.
+- **Continuation-heading rendering** (`## -client`, no `=`, §6.3): RESOLVED by
+  2026-08-25 UAT to decision A (no `=`, continuation form; flat tags bare,
+  space-bearing tags quoted).
+- **`_` lift** (§7): RESOLVED by 2026-08-25 UAT — dropped. `_` is literal for
+  all interpreters; pin-to-top falls out of plain lexical sort.
 - **Tag summary-lift policy**: raw normalized tags are lifted into a node's
   summary in slice 1; the signal to revisit is summary width in practice
   (fastmail's ~529 labels will force a namespace-bucketed or suppressed lift
@@ -477,8 +474,8 @@ covered by two layers:
   `Buckets` / `Matches` / `Complete` cases, including `naive`'s
   non-empty-namespace rejection (§5), the `dodder-hyphen` immediate-segment
   rollup and its `Via` attribution (§6.1), transitive bare-term matching and
-  the rollup-bucket write-back (§6.2), and the leading-`_` lift's
-  sort-first / identity-transparent behavior (§7). `LookupTagInterpreter`
+  the rollup-bucket write-back (§6.2), and the `_`-is-literal behavior
+  (distinct `_inbox`/`inbox`, plainly sorted, §7). `LookupTagInterpreter`
   resolves the two builtins and reports `ok == false` for an unknown name (§3).
 - **Host surface where naive semantics show through.** The bats lanes exercised
   through `cg` against the caldav testserver (`zz-tests_bats/`, the slice-1
@@ -502,7 +499,7 @@ interpreter can run the same host-surface lanes:
 | §5, naive namespace rejection | Go unit | `Buckets(tags, "project")` is a bad request naming "no namespaces" |
 | §6.1, immediate-segment rollup + Via | Go unit | the D4 example: `project` groups to `-cutting_garden`, `-client`; `Via` names the producing tag |
 | §6.2, transitive match + rollup write-back | Go unit | `project` matches `project-*`; `Complete` at `-client` appends `project-client` |
-| §7, leading-`_` lift | Go unit | `_inbox` sorts first and groups/matches as `inbox`; in-word `_` literal; interior-segment `_` literal |
+| §7, `_` literal (no lift) | Go unit | `_inbox` ≠ `inbox` (distinct tags); `_`/`_ ` sorts high by plain ASCII order with no identity rewrite; in-word and interior-segment `_` literal |
 | §5 host surface | `zz-tests_bats/` | `--group-by categories` renders per-tag buckets; `--filter categories=<tag>` counts exact matches |
 
 ## Compatibility
@@ -551,8 +548,8 @@ interpreter can run the same host-surface lanes:
 - cutting-garden#231 — the tracking issue: tag semantics vary per user and
   destination, hence a pluggable interpreter plugin type.
 - `docs/plans/2026-08-20-tags-design.md` — the approved design this RFC
-  normativizes (decisions D2, D4, D5, D6, D9), including the PROVISIONAL flags
-  §6.3 and §7 carry.
+  normativizes (decisions D2, D4, D5, D6, D9); the two decisions §6.3 and §7
+  carried as PROVISIONAL were resolved by 2026-08-25 UAT (decision A; no lift).
 - RFC 0012 — Plugin Facet Contract; `Node.Facets` / `Node.Fields` are the raw
   tag surfaces this contract is applied over host-side (§2), and its
   type-assertion capability-probe and `FacetFilter` equality matching are the
@@ -563,11 +560,11 @@ interpreter can run the same host-surface lanes:
 - RFC 0013 — Traversal Plugin JSON-RPC Transport; the launch, handshake, and
   indistinguishability model the §8 wire binding follows.
 - RFC 0014 — trellis query language; the bare-identifier tag term it defers to
-  this contract's `Matches` (§6.2), and the `_`-reservation §7's maturation
-  note names.
+  this contract's `Matches` (§6.2), and the `_`-reservation §7 cites as the
+  reason no `_` lift is defined.
 - RFC 0015 — organize dialect; the presentation-layer consumer of
-  `TagMembership.Bucket` and the home of the PROVISIONAL continuation-heading
-  rendering (§6.3).
+  `TagMembership.Bucket` and the home of the continuation-heading rendering
+  (§6.3, resolved to decision A).
 - cutting-garden#232 — tag-object editing (rename/edit with fan-out), the
   future work this contract's write-back deliberately stops short of.
 - cutting-garden#230 — the date-facet granularity ladder §6.1's prefix

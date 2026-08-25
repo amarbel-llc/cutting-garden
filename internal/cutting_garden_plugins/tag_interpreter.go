@@ -47,15 +47,17 @@ const (
 type TagInterpreter interface {
 	// Normalize returns the canonical form of a single tag. It MUST be
 	// idempotent: Normalize(Normalize(t)) == Normalize(t). It is the identity
-	// for interpreters that impose no canonical form (naive); it applies the
-	// leading-`_` lift's identity-transparency for dodder-hyphen (RFC 0019 §7).
+	// for both builtins (naive and dodder-hyphen impose no canonical rewrite —
+	// `_` is literal, no lift, RFC 0019 §7); a future interpreter MAY define a
+	// non-identity canonicalization.
 	Normalize(tag string) string
 
 	// SortKey returns the lexical sort key for a single tag — the string a
-	// consumer orders normalized tags and buckets by. It MAY differ from the
-	// tag itself to hoist certain tags (dodder-hyphen's leading-`_` lift,
-	// RFC 0019 §7); it is the identity where sort order is plain lexical
-	// (naive).
+	// consumer orders normalized tags and buckets by. Both builtins use plain
+	// lexical order (a leading `_`/`_ ` sorts high as a natural consequence of
+	// ASCII order, needing no special lift, RFC 0019 §7); a future interpreter
+	// MAY return a key that differs from the tag for interpreter-specific
+	// ordering.
 	SortKey(tag string) string
 
 	// Buckets computes the node's grouping memberships for a grouping request.

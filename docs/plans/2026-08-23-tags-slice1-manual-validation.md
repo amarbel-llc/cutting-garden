@@ -58,7 +58,8 @@ override — those are slices 2–3 (see the "Out of scope" note at the end).
   rollup + continuation headings are slice 3 — confirm they're absent here.)
 - [ ] A tag with an interior/leading underscore (e.g. `_inbox`,
   `client_acme`) groups under its LITERAL value — no lift, no reordering to the
-  top (naive `SortKey` is identity; the `_`-lift is slice 3).
+  top (naive `SortKey` is identity; `_` is literal in ALL interpreters — the
+  `_`-lift was dropped, 2026-08-25 UAT).
 
 ## C. Filtering & queries (read-only)
 
@@ -111,16 +112,19 @@ Generate with `--group-by categories`, move an object's line to a different
   (the N-way merge). Today it's rejected (section D).
 - **dodder-hyphen algebra** — namespace rollup (`--group-by project` bucketing
   `project-*`), continuation headings (`## -alpha`), bare-tag transitive
-  trellis matching, the `_`-lift: slice 3.
+  trellis matching: slice 3. (The `_`-lift once listed here was dropped —
+  2026-08-25 UAT; `_` is literal in all interpreters.)
 - **Interpreter override** — `[tags] interpreter = "dodder-hyphen"` in config:
   slice 3. Slice 1 always uses `naive`.
 
 ## Why this pass matters for slices 2–3
 
-Two design decisions are flagged PROVISIONAL pending your verdict
-(`docs/plans/2026-08-20-tags-design.md`, Tuning levers): the dodder-hyphen
-continuation-heading rendering (`## -alpha`, no `=`) and the leading-only
-`_`-lift rule. Slice 1 can't exercise those directly, but eyeballing naive
+Two design decisions were flagged PROVISIONAL pending your verdict
+(`docs/plans/2026-08-20-tags-design.md`, Tuning levers): the continuation-
+heading rendering (`## -alpha`, no `=`) and the `_`-lift rule. **Both were
+RESOLVED by this UAT (2026-08-25): continuation → decision A (no `=`); `_`-lift
+→ dropped (`_` literal).** Slice 1 couldn't exercise those directly, but
+eyeballing naive
 grouping against YOUR real CATEGORIES here — how the flat `## =<tag>` buckets
 read, whether hierarchy/rollup is something you actually want, how your tags are
 shaped — is the input that will confirm or revise those decisions before I plan

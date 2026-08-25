@@ -152,11 +152,12 @@ edit), T2 → `{proj-a, proj-b}`.
 - **Tags** — `CATEGORIES` is a codec-carrying, multi-valued, groupable,
   read+write field, governed by a pluggable **tag-interpreter plugin**
   (cutting-garden#231; `naive` + `dodder-hyphen` builtin, config-linkable). The
-  interpreter owns segment hierarchy, the `_`-lift rule (transparent, treated as
-  absent — used across caldav categories, carddav groups, fastmail labels),
-  `namespace → bucket` expansion, bare-tag query matching, and the write-back.
-  Its algebra is deferred to #231's own grill/FDR; this model only needs a tag
-  field to *name* an interpreter.
+  interpreter owns segment hierarchy, `namespace → bucket` expansion, bare-tag
+  query matching, and the write-back (RFC 0019; `_` is literal — no lift, per
+  the 2026-08-25 UAT resolution). The same interpreter surface applies across
+  caldav categories, carddav groups, and fastmail labels. Its algebra is
+  deferred to #231's own grill/FDR; this model only needs a tag field to *name*
+  an interpreter.
 - **Cancel-remap** is a codec/write-rule: a move to the `cancelled` status
   heading desugars to `STATUS:COMPLETED` + append the `zz-archive-task-cancelled`
   category — one placement, a **multi-stored write**. (Motivated by Tasks.org
