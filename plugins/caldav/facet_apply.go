@@ -12,7 +12,10 @@ import (
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
-var _ cutting_garden_plugins.FacetWriteApplier = (*Plugin)(nil)
+var (
+	_ cutting_garden_plugins.FacetWriteApplier      = (*Plugin)(nil)
+	_ cutting_garden_plugins.MembershipWriteApplier = (*Plugin)(nil)
+)
 
 // BuildFacetWritePatch builds the PatchNode body for one facet-bucket move
 // (FDR 0023) by delegating to the unified field-codec model (FDR 0025 Option B):
@@ -34,39 +37,87 @@ func (Plugin) BuildFacetWritePatch(
 	write cutting_garden_plugins.FacetWrite,
 	toBucket string,
 ) ([]byte, error) {
-	component := firstFacetKey(node.Facets[facetComponent])
-	if component == "" {
-		return nil, errors.BadRequestf(
-			"caldav plugin: cannot determine the component of %s (no component facet)",
-			node.URIString(),
-		)
-	}
-	inner, ok := componentInnerKey(component)
-	if !ok {
-		return nil, errors.BadRequestf(
-			"caldav plugin: unsupported component %q for %s", component, node.URIString(),
-		)
+	component, inner, err := componentPatchTarget(node)
+	if err != nil {
+		return nil, err
 	}
 
 	updates, err := cutting_garden_plugins.ParseUnifiedBucketMove(
 		codecsForType(objectType(component)), write.DimensionKey, toBucket, node.Fields,
 	)
 	if err != nil {
-		// Flatten into a new bad-request ROOT rather than errors.Wrapf: dewey
-		// renders only the root's message (wrap text lands in a descendant the
-		// CLI/mcp surfaces never print), and the node URI must reach the user so
-		// a failing move among many names WHICH object refused. Every error on
-		// this path is a bad request already, so the reclassification is a no-op.
-		return nil, errors.BadRequestf(
-			"caldav plugin: %s: %s", node.URIString(), err,
-		)
+		return nil, flattenPatchError(node, err)
 	}
 
+	return wrapComponentUpdates(component, inner, updates)
+}
+
+// BuildMembershipWritePatch is the full-set sibling of BuildFacetWritePatch
+// (MembershipWriteApplier, tags slice 2 #231): where BuildFacetWritePatch routes a
+// single bucket through the per-bucket Parse, this routes the COMPLETE tag set the
+// interpreter's Complete resolved through the multi-valued codec's full-set Parse,
+// which replaces the object's CATEGORIES verbatim (an empty set clears it). It
+// reuses the exact same component resolution and component-nested patch shape, so
+// the substrate patch layout lives in one place.
+func (Plugin) BuildMembershipWritePatch(
+	ctx context.Context,
+	node cutting_garden_plugins.Node,
+	write cutting_garden_plugins.FacetWrite,
+	newTags []string,
+) ([]byte, error) {
+	component, inner, err := componentPatchTarget(node)
+	if err != nil {
+		return nil, err
+	}
+
+	updates, err := cutting_garden_plugins.ParseUnifiedMembershipWrite(
+		codecsForType(objectType(component)), write.DimensionKey, newTags, node.Fields,
+	)
+	if err != nil {
+		return nil, flattenPatchError(node, err)
+	}
+
+	return wrapComponentUpdates(component, inner, updates)
+}
+
+// componentPatchTarget resolves node's component discriminator and the objectView
+// key its patched properties nest under, shared by the write-patch builders. A node
+// with no component facet, or an unsupported component, is a loud bad request.
+func componentPatchTarget(node cutting_garden_plugins.Node) (component, inner string, err error) {
+	component = firstFacetKey(node.Facets[facetComponent])
+	if component == "" {
+		return "", "", errors.BadRequestf(
+			"caldav plugin: cannot determine the component of %s (no component facet)",
+			node.URIString(),
+		)
+	}
+	inner, ok := componentInnerKey(component)
+	if !ok {
+		return "", "", errors.BadRequestf(
+			"caldav plugin: unsupported component %q for %s", component, node.URIString(),
+		)
+	}
+	return component, inner, nil
+}
+
+// wrapComponentUpdates nests the stored-field updates under the component's
+// objectView key and marshals the caldav PatchNode body — the single place the
+// component-nested patch shape is written, shared by both write-patch builders.
+func wrapComponentUpdates(component, inner string, updates map[string]any) ([]byte, error) {
 	body := map[string]any{
 		"component": component,
 		inner:       updates,
 	}
 	return json.Marshal(body)
+}
+
+// flattenPatchError reclassifies a Parse failure as a bad-request ROOT rather than
+// errors.Wrapf: dewey renders only the root's message (wrap text lands in a
+// descendant the CLI/mcp surfaces never print), and the node URI must reach the
+// user so a failing write among many names WHICH object refused. Every error on
+// this path is a bad request already, so the reclassification is a no-op.
+func flattenPatchError(node cutting_garden_plugins.Node, err error) error {
+	return errors.BadRequestf("caldav plugin: %s: %s", node.URIString(), err)
 }
 
 // componentInnerKey maps a caldav component discriminator to the objectView field

@@ -235,6 +235,64 @@ func TestBuildFacetWritePatch_Categories(t *testing.T) {
 	}
 }
 
+// TestBuildMembershipWritePatch pins the full-set tag write-back capability (tags
+// slice 2, #231): the COMPLETE membership set replaces CATEGORIES verbatim (naive,
+// no merge with the current value), and an empty set clears the property. The
+// wrapping is caldav's component-nested patch shape, shared with
+// BuildFacetWritePatch.
+func TestBuildMembershipWritePatch(t *testing.T) {
+	type patch struct {
+		Component string `json:"component"`
+		Task      struct {
+			Categories []string `json:"categories"`
+		} `json:"task"`
+	}
+	w := cutting_garden_plugins.FacetWrite{
+		DimensionKey: facetCategories, Mode: cutting_garden_plugins.FacetWriteMany, Field: "categories",
+	}
+
+	t.Run("full set replaces", func(t *testing.T) {
+		node := applyNode(t, "caldav://h/c/t1.ics", "VTODO", map[string]any{"categories": []string{"errand"}})
+		body, err := (Plugin{}).BuildMembershipWritePatch(context.Background(), node, w, []string{"work", "urgent"})
+		if err != nil {
+			t.Fatalf("BuildMembershipWritePatch: %v", err)
+		}
+		var got patch
+		if err := json.Unmarshal(body, &got); err != nil {
+			t.Fatalf("unmarshal %s: %v", body, err)
+		}
+		if got.Component != "VTODO" || !slices.Equal(got.Task.Categories, []string{"work", "urgent"}) {
+			t.Errorf("patch = %s, want VTODO task.categories=[work urgent]", body)
+		}
+	})
+
+	t.Run("empty set clears", func(t *testing.T) {
+		node := applyNode(t, "caldav://h/c/t1.ics", "VTODO", map[string]any{"categories": []string{"errand"}})
+		body, err := (Plugin{}).BuildMembershipWritePatch(context.Background(), node, w, []string{})
+		if err != nil {
+			t.Fatalf("BuildMembershipWritePatch: %v", err)
+		}
+		var got patch
+		if err := json.Unmarshal(body, &got); err != nil {
+			t.Fatalf("unmarshal %s: %v", body, err)
+		}
+		if got.Component != "VTODO" || len(got.Task.Categories) != 0 {
+			t.Errorf("patch = %s, want VTODO task.categories=[] (cleared)", body)
+		}
+	})
+
+	t.Run("componentless node rejects", func(t *testing.T) {
+		u, err := url.Parse("caldav://h/c/t1.ics")
+		if err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		node := cutting_garden_plugins.Node{URI: u, Type: objectType("VTODO"), Fields: map[string]any{}}
+		if _, err := (Plugin{}).BuildMembershipWritePatch(context.Background(), node, w, []string{"work"}); err == nil {
+			t.Error("membership write on a node with no component facet must reject")
+		}
+	})
+}
+
 // TestCategoriesCodec_Parse pins the full-set replacement semantics (tags slice 2,
 // RFC 0019): the complete tag set passed under the categories key becomes the
 // stored CATEGORIES delta verbatim (naive, no normalization, no merge with the

@@ -370,6 +370,20 @@ type ListingField = internal.ListingField
 // other schema-describing capabilities.
 type ListingFieldsDescriber = internal.ListingFieldsDescriber
 
+// MembershipWriteApplier is the full-set sibling of FacetWriteApplier for a
+// MULTI-VALUED (write:many) tag dimension. Where BuildFacetWritePatch moves a node
+// into a SINGLE bucket — routing through a per-bucket Parse that would discard a
+// full-set-replace codec's other values — this carries the COMPLETE membership set
+// the interpreter's Complete already resolved, so the codec's full-set Parse
+// persists exactly that set. It is a SEPARATE optional interface, not a method on
+// FacetWriteApplier, so declaring it does not force every existing single-bucket
+// applier to grow a method.
+//
+// Probed by type assertion on an already-resolved plugin, exactly like
+// FacetWriteApplier. A plugin returns the finished patch body, so the organize
+// apply engine stays free of the substrate's patch shape (RFC 0009 no-inversion).
+type MembershipWriteApplier = internal.MembershipWriteApplier
+
 // Node is one addressable point in a RootLister plugin's capturable
 // tree, as returned by ListRoots.
 type Node = internal.Node
@@ -824,6 +838,18 @@ var ParseUnifiedBucketMove = internal.ParseUnifiedBucketMove
 // write through a read-only declaration even without the framework's own
 // writability gate in front.
 var ParseUnifiedFieldEdits = internal.ParseUnifiedFieldEdits
+
+// ParseUnifiedMembershipWrite is ParseUnifiedBucketMove's multi-valued sibling:
+// it routes a FULL-SET replacement of a groupable, writable, MULTI-VALUED tag
+// dimension to the codec owning it, whose Parse persists the complete set. Unlike
+// the single-bucket move, this carries every tag (the interpreter's Complete has
+// already resolved the final set) — a per-bucket call would drop the others. An
+// empty newTags is valid and clears the dimension. No closed-domain (Values) check:
+// tags are an open domain, so any value is accepted (the codec's Parse still
+// validates its shape). Loud rejections mirror ParseUnifiedBucketMove — a dimension
+// no codec declares groupable, one declared read-only, and (this helper being the
+// many case only) one declared single-valued, which must use ParseUnifiedBucketMove.
+var ParseUnifiedMembershipWrite = internal.ParseUnifiedMembershipWrite
 
 // PresentUnifiedAtoms reproduces FieldPresenter.PresentBoxAtoms from a node type's
 // codecs: each codec formats the node's stored fields, and every INLINE (non-

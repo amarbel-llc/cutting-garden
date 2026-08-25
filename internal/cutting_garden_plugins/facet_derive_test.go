@@ -156,6 +156,73 @@ func TestParseUnifiedBucketMove(t *testing.T) {
 	}
 }
 
+// tagTestCodec is a groupable, writable, MULTI-VALUED tag codec whose Parse
+// persists the COMPLETE set passed under "tags" onto the stored field "cats" — a
+// stand-in for caldav's categoriesCodec full-set replacement.
+type tagTestCodec struct{}
+
+func (tagTestCodec) Fields() []UnifiedField {
+	return []UnifiedField{{
+		Key: "tags", Label: "Tags", Kind: FieldTag, Groupable: true,
+		Writable: true, MultiValued: true, Source: "cats",
+	}}
+}
+
+func (tagTestCodec) Format(map[string]any) (map[string][]string, error) {
+	return map[string][]string{}, nil
+}
+
+func (tagTestCodec) Parse(
+	edited map[string][]string, _ map[string]any,
+) (map[string]any, error) {
+	return map[string]any{"cats": edited["tags"]}, nil
+}
+
+// A full-set membership write routes the COMPLETE tag set (not a single element)
+// to the owning multi-valued codec's Parse; an empty set clears; a read-only,
+// single-valued, or undeclared dimension is a bad request.
+func TestParseUnifiedMembershipWrite(t *testing.T) {
+	codecs := []Codec{
+		IdentityCodec{Field: UnifiedField{
+			Key: "status", Groupable: true, Inline: true, Writable: true,
+		}},
+		IdentityCodec{Field: UnifiedField{
+			Key: "rotags", Groupable: true, MultiValued: true,
+		}},
+		tagTestCodec{},
+	}
+
+	updates, err := ParseUnifiedMembershipWrite(codecs, "tags", []string{"work", "urgent"}, nil)
+	if err != nil {
+		t.Fatalf("membership write: %v", err)
+	}
+	if !reflect.DeepEqual(updates, map[string]any{"cats": []string{"work", "urgent"}}) {
+		t.Fatalf("membership updates = %v, want {cats: [work urgent]}", updates)
+	}
+
+	// An empty set is valid — it clears the dimension.
+	updates, err = ParseUnifiedMembershipWrite(codecs, "tags", []string{}, nil)
+	if err != nil {
+		t.Fatalf("empty membership write: %v", err)
+	}
+	if !reflect.DeepEqual(updates, map[string]any{"cats": []string{}}) {
+		t.Fatalf("empty membership updates = %v, want {cats: []}", updates)
+	}
+
+	// A single-valued dimension must go through ParseUnifiedBucketMove instead.
+	if _, err := ParseUnifiedMembershipWrite(codecs, "status", []string{"DONE"}, nil); err == nil {
+		t.Fatal("single-valued dimension: want error, got nil")
+	}
+	// A read-only dimension is a bad request.
+	if _, err := ParseUnifiedMembershipWrite(codecs, "rotags", []string{"x"}, nil); err == nil {
+		t.Fatal("read-only dimension: want error, got nil")
+	}
+	// An undeclared dimension is a bad request.
+	if _, err := ParseUnifiedMembershipWrite(codecs, "nope", []string{"x"}, nil); err == nil {
+		t.Fatal("undeclared dimension: want error, got nil")
+	}
+}
+
 // A CLOSED value domain rejects a move to an undeclared bucket loudly (the
 // FDR 0023 rule) instead of letting the codec write an arbitrary value; an OPEN
 // domain (Values nil) keeps accepting any bucket.

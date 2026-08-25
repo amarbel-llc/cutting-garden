@@ -169,6 +169,43 @@ func ParseUnifiedBucketMove(
 	)
 }
 
+// ParseUnifiedMembershipWrite is ParseUnifiedBucketMove's multi-valued sibling:
+// it routes a FULL-SET replacement of a groupable, writable, MULTI-VALUED tag
+// dimension to the codec owning it, whose Parse persists the complete set. Unlike
+// the single-bucket move, this carries every tag (the interpreter's Complete has
+// already resolved the final set) — a per-bucket call would drop the others. An
+// empty newTags is valid and clears the dimension. No closed-domain (Values) check:
+// tags are an open domain, so any value is accepted (the codec's Parse still
+// validates its shape). Loud rejections mirror ParseUnifiedBucketMove — a dimension
+// no codec declares groupable, one declared read-only, and (this helper being the
+// many case only) one declared single-valued, which must use ParseUnifiedBucketMove.
+func ParseUnifiedMembershipWrite(
+	codecs []Codec, dimension string, newTags []string, current map[string]any,
+) (map[string]any, error) {
+	for _, c := range codecs {
+		for _, f := range c.Fields() {
+			if !f.Groupable || f.Key != dimension {
+				continue
+			}
+			if !f.Writable {
+				return nil, errors.BadRequestf(
+					"dimension %q is not writable via organize", dimension,
+				)
+			}
+			if !f.MultiValued {
+				return nil, errors.BadRequestf(
+					"dimension %q is single-valued; use a bucket move, not a membership write",
+					dimension,
+				)
+			}
+			return c.Parse(map[string][]string{dimension: newTags}, current)
+		}
+	}
+	return nil, errors.BadRequestf(
+		"dimension %q is not writable via organize", dimension,
+	)
+}
+
 func fieldValuesContain(values []FieldValue, key string) bool {
 	for _, v := range values {
 		if v.Value == key {
