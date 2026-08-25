@@ -132,6 +132,90 @@ func TestGroupNodes_MultiMembership(t *testing.T) {
 	}
 }
 
+// TestGroupNodes_StripsRedundantGroupedAtom pins cutting-garden#229: when the
+// `=<value>` heading a box is filed under already shows the grouped dimension's
+// value in FULL, that dimension's box atom is dropped (pure redundancy), while
+// its sibling atoms stay.
+func TestGroupNodes_StripsRedundantGroupedAtom(t *testing.T) {
+	anchor := "caldav://h/c/"
+	node := cgp.Node{
+		URI: mustURL(t, anchor+"s.ics"), Type: "caldav-object-v1",
+		Facets: map[string][]cgp.FacetValue{"status": {{Key: "COMPLETED"}}},
+	}
+	present := func(cgp.Node) []cgp.BoxAtom {
+		return []cgp.BoxAtom{{Name: "status", Value: "COMPLETED"}, {Name: "location", Value: "Bank"}}
+	}
+
+	_, buckets := groupNodes(
+		[]cgp.Node{node}, groupSpec{Dim: "status"}, anchor, nil, false, present,
+	)
+	if len(buckets) != 1 || len(buckets[0].Lines) != 1 {
+		t.Fatalf("status buckets = %+v", buckets)
+	}
+	got := buckets[0].Lines[0].Fields
+	if len(got) != 1 || got[0].Name != "location" {
+		t.Errorf("grouped status atom must be stripped, sibling kept; got %+v", got)
+	}
+
+	// A bare-day date grouping (the user's reported case): the atom value equals
+	// the day bucket, so date_due is stripped — but its split sibling time_due,
+	// which the heading does NOT show, is kept.
+	gDay, _ := cgp.ParseDateGranularity("day")
+	dateNode := cgp.Node{
+		URI: mustURL(t, anchor+"d.ics"), Type: "caldav-object-v1",
+		Facets: map[string][]cgp.FacetValue{"date_due": {{Key: "2026-08-15"}}},
+	}
+	presentDate := func(cgp.Node) []cgp.BoxAtom {
+		return []cgp.BoxAtom{{Name: "date_due", Value: "2026-08-15"}, {Name: "time_due", Value: "14-30"}}
+	}
+	_, db := groupNodes(
+		[]cgp.Node{dateNode}, groupSpec{Dim: "date_due", Granularity: gDay}, anchor, nil, false, presentDate,
+	)
+	if got := db[0].Lines[0].Fields; len(got) != 1 || got[0].Name != "time_due" {
+		t.Errorf("day-granularity date_due atom must be stripped, time_due kept; got %+v", got)
+	}
+}
+
+// TestGroupNodes_KeepsAtomUnderCoarserHeading pins the other side of #229: when
+// the heading is COARSER than the atom (a month bucket over a day-precise date,
+// a priority band over the raw integer), the atom carries precision the heading
+// drops and MUST be kept.
+func TestGroupNodes_KeepsAtomUnderCoarserHeading(t *testing.T) {
+	anchor := "caldav://h/c/"
+	gMonth, _ := cgp.ParseDateGranularity("month")
+
+	dateNode := cgp.Node{
+		URI: mustURL(t, anchor+"d.ics"), Type: "caldav-object-v1",
+		Facets: map[string][]cgp.FacetValue{"date_due": {{Key: "2026-08-15"}}},
+	}
+	presentDate := func(cgp.Node) []cgp.BoxAtom {
+		return []cgp.BoxAtom{{Name: "date_due", Value: "2026-08-15"}, {Name: "time_due", Value: "14-30"}}
+	}
+	_, mb := groupNodes(
+		[]cgp.Node{dateNode}, groupSpec{Dim: "date_due", Granularity: gMonth}, anchor, nil, false, presentDate,
+	)
+	if len(mb) != 1 || mb[0].Value != "2026-08" {
+		t.Fatalf("month bucket = %+v", mb)
+	}
+	if got := mb[0].Lines[0].Fields; len(got) != 2 {
+		t.Errorf("day-precise date_due atom must be kept under a month bucket; got %+v", got)
+	}
+
+	priNode := cgp.Node{
+		URI: mustURL(t, anchor+"p.ics"), Type: "caldav-object-v1",
+		Facets: map[string][]cgp.FacetValue{"priority": {{Key: "0_must"}}},
+	}
+	presentPri := func(cgp.Node) []cgp.BoxAtom {
+		return []cgp.BoxAtom{{Name: "priority", Value: "1"}}
+	}
+	_, pb := groupNodes(
+		[]cgp.Node{priNode}, groupSpec{Dim: "priority"}, anchor, nil, false, presentPri,
+	)
+	if got := pb[0].Lines[0].Fields; len(got) != 1 || got[0].Name != "priority" {
+		t.Errorf("raw-int priority atom must be kept under a band bucket; got %+v", got)
+	}
+}
+
 // TestCommonURIPrefix pins the anchor derivation that keeps box ids short
 // regardless of the CLI arg form: a single-calendar node set yields the calendar
 // dir, a multi-calendar set the shared ancestor dir, zero nodes the empty string.

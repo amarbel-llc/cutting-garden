@@ -123,6 +123,13 @@ function organize_date_bare_groups_by_day { # @test
   assert_line '# date_due:day='
   assert_line '## =2026-08-15'
   assert_line '## =2026-09-10'
+
+  # cutting-garden#229: at day granularity the heading shows the date in FULL, so
+  # the redundant date_due box atom is dropped — while its split sibling time_due
+  # (which the heading does not show) is kept. Contrast the month lane above,
+  # where the coarser heading keeps the day-precise date_due atom.
+  refute_output --partial 'date_due=2026-08-15'
+  assert_output --partial 'time_due=14-30'
 }
 
 # With `[organize] date_granularity = "month"` in config.toml, a bare

@@ -17,7 +17,9 @@ var _ cutting_garden_plugins.FieldPresenter = (*Plugin)(nil)
 // SUMMARY is the box trailer, not an atom, so its codec declares Trailer and yields
 // none. STATUS is presented (usually also the grouping heading) so a field edit can
 // read the live value for three-way-merge conflict detection — the heading/atom
-// redundancy this creates when grouped BY status is cutting-garden#229.
+// redundancy this WOULD create when grouped BY status is stripped at the
+// document-render layer (organize.groupNodes drops a grouped atom whose value the
+// heading already shows in full), cutting-garden#229.
 func (Plugin) PresentBoxAtoms(
 	node cutting_garden_plugins.Node,
 ) []cutting_garden_plugins.BoxAtom {

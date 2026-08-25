@@ -225,12 +225,13 @@ func commonStringPrefix(a, b string) string {
 }
 
 // provenance renders the inert `%` provenance note recording how the document was
-// generated.
+// generated. The echoed command is wrapped in backticks so it reads as code and
+// copy-pastes unambiguously (cutting-garden#243).
 func provenance(groupBy, query, uri string) string {
 	if query != "" {
-		return fmt.Sprintf("generated: cg organize -group-by %s -query %q %s", groupBy, query, uri)
+		return fmt.Sprintf("generated: `cg organize -group-by %s -query %q %s`", groupBy, query, uri)
 	}
-	return fmt.Sprintf("generated: cg organize -group-by %s %s", groupBy, uri)
+	return fmt.Sprintf("generated: `cg organize -group-by %s %s`", groupBy, uri)
 }
 
 // storeBase writes the canonical document as a content-addressed blob and returns

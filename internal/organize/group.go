@@ -45,7 +45,18 @@ func groupNodes(
 		}
 		for _, v := range values {
 			key := coarsenBucket(v.Key, spec.Granularity)
-			byValue[key] = append(byValue[key], ln)
+			bucketLine := ln
+			// Drop the grouped dimension's box atom when the `=<value>` heading it
+			// is filed under already shows that atom's value in FULL — pure
+			// redundancy (cutting-garden#229). A coarser heading keeps the atom: it
+			// carries precision the heading drops (a `date_due:month` bucket over a
+			// day-precise date_due atom; a priority band over the raw priority
+			// integer). The comparison is against the atom's rendered value, not the
+			// facet key, so a band/raw-int split is correctly kept.
+			if a, ok := findAtom(ln.Fields, spec.Dim); ok && a.Value == key {
+				bucketLine.Fields = withoutAtom(ln.Fields, spec.Dim)
+			}
+			byValue[key] = append(byValue[key], bucketLine)
 		}
 	}
 
@@ -75,6 +86,30 @@ func groupNodes(
 		buckets = append(buckets, bucket{Value: k, Lines: lines})
 	}
 	return ungrouped, buckets
+}
+
+// findAtom returns the box atom named name, or ok=false when the box carries no
+// such atom (e.g. a groupable-but-not-inline dimension like categories).
+func findAtom(atoms []cgp.BoxAtom, name string) (cgp.BoxAtom, bool) {
+	for _, a := range atoms {
+		if a.Name == name {
+			return a, true
+		}
+	}
+	return cgp.BoxAtom{}, false
+}
+
+// withoutAtom returns atoms with the atom named name removed. It allocates a
+// fresh slice, so the caller's shared backing array (one objectLine filed under
+// several buckets) is never mutated.
+func withoutAtom(atoms []cgp.BoxAtom, name string) []cgp.BoxAtom {
+	out := make([]cgp.BoxAtom, 0, len(atoms))
+	for _, a := range atoms {
+		if a.Name != name {
+			out = append(out, a)
+		}
+	}
+	return out
 }
 
 // nodeDescription resolves the box's description trailer: the human-readable
