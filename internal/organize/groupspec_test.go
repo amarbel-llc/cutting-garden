@@ -36,12 +36,15 @@ func dueNode(t *testing.T, name, due string) cgp.Node {
 func TestParseGroupSpec_Resolution(t *testing.T) {
 	dims := dateDims()
 
-	spec, err := parseGroupSpec("date_due:month", dims, "")
+	spec, err := parseGroupSpec("date_due:month", dims, nil, "")
 	if err != nil {
 		t.Fatalf("date_due:month: %v", err)
 	}
 	if spec.Dim != "date_due" || spec.Granularity != cgp.GranularityMonth {
 		t.Errorf("date_due:month = %+v", spec)
+	}
+	if spec.Kind != groupKindField {
+		t.Errorf("date_due:month kind = %v, want field", spec.Kind)
 	}
 	if spec.String() != "date_due:month" {
 		t.Errorf("String() = %q, want date_due:month", spec.String())
@@ -49,7 +52,7 @@ func TestParseGroupSpec_Resolution(t *testing.T) {
 
 	// Bare date dimension, no config: the built-in day default, persisted
 	// explicitly.
-	spec, err = parseGroupSpec("date_due", dims, "")
+	spec, err = parseGroupSpec("date_due", dims, nil, "")
 	if err != nil {
 		t.Fatalf("bare date_due: %v", err)
 	}
@@ -58,7 +61,7 @@ func TestParseGroupSpec_Resolution(t *testing.T) {
 	}
 
 	// Bare date dimension with a config default.
-	spec, err = parseGroupSpec("date_due", dims, "month")
+	spec, err = parseGroupSpec("date_due", dims, nil, "month")
 	if err != nil {
 		t.Fatalf("bare date_due with config: %v", err)
 	}
@@ -67,19 +70,143 @@ func TestParseGroupSpec_Resolution(t *testing.T) {
 	}
 
 	// Bare non-date dimension: no granularity, canonical bare spelling.
-	spec, err = parseGroupSpec("status", dims, "month")
+	spec, err = parseGroupSpec("status", dims, nil, "month")
 	if err != nil {
 		t.Fatalf("bare status: %v", err)
 	}
-	if spec.Granularity != "" || spec.String() != "status" {
+	if spec.Granularity != "" || spec.Kind != groupKindField || spec.String() != "status" {
 		t.Errorf("bare status = %+v (String %q)", spec, spec.String())
+	}
+}
+
+// TestParseGroupSpec_TagResolution pins the tags-slice-3 resolution ladder
+// (RFC 0019, cutting-garden#231): a bare TAG dimension groups whole-dimension;
+// a bare arg that is neither a facet nor a tag dimension, WHEN a tag dimension
+// exists, groups as a NAMESPACE within it; a trailing `=` forces the field
+// reading and rejects a non-field name.
+func TestParseGroupSpec_TagResolution(t *testing.T) {
+	// categories is a categorical facet dim AND the plugin's tag dimension.
+	dims := []cgp.NodeTypeFacets{{
+		Tag: "task",
+		Dimensions: []cgp.FacetDimension{
+			{Key: "status", Kind: cgp.FacetCategorical},
+			{Key: "categories", Kind: cgp.FacetCategorical, Multi: true},
+		},
+	}}
+	tagDims := []string{"categories"}
+
+	// The tag dimension itself → whole-dimension tag grouping (wins over the
+	// facet reading of the same name).
+	spec, err := parseGroupSpec("categories", dims, tagDims, "")
+	if err != nil {
+		t.Fatalf("bare categories: %v", err)
+	}
+	if spec.Kind != groupKindTagWhole || spec.Dim != "categories" || spec.Namespace != "" {
+		t.Errorf("categories = %+v, want tag-whole Dim=categories", spec)
+	}
+	if spec.String() != "categories" {
+		t.Errorf("String() = %q, want categories", spec.String())
+	}
+
+	// A bare non-facet arg with a tag dimension present → tag namespace.
+	spec, err = parseGroupSpec("project", dims, tagDims, "")
+	if err != nil {
+		t.Fatalf("bare project: %v", err)
+	}
+	if spec.Kind != groupKindTagNamespace || spec.Dim != "categories" || spec.Namespace != "project" {
+		t.Errorf("project = %+v, want tag-namespace Dim=categories Namespace=project", spec)
+	}
+	if spec.String() != "project" {
+		t.Errorf("String() = %q, want project", spec.String())
+	}
+
+	// A deeper namespace drills further.
+	spec, err = parseGroupSpec("project-client", dims, tagDims, "")
+	if err != nil {
+		t.Fatalf("bare project-client: %v", err)
+	}
+	if spec.Kind != groupKindTagNamespace || spec.Namespace != "project-client" {
+		t.Errorf("project-client = %+v, want Namespace=project-client", spec)
+	}
+
+	// A declared facet/field dimension still reads as a field even with a tag
+	// dimension present.
+	spec, err = parseGroupSpec("status", dims, tagDims, "")
+	if err != nil {
+		t.Fatalf("bare status with tag dim: %v", err)
+	}
+	if spec.Kind != groupKindField || spec.Dim != "status" {
+		t.Errorf("status = %+v, want field Dim=status", spec)
+	}
+
+	// Trailing `=` forces the field reading of a declared dimension.
+	spec, err = parseGroupSpec("status=", dims, tagDims, "")
+	if err != nil {
+		t.Fatalf("status=: %v", err)
+	}
+	if spec.Kind != groupKindField || spec.Dim != "status" {
+		t.Errorf("status= = %+v, want field Dim=status", spec)
+	}
+
+	// Trailing `=` on a name that is NOT a declared field is a bad request
+	// naming it — even though `project` is a valid tag namespace.
+	_, err = parseGroupSpec("project=", dims, tagDims, "")
+	if err == nil {
+		t.Fatal("project= must reject — project is not a declared facet dimension")
+	}
+	if !errors.Is400BadRequest(err) {
+		t.Errorf("expected a bad request, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "project") {
+		t.Errorf("error should name the dimension: %v", err)
+	}
+
+	// No tag dimension at all: an unknown bare arg falls through to the field
+	// reading (today's silent behavior), NOT a namespace.
+	spec, err = parseGroupSpec("project", dims, nil, "")
+	if err != nil {
+		t.Fatalf("bare project without tag dim: %v", err)
+	}
+	if spec.Kind != groupKindField || spec.Dim != "project" {
+		t.Errorf("project (no tag dim) = %+v, want field Dim=project", spec)
+	}
+}
+
+// TestUnsupportedGroupingError_NamespaceOnly pins the B1 generate-path guard:
+// a namespace grouping (resolved by parse, unwired downstream until B2/B3) is
+// rejected with a bad request naming the arg, while the field and
+// tag-whole-dimension groupings that work today pass through unguarded. This is
+// the reachable unit of buildAndStore's guard (buildAndStore itself needs a
+// resolved plugin + blob store). Removed by B3 (cutting-garden#231).
+func TestUnsupportedGroupingError_NamespaceOnly(t *testing.T) {
+	ns := groupSpec{Dim: "categories", Namespace: "project", Kind: groupKindTagNamespace}
+	err := unsupportedGroupingError(ns, "project")
+	if err == nil {
+		t.Fatal("namespace grouping must be rejected until B2/B3 land")
+	}
+	if !errors.Is400BadRequest(err) {
+		t.Errorf("expected a bad request, got %v", err)
+	}
+	if !strings.Contains(err.Error(), "project") {
+		t.Errorf("error should name the group-by arg: %v", err)
+	}
+
+	// The specs the generate path DOES support today pass the guard.
+	for _, ok := range []groupSpec{
+		{Dim: "status"}, // field
+		{Dim: "date_due", Granularity: cgp.GranularityDay}, // date field
+		{Dim: "categories", Kind: groupKindTagWhole},       // tag whole-dimension
+	} {
+		if err := unsupportedGroupingError(ok, "x"); err != nil {
+			t.Errorf("%+v must be supported, got %v", ok, err)
+		}
 	}
 }
 
 // TestParseGroupSpec_SuffixOnNonDateRejects pins that a granularity suffix on a
 // non-date dimension is a bad request naming the problem (cutting-garden#230).
 func TestParseGroupSpec_SuffixOnNonDateRejects(t *testing.T) {
-	_, err := parseGroupSpec("status:month", dateDims(), "")
+	_, err := parseGroupSpec("status:month", dateDims(), nil, "")
 	if err == nil {
 		t.Fatal("status:month must reject — status is not a date dimension")
 	}
@@ -92,7 +219,7 @@ func TestParseGroupSpec_SuffixOnNonDateRejects(t *testing.T) {
 
 	// A suffix with no schema in hand (nil dims) rejects too — nothing says the
 	// dimension is a date.
-	if _, err := parseGroupSpec("date_due:month", nil, ""); err == nil {
+	if _, err := parseGroupSpec("date_due:month", nil, nil, ""); err == nil {
 		t.Error("a suffix without a declared schema must reject")
 	}
 }
@@ -100,7 +227,7 @@ func TestParseGroupSpec_SuffixOnNonDateRejects(t *testing.T) {
 // TestParseGroupSpec_UnknownGranularityRejects pins that an unknown granularity
 // is a bad request listing the valid spellings.
 func TestParseGroupSpec_UnknownGranularityRejects(t *testing.T) {
-	_, err := parseGroupSpec("date_due:week", dateDims(), "")
+	_, err := parseGroupSpec("date_due:week", dateDims(), nil, "")
 	if err == nil {
 		t.Fatal("date_due:week must reject — week is not a granularity")
 	}
@@ -137,7 +264,7 @@ func TestCoarsenBucket_ShapeGated(t *testing.T) {
 // spelling so a later apply coarsens identically without consulting config.
 func TestBuildDocument_DateGranularityMonth(t *testing.T) {
 	lister := &fakeLister{dims: dateDims()}
-	spec, err := parseGroupSpec("date_due:month", lister.DescribeFacets(), "")
+	spec, err := parseGroupSpec("date_due:month", lister.DescribeFacets(), nil, "")
 	if err != nil {
 		t.Fatalf("parseGroupSpec: %v", err)
 	}
@@ -167,7 +294,7 @@ func TestBuildDocument_DateGranularityMonth(t *testing.T) {
 // with the resolved day granularity persisted explicitly in the heading.
 func TestBuildDocument_DateGranularityBareIsDay(t *testing.T) {
 	lister := &fakeLister{dims: dateDims()}
-	spec, err := parseGroupSpec("date_due", lister.DescribeFacets(), "")
+	spec, err := parseGroupSpec("date_due", lister.DescribeFacets(), nil, "")
 	if err != nil {
 		t.Fatalf("parseGroupSpec: %v", err)
 	}

@@ -37,9 +37,13 @@ func (cmd *Organize) buildAndStore(ctx errors.Context, uriStr string) (string, e
 		return "", err
 	}
 	spec, err := parseGroupSpec(
-		cmd.GroupBy, describedFacets(lister), cfg.Organize.DateGranularity,
+		cmd.GroupBy, describedFacets(lister), describedTagDims(lister),
+		cfg.Organize.DateGranularity,
 	)
 	if err != nil {
+		return "", err
+	}
+	if err := unsupportedGroupingError(spec, cmd.GroupBy); err != nil {
 		return "", err
 	}
 
@@ -142,6 +146,53 @@ func describedFacets(lister cgp.RootLister) []cgp.NodeTypeFacets {
 		return d.DescribeFacets()
 	}
 	return nil
+}
+
+// unsupportedGroupingError rejects a resolved spec the generate path cannot yet
+// render, returning nil for one it fully supports. B1 RESOLVES a namespace
+// grouping (groupKindTagNamespace) but nothing downstream consumes
+// Kind/Namespace yet — groupNodes would silently bucket by the WHOLE tag
+// dimension under a `<namespace>=` heading, a mislabeled document. So a
+// namespace spec is rejected loudly until B2 wires the rollup grouping and B3
+// the continuation-heading rendering. Field and tag-whole-dimension groupings
+// work today and pass through. REMOVED by B3 (RFC 0019 tags slice 3,
+// cutting-garden#231).
+func unsupportedGroupingError(spec groupSpec, groupBy string) error {
+	if spec.Kind == groupKindTagNamespace {
+		return errors.BadRequestf(
+			"organize: namespace grouping (--group-by %s) is not yet supported — "+
+				"tags slice 3 B2/B3 wire the rollup grouping + rendering", groupBy,
+		)
+	}
+	return nil
+}
+
+// describedTagDims collects the plugin's TAG-dimension keys — the
+// UnifiedField.Kind == FieldTag fields declared via DescribeUnified (FDR 0025).
+// The FacetDimension surface derives a tag field to FacetCategorical
+// (facet_derive), so the unified declaration is the ONLY place a tag dimension
+// is distinguishable from a plain categorical one; a plugin without the
+// UnifiedDescriber capability has no tag dimensions. Deduplicated,
+// first-declared order — parseGroupSpec resolves an unqualified namespace arg
+// against the first.
+func describedTagDims(lister cgp.RootLister) []string {
+	d, ok := lister.(cgp.UnifiedDescriber)
+	if !ok {
+		return nil
+	}
+	seen := map[string]bool{}
+	var keys []string
+	for _, set := range d.DescribeUnified() {
+		for _, codec := range set.Codecs {
+			for _, f := range codec.Fields() {
+				if f.Kind == cgp.FieldTag && !seen[f.Key] {
+					seen[f.Key] = true
+					keys = append(keys, f.Key)
+				}
+			}
+		}
+	}
+	return keys
 }
 
 // boxAtomPresenter returns the plugin's box-atom presentation function when it

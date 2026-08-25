@@ -1,15 +1,41 @@
 package organize
 
 import (
+	"slices"
 	"strings"
 
 	cgp "code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
+// groupKind classifies how a --group-by spelling resolves (RFC 0019 tags
+// slice 3, cutting-garden#231). The zero value is groupKindField — a plain
+// facet/field dimension, today's only behavior — so a groupSpec constructed
+// directly (the persisted-heading parse in document.go, the apply/group tests)
+// is a field grouping unless the resolver marks it otherwise.
+type groupKind int
+
+const (
+	// groupKindField groups by a facet/field dimension (status, date_due,
+	// priority) — the pre-tags behavior, unchanged.
+	groupKindField groupKind = iota
+	// groupKindTagWhole groups by a TAG dimension as a whole (categories): one
+	// bucket per raw tag value.
+	groupKindTagWhole
+	// groupKindTagNamespace groups by a NAMESPACE within a tag dimension: Dim is
+	// the tag dimension (categories), Namespace the segment prefix (project).
+	groupKindTagNamespace
+)
+
 // groupSpec is a parsed --group-by / document-heading dimension spelling:
 // the facet dimension plus, for a FacetDate dimension, the bucket
 // granularity (cutting-garden#230). Non-date dimensions never carry one.
+//
+// Kind records which resolution the spelling took (RFC 0019 tags slice 3): a
+// field grouping, the tag dimension as a whole, or a namespace within it. For a
+// tag-namespace grouping Dim is the TAG DIMENSION (e.g. categories) and
+// Namespace is the segment prefix (e.g. project); Granularity is only ever set
+// on a date FIELD dimension.
 //
 // The spec is resolved ONCE at generate time (config-then-day for a bare
 // date spelling) and persisted verbatim in the document's dimension heading
@@ -18,23 +44,96 @@ import (
 type groupSpec struct {
 	Dim         string
 	Granularity cgp.DateGranularity // "" for a non-date dimension
+	Kind        groupKind
+	Namespace   string // set only for groupKindTagNamespace
 }
 
-// String renders the canonical spelling ("date_due:month", or just the
-// dimension) — the document heading term and provenance form.
+// String renders the canonical spelling — the document heading term and
+// provenance form. A field grouping spells `dim` (or `dim:granularity` for a
+// date dim); a tag whole-dimension grouping spells the bare tag dimension; a
+// tag-namespace grouping spells the bare namespace. (B3 will move the persisted
+// form to a `_group_by` envelope; this stays a sensible bare canonical form.)
 func (s groupSpec) String() string {
-	if s.Granularity == "" {
+	switch s.Kind {
+	case groupKindTagNamespace:
+		return s.Namespace
+	case groupKindTagWhole:
 		return s.Dim
+	default:
+		if s.Granularity == "" {
+			return s.Dim
+		}
+		return s.Dim + ":" + string(s.Granularity)
 	}
-	return s.Dim + ":" + string(s.Granularity)
 }
 
-// parseGroupSpec resolves a spelling against the plugin's declared schema:
-// a `dim:granularity` suffix is legal only on a FacetDate dimension; a bare
-// date dimension takes configDefault, then day. dims may be nil (no
+// parseGroupSpec resolves a --group-by spelling against the plugin's declared
+// schema (RFC 0019 tags slice 3, cutting-garden#231):
+//
+//   - A trailing `=` FORCES the field reading: the token before it MUST be a
+//     declared facet/field dimension (error naming it otherwise) —
+//     disambiguates a name that is both a tag namespace and a field.
+//   - A `:granularity` suffix is the existing date-field path, unchanged.
+//   - A bare arg resolves, in order: the TAG dimension itself → whole-dimension
+//     tag grouping; a declared facet/field dimension → field grouping (today's
+//     behavior, including a bare date dim's granularity default); an
+//     otherwise-unrecognized arg WHEN a tag dimension exists → tag-namespace
+//     grouping (Dim = the tag dimension, Namespace = the arg); nothing
+//     recognizable and no tag dimension → the field reading (today's silent
+//     fall-through for an unknown bare dimension).
+//
+// tagDims are the plugin's TAG-dimension keys (UnifiedField.Kind == FieldTag),
+// which the FacetDimension surface cannot distinguish — the derived facet kind
+// of a tag field is FacetCategorical (facet_derive), so the unified declaration
+// is the only place a tag dimension is visible. dims may be nil (no
 // FacetDescriber) — then any suffix is rejected (no schema says it's a date).
 func parseGroupSpec(
-	spelling string, dims []cgp.NodeTypeFacets, configDefault string,
+	spelling string,
+	dims []cgp.NodeTypeFacets,
+	tagDims []string,
+	configDefault string,
+) (groupSpec, error) {
+	// A trailing `=` forces the field reading and requires a declared dimension.
+	if forced, ok := strings.CutSuffix(spelling, "="); ok {
+		return resolveFieldDim(forced, dims, configDefault, true)
+	}
+
+	// A `:granularity` suffix is a date-field spelling — the existing path.
+	if _, _, hasSuffix := strings.Cut(spelling, ":"); hasSuffix {
+		return resolveFieldDim(spelling, dims, configDefault, false)
+	}
+
+	// Bare arg. The tag dimension itself groups whole-dimension; a declared
+	// facet/field dimension keeps the field reading; an unrecognized arg becomes
+	// a tag NAMESPACE when a tag dimension exists.
+	if slices.Contains(tagDims, spelling) {
+		return groupSpec{Dim: spelling, Kind: groupKindTagWhole}, nil
+	}
+	if _, declared := findDim(dims, spelling); declared {
+		return resolveFieldDim(spelling, dims, configDefault, false)
+	}
+	if len(tagDims) > 0 {
+		// caldav declares exactly one tag dimension; if a plugin ever declares
+		// several, the first-declared owns an unqualified namespace arg — genuine
+		// cross-dimension ambiguity is out of scope for this slice.
+		return groupSpec{
+			Dim:       tagDims[0],
+			Namespace: spelling,
+			Kind:      groupKindTagNamespace,
+		}, nil
+	}
+	return resolveFieldDim(spelling, dims, configDefault, false)
+}
+
+// resolveFieldDim resolves the field/facet reading of a spelling — the
+// pre-tags logic verbatim, plus a requireDeclared guard for the forced-field
+// (`dim=`) case. A `:granularity` suffix is legal only on a FacetDate
+// dimension; a bare date dimension takes configDefault, then day.
+func resolveFieldDim(
+	spelling string,
+	dims []cgp.NodeTypeFacets,
+	configDefault string,
+	requireDeclared bool,
 ) (groupSpec, error) {
 	dim, suffix, hasSuffix := strings.Cut(spelling, ":")
 	d, declared := findDim(dims, dim)
@@ -52,6 +151,12 @@ func parseGroupSpec(
 			)
 		}
 		return groupSpec{Dim: dim, Granularity: g}, nil
+	}
+	if requireDeclared && !declared {
+		return groupSpec{}, errors.BadRequestf(
+			"organize: --group-by %q= forces a field reading, but %q is not a "+
+				"declared facet dimension", dim, dim,
+		)
 	}
 	if declared && d.Kind == cgp.FacetDate {
 		if g, ok := cgp.ParseDateGranularity(configDefault); ok {
