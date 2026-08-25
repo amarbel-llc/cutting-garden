@@ -238,15 +238,20 @@ func (facetOnlyCodec) Parse(map[string][]string, map[string]any) (map[string]any
 	return nil, errors.BadRequestf("facet-only dimension is not writable")
 }
 
-// categoriesCodec declares the object's CATEGORIES as a read-only, multi-valued,
-// groupable tag dimension with naive (exact-match) semantics (tags slice 1,
+// categoriesCodec declares the object's CATEGORIES as a WRITABLE, multi-valued,
+// groupable tag dimension with naive (exact-match) semantics (tags slice 2,
 // RFC 0019). It is its OWN type rather than a facetOnlyCodec because — unlike the
 // purely computed facet dimensions — CATEGORIES has a real stored counterpart
-// (ical.Event/Task/Journal.Categories) this codec will read and write once the
-// tag write slice lands; for now it stays read-only. Only the DECLARATION derives
-// from here (a Multi FacetDimension, a Mode-none FacetWrite): the counting path
-// (facetsFromView's categoriesOf loop) computes the per-tag membership VALUES, the
-// same as it does for the other computed dimensions.
+// (ical.Event/Task/Journal.Categories) this codec both reads (via the counting
+// path) and writes. The write is a FULL-SET replacement: the RFC 0019 interpreter's
+// Complete has already resolved the object's final membership, so Parse persists
+// that complete set as the object's CATEGORIES verbatim — no per-value delta, no
+// normalization. Because MultiValued makes the derived FacetWrite Mode `many`
+// (DeriveFacetWrites), the field's stored target is its Key ("categories", which
+// equals listingFieldCategories), so Source stays empty. Only the DECLARATION
+// derives from here (a Multi FacetDimension, a Mode-many FacetWrite): the counting
+// path (facetsFromView's categoriesOf loop) computes the per-tag membership VALUES,
+// the same as it does for the other computed dimensions.
 type categoriesCodec struct{}
 
 func (categoriesCodec) Fields() []cutting_garden_plugins.UnifiedField {
@@ -255,6 +260,7 @@ func (categoriesCodec) Fields() []cutting_garden_plugins.UnifiedField {
 		Kind:        cutting_garden_plugins.FieldTag,
 		Groupable:   true,
 		MultiValued: true,
+		Writable:    true,
 		Interpreter: "naive",
 	}}
 }
@@ -266,11 +272,24 @@ func (categoriesCodec) Format(map[string]any) (map[string][]string, error) {
 	return map[string][]string{}, nil
 }
 
-// Parse rejects: categories is read-only in slice 1. The write path also gates on
-// Writable before reaching Parse (ParseUnifiedBucketMove's not-writable guard), so
-// this is a defensive backstop rather than the reject a bucket move actually hits.
-func (categoriesCodec) Parse(map[string][]string, map[string]any) (map[string]any, error) {
-	return nil, errors.BadRequestf("categories is read-only until the tag write slice")
+// Parse replaces the object's stored CATEGORIES with exactly the complete set
+// passed under the categories key (tags slice 2, RFC 0019). The set is the
+// interpreter's already-resolved final membership, so this is a FULL-SET write,
+// not a per-value delta — the returned delta targets the "categories" stored field
+// (listingFieldCategories), which applyPatch decodes into the ical component's
+// Categories list and *ToIcal serializes as one comma-joined CATEGORIES property.
+// An empty or absent set is valid and clears the property (the serializer omits an
+// empty Categories); it never errors. The current stored value is unused: the
+// replacement is absolute, not relative.
+func (categoriesCodec) Parse(atoms map[string][]string, _ map[string]any) (map[string]any, error) {
+	tags := atoms[facetCategories]
+	if tags == nil {
+		// An absent key means the empty membership set — a non-nil empty slice
+		// so applyPatch decodes it into an empty Categories (clearing the
+		// property) rather than being dropped as JSON null.
+		tags = []string{}
+	}
+	return map[string]any{listingFieldCategories: tags}, nil
 }
 
 // caldavDateCodec splits one iCalendar DATE/DATE-TIME property (DTSTART, DTEND, or

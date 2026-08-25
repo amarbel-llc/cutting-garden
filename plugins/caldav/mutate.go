@@ -106,8 +106,10 @@ type objectPatchBody struct {
 // PUT, reporting that as a non-nil empty applied rather than a bare success.
 //
 // Supported patch fields: VEVENT — summary, description, status, dtstart,
-// dtend, location; VTODO — summary, description, status, dtstart, due, location,
-// priority; VJOURNAL — summary, description, status, dtstart.
+// dtend, location, categories; VTODO — summary, description, status, dtstart,
+// due, location, priority, categories; VJOURNAL — summary, description, status,
+// dtstart, categories. The categories field is the []string CATEGORIES tag set
+// (tags slice 2, RFC 0019): a full-set replacement, cleared by an empty array.
 func (Plugin) PatchNode(
 	ctx context.Context,
 	node *url.URL,
@@ -239,6 +241,7 @@ func eventPatchTargets(e *ical.Event) map[string]any {
 		"dtstart":     &e.DtStart,
 		"dtend":       &e.DtEnd,
 		"location":    &e.Location,
+		"categories":  &e.Categories,
 	}
 }
 
@@ -251,6 +254,7 @@ func taskPatchTargets(t *ical.Task) map[string]any {
 		"due":         &t.Due,
 		"location":    &t.Location,
 		"priority":    &t.Priority,
+		"categories":  &t.Categories,
 	}
 }
 
@@ -260,6 +264,7 @@ func journalPatchTargets(j *ical.Journal) map[string]any {
 		"description": &j.Description,
 		"status":      &j.Status,
 		"dtstart":     &j.DtStart,
+		"categories":  &j.Categories,
 	}
 }
 

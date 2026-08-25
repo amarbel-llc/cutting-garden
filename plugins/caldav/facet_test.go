@@ -269,7 +269,8 @@ func TestFacetCounts_CategoriesNaive(t *testing.T) {
 }
 
 // The derived declaration: categories is FacetCategorical + Multi on every
-// component, read-only (Mode none), and never an inline atom.
+// component, writable as a full-set membership write (Mode many, tags slice 2,
+// RFC 0019), and never an inline atom.
 func TestDescribeFacets_CategoriesDeclaration(t *testing.T) {
 	for _, ntf := range (Plugin{}).DescribeFacets() {
 		var dim *cutting_garden_plugins.FacetDimension
@@ -286,12 +287,23 @@ func TestDescribeFacets_CategoriesDeclaration(t *testing.T) {
 			t.Errorf("%s: categories must be Multi", ntf.Tag)
 		}
 	}
+	seen := 0
 	for _, ntw := range (Plugin{}).DescribeFacetWrites() {
 		for _, w := range ntw.Writes {
-			if w.DimensionKey == facetCategories && w.Mode != cutting_garden_plugins.FacetWriteNone {
-				t.Errorf("%s: categories write mode = %q, want none (slice 1 read-only)", ntw.Tag, w.Mode)
+			if w.DimensionKey != facetCategories {
+				continue
+			}
+			seen++
+			if w.Mode != cutting_garden_plugins.FacetWriteMany {
+				t.Errorf("%s: categories write mode = %q, want many (tags slice 2)", ntw.Tag, w.Mode)
+			}
+			if w.Field == "" {
+				t.Errorf("%s: categories writable but declares no Field", ntw.Tag)
 			}
 		}
+	}
+	if seen == 0 {
+		t.Error("categories write mapping not declared on any object leaf type")
 	}
 }
 

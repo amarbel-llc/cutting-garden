@@ -179,6 +179,47 @@ func TestPatchNode_PartialFieldChange(t *testing.T) {
 	}
 }
 
+// TestPatchNode_CategoriesFullSetReplacement pins the categories write end to end
+// (tags slice 2, RFC 0019): a categories patch REPLACES the object's CATEGORIES
+// with exactly the set sent (naive, no merge with the existing tags), and an empty
+// set clears the property. This is the guard against a silent no-op write — the
+// codec produces the delta, but only the PatchTargets wiring makes it reach the
+// stored iCalendar.
+func TestPatchNode_CategoriesFullSetReplacement(t *testing.T) {
+	f, home := startFake(t)
+	f.seed("/dav/cal/tagged.ics", "VTODO", vtodoWithCategories("tagged", "NEEDS-ACTION", "old,stale"))
+	arg := objectArg(home, "/dav/cal/tagged.ics")
+
+	applied, err := Plugin{}.PatchNode(
+		context.Background(), mustParseURL(t, arg),
+		strings.NewReader(`{"component":"VTODO","task":{"categories":["work","urgent"]}}`),
+	)
+	if err != nil {
+		t.Fatalf("PatchNode categories: %v", err)
+	}
+	if !slices.Equal(applied, []string{"categories"}) {
+		t.Errorf("applied = %#v, want [categories]", applied)
+	}
+	got := f.resources["/dav/cal/tagged.ics"]
+	if !strings.Contains(got, "CATEGORIES:work,urgent") {
+		t.Errorf("stored body missing the replaced categories: %q", got)
+	}
+	if strings.Contains(got, "old") || strings.Contains(got, "stale") {
+		t.Errorf("stored body kept the old categories (must be a full replacement): %q", got)
+	}
+
+	// An empty set clears the CATEGORIES property entirely.
+	if _, err := (Plugin{}).PatchNode(
+		context.Background(), mustParseURL(t, arg),
+		strings.NewReader(`{"component":"VTODO","task":{"categories":[]}}`),
+	); err != nil {
+		t.Fatalf("PatchNode categories clear: %v", err)
+	}
+	if got := f.resources["/dav/cal/tagged.ics"]; strings.Contains(got, "CATEGORIES") {
+		t.Errorf("empty categories set must clear the CATEGORIES property: %q", got)
+	}
+}
+
 // An unknown field is TOLERATED — a newer caller against an older plugin
 // must still succeed — but it is not reported as applied, so the caller can
 // see that only half of what it sent landed (cutting-garden#182).

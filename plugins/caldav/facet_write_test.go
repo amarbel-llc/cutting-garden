@@ -41,6 +41,14 @@ func TestDescribeFacetWrites_ConsistentAndDeclared(t *testing.T) {
 			t.Errorf("dimension %q: writable but declares no field", k)
 		}
 	}
+	// categories is the multi-valued tag dimension: a full-set membership write
+	// (tags slice 2, RFC 0019) through the CATEGORIES field.
+	if mode[facetCategories] != cutting_garden_plugins.FacetWriteMany {
+		t.Errorf("dimension %q: mode = %q, want many", facetCategories, mode[facetCategories])
+	}
+	if field[facetCategories] == "" {
+		t.Errorf("dimension %q: writable but declares no field", facetCategories)
+	}
 	for _, k := range []string{facetComponent, facetDueBand, facetTimezone} {
 		if mode[k] != cutting_garden_plugins.FacetWriteNone {
 			t.Errorf("dimension %q: mode = %q, want none", k, mode[k])

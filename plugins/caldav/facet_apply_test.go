@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/url"
+	"slices"
 	"testing"
 
 	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
@@ -207,13 +208,75 @@ func TestBuildFacetWritePatch_Priority(t *testing.T) {
 	}
 }
 
-// TestBuildFacetWritePatch_CategoriesRejects pins the read-only half of tags
-// slice 1: a bucket move naming the categories dimension rejects loudly — the
-// field is not writable, so the write path never persists a membership change.
-func TestBuildFacetWritePatch_CategoriesRejects(t *testing.T) {
-	node := applyNode(t, "caldav://h/c/t1.ics", "VTODO", map[string]any{})
-	w := cutting_garden_plugins.FacetWrite{DimensionKey: facetCategories, Mode: cutting_garden_plugins.FacetWriteNone}
-	if _, err := (Plugin{}).BuildFacetWritePatch(context.Background(), node, w, "work"); err == nil {
-		t.Error("categories move must reject in slice 1")
+// TestBuildFacetWritePatch_Categories pins that categories is now writable (tags
+// slice 2, RFC 0019): a move through the bucket-move path no longer rejects on the
+// not-writable guard — the codec's full-set Parse produces a CATEGORIES patch
+// carrying the target value. (The organize-side FULL membership set is resolved
+// and applied by a later slice; this pins only that the codec declares and
+// performs the write.)
+func TestBuildFacetWritePatch_Categories(t *testing.T) {
+	node := applyNode(t, "caldav://h/c/t1.ics", "VTODO", map[string]any{"categories": []string{"errand"}})
+	w := cutting_garden_plugins.FacetWrite{DimensionKey: facetCategories, Mode: cutting_garden_plugins.FacetWriteMany, Field: "categories"}
+	body, err := (Plugin{}).BuildFacetWritePatch(context.Background(), node, w, "work")
+	if err != nil {
+		t.Fatalf("categories move must now succeed: %v", err)
+	}
+	var got struct {
+		Component string `json:"component"`
+		Task      struct {
+			Categories []string `json:"categories"`
+		} `json:"task"`
+	}
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("unmarshal %s: %v", body, err)
+	}
+	if got.Component != "VTODO" || !slices.Equal(got.Task.Categories, []string{"work"}) {
+		t.Errorf("patch = %s, want VTODO task.categories=[work]", body)
+	}
+}
+
+// TestCategoriesCodec_Parse pins the full-set replacement semantics (tags slice 2,
+// RFC 0019): the complete tag set passed under the categories key becomes the
+// stored CATEGORIES delta verbatim (naive, no normalization, no merge with the
+// current value), and an empty or absent set clears the property rather than
+// erroring.
+func TestCategoriesCodec_Parse(t *testing.T) {
+	c := categoriesCodec{}
+
+	// A concrete set replaces outright — the current stored value is irrelevant.
+	got, err := c.Parse(
+		map[string][]string{facetCategories: {"work", "urgent"}},
+		map[string]any{listingFieldCategories: []string{"stale"}},
+	)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	cats, ok := got[listingFieldCategories].([]string)
+	if !ok || !slices.Equal(cats, []string{"work", "urgent"}) {
+		t.Errorf("Parse categories = %#v, want [work urgent]", got[listingFieldCategories])
+	}
+
+	// Both an explicit empty set and an absent key clear: a non-nil empty slice,
+	// which applyPatch decodes into an empty Categories the serializer omits.
+	for _, tc := range []struct {
+		name  string
+		atoms map[string][]string
+	}{
+		{"empty set", map[string][]string{facetCategories: {}}},
+		{"absent key", map[string][]string{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := c.Parse(tc.atoms, nil)
+			if err != nil {
+				t.Fatalf("Parse(%s): %v", tc.name, err)
+			}
+			cats, ok := got[listingFieldCategories].([]string)
+			if !ok {
+				t.Fatalf("Parse(%s) categories = %#v, want []string", tc.name, got[listingFieldCategories])
+			}
+			if len(cats) != 0 {
+				t.Errorf("Parse(%s) categories = %v, want empty (clears)", tc.name, cats)
+			}
+		})
 	}
 }

@@ -70,9 +70,11 @@ func (Plugin) DescribeListingFields() []cutting_garden_plugins.NodeTypeListingFi
 	status := cutting_garden_plugins.ListingField{Key: listingFieldStatus, Label: "Status", Writable: true}
 	dtstart := cutting_garden_plugins.ListingField{Key: listingFieldDtStart, Label: "Start", Writable: true}
 	location := cutting_garden_plugins.ListingField{Key: listingFieldLocation, Label: "Location", Writable: true}
-	// categories is a read-only tag list (tags slice 1, RFC 0019) on every
-	// component — the CATEGORIES property round-trips on all three, and the
-	// write slice is deferred.
+	// categories is the tag list (tags slice 2, RFC 0019) on every component —
+	// the CATEGORIES property round-trips on all three. The ListingField stays
+	// non-inline (no box atom to edit); the write happens through the facet
+	// membership path (a full-set CATEGORIES replacement), not an inline field
+	// edit, so it carries no Writable flag here.
 	categories := cutting_garden_plugins.ListingField{Key: listingFieldCategories, Label: "Categories"}
 	return []cutting_garden_plugins.NodeTypeListingFields{
 		{
