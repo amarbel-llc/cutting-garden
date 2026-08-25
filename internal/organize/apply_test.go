@@ -1,6 +1,10 @@
 package organize
 
 import (
+	"context"
+	"encoding/json"
+	"io"
+	"net/url"
 	"sort"
 	"strings"
 	"testing"
@@ -169,6 +173,262 @@ func TestApply_MultiValuedUnmovedRoundTrips(t *testing.T) {
 	}
 	if len(moves) != 0 {
 		t.Fatalf("moves = %+v, want none (unmoved multi-valued node, no spurious conflict)", moves)
+	}
+}
+
+// docWithMulti is the multi-membership sibling of docWith: an object may be filed
+// under SEVERAL `## =<value>` buckets (its line rendered once per bucket), the way
+// groupNodes renders a multi-valued dimension. An empty value slice places the
+// object ungrouped above the dimension heading.
+func docWithMulti(dim string, assignment map[string][]string) document {
+	doc := document{Sections: []section{{Depth: 1, Term: dim + "="}}}
+	byValue := map[string][]objectLine{}
+	for id, vs := range assignment {
+		if len(vs) == 0 {
+			doc.Ungrouped = append(doc.Ungrouped, objectLine{ID: id})
+			continue
+		}
+		for _, v := range vs {
+			byValue[v] = append(byValue[v], objectLine{ID: id})
+		}
+	}
+	keys := make([]string, 0, len(byValue))
+	for k := range byValue {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		doc.Sections = append(doc.Sections, section{Depth: 2, Term: "=" + k, Lines: byValue[k]})
+	}
+	return doc
+}
+
+// recordedPatch is one PatchNode call membershipFake observed: the node URI and
+// the tag set the membership patch carried (decoded from the fake applier's body).
+type recordedPatch struct {
+	uri     string
+	newTags []string
+}
+
+// membershipFake is a RootLister that implements just enough of the write surface
+// to drive the multi-valued apply path: NodeMutator + FacetWriteDescriber +
+// MembershipWriteApplier. Its BuildMembershipWritePatch marshals the resolved tag
+// set as the patch body and PatchNode decodes it, so a test can assert exactly
+// which set reached the mutator. It declares NO ListingFields/FieldPresenter, so
+// the field-edit path stays inert here.
+type membershipFake struct {
+	writes  []cgp.NodeTypeFacetWrites // when nil, the default categories=many mapping
+	patches []recordedPatch
+}
+
+func (*membershipFake) Schemes() []string { return []string{"caldav"} }
+func (*membershipFake) TypeTag() string   { return "" }
+
+func (*membershipFake) Types() []cgp.NodeType { return nil }
+
+func (*membershipFake) ListRoots(context.Context, *url.URL) ([]cgp.Node, error) {
+	return nil, nil
+}
+
+func (f *membershipFake) DescribeFacetWrites() []cgp.NodeTypeFacetWrites {
+	if f.writes != nil {
+		return f.writes
+	}
+	return []cgp.NodeTypeFacetWrites{{
+		Tag: "caldav-object-v1",
+		Writes: []cgp.FacetWrite{
+			{DimensionKey: "categories", Mode: cgp.FacetWriteMany, Field: "categories"},
+		},
+	}}
+}
+
+func (*membershipFake) BuildMembershipWritePatch(
+	_ context.Context, _ cgp.Node, _ cgp.FacetWrite, newTags []string,
+) ([]byte, error) {
+	return json.Marshal(newTags)
+}
+
+func (f *membershipFake) PatchNode(
+	_ context.Context, uri *url.URL, body io.Reader,
+) ([]string, error) {
+	data, err := io.ReadAll(body)
+	if err != nil {
+		return nil, err
+	}
+	var tags []string
+	if err := json.Unmarshal(data, &tags); err != nil {
+		return nil, err
+	}
+	f.patches = append(f.patches, recordedPatch{uri: uri.String(), newTags: tags})
+	return []string{"categories"}, nil
+}
+
+func (*membershipFake) CreateNode(context.Context, *url.URL, io.Reader, string) error { return nil }
+func (*membershipFake) PutNode(context.Context, *url.URL, io.Reader) error            { return nil }
+func (*membershipFake) DeleteNode(context.Context, *url.URL) error                    { return nil }
+
+// TestApplyMemberships_AddApplies pins the end-to-end membership write (#231 slice
+// 2): a document that files a one-tag task under a SECOND `## =<tag>` bucket (base
+// {work}, edited {work, urgent}) commits a single full-set PatchNode carrying the
+// complete {work, urgent} set — the interpreter-resolved membership, built via
+// BuildMembershipWritePatch, not a single-bucket move.
+func TestApplyMemberships_AddApplies(t *testing.T) {
+	base := docWithMulti("categories", map[string][]string{"t1.ics": {"work"}})
+	edited := docWithMulti("categories", map[string][]string{"t1.ics": {"work", "urgent"}})
+	base.Anchor, edited.Anchor = "caldav://h/c/", "caldav://h/c/"
+	live := []cgp.Node{categoriesNode(t, "caldav://h/c/t1.ics", "work")}
+
+	fake := &membershipFake{}
+	cmd := newWithOutput(io.Discard)
+	wrote, err := cmd.applyMemberships(
+		context.Background(), edited, base, live, fake, "categories", true, false, false,
+	)
+	if err != nil {
+		t.Fatalf("applyMemberships: %v", err)
+	}
+	if !wrote {
+		t.Fatal("a committed membership add must report it wrote")
+	}
+	if len(fake.patches) != 1 {
+		t.Fatalf("PatchNode calls = %d, want 1 (%+v)", len(fake.patches), fake.patches)
+	}
+	p := fake.patches[0]
+	if p.uri != "caldav://h/c/t1.ics" {
+		t.Errorf("patched uri = %q, want caldav://h/c/t1.ics", p.uri)
+	}
+	if got := stringSet(p.newTags); len(got) != 2 || !hasAll(got, "work", "urgent") {
+		t.Errorf("patched categories = %v, want set {work, urgent}", p.newTags)
+	}
+}
+
+// hasAll reports whether set contains every wanted key.
+func hasAll(set map[string]struct{}, want ...string) bool {
+	for _, w := range want {
+		if _, ok := set[w]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+// TestDedupFieldEditsByURI_NoDoubleWrite pins the multi-appearance guard (#231
+// slice 2): a multi-membership object's line is parsed once per bucket it sits
+// under, so planFieldEdits can return the same URI's field edit twice; dedup keeps
+// one. Because executeFieldEdits patches 1:1 per edit, one deduped edit means at
+// most one field-edit PatchNode for that object.
+func TestDedupFieldEditsByURI_NoDoubleWrite(t *testing.T) {
+	uri := "caldav://h/c/t1.ics"
+	node := taskNode(t, uri, "NEEDS-ACTION")
+	edits := []objectFieldEdit{
+		{URI: uri, Node: node, Edits: []cgp.FieldEdit{{Name: "summary", Value: "A"}}},
+		{URI: uri, Node: node, Edits: []cgp.FieldEdit{{Name: "summary", Value: "B"}}}, // divergent second appearance
+		{URI: "caldav://h/c/t2.ics", Node: taskNode(t, "caldav://h/c/t2.ics", ""), Edits: nil},
+	}
+	got := dedupFieldEditsByURI(edits)
+	if len(got) != 2 {
+		t.Fatalf("deduped edits = %d, want 2 (one per URI)", len(got))
+	}
+	byURI := map[string]int{}
+	for _, e := range got {
+		byURI[e.URI]++
+	}
+	if byURI[uri] != 1 {
+		t.Errorf("URI %s appears %d times after dedup, want exactly 1 (no double write)", uri, byURI[uri])
+	}
+	// The first appearance is kept, so a deterministic single apply survives.
+	if got[0].URI == uri && got[0].Edits[0].Value != "A" {
+		t.Errorf("dedup kept the wrong appearance: %+v", got[0].Edits)
+	}
+}
+
+// TestPlanFieldEdits_DedupKeepsDocumentFirst pins the ordering guarantee through
+// the REAL pipeline (#231 slice 2): a multi-membership object whose two document
+// appearances carry DIVERGENT edits for the same writable field flows through
+// planFieldEdits (which stable-sorts by URI) then dedupFieldEditsByURI (which keeps
+// the first per URI), and the surviving edit is the DOCUMENT-FIRST appearance — not
+// whatever an unstable sort would surface. The errand bucket precedes the work
+// bucket in document order, so summary=A (errand) must win over summary=B (work).
+func TestPlanFieldEdits_DedupKeepsDocumentFirst(t *testing.T) {
+	anchor := "caldav://h/c/"
+	edited := document{
+		Anchor: anchor,
+		Sections: []section{
+			{Depth: 1, Term: "categories="},
+			{Depth: 2, Term: "=errand", Lines: []objectLine{
+				{ID: "t1.ics", Fields: []cgp.BoxAtom{{Name: "summary", Value: "A"}}},
+			}},
+			{Depth: 2, Term: "=work", Lines: []objectLine{
+				{ID: "t1.ics", Fields: []cgp.BoxAtom{{Name: "summary", Value: "B"}}},
+			}},
+		},
+	}
+	base := document{
+		Anchor: anchor,
+		Sections: []section{
+			{Depth: 1, Term: "categories="},
+			{Depth: 2, Term: "=work", Lines: []objectLine{
+				{ID: "t1.ics", Fields: []cgp.BoxAtom{{Name: "summary", Value: "orig"}}},
+			}},
+		},
+	}
+	live := []cgp.Node{{
+		URI:    mustURL(t, "caldav://h/c/t1.ics"),
+		Type:   "caldav-object-v1",
+		Facets: map[string][]cgp.FacetValue{"categories": {{Key: "work"}}},
+	}}
+	writable := map[string]map[string]bool{"caldav-object-v1": {"summary": true}}
+	present := func(cgp.Node) []cgp.BoxAtom {
+		return []cgp.BoxAtom{{Name: "summary", Value: "orig", Field: "summary"}}
+	}
+
+	edits, _, err := planFieldEdits(edited, base, live, anchor, writable, nil, present)
+	if err != nil {
+		t.Fatalf("planFieldEdits: %v", err)
+	}
+	if len(edits) != 2 {
+		t.Fatalf("planFieldEdits edits = %d, want 2 (one per document appearance)", len(edits))
+	}
+	deduped := dedupFieldEditsByURI(edits)
+	if len(deduped) != 1 {
+		t.Fatalf("deduped = %d, want 1", len(deduped))
+	}
+	if got := deduped[0].Edits; len(got) != 1 || got[0].Value != "A" {
+		t.Errorf("dedup kept %+v, want the document-first appearance summary=A", got)
+	}
+}
+
+// TestGroupedIsMultiValued_Dispatch pins the write-mode dispatch (#231 slice 2):
+// a write:many dimension routes to the membership path, a write:one dimension to
+// the existing facet path, and a dimension declared with MIXED cardinality across
+// present types is rejected loudly.
+func TestGroupedIsMultiValued_Dispatch(t *testing.T) {
+	live := []cgp.Node{categoriesNode(t, "caldav://h/c/t1.ics", "work")}
+
+	manyFake := &membershipFake{writes: []cgp.NodeTypeFacetWrites{{
+		Tag: "caldav-object-v1",
+		Writes: []cgp.FacetWrite{
+			{DimensionKey: "categories", Mode: cgp.FacetWriteMany, Field: "categories"},
+			{DimensionKey: "status", Mode: cgp.FacetWriteOne, Field: "status"},
+		},
+	}}}
+
+	if multi, err := groupedIsMultiValued(manyFake, "categories", live); err != nil || !multi {
+		t.Errorf("categories should dispatch multi-valued: multi=%v err=%v", multi, err)
+	}
+	if multi, err := groupedIsMultiValued(manyFake, "status", live); err != nil || multi {
+		t.Errorf("status should dispatch single-valued: multi=%v err=%v", multi, err)
+	}
+
+	mixedFake := &membershipFake{writes: []cgp.NodeTypeFacetWrites{
+		{Tag: "a-v1", Writes: []cgp.FacetWrite{{DimensionKey: "categories", Mode: cgp.FacetWriteMany, Field: "c"}}},
+		{Tag: "b-v1", Writes: []cgp.FacetWrite{{DimensionKey: "categories", Mode: cgp.FacetWriteOne, Field: "c"}}},
+	}}
+	mixedLive := []cgp.Node{
+		{URI: mustURL(t, "caldav://h/c/a.ics"), Type: "a-v1"},
+		{URI: mustURL(t, "caldav://h/c/b.ics"), Type: "b-v1"},
+	}
+	if _, err := groupedIsMultiValued(mixedFake, "categories", mixedLive); err == nil {
+		t.Error("mixed single/multi-valued grouping must be rejected loudly")
 	}
 }
 

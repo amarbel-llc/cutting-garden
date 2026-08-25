@@ -125,6 +125,22 @@ func (cmd *Organize) applyDocument(
 		return false, errors.Wrapf(err, "organize --apply: re-query live state")
 	}
 
+	// Dispatch on the grouped dimension's write cardinality BEFORE planMoves: a
+	// multi-valued (write:many) dimension's document files one object under several
+	// buckets, which planMoves' assignments() dup-guard rejects as "appears twice".
+	// The membership path merges the tag SET (planMemberships) instead. A
+	// single-valued (write:one), read-only, or absent dimension takes the unchanged
+	// facet path below (RFC 0019, #231 slice 2).
+	multiValued, err := groupedIsMultiValued(lister, dim, liveNodes)
+	if err != nil {
+		return false, err
+	}
+	if multiValued {
+		return cmd.applyMemberships(
+			ctx, edited, base, liveNodes, lister, dim, commit, interactive, color,
+		)
+	}
+
 	// Two independent delta kinds merge against the same pinned base and live
 	// state: bucket moves (a facet re-file, applied via FacetWriteApplier) and
 	// field/trailer edits (a box-atom or description change, applied via
@@ -185,21 +201,11 @@ func (cmd *Organize) applyDocument(
 	renderDiff(cmd.output, changes, color)
 	fmt.Fprintln(cmd.output)
 
-	switch {
-	case commit && interactive:
-		ok, cerr := confirmApply(len(changes))
-		if cerr != nil {
-			return false, cerr
-		}
-		if !ok {
-			commit = false
-			fmt.Fprintln(cmd.output, "organize: not confirmed — nothing written")
-		}
-	case !commit:
-		fmt.Fprintln(cmd.output, "organize: dry-run — nothing written")
+	write, err := cmd.reviewGate(len(changes), commit, interactive)
+	if err != nil {
+		return false, err
 	}
-
-	if !commit {
+	if !write {
 		return false, nil
 	}
 
@@ -349,6 +355,74 @@ func confirmApply(changeCount int) (bool, error) {
 	return confirmed, nil
 }
 
+// reviewGate renders the standard confirm/dry-run footer for a change batch and
+// reports whether to write — the single source of the wet-run gate (#213/#224)
+// shared by the single-valued facet path and the multi-valued membership path. It
+// assumes the caller already printed the change header and the preview: an
+// interactive commit confirms after it, a dry-run notes it wrote nothing, and a
+// scripted commit asserts intent by its mode and skips the prompt.
+func (cmd *Organize) reviewGate(changeCount int, commit, interactive bool) (bool, error) {
+	switch {
+	case commit && interactive:
+		ok, cerr := confirmApply(changeCount)
+		if cerr != nil {
+			return false, cerr
+		}
+		if !ok {
+			fmt.Fprintln(cmd.output, "organize: not confirmed — nothing written")
+			return false, nil
+		}
+	case !commit:
+		fmt.Fprintln(cmd.output, "organize: dry-run — nothing written")
+		return false, nil
+	}
+	return true, nil
+}
+
+// groupedIsMultiValued reports whether the grouped dimension writes as a
+// multi-valued (write:many) tag SET for the live nodes' types — the dispatch key
+// the apply engine reads BEFORE planMoves (RFC 0019, #231 slice 2). It reads the
+// plugin's FacetWriteDescriber and looks the dimension's mode up across
+// distinctTypes(liveNodes): many selects the membership path; one, none, an
+// unmapped type, or a plugin with no write declarations selects the unchanged
+// facet path (which itself rejects a read-only/unmapped move loudly). A dimension
+// declared many for some present types and single-valued for others is rejected
+// loudly — mixed single/multi-valued grouping is out of scope this slice
+// (categories is uniformly many across every caldav component, so this is a safety
+// guard).
+func groupedIsMultiValued(
+	lister cgp.RootLister, dim string, liveNodes []cgp.Node,
+) (bool, error) {
+	describer, ok := lister.(cgp.FacetWriteDescriber)
+	if !ok {
+		return false, nil
+	}
+	modeByType := make(map[string]cgp.FacetWriteMode)
+	for _, nt := range describer.DescribeFacetWrites() {
+		for _, w := range nt.Writes {
+			if w.DimensionKey == dim {
+				modeByType[nt.Tag] = w.Mode
+			}
+		}
+	}
+	var many, other bool
+	for _, typ := range distinctTypes(liveNodes) {
+		if modeByType[typ] == cgp.FacetWriteMany {
+			many = true
+		} else {
+			other = true
+		}
+	}
+	if many && other {
+		return false, errors.BadRequestf(
+			"organize --apply: dimension %q is multi-valued for some present node "+
+				"type(s) and single-valued for others — mixed single/multi-valued "+
+				"grouping is out of scope in this slice", dim,
+		)
+	}
+	return many, nil
+}
+
 // executePlan writes each bucket move through the plugin's applier. It is called
 // only on a confirmed commit — the diff preview and its confirmation happen in
 // applyDocument. Mode/writability is checked per move so a mixed-type node set is
@@ -372,6 +446,187 @@ func (cmd *Organize) executePlan(
 		}
 		if _, err := mutator.PatchNode(ctx, mv.Node.URI, bytes.NewReader(body)); err != nil {
 			return errors.Wrapf(err, "organize: patch %s", mv.URI)
+		}
+	}
+	return nil
+}
+
+// applyMemberships is the multi-valued-dimension apply path (RFC 0019, #231 slice
+// 2): it three-way-merges each object's tag SET via planMemberships and writes the
+// resulting full-set replacements through the plugin's MembershipWriteApplier,
+// sharing the wet-run gate (reviewGate) and the field-edit path with the
+// single-valued facet path. Field/trailer edits still apply here, but a
+// multi-membership object's line appears N times in the document, so
+// planFieldEdits' returned edits are deduped by URI to keep a single-appearance
+// atom edit applying once while a multi-appearance object is never patched N times
+// (full agree/conflict reconciliation across divergent appearances is slice 2b).
+func (cmd *Organize) applyMemberships(
+	ctx context.Context,
+	edited, base document,
+	liveNodes []cgp.Node,
+	lister cgp.RootLister,
+	dim string,
+	commit, interactive, color bool,
+) (committed bool, err error) {
+	// Slice 2 uses the field default interpreter (naive). RFC 0019 §4 interpreter
+	// selection (reading the field's declared interpreter) and the [organize]
+	// config override are slice 3; until then every multi-valued dimension folds
+	// through naive.
+	interp, ok := cgp.LookupTagInterpreter("naive")
+	if !ok {
+		return false, errors.ErrorWithStackf(
+			"organize --apply: the naive tag interpreter is not registered",
+		)
+	}
+
+	memberships, err := planMemberships(edited, base, liveNodes, edited.Anchor, interp, dim)
+	if err != nil {
+		return false, err
+	}
+
+	// Resolve the membership write surface up front (mirroring the single-valued
+	// move precheck) so a plugin declaring a many dimension but no
+	// MembershipWriteApplier refuses before rendering a preview and prompting.
+	var (
+		memberMutator cgp.NodeMutator
+		memberApplier cgp.MembershipWriteApplier
+		memberWrites  map[string]cgp.FacetWrite
+	)
+	if len(memberships) > 0 {
+		if memberMutator, memberApplier, memberWrites, err = resolveMembershipWrites(lister, dim); err != nil {
+			return false, err
+		}
+	}
+
+	writable, trailer := fieldWriteSchema(lister)
+	fieldEdits, notices, err := planFieldEdits(
+		edited, base, liveNodes, edited.Anchor, writable, trailer, boxAtomPresenter(lister),
+	)
+	if err != nil {
+		return false, err
+	}
+	// A multi-membership object appears N times, so planFieldEdits can emit its
+	// field edit N times — dedup by URI so a single-appearance atom edit still
+	// applies once and a multi-appearance object is never patched N times.
+	fieldEdits = dedupFieldEditsByURI(fieldEdits)
+	if len(notices) > 0 {
+		fmt.Fprintf(cmd.output,
+			"organize: note — some field edits were not applied on %d line(s): %s "+
+				"(read-only fields such as dates are cutting-garden#218 slice 2; "+
+				"clearing a field is #215)\n",
+			len(notices), strings.Join(notices, ", "))
+	}
+
+	total := len(memberships) + len(fieldEdits)
+	if total == 0 {
+		fmt.Fprintln(cmd.output, "organize: no changes to apply")
+		return commit, nil
+	}
+
+	fmt.Fprintf(cmd.output, "organize: %d change(s):\n\n", total)
+	renderMembershipChanges(cmd.output, memberships, dim, edited.Anchor, color)
+	if len(fieldEdits) > 0 {
+		renderDiff(cmd.output, buildChanges(edited, base, nil, fieldEdits, dim, trailer, edited.Anchor), color)
+	}
+	fmt.Fprintln(cmd.output)
+
+	write, err := cmd.reviewGate(total, commit, interactive)
+	if err != nil {
+		return false, err
+	}
+	if !write {
+		return false, nil
+	}
+
+	if len(memberships) > 0 {
+		if err := cmd.executeMemberships(ctx, memberMutator, memberApplier, memberWrites, memberships); err != nil {
+			return false, err
+		}
+	}
+	if len(fieldEdits) > 0 {
+		fmutator, fapplier, ferr := resolveFieldWrites(lister)
+		if ferr != nil {
+			return false, ferr
+		}
+		if err := cmd.executeFieldEdits(ctx, fmutator, fapplier, fieldEdits); err != nil {
+			return false, err
+		}
+	}
+	fmt.Fprintf(cmd.output, "organize: wrote %d change(s)\n", total)
+	return true, nil
+}
+
+// resolveMembershipWrites resolves the plugin's write surface for a multi-valued
+// grouped dimension: the NodeMutator, the MembershipWriteApplier that builds each
+// full-set replacement patch, and the per-node-type FacetWrite mapping. It is the
+// membership sibling of resolveWrites — a plugin declaring a many dimension but
+// exposing no mutator, no FacetWriteDescriber, or no MembershipWriteApplier is
+// rejected loudly (FDR 0023 "writability must be declared").
+func resolveMembershipWrites(
+	lister cgp.RootLister, dim string,
+) (cgp.NodeMutator, cgp.MembershipWriteApplier, map[string]cgp.FacetWrite, error) {
+	mutator, ok := lister.(cgp.NodeMutator)
+	if !ok {
+		return nil, nil, nil, errors.BadRequestf(
+			"organize --apply: plugin does not support writes (no NodeMutator)",
+		)
+	}
+	describer, ok := lister.(cgp.FacetWriteDescriber)
+	if !ok {
+		return nil, nil, nil, errors.BadRequestf(
+			"organize --apply: plugin declares no writable facets (no "+
+				"FacetWriteDescriber); dimension %q cannot be reorganized", dim,
+		)
+	}
+	applier, ok := lister.(cgp.MembershipWriteApplier)
+	if !ok {
+		return nil, nil, nil, errors.BadRequestf(
+			"organize --apply: plugin declares a multi-valued dimension but no "+
+				"MembershipWriteApplier to build the patch; dimension %q cannot be "+
+				"reorganized", dim,
+		)
+	}
+
+	writes := make(map[string]cgp.FacetWrite)
+	for _, nt := range describer.DescribeFacetWrites() {
+		for _, w := range nt.Writes {
+			if w.DimensionKey == dim {
+				writes[nt.Tag] = w
+			}
+		}
+	}
+	if len(writes) == 0 {
+		return nil, nil, nil, errors.BadRequestf(
+			"organize --apply: dimension %q has no write mapping declared", dim,
+		)
+	}
+	return mutator, applier, writes, nil
+}
+
+// executeMemberships writes each membership edit's complete replacement tag set
+// through the plugin's MembershipWriteApplier — one full-set PatchNode per object.
+// Called only on a confirmed commit; the preview and its confirmation happen in
+// applyMemberships. It uses BuildMembershipWritePatch (NOT BuildFacetWritePatch)
+// with the FULL NewTags, so the multi-valued codec's full-set Parse persists
+// exactly the interpreter-resolved set.
+func (cmd *Organize) executeMemberships(
+	ctx context.Context,
+	mutator cgp.NodeMutator,
+	applier cgp.MembershipWriteApplier,
+	writes map[string]cgp.FacetWrite,
+	edits []membershipEdit,
+) error {
+	for _, e := range edits {
+		// writes[e.Node.Type] needs no presence check: groupedIsMultiValued has
+		// already established every present live type maps to a many write for this
+		// dimension before applyMemberships runs, so unlike executePlan's per-move
+		// re-check there is no mixed/unmapped type to guard against here.
+		body, err := applier.BuildMembershipWritePatch(ctx, e.Node, writes[e.Node.Type], e.NewTags)
+		if err != nil {
+			return errors.Wrapf(err, "organize: build membership patch for %s", e.URI)
+		}
+		if _, err := mutator.PatchNode(ctx, e.Node.URI, bytes.NewReader(body)); err != nil {
+			return errors.Wrapf(err, "organize: patch %s", e.URI)
 		}
 	}
 	return nil

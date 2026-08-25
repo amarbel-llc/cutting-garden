@@ -191,8 +191,35 @@ func planFieldEdits(
 		notices = append(notices, id)
 	}
 	sort.Strings(notices)
-	sort.Slice(edits, func(i, j int) bool { return edits[i].URI < edits[j].URI })
+	// SliceStable, not Slice: on the multi-valued apply path a multi-appearance
+	// object yields several equal-URI edits in document order, and
+	// dedupFieldEditsByURI keeps the first. A stable sort preserves document order
+	// among equal URIs, so "first" is deterministically the document-first
+	// appearance rather than whatever pdqsort's partitioning happened to surface.
+	sort.SliceStable(edits, func(i, j int) bool { return edits[i].URI < edits[j].URI })
 	return edits, notices, nil
+}
+
+// dedupFieldEditsByURI keeps the first objectFieldEdit per URI in document order
+// (preserved by planFieldEdits' stable sort), dropping later ones. On the
+// multi-valued (membership) apply path a two-appearance object's line is parsed
+// once per bucket it sits under, so planFieldEdits can return the same object's
+// field edit N times; collapsing to one per URI keeps a legitimate
+// single-appearance atom edit applying once and prevents a multi-appearance object
+// being patched N times (RFC 0019, #231 slice 2). A deterministic single apply is
+// acceptable now; full agree/conflict reconciliation across divergent appearances
+// is slice 2b.
+func dedupFieldEditsByURI(edits []objectFieldEdit) []objectFieldEdit {
+	seen := make(map[string]struct{}, len(edits))
+	var out []objectFieldEdit
+	for _, e := range edits {
+		if _, dup := seen[e.URI]; dup {
+			continue
+		}
+		seen[e.URI] = struct{}{}
+		out = append(out, e)
+	}
+	return out
 }
 
 func unionAtomNames(a, b map[string]string) map[string]struct{} {

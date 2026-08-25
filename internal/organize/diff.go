@@ -236,3 +236,30 @@ func renderDiff(w io.Writer, changes []objectChange, color bool) {
 		fmt.Fprintln(w, renderChange(c, color))
 	}
 }
+
+// renderMembershipChanges writes a minimal one-line-per-object preview of a
+// multi-valued dimension's membership edits (RFC 0019, #231 slice 2): each line
+// shows the object id and its OLD tag set (from the live node's Facets[dim]),
+// whole-value-diffed to the NEW replacement set, reusing renderWholeValue so the
+// markers and color match the single-valued box diff. It is intentionally lighter
+// than buildChanges' folded box — a membership edit re-files a whole SET, not one
+// atom. The caller writes the header and the confirm/dry-run footer around it.
+func renderMembershipChanges(
+	w io.Writer, edits []membershipEdit, dim, anchor string, color bool,
+) {
+	for _, e := range edits {
+		id := relativeID(e.URI, anchor)
+		old := sortedCopy(facetKeys(e.Node.Facets[dim]))
+		set := sortedCopy(e.NewTags)
+		fmt.Fprintf(w, "  - [%s  %s=%s]\n", id, dim,
+			renderWholeValue(strings.Join(old, ","), strings.Join(set, ","), color))
+	}
+}
+
+// sortedCopy returns a lexically sorted copy of in, leaving the input untouched —
+// so a membership preview renders its tag sets in a stable order.
+func sortedCopy(in []string) []string {
+	out := append([]string(nil), in...)
+	sort.Strings(out)
+	return out
+}

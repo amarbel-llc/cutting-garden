@@ -1,20 +1,16 @@
 #! /usr/bin/env bats
 
-# The organize categories tag lane (tags slice 1, RFC 0019; cutting-garden#231):
-# `categories` is a read-only, MULTI-VALUED tag dimension with naive
-# (exact-match) semantics. Grouping a calendar by `categories` files each object
-# under a `## =<tag>` bucket for EVERY tag it carries — a two-tag task appears
-# under both buckets — and `list --facets --filter 'categories=<tag>'` narrows
-# the facet summary to the objects carrying that tag. The dimension is read-only
-# in slice 1: applying a MOVED categories document is rejected. Because a two-tag
-# task renders under both buckets, the generated (and pinned-base) document
-# carries its box line twice, and the single-bucket apply merge rejects that
-# duplication loudly ("appears twice") BEFORE it ever reaches the read-only
-# FacetWriteNone gate — so the end-to-end proof is that no membership move lands.
-# The FacetWriteNone rejection itself (checkMoveWritable) is unit-tested in
-# internal/organize/apply_test.go and plugins/caldav/facet_apply_test.go; multi-
-# membership makes it unreachable through a rendered document, which is why the
-# e2e rejection surfaces as "appears twice" rather than the read-only message.
+# The organize categories tag lane (tags slice 2, RFC 0019; cutting-garden#231):
+# `categories` is a WRITABLE, MULTI-VALUED tag dimension with naive (exact-match)
+# semantics. Grouping a calendar by `categories` files each object under a
+# `## =<tag>` bucket for EVERY tag it carries — a two-tag task appears under both
+# buckets — and `list --facets --filter 'categories=<tag>'` narrows the facet
+# summary to the objects carrying that tag. Slice 2 makes the dimension writable:
+# the apply engine dispatches on the grouped dimension's write cardinality BEFORE
+# the single-bucket move merge (which would reject a multi-membership document as
+# "appears twice"), routing a write:many dimension through the SET-merge membership
+# path (planMemberships → BuildMembershipWritePatch). Reorganizing a task between
+# `## =<tag>` buckets now REWRITES its CATEGORIES to the interpreter-resolved set.
 #
 # The fixture calendar (/dav/fields/, opt-in via CG_TEST_CALDAV_FIELDS) holds
 # field2 "Read book" CATEGORIES work,errand (two-tag) and field3 "Water plants"
@@ -93,12 +89,13 @@ function list_facets_categories_filter { # @test
   refute_output --partial '3_unspecified'
 }
 
-# categories is read-only in slice 1: applying a moved categories document is
-# rejected end to end. Move the one-tag task field3 from work to errand and
-# commit; the apply refuses non-zero because the two-tag task's box line is
-# duplicated across its buckets (multi-membership cannot round-trip through the
-# single-bucket merge) — no membership change is ever written.
-function organize_categories_apply_rejected { # @test
+# categories is writable in slice 2: applying a moved categories document REWRITES
+# the object's CATEGORIES to the merged set. Move the one-tag task field3 from work
+# to errand and commit; the membership path folds the base->edited set-diff
+# (remove work, add errand) onto the live {work} set through the naive interpreter,
+# so field3's CATEGORIES becomes errand while the two-tag field2 (present under both
+# buckets, unmoved) is left untouched.
+function organize_categories_apply_writes { # @test
   generate_grouped
   local edited="$BATS_TEST_TMPDIR/edited.txt" line
   line="$(grep 'field3.ics' "$DOC")"
@@ -110,6 +107,13 @@ function organize_categories_apply_rejected { # @test
   ' "$DOC" >"$edited"
 
   run_cg organize -apply "$edited" -commit
-  assert_failure
-  assert_output --partial 'appears twice'
+  assert_success
+  assert_output --partial '  - [field3.ics  categories=[-work-]{+errand+}]'
+  assert_output --partial 'organize: wrote 1 change(s)'
+
+  # The membership write rewrote field3's CATEGORIES to errand on the live object.
+  run curl -fsS "${CALDAV_SOURCE#caldav:}fields/field3.ics"
+  assert_success
+  assert_output --partial 'CATEGORIES:errand'
+  refute_output --partial 'CATEGORIES:work'
 }
