@@ -28,9 +28,12 @@ revised: |
     and `_base`/`_anchor`/`_query`/`_type` are envelope `-` fields; the object
     TYPE is a leading `# !<type>` heading OR a distributed `- _type = !<type>`
     envelope field (two spellings), and the **trailing `! <type>` type-anchor of
-    the earlier draft was a mistake and is removed**; `_group-by` is removed (the
-    grouped dimension IS the `<dim>=` heading); headings nest arbitrarily deep;
-    a blank line follows every heading. The `%:` operational-directive machinery
+    the earlier draft was a mistake and is removed**; `_group-by` is absent for
+    a FIELD grouping (the grouped dimension IS the `<dim>=` heading) — it was
+    later re-introduced (tags slice 3, RFC 0019) as an envelope directive for the
+    HOISTED TAG dialect, which has no `<dim>=` heading, encoding `<dim>`
+    (whole-dimension) or `<dim>/<namespace>` (namespace rollup); headings nest
+    arbitrarily deep; a blank line follows every heading. The `%:` operational-directive machinery
     (deletion gates, dry-run) is not exercised by Slice 2a and is untouched here.
 ---
 
@@ -88,10 +91,36 @@ document — the exact bytes presented to and edited by the end-user:
   distribution). `_base` self-reference: the stored blob is this document with the
   `- _base` line excised; the emitted document re-inserts the pin (§base-blob shape).
 - **Body: a heading ladder of arbitrary depth.** An object's effective terms are
-  the union of its heading path. The grouped dimension IS a `<dim>=` heading (there
-  is NO `_group-by` field); each `=<value>` sub-heading is a bucket; the plugin's
-  declared `FacetWrite.Values` are pre-rendered as empty buckets so a caller moves
-  an object under an existing state heading. A blank line follows every heading.
+  the union of its heading path. For a FIELD grouping the grouped dimension IS a
+  `<dim>=` heading (there is NO `_group-by` field); each `=<value>` sub-heading is
+  a bucket; the plugin's declared `FacetWrite.Values` are pre-rendered as empty
+  buckets so a caller moves an object under an existing state heading. A blank line
+  follows every heading.
+- **Tag grouping (hoisted, tags slice 3 / RFC 0019).** Grouping by a multi-valued
+  TAG dimension (e.g. caldav `categories`) omits the `<dim>=` heading entirely — a
+  tag grouping is just its buckets, so the grouped spec is recorded instead in a
+  `- _group-by = <encoding>` envelope directive that apply reads in place of the
+  heading: `<dim>` for a whole-dimension grouping, `<dim>/<namespace>` for a
+  namespace rollup. Buckets are bare `## <value>` headings with no `=` value
+  prefix; a value bearing whitespace (or a `"`) is quoted as a Go string literal
+  (`## "_ inbox"`) so it stays on one physical line, and the parser unquotes it. An
+  object appears under one `## <tag>` heading per tag it carries (multi-membership).
+  A namespace rollup buckets by segment prefix (`## -client`, `## -cutting_garden`):
+
+  ```
+  ---
+  - _base = @blake2b256-…
+  - _anchor = caldav:https://…/cal/
+  - _type = !caldav-object-v1
+  - _group-by = categories/project
+  ! organize-base-v1
+  ---
+
+  ## -client
+  - [acme.ics] Acme
+  ## -cutting_garden
+  - [cg.ics] CG
+  ```
 - **Two type spellings** (marker symmetry — the same `!<type>` term, scoped vs
   distributed):
   - **Spelling 1 — type as heading**: a leading `# !<type>` scopes objects, then
@@ -155,7 +184,11 @@ and appears ONLY on the data plane — `_genre`/`_body` on object nodes,
   `_base` is invalid — organize documents are ephemeral action, not durable
   artifacts; no legacy mode. (Divergence: dodder's live-only fork-overlay is
   superseded.)
-- `- _group-by = "…"` — the generation grouping (present iff grouped; see
+- `- _group-by = <encoding>` — the generation grouping, present ONLY for a
+  hoisted TAG grouping (tags slice 3 / RFC 0019), which has no `<dim>=` heading to
+  recover the dimension from: `<dim>` for a whole-dimension grouping,
+  `<dim>/<namespace>` for a namespace rollup. A FIELD grouping carries NO
+  `_group-by` — its dimension is recovered from the `<dim>=` heading (see
   §"The base blob's shape"). A substrate MAY declare additional `_`-fields on
   its organize-document type.
 
@@ -329,7 +362,8 @@ Three inputs: **base** (dereferenced `_base` — what the user was shown),
 Surfaced by the first implementation (dodder #374(b)): the base cannot
 contain its own digest. The resolution: **the base blob is an
 `organize-base-v1` hyphence envelope whose metadata carries only
-generation parameters** (`- _group-by = "…"` iff grouped; provenance
+generation parameters** (`- _group-by = <encoding>` for a hoisted tag grouping —
+a field grouping carries none, its dimension being the `<dim>=` heading; provenance
 comment; type line last) **and whose body is the outer document's
 canonical text with exactly one line excised: `- _base = @…`** (the
 self-reference). Generation renders the full document without `_base`,

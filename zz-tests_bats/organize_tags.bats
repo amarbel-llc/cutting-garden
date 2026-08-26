@@ -3,7 +3,7 @@
 # The organize categories tag lane (tags slice 2, RFC 0019; cutting-garden#231):
 # `categories` is a WRITABLE, MULTI-VALUED tag dimension with naive (exact-match)
 # semantics. Grouping a calendar by `categories` uses the hoisted tag-grouping
-# dialect (RFC 0019 slice 3 B3): a `- _group_by = categories` envelope directive,
+# dialect (RFC 0019 slice 3 B3): a `- _group-by = categories` envelope directive,
 # NO `# categories=` parent heading, and a bare no-`=` `## <tag>` bucket for EVERY
 # tag an object carries — a two-tag task appears under both buckets — and
 # `list --facets --filter 'categories=<tag>'` narrows the facet
@@ -57,12 +57,12 @@ lines_under_bucket() {
 
 # Grouping by categories files a two-tag task under BOTH its buckets and a
 # one-tag task under its single bucket — multi-membership (tags design D7). The
-# grouping is hoisted: a `- _group_by = categories` envelope directive, no
+# grouping is hoisted: a `- _group-by = categories` envelope directive, no
 # `# categories=` parent heading, and bare `## <tag>` buckets (observed tag values
 # sort ascending — errand before work).
 function organize_categories_multi_membership { # @test
   generate_grouped
-  assert_line '- _group_by = categories'
+  assert_line '- _group-by = categories'
   refute_line '# categories='
   assert_line '## errand'
   assert_line '## work'

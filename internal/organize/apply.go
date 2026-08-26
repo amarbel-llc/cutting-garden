@@ -97,7 +97,7 @@ func (cmd *Organize) applyDocument(
 	if edited.Anchor == "" || dim == "" {
 		return false, errors.BadRequestf(
 			"organize --apply: document is missing its `- _anchor` field or its " +
-				"grouping (a `# <dim>=` heading or a `- _group_by` directive)",
+				"grouping (a `# <dim>=` heading or a `- _group-by` directive)",
 		)
 	}
 	if edited.BaseDigest == "" {

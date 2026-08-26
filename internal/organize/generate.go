@@ -123,7 +123,7 @@ func (cmd *Organize) runGenerate(ctx errors.Context, uriStr string) error {
 // `dim:granularity` spelling for a date grouping, cutting-garden#230) with a
 // `=<value>` bucket per declared / observed value. A TAG grouping (RFC 0019 tags
 // slice 3 B3) is hoisted: no parent dimension heading, its spec recorded in the
-// `_group_by` envelope directive, and its buckets bare `## <value>` headings.
+// `_group-by` envelope directive, and its buckets bare `## <value>` headings.
 // interp is the resolved tag interpreter — required for a namespace grouping
 // (groupKindTagNamespace), nil otherwise.
 func buildDocument(
@@ -282,7 +282,7 @@ func dimensionSections(spec groupSpec, buckets []bucket, baseDepth int) []sectio
 
 // tagDimensionSections renders a TAG grouping's buckets in the hoisted dialect
 // (RFC 0019 tags slice 3 B3): a bare `## <value>` heading per bucket with NO
-// parent dimension heading (the spec lives in the `_group_by` envelope directive)
+// parent dimension heading (the spec lives in the `_group-by` envelope directive)
 // and NO `=` value prefix. The buckets sit at baseDepth+1 — the SAME depth a
 // field grouping's `## =<value>` buckets occupy (dimensionSections) — so the
 // hoisting only elides the parent heading, it does not shift the buckets up:

@@ -52,13 +52,13 @@ const (
 	fieldAnchor  = "_anchor"
 	fieldQuery   = "_query"
 	fieldType    = "_type"
-	// fieldGroupBy is the `- _group_by = <encoding>` envelope directive a TAG
+	// fieldGroupBy is the `- _group-by = <encoding>` envelope directive a TAG
 	// grouping carries (RFC 0019 tags slice 3 B3) — the hoisted dialect's
 	// self-describing spec: `<dim>` for a whole-dimension grouping,
 	// `<dim>/<namespace>` for a namespace grouping. A field grouping never emits
 	// it (its dimension lives in a `# <dim>=` heading instead), so a field
 	// document stays byte-identical to the pre-tags form.
-	fieldGroupBy = "_group_by"
+	fieldGroupBy = "_group-by"
 )
 
 // objectLine is one espalier box literal: the anchor-relative node id, its type
@@ -98,7 +98,7 @@ type document struct {
 	// Type is `- _type` (spelling 2): the type distributed to every object; empty
 	// under spelling 1, where the type is a `# !<type>` heading instead.
 	Type string
-	// GroupBy is `- _group_by`: the TAG grouping's self-describing spec encoding
+	// GroupBy is `- _group-by`: the TAG grouping's self-describing spec encoding
 	// (RFC 0019 tags slice 3 B3), `<dim>` (whole-dimension) or `<dim>/<namespace>`
 	// (namespace grouping). Empty for a field grouping, which carries its
 	// dimension in a `# <dim>=` heading instead. When set, groupedSpec reconstructs
@@ -128,7 +128,7 @@ func dimName(t string) string   { return strings.TrimSuffix(t, "=") }
 func valueName(t string) string { return strings.TrimPrefix(t, "=") }
 
 // isTagGrouping reports whether the document uses the hoisted TAG-grouping
-// dialect (RFC 0019 tags slice 3 B3): a `_group_by` directive present, its
+// dialect (RFC 0019 tags slice 3 B3): a `_group-by` directive present, its
 // buckets bare `## <value>` headings with no parent dimension heading. A field
 // grouping (GroupBy empty) keeps the `# <dim>=` heading + `## =<value>` buckets.
 func (doc document) isTagGrouping() bool { return doc.GroupBy != "" }
@@ -438,7 +438,7 @@ func (doc document) groupedDimension() string {
 // loud bad request — never a silent exact-match degradation. A bare `<dim>=`
 // heading carries none; the zero spec means no dimension heading at all.
 func (doc document) groupedSpec() (groupSpec, error) {
-	// A TAG grouping records its whole spec in the `_group_by` envelope directive
+	// A TAG grouping records its whole spec in the `_group-by` envelope directive
 	// (RFC 0019 tags slice 3 B3), self-describing so it reconstructs WITHOUT
 	// re-resolving against a plugin schema — the hoisted body has no `# <dim>=`
 	// heading to read.

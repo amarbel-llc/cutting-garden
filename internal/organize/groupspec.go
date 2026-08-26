@@ -52,7 +52,7 @@ type groupSpec struct {
 // provenance form. A field grouping spells `dim` (or `dim:granularity` for a
 // date dim); a tag whole-dimension grouping spells the bare tag dimension; a
 // tag-namespace grouping spells the bare namespace. (B3 will move the persisted
-// form to a `_group_by` envelope; this stays a sensible bare canonical form.)
+// form to a `_group-by` envelope; this stays a sensible bare canonical form.)
 func (s groupSpec) String() string {
 	switch s.Kind {
 	case groupKindTagNamespace:
@@ -67,12 +67,12 @@ func (s groupSpec) String() string {
 	}
 }
 
-// groupByEncoding renders the self-describing `_group_by` envelope value for a
+// groupByEncoding renders the self-describing `_group-by` envelope value for a
 // TAG grouping (RFC 0019 tags slice 3 B3): `<dim>` for a whole-dimension
 // grouping, `<dim>/<namespace>` for a namespace grouping — the `/` presence is
 // what distinguishes the two on parse, so the CLI's bare `project` still
 // round-trips to a namespace spec. A field grouping returns "" (it carries no
-// `_group_by` directive; its dimension lives in a `# <dim>=` heading), keeping a
+// `_group-by` directive; its dimension lives in a `# <dim>=` heading), keeping a
 // field document byte-identical to the pre-tags dialect.
 func (s groupSpec) groupByEncoding() string {
 	switch s.Kind {
@@ -85,7 +85,7 @@ func (s groupSpec) groupByEncoding() string {
 	}
 }
 
-// parseGroupByEncoding reconstructs the tag groupSpec a `_group_by` envelope
+// parseGroupByEncoding reconstructs the tag groupSpec a `_group-by` envelope
 // value encodes, WITHOUT re-resolving against the plugin schema (the encoding is
 // self-describing, RFC 0019 tags slice 3 B3): a `/` separates a namespace
 // grouping (`<dim>/<namespace>`, groupKindTagNamespace) from a whole-dimension

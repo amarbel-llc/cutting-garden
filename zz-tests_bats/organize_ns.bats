@@ -3,7 +3,7 @@
 # The organize namespace-rollup grouping lane (RFC 0019 tags slice 3 B5,
 # cutting-garden#231): `--group-by project` groups the caldav `categories` tag
 # dimension by the `project` NAMESPACE (dodder-hyphen segment hierarchy),
-# rendering the HOISTED continuation-heading dialect — a `- _group_by =
+# rendering the HOISTED continuation-heading dialect — a `- _group-by =
 # categories/project` envelope directive, NO `# categories=` parent heading, and
 # rollup buckets `## -client` / `## -cutting_garden` (bare, no `=`). Each task
 # rolls up to its immediate segment under `project`: nsA/nsB (project-client-*)
@@ -78,14 +78,14 @@ lines_ungrouped() {
   awk '/^#/ { exit } /^- \[/ { print }' "$DOC"
 }
 
-# Grouping by the `project` namespace hoists the dialect: a `- _group_by =
+# Grouping by the `project` namespace hoists the dialect: a `- _group-by =
 # categories/project` envelope directive, NO `# categories=` parent heading, and
 # bare `## -<segment>` rollup buckets. project-client-* tasks (nsA, nsB) coalesce
 # under `-client`; project-cutting_garden (nsC) lands under `-cutting_garden`; the
 # out-of-namespace `other` task (nsD) is ungrouped above the first heading.
 function organize_ns_namespace_rollup_render { # @test
   generate_grouped
-  assert_line '- _group_by = categories/project'
+  assert_line '- _group-by = categories/project'
   refute_line '# categories='
   assert_line '## -client'
   assert_line '## -cutting_garden'

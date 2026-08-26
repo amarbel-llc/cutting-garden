@@ -10,7 +10,7 @@ import (
 )
 
 // tagWholeDoc is a representative hoisted TAG-whole-dimension document: the
-// `_group_by = categories` directive, NO parent dimension heading, and bare
+// `_group-by = categories` directive, NO parent dimension heading, and bare
 // `## <tag>` buckets — one carrying a space, so it must quote (`## "_ inbox"`).
 func tagWholeDoc() document {
 	return document{
@@ -32,7 +32,7 @@ func tagWholeDoc() document {
 }
 
 // tagNamespaceDoc is a representative hoisted namespace-rollup document:
-// `_group_by = categories/project` and `## -<segment>` rollup buckets.
+// `_group-by = categories/project` and `## -<segment>` rollup buckets.
 func tagNamespaceDoc() document {
 	return document{
 		BaseDigest: "blake2b256-abcdef",
@@ -49,14 +49,14 @@ func tagNamespaceDoc() document {
 	}
 }
 
-// TestRenderTagWhole pins the hoisted whole-dimension dialect: the `_group_by`
+// TestRenderTagWhole pins the hoisted whole-dimension dialect: the `_group-by`
 // directive, NO `# categories=` parent heading, bare no-`=` `## <tag>` buckets,
 // and a space-bearing tag quoted (`## "_ inbox"`).
 func TestRenderTagWhole(t *testing.T) {
 	out := render(tagWholeDoc())
 
-	if !strings.Contains(out, "- _group_by = categories\n") {
-		t.Errorf("missing `- _group_by = categories` directive:\n%s", out)
+	if !strings.Contains(out, "- _group-by = categories\n") {
+		t.Errorf("missing `- _group-by = categories` directive:\n%s", out)
 	}
 	if strings.Contains(out, "# categories=") {
 		t.Errorf("hoisted tag grouping must NOT render a parent dimension heading:\n%s", out)
@@ -71,13 +71,13 @@ func TestRenderTagWhole(t *testing.T) {
 	}
 }
 
-// TestRenderTagNamespace pins the namespace dialect: `_group_by = <dim>/<ns>`
+// TestRenderTagNamespace pins the namespace dialect: `_group-by = <dim>/<ns>`
 // and `## -<segment>` rollup buckets, still no parent heading, still no `=`.
 func TestRenderTagNamespace(t *testing.T) {
 	out := render(tagNamespaceDoc())
 
-	if !strings.Contains(out, "- _group_by = categories/project\n") {
-		t.Errorf("missing `- _group_by = categories/project` directive:\n%s", out)
+	if !strings.Contains(out, "- _group-by = categories/project\n") {
+		t.Errorf("missing `- _group-by = categories/project` directive:\n%s", out)
 	}
 	if strings.Contains(out, "# categories=") || strings.Contains(out, "## =") {
 		t.Errorf("namespace grouping must be hoisted with no `=` buckets:\n%s", out)
@@ -222,14 +222,14 @@ func TestGroupByEncodingRoundTrip(t *testing.T) {
 		t.Errorf("parseGroupByEncoding(categories/project) = %+v, want %+v", got, ns)
 	}
 
-	// A field grouping carries no `_group_by` directive.
+	// A field grouping carries no `_group-by` directive.
 	if enc := (groupSpec{Dim: "status"}).groupByEncoding(); enc != "" {
 		t.Errorf("field encoding = %q, want empty", enc)
 	}
 }
 
 // TestBuildDocument_TagWhole pins that the tag-whole grouping renders hoisted
-// buckets with no parent heading and sets the `_group_by` encoding.
+// buckets with no parent heading and sets the `_group-by` encoding.
 func TestBuildDocument_TagWhole(t *testing.T) {
 	anchor := "caldav://h/c/"
 	nodes := []cgp.Node{
@@ -326,13 +326,13 @@ func TestRequireNamespaceInterpreter(t *testing.T) {
 }
 
 // TestFieldDocUnaffectedByTagDialect pins the no-regression guarantee: a FIELD
-// document carries no `_group_by`, keeps its `# <dim>=` heading and `## =<value>`
+// document carries no `_group-by`, keeps its `# <dim>=` heading and `## =<value>`
 // buckets, and round-trips byte-identically through render→parse→render.
 func TestFieldDocUnaffectedByTagDialect(t *testing.T) {
 	doc := spelling2Doc()
 	out := render(doc)
-	if strings.Contains(out, "_group_by") {
-		t.Errorf("field document must not carry a _group_by directive:\n%s", out)
+	if strings.Contains(out, "_group-by") {
+		t.Errorf("field document must not carry a _group-by directive:\n%s", out)
 	}
 	if !strings.Contains(out, "# status=") || !strings.Contains(out, "## =COMPLETED") {
 		t.Errorf("field document must keep its `# dim=` / `## =value` dialect:\n%s", out)

@@ -14,7 +14,7 @@
 // opens it in $EDITOR, and applies the result on save (dodder's interactive
 // default); with stdout piped/redirected it just prints the document (the
 // MCP/scripting path). Generate selects the anchor's nodes (a trellis query, or
-// the enriched child listing), groups them by the --group-by facet dimension,
+// the enriched child listing), groups them by the --group-by dimension,
 // pins the pre-edit assignment as a content-addressed organize-base-v1 blob, and
 // emits the document with a `- _base=@<digest>` line. You move object lines
 // between headings; apply three-way-merges your edits against the pinned base and
@@ -52,10 +52,13 @@ type Organize struct {
 	// Query is an optional trellis query (RFC 0014) selecting the nodes to
 	// organize; empty means the anchor's enriched child listing.
 	Query string
-	// GroupBy is the facet dimension the document groups by (required to
-	// generate). A date-kind dimension may carry a bucket-granularity suffix
+	// GroupBy is the dimension the document groups by (required to generate): a
+	// facet/field dimension, a tag dimension, or a tag namespace (RFC 0019 tags
+	// slice 3). A date-kind field dimension may carry a bucket-granularity suffix
 	// (`date_due:month`, one of year/month/day; cutting-garden#230); bare it
-	// resolves the `[organize] date_granularity` config default, then day.
+	// resolves the `[organize] date_granularity` config default, then day. A
+	// trailing `=` (`dim=`) forces the field reading of a name that is also a tag
+	// namespace.
 	GroupBy string
 	// Apply, when set, switches to apply mode: the path of an edited document
 	// to merge and write, or "-" for stdin. The anchor, group-by, and query are
@@ -120,8 +123,10 @@ func (cmd *Organize) SetFlagDefinitions(flagSet interfaces.CLIFlagDefinitions) {
 		&cmd.GroupBy,
 		"group-by",
 		"",
-		"facet dimension to group the nodes by, optionally with a date bucket "+
-			"granularity suffix dim:year|month|day (required to generate)",
+		"dimension to group the nodes by: a facet dimension (optional "+
+			":year|month|day granularity for dates), a tag dimension or tag "+
+			"namespace (bare, e.g. `project` → rollup), or `dim=` to force the "+
+			"field reading (required to generate)",
 	)
 	flagSet.StringVar(
 		&cmd.Apply,
