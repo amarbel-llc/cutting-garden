@@ -97,7 +97,7 @@ func (cmd *Organize) applyDocument(
 	if edited.Anchor == "" || dim == "" {
 		return false, errors.BadRequestf(
 			"organize --apply: document is missing its `- _anchor` field or its " +
-				"`<dim>=` grouping heading",
+				"grouping (a `# <dim>=` heading or a `- _group_by` directive)",
 		)
 	}
 	if edited.BaseDigest == "" {
@@ -468,17 +468,24 @@ func (cmd *Organize) executePlan(
 // field for the dimension, or an empty declared interpreter defaults the
 // field-default to "naive" (the RFC 0019 §4 default and the Slice-1/2 behavior),
 // NOT an error; only an unknown interpreter NAME (from either source) is the
-// loud bad request ResolveTagInterpreter raises.
+// loud bad request ResolveTagInterpreter raises. The resolved name is returned
+// alongside the interpreter so a caller can name it in an error (e.g. a naive
+// interpreter rejecting a namespace grouping).
 func interpreterForDimension(
 	lister cgp.RootLister, dim string, tagsOverride string,
-) (cgp.TagInterpreter, error) {
+) (cgp.TagInterpreter, string, error) {
 	fieldDefault := "naive"
 	if describer, ok := lister.(cgp.UnifiedDescriber); ok {
 		if declared := declaredTagInterpreter(describer, dim); declared != "" {
 			fieldDefault = declared
 		}
 	}
-	return command_components.ResolveTagInterpreter(fieldDefault, tagsOverride)
+	name := tagsOverride
+	if name == "" {
+		name = fieldDefault
+	}
+	interp, err := command_components.ResolveTagInterpreter(fieldDefault, tagsOverride)
+	return interp, name, err
 }
 
 // declaredTagInterpreter returns the interpreter a plugin declares for the
@@ -523,7 +530,7 @@ func (cmd *Organize) applyMemberships(
 	// naive (its whole-dimension Buckets and exact Complete match naive's); the
 	// observable difference only appears in namespace grouping and transitive
 	// matching (later slices), so this wires SELECTION, not a behavior change here.
-	interp, err := interpreterForDimension(lister, dim, tagsOverride)
+	interp, _, err := interpreterForDimension(lister, dim, tagsOverride)
 	if err != nil {
 		return false, err
 	}

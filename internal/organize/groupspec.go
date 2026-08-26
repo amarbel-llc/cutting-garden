@@ -67,6 +67,36 @@ func (s groupSpec) String() string {
 	}
 }
 
+// groupByEncoding renders the self-describing `_group_by` envelope value for a
+// TAG grouping (RFC 0019 tags slice 3 B3): `<dim>` for a whole-dimension
+// grouping, `<dim>/<namespace>` for a namespace grouping — the `/` presence is
+// what distinguishes the two on parse, so the CLI's bare `project` still
+// round-trips to a namespace spec. A field grouping returns "" (it carries no
+// `_group_by` directive; its dimension lives in a `# <dim>=` heading), keeping a
+// field document byte-identical to the pre-tags dialect.
+func (s groupSpec) groupByEncoding() string {
+	switch s.Kind {
+	case groupKindTagNamespace:
+		return s.Dim + "/" + s.Namespace
+	case groupKindTagWhole:
+		return s.Dim
+	default:
+		return ""
+	}
+}
+
+// parseGroupByEncoding reconstructs the tag groupSpec a `_group_by` envelope
+// value encodes, WITHOUT re-resolving against the plugin schema (the encoding is
+// self-describing, RFC 0019 tags slice 3 B3): a `/` separates a namespace
+// grouping (`<dim>/<namespace>`, groupKindTagNamespace) from a whole-dimension
+// one (`<dim>`, groupKindTagWhole).
+func parseGroupByEncoding(enc string) groupSpec {
+	if dim, namespace, hasNamespace := strings.Cut(enc, "/"); hasNamespace {
+		return groupSpec{Dim: dim, Namespace: namespace, Kind: groupKindTagNamespace}
+	}
+	return groupSpec{Dim: enc, Kind: groupKindTagWhole}
+}
+
 // parseGroupSpec resolves a --group-by spelling against the plugin's declared
 // schema (RFC 0019 tags slice 3, cutting-garden#231):
 //

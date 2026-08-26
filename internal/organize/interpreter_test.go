@@ -67,26 +67,32 @@ func isTransitive(interp cgp.TagInterpreter) bool {
 func TestInterpreterForDimension_FieldDefaultAndOverride(t *testing.T) {
 	declaresNaive := interpUnifiedLister{fields: categoriesUnified("naive")}
 
-	// Field declares naive, no override → naive (exact match).
-	interp, err := interpreterForDimension(declaresNaive, "categories", "")
+	// Field declares naive, no override → naive (exact match), name reported.
+	interp, name, err := interpreterForDimension(declaresNaive, "categories", "")
 	if err != nil {
 		t.Fatalf("field default naive, no override: %v", err)
 	}
 	if isTransitive(interp) {
 		t.Error("field default naive, no override: got transitive (dodder-hyphen) semantics")
 	}
+	if name != "naive" {
+		t.Errorf("resolved name = %q, want naive", name)
+	}
 
-	// Override wins over the declared field default.
-	interp, err = interpreterForDimension(declaresNaive, "categories", "dodder-hyphen")
+	// Override wins over the declared field default, and is the reported name.
+	interp, name, err = interpreterForDimension(declaresNaive, "categories", "dodder-hyphen")
 	if err != nil {
 		t.Fatalf("override dodder-hyphen: %v", err)
 	}
 	if !isTransitive(interp) {
 		t.Error("override=dodder-hyphen did not win: got exact-match (naive) semantics")
 	}
+	if name != "dodder-hyphen" {
+		t.Errorf("resolved name = %q, want dodder-hyphen", name)
+	}
 
 	// A lister with no UnifiedDescriber capability defaults to naive.
-	interp, err = interpreterForDimension(interpPlainLister{}, "categories", "")
+	interp, _, err = interpreterForDimension(interpPlainLister{}, "categories", "")
 	if err != nil {
 		t.Fatalf("no DescribeUnified: %v", err)
 	}
@@ -95,7 +101,7 @@ func TestInterpreterForDimension_FieldDefaultAndOverride(t *testing.T) {
 	}
 
 	// A dimension with no declared field defaults to naive.
-	interp, err = interpreterForDimension(declaresNaive, "nonexistent", "")
+	interp, _, err = interpreterForDimension(declaresNaive, "nonexistent", "")
 	if err != nil {
 		t.Fatalf("unknown dimension: %v", err)
 	}
@@ -105,7 +111,7 @@ func TestInterpreterForDimension_FieldDefaultAndOverride(t *testing.T) {
 
 	// A field declaring an EMPTY interpreter defaults to naive.
 	declaresEmpty := interpUnifiedLister{fields: categoriesUnified("")}
-	interp, err = interpreterForDimension(declaresEmpty, "categories", "")
+	interp, _, err = interpreterForDimension(declaresEmpty, "categories", "")
 	if err != nil {
 		t.Fatalf("empty declared interpreter: %v", err)
 	}
@@ -114,7 +120,7 @@ func TestInterpreterForDimension_FieldDefaultAndOverride(t *testing.T) {
 	}
 
 	// An unknown override NAME is a loud bad request.
-	if _, err := interpreterForDimension(declaresNaive, "categories", "bogus"); err == nil {
+	if _, _, err := interpreterForDimension(declaresNaive, "categories", "bogus"); err == nil {
 		t.Error("unknown override name must reject")
 	}
 }

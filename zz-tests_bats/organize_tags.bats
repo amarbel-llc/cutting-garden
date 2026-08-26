@@ -2,15 +2,17 @@
 
 # The organize categories tag lane (tags slice 2, RFC 0019; cutting-garden#231):
 # `categories` is a WRITABLE, MULTI-VALUED tag dimension with naive (exact-match)
-# semantics. Grouping a calendar by `categories` files each object under a
-# `## =<tag>` bucket for EVERY tag it carries — a two-tag task appears under both
-# buckets — and `list --facets --filter 'categories=<tag>'` narrows the facet
+# semantics. Grouping a calendar by `categories` uses the hoisted tag-grouping
+# dialect (RFC 0019 slice 3 B3): a `- _group_by = categories` envelope directive,
+# NO `# categories=` parent heading, and a bare no-`=` `## <tag>` bucket for EVERY
+# tag an object carries — a two-tag task appears under both buckets — and
+# `list --facets --filter 'categories=<tag>'` narrows the facet
 # summary to the objects carrying that tag. Slice 2 makes the dimension writable:
 # the apply engine dispatches on the grouped dimension's write cardinality BEFORE
 # the single-bucket move merge (which would reject a multi-membership document as
 # "appears twice"), routing a write:many dimension through the SET-merge membership
 # path (planMemberships → BuildMembershipWritePatch). Reorganizing a task between
-# `## =<tag>` buckets now REWRITES its CATEGORIES to the interpreter-resolved set.
+# `## <tag>` buckets now REWRITES its CATEGORIES to the interpreter-resolved set.
 #
 # The fixture calendar (/dav/fields/, opt-in via CG_TEST_CALDAV_FIELDS) holds
 # field2 "Read book" CATEGORIES work,errand (two-tag) and field3 "Water plants"
@@ -43,10 +45,10 @@ generate_grouped() {
 }
 
 # lines_under_bucket prints the object box lines directly beneath the
-# `## =<value>` heading ($1), stopping at the next heading — so a lane can assert
+# `## <value>` heading ($1), stopping at the next heading — so a lane can assert
 # which tasks a tag bucket contains.
 lines_under_bucket() {
-  awk -v h="## =$1" '
+  awk -v h="## $1" '
     $0 == h { in_bucket = 1; next }
     /^#/ { in_bucket = 0 }
     in_bucket && /^- \[/ { print }
@@ -55,13 +57,15 @@ lines_under_bucket() {
 
 # Grouping by categories files a two-tag task under BOTH its buckets and a
 # one-tag task under its single bucket — multi-membership (tags design D7). The
-# dimension heading is the bare `categories=` (naive: no granularity suffix), and
-# observed tag values sort ascending (errand before work).
+# grouping is hoisted: a `- _group_by = categories` envelope directive, no
+# `# categories=` parent heading, and bare `## <tag>` buckets (observed tag values
+# sort ascending — errand before work).
 function organize_categories_multi_membership { # @test
   generate_grouped
-  assert_line '# categories='
-  assert_line '## =errand'
-  assert_line '## =work'
+  assert_line '- _group_by = categories'
+  refute_line '# categories='
+  assert_line '## errand'
+  assert_line '## work'
 
   # field2 (work,errand) is filed under BOTH buckets; field3 (work) under work only.
   run lines_under_bucket errand
@@ -100,7 +104,7 @@ function organize_categories_apply_writes { # @test
   local edited="$BATS_TEST_TMPDIR/edited.txt" line
   line="$(grep 'field3.ics' "$DOC")"
   [[ -n $line ]] || fail "no field3 box in document: $(cat "$DOC")"
-  awk -v ln="$line" -v h='## =errand' '
+  awk -v ln="$line" -v h='## errand' '
     $0 == ln { next }
     { print }
     $0 == h { print ""; print ln }

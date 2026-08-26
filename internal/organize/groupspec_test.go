@@ -172,37 +172,6 @@ func TestParseGroupSpec_TagResolution(t *testing.T) {
 	}
 }
 
-// TestUnsupportedGroupingError_NamespaceOnly pins the B1 generate-path guard:
-// a namespace grouping (resolved by parse, unwired downstream until B2/B3) is
-// rejected with a bad request naming the arg, while the field and
-// tag-whole-dimension groupings that work today pass through unguarded. This is
-// the reachable unit of buildAndStore's guard (buildAndStore itself needs a
-// resolved plugin + blob store). Removed by B3 (cutting-garden#231).
-func TestUnsupportedGroupingError_NamespaceOnly(t *testing.T) {
-	ns := groupSpec{Dim: "categories", Namespace: "project", Kind: groupKindTagNamespace}
-	err := unsupportedGroupingError(ns, "project")
-	if err == nil {
-		t.Fatal("namespace grouping must be rejected until B2/B3 land")
-	}
-	if !errors.Is400BadRequest(err) {
-		t.Errorf("expected a bad request, got %v", err)
-	}
-	if !strings.Contains(err.Error(), "project") {
-		t.Errorf("error should name the group-by arg: %v", err)
-	}
-
-	// The specs the generate path DOES support today pass the guard.
-	for _, ok := range []groupSpec{
-		{Dim: "status"}, // field
-		{Dim: "date_due", Granularity: cgp.GranularityDay}, // date field
-		{Dim: "categories", Kind: groupKindTagWhole},       // tag whole-dimension
-	} {
-		if err := unsupportedGroupingError(ok, "x"); err != nil {
-			t.Errorf("%+v must be supported, got %v", ok, err)
-		}
-	}
-}
-
 // TestParseGroupSpec_SuffixOnNonDateRejects pins that a granularity suffix on a
 // non-date dimension is a bad request naming the problem (cutting-garden#230).
 func TestParseGroupSpec_SuffixOnNonDateRejects(t *testing.T) {
@@ -273,7 +242,10 @@ func TestBuildDocument_DateGranularityMonth(t *testing.T) {
 		dueNode(t, "b.ics", "2026-08-20"),
 	}
 
-	doc := buildDocument(nodes, "fake://cal/", "", spec, lister)
+	doc, err := buildDocument(nodes, "fake://cal/", "", spec, lister, nil)
+	if err != nil {
+		t.Fatalf("buildDocument: %v", err)
+	}
 
 	if len(doc.Sections) != 2 {
 		t.Fatalf("sections = %+v, want dimension heading + one month bucket", doc.Sections)
@@ -303,7 +275,10 @@ func TestBuildDocument_DateGranularityBareIsDay(t *testing.T) {
 		dueNode(t, "b.ics", "2026-08-20"),
 	}
 
-	doc := buildDocument(nodes, "fake://cal/", "", spec, lister)
+	doc, err := buildDocument(nodes, "fake://cal/", "", spec, lister, nil)
+	if err != nil {
+		t.Fatalf("buildDocument: %v", err)
+	}
 
 	if len(doc.Sections) != 3 {
 		t.Fatalf("sections = %+v, want dimension heading + two day buckets", doc.Sections)

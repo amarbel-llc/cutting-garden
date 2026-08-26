@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"net/url"
+	"strconv"
 	"strings"
 
 	cgp "code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
@@ -51,6 +52,13 @@ const (
 	fieldAnchor  = "_anchor"
 	fieldQuery   = "_query"
 	fieldType    = "_type"
+	// fieldGroupBy is the `- _group_by = <encoding>` envelope directive a TAG
+	// grouping carries (RFC 0019 tags slice 3 B3) — the hoisted dialect's
+	// self-describing spec: `<dim>` for a whole-dimension grouping,
+	// `<dim>/<namespace>` for a namespace grouping. A field grouping never emits
+	// it (its dimension lives in a `# <dim>=` heading instead), so a field
+	// document stays byte-identical to the pre-tags form.
+	fieldGroupBy = "_group_by"
 )
 
 // objectLine is one espalier box literal: the anchor-relative node id, its type
@@ -90,6 +98,13 @@ type document struct {
 	// Type is `- _type` (spelling 2): the type distributed to every object; empty
 	// under spelling 1, where the type is a `# !<type>` heading instead.
 	Type string
+	// GroupBy is `- _group_by`: the TAG grouping's self-describing spec encoding
+	// (RFC 0019 tags slice 3 B3), `<dim>` (whole-dimension) or `<dim>/<namespace>`
+	// (namespace grouping). Empty for a field grouping, which carries its
+	// dimension in a `# <dim>=` heading instead. When set, groupedSpec reconstructs
+	// the groupSpec from this alone (no re-resolution), and the hoisted body has no
+	// parent dimension heading — its buckets are bare `## <value>` headings.
+	GroupBy string
 	// Distributed carries any other bare `- <term>` envelope lines the user
 	// hand-added (RFC 0015 distribution rule) — preserved verbatim on parse.
 	Distributed []string
@@ -112,6 +127,70 @@ func isDimTerm(t string) bool {
 func dimName(t string) string   { return strings.TrimSuffix(t, "=") }
 func valueName(t string) string { return strings.TrimPrefix(t, "=") }
 
+// isTagGrouping reports whether the document uses the hoisted TAG-grouping
+// dialect (RFC 0019 tags slice 3 B3): a `_group_by` directive present, its
+// buckets bare `## <value>` headings with no parent dimension heading. A field
+// grouping (GroupBy empty) keeps the `# <dim>=` heading + `## =<value>` buckets.
+func (doc document) isTagGrouping() bool { return doc.GroupBy != "" }
+
+// sectionValueReader returns the function that extracts a bucket VALUE from a
+// heading term for this document's grouping dialect. A field grouping's buckets
+// are `=<value>` terms (isValueTerm); a TAG grouping's buckets are the hoisted
+// bare/quoted headings `<value>` — every non-type heading is a value, unquoted.
+// A type heading (`!<type>`) and, for a field grouping, a `<dim>=` heading are
+// never buckets. Shared by assignments and memberships so both dialects read a
+// section's value identically.
+func (doc document) sectionValueReader() func(term string) (value string, isValue bool) {
+	if doc.isTagGrouping() {
+		return func(term string) (string, bool) {
+			if strings.HasPrefix(term, "!") {
+				return "", false
+			}
+			return unquoteHeadingValue(term), true
+		}
+	}
+	return func(term string) (string, bool) {
+		if isValueTerm(term) {
+			return valueName(term), true
+		}
+		return "", false
+	}
+}
+
+// headingValueNeedsQuote reports whether a TAG bucket value must be quoted in a
+// `## <value>` heading — when it contains whitespace (including a newline/CR that
+// would otherwise split one heading across two physical lines and corrupt the
+// parse) or a double quote the heading grammar would otherwise mis-tokenize. An
+// empty value is quoted too so unquoteHeadingValue round-trips it via
+// strconv.Unquote (which escapes/reverses `\n` and `\r` correctly).
+func headingValueNeedsQuote(v string) bool {
+	return v == "" || strings.ContainsAny(v, " \t\n\r\"")
+}
+
+// quoteHeadingValue renders a TAG bucket value for a `## <value>` heading,
+// quoting it as a Go string literal only when the raw form would be ambiguous. A
+// plain value like `work` or `-client` renders bare; `_ inbox` renders
+// `"_ inbox"`.
+func quoteHeadingValue(v string) string {
+	if headingValueNeedsQuote(v) {
+		return strconv.Quote(v)
+	}
+	return v
+}
+
+// unquoteHeadingValue is quoteHeadingValue's inverse: a heading term opening with
+// a double quote is a Go string literal the parser decodes; anything else is a
+// bare value taken verbatim. A malformed literal falls back to the raw term
+// rather than failing the parse.
+func unquoteHeadingValue(term string) string {
+	if strings.HasPrefix(term, "\"") {
+		if s, err := strconv.Unquote(term); err == nil {
+			return s
+		}
+	}
+	return term
+}
+
 // --- render ------------------------------------------------------------------
 
 // render serializes the full document: the hyphence envelope (with the `_base`
@@ -133,6 +212,9 @@ func render(doc document) string {
 	}
 	if doc.Type != "" {
 		fmt.Fprintf(&b, "- %s = !%s\n", fieldType, doc.Type)
+	}
+	if doc.GroupBy != "" {
+		fmt.Fprintf(&b, "- %s = %s\n", fieldGroupBy, doc.GroupBy)
 	}
 	for _, d := range doc.Distributed {
 		fmt.Fprintf(&b, "- %s\n", d)
@@ -211,6 +293,7 @@ func parseDocument(text string) (document, error) {
 	doc.Anchor = fields[fieldAnchor]
 	doc.Query = fields[fieldQuery]
 	doc.Type = strings.TrimPrefix(fields[fieldType], "!")
+	doc.GroupBy = fields[fieldGroupBy]
 
 	if err := parseBody(&doc, body); err != nil {
 		return document{}, err
@@ -355,6 +438,14 @@ func (doc document) groupedDimension() string {
 // loud bad request — never a silent exact-match degradation. A bare `<dim>=`
 // heading carries none; the zero spec means no dimension heading at all.
 func (doc document) groupedSpec() (groupSpec, error) {
+	// A TAG grouping records its whole spec in the `_group_by` envelope directive
+	// (RFC 0019 tags slice 3 B3), self-describing so it reconstructs WITHOUT
+	// re-resolving against a plugin schema — the hoisted body has no `# <dim>=`
+	// heading to read.
+	if doc.isTagGrouping() {
+		return parseGroupByEncoding(doc.GroupBy), nil
+	}
+
 	term := doc.groupedDimension()
 	if term == "" {
 		return groupSpec{}, nil
@@ -399,6 +490,7 @@ func (doc document) assignments() (map[string]string, error) {
 
 	// Walk the flat sections as a depth stack, so each object's value is the
 	// value term on its enclosing heading path.
+	readValue := doc.sectionValueReader()
 	var stack []section
 	for _, s := range doc.Sections {
 		for len(stack) > 0 && stack[len(stack)-1].Depth >= s.Depth {
@@ -407,8 +499,8 @@ func (doc document) assignments() (map[string]string, error) {
 		stack = append(stack, s)
 		value := ""
 		for _, anc := range stack {
-			if isValueTerm(anc.Term) {
-				value = valueName(anc.Term)
+			if v, ok := readValue(anc.Term); ok {
+				value = v
 			}
 		}
 		for _, ln := range s.Lines {
@@ -492,6 +584,7 @@ func (doc document) memberships(multi bool) (map[string][]string, error) {
 
 	// Walk the flat sections as a depth stack, so each object's value is the
 	// value term on its enclosing heading path.
+	readValue := doc.sectionValueReader()
 	var stack []section
 	for _, s := range doc.Sections {
 		for len(stack) > 0 && stack[len(stack)-1].Depth >= s.Depth {
@@ -500,8 +593,8 @@ func (doc document) memberships(multi bool) (map[string][]string, error) {
 		stack = append(stack, s)
 		value := ""
 		for _, anc := range stack {
-			if isValueTerm(anc.Term) {
-				value = valueName(anc.Term)
+			if v, ok := readValue(anc.Term); ok {
+				value = v
 			}
 		}
 		for _, ln := range s.Lines {

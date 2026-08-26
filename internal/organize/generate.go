@@ -43,8 +43,22 @@ func (cmd *Organize) buildAndStore(ctx errors.Context, uriStr string) (string, e
 	if err != nil {
 		return "", err
 	}
-	if err := unsupportedGroupingError(spec, cmd.GroupBy); err != nil {
-		return "", err
+
+	// A namespace grouping needs a tag interpreter that declares namespaces
+	// (RFC 0019 tags slice 3): resolve it from the field default + the global
+	// [tags] override, then reject the naive (exact-match) interpreter up front
+	// with a clear message rather than surfacing the interpreter's raw "declares
+	// no namespaces". A whole-dimension or field grouping needs no interpreter.
+	var interp cgp.TagInterpreter
+	if spec.Kind == groupKindTagNamespace {
+		var interpName string
+		interp, interpName, err = interpreterForDimension(lister, spec.Dim, cfg.Tags.Interpreter)
+		if err != nil {
+			return "", err
+		}
+		if err := requireNamespaceInterpreter(interp, interpName, cmd.GroupBy, spec); err != nil {
+			return "", err
+		}
 	}
 
 	// The effective query is the user's query with organize's default
@@ -68,7 +82,10 @@ func (cmd *Organize) buildAndStore(ctx errors.Context, uriStr string) (string, e
 		anchor = uriStr
 	}
 
-	doc := buildDocument(nodes, anchor, effective, spec, lister)
+	doc, err := buildDocument(nodes, anchor, effective, spec, lister, interp)
+	if err != nil {
+		return "", err
+	}
 	// Provenance records what the user actually typed for the URI (e.g. the
 	// short alias), even though _anchor is the canonical common prefix — but
 	// echoes the RESOLVED group-by spelling, so a config-defaulted granularity
@@ -101,41 +118,81 @@ func (cmd *Organize) runGenerate(ctx errors.Context, uriStr string) error {
 
 // buildDocument assembles the organize document from the selected nodes. A
 // single-type node set uses the flatter envelope-`_type` spelling (spelling 2);
-// a multi-type set uses per-type `# !<type>` headings (spelling 1). The grouped
-// dimension renders as a `<spec>=` heading (the full `dim:granularity` spelling
-// for a date grouping, cutting-garden#230) with a `=<value>` bucket per
-// declared / observed value.
+// a multi-type set uses per-type `# !<type>` headings (spelling 1). A FIELD
+// grouping renders the grouped dimension as a `<spec>=` heading (the full
+// `dim:granularity` spelling for a date grouping, cutting-garden#230) with a
+// `=<value>` bucket per declared / observed value. A TAG grouping (RFC 0019 tags
+// slice 3 B3) is hoisted: no parent dimension heading, its spec recorded in the
+// `_group_by` envelope directive, and its buckets bare `## <value>` headings.
+// interp is the resolved tag interpreter — required for a namespace grouping
+// (groupKindTagNamespace), nil otherwise.
 func buildDocument(
 	nodes []cgp.Node, anchor, query string, spec groupSpec, lister cgp.RootLister,
-) document {
+	interp cgp.TagInterpreter,
+) (document, error) {
 	doc := document{
 		Anchor:     anchor,
 		Query:      query,
 		Provenance: provenance(spec.String(), query, anchor),
+		GroupBy:    spec.groupByEncoding(),
 	}
 
 	present := boxAtomPresenter(lister)
 	types := distinctTypes(nodes)
 	switch len(types) {
 	case 1:
-		// Spelling 2: type in the envelope, object boxes bare, dimension at depth 1.
+		// Spelling 2: type in the envelope, object boxes bare, buckets at depth 1
+		// (a field dimension heading at depth 1 with buckets at depth 2).
 		doc.Type = types[0]
 		declared := writableBuckets(lister, types[0], spec.Dim)
-		ungrouped, buckets := groupNodes(nodes, spec, anchor, declared, false, present)
+		ungrouped, buckets, err := groupForSpec(nodes, spec, anchor, declared, false, present, interp)
+		if err != nil {
+			return document{}, err
+		}
 		doc.Ungrouped = ungrouped
-		doc.Sections = dimensionSections(spec, buckets, 1)
+		doc.Sections = sectionsForSpec(spec, buckets, 1)
 	default:
-		// Spelling 1: a `# !<type>` heading per type, each with its own dimension
-		// ladder at depth 2; object boxes carry inline `!type`.
+		// Spelling 1: a `# !<type>` heading per type, each with its own bucket
+		// ladder one level deeper; object boxes carry inline `!type`.
 		for _, typ := range types {
 			typeNodes := nodesOfType(nodes, typ)
 			declared := writableBuckets(lister, typ, spec.Dim)
-			ungrouped, buckets := groupNodes(typeNodes, spec, anchor, declared, true, present)
+			ungrouped, buckets, err := groupForSpec(typeNodes, spec, anchor, declared, true, present, interp)
+			if err != nil {
+				return document{}, err
+			}
 			doc.Sections = append(doc.Sections, section{Depth: 1, Term: "!" + typ, Lines: ungrouped})
-			doc.Sections = append(doc.Sections, dimensionSections(spec, buckets, 2)...)
+			doc.Sections = append(doc.Sections, sectionsForSpec(spec, buckets, 2)...)
 		}
 	}
-	return doc
+	return doc, nil
+}
+
+// groupForSpec buckets nodes for the grouping dialect the spec selects: a
+// namespace grouping folds through the resolved interpreter's rollup
+// (groupNodesByNamespace, B2); a whole-dimension tag grouping and a field
+// grouping both bucket by raw facet value (groupNodes) — the difference is only
+// in how the buckets RENDER (sectionsForSpec), not how nodes bucket.
+func groupForSpec(
+	nodes []cgp.Node, spec groupSpec, anchor string, declared []string,
+	inlineType bool, present func(cgp.Node) []cgp.BoxAtom, interp cgp.TagInterpreter,
+) (ungrouped []objectLine, buckets []bucket, err error) {
+	if spec.Kind == groupKindTagNamespace {
+		return groupNodesByNamespace(nodes, spec, anchor, interp, inlineType, present)
+	}
+	ungrouped, buckets = groupNodes(nodes, spec, anchor, declared, inlineType, present)
+	return ungrouped, buckets, nil
+}
+
+// sectionsForSpec renders a grouping's buckets in the dialect the spec selects: a
+// FIELD grouping keeps the `<spec>=` heading + `## =<value>` buckets
+// (dimensionSections); a TAG grouping is hoisted to bare `## <value>` buckets
+// with no parent heading (tagDimensionSections).
+func sectionsForSpec(spec groupSpec, buckets []bucket, baseDepth int) []section {
+	if spec.Kind == groupKindField {
+		return dimensionSections(spec, buckets, baseDepth)
+	}
+	return tagDimensionSections(buckets, baseDepth)
 }
 
 // describedFacets probes the plugin's declared facet schema, nil for a plugin
@@ -148,20 +205,24 @@ func describedFacets(lister cgp.RootLister) []cgp.NodeTypeFacets {
 	return nil
 }
 
-// unsupportedGroupingError rejects a resolved spec the generate path cannot yet
-// render, returning nil for one it fully supports. B1 RESOLVES a namespace
-// grouping (groupKindTagNamespace) but nothing downstream consumes
-// Kind/Namespace yet — groupNodes would silently bucket by the WHOLE tag
-// dimension under a `<namespace>=` heading, a mislabeled document. So a
-// namespace spec is rejected loudly until B2 wires the rollup grouping and B3
-// the continuation-heading rendering. Field and tag-whole-dimension groupings
-// work today and pass through. REMOVED by B3 (RFC 0019 tags slice 3,
-// cutting-garden#231).
-func unsupportedGroupingError(spec groupSpec, groupBy string) error {
-	if spec.Kind == groupKindTagNamespace {
+// requireNamespaceInterpreter rejects a namespace grouping whose resolved
+// interpreter declares no namespaces — the naive (exact-match) interpreter —
+// with a clear, actionable message naming the interpreter and pointing at the
+// [tags] config, rather than surfacing the interpreter's raw "declares no
+// namespaces". A capable interpreter (dodder-hyphen) probes clean and returns
+// nil. The probe uses an empty tag set: naive rejects any non-empty namespace
+// regardless of tags, dodder-hyphen returns an empty membership set. Removes the
+// need for buildDocument to distinguish the naive error downstream (RFC 0019
+// tags slice 3 B3, cutting-garden#231).
+func requireNamespaceInterpreter(
+	interp cgp.TagInterpreter, interpName, groupBy string, spec groupSpec,
+) error {
+	if _, err := interp.Buckets(nil, spec.Namespace); err != nil {
 		return errors.BadRequestf(
-			"organize: namespace grouping (--group-by %s) is not yet supported — "+
-				"tags slice 3 B2/B3 wire the rollup grouping + rendering", groupBy,
+			"organize: namespace grouping (--group-by %s) needs a tag interpreter "+
+				"that declares namespaces, but dimension %q uses the %q interpreter; "+
+				"set [tags] interpreter = dodder-hyphen",
+			groupBy, spec.Dim, interpName,
 		)
 	}
 	return nil
@@ -215,6 +276,26 @@ func dimensionSections(spec groupSpec, buckets []bucket, baseDepth int) []sectio
 	secs = append(secs, section{Depth: baseDepth, Term: spec.String() + "="})
 	for _, bk := range buckets {
 		secs = append(secs, section{Depth: baseDepth + 1, Term: "=" + bk.Value, Lines: bk.Lines})
+	}
+	return secs
+}
+
+// tagDimensionSections renders a TAG grouping's buckets in the hoisted dialect
+// (RFC 0019 tags slice 3 B3): a bare `## <value>` heading per bucket with NO
+// parent dimension heading (the spec lives in the `_group_by` envelope directive)
+// and NO `=` value prefix. The buckets sit at baseDepth+1 — the SAME depth a
+// field grouping's `## =<value>` buckets occupy (dimensionSections) — so the
+// hoisting only elides the parent heading, it does not shift the buckets up:
+// spelling 2 renders `## work`, spelling 1 `### work` under its `# !<type>`. A
+// value containing whitespace is quoted (`## "_ inbox"`); the parser unquotes.
+// The bucket value already IS the tag (`work`) or the namespace-rollup segment
+// (`-client`) from groupForSpec.
+func tagDimensionSections(buckets []bucket, baseDepth int) []section {
+	secs := make([]section, 0, len(buckets))
+	for _, bk := range buckets {
+		secs = append(secs, section{
+			Depth: baseDepth + 1, Term: quoteHeadingValue(bk.Value), Lines: bk.Lines,
+		})
 	}
 	return secs
 }
