@@ -96,6 +96,35 @@ func main() {
 			vtodoRich("field4", "Someday idea", 0, "", "", ""))
 	}
 
+	// A fifth calendar dedicated to the organize NAMESPACE-ROLLUP grouping lane
+	// (RFC 0019 tags slice 3 B5, cutting-garden#231): VTODOs whose CATEGORIES form a
+	// `project-*` hyphen hierarchy, so `--group-by project` under the dodder-hyphen
+	// interpreter rolls each task up to its immediate segment — `## -client`
+	// (nsA + nsB) and `## -cutting_garden` (nsC) — while a task tagged outside the
+	// namespace (nsD, `other`) lands ungrouped, above the first bucket heading.
+	// Moving a task between rollup buckets rewrites the reconstructed namespace tag
+	// through the CATEGORIES full-set write (the naive interpreter rejects a
+	// namespace grouping, so the lane sets [tags] interpreter = dodder-hyphen).
+	// OPT-IN via CG_TEST_CALDAV_NS so it never inflates the home-capture object
+	// count caldav.bats asserts against — only the namespace lane, which sets the
+	// env var, sees this calendar.
+	//
+	//   nsA  Acme retainer   CATEGORIES project-client-acme     → -client
+	//   nsB  Baxter audit     CATEGORIES project-client-baxter   → -client
+	//   nsC  CG roadmap       CATEGORIES project-cutting_garden  → -cutting_garden
+	//   nsD  Loose idea       CATEGORIES other                    → ungrouped
+	if os.Getenv("CG_TEST_CALDAV_NS") != "" {
+		srv.AddCalendar("/dav/ns/", "Namespaces")
+		srv.Seed("/dav/ns/nsA.ics", "VTODO",
+			vtodoRich("nsA", "Acme retainer", 0, "", "", "project-client-acme"))
+		srv.Seed("/dav/ns/nsB.ics", "VTODO",
+			vtodoRich("nsB", "Baxter audit", 0, "", "", "project-client-baxter"))
+		srv.Seed("/dav/ns/nsC.ics", "VTODO",
+			vtodoRich("nsC", "CG roadmap", 0, "", "", "project-cutting_garden"))
+		srv.Seed("/dav/ns/nsD.ics", "VTODO",
+			vtodoRich("nsD", "Loose idea", 0, "", "", "other"))
+	}
+
 	// Handshake: the caldav: source arg (opaque form reaches the plain-HTTP
 	// test server) and the calendar path.
 	fmt.Printf("caldav:%s/dav/ %s\n", srv.URL(), srv.CalendarPath)
