@@ -36,12 +36,24 @@ type membershipEdit struct {
 // (cutting-garden#215's `%:allow-deletion` gate) and rejects loudly; an object
 // still present but moved out of every bucket (present ungrouped, empty membership)
 // is a legal remove-all.
+//
+// namespace is EMPTY for a whole-dimension (or field) grouping — the document
+// buckets are then FULL tags and each add/remove folds through the interpreter
+// exactly (`Complete(TagAdd/Remove, "work")`). For a tag-NAMESPACE rollup grouping
+// (`--group-by project` over categories, RFC 0019 §6) namespace is the segment
+// prefix (`project`) and the document buckets are namespace SEGMENTS (`-client`,
+// carrying their leading `-`): an ADD reconstructs the namespace tag
+// (`project-client`, the only unambiguous leaf, §6.2) and a REMOVE enumerates the
+// live tags realizing that rollup subtree and exact-removes each — the interpreter
+// Complete is EXACT (never a subtree remove), so subtree removal is this apply
+// layer's job (§6.2).
 func planMemberships(
 	edited, base document,
 	live []cgp.Node,
 	anchor string,
 	interp cgp.TagInterpreter,
 	dim string,
+	namespace string,
 ) ([]membershipEdit, error) {
 	baseM, err := base.memberships(true)
 	if err != nil {
@@ -97,16 +109,44 @@ func planMemberships(
 
 		liveTags := facetKeys(liveNode.Facets[dim])
 		newTags := liveTags
-		for _, bucket := range removes {
-			newTags, err = interp.Complete(newTags, cgp.TagRemove, bucket)
-			if err != nil {
-				return nil, errors.Wrapf(err, "organize: %s remove %q", id, bucket)
+		if namespace == "" {
+			// Whole-dimension (or field) grouping: buckets ARE full tags, folded
+			// through the interpreter exactly — the byte-for-byte slice-2 behavior.
+			for _, bucket := range removes {
+				newTags, err = interp.Complete(newTags, cgp.TagRemove, bucket)
+				if err != nil {
+					return nil, errors.Wrapf(err, "organize: %s remove %q", id, bucket)
+				}
 			}
-		}
-		for _, bucket := range adds {
-			newTags, err = interp.Complete(newTags, cgp.TagAdd, bucket)
-			if err != nil {
-				return nil, errors.Wrapf(err, "organize: %s add %q", id, bucket)
+			for _, bucket := range adds {
+				newTags, err = interp.Complete(newTags, cgp.TagAdd, bucket)
+				if err != nil {
+					return nil, errors.Wrapf(err, "organize: %s add %q", id, bucket)
+				}
+			}
+		} else {
+			// Namespace rollup: a bucket is a segment (`-client`), not a full tag.
+			// A REMOVE enumerates the live tags under the reconstructed namespace tag
+			// and exact-removes each realizing tag (the subtree, apply-owned §6.2 —
+			// Complete never does a subtree remove); an ADD reconstructs and appends
+			// the namespace tag exactly (the unambiguous leaf).
+			for _, bucket := range removes {
+				fullTag := reconstructNamespaceTag(namespace, bucket)
+				for _, liveTag := range liveTags {
+					if liveTag == fullTag || strings.HasPrefix(liveTag, fullTag+"-") {
+						newTags, err = interp.Complete(newTags, cgp.TagRemove, liveTag)
+						if err != nil {
+							return nil, errors.Wrapf(err, "organize: %s remove %q", id, liveTag)
+						}
+					}
+				}
+			}
+			for _, bucket := range adds {
+				fullTag := reconstructNamespaceTag(namespace, bucket)
+				newTags, err = interp.Complete(newTags, cgp.TagAdd, fullTag)
+				if err != nil {
+					return nil, errors.Wrapf(err, "organize: %s add %q", id, fullTag)
+				}
 			}
 		}
 
@@ -135,6 +175,18 @@ func planMemberships(
 
 	sort.Slice(edits, func(i, j int) bool { return edits[i].URI < edits[j].URI })
 	return edits, nil
+}
+
+// reconstructNamespaceTag rebuilds the full namespace tag a rollup bucket stands
+// for (RFC 0019 §6.2): the bucket carries its leading `-` (dodder-hyphen's
+// continuation form, `-client`), so `"project" + "-client" = "project-client"`.
+// The interpreter always yields a `-<segment>` bucket, so plain concatenation is
+// correct; the leading-`-` guard is defence against a bucket that somehow lacks it.
+func reconstructNamespaceTag(namespace, bucket string) string {
+	if strings.HasPrefix(bucket, "-") {
+		return namespace + bucket
+	}
+	return namespace + "-" + bucket
 }
 
 // facetKeys projects a dimension's live facet values to their tag strings.

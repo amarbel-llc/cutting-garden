@@ -22,6 +22,17 @@ func mustInterp(t *testing.T) cgp.TagInterpreter {
 	return interp
 }
 
+// mustDodderHyphen resolves the dodder-hyphen interpreter — the realistic
+// namespace path (naive rejects namespaces; Complete is exact under either).
+func mustDodderHyphen(t *testing.T) cgp.TagInterpreter {
+	t.Helper()
+	interp, ok := cgp.LookupTagInterpreter("dodder-hyphen")
+	if !ok {
+		t.Fatalf("dodder-hyphen interpreter must be registered")
+	}
+	return interp
+}
+
 // categoriesDoc builds a document that files each id under the buckets it maps to,
 // under one `categories=` dimension heading. An id mapped to no buckets is placed
 // ungrouped (present but no membership) — the legal remove-all shape.
@@ -74,7 +85,7 @@ func TestPlanMemberships_AddOnly(t *testing.T) {
 	edited := categoriesDoc(t, map[string][]string{"t1.ics": {"work", "urgent"}})
 	live := []cgp.Node{liveNode(t, "t1.ics", "work")}
 
-	edits, err := planMemberships(edited, base, live, membershipAnchor, mustInterp(t), membershipDim)
+	edits, err := planMemberships(edited, base, live, membershipAnchor, mustInterp(t), membershipDim, "")
 	if err != nil {
 		t.Fatalf("planMemberships: %v", err)
 	}
@@ -96,7 +107,7 @@ func TestPlanMemberships_RemoveWithSurvivor(t *testing.T) {
 	edited := categoriesDoc(t, map[string][]string{"t1.ics": {"work"}})
 	live := []cgp.Node{liveNode(t, "t1.ics", "work", "urgent")}
 
-	edits, err := planMemberships(edited, base, live, membershipAnchor, mustInterp(t), membershipDim)
+	edits, err := planMemberships(edited, base, live, membershipAnchor, mustInterp(t), membershipDim, "")
 	if err != nil {
 		t.Fatalf("planMemberships: %v", err)
 	}
@@ -115,7 +126,7 @@ func TestPlanMemberships_NoOp(t *testing.T) {
 	edited := categoriesDoc(t, map[string][]string{"t1.ics": {"work", "urgent"}})
 	live := []cgp.Node{liveNode(t, "t1.ics", "work", "urgent")}
 
-	edits, err := planMemberships(edited, base, live, membershipAnchor, mustInterp(t), membershipDim)
+	edits, err := planMemberships(edited, base, live, membershipAnchor, mustInterp(t), membershipDim, "")
 	if err != nil {
 		t.Fatalf("planMemberships: %v", err)
 	}
@@ -133,7 +144,7 @@ func TestPlanMemberships_IdempotentAgainstLive(t *testing.T) {
 	// Live already carries both tags (someone else added urgent concurrently).
 	live := []cgp.Node{liveNode(t, "t1.ics", "work", "urgent")}
 
-	edits, err := planMemberships(edited, base, live, membershipAnchor, mustInterp(t), membershipDim)
+	edits, err := planMemberships(edited, base, live, membershipAnchor, mustInterp(t), membershipDim, "")
 	if err != nil {
 		t.Fatalf("planMemberships: %v", err)
 	}
@@ -154,7 +165,7 @@ func TestPlanMemberships_LastLineVanish(t *testing.T) {
 	}
 	live := []cgp.Node{liveNode(t, "t1.ics", "work")}
 
-	_, err := planMemberships(edited, base, live, membershipAnchor, mustInterp(t), membershipDim)
+	_, err := planMemberships(edited, base, live, membershipAnchor, mustInterp(t), membershipDim, "")
 	if err == nil {
 		t.Fatal("deleting an object's last line must reject")
 	}
@@ -172,7 +183,7 @@ func TestPlanMemberships_LastLineVanishBatched(t *testing.T) {
 	}
 	live := []cgp.Node{liveNode(t, "id1.ics", "work"), liveNode(t, "id2.ics", "urgent")}
 
-	_, err := planMemberships(edited, base, live, membershipAnchor, mustInterp(t), membershipDim)
+	_, err := planMemberships(edited, base, live, membershipAnchor, mustInterp(t), membershipDim, "")
 	if err == nil {
 		t.Fatal("two deleted last lines must reject")
 	}
@@ -190,7 +201,7 @@ func TestPlanMemberships_RemoveAllLegal(t *testing.T) {
 	edited := categoriesDoc(t, map[string][]string{"t1.ics": {}})
 	live := []cgp.Node{liveNode(t, "t1.ics", "work")}
 
-	edits, err := planMemberships(edited, base, live, membershipAnchor, mustInterp(t), membershipDim)
+	edits, err := planMemberships(edited, base, live, membershipAnchor, mustInterp(t), membershipDim, "")
 	if err != nil {
 		t.Fatalf("remove-all must be legal: %v", err)
 	}
@@ -199,5 +210,71 @@ func TestPlanMemberships_RemoveAllLegal(t *testing.T) {
 	}
 	if len(edits[0].NewTags) != 0 {
 		t.Errorf("NewTags = %v, want empty (all tags removed)", edits[0].NewTags)
+	}
+}
+
+// TestPlanMemberships_NamespaceAdd pins the namespace-rollup ADD reconstruction
+// (RFC 0019 §6.2, #231 slice 3 B4): filing an object under rollup bucket `-client`
+// reconstructs the namespace tag `project-client` (the unambiguous leaf) against
+// namespace `project` and appends it exactly.
+func TestPlanMemberships_NamespaceAdd(t *testing.T) {
+	base := categoriesDoc(t, map[string][]string{"t1.ics": {}})
+	edited := categoriesDoc(t, map[string][]string{"t1.ics": {"-client"}})
+	live := []cgp.Node{liveNode(t, "t1.ics")} // no categories tags yet
+
+	edits, err := planMemberships(edited, base, live, membershipAnchor, mustDodderHyphen(t), membershipDim, "project")
+	if err != nil {
+		t.Fatalf("planMemberships: %v", err)
+	}
+	if len(edits) != 1 {
+		t.Fatalf("edit count = %d, want 1 (%+v)", len(edits), edits)
+	}
+	if !setEqual(edits[0].NewTags, []string{"project-client"}) {
+		t.Errorf("NewTags = %v, want set {project-client}", edits[0].NewTags)
+	}
+}
+
+// TestPlanMemberships_NamespaceRemoveSubtree pins the namespace-rollup REMOVE
+// enumeration (RFC 0019 §6.2, #231 slice 3 B4): leaving rollup bucket `-client`
+// removes EVERY live tag realizing the `project-client` subtree
+// (project-client-acme, project-client-baxter) via exact removal, while an
+// unrelated tag (`other`) survives — the apply layer owns the subtree walk, not
+// the interpreter's exact Complete.
+func TestPlanMemberships_NamespaceRemoveSubtree(t *testing.T) {
+	base := categoriesDoc(t, map[string][]string{"t1.ics": {"-client"}})
+	// t1.ics present ungrouped in edited — a legal remove-all of the -client bucket.
+	edited := categoriesDoc(t, map[string][]string{"t1.ics": {}})
+	live := []cgp.Node{liveNode(t, "t1.ics", "project-client-acme", "project-client-baxter", "other")}
+
+	edits, err := planMemberships(edited, base, live, membershipAnchor, mustDodderHyphen(t), membershipDim, "project")
+	if err != nil {
+		t.Fatalf("planMemberships: %v", err)
+	}
+	if len(edits) != 1 {
+		t.Fatalf("edit count = %d, want 1 (%+v)", len(edits), edits)
+	}
+	if !setEqual(edits[0].NewTags, []string{"other"}) {
+		t.Errorf("NewTags = %v, want set {other} (whole project-client subtree removed)", edits[0].NewTags)
+	}
+}
+
+// TestPlanMemberships_NamespaceAddKeepsSiblings pins that a namespace ADD only
+// appends the reconstructed leaf and leaves an existing sibling-namespace tag
+// (project-sales) untouched: filing under `-client` while already under `-sales`
+// yields both project-sales and project-client.
+func TestPlanMemberships_NamespaceAddKeepsSiblings(t *testing.T) {
+	base := categoriesDoc(t, map[string][]string{"t1.ics": {"-sales"}})
+	edited := categoriesDoc(t, map[string][]string{"t1.ics": {"-sales", "-client"}})
+	live := []cgp.Node{liveNode(t, "t1.ics", "project-sales")}
+
+	edits, err := planMemberships(edited, base, live, membershipAnchor, mustDodderHyphen(t), membershipDim, "project")
+	if err != nil {
+		t.Fatalf("planMemberships: %v", err)
+	}
+	if len(edits) != 1 {
+		t.Fatalf("edit count = %d, want 1 (%+v)", len(edits), edits)
+	}
+	if !setEqual(edits[0].NewTags, []string{"project-sales", "project-client"}) {
+		t.Errorf("NewTags = %v, want set {project-sales, project-client}", edits[0].NewTags)
 	}
 }

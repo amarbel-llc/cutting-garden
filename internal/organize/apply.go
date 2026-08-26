@@ -145,7 +145,7 @@ func (cmd *Organize) applyDocument(
 			return false, err
 		}
 		return cmd.applyMemberships(
-			ctx, edited, base, liveNodes, lister, dim, cfg.Tags.Interpreter,
+			ctx, edited, base, liveNodes, lister, dim, spec.Namespace, cfg.Tags.Interpreter,
 			commit, interactive, color,
 		)
 	}
@@ -521,21 +521,23 @@ func (cmd *Organize) applyMemberships(
 	liveNodes []cgp.Node,
 	lister cgp.RootLister,
 	dim string,
+	namespace string,
 	tagsOverride string,
 	commit, interactive, color bool,
 ) (committed bool, err error) {
 	// Resolve the grouped dimension's tag interpreter from the field's declared
 	// default plus the global [tags] config override (RFC 0019 §4, #231 slice 3).
-	// For whole-dimension categories grouping dodder-hyphen folds identically to
-	// naive (its whole-dimension Buckets and exact Complete match naive's); the
-	// observable difference only appears in namespace grouping and transitive
-	// matching (later slices), so this wires SELECTION, not a behavior change here.
+	// namespace (spec.Namespace) is "" for a whole-dimension grouping — buckets are
+	// full tags, folded exactly (the slice-2 behavior, identical under naive and
+	// dodder-hyphen) — and the segment prefix (`project`) for a namespace rollup, in
+	// which planMemberships reconstructs the add tag and enumerates the remove
+	// subtree (RFC 0019 §6.2, #231 slice 3 B4).
 	interp, _, err := interpreterForDimension(lister, dim, tagsOverride)
 	if err != nil {
 		return false, err
 	}
 
-	memberships, err := planMemberships(edited, base, liveNodes, edited.Anchor, interp, dim)
+	memberships, err := planMemberships(edited, base, liveNodes, edited.Anchor, interp, dim, namespace)
 	if err != nil {
 		return false, err
 	}

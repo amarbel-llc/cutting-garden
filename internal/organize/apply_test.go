@@ -281,7 +281,7 @@ func TestApplyMemberships_AddApplies(t *testing.T) {
 	fake := &membershipFake{}
 	cmd := newWithOutput(io.Discard)
 	wrote, err := cmd.applyMemberships(
-		context.Background(), edited, base, live, fake, "categories", "", true, false, false,
+		context.Background(), edited, base, live, fake, "categories", "", "", true, false, false,
 	)
 	if err != nil {
 		t.Fatalf("applyMemberships: %v", err)
