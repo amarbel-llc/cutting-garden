@@ -13,11 +13,7 @@
 # VTODOs carry no STATUS, so they start ungrouped (above the dimension heading);
 # moving task1 under a `## =COMPLETED` bucket ASSIGNS its status through PatchNode.
 #
-# Every step is a WHOLE-DOCUMENT vector (native tags design G16): the generated
-# document, the edited input, and the post-apply re-render are asserted in full,
-# `_base` digests verbatim. That needs a stable server URL, so the testserver is
-# pinned to this file's own port (43101) and the file's tests are serialized
-# (see lib/caldav.bash).
+# Whole-document vectors (G16): pinned port + serialized tests, see lib/caldav.bash.
 
 setup_file() {
   export BATS_NO_PARALLELIZE_WITHIN_FILE=true
@@ -222,6 +218,7 @@ EOF
   assert_success
   refute_output --partial 'task1.ics'
 
+  # The re-render is byte-identical to the generated vector — proves no write.
   generate_doc
 }
 

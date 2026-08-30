@@ -17,9 +17,7 @@
 #   field3 Water plants  PRIORITY 9 (2_nice)
 #   field4 Someday idea  no PRIORITY (3_unspecified)
 #
-# Every organize step is a WHOLE-DOCUMENT vector (native tags design G16) with
-# verbatim `_base` digests, so the testserver is pinned to this file's own port
-# (43105) and the file's tests are serialized (see lib/caldav.bash).
+# Whole-document vectors (G16): pinned port + serialized tests, see lib/caldav.bash.
 
 setup_file() {
   export BATS_NO_PARALLELIZE_WITHIN_FILE=true

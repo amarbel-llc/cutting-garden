@@ -15,9 +15,7 @@
 # TZID-bearing DUE dates in distinct months (sched1 → 2026-08-15,
 # sched2 → 2026-09-10).
 #
-# Every organize step is a WHOLE-DOCUMENT vector (native tags design G16) with
-# verbatim `_base` digests, so the testserver is pinned to this file's own port
-# (43104) and the file's tests are serialized (see lib/caldav.bash).
+# Whole-document vectors (G16): pinned port + serialized tests, see lib/caldav.bash.
 
 setup_file() {
   export BATS_NO_PARALLELIZE_WITHIN_FILE=true
@@ -45,14 +43,15 @@ teardown() {
 
 # bats file_tags=organize
 
-# generate_month runs `organize -group-by date_due:month` and asserts the
-# document in full: the dimension heading persists the FULL resolved spelling
-# (`# date_due:month=`, so a later apply coarsens identically without consulting
-# config, #230), each VTODO sits in its own month bucket, and every box carries
-# the split date_due/time_due atoms (the coarser month heading keeps the
-# day-precise date_due atom).
+# generate_month runs `organize -group-by $1` (default `date_due:month`; a
+# caller passing bare `date_due` under a month config default must land on the
+# SAME vector) and asserts the document in full: the dimension heading persists
+# the FULL resolved spelling (`# date_due:month=`, so a later apply coarsens
+# identically without consulting config, #230), each VTODO sits in its own month
+# bucket, and every box carries the split date_due/time_due atoms (the coarser
+# month heading keeps the day-precise date_due atom).
 generate_month() {
-  run_cg organize -group-by date_due:month "$CAL"
+  run_cg organize -group-by "${1:-date_due:month}" "$CAL"
   assert_success
   assert_output - <<-'EOM'
 	---
@@ -78,18 +77,12 @@ generate_month() {
 
 # Grouping by date_due:month coarsens the day-precise DUEs into their distinct
 # month buckets, and the dimension heading persists the FULL resolved spelling
-# so a later apply coarsens identically without consulting config (#230).
+# so a later apply coarsens identically without consulting config (#230). The
+# same vector pins the read-side field presenter (cutting-garden#47): each
+# VTODO's DUE surfaces as structured date_due/time_due atoms inside the box —
+# the clock is its own editable field (HH-mm), never smuggled into the
+# description trailer (`Book flights` carries no trailing clock).
 function organize_date_month_generate_buckets { # @test
-  generate_month
-}
-
-# The read-side field presenter (cutting-garden#47) surfaces each VTODO's DUE as
-# structured date_due/time_due atoms inside the box — split so the clock is its
-# own editable field (HH-mm), not scraped from the description trailer. Proves
-# the FieldPresenter render end to end against the real binary: the clock lives
-# in its own atom, never smuggled into the trailer (the whole-document vector
-# pins `Book flights` with no trailing clock).
-function organize_date_surfaces_due_atoms { # @test
   generate_month
 }
 
@@ -215,28 +208,9 @@ function organize_date_config_default_month { # @test
 	date_granularity = "month"
 	EOF
 
-  run_cg organize -group-by date_due "$CAL"
-  assert_success
-  assert_output - <<-'EOM'
-	---
-	% generated: `cg organize -group-by date_due:month -query "_terminal=no" caldav:http://127.0.0.1:43104/dav/sched/`
-	- _base = @blake2b256-597yt3y6xyaw6gwzfucwkzxegyyqpqh6ge5e6y5hclaze4c637hq7uzr3c
-	- _anchor = caldav:http://127.0.0.1:43104/dav/sched/
-	- _query = _terminal=no
-	- _type = !caldav-object-vtodo-v1
-	! organize-base-v1
-	---
-
-	# date_due:month=
-
-	## =2026-08
-
-	- [sched1.ics date_due=2026-08-15 time_due=14-30] Book flights
-
-	## =2026-09
-
-	- [sched2.ics date_due=2026-09-10 time_due=16-30] Renew passport
-	EOM
+  # Bare `date_due` under the month default is the SAME vector as an explicit
+  # `date_due:month` — provenance, heading, and `_base` digest included.
+  generate_month date_due
 }
 
 # `list --facets --filter` prefix-matches a date dimension by validated value

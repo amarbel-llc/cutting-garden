@@ -20,9 +20,7 @@
 # fields calendar keeps CATEGORIES groupable-only (never a box atom), so the
 # priority/field-edit lanes' exact box assertions are undisturbed.
 #
-# Every organize step is a WHOLE-DOCUMENT vector (native tags design G16) with
-# verbatim `_base` digests, so the testserver is pinned to this file's own port
-# (43102) and the file's tests are serialized (see lib/caldav.bash).
+# Whole-document vectors (G16): pinned port + serialized tests, see lib/caldav.bash.
 
 setup_file() {
   export BATS_NO_PARALLELIZE_WITHIN_FILE=true

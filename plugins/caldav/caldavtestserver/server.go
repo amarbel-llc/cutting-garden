@@ -106,6 +106,9 @@ func StartAt(calendarPath, addr string) *Server {
 		panic(fmt.Sprintf("caldavtestserver: listen %s: %v", addr, err))
 	}
 	s.httptest = httptest.NewUnstartedServer(http.HandlerFunc(s.handle))
+	// NewUnstartedServer already opened its own ephemeral listener; close it
+	// before swapping in the pinned one so it does not leak.
+	_ = s.httptest.Listener.Close()
 	s.httptest.Listener = listener
 	s.httptest.Start()
 	return s

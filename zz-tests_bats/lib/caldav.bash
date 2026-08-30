@@ -13,7 +13,6 @@
 # It exists because Radicale cannot start under the nix bats sandbox (it
 # calls socket.socketpair(AF_UNIX); amarbel-llc/dodder#117). This server is
 # a pure net/http TCP listener, so it runs in-sandbox.
-
 #
 # An optional $1 pins the server's listen port (CG_TEST_CALDAV_PORT): the
 # organize lanes need it because the server URL lands in the organize
@@ -39,13 +38,7 @@ start_caldav_server() {
   local port="${1:-}"
 
   local stderr_file="$BATS_TEST_TMPDIR/caldav-server.stderr"
-  # Arg-less callers leave CG_TEST_CALDAV_PORT unset (ephemeral port), never
-  # exported empty.
-  if [[ -n $port ]]; then
-    coproc CALDAV_PROC { CG_TEST_CALDAV_PORT="$port" "$bin" 2>"$stderr_file"; }
-  else
-    coproc CALDAV_PROC { "$bin" 2>"$stderr_file"; }
-  fi
+  coproc CALDAV_PROC { CG_TEST_CALDAV_PORT="$port" "$bin" 2>"$stderr_file"; }
   export CALDAV_STDOUT_FD="${CALDAV_PROC[0]}"
   export CALDAV_STDIN_FD="${CALDAV_PROC[1]}"
   export CALDAV_PID="$CALDAV_PROC_PID"
