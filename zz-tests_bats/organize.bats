@@ -73,14 +73,45 @@ generate_doc() {
 	EOM
 }
 
-# write_task1_under writes the edited document to $2: task1's box is pulled out
-# of the ungrouped section and re-filed under the `## =<$1>` bucket, against the
-# generated `_base`.
-write_task1_under() {
-  local value="$1" out="$2"
-  cat >"$out" <<-EOM
+# write_task1_completed writes the edited document to $1: task1's box is pulled
+# out of the ungrouped section and re-filed under the pre-rendered
+# `## =COMPLETED` bucket, against the generated `_base`. The full input document
+# is spelled out (G16) rather than spliced.
+write_task1_completed() {
+  cat >"$1" <<-'EOM'
 	---
-	% generated: \`cg organize -group-by status -query "_terminal=no" caldav:http://127.0.0.1:43101/dav/cal/\`
+	% generated: `cg organize -group-by status -query "_terminal=no" caldav:http://127.0.0.1:43101/dav/cal/`
+	- _base = @blake2b256-tctuw2agyz68ny7knvp3s7z7rkq88pzl4w28frf3343v6wt87uwse3ffes
+	- _anchor = caldav:http://127.0.0.1:43101/dav/cal/
+	- _query = _terminal=no
+	- _type = !caldav-object-vtodo-v1
+	! organize-base-v1
+	---
+
+	- [task2.ics] Walk dog
+
+	# status=
+
+	## =NEEDS-ACTION
+
+	## =IN-PROCESS
+
+	## =COMPLETED
+
+	- [task1.ics] Buy milk
+
+	## =CANCELLED
+	EOM
+}
+
+# write_task1_cancelled is write_task1_completed's sibling: the same edit
+# against the same generated `_base`, but re-filing task1 under `## =CANCELLED`
+# — the conflicting second edit the conflict lane applies after a COMPLETED move
+# has already landed.
+write_task1_cancelled() {
+  cat >"$1" <<-'EOM'
+	---
+	% generated: `cg organize -group-by status -query "_terminal=no" caldav:http://127.0.0.1:43101/dav/cal/`
 	- _base = @blake2b256-tctuw2agyz68ny7knvp3s7z7rkq88pzl4w28frf3343v6wt87uwse3ffes
 	- _anchor = caldav:http://127.0.0.1:43101/dav/cal/
 	- _query = _terminal=no
@@ -99,9 +130,9 @@ write_task1_under() {
 	## =COMPLETED
 
 	## =CANCELLED
+
+	- [task1.ics] Buy milk
 	EOM
-  # Re-file task1 under the target bucket (its heading is pre-rendered).
-  sed -i "s|^## =$value\$|## =$value\n\n- [task1.ics] Buy milk|" "$out"
 }
 
 # assert_task1_completed re-renders the calendar and asserts the "after"
@@ -149,7 +180,7 @@ function organize_generate_emits_envelope { # @test
 function organize_apply_status_move_commits { # @test
   generate_doc
   local edited="$BATS_TEST_TMPDIR/edited.txt"
-  write_task1_under COMPLETED "$edited"
+  write_task1_completed "$edited"
 
   run_cg organize -apply "$edited" -commit
   assert_success
@@ -175,7 +206,7 @@ EOF
 function organize_apply_dry_run_does_not_write { # @test
   generate_doc
   local edited="$BATS_TEST_TMPDIR/edited.txt"
-  write_task1_under COMPLETED "$edited"
+  write_task1_completed "$edited"
 
   run_cg organize -apply "$edited"
   assert_success
@@ -200,7 +231,7 @@ EOF
 function organize_commit_directly_from_stdin_writes { # @test
   generate_doc
   local edited="$BATS_TEST_TMPDIR/edited.txt"
-  write_task1_under COMPLETED "$edited"
+  write_task1_completed "$edited"
 
   run_cg organize -commit-directly <"$edited"
   assert_success
@@ -222,20 +253,31 @@ EOF
 
 # A pinned base whose live state has drifted is a conflict, not a silent clobber:
 # commit one move, then apply a second edit built against the ORIGINAL base — the
-# merge must reject, and the live document still shows only the first move.
+# merge must reject. COMPLETED and CANCELLED are BOTH terminal, so the after-
+# render alone cannot tell a rejected CANCELLED move from a silently applied one
+# (task1 is windowed out either way); the discriminating check is the live
+# status query — task1 is still COMPLETED, never CANCELLED.
 function organize_apply_conflict_rejects { # @test
   generate_doc
 
   local edited_a="$BATS_TEST_TMPDIR/edited_a.txt"
-  write_task1_under COMPLETED "$edited_a"
+  write_task1_completed "$edited_a"
   run_cg organize -apply "$edited_a" -commit
   assert_success
 
   local edited_b="$BATS_TEST_TMPDIR/edited_b.txt"
-  write_task1_under CANCELLED "$edited_b"
+  write_task1_cancelled "$edited_b"
   run_cg organize -apply "$edited_b" -commit
   assert_failure
   assert_output --partial 'conflict'
+
+  run_cg list -query 'status=COMPLETED' "$CAL"
+  assert_success
+  assert_output --partial 'task1.ics'
+
+  run_cg list -query 'status=CANCELLED' "$CAL"
+  assert_success
+  refute_output --partial 'task1.ics'
 
   assert_task1_completed
 }

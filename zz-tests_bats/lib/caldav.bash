@@ -23,7 +23,15 @@
 # (a) pick one no other file uses and (b) serialize its own tests via
 # `setup_file() { export BATS_NO_PARALLELIZE_WITHIN_FILE=true; }` — each test
 # starts its own server on the same port, and stop_caldav_server waits for the
-# previous one to exit first.
+# previous one to exit first. Assigned ports (pick the next free one for a new
+# lane):
+#
+#   43101  organize.bats
+#   43102  organize_tags.bats
+#   43103  organize_ns.bats
+#   43104  organize_date.bats
+#   43105  organize_priority.bats
+#   43106  organize_fields.bats
 
 start_caldav_server() {
   require_bin CG_TEST_CALDAV cutting-garden-caldav-testserver
@@ -31,7 +39,13 @@ start_caldav_server() {
   local port="${1:-}"
 
   local stderr_file="$BATS_TEST_TMPDIR/caldav-server.stderr"
-  coproc CALDAV_PROC { CG_TEST_CALDAV_PORT="$port" "$bin" 2>"$stderr_file"; }
+  # Arg-less callers leave CG_TEST_CALDAV_PORT unset (ephemeral port), never
+  # exported empty.
+  if [[ -n $port ]]; then
+    coproc CALDAV_PROC { CG_TEST_CALDAV_PORT="$port" "$bin" 2>"$stderr_file"; }
+  else
+    coproc CALDAV_PROC { "$bin" 2>"$stderr_file"; }
+  fi
   export CALDAV_STDOUT_FD="${CALDAV_PROC[0]}"
   export CALDAV_STDIN_FD="${CALDAV_PROC[1]}"
   export CALDAV_PID="$CALDAV_PROC_PID"
