@@ -16,7 +16,7 @@ import (
 // document — the exact bytes the end-user is presented and edits:
 //
 //	---
-//	% generated: `cg organize -group-by status caldav:https://…/cal/`
+//	% generated: `cg organize -group-by status= caldav:https://…/cal/`
 //	- _base = @blake2b256-<digest of this doc with the _base line excised>
 //	- _anchor = caldav:https://…/cal/
 //	- _type = !caldav-object-v1            (spelling 2 only)
@@ -52,12 +52,11 @@ const (
 	fieldAnchor  = "_anchor"
 	fieldQuery   = "_query"
 	fieldType    = "_type"
-	// fieldGroupBy is the `- _group-by = <encoding>` envelope directive a TAG
-	// grouping carries (RFC 0019 tags slice 3 B3) — the hoisted dialect's
-	// self-describing spec: `<dim>` for a whole-dimension grouping,
-	// `<dim>/<namespace>` for a namespace grouping. A field grouping never emits
-	// it (its dimension lives in a `# <dim>=` heading instead), so a field
-	// document stays byte-identical to the pre-tags form.
+	// fieldGroupBy is the `- _group-by = <spelling>` envelope directive a TAG
+	// grouping carries (native tags design G10) — the hoisted dialect's spec in
+	// the SAME spelling as the --group-by flag: `(tags)` for the whole tag set,
+	// a bare `project` for a namespace. A field grouping never emits it (its
+	// spelling IS the `# <dim>=` / `# <dim>=(month)` heading).
 	fieldGroupBy = "_group-by"
 )
 
@@ -105,12 +104,13 @@ type document struct {
 	// Type is `- _type` (spelling 2): the type distributed to every object; empty
 	// under spelling 1, where the type is a `# !<type>` heading instead.
 	Type string
-	// GroupBy is `- _group-by`: the TAG grouping's self-describing spec encoding
-	// (RFC 0019 tags slice 3 B3), `<dim>` (whole-dimension) or `<dim>/<namespace>`
-	// (namespace grouping). Empty for a field grouping, which carries its
-	// dimension in a `# <dim>=` heading instead. When set, groupedSpec reconstructs
-	// the groupSpec from this alone (no re-resolution), and the hoisted body has no
-	// parent dimension heading — its buckets are bare `## <value>` headings.
+	// GroupBy is `- _group-by`: the TAG grouping's spelling (design G10), `(tags)`
+	// (the whole tag set) or a bare namespace (`project`). Empty for a field
+	// grouping, which carries its spelling in a `# <dim>=` heading instead. When
+	// set, groupedSpec reads the kind and namespace from it alone; the tag
+	// DIMENSION it applies to is resolved from the plugin at apply time
+	// (resolveTagDimension). The hoisted body has no parent dimension heading —
+	// its buckets are bare `## <value>` headings.
 	GroupBy string
 	// Distributed carries any other bare `- <term>` envelope lines the user
 	// hand-added (RFC 0015 distribution rule) — preserved verbatim on parse.
@@ -125,13 +125,12 @@ type document struct {
 
 func isValueTerm(t string) bool { return strings.HasPrefix(t, "=") }
 
-// isDimTerm reports a dimension partial-term like `status=` (ends with `=`, does
-// not start with one).
+// isDimTerm reports a dimension heading term — the field group-by spelling
+// `status=` or `date_due=(month)` (design G10), read by the group-term parser.
 func isDimTerm(t string) bool {
-	return strings.HasSuffix(t, "=") && !strings.HasPrefix(t, "=")
+	gt, err := parseGroupTerm(t)
+	return err == nil && gt.kind == groupTermField
 }
-
-func dimName(t string) string { return strings.TrimSuffix(t, "=") }
 
 // isTagGrouping reports whether the document uses the hoisted TAG-grouping
 // dialect (RFC 0019 tags slice 3 B3): a `_group-by` directive present, its
@@ -458,50 +457,70 @@ func (doc document) objectLines() []objectLine {
 	return lines
 }
 
-// groupedDimension returns the grouped facet dimension — the `<dim>=` heading
+// groupedDimension returns the grouped field dimension — the `<dim>=` heading
 // term (RFC 0015: the dimension is the heading, not a separate field). Empty when
-// the document has no dimension heading.
+// the document has no dimension heading (or it does not parse).
 func (doc document) groupedDimension() string {
-	for _, s := range doc.Sections {
-		if isDimTerm(s.Term) {
-			return dimName(s.Term)
-		}
+	spec, err := doc.groupedSpec()
+	if err != nil {
+		return ""
 	}
-	return ""
+	return spec.Dim
 }
 
-// groupedSpec recovers the grouped dimension AND, when the heading spells
-// `<dim>:<granularity>=` (a date grouping, cutting-garden#230), the persisted
-// bucket granularity. The document itself carries the granularity so apply
-// coarsens live values exactly as generate did, without consulting config
-// (which may have changed in between). An unknown granularity spelling is a
-// loud bad request — never a silent exact-match degradation. A bare `<dim>=`
-// heading carries none; the zero spec means no dimension heading at all.
+// groupedSpec recovers the document's grouping in the one G10 spelling. A TAG
+// grouping is read from the `_group-by` envelope directive (`(tags)` or a bare
+// namespace) — its tag DIMENSION is left empty for apply to resolve from the
+// plugin. A FIELD grouping is read from its dimension heading, `<dim>=` or, for
+// a date grouping, `<dim>=(<granularity>)` (cutting-garden#230): the document
+// itself carries the granularity so apply coarsens live values exactly as
+// generate did, without consulting config (which may have changed in between).
+// An unknown granularity spelling, or a retired `dim:granularity=` heading, is
+// a loud bad request — never a silent exact-match degradation. The zero spec
+// means no grouping at all.
 func (doc document) groupedSpec() (groupSpec, error) {
-	// A TAG grouping records its whole spec in the `_group-by` envelope directive
-	// (RFC 0019 tags slice 3 B3), self-describing so it reconstructs WITHOUT
-	// re-resolving against a plugin schema — the hoisted body has no `# <dim>=`
-	// heading to read.
 	if doc.isTagGrouping() {
-		return parseGroupByEncoding(doc.GroupBy), nil
+		return parseGroupByEncoding(doc.GroupBy)
 	}
 
-	term := doc.groupedDimension()
-	if term == "" {
-		return groupSpec{}, nil
+	for _, s := range doc.Sections {
+		// Bucket values (`=COMPLETED`) and type headings (`!type`) are never the
+		// dimension heading; anything else must be a group term.
+		if strings.HasPrefix(s.Term, "=") || strings.HasPrefix(s.Term, "!") {
+			continue
+		}
+		gt, err := parseGroupTerm(s.Term)
+		if err != nil {
+			return groupSpec{}, errors.BadRequestf("organize: dimension heading %q: %w", s.Term, err)
+		}
+		if gt.kind != groupTermField {
+			continue
+		}
+		if gt.qualifier == "" {
+			return groupSpec{Dim: gt.name}, nil
+		}
+		g, ok := cgp.ParseDateGranularity(gt.qualifier)
+		if !ok {
+			return groupSpec{}, errors.BadRequestf(
+				"organize: dimension heading %q carries granularity %q; expected "+
+					"year, month, or day", s.Term, gt.qualifier,
+			)
+		}
+		return groupSpec{Dim: gt.name, Granularity: g}, nil
 	}
-	dim, suffix, hasSuffix := strings.Cut(term, ":")
-	if !hasSuffix {
-		return groupSpec{Dim: dim}, nil
+	return groupSpec{}, nil
+}
+
+// hasBuckets reports whether the document has any bucket heading — a section
+// other than a type heading or a field dimension heading.
+func (doc document) hasBuckets() bool {
+	for _, s := range doc.Sections {
+		if strings.HasPrefix(s.Term, "!") || isDimTerm(s.Term) {
+			continue
+		}
+		return true
 	}
-	g, ok := cgp.ParseDateGranularity(suffix)
-	if !ok {
-		return groupSpec{}, errors.BadRequestf(
-			"organize: dimension heading %q carries granularity %q; expected "+
-				"year, month, or day", term+"=", suffix,
-		)
-	}
-	return groupSpec{Dim: dim, Granularity: g}, nil
+	return false
 }
 
 // assignments projects the document into a box-id → bucket-value map: each

@@ -4,7 +4,7 @@
 # cutting-garden#231): `--group-by project` groups the caldav `categories` tag
 # dimension by the `project` NAMESPACE (dodder-hyphen segment hierarchy),
 # rendering the HOISTED continuation-heading dialect — a `- _group-by =
-# categories/project` envelope directive, NO `# categories=` parent heading, and
+# project` envelope directive (the SAME bare spelling as the flag, design G10), NO `# categories=` parent heading, and
 # rollup buckets `## -client` / `## -cutting_garden` (bare, no `=`). Each task
 # rolls up to its immediate segment under `project`: nsA/nsB (project-client-*)
 # to `-client`, nsC (project-cutting_garden) to `-cutting_garden`, while nsD
@@ -59,7 +59,7 @@ teardown() {
 # bats file_tags=organize
 
 # generate_grouped runs `organize -group-by project` and asserts the document in
-# full: the hoisted dialect (a `- _group-by = categories/project` envelope
+# full: the hoisted dialect (a `- _group-by = project` envelope
 # directive, no `# categories=` parent heading, bare `## -<segment>` rollup
 # buckets), the out-of-namespace nsD ungrouped above the first heading, nsA + nsB
 # coalesced under `-client`, and nsC under `-cutting_garden`.
@@ -69,11 +69,11 @@ generate_grouped() {
   assert_output - <<-'EOM'
 	---
 	% generated: `cg organize -group-by project -query "_terminal=no" caldav:http://127.0.0.1:43103/dav/ns/`
-	- _base = @blake2b256-3r4jkz948l7agg3985hkgcahhh4sm290xk82ca84a9szs4ekyvvs3ryhes
+	- _base = @blake2b256-cs4j46rq8ampqf6ltguc6sqmafjc5mr84nkqmpqd8dh5czzhntsq53z4jw
 	- _anchor = caldav:http://127.0.0.1:43103/dav/ns/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
-	- _group-by = categories/project
+	- _group-by = project
 	! organize-base-v1
 	---
 
@@ -91,7 +91,7 @@ generate_grouped() {
 }
 
 # Grouping by the `project` namespace hoists the dialect: a `- _group-by =
-# categories/project` envelope directive, NO `# categories=` parent heading, and
+# project` envelope directive (the SAME bare spelling as the flag, design G10), NO `# categories=` parent heading, and
 # bare `## -<segment>` rollup buckets. project-client-* tasks (nsA, nsB) coalesce
 # under `-client`; project-cutting_garden (nsC) lands under `-cutting_garden`; the
 # out-of-namespace `other` task (nsD) is ungrouped above the first heading.
@@ -114,11 +114,11 @@ function organize_ns_rollup_move_writes_reconstructed_tag { # @test
   cat >"$edited" <<-'EOM'
 	---
 	% generated: `cg organize -group-by project -query "_terminal=no" caldav:http://127.0.0.1:43103/dav/ns/`
-	- _base = @blake2b256-3r4jkz948l7agg3985hkgcahhh4sm290xk82ca84a9szs4ekyvvs3ryhes
+	- _base = @blake2b256-cs4j46rq8ampqf6ltguc6sqmafjc5mr84nkqmpqd8dh5czzhntsq53z4jw
 	- _anchor = caldav:http://127.0.0.1:43103/dav/ns/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
-	- _group-by = categories/project
+	- _group-by = project
 	! organize-base-v1
 	---
 
@@ -156,11 +156,11 @@ EOF
   assert_output - <<-'EOM'
 	---
 	% generated: `cg organize -group-by project -query "_terminal=no" caldav:http://127.0.0.1:43103/dav/ns/`
-	- _base = @blake2b256-9qfenazum39g5ggy0xw000qee809r0amw0qslztzc39y3gagtets89khw4
+	- _base = @blake2b256-pd4fhqncry3g75kxv8hh5h2kxg50vmj9n5a85znartcwz9n6fpxsqvchqm
 	- _anchor = caldav:http://127.0.0.1:43103/dav/ns/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
-	- _group-by = categories/project
+	- _group-by = project
 	! organize-base-v1
 	---
 

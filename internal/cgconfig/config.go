@@ -93,7 +93,7 @@ type OrganizeConfig struct {
 	// DateGranularity is the default bucket granularity for a bare
 	// `--group-by` on a date-kind facet dimension (cutting-garden#230):
 	// "year", "month", or "day". Empty means the built-in default (day).
-	// A `--group-by dim:granularity` suffix always wins over this.
+	// An explicit `--group-by dim=(granularity)` qualifier always wins over this.
 	DateGranularity string `toml:"date_granularity,omitempty"`
 }
 

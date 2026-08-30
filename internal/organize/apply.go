@@ -115,16 +115,17 @@ func (cmd *Organize) applyDocument(
 	if err := rejectTagAtoms(edited); err != nil {
 		return false, err
 	}
-	// The dimension heading carries the whole grouping spec: the bare dimension
-	// AND, for a date grouping, the persisted granularity (`date_due:month=`,
-	// cutting-garden#230) — apply coarsens live values from the document alone,
-	// never from config. The BARE dimension keys the write surface below.
+	// The document carries the whole grouping spec in the G10 spelling: a field
+	// grouping's dimension heading (`# status=`, or `# date_due=(month)` with the
+	// persisted granularity, cutting-garden#230 — apply coarsens live values from
+	// the document alone, never from config), or a tag grouping's `_group-by`
+	// directive. The grouped DIMENSION keys the write surface below; for a tag
+	// grouping it is resolved from the plugin once the anchor's lister is in hand.
 	spec, err := edited.groupedSpec()
 	if err != nil {
 		return false, err
 	}
-	dim := spec.Dim
-	if edited.Anchor == "" || dim == "" {
+	if edited.Anchor == "" || !spec.grouped() {
 		return false, errors.BadRequestf(
 			"organize --apply: document is missing its `- _anchor` field or its " +
 				"grouping (a `# <dim>=` heading or a `- _group-by` directive)",
@@ -150,6 +151,10 @@ func (cmd *Organize) applyDocument(
 	if err != nil {
 		return false, err
 	}
+	if spec, err = resolveTagDimension(spec, lister, edited.GroupBy); err != nil {
+		return false, err
+	}
+	dim := spec.Dim
 	liveNodes, err := selectNodes(ctx, lister, u, edited.Query)
 	if err != nil {
 		return false, errors.Wrapf(err, "organize --apply: re-query live state")
@@ -264,6 +269,26 @@ func (cmd *Organize) applyDocument(
 	}
 	fmt.Fprintf(cmd.output, "organize: wrote %d change(s)\n", len(changes))
 	return true, nil
+}
+
+// resolveTagDimension fills a TAG grouping's Dim from the plugin's designated
+// tag dimension (the first FieldTag field it declares, describedTagDims) — the
+// `_group-by` spelling (`(tags)`, `project`) never names it (design G10). A
+// field grouping passes through untouched; a tag grouping against a plugin
+// declaring no tag dimension is a loud bad request.
+func resolveTagDimension(spec groupSpec, lister cgp.RootLister, groupBy string) (groupSpec, error) {
+	if spec.Kind == groupKindField {
+		return spec, nil
+	}
+	tagDims := describedTagDims(lister)
+	if len(tagDims) == 0 {
+		return groupSpec{}, errors.BadRequestf(
+			"organize --apply: `- %s = %s` is a tag grouping, but the plugin declares "+
+				"no tag dimension", fieldGroupBy, groupBy,
+		)
+	}
+	spec.Dim = tagDims[0]
+	return spec, nil
 }
 
 // planMoves computes the three-way merge, keyed by box id. The stored box ids

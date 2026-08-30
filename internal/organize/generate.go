@@ -19,7 +19,10 @@ import (
 // (runInteractive) paths.
 func (cmd *Organize) buildAndStore(ctx errors.Context, uriStr string) (string, error) {
 	if cmd.GroupBy == "" {
-		return "", errors.BadRequestf("organize <uri> requires --group-by <facet-key>")
+		return "", errors.BadRequestf(
+			"organize <uri> requires --group-by: `(tags)`, a tag namespace (`project`), " +
+				"a field (`status=`), or a date field at a granularity (`date_due=(month)`)",
+		)
 	}
 
 	u, lister, err := command_components.ResolveRootListerPlugin(uriStr)
@@ -28,19 +31,18 @@ func (cmd *Organize) buildAndStore(ctx errors.Context, uriStr string) (string, e
 	}
 
 	// Resolve the group-by spelling ONCE, at generate time (cutting-garden#230):
-	// a bare date dimension takes the `[organize] date_granularity` config
-	// default, then day, and the resolved spelling is persisted in the
-	// document's dimension heading — so a later --apply never consults config
-	// (which may change in between). The config was already loaded and warned
-	// about by Run's LoadAndInjectConfig; this re-read just fetches the value.
+	// a bare `<dim>=` on a date dimension takes the `[organize] date_granularity`
+	// config default, then day, and the resolved spelling is persisted in the
+	// document's dimension heading (`# date_due=(month)`) — so a later --apply
+	// never consults config (which may change in between). The config was
+	// already loaded and warned about by Run's LoadAndInjectConfig; this re-read
+	// just fetches the value.
 	cfg, err := command_components.LoadDefaultConfig(nil)
 	if err != nil {
 		return "", err
 	}
-	spec, err := parseGroupSpec(
-		cmd.GroupBy, describedFacets(lister), describedTagDims(lister),
-		cfg.Organize.DateGranularity,
-	)
+	dims := describedFacets(lister)
+	spec, err := parseGroupSpec(cmd.GroupBy, dims, describedTagDims(lister), cfg.Organize.DateGranularity)
 	if err != nil {
 		return "", err
 	}
@@ -87,6 +89,9 @@ func (cmd *Organize) buildAndStore(ctx errors.Context, uriStr string) (string, e
 	if err != nil {
 		return "", err
 	}
+	if err := rejectEmptyNamespace(spec, doc, dims); err != nil {
+		return "", err
+	}
 	// Provenance records what the user actually typed for the URI (e.g. the
 	// short alias), even though _anchor is the canonical common prefix — but
 	// echoes the RESOLVED group-by spelling, so a config-defaulted granularity
@@ -120,10 +125,10 @@ func (cmd *Organize) runGenerate(ctx errors.Context, uriStr string) error {
 // buildDocument assembles the organize document from the selected nodes. A
 // single-type node set uses the flatter envelope-`_type` spelling (spelling 2);
 // a multi-type set uses per-type `# !<type>` headings (spelling 1). A FIELD
-// grouping renders the grouped dimension as a `<spec>=` heading (the full
-// `dim:granularity` spelling for a date grouping, cutting-garden#230) with a
-// `=<value>` bucket per declared / observed value. A TAG grouping (RFC 0019 tags
-// slice 3 B3) is hoisted: no parent dimension heading, its spec recorded in the
+// grouping renders the grouped dimension as its spelling heading (`# status=`,
+// or `# date_due=(month)` for a date grouping, cutting-garden#230) with a
+// `=<value>` bucket per declared / observed value. A TAG grouping (design G10)
+// is hoisted: no parent dimension heading, its spelling recorded in the
 // `_group-by` envelope directive, and its buckets bare `## <value>` headings.
 // interp is the resolved tag interpreter — required for a namespace grouping
 // (groupKindTagNamespace), nil otherwise.
@@ -268,13 +273,13 @@ func boxAtomPresenter(lister cgp.RootLister) func(cgp.Node) []cgp.BoxAtom {
 	return nil
 }
 
-// dimensionSections renders the grouped dimension as a `<spec>=` heading at
+// dimensionSections renders the grouped dimension as its spelling heading at
 // baseDepth followed by a `=<value>` bucket heading (baseDepth+1) per bucket.
-// The heading term carries the FULL spec spelling (`date_due:month=`) — the
+// The heading term IS the spec spelling (`status=`, `date_due=(month)`) — the
 // persisted granularity a later apply recovers via groupedSpec (#230).
 func dimensionSections(spec groupSpec, buckets []bucket, baseDepth int) []section {
 	secs := make([]section, 0, len(buckets)+1)
-	secs = append(secs, section{Depth: baseDepth, Term: spec.String() + "="})
+	secs = append(secs, section{Depth: baseDepth, Term: spec.String()})
 	for _, bk := range buckets {
 		secs = append(secs, section{
 			Depth: baseDepth + 1, Term: "=" + trellis.QuoteIfNeeded(bk.Value), Lines: bk.Lines,
@@ -284,7 +289,7 @@ func dimensionSections(spec groupSpec, buckets []bucket, baseDepth int) []sectio
 }
 
 // tagDimensionSections renders a TAG grouping's buckets in the hoisted dialect
-// (RFC 0019 tags slice 3 B3): a bare `## <value>` heading per bucket with NO
+// (design G10): a bare `## <value>` heading per bucket with NO
 // parent dimension heading (the spec lives in the `_group-by` envelope directive)
 // and NO `=` value prefix. The buckets sit at baseDepth+1 — the SAME depth a
 // field grouping's `## =<value>` buckets occupy (dimensionSections) — so the

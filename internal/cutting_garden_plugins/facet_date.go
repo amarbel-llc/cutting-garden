@@ -7,7 +7,7 @@ package cutting_garden_plugins
 // grouping and prefix filtering from these helpers.
 
 // DateGranularity is a bucket coarseness for a FacetDate dimension: the
-// --group-by suffix spelling ("date_due:month") and the config default.
+// --group-by qualifier spelling ("date_due=(month)") and the config default.
 type DateGranularity string
 
 const (

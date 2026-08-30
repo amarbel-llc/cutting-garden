@@ -2,12 +2,12 @@
 
 # The organize date-granularity lane (FDR 0023 Slice 2b, cutting-garden#230):
 # `date_due` is a prefix-granular FacetDate dimension. Grouping a calendar by
-# `date_due:month` coarsens the day-precise DUEs into `## =<YYYY-MM>` buckets,
+# `date_due=(month)` coarsens the day-precise DUEs into `## =<YYYY-MM>` buckets,
 # and moving an object between them RESCHEDULES it — the FacetWriteApplier
 # splices the target month into the object's existing DUE, preserving the
 # day-of-month, clock time, and TZID. A bare `date_due` group-by resolves the
 # `[organize] date_granularity` config default, then the built-in day; the
-# document heading always carries the RESOLVED spelling (`date_due:month=`).
+# document heading always carries the RESOLVED spelling (`date_due=(month)`).
 # `list --facets --filter` prefix-matches date values by validated shape.
 # Replaces the retired `month` dimension's lane (the old organize_month.bats).
 #
@@ -43,27 +43,27 @@ teardown() {
 
 # bats file_tags=organize
 
-# generate_month runs `organize -group-by $1` (default `date_due:month`; a
+# generate_month runs `organize -group-by $1` (default `date_due=(month)`; a
 # caller passing bare `date_due` under a month config default must land on the
 # SAME vector) and asserts the document in full: the dimension heading persists
-# the FULL resolved spelling (`# date_due:month=`, so a later apply coarsens
+# the FULL resolved spelling (`# date_due=(month)`, so a later apply coarsens
 # identically without consulting config, #230), each VTODO sits in its own month
 # bucket, and every box carries the split date_due/time_due atoms (the coarser
 # month heading keeps the day-precise date_due atom).
 generate_month() {
-  run_cg organize -group-by "${1:-date_due:month}" "$CAL"
+  run_cg organize -group-by "${1:-date_due=(month)}" "$CAL"
   assert_success
   assert_output - <<-'EOM'
 	---
-	% generated: `cg organize -group-by date_due:month -query "_terminal=no" caldav:http://127.0.0.1:43104/dav/sched/`
-	- _base = @blake2b256-597yt3y6xyaw6gwzfucwkzxegyyqpqh6ge5e6y5hclaze4c637hq7uzr3c
+	% generated: `cg organize -group-by date_due=(month) -query "_terminal=no" caldav:http://127.0.0.1:43104/dav/sched/`
+	- _base = @blake2b256-kuaxfueta7yl0n5ceqfacpnvt9zpkcrk0t5uwgz9fhp3vejp09fst9zgap
 	- _anchor = caldav:http://127.0.0.1:43104/dav/sched/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
 	! organize-base-v1
 	---
 
-	# date_due:month=
+	# date_due=(month)
 
 	## =2026-08
 
@@ -75,7 +75,7 @@ generate_month() {
 	EOM
 }
 
-# Grouping by date_due:month coarsens the day-precise DUEs into their distinct
+# Grouping by date_due=(month) coarsens the day-precise DUEs into their distinct
 # month buckets, and the dimension heading persists the FULL resolved spelling
 # so a later apply coarsens identically without consulting config (#230). The
 # same vector pins the read-side field presenter (cutting-garden#47): each
@@ -95,15 +95,15 @@ function organize_date_month_reschedule_preserves_datetime { # @test
   local edited="$BATS_TEST_TMPDIR/edited.txt"
   cat >"$edited" <<-'EOM'
 	---
-	% generated: `cg organize -group-by date_due:month -query "_terminal=no" caldav:http://127.0.0.1:43104/dav/sched/`
-	- _base = @blake2b256-597yt3y6xyaw6gwzfucwkzxegyyqpqh6ge5e6y5hclaze4c637hq7uzr3c
+	% generated: `cg organize -group-by date_due=(month) -query "_terminal=no" caldav:http://127.0.0.1:43104/dav/sched/`
+	- _base = @blake2b256-kuaxfueta7yl0n5ceqfacpnvt9zpkcrk0t5uwgz9fhp3vejp09fst9zgap
 	- _anchor = caldav:http://127.0.0.1:43104/dav/sched/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
 	! organize-base-v1
 	---
 
-	# date_due:month=
+	# date_due=(month)
 
 	## =2026-08
 
@@ -144,19 +144,19 @@ EOF
 
   # The re-rendered document: both tasks under 2026-09, sched1's date_due atom
   # spliced to the 15th of the new month, the emptied 2026-08 bucket gone.
-  run_cg organize -group-by date_due:month "$CAL"
+  run_cg organize -group-by 'date_due=(month)' "$CAL"
   assert_success
   assert_output - <<-'EOM'
 	---
-	% generated: `cg organize -group-by date_due:month -query "_terminal=no" caldav:http://127.0.0.1:43104/dav/sched/`
-	- _base = @blake2b256-s5yyw3yj8td4xa0vusng32lqn45uxnkwr65n8skwlu0u87qch5ushj0nd2
+	% generated: `cg organize -group-by date_due=(month) -query "_terminal=no" caldav:http://127.0.0.1:43104/dav/sched/`
+	- _base = @blake2b256-m9syr55ukvvauq6ey2wwl0hcvdkgatx69xluu4fjyk3mz9z00z3qmpeqxu
 	- _anchor = caldav:http://127.0.0.1:43104/dav/sched/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
 	! organize-base-v1
 	---
 
-	# date_due:month=
+	# date_due=(month)
 
 	## =2026-09
 
@@ -165,7 +165,7 @@ EOF
 	EOM
 }
 
-# A bare `--group-by date_due` with no config resolves the built-in DAY default
+# A bare `--group-by date_due=` with no config resolves the built-in DAY default
 # (the identity — no silent coarsening): one bucket heading per distinct day,
 # with the resolved day granularity persisted explicitly in the heading.
 # cutting-garden#229: at day granularity the heading shows the date in FULL, so
@@ -173,19 +173,19 @@ EOF
 # (which the heading does not show) is kept. Contrast the month lane above,
 # where the coarser heading keeps the day-precise date_due atom.
 function organize_date_bare_groups_by_day { # @test
-  run_cg organize -group-by date_due "$CAL"
+  run_cg organize -group-by date_due= "$CAL"
   assert_success
   assert_output - <<-'EOM'
 	---
-	% generated: `cg organize -group-by date_due:day -query "_terminal=no" caldav:http://127.0.0.1:43104/dav/sched/`
-	- _base = @blake2b256-yc2dj6eakdgp7pgadcgwkhye6ukcp0umyffc405xgn4jh7dg4q5qhlk4au
+	% generated: `cg organize -group-by date_due=(day) -query "_terminal=no" caldav:http://127.0.0.1:43104/dav/sched/`
+	- _base = @blake2b256-sv5d5z5w5dnwxtn3k9gp78cwgepp0dfsnn0ftajr9gwc5ltr90wqh6jfx6
 	- _anchor = caldav:http://127.0.0.1:43104/dav/sched/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
 	! organize-base-v1
 	---
 
-	# date_due:day=
+	# date_due=(day)
 
 	## =2026-08-15
 
@@ -198,7 +198,7 @@ function organize_date_bare_groups_by_day { # @test
 }
 
 # With `[organize] date_granularity = "month"` in config.toml, a bare
-# `--group-by date_due` resolves to month at GENERATE time — and the document
+# `--group-by date_due=` resolves to month at GENERATE time — and the document
 # heading carries the resolved spelling, not the bare one, so a later apply
 # never re-consults (possibly changed) config.
 function organize_date_config_default_month { # @test
@@ -209,8 +209,8 @@ function organize_date_config_default_month { # @test
 	EOF
 
   # Bare `date_due` under the month default is the SAME vector as an explicit
-  # `date_due:month` — provenance, heading, and `_base` digest included.
-  generate_month date_due
+  # `date_due=(month)` — provenance, heading, and `_base` digest included.
+  generate_month date_due=
 }
 
 # `list --facets --filter` prefix-matches a date dimension by validated value

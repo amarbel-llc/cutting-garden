@@ -35,6 +35,16 @@ revised: |
     (whole-dimension) or `<dim>/<namespace>` (namespace rollup); headings nest
     arbitrarily deep; a blank line follows every heading. The `%:` operational-directive machinery
     (deletion gates, dry-run) is not exercised by Slice 2a and is untouched here.
+  2026-08-30 — ONE group-by grammar (native tags design G9/G10, slice 1 task
+    4): the `--group-by` flag, the `_group-by` envelope directive, and the
+    dimension heading share one trellis-parsed spelling — `(tags)` (the whole
+    tag set), a bare name (a tag NAMESPACE, never a field), `<dim>=` (a
+    field), `<dim>=(year|month|day)` (a date field at a granularity). The
+    slice-3 `<dim>` / `<dim>/<namespace>` `_group-by` encodings and the #230
+    `<dim>:<granularity>=` heading are RETIRED and reject with a hint. A tag
+    grouping's `_group-by` carries the spelling only; the tag DIMENSION it
+    applies to is the plugin's designated tag field, resolved at generate and
+    again at apply.
 ---
 
 # The organize document dialect
@@ -64,7 +74,7 @@ document — the exact bytes presented to and edited by the end-user:
 
 ```
 ---
-% generated: `cg organize -group-by status caldav:https://…/cal/`
+% generated: `cg organize -group-by status= caldav:https://…/cal/`
 - _base = @blake2b256-<digest of this doc with the _base line excised>
 - _anchor = caldav:https://…/cal/
 - _type = !caldav-object-vtodo-v1      (spelling 2 only; see below)
@@ -91,28 +101,51 @@ document — the exact bytes presented to and edited by the end-user:
   distribution). `_base` self-reference: the stored blob is this document with the
   `- _base` line excised; the emitted document re-inserts the pin (§base-blob shape).
 - **Body: a heading ladder of arbitrary depth.** An object's effective terms are
-  the union of its heading path. For a FIELD grouping the grouped dimension IS a
-  `<dim>=` heading (there is NO `_group-by` field); each `=<value>` sub-heading is
-  a bucket; the plugin's declared `FacetWrite.Values` are pre-rendered as empty
-  buckets so a caller moves an object under an existing state heading. A blank line
-  follows every heading.
-- **Tag grouping (hoisted, tags slice 3 / RFC 0019).** Grouping by a multi-valued
-  TAG dimension (e.g. caldav `categories`) omits the `<dim>=` heading entirely — a
-  tag grouping is just its buckets, so the grouped spec is recorded instead in a
-  `- _group-by = <encoding>` envelope directive that apply reads in place of the
-  heading: `<dim>` for a whole-dimension grouping, `<dim>/<namespace>` for a
-  namespace rollup. Buckets are bare `## <value>` headings with no `=` value
-  prefix; a value bearing whitespace (or a `"`) is quoted as a Go string literal
-  (`## "_ inbox"`) so it stays on one physical line, and the parser unquotes it. An
-  object appears under one `## <tag>` heading per tag it carries (multi-membership).
-  A namespace rollup buckets by segment prefix (`## -client`, `## -cutting_garden`):
+  the union of its heading path. For a FIELD grouping the grouped dimension IS its
+  spelling heading — `<dim>=`, or `<dim>=(<granularity>)` for a date field (there
+  is NO `_group-by` field); each `=<value>` sub-heading is a bucket; the plugin's
+  declared `FacetWrite.Values` are pre-rendered as empty buckets so a caller moves
+  an object under an existing state heading. A blank line follows every heading.
+- **One group-by grammar (native tags design G9/G10).** The `--group-by` flag,
+  the `_group-by` envelope directive, and the dimension heading share ONE
+  spelling, read by the trellis term parser (RFC 0014): a bare identifier is
+  always a tag; a field is only ever addressed with its operator; a
+  parenthetical is a meta qualifier.
+
+  | spelling | meaning | persisted as |
+  |---|---|---|
+  | `(tags)` | the type's whole tag set (one bucket per tag) | `- _group-by = (tags)`; buckets `## <tag>` |
+  | `project` | tag namespace `project` (bare = tag; `project-client` drills deeper) | `- _group-by = project`; buckets `## -client` |
+  | `status=` | field grouping | heading `# status=`; buckets `## =<value>` |
+  | `date_due=(month)` | date field at month granularity (`year`/`month`/`day`; bare `date_due=` resolves `[organize] date_granularity`, then day) | heading `# date_due=(month)` |
+
+  The retired spellings — `categories` (bare, for the whole tag dimension),
+  `categories/project` (the envelope encoding), and `date_due:month` /
+  `# date_due:month=` — are loud bad requests naming the new spelling. A bare
+  name whose namespace matches nothing, when a field of that name exists, fails
+  suggesting `<name>=`. The `<dim>=` partial term is deliberately NOT a trellis
+  grammar production (see §Headings, "Dependent-dimension sugar"): the `=`
+  suffix is split off and the field name parsed as one trellis identifier;
+  every other spelling is one whole trellis term.
+- **Tag grouping (hoisted, tags slice 3 / RFC 0019).** Grouping by the tag set
+  or a namespace omits the dimension heading entirely — a tag grouping is just
+  its buckets, so the grouping is recorded instead in the `- _group-by`
+  envelope directive (the spelling above, verbatim) that apply reads in place of
+  the heading. The directive names no dimension: the tag DIMENSION it applies
+  to is the plugin's designated tag field (caldav `categories`), resolved from
+  the plugin schema at generate and again at apply. Buckets are bare
+  `## <value>` headings with no `=` value prefix; a value bearing whitespace or
+  a reserved rune is quoted as a trellis String (`## "_ inbox"`) so it stays on
+  one physical line, and the parser unquotes it. An object appears under one
+  `## <tag>` heading per tag it carries (multi-membership). A namespace rollup
+  buckets by segment prefix (`## -client`, `## -cutting_garden`):
 
   ```
   ---
   - _base = @blake2b256-…
   - _anchor = caldav:https://…/cal/
   - _type = !caldav-object-v1
-  - _group-by = categories/project
+  - _group-by = project
   ! organize-base-v1
   ---
 
@@ -184,13 +217,13 @@ and appears ONLY on the data plane — `_genre`/`_body` on object nodes,
   `_base` is invalid — organize documents are ephemeral action, not durable
   artifacts; no legacy mode. (Divergence: dodder's live-only fork-overlay is
   superseded.)
-- `- _group-by = <encoding>` — the generation grouping, present ONLY for a
-  hoisted TAG grouping (tags slice 3 / RFC 0019), which has no `<dim>=` heading to
-  recover the dimension from: `<dim>` for a whole-dimension grouping,
-  `<dim>/<namespace>` for a namespace rollup. A FIELD grouping carries NO
-  `_group-by` — its dimension is recovered from the `<dim>=` heading (see
-  §"The base blob's shape"). A substrate MAY declare additional `_`-fields on
-  its organize-document type.
+- `- _group-by = <spelling>` — the generation grouping, present ONLY for a
+  hoisted TAG grouping (tags slice 3 / RFC 0019), which has no dimension heading
+  to recover it from: `(tags)` for the whole tag set, a bare name for a
+  namespace rollup (design G10 — the same spelling as the `--group-by` flag). A
+  FIELD grouping carries NO `_group-by` — its spelling IS the `<dim>=` /
+  `<dim>=(<granularity>)` heading (see §"The base blob's shape"). A substrate
+  MAY declare additional `_`-fields on its organize-document type.
 
 **`%` / `%:` lines — the OPERATIONAL plane.** NOT content-addressed; **stripped
 from the base entirely** — they configure *how the apply behaves*, not what the
@@ -258,9 +291,10 @@ fields, and a field shadowing a harness-reserved name is a type error.
   object = the union of its heading path, composed by the laddering
   rules below.
 - **Dependent-dimension sugar**: a heading may be a `PartialTerm`
-  (`date=` — field + operator, no value); descendant headings may be
-  dependent values (`=2026-07-22` — operator + value). Resolution
-  composes them (`date="2026-07-22"`). This lives at **runtime
+  (`date=` — field + operator, no value; or `date=(month)` — the value
+  slot holding a granularity qualifier, RFC 0014 `Qualifier`); descendant
+  headings may be dependent values (`=2026-07-22` — operator + value).
+  Resolution composes them (`date="2026-07-22"`). This lives at **runtime
   resolution, deliberately not the grammar**: a grammar-level spelling
   would be context-sensitive and break the PEG, so `PartialTerm`s parse
   context-freely everywhere and validate only in heading position (the
@@ -362,8 +396,8 @@ Three inputs: **base** (dereferenced `_base` — what the user was shown),
 Surfaced by the first implementation (dodder #374(b)): the base cannot
 contain its own digest. The resolution: **the base blob is an
 `organize-base-v1` hyphence envelope whose metadata carries only
-generation parameters** (`- _group-by = <encoding>` for a hoisted tag grouping —
-a field grouping carries none, its dimension being the `<dim>=` heading; provenance
+generation parameters** (`- _group-by = <spelling>` for a hoisted tag grouping —
+a field grouping carries none, its spelling being the `<dim>=` heading; provenance
 comment; type line last) **and whose body is the outer document's
 canonical text with exactly one line excised: `- _base = @…`** (the
 self-reference). Generation renders the full document without `_base`,

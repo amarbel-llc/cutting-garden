@@ -492,7 +492,7 @@ debug-caldav-expand-probe CAL='93fe8ff4-b027-4c5e-a961-96ec236624d8' START='2026
 #
 # render the organize document for the caldav testserver's Personal calendar
 [group('debug')]
-debug-organize-fixture GROUP_BY='status': debug-build-go
+debug-organize-fixture GROUP_BY='status=': debug-build-go
     #!/usr/bin/env bash
     set -euo pipefail
     root="{{ justfile_directory() }}"
@@ -502,14 +502,14 @@ debug-organize-fixture GROUP_BY='status': debug-build-go
     coproc SRV { .tmp/cutting-garden-caldav-testserver; }
     read -r -u "${SRV[0]}" source_url _calpath
     cal="${source_url%/dav/}/dav/cal/"
-    echo "# cg organize -group-by {{ GROUP_BY }} $cal" >&2
+    echo "# cg organize -group-by '{{ GROUP_BY }}' $cal" >&2
     echo '# ---------------------------------------------------------------' >&2
-    .tmp/cutting-garden organize -group-by {{ GROUP_BY }} "$cal"
+    .tmp/cutting-garden organize -group-by '{{ GROUP_BY }}' "$cal"
     exec {SRV[1]}>&- || true
 
 # End-to-end reschedule-by-move against the testserver's /dav/sched/ calendar
 # (FDR 0023 Slice 2b, cutting-garden#230): generate the document grouped by
-# date_due:month, move sched1 from 2026-08 to 2026-09, apply with --commit, and
+# date_due=(month), move sched1 from 2026-08 to 2026-09, apply with --commit, and
 # GET the object back to show the DUE splice preserved its day/clock/TZID. The
 # host-run twin of zz-tests_bats/organize_date.bats — WRITES to the throwaway
 # in-memory server only (nothing persists past the coproc).
@@ -526,8 +526,8 @@ debug-organize-month-reschedule: debug-build-go
     read -r -u "${SRV[0]}" source_url _calpath
     cal="${source_url%/dav/}/dav/sched/"
     doc=".tmp/organize-month.txt"
-    echo "# cg organize -group-by date_due:month $cal" >&2
-    .tmp/cutting-garden organize -group-by date_due:month "$cal" | tee "$doc"
+    echo "# cg organize -group-by 'date_due=(month)' $cal" >&2
+    .tmp/cutting-garden organize -group-by 'date_due=(month)' "$cal" | tee "$doc"
     line="$(grep sched1.ics "$doc")"
     awk -v ln="$line" -v h='## =2026-09' '
       $0 == ln { next }
@@ -559,9 +559,9 @@ debug-organize-fields: debug-build-go
     read -r -u "${SRV[0]}" source_url _calpath
     cal="${source_url%/dav/}/dav/fields/"
     doc=".tmp/organize-fields.txt"
-    echo "# cg organize -group-by priority $cal" >&2
+    echo "# cg organize -group-by priority= $cal" >&2
     echo '# ---------------------------------------------------------------' >&2
-    .tmp/cutting-garden organize -group-by priority "$cal" | tee "$doc"
+    .tmp/cutting-garden organize -group-by priority= "$cal" | tee "$doc"
     echo '# --- field edit: field1 location=Bank -> location=Office ---' >&2
     sed 's/location=Bank/location=Office/' "$doc" >"$doc.edited"
     .tmp/cutting-garden organize -apply "$doc.edited" -commit
@@ -624,9 +624,9 @@ debug-organize-literal:
     read -r -u "${SRV[0]}" source_url _calpath
     cal="${source_url%/dav/}/dav/lit/"
     doc=".tmp/organize-literal.txt"
-    echo "# cg organize -group-by categories $cal" >&2
+    echo "# cg organize -group-by '(tags)' $cal" >&2
     echo '# ---------------------------------------------------------------' >&2
-    "$cg" organize -group-by categories "$cal" | tee "$doc"
+    "$cg" organize -group-by '(tags)' "$cal" | tee "$doc"
     echo '# --- refusal: bare tag token (expect exit 64) ---' >&2
     sed 's/^- \[lit2.ics location=Bank\]/- [lit2.ics work-x location=Bank]/' "$doc" >"$doc.tagged"
     "$cg" organize -apply "$doc.tagged" -commit || echo "exit=$?"
@@ -645,8 +645,145 @@ debug-organize-literal:
     echo '# --- GET lit2.ics (expect CATEGORIES:_ inbox) ---' >&2
     curl -fsS "${source_url#caldav:}lit/lit2.ics"
     echo '# --- re-render ---' >&2
-    "$cg" organize -group-by categories "$cal"
+    "$cg" organize -group-by '(tags)' "$cal"
     exec {SRV[1]}>&- || true
+
+# Regenerate EVERY organize lane's whole-document vectors (native tags slice 1,
+# design G10/G16): for each zz-tests_bats/organize*.bats lane, start the caldav
+# testserver on the lane's pinned port (lib/caldav.bash), render the generate
+# document, apply the lane's edit, and re-render — printing each document under a
+# `### <lane> <label>` banner so the `_base` digests can be pasted into the
+# heredocs after a dialect change (the group-by spelling reaches provenance and
+# thus the digest). Also drives the organize_groupby.bats rejections. Uses the
+# NIX-built CLI (see debug-organize-literal for why) and a throwaway XDG config
+# dir so the host's config.toml never leaks into the bare-date default. WRITES to
+# the throwaway in-memory servers only.
+[group('debug')]
+debug-organize-vectors:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    root="{{ justfile_directory() }}"
+    cd "$root"
+    nix build .#default --out-link .tmp/cg-result
+    cg=.tmp/cg-result/bin/cutting-garden
+    nix develop --command go build -o .tmp/cutting-garden-caldav-testserver ./cmd/cutting-garden-caldav-testserver
+    nix develop --command madder init -encryption none .default 2>/dev/null || true
+    export XDG_CONFIG_HOME="$root/.tmp/organize-vectors-config"
+    rm -rf "$XDG_CONFIG_HOME"; mkdir -p "$XDG_CONFIG_HOME/cutting-garden"
+    dodder_hyphen() { printf '[tags]\ninterpreter = "dodder-hyphen"\n' >"$XDG_CONFIG_HOME/cutting-garden/config.toml"; }
+    no_config() { rm -f "$XDG_CONFIG_HOME/cutting-garden/config.toml"; }
+    start_srv() { # port [ENV=1 ...]
+      local port="$1"; shift
+      coproc SRV { env CG_TEST_CALDAV_PORT="$port" "$@" .tmp/cutting-garden-caldav-testserver; }
+      read -r -u "${SRV[0]}" source_url _calpath
+      home="${source_url%/dav/}/dav/"
+    }
+    stop_srv() { exec {SRV[1]}>&- || true; wait "$SRV_PID" 2>/dev/null || true; }
+    banner() { printf '\n### %s\n' "$*"; }
+    gen() { # label cal spec
+      banner "$1"; "$cg" organize -group-by "$3" "$2" | tee ".tmp/organize-vectors-$1.txt"
+    }
+    apply() { banner "$1 apply"; "$cg" organize -apply "$2" -commit; }
+    reject() { banner "$1"; "$cg" organize -group-by "$3" "$2" || echo "exit=$?"; }
+    # move_line DOC HEADING LINE_REGEX: delete the object line matching the regex
+    # and re-insert it right after HEADING (+ blank), in $DOC.edited. The regex
+    # reaches awk through -v, which re-processes backslash escapes — so spell the
+    # box's `[` as `.` (`^- .task1.ics`), never `\[`.
+    move_line() {
+      awk -v h="$2" -v re="$3" '
+        $0 ~ re && !moved { moved = 1; next }
+        { print }
+        $0 == h { print ""; print saved }
+      ' saved="$(grep -E "$3" "$1")" "$1" >"$1.edited"
+    }
+
+    no_config
+    start_srv 43101
+    cal="${home}cal/"
+    gen organize-generate "$cal" 'status='
+    move_line .tmp/organize-vectors-organize-generate.txt '## =COMPLETED' '^- .task1.ics'
+    apply organize .tmp/organize-vectors-organize-generate.txt.edited
+    gen organize-after "$cal" 'status='
+    stop_srv
+
+    start_srv 43102 CG_TEST_CALDAV_FIELDS=1
+    cal="${home}fields/"
+    gen tags-generate "$cal" '(tags)'
+    move_line .tmp/organize-vectors-tags-generate.txt '## errand' '^- .field3.ics'
+    apply tags .tmp/organize-vectors-tags-generate.txt.edited
+    gen tags-after "$cal" '(tags)'
+    stop_srv
+
+    dodder_hyphen
+    start_srv 43103 CG_TEST_CALDAV_NS=1
+    cal="${home}ns/"
+    gen ns-generate "$cal" 'project'
+    move_line .tmp/organize-vectors-ns-generate.txt '## -cutting_garden' '^- .nsA.ics'
+    apply ns .tmp/organize-vectors-ns-generate.txt.edited
+    gen ns-after "$cal" 'project'
+    stop_srv
+    no_config
+
+    start_srv 43104 CG_TEST_CALDAV_SCHED=1
+    cal="${home}sched/"
+    gen date-day "$cal" 'date_due='
+    gen date-month "$cal" 'date_due=(month)'
+    move_line .tmp/organize-vectors-date-month.txt '## =2026-09' '^- .sched1.ics'
+    apply date .tmp/organize-vectors-date-month.txt.edited
+    gen date-after "$cal" 'date_due=(month)'
+    stop_srv
+
+    start_srv 43105 CG_TEST_CALDAV_FIELDS=1
+    cal="${home}fields/"
+    gen priority-generate "$cal" 'priority='
+    move_line .tmp/organize-vectors-priority-generate.txt '## =0_must' '^- .field2.ics'
+    apply priority-must .tmp/organize-vectors-priority-generate.txt.edited
+    gen priority-after-must "$cal" 'priority='
+    stop_srv
+    start_srv 43105 CG_TEST_CALDAV_FIELDS=1
+    cal="${home}fields/"
+    move_line .tmp/organize-vectors-priority-generate.txt '## =3_unspecified' '^- .field1.ics'
+    apply priority-unspecified .tmp/organize-vectors-priority-generate.txt.edited
+    gen priority-after-unspecified "$cal" 'priority='
+    stop_srv
+
+    start_srv 43106 CG_TEST_CALDAV_FIELDS=1
+    cal="${home}fields/"
+    gen fields-generate "$cal" 'priority='
+    sed 's/location=Bank/location=Office/' .tmp/organize-vectors-fields-generate.txt >.tmp/organize-vectors-fields-generate.txt.edited
+    apply fields-office .tmp/organize-vectors-fields-generate.txt.edited
+    gen fields-after-office "$cal" 'priority='
+    stop_srv
+    start_srv 43106 CG_TEST_CALDAV_FIELDS=1
+    cal="${home}fields/"
+    sed 's/Pay rent$/Pay rent now/' .tmp/organize-vectors-fields-generate.txt >.tmp/organize-vectors-fields-generate.txt.edited
+    apply fields-now .tmp/organize-vectors-fields-generate.txt.edited
+    gen fields-after-now "$cal" 'priority='
+    stop_srv
+
+    start_srv 43107 CG_TEST_CALDAV_LIT=1
+    cal="${home}lit/"
+    gen literal-generate "$cal" '(tags)'
+    { grep -v '^- \[lit2.ics ' .tmp/organize-vectors-literal-generate.txt; printf -- '- [lit2.ics location=Bank] Read book\n'; } >.tmp/organize-vectors-literal-generate.txt.edited
+    apply literal .tmp/organize-vectors-literal-generate.txt.edited
+    gen literal-after "$cal" '(tags)'
+    stop_srv
+
+    dodder_hyphen
+    start_srv 43108 CG_TEST_CALDAV_FIELDS=1 CG_TEST_CALDAV_SCHED=1 CG_TEST_CALDAV_NS=1
+    gen groupby-tags "${home}fields/" '(tags)'
+    gen groupby-namespace "${home}ns/" 'project'
+    gen groupby-field "${home}fields/" 'status='
+    gen groupby-date-month "${home}sched/" 'date_due=(month)'
+    gen groupby-date-year "${home}sched/" 'date_due=(year)'
+    reject groupby-reject-colon "${home}sched/" 'date_due:month'
+    reject groupby-reject-bare-tagdim "${home}fields/" 'categories'
+    reject groupby-reject-slash "${home}fields/" 'categories/project'
+    reject groupby-reject-bare-field "${home}fields/" 'status'
+    reject groupby-reject-value "${home}fields/" 'status=x'
+    reject groupby-reject-qualifier "${home}fields/" '(foo)'
+    stop_srv
+    no_config
 
 # Drop into an interactive shell in a throwaway tempdir with a fresh madder store
 # and the Fastmail caldav creds (CALDAV_USERNAME/PASSWORD) exported — the manual
@@ -673,7 +810,7 @@ debug-caldav-shell:
     echo "# tempdir: $tmp (fresh .default store via profile madder)" >&2
     echo "# creds loaded: CALDAV_USERNAME=$CALDAV_USERNAME; \$CG_CALDAV_HOME is set" >&2
     echo "# try:  cg list \$CG_CALDAV_HOME" >&2
-    echo "#       cg organize -group-by status \$CG_CALDAV_HOME<uid>/" >&2
+    echo "#       cg organize -group-by status= \$CG_CALDAV_HOME<uid>/" >&2
     exec "${SHELL:-fish}"
 
 # Render (dry-run, READ-ONLY on the server) the organize document for a LIVE
@@ -686,7 +823,7 @@ debug-caldav-shell:
 #
 # render the organize document for a live Fastmail calendar (dry-run)
 [group('debug')]
-debug-organize-live CAL='' GROUP_BY='status': debug-build-go
+debug-organize-live CAL='' GROUP_BY='status=': debug-build-go
     #!/usr/bin/env bash
     set -euo pipefail
     set +x
@@ -704,9 +841,9 @@ debug-organize-live CAL='' GROUP_BY='status': debug-build-go
       .tmp/cutting-garden list "$home"
     else
       cal="${home}{{ CAL }}/"
-      echo "# cg organize -group-by {{ GROUP_BY }} $cal" >&2
+      echo "# cg organize -group-by '{{ GROUP_BY }}' $cal" >&2
       echo '# ---------------------------------------------------------------' >&2
-      .tmp/cutting-garden organize -group-by {{ GROUP_BY }} "$cal"
+      .tmp/cutting-garden organize -group-by '{{ GROUP_BY }}' "$cal"
     fi
 
 # DRY-RUN --apply against a LIVE Fastmail calendar: generate the organize
@@ -717,7 +854,7 @@ debug-organize-live CAL='' GROUP_BY='status': debug-build-go
 #
 # dry-run --apply against a live Fastmail calendar (no writes)
 [group('debug')]
-debug-organize-live-apply CAL='zz-ax-vtodo-playground' GROUP_BY='status' VALUE='COMPLETED': debug-build-go
+debug-organize-live-apply CAL='zz-ax-vtodo-playground' GROUP_BY='status=' VALUE='COMPLETED': debug-build-go
     #!/usr/bin/env bash
     set -euo pipefail
     set +x
@@ -732,7 +869,7 @@ debug-organize-live-apply CAL='zz-ax-vtodo-playground' GROUP_BY='status' VALUE='
     cal="caldav:https://caldav.fastmail.com/dav/calendars/user/${CALDAV_USERNAME}/{{ CAL }}/"
     gen="$(mktemp)"; edited="$(mktemp)"
     trap 'rm -f "$gen" "$edited"' EXIT
-    .tmp/cutting-garden organize -group-by {{ GROUP_BY }} "$cal" >"$gen"
+    .tmp/cutting-garden organize -group-by '{{ GROUP_BY }}' "$cal" >"$gen"
     first="$(awk '/^- \[/ {print; exit}' "$gen")"
     if [[ -z "$first" ]]; then echo "# no objects to move in $cal" >&2; exit 0; fi
     awk -v line="$first" -v h='## ={{ VALUE }}' '
@@ -745,7 +882,7 @@ debug-organize-live-apply CAL='zz-ax-vtodo-playground' GROUP_BY='status' VALUE='
     .tmp/cutting-garden organize -apply "$edited"
 
 # INTERACTIVE organize against a LIVE Fastmail calendar, exercising the default
-# interactive round-trip: a bare `organize <cal> -group-by status` on a TTY
+# interactive round-trip: a bare `organize <cal> -group-by status=` on a TTY
 # generates the document, opens it in $EDITOR so you move object lines between
 # `## =VALUE` buckets, and applies on save. Dry-run by default (prints intended
 # writes + a temp-file path to re-apply, PUTs nothing); pass COMMIT=1 to write.
@@ -754,7 +891,7 @@ debug-organize-live-apply CAL='zz-ax-vtodo-playground' GROUP_BY='status' VALUE='
 #
 # interactively edit + apply the organize document for a live Fastmail calendar
 [group('debug')]
-debug-organize-live-edit CAL='zz-ax-vtodo-playground' GROUP_BY='status' COMMIT='':
+debug-organize-live-edit CAL='zz-ax-vtodo-playground' GROUP_BY='status=' COMMIT='':
     #!/usr/bin/env bash
     set -euo pipefail
     set +x
@@ -771,9 +908,9 @@ debug-organize-live-edit CAL='zz-ax-vtodo-playground' GROUP_BY='status' COMMIT='
     # No stdout redirect: cg detects the TTY and drives the interactive
     # generate -> $EDITOR -> apply round-trip itself.
     if [[ -n '{{ COMMIT }}' ]]; then
-      .tmp/cutting-garden organize -group-by {{ GROUP_BY }} -commit "$cal"
+      .tmp/cutting-garden organize -group-by '{{ GROUP_BY }}' -commit "$cal"
     else
-      .tmp/cutting-garden organize -group-by {{ GROUP_BY }} "$cal"
+      .tmp/cutting-garden organize -group-by '{{ GROUP_BY }}' "$cal"
     fi
 
 # Capture a live jira: NODE (READ-ONLY) into a throwaway store, emitting the

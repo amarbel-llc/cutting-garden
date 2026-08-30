@@ -6,7 +6,8 @@
 // Invocation shapes:
 //
 //	organize <uri> <group-by> [--query <trellis>]           interactive (TTY) / generate (pipe)
-//	  (<group-by> may be positional as shown, or the --group-by <facet> flag)
+//	  (<group-by> may be positional as shown, or the --group-by flag: `(tags)`,
+//	  `project`, `status=`, `date_due=(month)` — native tags design G10)
 //	organize --apply <path> [--commit|--dry-run]            apply an edited document
 //	organize --commit-directly < doc                        apply from stdin, committing
 //
@@ -52,13 +53,13 @@ type Organize struct {
 	// Query is an optional trellis query (RFC 0014) selecting the nodes to
 	// organize; empty means the anchor's enriched child listing.
 	Query string
-	// GroupBy is the dimension the document groups by (required to generate): a
-	// facet/field dimension, a tag dimension, or a tag namespace (RFC 0019 tags
-	// slice 3). A date-kind field dimension may carry a bucket-granularity suffix
-	// (`date_due:month`, one of year/month/day; cutting-garden#230); bare it
-	// resolves the `[organize] date_granularity` config default, then day. A
-	// trailing `=` (`dim=`) forces the field reading of a name that is also a tag
-	// namespace.
+	// GroupBy is the grouping the document is built around (required to
+	// generate), in the one spelling the `_group-by` directive and the dimension
+	// heading share (native tags design G10): `(tags)` for the type's whole tag
+	// set, a bare name for a tag namespace (`project`, RFC 0019), `<dim>=` for a
+	// field, or `<dim>=(year|month|day)` for a date field at a bucket granularity
+	// (cutting-garden#230; a bare `<dim>=` on a date field resolves the
+	// `[organize] date_granularity` config default, then day).
 	GroupBy string
 	// Apply, when set, switches to apply mode: the path of an edited document
 	// to merge and write, or "-" for stdin. The anchor, group-by, and query are
@@ -103,7 +104,8 @@ func (*Organize) GetDescription() command.Description {
 	return command.Description{
 		Short: "reorganize a plugin's nodes by editing a faceted document",
 		Long: "Generates an editable document that groups a plugin's nodes " +
-			"by a facet dimension, pinning the pre-edit state as a content-" +
+			"by a field (`status=`, `date_due=(month)`), its whole tag set " +
+			"(`(tags)`), or a tag namespace (`project`), pinning the pre-edit state as a content-" +
 			"addressed base; you move object lines between headings and apply " +
 			"the result, which three-way-merges the edits against the base and " +
 			"the re-queried live state and writes each move through the " +
@@ -123,10 +125,10 @@ func (cmd *Organize) SetFlagDefinitions(flagSet interfaces.CLIFlagDefinitions) {
 		&cmd.GroupBy,
 		"group-by",
 		"",
-		"dimension to group the nodes by: a facet dimension (optional "+
-			":year|month|day granularity for dates), a tag dimension or tag "+
-			"namespace (bare, e.g. `project` → rollup), or `dim=` to force the "+
-			"field reading (required to generate)",
+		"grouping to build the document around (required to generate): `(tags)` "+
+			"for the whole tag set, a bare tag namespace (`project` → rollup), "+
+			"`dim=` for a field, or `dim=(year|month|day)` for a date field at "+
+			"that granularity",
 	)
 	flagSet.StringVar(
 		&cmd.Apply,

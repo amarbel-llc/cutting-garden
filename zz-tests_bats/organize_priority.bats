@@ -39,17 +39,17 @@ teardown() {
 
 # bats file_tags=organize
 
-# generate_priority runs `organize -group-by priority` and asserts the document
+# generate_priority runs `organize -group-by priority=` (the field spelling, design G10) and asserts the document
 # in full: the four bands pre-rendered urgency-first, each task under its own
 # band, every box surfacing its redundant priority atom (the heading/atom overlap
 # #229 tracks) plus location/status where present.
 generate_priority() {
-  run_cg organize -group-by priority "$CAL"
+  run_cg organize -group-by priority= "$CAL"
   assert_success
   assert_output - <<-'EOM'
 	---
-	% generated: `cg organize -group-by priority -query "_terminal=no" caldav:http://127.0.0.1:43105/dav/fields/`
-	- _base = @blake2b256-s4q5ertf9nmhp27axwvxsxdf9dw6ayugjhlw7vv9m73qznty9chsmzsmla
+	% generated: `cg organize -group-by priority= -query "_terminal=no" caldav:http://127.0.0.1:43105/dav/fields/`
+	- _base = @blake2b256-pvsu4xx8ayy480jscwkmcn5da9haypl98w8jtu4uh67lnk3hrm7qxsvmt0
 	- _anchor = caldav:http://127.0.0.1:43105/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -93,8 +93,8 @@ function organize_priority_band_move_rewrites { # @test
   local edited="$BATS_TEST_TMPDIR/edited.txt"
   cat >"$edited" <<-'EOM'
 	---
-	% generated: `cg organize -group-by priority -query "_terminal=no" caldav:http://127.0.0.1:43105/dav/fields/`
-	- _base = @blake2b256-s4q5ertf9nmhp27axwvxsxdf9dw6ayugjhlw7vv9m73qznty9chsmzsmla
+	% generated: `cg organize -group-by priority= -query "_terminal=no" caldav:http://127.0.0.1:43105/dav/fields/`
+	- _base = @blake2b256-pvsu4xx8ayy480jscwkmcn5da9haypl98w8jtu4uh67lnk3hrm7qxsvmt0
 	- _anchor = caldav:http://127.0.0.1:43105/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -138,12 +138,12 @@ EOF
   assert_success
   assert_output --partial 'field2.ics'
 
-  run_cg organize -group-by priority "$CAL"
+  run_cg organize -group-by priority= "$CAL"
   assert_success
   assert_output - <<-'EOM'
 	---
-	% generated: `cg organize -group-by priority -query "_terminal=no" caldav:http://127.0.0.1:43105/dav/fields/`
-	- _base = @blake2b256-6pcxtgqndw97kcj7af40vqje5ql85saafxppwxyx30z4c2asfy2qtvvz0n
+	% generated: `cg organize -group-by priority= -query "_terminal=no" caldav:http://127.0.0.1:43105/dav/fields/`
+	- _base = @blake2b256-f496ypxfpmc2064m0u2jakm4x723zg75m5vlphey05rscr5egk4skdwtr5
 	- _anchor = caldav:http://127.0.0.1:43105/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -178,8 +178,8 @@ function organize_priority_unspecified_clears { # @test
   local edited="$BATS_TEST_TMPDIR/edited.txt"
   cat >"$edited" <<-'EOM'
 	---
-	% generated: `cg organize -group-by priority -query "_terminal=no" caldav:http://127.0.0.1:43105/dav/fields/`
-	- _base = @blake2b256-s4q5ertf9nmhp27axwvxsxdf9dw6ayugjhlw7vv9m73qznty9chsmzsmla
+	% generated: `cg organize -group-by priority= -query "_terminal=no" caldav:http://127.0.0.1:43105/dav/fields/`
+	- _base = @blake2b256-pvsu4xx8ayy480jscwkmcn5da9haypl98w8jtu4uh67lnk3hrm7qxsvmt0
 	- _anchor = caldav:http://127.0.0.1:43105/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -221,12 +221,12 @@ EOF
   assert_output --partial 'LOCATION:Bank'
   assert_output --partial 'STATUS:NEEDS-ACTION'
 
-  run_cg organize -group-by priority "$CAL"
+  run_cg organize -group-by priority= "$CAL"
   assert_success
   assert_output - <<-'EOM'
 	---
-	% generated: `cg organize -group-by priority -query "_terminal=no" caldav:http://127.0.0.1:43105/dav/fields/`
-	- _base = @blake2b256-gwx98hhywlx2sulqfjccr3ygsg5fe6rqd7yd68t8p77pucy3q8wqqw4w4v
+	% generated: `cg organize -group-by priority= -query "_terminal=no" caldav:http://127.0.0.1:43105/dav/fields/`
+	- _base = @blake2b256-xhs82xfh0yx6g4tty7s8yw80c3wy0gcujz9cqhwwdrnjww845g6q8rn63r
 	- _anchor = caldav:http://127.0.0.1:43105/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1

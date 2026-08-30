@@ -43,20 +43,20 @@ teardown() {
 
 # The generated document's `_base` digest, and the digest after lit2 has moved
 # into the `"_ inbox"` bucket.
-BASE_GENERATED=blake2b256-m5wr5rw94rmypsz26p070dsrwlaf6y98uafe7kncxdl9ww86wnusrv4p5y
-BASE_MOVED=blake2b256-7a5dxlhh4fdx7pvrj6njjjrd05gatzc7nx5zm6uemg4xvxg8aywquszy42
+BASE_GENERATED=blake2b256-tp85mz32plvghw88vgtktz6yqqpa9zjytfxqvqlz5knxj5dfuadsfw6009
+BASE_MOVED=blake2b256-n05uwrrjky9jzdew4t94mxk8svs4x8ucfwmmkj938q882fzvxnus9knnt8
 
-# envelope_header prints the `-group-by categories` document's hyphence envelope
+# envelope_header prints the `-group-by (tags)` document's hyphence envelope
 # pinned at `_base` $1 — the part every document in this lane shares.
 envelope_header() {
   cat <<-EOM
 	---
-	% generated: \`cg organize -group-by categories -query "_terminal=no" caldav:http://127.0.0.1:43107/dav/lit/\`
+	% generated: \`cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:43107/dav/lit/\`
 	- _base = @$1
 	- _anchor = caldav:http://127.0.0.1:43107/dav/lit/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
-	- _group-by = categories
+	- _group-by = (tags)
 	! organize-base-v1
 	---
 	EOM
@@ -69,12 +69,12 @@ lit_doc() {
   cat
 }
 
-# generate_grouped runs `organize -group-by categories` and asserts the document
+# generate_grouped runs `organize -group-by (tags)` and asserts the document
 # in full: the untagged lit2 ungrouped, and lit1 under the QUOTED `## "_ inbox"`
 # bucket — its CATEGORIES value carries whitespace, so the heading spells it as a
 # trellis String.
 generate_grouped() {
-  run_cg organize -group-by categories "$CAL"
+  run_cg organize -group-by '(tags)' "$CAL"
   assert_success
   assert_output "$(
     lit_doc "$BASE_GENERATED" <<-'EOM'
@@ -189,7 +189,7 @@ EOF
   assert_success
   assert_output --partial 'CATEGORIES:_ inbox'
 
-  run_cg organize -group-by categories "$CAL"
+  run_cg organize -group-by '(tags)' "$CAL"
   assert_success
   assert_output "$(
     lit_doc "$BASE_MOVED" <<-'EOM'

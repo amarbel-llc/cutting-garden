@@ -37,16 +37,16 @@ teardown() {
 
 # bats file_tags=organize
 
-# generate_fields runs `organize -group-by priority` and asserts the document in
+# generate_fields runs `organize -group-by priority=` (the field spelling, design G10) and asserts the document in
 # full; its field1 box surfaces the editable location/status/priority atoms +
 # SUMMARY trailer.
 generate_fields() {
-  run_cg organize -group-by priority "$CAL"
+  run_cg organize -group-by priority= "$CAL"
   assert_success
   assert_output - <<-'EOM'
 	---
-	% generated: `cg organize -group-by priority -query "_terminal=no" caldav:http://127.0.0.1:43106/dav/fields/`
-	- _base = @blake2b256-dvhce5xqj6ece5w8m4r4qrqkhfs9fwywjuwytgregd2qjf55t4gspan0z4
+	% generated: `cg organize -group-by priority= -query "_terminal=no" caldav:http://127.0.0.1:43106/dav/fields/`
+	- _base = @blake2b256-xgw8lhk2ddufzv8jz2ntsvc4syyzl4umy2vr57ezwzyn4hzd294s8tuczj
 	- _anchor = caldav:http://127.0.0.1:43106/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -79,8 +79,8 @@ write_field1_edited() {
   local box="$1" out="$2"
   cat >"$out" <<-EOM
 	---
-	% generated: \`cg organize -group-by priority -query "_terminal=no" caldav:http://127.0.0.1:43106/dav/fields/\`
-	- _base = @blake2b256-dvhce5xqj6ece5w8m4r4qrqkhfs9fwywjuwytgregd2qjf55t4gspan0z4
+	% generated: \`cg organize -group-by priority= -query "_terminal=no" caldav:http://127.0.0.1:43106/dav/fields/\`
+	- _base = @blake2b256-xgw8lhk2ddufzv8jz2ntsvc4syyzl4umy2vr57ezwzyn4hzd294s8tuczj
 	- _anchor = caldav:http://127.0.0.1:43106/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -111,12 +111,12 @@ write_field1_edited() {
 # of the location edit in full: field1's box now reads location=Office in its
 # unchanged 0_must bucket, and the `_base` pin moved with the content.
 assert_field1_office() {
-  run_cg organize -group-by priority "$CAL"
+  run_cg organize -group-by priority= "$CAL"
   assert_success
   assert_output - <<-'EOM'
 	---
-	% generated: `cg organize -group-by priority -query "_terminal=no" caldav:http://127.0.0.1:43106/dav/fields/`
-	- _base = @blake2b256-ds4f8w92rpvu69uknkg748xdv0vc0e93xhpksccxederq4e4s7xssznydf
+	% generated: `cg organize -group-by priority= -query "_terminal=no" caldav:http://127.0.0.1:43106/dav/fields/`
+	- _base = @blake2b256-nyq9xyypqrfawnw3mcchz00shpjh09klzvdz7a7c7lg9m2v5k2xq6hvfrj
 	- _anchor = caldav:http://127.0.0.1:43106/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -190,12 +190,12 @@ EOF
   assert_success
   assert_output --partial 'SUMMARY:Pay rent now'
 
-  run_cg organize -group-by priority "$CAL"
+  run_cg organize -group-by priority= "$CAL"
   assert_success
   assert_output - <<-'EOM'
 	---
-	% generated: `cg organize -group-by priority -query "_terminal=no" caldav:http://127.0.0.1:43106/dav/fields/`
-	- _base = @blake2b256-xknyqykj8dwheke548ydh3mzkqyhgv3hvym9lh9728htpxwxezjqlvk092
+	% generated: `cg organize -group-by priority= -query "_terminal=no" caldav:http://127.0.0.1:43106/dav/fields/`
+	- _base = @blake2b256-40hkm2ygpa98t2wyntxrnkf40n6thpvv4gu4cy4nsx0uu0kqm2lq86qstz
 	- _anchor = caldav:http://127.0.0.1:43106/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1

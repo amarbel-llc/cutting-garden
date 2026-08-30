@@ -11,7 +11,7 @@ import (
 )
 
 // tagWholeDoc is a representative hoisted TAG-whole-dimension document: the
-// `_group-by = categories` directive, NO parent dimension heading, and bare
+// `_group-by = (tags)` directive, NO parent dimension heading, and bare
 // `## <tag>` buckets — one carrying a space, so it must quote (`## "_ inbox"`).
 func tagWholeDoc() document {
 	return document{
@@ -20,7 +20,7 @@ func tagWholeDoc() document {
 		BaseDigest: "blake2b256-acdef9",
 		Anchor:     "caldav://host/dav/cal/",
 		Type:       "caldav-object-v1",
-		GroupBy:    "categories",
+		GroupBy:    "(tags)",
 		Sections: []section{
 			// The bucket Term carries the RENDERED heading text — quoted for a
 			// space-bearing value exactly as tagDimensionSections would store it.
@@ -35,13 +35,13 @@ func tagWholeDoc() document {
 }
 
 // tagNamespaceDoc is a representative hoisted namespace-rollup document:
-// `_group-by = categories/project` and `## -<segment>` rollup buckets.
+// `_group-by = project` and `## -<segment>` rollup buckets.
 func tagNamespaceDoc() document {
 	return document{
 		BaseDigest: "blake2b256-acdef9",
 		Anchor:     "caldav://host/dav/cal/",
 		Type:       "caldav-object-v1",
-		GroupBy:    "categories/project",
+		GroupBy:    "project",
 		Sections: []section{
 			{Depth: 2, Term: "-client", Lines: []objectLine{
 				{ID: "acme.ics", Desc: "Acme"},
@@ -58,8 +58,8 @@ func tagNamespaceDoc() document {
 func TestRenderTagWhole(t *testing.T) {
 	out := render(tagWholeDoc())
 
-	if !strings.Contains(out, "- _group-by = categories\n") {
-		t.Errorf("missing `- _group-by = categories` directive:\n%s", out)
+	if !strings.Contains(out, "- _group-by = (tags)\n") {
+		t.Errorf("missing `- _group-by = (tags)` directive:\n%s", out)
 	}
 	if strings.Contains(out, "# categories=") {
 		t.Errorf("hoisted tag grouping must NOT render a parent dimension heading:\n%s", out)
@@ -74,13 +74,13 @@ func TestRenderTagWhole(t *testing.T) {
 	}
 }
 
-// TestRenderTagNamespace pins the namespace dialect: `_group-by = <dim>/<ns>`
+// TestRenderTagNamespace pins the namespace dialect: `_group-by = <namespace>`
 // and `## -<segment>` rollup buckets, still no parent heading, still no `=`.
 func TestRenderTagNamespace(t *testing.T) {
 	out := render(tagNamespaceDoc())
 
-	if !strings.Contains(out, "- _group-by = categories/project\n") {
-		t.Errorf("missing `- _group-by = categories/project` directive:\n%s", out)
+	if !strings.Contains(out, "- _group-by = project\n") {
+		t.Errorf("missing `- _group-by = project` directive:\n%s", out)
 	}
 	if strings.Contains(out, "# categories=") || strings.Contains(out, "## =") {
 		t.Errorf("namespace grouping must be hoisted with no `=` buckets:\n%s", out)
@@ -93,8 +93,10 @@ func TestRenderTagNamespace(t *testing.T) {
 }
 
 // roundTripTagDoc renders a doc, parses it back, and asserts the reconstructed
-// groupSpec (via groupedSpec) and every object's membership (via memberships)
-// survive — the invariant the multi-valued three-way merge relies on.
+// groupSpec (via groupedSpec — kind + namespace; the tag DIMENSION is left for
+// apply to resolve from the plugin) and every object's membership (via
+// memberships) survive — the invariant the multi-valued three-way merge relies
+// on.
 func roundTripTagDoc(t *testing.T, doc document, wantSpec groupSpec) {
 	t.Helper()
 	got, err := parseDocument(render(doc))
@@ -139,14 +141,14 @@ func roundTripTagDoc(t *testing.T, doc document, wantSpec groupSpec) {
 // space-bearing `_ inbox` bucket the parser must unquote, and a multi-membership
 // object (t2.ics under both errand and work).
 func TestRoundTripTagWhole(t *testing.T) {
-	roundTripTagDoc(t, tagWholeDoc(), groupSpec{Dim: "categories", Kind: groupKindTagWhole})
+	roundTripTagDoc(t, tagWholeDoc(), groupSpec{Kind: groupKindTagWhole})
 }
 
 // TestRoundTripTagNamespace pins the namespace round trip: the `-client`/
-// `-cutting_garden` rollup buckets and the `categories/project` spec.
+// `-cutting_garden` rollup buckets and the `project` spec.
 func TestRoundTripTagNamespace(t *testing.T) {
 	roundTripTagDoc(t, tagNamespaceDoc(),
-		groupSpec{Dim: "categories", Namespace: "project", Kind: groupKindTagNamespace})
+		groupSpec{Namespace: "project", Kind: groupKindTagNamespace})
 }
 
 // TestParseSpaceBearingBucketValue pins the quoting scheme end to end: a
@@ -175,7 +177,7 @@ func TestParseNewlineBearingBucketValue(t *testing.T) {
 		BaseDigest: "blake2b256-acdef9",
 		Anchor:     "caldav://host/dav/cal/",
 		Type:       "caldav-object-v1",
-		GroupBy:    "categories",
+		GroupBy:    "(tags)",
 		Sections: []section{
 			{Depth: 2, Term: trellis.QuoteIfNeeded("a\nb"), Lines: []objectLine{{ID: "t1.ics"}}},
 		},
@@ -205,24 +207,26 @@ func TestParseNewlineBearingBucketValue(t *testing.T) {
 	}
 }
 
-// TestGroupByEncodingRoundTrip pins the self-describing encoding: a whole
-// grouping encodes `<dim>`, a namespace grouping `<dim>/<namespace>`, and
-// parseGroupByEncoding reconstructs Kind/Dim/Namespace without a schema.
+// TestGroupByEncodingRoundTrip pins the `_group-by` spelling: a whole grouping
+// encodes `(tags)`, a namespace grouping the bare namespace, and
+// parseGroupByEncoding reconstructs Kind/Namespace without a schema — the tag
+// DIMENSION is the plugin's to fill (resolveTagDimension).
 func TestGroupByEncodingRoundTrip(t *testing.T) {
 	whole := groupSpec{Dim: "categories", Kind: groupKindTagWhole}
-	if enc := whole.groupByEncoding(); enc != "categories" {
-		t.Errorf("whole encoding = %q, want categories", enc)
+	if enc := whole.groupByEncoding(); enc != "(tags)" {
+		t.Errorf("whole encoding = %q, want (tags)", enc)
 	}
-	if got := parseGroupByEncoding("categories"); got != whole {
-		t.Errorf("parseGroupByEncoding(categories) = %+v, want %+v", got, whole)
+	if got, err := parseGroupByEncoding("(tags)"); err != nil || got != (groupSpec{Kind: groupKindTagWhole}) {
+		t.Errorf("parseGroupByEncoding((tags)) = %+v, %v", got, err)
 	}
 
 	ns := groupSpec{Dim: "categories", Namespace: "project", Kind: groupKindTagNamespace}
-	if enc := ns.groupByEncoding(); enc != "categories/project" {
-		t.Errorf("namespace encoding = %q, want categories/project", enc)
+	if enc := ns.groupByEncoding(); enc != "project" {
+		t.Errorf("namespace encoding = %q, want project", enc)
 	}
-	if got := parseGroupByEncoding("categories/project"); got != ns {
-		t.Errorf("parseGroupByEncoding(categories/project) = %+v, want %+v", got, ns)
+	want := groupSpec{Namespace: "project", Kind: groupKindTagNamespace}
+	if got, err := parseGroupByEncoding("project"); err != nil || got != want {
+		t.Errorf("parseGroupByEncoding(project) = %+v, %v; want %+v", got, err, want)
 	}
 
 	// A field grouping carries no `_group-by` directive.
@@ -251,8 +255,8 @@ func TestBuildDocument_TagWhole(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildDocument: %v", err)
 	}
-	if doc.GroupBy != "categories" {
-		t.Errorf("GroupBy = %q, want categories", doc.GroupBy)
+	if doc.GroupBy != "(tags)" {
+		t.Errorf("GroupBy = %q, want (tags)", doc.GroupBy)
 	}
 	for _, s := range doc.Sections {
 		if isDimTerm(s.Term) {
@@ -270,7 +274,7 @@ func TestBuildDocument_TagWhole(t *testing.T) {
 
 // TestBuildDocument_TagNamespace pins the namespace grouping through the
 // dodder-hyphen interpreter: `## -client` / `## -cutting_garden` rollup buckets
-// and the `categories/project` encoding.
+// and the `project` encoding.
 func TestBuildDocument_TagNamespace(t *testing.T) {
 	interp, ok := cgp.LookupTagInterpreter("dodder-hyphen")
 	if !ok {
@@ -293,8 +297,8 @@ func TestBuildDocument_TagNamespace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildDocument: %v", err)
 	}
-	if doc.GroupBy != "categories/project" {
-		t.Errorf("GroupBy = %q, want categories/project", doc.GroupBy)
+	if doc.GroupBy != "project" {
+		t.Errorf("GroupBy = %q, want project", doc.GroupBy)
 	}
 	if len(doc.Sections) != 2 ||
 		doc.Sections[0].Term != "-client" || doc.Sections[1].Term != "-cutting_garden" {

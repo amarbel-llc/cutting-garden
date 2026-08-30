@@ -310,11 +310,13 @@ dimension per date property, reading and writing ITS OWN property only);
 `year`/`month` retired in the same slice, and `caldavRescheduleCodec`
 dissolved — bucket moves shape-dispatch in the date codecs' own `Parse`
 (`YYYY` → year splice, `YYYY-MM` → month, `YYYY-MM-DD` → day; clock + TZID
-preserved). organize spells granularity as `--group-by dim[:granularity]`
-(bare date group-bys resolve the `[organize] date_granularity` config default,
-then day) and PERSISTS the resolved spelling in the document's dimension
-heading, so apply coarsens live day-values identically without consulting
-config; filters prefix-match by validated value shape (`date_start=2026-08`);
+preserved). organize spells granularity as `--group-by dim=(granularity)` — a
+trellis `(…)` meta qualifier on the field term, native tags design G10 (the
+original `dim:granularity` suffix spelling of #230 was retired 2026-08-30 and
+now rejects with a hint); a bare `dim=` on a date field resolves the
+`[organize] date_granularity` config default, then day, and organize PERSISTS
+the resolved spelling in the document's dimension heading (`# date_due=(month)`),
+so apply coarsens live day-values identically without consulting config; filters prefix-match by validated value shape (`date_start=2026-08`);
 summaries lift date dimensions at fixed month granularity while per-node
 values stay day-precise. Known boundary: a `FacetDate` dimension declaring a
 CLOSED value domain (`Values` non-nil) is currently out of contract —

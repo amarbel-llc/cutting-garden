@@ -49,7 +49,7 @@ func groupNodes(
 			// Drop the grouped dimension's box atom when the `=<value>` heading it
 			// is filed under already shows that atom's value in FULL — pure
 			// redundancy (cutting-garden#229). A coarser heading keeps the atom: it
-			// carries precision the heading drops (a `date_due:month` bucket over a
+			// carries precision the heading drops (a `date_due=(month)` bucket over a
 			// day-precise date_due atom; a priority band over the raw priority
 			// integer). The comparison is against the atom's rendered value, not the
 			// facet key, so a band/raw-int split is correctly kept.

@@ -60,7 +60,14 @@ func taskNode(t *testing.T, uri, status string) cgp.Node {
 // places the object ungrouped (above the dimension heading), a non-empty value
 // under a `## =<value>` bucket beneath the `# <dim>=` heading.
 func docWith(dim string, assignment map[string]string) document {
-	doc := document{Sections: []section{{Depth: 1, Term: dim + "="}}}
+	return docWithHeading(dim+"=", assignment)
+}
+
+// docWithHeading is docWith with the dimension heading TERM given verbatim
+// (`date_due=(month)`, or a retired spelling under test) rather than derived
+// from a bare field name.
+func docWithHeading(heading string, assignment map[string]string) document {
+	doc := document{Sections: []section{{Depth: 1, Term: heading}}}
 	byValue := map[string][]objectLine{}
 	for id, v := range assignment {
 		if v == "" {
@@ -531,17 +538,17 @@ func TestPlanMoves_Conflict(t *testing.T) {
 	}
 }
 
-// dateDocs builds a base/edited pair grouped `date_due:month=` with t1.ics under
+// dateDocs builds a base/edited pair grouped `date_due=(month)` with t1.ics under
 // the given month buckets — the apply-side date-granularity fixture (#230).
 func dateDocs(baseBucket, editedBucket string) (base, edited document) {
-	base = docWith("date_due:month", map[string]string{"t1.ics": baseBucket})
-	edited = docWith("date_due:month", map[string]string{"t1.ics": editedBucket})
+	base = docWithHeading("date_due=(month)", map[string]string{"t1.ics": baseBucket})
+	edited = docWithHeading("date_due=(month)", map[string]string{"t1.ics": editedBucket})
 	base.Anchor, edited.Anchor = "fake://cal/", "fake://cal/"
 	return base, edited
 }
 
 // TestPlanMoves_DateGranularityUnmoved pins the round-trip invariant
-// (cutting-garden#230): a `date_due:month=` document's headings carry the
+// (cutting-garden#230): a `date_due=(month)` document's headings carry the
 // granularity, so the live day-precise value coarsens to the month for the
 // three-way comparison — an unmoved line is neither a move nor a conflict,
 // with NO config consulted on the apply path.
@@ -554,7 +561,7 @@ func TestPlanMoves_DateGranularityUnmoved(t *testing.T) {
 		t.Fatalf("groupedSpec: %v", err)
 	}
 	if spec.Dim != "date_due" || spec.Granularity != cgp.GranularityMonth {
-		t.Fatalf("recovered spec = %+v, want date_due:month", spec)
+		t.Fatalf("recovered spec = %+v, want date_due=(month)", spec)
 	}
 
 	moves, err := planMoves(edited, base, spec, live)
@@ -590,8 +597,14 @@ func TestPlanMoves_DateGranularityMove(t *testing.T) {
 // a document heading spelling an unknown granularity is a bad request, not a
 // silent exact-match degradation.
 func TestGroupedSpec_RejectsUnknownGranularity(t *testing.T) {
-	doc := docWith("date_due:week", map[string]string{"t1.ics": "2026-08"})
+	doc := docWithHeading("date_due=(week)", map[string]string{"t1.ics": "2026-08"})
 	if _, err := doc.groupedSpec(); err == nil {
-		t.Fatal("a date_due:week= heading must reject loudly")
+		t.Fatal("a date_due=(week) heading must reject loudly")
+	}
+	// The retired `dim:granularity=` heading is rejected with the new spelling.
+	legacy := docWithHeading("date_due:month=", map[string]string{"t1.ics": "2026-08"})
+	_, err := legacy.groupedSpec()
+	if err == nil || !strings.Contains(err.Error(), "date_due=(month)") {
+		t.Fatalf("a date_due:month= heading must reject naming date_due=(month), got %v", err)
 	}
 }

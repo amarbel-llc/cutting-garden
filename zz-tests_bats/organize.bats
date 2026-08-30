@@ -36,18 +36,18 @@ teardown() {
 
 # bats file_tags=organize
 
-# generate_doc runs `organize -group-by status` and asserts the emitted document
+# generate_doc runs `organize -group-by status=` (the field spelling, design G10) and asserts the emitted document
 # in full: the fenced envelope with the framework fields + type, the two VTODOs
 # ungrouped (no STATUS yet), then the `# status=` dimension heading with its
 # pre-rendered, empty `## =VALUE` buckets. The lone VEVENT windows out of the
 # object listing, so it is not organized.
 generate_doc() {
-  run_cg organize -group-by status "$CAL"
+  run_cg organize -group-by status= "$CAL"
   assert_success
   assert_output - <<-'EOM'
 	---
-	% generated: `cg organize -group-by status -query "_terminal=no" caldav:http://127.0.0.1:43101/dav/cal/`
-	- _base = @blake2b256-tctuw2agyz68ny7knvp3s7z7rkq88pzl4w28frf3343v6wt87uwse3ffes
+	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:43101/dav/cal/`
+	- _base = @blake2b256-y5l6466y0x0h8lfy62r42d7puc3m0uxq9suu2dc33dn3xuueg6lsxewkkc
 	- _anchor = caldav:http://127.0.0.1:43101/dav/cal/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -76,8 +76,8 @@ generate_doc() {
 write_task1_completed() {
   cat >"$1" <<-'EOM'
 	---
-	% generated: `cg organize -group-by status -query "_terminal=no" caldav:http://127.0.0.1:43101/dav/cal/`
-	- _base = @blake2b256-tctuw2agyz68ny7knvp3s7z7rkq88pzl4w28frf3343v6wt87uwse3ffes
+	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:43101/dav/cal/`
+	- _base = @blake2b256-y5l6466y0x0h8lfy62r42d7puc3m0uxq9suu2dc33dn3xuueg6lsxewkkc
 	- _anchor = caldav:http://127.0.0.1:43101/dav/cal/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -107,8 +107,8 @@ write_task1_completed() {
 write_task1_cancelled() {
   cat >"$1" <<-'EOM'
 	---
-	% generated: `cg organize -group-by status -query "_terminal=no" caldav:http://127.0.0.1:43101/dav/cal/`
-	- _base = @blake2b256-tctuw2agyz68ny7knvp3s7z7rkq88pzl4w28frf3343v6wt87uwse3ffes
+	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:43101/dav/cal/`
+	- _base = @blake2b256-y5l6466y0x0h8lfy62r42d7puc3m0uxq9suu2dc33dn3xuueg6lsxewkkc
 	- _anchor = caldav:http://127.0.0.1:43101/dav/cal/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -137,12 +137,12 @@ write_task1_cancelled() {
 # (still ungrouped), every bucket is empty, and the `_base` pin moved with the
 # content. The live status itself is proven by the `list -query` check.
 assert_task1_completed() {
-  run_cg organize -group-by status "$CAL"
+  run_cg organize -group-by status= "$CAL"
   assert_success
   assert_output - <<-'EOM'
 	---
-	% generated: `cg organize -group-by status -query "_terminal=no" caldav:http://127.0.0.1:43101/dav/cal/`
-	- _base = @blake2b256-chphhva9fu4yqz6uvl43vxedv59t7y9h2tt3g362d0p2emnf5xvsasermd
+	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:43101/dav/cal/`
+	- _base = @blake2b256-fknza3rf93azza2z89p6ddqufxvr5hpe4lcxmjuzq344ep3xn3dsp8ys5e
 	- _anchor = caldav:http://127.0.0.1:43101/dav/cal/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
