@@ -14,4 +14,11 @@ function sepBy1(sep, rule) {
   return seq(rule, repeat(seq(sep, rule)));
 }
 
-module.exports = { sepBy1 };
+// A trellis Ident (RFC 0014 / hyphence-content.peg's Reserved set, mirrored by
+// internal/trellis/lex.go's reservedRunes): a run that stops at whitespace or a
+// reserved rune `[]^=,!@<>*$~%#"'()`; `-`, `/`, `.` are admitted, so `-client`,
+// `date_due`, `sched1.ics`, and `project-client-acme` are single words. Use as
+// `token(IDENT)` wherever a bare tag / field key / dimension name is lexed.
+const IDENT = /[^\s\[\]^=,!@<>*$~%#"'()]+/;
+
+module.exports = { sepBy1, IDENT };

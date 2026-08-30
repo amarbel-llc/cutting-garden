@@ -29,14 +29,12 @@
 (field_type name: (field_type_name) @type)
 (field_blob "@" @punctuation.special)
 
-; the `- _group-by = <spec>` directive: `(tags)` / `project` / `status=` /
-; `date_due=(month)` — the same spelling as the `--group-by` flag
+; the `- _group-by = <spec>` directive: `(tags)` / `project` — the same
+; spelling as the `--group-by` flag (a field grouping carries no directive)
 (group_by_line "-" @punctuation.special)
 (group_by_line key: (field_key) @property)
 (group_by_line "=" @operator)
-(group_by_tag name: (heading_tag_name) @tag)
-(group_by_field name: (heading_dim_name) @property)
-(group_by_field "=" @operator)
+(group_by_line value: (tag_name) @tag)
 
 ; a `(…)` meta qualifier (RFC 0014 Qualifier): `(tags)`, `date_due=(month)`
 (qualifier ["(" ")"] @punctuation.bracket)
@@ -51,13 +49,12 @@
 (heading_reset marker: (heading_marker) @markup.heading.marker)
 (heading_type "!" @punctuation.special)
 (heading_type name: (heading_type_name) @type)
-(heading_dimension name: (heading_dim_name) @property)
+(heading_dimension name: (dim_name) @property)
 (heading_dimension "=" @operator)
 (heading_value "=" @operator)
 (heading_value value: (heading_value_text) @constant)
-(heading_tag name: (heading_tag_name) @tag)
+(heading_tag name: (tag_name) @tag)
 (heading_tag name: (heading_tag_quoted) @tag)
-(heading_tag_quoted (box_escape) @string.escape)
 
 ; --- object lines ---
 (object_line "-" @punctuation.special)
@@ -71,7 +68,6 @@
 (box_type name: (box_ident) @type)
 (box_tag name: (box_ident) @tag)
 (box_tag name: (box_tag_quoted) @tag)
-(box_tag_quoted (box_escape) @string.escape)
 (box_computed_tag) @comment
 (box_field key: (box_ident) @property)
 (box_field "=" @operator)

@@ -251,6 +251,11 @@
     "fields": {}
   },
   {
+    "type": "dim_name",
+    "named": true,
+    "fields": {}
+  },
+  {
     "type": "field_blob",
     "named": true,
     "fields": {},
@@ -321,32 +326,6 @@
     "fields": {}
   },
   {
-    "type": "group_by_field",
-    "named": true,
-    "fields": {
-      "name": {
-        "multiple": false,
-        "required": true,
-        "types": [
-          {
-            "type": "heading_dim_name",
-            "named": true
-          }
-        ]
-      },
-      "qualifier": {
-        "multiple": false,
-        "required": false,
-        "types": [
-          {
-            "type": "qualifier",
-            "named": true
-          }
-        ]
-      }
-    }
-  },
-  {
     "type": "group_by_line",
     "named": true,
     "fields": {
@@ -365,31 +344,11 @@
         "required": true,
         "types": [
           {
-            "type": "group_by_field",
-            "named": true
-          },
-          {
-            "type": "group_by_tag",
-            "named": true
-          },
-          {
             "type": "qualifier",
             "named": true
-          }
-        ]
-      }
-    }
-  },
-  {
-    "type": "group_by_tag",
-    "named": true,
-    "fields": {
-      "name": {
-        "multiple": false,
-        "required": true,
-        "types": [
+          },
           {
-            "type": "heading_tag_name",
+            "type": "tag_name",
             "named": true
           }
         ]
@@ -435,11 +394,6 @@
     }
   },
   {
-    "type": "heading_dim_name",
-    "named": true,
-    "fields": {}
-  },
-  {
     "type": "heading_dimension",
     "named": true,
     "fields": {
@@ -448,7 +402,7 @@
         "required": true,
         "types": [
           {
-            "type": "heading_dim_name",
+            "type": "dim_name",
             "named": true
           }
         ]
@@ -490,21 +444,16 @@
         "required": true,
         "types": [
           {
-            "type": "heading_tag_name",
+            "type": "heading_tag_quoted",
             "named": true
           },
           {
-            "type": "heading_tag_quoted",
+            "type": "tag_name",
             "named": true
           }
         ]
       }
     }
-  },
-  {
-    "type": "heading_tag_name",
-    "named": true,
-    "fields": {}
   },
   {
     "type": "heading_tag_quoted",
@@ -741,6 +690,11 @@
         }
       ]
     }
+  },
+  {
+    "type": "tag_name",
+    "named": true,
+    "fields": {}
   },
   {
     "type": "type_line",

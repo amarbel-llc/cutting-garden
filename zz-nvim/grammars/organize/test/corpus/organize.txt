@@ -113,8 +113,7 @@ namespace grouping: `- _group-by = project`, `# -client` buckets (organize_ns.ba
         (field_type_name)))
     (group_by_line
       (field_key)
-      (group_by_tag
-        (heading_tag_name)))
+      (tag_name))
     (type_line
       (type_name)))
   (blank_line)
@@ -127,7 +126,7 @@ namespace grouping: `- _group-by = project`, `# -client` buckets (organize_ns.ba
   (heading
     (heading_marker)
     (heading_tag
-      (heading_tag_name)))
+      (tag_name)))
   (blank_line)
   (object_line
     (box
@@ -141,7 +140,7 @@ namespace grouping: `- _group-by = project`, `# -client` buckets (organize_ns.ba
   (heading
     (heading_marker)
     (heading_tag
-      (heading_tag_name)))
+      (tag_name)))
   (blank_line)
   (object_line
     (box
@@ -224,7 +223,7 @@ field grouping: `# status=` dimension heading, `## =value` buckets (organize_gro
   (heading
     (heading_marker)
     (heading_dimension
-      (heading_dim_name)))
+      (dim_name)))
   (blank_line)
   (heading
     (heading_marker)
@@ -308,7 +307,7 @@ date field at a granularity: `# date_due=(month)` qualifier (organize_groupby.ba
   (heading
     (heading_marker)
     (heading_dimension
-      (heading_dim_name)
+      (dim_name)
       (qualifier
         (qualifier_name))))
   (blank_line)
@@ -436,7 +435,7 @@ empty headings are resets: `##` pops to the parent, `#` to ungrouped (organize_h
   (heading
     (heading_marker)
     (heading_tag
-      (heading_tag_name)))
+      (tag_name)))
   (blank_line)
   (object_line
     (box
@@ -449,7 +448,7 @@ empty headings are resets: `##` pops to the parent, `#` to ungrouped (organize_h
   (heading
     (heading_marker)
     (heading_tag
-      (heading_tag_name)))
+      (tag_name)))
   (blank_line)
   (object_line
     (box
@@ -485,18 +484,83 @@ empty headings are resets: `##` pops to the parent, `#` to ungrouped (organize_h
     (description)))
 
 ========================================
+reset heading with trailing blanks: `##   ` is still a reset
+========================================
+# work
+
+##   
+
+- [field4.ics] Someday idea
+
+----------------------------------------
+
+(source_file
+  (heading
+    (heading_marker)
+    (heading_tag
+      (tag_name)))
+  (blank_line)
+  (heading_reset
+    (heading_marker))
+  (blank_line)
+  (object_line
+    (box
+      (box_object_id))
+    (description)))
+
+========================================
+bare `# status` is a tag bucket, `# status=` a field grouping (the LR(1) split on `=`)
+========================================
+# status
+
+- [field2.ics priority=5] Read book
+
+# status=
+
+## =NEEDS-ACTION
+
+- [field1.ics location=Bank priority=1] Pay rent
+
+----------------------------------------
+
+(source_file
+  (heading
+    (heading_marker)
+    (heading_tag
+      (tag_name)))
+  (blank_line)
+  (object_line
+    (box
+      (box_object_id)
+      (box_field
+        (box_ident)
+        (box_bare_value)))
+    (description))
+  (blank_line)
+  (heading
+    (heading_marker)
+    (heading_dimension
+      (dim_name)))
+  (blank_line)
+  (heading
+    (heading_marker)
+    (heading_value
+      (heading_value_text)))
+  (blank_line)
+  (object_line
+    (box
+      (box_object_id)
+      (box_field
+        (box_ident)
+        (box_bare_value))
+      (box_field
+        (box_ident)
+        (box_bare_value)))
+    (description)))
+
+========================================
 heading depth is structure-only: a `##`-rooted document (organize_headings.bats organize_headings_double_hash_document_applies_identically)
 ========================================
----
-% generated: `cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:43109/dav/fields/`
-- _base = @blake2b256-3cqzc5cknaq8v5t9xuc0jp07egvllras05avln3tavafg9dtwm2qwznkhy
-- _anchor = caldav:http://127.0.0.1:43109/dav/fields/
-- _query = _terminal=no
-- _type = !caldav-object-vtodo-v1
-- _group-by = (tags)
-! organize-base-v1
----
-
 - [field1.ics location=Bank status=NEEDS-ACTION priority=1] Pay rent
 - [field4.ics] Someday idea
 
@@ -512,33 +576,6 @@ heading depth is structure-only: a `##`-rooted document (organize_headings.bats 
 ----------------------------------------
 
 (source_file
-  (metadata
-    (comment_line
-      (comment_text))
-    (field_line
-      (field_key)
-      (field_blob
-        (markl_id
-          (markl_format)
-          (markl_data))))
-    (field_line
-      (field_key)
-      (field_bare))
-    (field_line
-      (field_key)
-      (field_bare))
-    (field_line
-      (field_key)
-      (field_type
-        (field_type_name)))
-    (group_by_line
-      (field_key)
-      (qualifier
-        (qualifier_name)))
-    (type_line
-      (type_name)))
-  (blank_line)
-  (blank_line)
   (object_line
     (box
       (box_object_id)
@@ -560,7 +597,7 @@ heading depth is structure-only: a `##`-rooted document (organize_headings.bats 
   (heading
     (heading_marker)
     (heading_tag
-      (heading_tag_name)))
+      (tag_name)))
   (blank_line)
   (object_line
     (box
@@ -580,7 +617,7 @@ heading depth is structure-only: a `##`-rooted document (organize_headings.bats 
   (heading
     (heading_marker)
     (heading_tag
-      (heading_tag_name)))
+      (tag_name)))
   (blank_line)
   (object_line
     (box

@@ -30,6 +30,7 @@
 const markl = require('../common/markl.js');
 const metadata = require('../common/metadata.js');
 const box = require('../common/box.js');
+const { IDENT } = require('../common/util.js');
 
 module.exports = grammar({
   name: 'cutting_garden_organize',
@@ -78,7 +79,7 @@ module.exports = grammar({
     // a meta qualifier (RFC 0014 `Value <- Qualifier / …`).
     heading_dimension: $ =>
       seq(
-        field('name', alias($._term_word, $.heading_dim_name)),
+        field('name', $.dim_name),
         '=',
         optional(field('qualifier', $.qualifier)),
       ),
@@ -91,17 +92,16 @@ module.exports = grammar({
     heading_tag: $ =>
       field(
         'name',
-        choice(
-          alias($._term_word, $.heading_tag_name),
-          alias($.box_quoted, $.heading_tag_quoted),
-        ),
+        choice($.tag_name, alias($.box_quoted, $.heading_tag_quoted)),
       ),
 
-    // A trellis Ident (RFC 0014 / hyphence-content.peg's Reserved set,
-    // mirrored by internal/trellis/lex.go): runs until whitespace or a reserved
-    // rune `[]^=,!@<>*$~%#"'()`; `-`, `/`, `.` are admitted, so `-client`,
-    // `date_due`, and `project-client-acme` are single words.
-    _term_word: $ => token(/[^\s\[\]^=,!@<>*$~%#"'()]+/),
+    // The shared term leaves: a bare tag and a dimension name are the SAME
+    // trellis IDENT token (common/util.js); the parser tells them apart by the
+    // `=` that follows a dimension (LR(1)), so `# status` is a tag and
+    // `# status=` a field grouping. Neutral names — they serve both the heading
+    // ladder and the `_group-by` envelope directive.
+    tag_name: $ => token(IDENT),
+    dim_name: $ => token(IDENT),
 
     // A `(…)` meta qualifier (RFC 0014 `Qualifier <- '(' Ident ')'`, design
     // G10): `(tags)` as a whole `_group-by` value, `(month)` as a date
@@ -110,12 +110,13 @@ module.exports = grammar({
     qualifier_name: $ => token(/[^\s()]+/),
 
     // The `- _group-by = <spec>` envelope directive carries the SAME spelling
-    // as the `--group-by` flag (G10): `(tags)` (a qualifier), `project` (a bare
-    // tag namespace), or a field grouping `status=` / `date_due=(month)` —
-    // the last two are not emitted today (a field grouping's heading IS its
-    // spelling) but are admitted so a hand-written envelope still parses.
-    // Keyed by the literal `_group-by` so the generic `field_line`'s greedy bare
-    // value does not swallow the structure.
+    // as the `--group-by` flag (G10) for the two groupings that hoist tags:
+    // `(tags)` (a qualifier — the whole tag set) or `project` (a bare tag
+    // namespace). A FIELD grouping (`status=`, `date_due=(month)`) carries no
+    // `_group-by` — its dimension heading IS the spelling, and organize rejects
+    // it here — so only those two forms are admitted. Keyed by the literal
+    // `_group-by` so the generic `field_line`'s greedy bare value does not
+    // swallow the structure.
     group_by_line: $ =>
       seq(
         '-',
@@ -127,15 +128,7 @@ module.exports = grammar({
         field('value', $._group_by_spec),
         '\n',
       ),
-    _group_by_spec: $ =>
-      choice($.qualifier, $.group_by_field, $.group_by_tag),
-    group_by_field: $ =>
-      seq(
-        field('name', alias($._term_word, $.heading_dim_name)),
-        '=',
-        optional(field('qualifier', $.qualifier)),
-      ),
-    group_by_tag: $ => field('name', alias($._term_word, $.heading_tag_name)),
+    _group_by_spec: $ => choice($.qualifier, $.tag_name),
 
     // An espalier object line: `- [box] description` (or `%` for a
     // virtual/inferred-type object, preserved from dodder).
@@ -155,7 +148,10 @@ module.exports = grammar({
 
     // Overrides the shared envelope's line set (spread above, so this wins) to
     // admit the organize-specific `_group-by` directive ahead of the generic
-    // field line.
+    // field line. This list MUST be kept in sync with common/metadata.js's
+    // `_metadata_line` — a line kind added there is invisible here until it is
+    // repeated below (it is the shared module's only organize-specific
+    // divergence, so an extension hook has not earned its keep yet).
     _metadata_line: $ =>
       choice(
         $.description_line,

@@ -15,7 +15,8 @@ extracting shared tree-sitter grammar homes (mirroring the `marklid.peg` /
 One grammar, `cutting_garden_organize`:
 
 - the `---`-fenced hyphence **envelope** (`- _base = @digest`, `- _anchor`,
-  `- _type = !type`, `- _group-by = (tags)` / `project`, `% provenance`,
+  `- _type = !type`, `- _group-by = (tags)` / `project` — the tag-hoisting
+  groupings only; a field grouping's heading is its spelling — `% provenance`,
   `! organize-base-v1`);
 - the RFC 0015 **heading ladder** — `# !<type>`, a `# <dim>=` /
   `# date_due=(month)` dimension heading, a `## =<value>` bucket, a **tag
@@ -41,6 +42,7 @@ Query-string highlighting (the trellis grammar) and a completion/LSP layer
 ```
 grammars/common/{box,markl,metadata,util}.js   shared rule modules (vendored)
 grammars/organize/{grammar.js, src/parser.c}   the organize grammar (committed parser)
+grammars/organize/test/corpus/                 the dialect's conformance corpus (mirrors zz-tests_bats/organize_*.bats)
 queries/cutting_garden_organize/highlights.scm highlight captures (dir must match the parser language name)
 lua/cutting_garden/{init,health}.lua           filetype registration + folding + checkhealth
 plugin/cutting_garden.lua                       auto-setup
@@ -67,13 +69,14 @@ buffer, set the filetype by hand:
 
 ## Develop
 
-The tree-sitter CLI is not in the devshell (it needs node too); run it via
-`nix shell`:
+The devshell carries the flake-pinned tree-sitter CLI + nodejs — the same
+`pkgs.tree-sitter` that compiles the parser for the plugin and runs the corpus
+check — so regeneration is deterministic:
 
 ```
 just codemod-generate-tree-sitter   # after a grammar.js edit (tree-sitter generate)
-just test-grammar-corpus            # tree-sitter test
-just debug-tree-sitter-corpus -u    # rewrite the expected trees; review the diff
+just test-grammar-corpus            # the sandboxed checks.grammar-corpus (merge gate)
+just debug-tree-sitter-corpus -u    # rewrite the expected trees in place; review the diff
 ```
 
 Commit the regenerated `grammars/organize/src/` (the build uses the committed

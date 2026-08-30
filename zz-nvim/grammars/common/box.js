@@ -17,12 +17,14 @@
 // `box_ident` — even one spelled like a field name, `status`), and a bare
 // quoted string is a QUOTED tag (`box_tag` wrapping `box_tag_quoted`, the
 // spelling for whitespace / reserved runes: `"_ inbox"`). `box_ident` and
-// `box_bare_value` follow trellis's Ident: they stop at whitespace or a reserved
-// rune `[]^=,!@<>*$~%#"'()` — parens included, so a `(…)` qualifier never
-// appears inside a box (headings/envelope only).
+// `box_bare_value` are the shared trellis IDENT token (common/util.js) — parens
+// are reserved, so a `(…)` qualifier never appears inside a box
+// (headings/envelope only).
 //
 // Assumes the grammar sets `extras: []`; spaces inside the brackets are matched
 // explicitly. Requires the markl rules (markl_id) in the same grammar.
+
+const { IDENT } = require('./util.js');
 
 module.exports = {
   box: $ =>
@@ -57,7 +59,7 @@ module.exports = {
   box_field: $ =>
     seq(field('key', $.box_ident), '=', field('value', $._box_value)),
   _box_value: $ => choice($.box_quoted, $.box_bare_value),
-  box_bare_value: $ => token(/[^\s\[\]^=,!@<>*$~%#"'()]+/),
+  box_bare_value: $ => token(IDENT),
 
   // A tag atom: bare (`work`, `project-client-acme`) or quoted (`"_ inbox"`).
   // The same `box_ident` token as a field key — the parser splits them on the
@@ -68,7 +70,7 @@ module.exports = {
       choice($.box_ident, alias($.box_quoted, $.box_tag_quoted)),
     ),
 
-  box_ident: $ => token(/[^\s\[\]^=,!@<>*$~%#"'()]+/),
+  box_ident: $ => token(IDENT),
 
   box_quoted: $ =>
     seq('"', repeat(choice($.box_escape, token.immediate(/[^"\\]+/))), '"'),

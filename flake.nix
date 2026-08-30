@@ -982,6 +982,16 @@
             # cuttingGardenDoc's nativeBuildInputs below; `just debug-manpage`
             # shells out to it directly for the fast eyeball loop.
             pkgs.scdoc
+            # tree-sitter + nodejs: the PINNED grammar toolchain for
+            # zz-nvim/grammars/organize (cutting-garden#43, native tags G11).
+            # `just codemod-generate-tree-sitter` regenerates the committed
+            # src/parser.c with this exact CLI — the same `pkgs.tree-sitter`
+            # whose buildGrammar compiles it for cutting-garden-nvim and whose
+            # `tree-sitter test` runs checks.grammar-corpus — so the parser is
+            # never a different CLI version's output. nodejs is what `generate`
+            # evaluates grammar.js with.
+            pkgs.tree-sitter
+            pkgs.nodejs
           ]
           # cdparanoia + ddrescue back the optical plugin
           # (internal/cutting_garden_plugin_optical), matching the wrap in
@@ -1011,6 +1021,33 @@
         # checks run via `just lint-worktree` (see conformist-impure-config).
         # `nix flake check` (the justfile's build-nix-check recipe) runs it.
         checks.formatting = conformistEval.config.build.check self;
+
+        # The organize tree-sitter grammar's corpus (zz-nvim/grammars/organize/
+        # test/corpus) as a sandboxed flake check: `tree-sitter test` over the
+        # COMMITTED src/parser.c with the same pinned `pkgs.tree-sitter` that
+        # cutting-garden-nvim's buildGrammar compiles. The corpus is the
+        # organize dialect's conformance vector (native tags design G11 — each
+        # test mirrors a zz-tests_bats/organize_*.bats document), so a dialect
+        # change that outruns the grammar fails here. `just test-grammar-corpus`
+        # builds it (the `test` aggregate leaf); `nix flake check` runs it too.
+        # tree-sitter compiles the parser (with `cc` — hence runCommandCC, the
+        # plain runCommand is the no-compiler stdenv) into $HOME's cache, hence
+        # the writable copy + HOME under $TMPDIR. Success leaves a stamp at $out.
+        checks.grammar-corpus =
+          pkgs.runCommandCC "cutting-garden-grammar-corpus"
+            {
+              nativeBuildInputs = [ pkgs.tree-sitter ];
+              src = ./zz-nvim/grammars;
+            }
+            ''
+              cp -r "$src" grammars
+              chmod -R u+w grammars
+              cd grammars/organize
+              export HOME="$TMPDIR/home"
+              mkdir -p "$HOME"
+              tree-sitter test
+              touch "$out"
+            '';
 
         # Eval-check for the exported NixOS/home-manager modules
         # (docs/features/0019): render a sample config.toml via the shared

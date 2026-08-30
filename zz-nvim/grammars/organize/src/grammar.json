@@ -171,13 +171,8 @@
           "type": "FIELD",
           "name": "name",
           "content": {
-            "type": "ALIAS",
-            "content": {
-              "type": "SYMBOL",
-              "name": "_term_word"
-            },
-            "named": true,
-            "value": "heading_dim_name"
+            "type": "SYMBOL",
+            "name": "dim_name"
           }
         },
         {
@@ -233,13 +228,8 @@
         "type": "CHOICE",
         "members": [
           {
-            "type": "ALIAS",
-            "content": {
-              "type": "SYMBOL",
-              "name": "_term_word"
-            },
-            "named": true,
-            "value": "heading_tag_name"
+            "type": "SYMBOL",
+            "name": "tag_name"
           },
           {
             "type": "ALIAS",
@@ -253,7 +243,14 @@
         ]
       }
     },
-    "_term_word": {
+    "tag_name": {
+      "type": "TOKEN",
+      "content": {
+        "type": "PATTERN",
+        "value": "[^\\s\\[\\]^=,!@<>*$~%#\"'()]+"
+      }
+    },
+    "dim_name": {
       "type": "TOKEN",
       "content": {
         "type": "PATTERN",
@@ -347,64 +344,9 @@
         },
         {
           "type": "SYMBOL",
-          "name": "group_by_field"
-        },
-        {
-          "type": "SYMBOL",
-          "name": "group_by_tag"
+          "name": "tag_name"
         }
       ]
-    },
-    "group_by_field": {
-      "type": "SEQ",
-      "members": [
-        {
-          "type": "FIELD",
-          "name": "name",
-          "content": {
-            "type": "ALIAS",
-            "content": {
-              "type": "SYMBOL",
-              "name": "_term_word"
-            },
-            "named": true,
-            "value": "heading_dim_name"
-          }
-        },
-        {
-          "type": "STRING",
-          "value": "="
-        },
-        {
-          "type": "CHOICE",
-          "members": [
-            {
-              "type": "FIELD",
-              "name": "qualifier",
-              "content": {
-                "type": "SYMBOL",
-                "name": "qualifier"
-              }
-            },
-            {
-              "type": "BLANK"
-            }
-          ]
-        }
-      ]
-    },
-    "group_by_tag": {
-      "type": "FIELD",
-      "name": "name",
-      "content": {
-        "type": "ALIAS",
-        "content": {
-          "type": "SYMBOL",
-          "name": "_term_word"
-        },
-        "named": true,
-        "value": "heading_tag_name"
-      }
     },
     "object_line": {
       "type": "SEQ",
