@@ -21,12 +21,13 @@ func TestValidate_RejectsQualifierTerms(t *testing.T) {
 	}{
 		{`(tags)`, "`(tags)`"},
 		{`!task (tags)`, "`(tags)`"},
-		{`status=(x)`, "`status=(x)`"},
-		{`date_due=(month)`, "`date_due=(month)`"},
-		{`k=[a, (b)]`, "`k=(b)`"},
+		{`status=(x)`, "`(x)` in field `status`"},
+		{`date_due=(month)`, "`(month)` in field `date_due`"},
+		{`k=[a, (b)]`, "`(b)` in field `k`"},
+		{`"event.due"=(month)`, "`(month)` in field `event.due`"},
 		// Inside an OR-group and an existential subpath alike.
 		{`[!task, (tags)]`, "`(tags)`"},
-		{`!cal [-> status=(x)]`, "`status=(x)`"},
+		{`!cal [-> status=(x)]`, "`(x)` in field `status`"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.query, func(t *testing.T) {

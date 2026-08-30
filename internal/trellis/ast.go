@@ -169,6 +169,11 @@ type Qualifier struct{ Name string }
 // writer half of the parse round-trip.
 func (q Qualifier) String() string { return "(" + q.Name + ")" }
 
+// Qualifier is also Value's `Qualifier` alternative: `k=(x)` is a FieldPred
+// whose value is a value HOLE with a meta qualifier (`date_due=(month)` —
+// group the field at month granularity), not a literal to compare against.
+func (Qualifier) isValue() {}
+
 // TypeTerm <- '!' Ident
 //
 // Type identity (not genre; dodder FDR 0018) — `!task`.
@@ -204,7 +209,7 @@ func (MarklTerm) isValue() {}
 // Ident <- IdentRune+
 //
 // An opaque object reference. Sigil runes are identifier-interior unless
-// term-final (the strict sigil rule; see IsIdentRuneAt in lexident.go), so
+// term-final (the strict sigil rule; see IsIdentRuneAt in lex.go), so
 // `caldav:fastmail`, `web:http://example.com`, and `12.7` are single
 // identifiers.
 type Ident struct{ Name string }
@@ -353,26 +358,14 @@ func (op FieldOp) String() string {
 // One element of a FieldPred's value (or value list). MarklTerm and
 // DigestTerm implement this directly (Value's grammar carries no trailing
 // Sigil, unlike BasicTerm's alternatives); String is represented as
-// StringValue, Bareword as the Bareword type above, and Qualifier as
-// QualifierValue.
+// StringValue and Bareword as the Bareword type above; Qualifier implements
+// it directly (a value hole with a meta qualifier, `k=(x)`).
 type Value interface{ isValue() }
 
 // StringValue is Value's `String` alternative (decoded content).
 type StringValue struct{ Value string }
 
 func (StringValue) isValue() {}
-
-// QualifierValue is Value's `Qualifier` alternative: `k=(x)` is a FieldPred
-// whose value is a value HOLE with a meta qualifier (`date_due=(month)` —
-// group the field at month granularity), not a literal to compare against.
-// Reserved in query position (rejected by trellis_eval's validation).
-type QualifierValue struct{ Qualifier Qualifier }
-
-func (QualifierValue) isValue() {}
-
-// String renders the value back in its grammar spelling, `(name)`, so a
-// writer emits `k=(x)` for the FieldPred that parsed it.
-func (v QualifierValue) String() string { return v.Qualifier.String() }
 
 func (DigestTerm) isValue() {}
 

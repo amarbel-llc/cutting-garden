@@ -162,7 +162,8 @@ FieldOp      <- '*=' / '^=' / '$=' / '!=' / '<=' / '>=' / '~=' / '=' / '<' / '>'
 // (`_mother=@blake2b256-…`, `_base=@…`) and of edge-target matching.
 // Qualifier is admitted as a value (2026-08-30, native tags G10): `k=(x)`
 // is a field predicate whose value is a qualifier, not a literal. Tried
-// first: `(` is Reserved, so no other alternative can begin with it.
+// first in Value (and right after Group in BasicTerm): `(` is Reserved and
+// distinct from `[`, so no other alternative can begin with it.
 ValueList    <- '[' SP? Value (SP? ',' SP? Value)* SP? ']'
 Value        <- Qualifier / MarklTerm / String / DigestTerm / Bareword
 

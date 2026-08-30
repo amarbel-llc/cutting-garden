@@ -332,7 +332,9 @@ func (p *parser) parseMarklTerm() (MarklTerm, bool) {
 }
 
 // parseQualifier: '(' Ident ')'. Parens are Reserved runes (hyphence
-// master 0ac8742), so the Ident inside can never swallow the closing `)`.
+// master 0ac8742), so the Ident inside can never swallow the closing `)`;
+// the parens DELIMIT the identifier and no sigil is admitted inside
+// (`(todo:)` fails at the `:`, expecting `)`).
 func (p *parser) parseQualifier() (Qualifier, bool) {
 	save := p.pos
 	if !p.literal("(") {
@@ -401,7 +403,7 @@ func (p *parser) parseFieldOp() (FieldOp, bool) {
 
 func (p *parser) parseValue() (Value, bool) {
 	if q, ok := p.parseQualifier(); ok {
-		return QualifierValue{Qualifier: q}, true
+		return q, true
 	}
 	if m, ok := p.parseMarklTerm(); ok {
 		return m, true

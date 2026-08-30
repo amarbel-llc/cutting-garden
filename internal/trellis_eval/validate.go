@@ -93,9 +93,9 @@ func validateBasic(basic trellis.BasicTerm) error {
 		return errors.BadRequestf(qualifierReserved, "`"+b.String()+"`")
 	case trellis.FieldPredBasicTerm:
 		for _, v := range b.FieldPred.Values {
-			if qv, ok := v.(trellis.QualifierValue); ok {
+			if q, ok := v.(trellis.Qualifier); ok {
 				return errors.BadRequestf(qualifierReserved,
-					"`"+b.FieldPred.Field.Name+b.FieldPred.Op.String()+qv.String()+"`")
+					"`"+q.String()+"` in field `"+b.FieldPred.Field.Name+"`")
 			}
 		}
 		if b.FieldPred.Op == trellis.FieldOpRegex {

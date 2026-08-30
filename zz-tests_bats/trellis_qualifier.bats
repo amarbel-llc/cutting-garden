@@ -29,7 +29,9 @@ function list_query_rejects_qualifier_value_as_reserved { # @test
   # (Is400BadRequest), not "trouble".
   assert_failure 64
   assert_output --partial 'qualifier terms are reserved; not evaluable yet'
-  assert_output --partial 'status=(x)'
+  assert_output --partial '(x)'
+  assert_output --partial 'in field'
+  assert_output --partial 'status'
   # Loud, not a silent empty result: nothing from the listing leaks through.
   refute_output --partial 'Personal'
   refute_output --partial 'Work'

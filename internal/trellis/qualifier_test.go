@@ -27,12 +27,12 @@ func TestShape_QualifierValue(t *testing.T) {
 	if fp.FieldPred.List || len(fp.FieldPred.Values) != 1 {
 		t.Fatalf("Values = %+v (List=%v), want one bare value", fp.FieldPred.Values, fp.FieldPred.List)
 	}
-	qv, ok := fp.FieldPred.Values[0].(QualifierValue)
+	qv, ok := fp.FieldPred.Values[0].(Qualifier)
 	if !ok {
-		t.Fatalf("Values[0] = %T, want QualifierValue", fp.FieldPred.Values[0])
+		t.Fatalf("Values[0] = %T, want Qualifier", fp.FieldPred.Values[0])
 	}
-	if qv.Qualifier.Name != "month" {
-		t.Fatalf("Qualifier.Name = %q, want %q", qv.Qualifier.Name, "month")
+	if qv.Name != "month" {
+		t.Fatalf("Qualifier.Name = %q, want %q", qv.Name, "month")
 	}
 
 	// Writer round-trip: the value renders back as `(month)`, so a writer
@@ -53,8 +53,8 @@ func TestShape_QualifierInValueList(t *testing.T) {
 	if !fp.List || len(fp.Values) != 2 {
 		t.Fatalf("Values = %+v (List=%v), want a two-element list", fp.Values, fp.List)
 	}
-	if _, ok := fp.Values[0].(QualifierValue); !ok {
-		t.Fatalf("Values[0] = %T, want QualifierValue", fp.Values[0])
+	if _, ok := fp.Values[0].(Qualifier); !ok {
+		t.Fatalf("Values[0] = %T, want Qualifier", fp.Values[0])
 	}
 	if _, ok := fp.Values[1].(Bareword); !ok {
 		t.Fatalf("Values[1] = %T, want Bareword", fp.Values[1])
@@ -148,6 +148,10 @@ func TestParse_MalformedQualifiers(t *testing.T) {
 		{"nested qualifier", `((a))`},
 		{"empty qualifier value", `k=()`},
 		{"bare close paren", `)`},
+		// A qualifier is a term, never a field name: `(x)=y` strands `=y`.
+		{"qualifier followed by field operator", `(x)=y`},
+		// Parens delimit; no sigil inside — fails at the `:` expecting `)`.
+		{"sigil inside qualifier", `(todo:)`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
