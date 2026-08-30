@@ -37,9 +37,9 @@ teardown() {
 
 # bats file_tags=organize
 
-# generate_fields runs `organize -group-by priority=` (the field spelling, design G10) and asserts the document in
-# full; its field1 box surfaces the editable location/status/priority atoms +
-# SUMMARY trailer.
+# generate_fields runs `organize -group-by priority=` (the field spelling,
+# design G10) and asserts the document in full; its field1 box surfaces the
+# editable location/status/priority atoms + SUMMARY trailer.
 generate_fields() {
   run_cg organize -group-by priority= "$CAL"
   assert_success

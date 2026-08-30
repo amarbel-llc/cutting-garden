@@ -39,8 +39,9 @@ teardown() {
 
 # bats file_tags=organize
 
-# generate_priority runs `organize -group-by priority=` (the field spelling, design G10) and asserts the document
-# in full: the four bands pre-rendered urgency-first, each task under its own
+# generate_priority runs `organize -group-by priority=` (the field spelling,
+# design G10) and asserts the document in full: the four bands pre-rendered
+# urgency-first, each task under its own
 # band, every box surfacing its redundant priority atom (the heading/atom overlap
 # #229 tracks) plus location/status where present.
 generate_priority() {

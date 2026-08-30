@@ -56,7 +56,8 @@ type groupSpec struct {
 
 // grouped reports whether the spec names a grouping at all: the zero spec (a
 // document with neither a `# <dim>=` heading nor a `_group-by` directive) does
-// not.
+// not. A tag spec with an EMPTY Dim is still grouped — that is the pre-resolve
+// state parseGroupByEncoding returns before resolveTagDimension fills Dim.
 func (s groupSpec) grouped() bool {
 	return s.Kind != groupKindField || s.Dim != ""
 }
@@ -135,6 +136,30 @@ type groupTerm struct {
 	qualifier string // the `(x)` qualifier of a field term; "" when absent
 }
 
+// granularity resolves a field term's `(x)` qualifier to a date granularity —
+// "" when the term carries none, a bad request listing the valid spellings when
+// it carries an unknown one. The one place the qualifier's vocabulary is
+// checked, shared by the flag resolver and the heading reader.
+func (gt groupTerm) granularity() (cgp.DateGranularity, error) {
+	if gt.qualifier == "" {
+		return "", nil
+	}
+	g, ok := cgp.ParseDateGranularity(gt.qualifier)
+	if !ok {
+		return "", errors.BadRequestf(
+			"granularity %q is not one of year, month, day", gt.qualifier,
+		)
+	}
+	return g, nil
+}
+
+// badGroupBy is the bad request every --group-by rejection takes: the spelling
+// as the user typed it, then the reason. A `%w` in format still wraps.
+func badGroupBy(spelling, format string, args ...any) error {
+	prefix := "organize: --group-by " + strings.ReplaceAll(spelling, "%", "%%") + ": "
+	return errors.BadRequestf(prefix+format, args...)
+}
+
 // parseGroupTerm reads one group-by spelling with the trellis term parser
 // (design G13 — one grammar). The shapes:
 //
@@ -189,14 +214,9 @@ func parseGroupTerm(spelling string) (groupTerm, error) {
 		return groupTerm{kind: groupTermTags}, nil
 	case trellis.FieldPredBasicTerm:
 		return parseFieldGroupTerm(b.FieldPred)
-	case trellis.IdentBasicTerm:
-		if b.Sigil == nil {
-			return groupTerm{kind: groupTermBare, name: b.Ident.Name}, nil
-		}
-	case trellis.QuotedRefBasicTerm:
-		if b.Sigil == nil {
-			return groupTerm{kind: groupTermBare, name: b.Ref.Value}, nil
-		}
+	}
+	if name, ok := plainIdent(t); ok {
+		return groupTerm{kind: groupTermBare, name: name}, nil
 	}
 	return groupTerm{}, errors.BadRequestf(
 		"expected `(tags)`, a tag namespace (`project`), a field (`status=`), or a " +
@@ -231,6 +251,8 @@ func parseFieldGroupTerm(fp trellis.FieldPred) (groupTerm, error) {
 // rule, so they would otherwise fail later as an unknown name.
 func rejectLegacySpelling(s string) error {
 	if dim, gran, ok := strings.Cut(s, ":"); ok && dim != "" && gran != "" && !strings.ContainsAny(s, "\"'") {
+		// `date_due:month=(x)` hints `date_due=(month)`, not `date_due=(month=(x))`.
+		gran, _, _ = strings.Cut(gran, "=")
 		return errors.BadRequestf(
 			"the `dim:granularity` spelling is retired; spell a date granularity as `%s=(%s)`",
 			dim, gran,
@@ -245,6 +267,28 @@ func rejectLegacySpelling(s string) error {
 	return nil
 }
 
+// plainIdent projects a parsed term to its decoded text when it is one
+// undecorated, sigil-free bare or quoted identifier — the shape a tag
+// namespace, a field name, and a bucket heading value share. The ONE such
+// projection organize makes (a heading value additionally admits the `=`
+// exact prefix, which parseHeadingValue reports separately).
+func plainIdent(t trellis.Term) (string, bool) {
+	if t.Negate {
+		return "", false
+	}
+	switch b := t.Basic.(type) {
+	case trellis.IdentBasicTerm:
+		if b.Sigil == nil {
+			return b.Ident.Name, true
+		}
+	case trellis.QuotedRefBasicTerm:
+		if b.Sigil == nil {
+			return b.Ref.Value, true
+		}
+	}
+	return "", false
+}
+
 // parsePlainIdent parses s as one sigil-free bare or quoted identifier term,
 // returning its decoded text.
 func parsePlainIdent(s string) (string, error) {
@@ -252,17 +296,8 @@ func parsePlainIdent(s string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if !t.Negate && !t.Exact {
-		switch b := t.Basic.(type) {
-		case trellis.IdentBasicTerm:
-			if b.Sigil == nil {
-				return b.Ident.Name, nil
-			}
-		case trellis.QuotedRefBasicTerm:
-			if b.Sigil == nil {
-				return b.Ref.Value, nil
-			}
-		}
+	if name, ok := plainIdent(t); ok && !t.Exact {
+		return name, nil
 	}
 	return "", errors.BadRequestf("%q is not a bare or quoted identifier", s)
 }
@@ -293,14 +328,12 @@ func parseGroupSpec(
 ) (groupSpec, error) {
 	gt, err := parseGroupTerm(spelling)
 	if err != nil {
-		return groupSpec{}, errors.BadRequestf("organize: --group-by %s: %w", spelling, err)
+		return groupSpec{}, badGroupBy(spelling, "%w", err)
 	}
 	switch gt.kind {
 	case groupTermTags:
 		if len(tagDims) == 0 {
-			return groupSpec{}, errors.BadRequestf(
-				"organize: --group-by (tags): the plugin declares no tag dimension to group by",
-			)
+			return groupSpec{}, badGroupBy(spelling, "the plugin declares no tag dimension to group by")
 		}
 		return groupSpec{Dim: tagDims[0], Kind: groupKindTagWhole}, nil
 
@@ -309,23 +342,23 @@ func parseGroupSpec(
 			// The retired whole-dimension spelling (`categories`): a bare name is a
 			// namespace, and no tag sits under a namespace named after the
 			// dimension itself.
-			return groupSpec{}, errors.BadRequestf(
-				"organize: --group-by %s: a bare name is a tag namespace, and %q names "+
-					"the tag dimension itself; group by the whole tag set with `(tags)`",
-				spelling, gt.name,
+			return groupSpec{}, badGroupBy(
+				spelling,
+				"a bare name is a tag namespace, and %q names the tag dimension itself; "+
+					"group by the whole tag set with `(tags)`", gt.name,
 			)
 		}
 		if len(tagDims) == 0 {
 			if _, declared := findDim(dims, gt.name); declared {
-				return groupSpec{}, errors.BadRequestf(
-					"organize: --group-by %s: a bare name is a tag namespace, but the "+
-						"plugin declares no tag dimension; to group by the %q field spell it "+
-						"`%s=`", spelling, gt.name, spelling,
+				return groupSpec{}, badGroupBy(
+					spelling,
+					"a bare name is a tag namespace, but the plugin declares no tag "+
+						"dimension; to group by the %q field spell it `%s=`", gt.name, spelling,
 				)
 			}
-			return groupSpec{}, errors.BadRequestf(
-				"organize: --group-by %s: a bare name is a tag namespace, but the "+
-					"plugin declares no tag dimension", spelling,
+			return groupSpec{}, badGroupBy(
+				spelling,
+				"a bare name is a tag namespace, but the plugin declares no tag dimension",
 			)
 		}
 		// caldav declares exactly one tag dimension; if a plugin ever declares
@@ -347,22 +380,18 @@ func resolveFieldDim(
 ) (groupSpec, error) {
 	d, declared := findDim(dims, gt.name)
 	if dims != nil && !declared {
-		return groupSpec{}, errors.BadRequestf(
-			"organize: --group-by %s: %q is not a declared field dimension", spelling, gt.name,
-		)
+		return groupSpec{}, badGroupBy(spelling, "%q is not a declared field dimension", gt.name)
 	}
 	if gt.qualifier != "" {
-		g, ok := cgp.ParseDateGranularity(gt.qualifier)
-		if !ok {
-			return groupSpec{}, errors.BadRequestf(
-				"organize: --group-by %s: granularity %q is not one of year, month, day",
-				spelling, gt.qualifier,
-			)
+		g, err := gt.granularity()
+		if err != nil {
+			return groupSpec{}, badGroupBy(spelling, "%w", err)
 		}
 		if !declared || d.Kind != cgp.FacetDate {
-			return groupSpec{}, errors.BadRequestf(
-				"organize: --group-by %s: %q is not a date dimension; a `(granularity)` "+
-					"qualifier applies only to date dimensions", spelling, gt.name,
+			return groupSpec{}, badGroupBy(
+				spelling,
+				"%q is not a date dimension; a `(granularity)` qualifier applies only "+
+					"to date dimensions", gt.name,
 			)
 		}
 		return groupSpec{Dim: gt.name, Granularity: g}, nil
@@ -387,10 +416,10 @@ func rejectEmptyNamespace(spec groupSpec, doc document, dims []cgp.NodeTypeFacet
 	if _, declared := findDim(dims, spec.Namespace); !declared {
 		return nil
 	}
-	return errors.BadRequestf(
-		"organize: --group-by %s: no tag is under the %q namespace, but %q is a "+
-			"field dimension; to group by the field spell it `%s=`",
-		spec, spec.Namespace, spec.Namespace, spec,
+	return badGroupBy(
+		spec.String(),
+		"no tag is under the %q namespace, but %q is a field dimension; to group "+
+			"by the field spell it `%s=`", spec.Namespace, spec.Namespace, spec,
 	)
 }
 

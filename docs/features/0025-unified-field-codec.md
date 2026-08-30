@@ -120,9 +120,13 @@ box shows only the *other* fields.
   different values of the same atom. Single-valued grouping is the **N=1
   degenerate**, so this subsumes today's `planMoves` + `planFieldEdits`.
 
-## Worked example (`-group-by categories`)
+## Worked example (`-group-by (tags)`)
 
 Live: **T1** (categories `proj-a`,`proj-b`), **T2** (`proj-a`), **T3** (none).
+
+(The rendering below predates the hoisted tag dialect — today the spelling is
+`(tags)`, there is no `# categories=` heading, and buckets are bare `## proj-a`;
+see RFC 0015. The merge semantics it illustrates are unchanged.)
 
 ```
 # categories=
@@ -148,7 +152,7 @@ edit), T2 → `{proj-a, proj-b}`.
 - **Date-split** (existing) becomes a declared codec rather than ad-hoc
   `present.go` logic; dates additionally become **groupable** fields (#230) —
   delivered as ONE prefix-granular dimension per date property
-  (`dim:year|month|day`), not distinct coarse fields.
+  (`dim=(year|month|day)`, native tags G10), not distinct coarse fields.
 - **Tags** — `CATEGORIES` is a codec-carrying, multi-valued, groupable,
   read+write field, governed by a pluggable **tag-interpreter plugin**
   (cutting-garden#231; `naive` + `dodder-hyphen` builtin, config-linkable). The

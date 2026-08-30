@@ -76,14 +76,15 @@ func TestParseGroupTerm(t *testing.T) {
 		{"date_due=(month)", groupTerm{kind: groupTermField, name: "date_due", qualifier: "month"}},
 	}
 	for _, tc := range cases {
-		got, err := parseGroupTerm(tc.in)
-		if err != nil {
-			t.Errorf("parseGroupTerm(%q): %v", tc.in, err)
-			continue
-		}
-		if got != tc.want {
-			t.Errorf("parseGroupTerm(%q) = %+v, want %+v", tc.in, got, tc.want)
-		}
+		t.Run(tc.in, func(t *testing.T) {
+			got, err := parseGroupTerm(tc.in)
+			if err != nil {
+				t.Fatalf("parseGroupTerm(%q): %v", tc.in, err)
+			}
+			if got != tc.want {
+				t.Errorf("parseGroupTerm(%q) = %+v, want %+v", tc.in, got, tc.want)
+			}
+		})
 	}
 }
 
@@ -105,10 +106,18 @@ func TestParseGroupTerm_Rejects(t *testing.T) {
 		{"^project", []string{"query decoration"}},
 		{"=project", []string{"query decoration"}},
 		{"status=[a, b]", []string{"query operator"}},
+		// A retired suffix WITH a qualifier hints the qualifier alone.
+		{"date_due:month=(x)", []string{"`date_due=(month)`"}},
+		// The fall-through: a term that is none of the four shapes.
+		{"!task", []string{"expected `(tags)`"}},
+		{"@x-9ft3x", []string{"expected `(tags)`"}},
+		{"todo:", []string{"expected `(tags)`"}},
 	}
 	for _, tc := range cases {
-		_, err := parseGroupTerm(tc.in)
-		mustBadRequest(t, err, tc.in, tc.want...)
+		t.Run(tc.in, func(t *testing.T) {
+			_, err := parseGroupTerm(tc.in)
+			mustBadRequest(t, err, tc.in, tc.want...)
+		})
 	}
 }
 
@@ -391,5 +400,24 @@ func TestBuildDocument_DateGranularityBareIsDay(t *testing.T) {
 	}
 	if doc.Sections[1].Term != "=2026-08-15" || doc.Sections[2].Term != "=2026-08-20" {
 		t.Errorf("day buckets = %q, %q", doc.Sections[1].Term, doc.Sections[2].Term)
+	}
+}
+
+// TestResolveTagDimension pins the apply-side fill of a tag grouping's Dim: a
+// plugin declaring no tag dimension (fakeLister has no UnifiedDescriber) is a
+// bad request naming the `_group-by` spelling; a field spec passes untouched.
+func TestResolveTagDimension(t *testing.T) {
+	lister := &fakeLister{dims: dateDims()}
+
+	_, err := resolveTagDimension(groupSpec{Kind: groupKindTagWhole}, lister)
+	mustBadRequest(t, err, "(tags) against no tag dimension", "_group-by = (tags)", "no tag dimension")
+
+	_, err = resolveTagDimension(groupSpec{Kind: groupKindTagNamespace, Namespace: "project"}, lister)
+	mustBadRequest(t, err, "project against no tag dimension", "_group-by = project")
+
+	field := groupSpec{Dim: "status"}
+	got, err := resolveTagDimension(field, lister)
+	if err != nil || got != field {
+		t.Errorf("field spec = %+v, %v; want untouched", got, err)
 	}
 }

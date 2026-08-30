@@ -126,9 +126,10 @@ func (cmd *Organize) SetFlagDefinitions(flagSet interfaces.CLIFlagDefinitions) {
 		"group-by",
 		"",
 		"grouping to build the document around (required to generate): `(tags)` "+
-			"for the whole tag set, a bare tag namespace (`project` → rollup), "+
-			"`dim=` for a field, or `dim=(year|month|day)` for a date field at "+
-			"that granularity",
+			"for the whole tag set, a bare tag namespace (`project` → rollup; quote "+
+			"it if it contains `:` or `/`), `dim=` for a field (taken on trust when "+
+			"the plugin declares no facet schema), or `dim=(year|month|day)` for a "+
+			"date field at that granularity",
 	)
 	flagSet.StringVar(
 		&cmd.Apply,

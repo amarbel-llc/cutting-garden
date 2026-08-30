@@ -36,8 +36,9 @@ teardown() {
 
 # bats file_tags=organize
 
-# generate_doc runs `organize -group-by status=` (the field spelling, design G10) and asserts the emitted document
-# in full: the fenced envelope with the framework fields + type, the two VTODOs
+# generate_doc runs `organize -group-by status=` (the field spelling, design
+# G10) and asserts the emitted document in full: the fenced envelope with the
+# framework fields + type, the two VTODOs
 # ungrouped (no STATUS yet), then the `# status=` dimension heading with its
 # pre-rendered, empty `## =VALUE` buckets. The lone VEVENT windows out of the
 # object listing, so it is not organized.

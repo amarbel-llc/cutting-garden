@@ -135,7 +135,7 @@ type Codec = internal.Codec
 type ContainerCreator = internal.ContainerCreator
 
 // DateGranularity is a bucket coarseness for a FacetDate dimension: the
-// --group-by suffix spelling ("date_due:month") and the config default.
+// --group-by qualifier spelling ("date_due=(month)") and the config default.
 type DateGranularity = internal.DateGranularity
 
 // DiffPlugin enumerates the current state at a location and returns

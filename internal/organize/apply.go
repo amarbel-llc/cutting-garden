@@ -151,7 +151,7 @@ func (cmd *Organize) applyDocument(
 	if err != nil {
 		return false, err
 	}
-	if spec, err = resolveTagDimension(spec, lister, edited.GroupBy); err != nil {
+	if spec, err = resolveTagDimension(spec, lister); err != nil {
 		return false, err
 	}
 	dim := spec.Dim
@@ -275,19 +275,24 @@ func (cmd *Organize) applyDocument(
 // tag dimension (the first FieldTag field it declares, describedTagDims) — the
 // `_group-by` spelling (`(tags)`, `project`) never names it (design G10). A
 // field grouping passes through untouched; a tag grouping against a plugin
-// declaring no tag dimension is a loud bad request.
-func resolveTagDimension(spec groupSpec, lister cgp.RootLister, groupBy string) (groupSpec, error) {
-	if spec.Kind == groupKindField {
-		return spec, nil
+// declaring no tag dimension is a loud bad request. The returned spec always
+// has a non-empty Dim when grouped — no caller ever reads Facets[""].
+func resolveTagDimension(spec groupSpec, lister cgp.RootLister) (groupSpec, error) {
+	if spec.Kind != groupKindField {
+		tagDims := describedTagDims(lister)
+		if len(tagDims) == 0 {
+			return groupSpec{}, errors.BadRequestf(
+				"organize --apply: `- %s = %s` is a tag grouping, but the plugin declares "+
+					"no tag dimension", fieldGroupBy, spec,
+			)
+		}
+		spec.Dim = tagDims[0]
 	}
-	tagDims := describedTagDims(lister)
-	if len(tagDims) == 0 {
+	if spec.grouped() && spec.Dim == "" {
 		return groupSpec{}, errors.BadRequestf(
-			"organize --apply: `- %s = %s` is a tag grouping, but the plugin declares "+
-				"no tag dimension", fieldGroupBy, groupBy,
+			"organize --apply: grouping %s resolved to no dimension", spec,
 		)
 	}
-	spec.Dim = tagDims[0]
 	return spec, nil
 }
 

@@ -122,3 +122,10 @@ design constraint.
 
 Rendering tags from data (Slice 2), `fmt-organize` (3), `list` changes (4),
 `--filter` (followup), golden.bash port (Slice 4, first bulk-output consumer).
+
+- **Vectors regeneration recipe (followup, issue to be filed).** Task 4 added
+  `just debug-organize-vectors`, which only PRINTS every organize lane's
+  documents; pasting the `_base` digests back into the bats heredocs is
+  manual. The gap: a `CG_UPDATE_GOLDENS`-style lane that rewrites the vectors
+  in place (the G16 golden.bash port generalized to the whole-document
+  heredocs).

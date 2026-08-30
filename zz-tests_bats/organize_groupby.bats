@@ -1,4 +1,5 @@
 #! /usr/bin/env bats
+# shellcheck disable=SC2016  # the asserted messages quote spellings in backticks; no expansion intended
 
 # The organize group-by SPELLING lane (native tags slice 1 task 4; design G9 /
 # G10): ONE grammar for the `--group-by` flag, the `_group-by` envelope
@@ -203,17 +204,14 @@ function organize_groupby_date_granularity { # @test
 function organize_groupby_rejects_legacy_spellings { # @test
   run_cg organize -group-by date_due:month "$SCHED"
   assert_failure 64
-  # shellcheck disable=SC2016  # the backticks are the message's own quoting, not expansion
   assert_output --partial 'organize: --group-by date_due:month: the `dim:granularity` spelling is retired; spell a date granularity as `date_due=(month)`'
 
   run_cg organize -group-by categories "$FIELDS"
   assert_failure 64
-  # shellcheck disable=SC2016
   assert_output --partial 'organize: --group-by categories: a bare name is a tag namespace, and "categories" names the tag dimension itself; group by the whole tag set with `(tags)`'
 
   run_cg organize -group-by categories/project "$NS"
   assert_failure 64
-  # shellcheck disable=SC2016
   assert_output --partial 'organize: --group-by categories/project: the `dim/namespace` spelling is retired; a bare name is a tag namespace (`project`), and `(tags)` is the whole tag set'
 }
 
@@ -223,7 +221,6 @@ function organize_groupby_rejects_legacy_spellings { # @test
 function organize_groupby_empty_namespace_suggests_field { # @test
   run_cg organize -group-by status "$FIELDS"
   assert_failure 64
-  # shellcheck disable=SC2016
   assert_output --partial 'organize: --group-by status: no tag is under the "status" namespace, but "status" is a field dimension; to group by the field spell it `status=`'
   refute_output --partial '_anchor'
 }
@@ -233,11 +230,9 @@ function organize_groupby_empty_namespace_suggests_field { # @test
 function organize_groupby_rejects_query_shapes { # @test
   run_cg organize -group-by status=x "$FIELDS"
   assert_failure 64
-  # shellcheck disable=SC2016
   assert_output --partial 'organize: --group-by status=x: `status=<value>` is a query predicate; group by the field with `status=`, or at a granularity with `status=(year|month|day)`'
 
   run_cg organize -group-by '(foo)' "$FIELDS"
   assert_failure 64
-  # shellcheck disable=SC2016
   assert_output --partial 'organize: --group-by (foo): unknown qualifier; the only bare qualifier is `(tags)` (the type'"'"'s whole tag set)'
 }

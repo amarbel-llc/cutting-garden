@@ -654,7 +654,11 @@ debug-organize-literal:
 # document, apply the lane's edit, and re-render — printing each document under a
 # `### <lane> <label>` banner so the `_base` digests can be pasted into the
 # heredocs after a dialect change (the group-by spelling reaches provenance and
-# thus the digest). Also drives the organize_groupby.bats rejections. Uses the
+# thus the digest). Also drives the organize_groupby.bats rejections. It PRINTS
+# the documents only — it does not rewrite the bats files; pasting the digests
+# back is manual. A real vectors-regeneration lane (`CG_UPDATE_GOLDENS`-style,
+# design G16's golden.bash port) is a followup tracked in
+# docs/plans/2026-08-30-native-tags-slice1.md "Out of scope". Uses the
 # NIX-built CLI (see debug-organize-literal for why) and a throwaway XDG config
 # dir so the host's config.toml never leaks into the bare-date default. WRITES to
 # the throwaway in-memory servers only.
@@ -683,7 +687,7 @@ debug-organize-vectors:
     gen() { # label cal spec
       banner "$1"; "$cg" organize -group-by "$3" "$2" | tee ".tmp/organize-vectors-$1.txt"
     }
-    apply() { banner "$1 apply"; "$cg" organize -apply "$2" -commit; }
+    apply_doc() { banner "$1 apply"; "$cg" organize -apply "$2" -commit; }
     reject() { banner "$1"; "$cg" organize -group-by "$3" "$2" || echo "exit=$?"; }
     # move_line DOC HEADING LINE_REGEX: delete the object line matching the regex
     # and re-insert it right after HEADING (+ blank), in $DOC.edited. The regex
@@ -702,7 +706,7 @@ debug-organize-vectors:
     cal="${home}cal/"
     gen organize-generate "$cal" 'status='
     move_line .tmp/organize-vectors-organize-generate.txt '## =COMPLETED' '^- .task1.ics'
-    apply organize .tmp/organize-vectors-organize-generate.txt.edited
+    apply_doc organize .tmp/organize-vectors-organize-generate.txt.edited
     gen organize-after "$cal" 'status='
     stop_srv
 
@@ -710,7 +714,7 @@ debug-organize-vectors:
     cal="${home}fields/"
     gen tags-generate "$cal" '(tags)'
     move_line .tmp/organize-vectors-tags-generate.txt '## errand' '^- .field3.ics'
-    apply tags .tmp/organize-vectors-tags-generate.txt.edited
+    apply_doc tags .tmp/organize-vectors-tags-generate.txt.edited
     gen tags-after "$cal" '(tags)'
     stop_srv
 
@@ -719,7 +723,7 @@ debug-organize-vectors:
     cal="${home}ns/"
     gen ns-generate "$cal" 'project'
     move_line .tmp/organize-vectors-ns-generate.txt '## -cutting_garden' '^- .nsA.ics'
-    apply ns .tmp/organize-vectors-ns-generate.txt.edited
+    apply_doc ns .tmp/organize-vectors-ns-generate.txt.edited
     gen ns-after "$cal" 'project'
     stop_srv
     no_config
@@ -729,7 +733,7 @@ debug-organize-vectors:
     gen date-day "$cal" 'date_due='
     gen date-month "$cal" 'date_due=(month)'
     move_line .tmp/organize-vectors-date-month.txt '## =2026-09' '^- .sched1.ics'
-    apply date .tmp/organize-vectors-date-month.txt.edited
+    apply_doc date .tmp/organize-vectors-date-month.txt.edited
     gen date-after "$cal" 'date_due=(month)'
     stop_srv
 
@@ -737,13 +741,13 @@ debug-organize-vectors:
     cal="${home}fields/"
     gen priority-generate "$cal" 'priority='
     move_line .tmp/organize-vectors-priority-generate.txt '## =0_must' '^- .field2.ics'
-    apply priority-must .tmp/organize-vectors-priority-generate.txt.edited
+    apply_doc priority-must .tmp/organize-vectors-priority-generate.txt.edited
     gen priority-after-must "$cal" 'priority='
     stop_srv
     start_srv 43105 CG_TEST_CALDAV_FIELDS=1
     cal="${home}fields/"
     move_line .tmp/organize-vectors-priority-generate.txt '## =3_unspecified' '^- .field1.ics'
-    apply priority-unspecified .tmp/organize-vectors-priority-generate.txt.edited
+    apply_doc priority-unspecified .tmp/organize-vectors-priority-generate.txt.edited
     gen priority-after-unspecified "$cal" 'priority='
     stop_srv
 
@@ -751,13 +755,13 @@ debug-organize-vectors:
     cal="${home}fields/"
     gen fields-generate "$cal" 'priority='
     sed 's/location=Bank/location=Office/' .tmp/organize-vectors-fields-generate.txt >.tmp/organize-vectors-fields-generate.txt.edited
-    apply fields-office .tmp/organize-vectors-fields-generate.txt.edited
+    apply_doc fields-office .tmp/organize-vectors-fields-generate.txt.edited
     gen fields-after-office "$cal" 'priority='
     stop_srv
     start_srv 43106 CG_TEST_CALDAV_FIELDS=1
     cal="${home}fields/"
     sed 's/Pay rent$/Pay rent now/' .tmp/organize-vectors-fields-generate.txt >.tmp/organize-vectors-fields-generate.txt.edited
-    apply fields-now .tmp/organize-vectors-fields-generate.txt.edited
+    apply_doc fields-now .tmp/organize-vectors-fields-generate.txt.edited
     gen fields-after-now "$cal" 'priority='
     stop_srv
 
@@ -765,7 +769,7 @@ debug-organize-vectors:
     cal="${home}lit/"
     gen literal-generate "$cal" '(tags)'
     { grep -v '^- \[lit2.ics ' .tmp/organize-vectors-literal-generate.txt; printf -- '- [lit2.ics location=Bank] Read book\n'; } >.tmp/organize-vectors-literal-generate.txt.edited
-    apply literal .tmp/organize-vectors-literal-generate.txt.edited
+    apply_doc literal .tmp/organize-vectors-literal-generate.txt.edited
     gen literal-after "$cal" '(tags)'
     stop_srv
 

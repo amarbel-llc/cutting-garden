@@ -191,15 +191,8 @@ func parseHeadingValue(term string) (value string, exact bool, err error) {
 	if t.Negate {
 		return "", false, errors.BadRequestf("organize: heading %q: a bucket value cannot be negated", term)
 	}
-	switch b := t.Basic.(type) {
-	case trellis.IdentBasicTerm:
-		if b.Sigil == nil {
-			return b.Ident.Name, t.Exact, nil
-		}
-	case trellis.QuotedRefBasicTerm:
-		if b.Sigil == nil {
-			return b.Ref.Value, t.Exact, nil
-		}
+	if v, ok := plainIdent(t); ok {
+		return v, t.Exact, nil
 	}
 	return "", false, errors.BadRequestf(
 		"organize: heading %q: a bucket value is a bare or quoted identifier", term,
@@ -496,15 +489,9 @@ func (doc document) groupedSpec() (groupSpec, error) {
 		if gt.kind != groupTermField {
 			continue
 		}
-		if gt.qualifier == "" {
-			return groupSpec{Dim: gt.name}, nil
-		}
-		g, ok := cgp.ParseDateGranularity(gt.qualifier)
-		if !ok {
-			return groupSpec{}, errors.BadRequestf(
-				"organize: dimension heading %q carries granularity %q; expected "+
-					"year, month, or day", s.Term, gt.qualifier,
-			)
+		g, err := gt.granularity()
+		if err != nil {
+			return groupSpec{}, errors.BadRequestf("organize: dimension heading %q: %w", s.Term, err)
 		}
 		return groupSpec{Dim: gt.name, Granularity: g}, nil
 	}

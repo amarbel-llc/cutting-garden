@@ -373,7 +373,7 @@ func (c caldavDateCodec) Parse(
 		g, isBucket := cutting_garden_plugins.ParseDateBucket(v[0])
 		switch {
 		case isBucket && g != cutting_garden_plugins.GranularityDay:
-			// A coarse bucket (a --group-by date_*:month/year move, or a
+			// A coarse bucket (a --group-by date_*=(month|year) move, or a
 			// hand-typed coarse atom edit) period-splices, preserving the
 			// finer components and the clock.
 			spliced, err := splicePeriod(cur, g, v[0])

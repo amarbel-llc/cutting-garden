@@ -59,7 +59,7 @@ func main() {
 	// A third calendar dedicated to the organize date reschedule-by-move lanes
 	// (zz-tests_bats/organize_date.bats, FDR 0023 Slice 2b): VTODOs with
 	// clock-bearing, TZID-stamped DUE dates in DISTINCT months, so grouping by
-	// `--group-by date_due:month` yields separate buckets and moving one between
+	// `--group-by date_due=(month)` yields separate buckets and moving one between
 	// them exercises the FacetWriteApplier date splice (day + clock + zone
 	// preserved). OPT-IN via CG_TEST_CALDAV_SCHED so it never inflates the
 	// home-capture object count the caldav.bats / discovery fixtures assert

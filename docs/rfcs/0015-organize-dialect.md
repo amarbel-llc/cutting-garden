@@ -126,7 +126,11 @@ document — the exact bytes presented to and edited by the end-user:
   suggesting `<name>=`. The `<dim>=` partial term is deliberately NOT a trellis
   grammar production (see §Headings, "Dependent-dimension sugar"): the `=`
   suffix is split off and the field name parsed as one trellis identifier;
-  every other spelling is one whole trellis term.
+  every other spelling is one whole trellis term. Two edge rules: a plugin
+  with NO facet schema (no `FacetDescriber`) has `<dim>=` taken on trust
+  while `<dim>=(x)` still rejects (nothing says the field is a date); and a
+  bare namespace whose text contains `:` or `/` MUST be quoted
+  (`"a:b"`) — unquoted, those runes are read as the retired spellings.
 - **Tag grouping (hoisted, tags slice 3 / RFC 0019).** Grouping by the tag set
   or a namespace omits the dimension heading entirely — a tag grouping is just
   its buckets, so the grouping is recorded instead in the `- _group-by`

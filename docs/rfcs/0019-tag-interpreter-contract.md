@@ -492,8 +492,9 @@ covered by two layers:
   resolves the two builtins and reports `ok == false` for an unknown name (§3).
 - **Host surface where naive semantics show through.** The bats lanes exercised
   through `cg` against the caldav testserver (`zz-tests_bats/`, the slice-1
-  categories lane): `cg organize --group-by categories` renders one line per
-  tag under a `## =<tag>` value bucket (whole-dimension `Buckets`), and
+  categories lane): `cg organize --group-by (tags)` (native tags G10; formerly
+  `categories`) renders one line per tag under a `## <tag>` bucket
+  (whole-dimension `Buckets`), and
   `cg list --facets --filter 'categories=<tag>'` counts exact naive matches. A
   move under a read-only categories bucket rejects loudly (slice 1 declares the
   field not writable).
@@ -513,7 +514,7 @@ interpreter can run the same host-surface lanes:
 | §6.1, immediate-segment rollup + Via | Go unit | the D4 example: `project` groups to `-cutting_garden`, `-client`; `Via` names the producing tag |
 | §6.2, transitive match + rollup write-back | Go unit | `project` matches `project-*`; `Complete` at `-client` appends `project-client` |
 | §7, `_` literal (no lift) | Go unit | `_inbox` ≠ `inbox` (distinct tags); `_`/`_ ` sorts high by plain ASCII order with no identity rewrite; in-word and interior-segment `_` literal |
-| §5 host surface | `zz-tests_bats/` | `--group-by categories` renders per-tag buckets; `--filter categories=<tag>` counts exact matches |
+| §5 host surface | `zz-tests_bats/` | `--group-by (tags)` renders per-tag buckets; `--filter categories=<tag>` counts exact matches |
 
 ## Compatibility
 
