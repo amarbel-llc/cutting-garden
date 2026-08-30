@@ -8,6 +8,7 @@ import (
 	"code.linenisgreat.com/cutting-garden/internal/command_components"
 	cgp "code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
 	"code.linenisgreat.com/cutting-garden/internal/plugin_blob_io"
+	"code.linenisgreat.com/cutting-garden/internal/trellis"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
@@ -275,7 +276,9 @@ func dimensionSections(spec groupSpec, buckets []bucket, baseDepth int) []sectio
 	secs := make([]section, 0, len(buckets)+1)
 	secs = append(secs, section{Depth: baseDepth, Term: spec.String() + "="})
 	for _, bk := range buckets {
-		secs = append(secs, section{Depth: baseDepth + 1, Term: "=" + bk.Value, Lines: bk.Lines})
+		secs = append(secs, section{
+			Depth: baseDepth + 1, Term: "=" + trellis.QuoteIfNeeded(bk.Value), Lines: bk.Lines,
+		})
 	}
 	return secs
 }
@@ -287,14 +290,15 @@ func dimensionSections(spec groupSpec, buckets []bucket, baseDepth int) []sectio
 // field grouping's `## =<value>` buckets occupy (dimensionSections) — so the
 // hoisting only elides the parent heading, it does not shift the buckets up:
 // spelling 2 renders `## work`, spelling 1 `### work` under its `# !<type>`. A
-// value containing whitespace is quoted (`## "_ inbox"`); the parser unquotes.
+// value containing whitespace or a reserved rune is quoted as a trellis String
+// (`## "_ inbox"`, design G9); the parser unquotes.
 // The bucket value already IS the tag (`work`) or the namespace-rollup segment
 // (`-client`) from groupForSpec.
 func tagDimensionSections(buckets []bucket, baseDepth int) []section {
 	secs := make([]section, 0, len(buckets))
 	for _, bk := range buckets {
 		secs = append(secs, section{
-			Depth: baseDepth + 1, Term: quoteHeadingValue(bk.Value), Lines: bk.Lines,
+			Depth: baseDepth + 1, Term: trellis.QuoteIfNeeded(bk.Value), Lines: bk.Lines,
 		})
 	}
 	return secs

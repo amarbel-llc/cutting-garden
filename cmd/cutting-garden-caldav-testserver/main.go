@@ -133,6 +133,24 @@ func main() {
 			vtodoRich("nsD", "Loose idea", 0, "", "", "other"))
 	}
 
+	// A sixth calendar dedicated to the organize BOX-LITERAL lane
+	// (zz-tests_bats/organize_literal.bats, native tags slice 1 G9/G13): a task
+	// whose CATEGORIES value carries whitespace, so its `## "_ inbox"` bucket
+	// heading MUST quote (trellis String) and the quoted spelling round-trips
+	// through a bucket move; and a task with a LOCATION atom for the hand-edited
+	// bare-token / non-ground box refusals. OPT-IN via CG_TEST_CALDAV_LIT so it
+	// never inflates the shared fixtures' object counts.
+	//
+	//   lit1  Triage inbox   CATEGORIES _ inbox
+	//   lit2  Read book      LOCATION Bank
+	if os.Getenv("CG_TEST_CALDAV_LIT") != "" {
+		srv.AddCalendar("/dav/lit/", "Literal")
+		srv.Seed("/dav/lit/lit1.ics", "VTODO",
+			vtodoRich("lit1", "Triage inbox", 0, "", "", "_ inbox"))
+		srv.Seed("/dav/lit/lit2.ics", "VTODO",
+			vtodoRich("lit2", "Read book", 0, "Bank", "", ""))
+	}
+
 	// Handshake: the caldav: source arg (opaque form reaches the plain-HTTP
 	// test server) and the calendar path.
 	fmt.Printf("caldav:%s/dav/ %s\n", srv.URL(), srv.CalendarPath)

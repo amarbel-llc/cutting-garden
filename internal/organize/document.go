@@ -4,10 +4,10 @@ import (
 	"bytes"
 	"fmt"
 	"net/url"
-	"strconv"
 	"strings"
 
 	cgp "code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
+	"code.linenisgreat.com/cutting-garden/internal/trellis"
 	"code.linenisgreat.com/hyphence/go/hyphence"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
@@ -63,11 +63,18 @@ const (
 
 // objectLine is one espalier box literal: the anchor-relative node id, its type
 // tag (inline for spelling 1; empty for spelling 2, where the envelope carries
-// it), the plugin-presented detail atoms (date/time/location; FDR 0023,
-// cutting-garden#47), and the description trailer.
+// it), any bare tag tokens, the plugin-presented detail atoms
+// (date/time/location; FDR 0023, cutting-garden#47), and the description
+// trailer. The box interior is a trellis.Literal (native tags design G13): the
+// parse and the spelling both belong to trellis.
 type objectLine struct {
-	ID     string
-	Type   string
+	ID   string
+	Type string
+	// Tags are the bare / quoted identifier tokens a box carries after its id
+	// and type (design G9: bare is ALWAYS a tag). Slice 1 parses and round-trips
+	// them verbatim but never renders them from data and never writes them —
+	// apply refuses a tagged line (rejectTagAtoms) rather than dropping it.
+	Tags   []string
 	Fields []cgp.BoxAtom
 	Desc   string
 }
@@ -124,8 +131,7 @@ func isDimTerm(t string) bool {
 	return strings.HasSuffix(t, "=") && !strings.HasPrefix(t, "=")
 }
 
-func dimName(t string) string   { return strings.TrimSuffix(t, "=") }
-func valueName(t string) string { return strings.TrimPrefix(t, "=") }
+func dimName(t string) string { return strings.TrimSuffix(t, "=") }
 
 // isTagGrouping reports whether the document uses the hoisted TAG-grouping
 // dialect (RFC 0019 tags slice 3 B3): a `_group-by` directive present, its
@@ -136,59 +142,101 @@ func (doc document) isTagGrouping() bool { return doc.GroupBy != "" }
 // sectionValueReader returns the function that extracts a bucket VALUE from a
 // heading term for this document's grouping dialect. A field grouping's buckets
 // are `=<value>` terms (isValueTerm); a TAG grouping's buckets are the hoisted
-// bare/quoted headings `<value>` — every non-type heading is a value, unquoted.
-// A type heading (`!<type>`) and, for a field grouping, a `<dim>=` heading are
-// never buckets. Shared by assignments and memberships so both dialects read a
-// section's value identically.
-func (doc document) sectionValueReader() func(term string) (value string, isValue bool) {
+// bare/quoted headings `<value>` — every non-type heading is a value. Either
+// way the value is one trellis term (parseHeadingValue): a bare or quoted
+// identifier, decoded. A type heading (`!<type>`) and, for a field grouping, a
+// `<dim>=` heading are never buckets. A heading that is not a single plain term
+// is a bad request. Shared by assignments and memberships so both dialects read
+// a section's value identically.
+func (doc document) sectionValueReader() func(term string) (value string, isValue bool, err error) {
 	if doc.isTagGrouping() {
-		return func(term string) (string, bool) {
+		return func(term string) (string, bool, error) {
 			if strings.HasPrefix(term, "!") {
-				return "", false
+				return "", false, nil
 			}
-			return unquoteHeadingValue(term), true
+			value, exact, err := parseHeadingValue(term)
+			if err != nil {
+				return "", false, err
+			}
+			if exact {
+				return "", false, errors.BadRequestf(
+					"organize: tag bucket heading %q must be bare (no `=` prefix)", term,
+				)
+			}
+			return value, true, nil
 		}
 	}
-	return func(term string) (string, bool) {
-		if isValueTerm(term) {
-			return valueName(term), true
+	return func(term string) (string, bool, error) {
+		if !isValueTerm(term) {
+			return "", false, nil
 		}
-		return "", false
+		value, _, err := parseHeadingValue(term)
+		if err != nil {
+			return "", false, err
+		}
+		return value, true, nil
 	}
 }
 
-// headingValueNeedsQuote reports whether a TAG bucket value must be quoted in a
-// `## <value>` heading — when it contains whitespace (including a newline/CR that
-// would otherwise split one heading across two physical lines and corrupt the
-// parse) or a double quote the heading grammar would otherwise mis-tokenize. An
-// empty value is quoted too so unquoteHeadingValue round-trips it via
-// strconv.Unquote (which escapes/reverses `\n` and `\r` correctly).
-func headingValueNeedsQuote(v string) bool {
-	return v == "" || strings.ContainsAny(v, " \t\n\r\"")
-}
-
-// quoteHeadingValue renders a TAG bucket value for a `## <value>` heading,
-// quoting it as a Go string literal only when the raw form would be ambiguous. A
-// plain value like `work` or `-client` renders bare; `_ inbox` renders
-// `"_ inbox"`.
-func quoteHeadingValue(v string) string {
-	if headingValueNeedsQuote(v) {
-		return strconv.Quote(v)
+// parseHeadingValue reads a bucket heading's VALUE as one trellis term: a bare
+// identifier (`work`, `-client`, `NEEDS-ACTION`) or a quoted String (`"_ inbox"`,
+// decoded), optionally carrying the field dialect's `=` exact prefix
+// (`=COMPLETED`), which is reported, not part of the value. The writer half is
+// trellis.QuoteIfNeeded — the ONE quoting rule box slots and headings share
+// (design G9).
+func parseHeadingValue(term string) (value string, exact bool, err error) {
+	t, err := trellis.ParseTerm(term)
+	if err != nil {
+		return "", false, errors.BadRequestf("organize: heading %q: %v", term, err)
 	}
-	return v
-}
-
-// unquoteHeadingValue is quoteHeadingValue's inverse: a heading term opening with
-// a double quote is a Go string literal the parser decodes; anything else is a
-// bare value taken verbatim. A malformed literal falls back to the raw term
-// rather than failing the parse.
-func unquoteHeadingValue(term string) string {
-	if strings.HasPrefix(term, "\"") {
-		if s, err := strconv.Unquote(term); err == nil {
-			return s
+	if t.Negate {
+		return "", false, errors.BadRequestf("organize: heading %q: a bucket value cannot be negated", term)
+	}
+	switch b := t.Basic.(type) {
+	case trellis.IdentBasicTerm:
+		if b.Sigil == nil {
+			return b.Ident.Name, t.Exact, nil
+		}
+	case trellis.QuotedRefBasicTerm:
+		if b.Sigil == nil {
+			return b.Ref.Value, t.Exact, nil
 		}
 	}
-	return term
+	return "", false, errors.BadRequestf(
+		"organize: heading %q: a bucket value is a bare or quoted identifier", term,
+	)
+}
+
+// parseEnvelopeDigest reads the `- _base = @<digest>` pin as a trellis
+// DigestTerm, returning the bare digest (`blake2b256-…`); empty stays empty.
+func parseEnvelopeDigest(raw string) (string, error) {
+	if raw == "" {
+		return "", nil
+	}
+	t, err := trellis.ParseTerm(raw)
+	if err != nil {
+		return "", errors.BadRequestf("organize: `- %s = %s`: %v", fieldBase, raw, err)
+	}
+	if d, ok := t.Basic.(trellis.DigestBasicTerm); ok && d.Sigil == nil && !t.Negate && !t.Exact {
+		return d.Digest.Digest, nil
+	}
+	return "", errors.BadRequestf("organize: `- %s = %s` is not a `@<digest>` term", fieldBase, raw)
+}
+
+// parseEnvelopeType reads the `- _type = !<type>` field as a trellis TypeTerm,
+// returning the bare type name; empty stays empty.
+func parseEnvelopeType(raw string) (string, error) {
+	if raw == "" {
+		return "", nil
+	}
+	t, err := trellis.ParseTerm(raw)
+	if err != nil {
+		return "", errors.BadRequestf("organize: `- %s = %s`: %v", fieldType, raw, err)
+	}
+	if ty, ok := t.Basic.(trellis.TypeBasicTerm); ok && ty.Sigil == nil && !t.Negate && !t.Exact {
+		return ty.Type.Name, nil
+	}
+	return "", errors.BadRequestf("organize: `- %s = %s` is not a `!<type>` term", fieldType, raw)
 }
 
 // --- render ------------------------------------------------------------------
@@ -257,17 +305,17 @@ func writeBody(b *strings.Builder, doc document) {
 }
 
 // writeObjectLine renders one espalier box literal and its description trailer:
-// `- [<id> !<type> <name>=<value>…] <desc>`. The detail atoms follow the id/type
-// inside the box, each a ground `name=value` espalier field (cutting-garden#47).
+// `- [<id> !<type> <tag>… <name>=<value>…] <desc>`. The interior is spelled by
+// trellis.WriteLiteral (design G13): the id, the type, any tag tokens the box
+// carried on parse, then the detail atoms, each a ground `name=value` espalier
+// field (cutting-garden#47).
 func writeObjectLine(b *strings.Builder, ln objectLine) {
-	b.WriteString("- [")
-	b.WriteString(ln.ID)
-	if ln.Type != "" {
-		fmt.Fprintf(b, " !%s", ln.Type)
-	}
+	lit := trellis.Literal{ID: ln.ID, Type: ln.Type, Tags: ln.Tags}
 	for _, f := range ln.Fields {
-		fmt.Fprintf(b, " %s=%s", f.Name, f.Value)
+		lit.Atoms = append(lit.Atoms, trellis.Atom{Name: f.Name, Value: f.Value})
 	}
+	b.WriteString("- [")
+	trellis.WriteLiteral(b, lit)
 	b.WriteByte(']')
 	if ln.Desc != "" {
 		fmt.Fprintf(b, " %s", ln.Desc)
@@ -289,10 +337,14 @@ func parseDocument(text string) (document, error) {
 	var doc document
 	doc.Provenance = provenance
 	doc.Distributed = distributed
-	doc.BaseDigest = strings.TrimPrefix(fields[fieldBase], "@")
+	if doc.BaseDigest, err = parseEnvelopeDigest(fields[fieldBase]); err != nil {
+		return document{}, err
+	}
 	doc.Anchor = fields[fieldAnchor]
 	doc.Query = fields[fieldQuery]
-	doc.Type = strings.TrimPrefix(fields[fieldType], "!")
+	if doc.Type, err = parseEnvelopeType(fields[fieldType]); err != nil {
+		return document{}, err
+	}
 	doc.GroupBy = fields[fieldGroupBy]
 
 	if err := parseBody(&doc, body); err != nil {
@@ -376,33 +428,54 @@ func parseBody(doc *document, body string) error {
 	return nil
 }
 
-// parseObjectLine parses one espalier box literal `[<id> !<type> …] <desc>`.
+// parseObjectLine parses one espalier box literal `[<id> !<type> …] <desc>`:
+// the interior through trellis.ParseLiteral (design G13 — the ground subset of a
+// trellis Group; a non-ground term is a loud bad request naming it), the rest
+// of the line as the description trailer.
 func parseObjectLine(rest string) (objectLine, error) {
-	if !strings.HasPrefix(rest, "[") {
-		return objectLine{}, fmt.Errorf("object line is not an espalier box: %q", rest)
+	interior, desc, err := splitBox(rest)
+	if err != nil {
+		return objectLine{}, err
 	}
-	end := strings.IndexByte(rest, ']')
-	if end < 0 {
-		return objectLine{}, fmt.Errorf("object line box is unterminated: %q", rest)
+	lit, err := trellis.ParseLiteral(interior)
+	if err != nil {
+		return objectLine{}, err
 	}
-	interior := strings.Fields(rest[1:end])
-	if len(interior) == 0 {
-		return objectLine{}, fmt.Errorf("object line box is empty: %q", rest)
-	}
-	ln := objectLine{ID: interior[0], Desc: strings.TrimSpace(rest[end+1:])}
-	for _, tok := range interior[1:] {
-		if strings.HasPrefix(tok, "!") {
-			ln.Type = strings.TrimPrefix(tok, "!")
-			continue
-		}
-		// A ground `name=value` espalier field: the plugin-presented detail
-		// atoms (date/time/location; cutting-garden#47). Captured so they
-		// round-trip; splitting on the FIRST '=' keeps any '=' in the value.
-		if name, value, ok := strings.Cut(tok, "="); ok && name != "" {
-			ln.Fields = append(ln.Fields, cgp.BoxAtom{Name: name, Value: value})
-		}
+	ln := objectLine{ID: lit.ID, Type: lit.Type, Tags: lit.Tags, Desc: desc}
+	for _, a := range lit.Atoms {
+		ln.Fields = append(ln.Fields, cgp.BoxAtom{Name: a.Name, Value: a.Value})
 	}
 	return ln, nil
+}
+
+// splitBox separates a `[<interior>] <desc>` line into its box interior and
+// trimmed trailer. The closing bracket is found by a quote- and nesting-aware
+// scan (a `]` inside a quoted tag or a nested `[…]` does not end the box), so a
+// malformed interior reaches ParseLiteral whole and fails there, by name.
+func splitBox(rest string) (interior, desc string, err error) {
+	if !strings.HasPrefix(rest, "[") {
+		return "", "", errors.BadRequestf("object line is not an espalier box: %q", rest)
+	}
+	depth := 0
+	var quote rune
+	for i, r := range rest {
+		switch {
+		case quote != 0:
+			if r == quote {
+				quote = 0
+			}
+		case r == '"' || r == '\'':
+			quote = r
+		case r == '[':
+			depth++
+		case r == ']':
+			depth--
+			if depth == 0 {
+				return rest[1:i], strings.TrimSpace(rest[i+1:]), nil
+			}
+		}
+	}
+	return "", "", errors.BadRequestf("object line box is unterminated: %q", rest)
 }
 
 // --- derived views -----------------------------------------------------------
@@ -488,8 +561,16 @@ func (doc document) assignments() (map[string]string, error) {
 		}
 	}
 
-	// Walk the flat sections as a depth stack, so each object's value is the
-	// value term on its enclosing heading path.
+	if err := doc.walkSectionValues(place); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// walkSectionValues walks the flat sections as a depth stack, calling place for
+// every object line with the bucket VALUE on its enclosing heading path (the
+// deepest value heading wins). Shared by assignments and memberships.
+func (doc document) walkSectionValues(place func(objectLine, string) error) error {
 	readValue := doc.sectionValueReader()
 	var stack []section
 	for _, s := range doc.Sections {
@@ -499,17 +580,21 @@ func (doc document) assignments() (map[string]string, error) {
 		stack = append(stack, s)
 		value := ""
 		for _, anc := range stack {
-			if v, ok := readValue(anc.Term); ok {
+			v, ok, err := readValue(anc.Term)
+			if err != nil {
+				return err
+			}
+			if ok {
 				value = v
 			}
 		}
 		for _, ln := range s.Lines {
 			if err := place(ln, value); err != nil {
-				return nil, err
+				return err
 			}
 		}
 	}
-	return out, nil
+	return nil
 }
 
 // memberships is the cardinality-aware sibling of assignments: it projects the
@@ -582,26 +667,8 @@ func (doc document) memberships(multi bool) (map[string][]string, error) {
 		}
 	}
 
-	// Walk the flat sections as a depth stack, so each object's value is the
-	// value term on its enclosing heading path.
-	readValue := doc.sectionValueReader()
-	var stack []section
-	for _, s := range doc.Sections {
-		for len(stack) > 0 && stack[len(stack)-1].Depth >= s.Depth {
-			stack = stack[:len(stack)-1]
-		}
-		stack = append(stack, s)
-		value := ""
-		for _, anc := range stack {
-			if v, ok := readValue(anc.Term); ok {
-				value = v
-			}
-		}
-		for _, ln := range s.Lines {
-			if err := place(ln, value); err != nil {
-				return nil, err
-			}
-		}
+	if err := doc.walkSectionValues(place); err != nil {
+		return nil, err
 	}
 	return out, nil
 }

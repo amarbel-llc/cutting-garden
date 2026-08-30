@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	cgp "code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
+	"code.linenisgreat.com/cutting-garden/internal/trellis"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
@@ -14,14 +15,14 @@ import (
 // `## <tag>` buckets — one carrying a space, so it must quote (`## "_ inbox"`).
 func tagWholeDoc() document {
 	return document{
-		BaseDigest: "blake2b256-abcdef",
+		BaseDigest: "blake2b256-acdef9",
 		Anchor:     "caldav://host/dav/cal/",
 		Type:       "caldav-object-v1",
 		GroupBy:    "categories",
 		Sections: []section{
 			// The bucket Term carries the RENDERED heading text — quoted for a
 			// space-bearing value exactly as tagDimensionSections would store it.
-			{Depth: 2, Term: quoteHeadingValue("_ inbox"), Lines: []objectLine{{ID: "t3.ics", Desc: "Loose"}}},
+			{Depth: 2, Term: trellis.QuoteIfNeeded("_ inbox"), Lines: []objectLine{{ID: "t3.ics", Desc: "Loose"}}},
 			{Depth: 2, Term: "errand", Lines: []objectLine{{ID: "t2.ics", Desc: "Post"}}},
 			{Depth: 2, Term: "work", Lines: []objectLine{
 				{ID: "t1.ics", Desc: "Buy milk"},
@@ -35,7 +36,7 @@ func tagWholeDoc() document {
 // `_group-by = categories/project` and `## -<segment>` rollup buckets.
 func tagNamespaceDoc() document {
 	return document{
-		BaseDigest: "blake2b256-abcdef",
+		BaseDigest: "blake2b256-acdef9",
 		Anchor:     "caldav://host/dav/cal/",
 		Type:       "caldav-object-v1",
 		GroupBy:    "categories/project",
@@ -169,12 +170,12 @@ func TestParseSpaceBearingBucketValue(t *testing.T) {
 // render→parse→memberships to the exact same value.
 func TestParseNewlineBearingBucketValue(t *testing.T) {
 	doc := document{
-		BaseDigest: "blake2b256-abcdef",
+		BaseDigest: "blake2b256-acdef9",
 		Anchor:     "caldav://host/dav/cal/",
 		Type:       "caldav-object-v1",
 		GroupBy:    "categories",
 		Sections: []section{
-			{Depth: 2, Term: quoteHeadingValue("a\nb"), Lines: []objectLine{{ID: "t1.ics"}}},
+			{Depth: 2, Term: trellis.QuoteIfNeeded("a\nb"), Lines: []objectLine{{ID: "t1.ics"}}},
 		},
 	}
 

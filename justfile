@@ -594,6 +594,59 @@ debug-organize-categories: debug-build-go
     .tmp/cutting-garden list -query 'categories=work' "$cal"
     exec {SRV[1]}>&- || true
 
+# Render + exercise the /dav/lit/ calendar (native tags slice 1, G9/G13): grouped
+# by categories (the `## "_ inbox"` QUOTED bucket), then a bucket move of lit2 into
+# that quoted bucket (apply + curl + re-render), then the two apply REFUSALS — a
+# hand-edited bare tag token and a non-ground `status*=y` atom (expected exit 64).
+# The host-run source for the whole-document heredocs in
+# zz-tests_bats/organize_literal.bats: pins CG_TEST_CALDAV_PORT=43107 (the lane's
+# port, lib/caldav.bash) so the `_base` digests match. WRITES to the throwaway
+# in-memory server only.
+#
+# Unlike debug-organize-fields this uses the NIX-built CLI (`nix build`, the
+# flake-bridged madder) rather than the go-built one: `nix develop --command go
+# build` links the go.mod-pinned madder library, which cannot read the store
+# config the devshell's newer `madder init` writes (cutting-garden#87). Stage any
+# new source files first — `nix build` sees only git-tracked paths.
+[group('debug')]
+debug-organize-literal:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    root="{{ justfile_directory() }}"
+    cd "$root"
+    nix build .#default --out-link .tmp/cg-result
+    cg=.tmp/cg-result/bin/cutting-garden
+    nix develop --command go build -o .tmp/cutting-garden-caldav-testserver ./cmd/cutting-garden-caldav-testserver
+    nix develop --command madder init -encryption none .default 2>/dev/null || true
+    export CG_TEST_CALDAV_LIT=1 CG_TEST_CALDAV_PORT=43107
+    coproc SRV { .tmp/cutting-garden-caldav-testserver; }
+    read -r -u "${SRV[0]}" source_url _calpath
+    cal="${source_url%/dav/}/dav/lit/"
+    doc=".tmp/organize-literal.txt"
+    echo "# cg organize -group-by categories $cal" >&2
+    echo '# ---------------------------------------------------------------' >&2
+    "$cg" organize -group-by categories "$cal" | tee "$doc"
+    echo '# --- refusal: bare tag token (expect exit 64) ---' >&2
+    sed 's/^- \[lit2.ics location=Bank\]/- [lit2.ics work-x location=Bank]/' "$doc" >"$doc.tagged"
+    "$cg" organize -apply "$doc.tagged" -commit || echo "exit=$?"
+    echo '# --- refusal: quoted tag token (expect exit 64) ---' >&2
+    sed 's/^- \[lit2.ics location=Bank\]/- [lit2.ics "_ inbox" location=Bank]/' "$doc" >"$doc.quoted"
+    "$cg" organize -apply "$doc.quoted" -commit || echo "exit=$?"
+    echo '# --- refusal: non-ground status*=y (expect exit 64) ---' >&2
+    sed 's/^- \[lit2.ics location=Bank\]/- [lit2.ics status*=y location=Bank]/' "$doc" >"$doc.nonground"
+    "$cg" organize -apply "$doc.nonground" -commit || echo "exit=$?"
+    echo '# --- GET lit2.ics (expect NO CATEGORIES, LOCATION:Bank) ---' >&2
+    curl -fsS "${source_url#caldav:}lit/lit2.ics"
+    echo '# --- move: lit2 into the "_ inbox" bucket ---' >&2
+    { grep -v '^- \[lit2.ics ' "$doc"; printf -- '- [lit2.ics location=Bank] Read book\n'; } >"$doc.moved"
+    cat "$doc.moved"
+    "$cg" organize -apply "$doc.moved" -commit
+    echo '# --- GET lit2.ics (expect CATEGORIES:_ inbox) ---' >&2
+    curl -fsS "${source_url#caldav:}lit/lit2.ics"
+    echo '# --- re-render ---' >&2
+    "$cg" organize -group-by categories "$cal"
+    exec {SRV[1]}>&- || true
+
 # Drop into an interactive shell in a throwaway tempdir with a fresh madder store
 # and the Fastmail caldav creds (CALDAV_USERNAME/PASSWORD) exported — the manual
 # eyeball loop for `cg organize` against a LIVE Fastmail calendar (FDR 0025 Slice 1

@@ -11,6 +11,7 @@ import (
 
 	"code.linenisgreat.com/cutting-garden/internal/command_components"
 	cgp "code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
+	"code.linenisgreat.com/cutting-garden/internal/trellis"
 	"code.linenisgreat.com/madder/go/pkgs/blob_stores"
 	"code.linenisgreat.com/piggy/go/pkgs/markl"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
@@ -72,6 +73,29 @@ func (cmd *Organize) runCommitDirectly(ctx errors.Context) error {
 	return err
 }
 
+// rejectTagAtoms refuses an edited document whose box carries bare tag tokens
+// (`- [x.ics work-x location=Bank]`): the parser round-trips them (design G13)
+// but nothing writes them until native tags slice 2, and a silent drop would
+// discard the user's edit — so the refusal is loud, naming the object and the
+// tags as the user spelled them.
+func rejectTagAtoms(doc document) error {
+	for _, ln := range doc.objectLines() {
+		if len(ln.Tags) == 0 {
+			continue
+		}
+		spelled := make([]string, len(ln.Tags))
+		for i, tag := range ln.Tags {
+			spelled[i] = trellis.QuoteIfNeeded(tag)
+		}
+		return errors.BadRequestf(
+			"organize --apply: object %s carries tag atoms %s: tag atoms are not "+
+				"writable yet (native tags slice 2)",
+			ln.ID, strings.Join(spelled, " "),
+		)
+	}
+	return nil
+}
+
 // applyDocument three-way-merges an edited organize document against its pinned
 // base and the re-queried live state, then writes the resulting bucket moves
 // through the plugin's NodeMutator. commit gates dry-run vs writes; interactive
@@ -83,6 +107,9 @@ func (cmd *Organize) applyDocument(
 ) (committed bool, err error) {
 	edited, err := parseDocument(editedText)
 	if err != nil {
+		return false, err
+	}
+	if err := rejectTagAtoms(edited); err != nil {
 		return false, err
 	}
 	// The dimension heading carries the whole grouping spec: the bare dimension

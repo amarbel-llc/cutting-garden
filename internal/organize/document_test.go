@@ -10,7 +10,7 @@ import (
 func spelling2Doc() document {
 	return document{
 		Provenance: "generated: cg organize -group-by status caldav://host/dav/cal/",
-		BaseDigest: "blake2b256-abcdef",
+		BaseDigest: "blake2b256-acdef9",
 		Anchor:     "caldav://host/dav/cal/",
 		Type:       "caldav-object-v1",
 		Ungrouped:  []objectLine{{ID: "task2.ics", Desc: "Walk dog"}},
@@ -85,7 +85,7 @@ func TestRenderCanonicalOmitsBasePin(t *testing.T) {
 	if strings.Contains(renderCanonical(doc), "_base") {
 		t.Error("canonical form must not contain the _base pin")
 	}
-	if !strings.Contains(render(doc), "- _base = @blake2b256-abcdef") {
+	if !strings.Contains(render(doc), "- _base = @blake2b256-acdef9") {
 		t.Error("emitted form must contain the _base pin")
 	}
 	// Both are valid hyphence envelopes with the type line.
@@ -99,7 +99,7 @@ func TestRenderCanonicalOmitsBasePin(t *testing.T) {
 func TestParseEditedMove(t *testing.T) {
 	edited := `---
 % generated: cg organize -group-by status caldav://host/dav/cal/
-- _base = @blake2b256-deadbeef
+- _base = @blake2b256-deadfeed
 - _anchor = caldav://host/dav/cal/
 - _type = !caldav-object-v1
 ! organize-base-v1
@@ -119,7 +119,7 @@ func TestParseEditedMove(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	if doc.BaseDigest != "blake2b256-deadbeef" {
+	if doc.BaseDigest != "blake2b256-deadfeed" {
 		t.Errorf("base digest = %q", doc.BaseDigest)
 	}
 	if doc.Anchor != "caldav://host/dav/cal/" || doc.Type != "caldav-object-v1" {

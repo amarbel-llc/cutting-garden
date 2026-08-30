@@ -31,6 +31,7 @@
 #   43104  organize_date.bats
 #   43105  organize_priority.bats
 #   43106  organize_fields.bats
+#   43107  organize_literal.bats
 
 start_caldav_server() {
   require_bin CG_TEST_CALDAV cutting-garden-caldav-testserver
