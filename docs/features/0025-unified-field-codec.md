@@ -8,7 +8,7 @@ promotion-criteria: |
   behavior change (the current organize bats stay green after the rename).
   Promote to `testing` once the model delivers a NET-NEW capability end to end —
   the first of: lowercase status/component (case-fold codec), `--group-by
-  date_start` (#230), or `--group-by categories` with the N-way merge — against
+  date_start` (#230), or `--group-by categories` (now `(tags)`) with the N-way merge — against
   the caldav testserver. MET 2026-08-20: #230 delivered end to end
   (prefix-granular date grouping/filtering; see the dated status note). Promote to `accepted` once every in-tree plugin
   (nebulous, jira, fastmail, …) is migrated off the legacy facet/listing-field
@@ -201,7 +201,7 @@ big-bang:
 2. **Migrate caldav** onto it and re-express its existing facets/fields with no
    behavior change (organize bats stay green) — the conformance bar for Slice 1.
 3. **Deliver a net-new capability** (case-fold, or `-group-by date_start`, or
-   `-group-by categories`) to prove the model earns its keep — DONE 2026-08-20
+   `-group-by categories` (now `(tags)`)) to prove the model earns its keep — DONE 2026-08-20
    (#230, prefix-granular date facets; see the dated status note).
 4. **Migrate the remaining plugins** (nebulous, jira, fastmail, …) and **delete**
    the legacy interfaces.
@@ -336,6 +336,25 @@ last unmodeled matrix column now has a read-only, naive-interpreter (RFC 0019)
 groupable-only — placement carries membership, so it is never a box atom, the
 #229 rule), with slices 2 (N-way merge / tag write-back) and 3 (dodder-hyphen +
 config-linkable interpreter override) pending.
+
+### Native tags slice 1 — one grammar (2026-08-30)
+
+Slice 1 of the native tags design (`docs/plans/2026-08-30-native-tags-design.md`,
+G9/G10/G13/G16; plan `…-native-tags-slice1.md`, vector index
+`…-native-tags-vectors.md`) landed the grammar/spelling convergence, with no
+change to what is rendered from data: organize's box interiors, heading terms,
+`_base`, `_type`, and `_group-by` are parsed and written by `internal/trellis`
+(`literal.go`); `(` `)` are reserved runes and `(…)` is a meta-qualifier term
+(`(tags)`, `k=(month)`; reserved in query position); `--group-by` / `_group-by`
+/ the dimension heading share one spelling — `(tags)`, `<ns>`, `dim=`,
+`dim=(granularity)` — and the legacy `categories`, `categories/project`,
+`dim:granularity` spellings reject with a hint; heading depth is normalized and
+empty headings reset context; every organize bats lane is a whole-document
+vector on a pinned testserver port; the nvim corpus mirrors the vectors. The
+`categories` dimension therefore has no heading of its own any more (`(tags)`
+buckets are `# <tag>`). Key-free tag atoms in boxes (rendering the tag set from
+data, `_tag-atoms` / `_tag-strip`, atom edits → memberships) are slice 2;
+`fmt-organize` slice 3; `list -format espalier` / JSON `tags` slice 4.
 
 ## More information
 

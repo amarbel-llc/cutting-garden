@@ -40,6 +40,14 @@ trellis query with identical meaning.
    opaque identifier. Query strings are portable.
 4. **Whitespace is semantic.** Space separates terms (AND); whitespace is
    REQUIRED around combinators (`a -> b`, never `a->b`).
+5. **Bare is always a tag; fields use operators** (native tags design G9,
+   `docs/plans/2026-08-30-native-tags-design.md`). In a step, a bare
+   identifier is always a tag term — no field-key shadowing check, so a tag
+   literally named `status` is the tag `status`; a field is only ever
+   addressed with an operator (`status=x`). Object ids in query position
+   remain deferred (FDR 0022), so constraint 1's "opaque object reference"
+   resolves to tag-match today. A parenthetical is a meta qualifier, never a
+   predicate (G10).
 
 ## Query structure
 
@@ -73,6 +81,16 @@ and unbracketed (query-flavored) spellings are valid everywhere a step is
   exact match (doddish scans `@` as OpMarklId but never wired it into the
   query builder; trellis wires it)
 - `key OP value` — field predicate (see operators)
+- `(name)` — **qualifier**: a meta qualifier on a term, never a predicate
+  over objects (native tags design G10; PEG `Qualifier <- '(' Ident ')'`).
+  Two positions: as a `Value` (`date_due=(month)` — a value hole carrying a
+  granularity qualifier) and as a standalone term (`(tags)` — the type's
+  whole tag set). These are the spellings organize's `--group-by` /
+  `_group-by` / heading dialect shares (RFC 0015). In query position both
+  are RESERVED: parsed, rejected at validation until a query-side meaning
+  exists. `(` and `)` joined the `Reserved` rune set via hyphence RFC 0002
+  (hyphence master 0ac8742), so a bare `c(1)` is identifier `c` plus
+  qualifier `(1)`; a tag whose content contains parens is quoted (`"c(1)"`).
 - `^term`, `^[...]` — negation
 - `=` prefix — exact (non-prefix) match
 - `[alt, alt, ...]` — OR-group: comma-separated alternatives, each

@@ -12,6 +12,21 @@ review, fixes re-verified) as slices 2/3 were. Every task's vectors are
 whole-document `assert_output - <<-EOM` heredocs (G16); `_base` digests stay
 verbatim.
 
+## Status (2026-08-30) — all seven tasks landed
+
+| task | commits (green-chestnut) |
+|---|---|
+| T1 whole-document vectors + pinned testserver port | `69c2f4c`, `1497160`, `0a34c5f` (pre-rebase `b913fbd`, `e425f5a`, `ad205b8`; merged to master) |
+| T2 `(…)` qualifier term | `861689d`, `2aa10c8` (merged to master) |
+| T3 trellis owns box/heading parsing | `746f8d1`, `3f5a27f` (merged to master) |
+| T4 converged `--group-by` spelling | `1ee35a9`, `088a32c` (merged to master) |
+| T5 depth normalization + resets | `1b9e49b`, `17ee7de` |
+| T6 nvim grammar + corpus | `8f49f67`, `4315ec6` |
+| T7 vectors index + doc-drift | the commit carrying this table |
+
+Followups filed during the slice: cutting-garden#247, #248, #249, #250, #251,
+#252, #253, #254 (the vectors-regeneration recipe below is among them).
+
 ## Task 1: whole-document vector conversion (behaviour-neutral)
 
 Convert every organize lane from awk/partial asserts to whole-document vectors
@@ -59,8 +74,9 @@ BEFORE any dialect change, so later tasks show up as reviewable vector diffs.
   the bracketed `Group`, returning `{ID, Type, Tags []string, Atoms []Atom}`
   with a GROUNDNESS check (only `=` field preds, no lists/sigils/subpaths/
   closures/negation; anything else → bad request naming the offending term);
-  `WriteLiteral(b, Literal, opts)` renders `[id !type tag… k=v…]` with trellis
-  quoting rules (whitespace/reserved runes → `String`).
+  `WriteLiteral(b, Literal)` (no options — as landed) renders
+  `[id !type tag… k=v…]` with trellis quoting rules (whitespace/reserved
+  runes → `String`).
 - `internal/organize/document.go`: `parseObjectLine` / `writeObjectLine`
   delegate; `objectLine` gains `Tags []string` (parsed and round-tripped; NOT
   yet rendered from data — that is Slice 2; a bare token in a hand-edited box is
@@ -83,8 +99,9 @@ BEFORE any dialect change, so later tasks show up as reviewable vector diffs.
   a date field resolves `[organize] date_granularity` then day). The legacy
   `dim:granularity`, `categories`, `categories/project` spellings are rejected
   with a hint naming the new spelling.
-- `_group-by` persists the SAME spelling (`(tags)`, `project`, `status=`,
-  `date_due=(month)`); the dimension heading spells `# status=` /
+- `_group-by` persists the SAME spelling as the `--group-by` flag, verbatim —
+  there is no separate envelope encoding (`- _group-by = (tags)`, `project`,
+  `status=`, `date_due=(month)`); the dimension heading spells `# status=` /
   `# date_due=(month)`; `(tags)` has no dimension heading (buckets `# <tag>`).
   `groupedSpec` parses the heading/envelope with the trellis term parser.
 - Re-point every affected vector (Task 1 made them whole-document, so the
@@ -123,7 +140,7 @@ design constraint.
 Rendering tags from data (Slice 2), `fmt-organize` (3), `list` changes (4),
 `--filter` (followup), golden.bash port (Slice 4, first bulk-output consumer).
 
-- **Vectors regeneration recipe (followup, issue to be filed).** Task 4 added
+- **Vectors regeneration recipe (followup, filed — see Status).** Task 4 added
   `just debug-organize-vectors`, which only PRINTS every organize lane's
   documents; pasting the `_base` digests back into the bats heredocs is
   manual. The gap: a `CG_UPDATE_GOLDENS`-style lane that rewrites the vectors

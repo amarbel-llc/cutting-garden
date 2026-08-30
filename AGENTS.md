@@ -88,6 +88,26 @@ substitution). Go peers implement the plugin side via
 `pkgs/traversal_serve`; the first external consumer is forgejo-cli's
 `fj-cg` (Rust, cutting-garden#140).
 
+`organize` (RFC 0015, FDR 0023) speaks ONE grammar with trellis (native
+tags design, `docs/plans/2026-08-30-native-tags-design.md`): `--group-by`,
+the `_group-by` envelope field, and the dimension heading share the
+spelling `(tags)` (whole tag set, buckets `# <tag>`), `<ns>` (tag
+namespace rollup), `dim=` (field), `dim=(granularity)` (date field at
+granularity) — a bare term is always a tag, a field is only ever addressed
+with an operator, and a `(…)` parenthetical is a meta qualifier (reserved
+in query position). `internal/trellis/literal.go` (`ParseLiteral` /
+`WriteLiteral`) owns organize's box interiors and heading terms; heading
+depth is normalized (shallowest level = root) and an empty heading resets
+context. The organize bats lanes are whole-document vectors
+(`assert_output - <<-EOM`) against the caldav testserver on a pinned port
+per lane (`CG_TEST_CALDAV_PORT`; the port table lives in
+`zz-tests_bats/lib/caldav.bash`), indexed G# → test in
+`docs/plans/2026-08-30-native-tags-vectors.md`. The nvim tree-sitter
+grammar (`zz-nvim/grammars/organize`) is the dialect's conformance
+corpus: `just test-grammar-corpus` (= `checks.grammar-corpus`) runs it,
+`just codemod-generate-tree-sitter` regenerates the committed parser, and
+the devShell carries the flake-pinned `tree-sitter` + `nodejs` toolchain.
+
 Comments and TODOs frequently reference upstream dodder issues (#161, #183,
 …) and madder issues — check those before "fixing" what looks like a bug; some
 divergences from dodder are intentional carry-forwards.

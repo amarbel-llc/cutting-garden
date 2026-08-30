@@ -2,7 +2,15 @@
 
 Review checklist for `2026-08-30-native-tags-design.md`. Every row is a
 whole-document vector (`assert_output - <<-EOM`) unless marked golden. Test
-names are filled in as each slice lands; `—` = not yet written.
+names are filled in as each slice lands; `—` = not yet written. Bats names
+are the `function <name> { # @test` form; Go names are `go test` functions.
+Slice 1 rows verified against the tree 2026-08-30 (T7).
+
+The nvim tree-sitter corpus,
+`zz-nvim/grammars/organize/test/corpus/organize.txt`, is the dialect's
+conformance vector (G11): each of its cases mirrors one of the bats vectors
+below (the case title names the lane), and `just test-grammar-corpus`
+(= `checks.grammar-corpus`) is its gate.
 
 | G# | decision | slice | test (file:function) |
 |---|---|---|---|
@@ -36,6 +44,7 @@ names are filled in as each slice lands; `—` = not yet written.
 | G10 | qualifier in query position is reserved (bad request) | 1 | `trellis_qualifier.bats:list_query_rejects_qualifier_value_as_reserved`, `trellis_qualifier.bats:list_query_rejects_qualifier_term_as_reserved` |
 | G10 | depth normalization (a `##`-rooted document applies identically to the `#` form; generate never emits an empty heading) | 1 | `organize_headings.bats:organize_headings_double_hash_document_applies_identically`, `organize_headings.bats:organize_headings_generate_never_emits_reset` (+ Go `TestParseDepthNormalization_*`, `TestParseFieldDoc_DepthNormalizationPreservesLadder`, `TestGenerateNeverEmitsResetHeading`) |
 | G10 | empty-heading reset (`##` pops one; `#` → ungrouped; deeper no-op) | 1 | `organize_headings.bats:organize_headings_reset_pops_to_parent_and_ungrouped`, `organize_headings.bats:organize_headings_reset_deeper_than_current_is_noop` (+ Go `TestParseReset_*`) |
+| G11 | nvim corpus mirrors the slice-1 vectors | 1 | `zz-nvim/grammars/organize/test/corpus/organize.txt` (`just test-grammar-corpus`) |
 | G12 | `describe_node_types` reports `tag_set` | 4 | — |
 | G13 | hand-written bare token round-trips through parse→write | 1 | `organize_literal.bats:organize_literal_bare_token_is_tag_apply_refuses` (+ Go `internal/organize` `TestObjectLineTagRoundTrip`) |
 | G16 | existing lanes converted to whole-document vectors | 1 | all `organize*.bats` |
