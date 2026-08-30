@@ -12,12 +12,22 @@
 # dimension exercised is `status` (a passthrough enum, Slice 2a). The seeded
 # VTODOs carry no STATUS, so they start ungrouped (above the dimension heading);
 # moving task1 under a `## =COMPLETED` bucket ASSIGNS its status through PatchNode.
+#
+# Every step is a WHOLE-DOCUMENT vector (native tags design G16): the generated
+# document, the edited input, and the post-apply re-render are asserted in full,
+# `_base` digests verbatim. That needs a stable server URL, so the testserver is
+# pinned to this file's own port (43101) and the file's tests are serialized
+# (see lib/caldav.bash).
+
+setup_file() {
+  export BATS_NO_PARALLELIZE_WITHIN_FILE=true
+}
 
 setup() {
   load "$(dirname "$BATS_TEST_FILE")/lib/common.bash"
   load "$(dirname "$BATS_TEST_FILE")/lib/caldav.bash"
   export output
-  start_caldav_server
+  start_caldav_server 43101
   init_store
   # The Personal calendar holds task1.ics + task2.ics (VTODO); its VEVENT
   # (event1.ics) windows out of the object listing (#176/#177).
@@ -30,26 +40,100 @@ teardown() {
 
 # bats file_tags=organize
 
-# generate_doc runs `organize -group-by status` and saves the emitted document.
+# generate_doc runs `organize -group-by status` and asserts the emitted document
+# in full: the fenced envelope with the framework fields + type, the two VTODOs
+# ungrouped (no STATUS yet), then the `# status=` dimension heading with its
+# pre-rendered, empty `## =VALUE` buckets. The lone VEVENT windows out of the
+# object listing, so it is not organized.
 generate_doc() {
   run_cg organize -group-by status "$CAL"
   assert_success
-  DOC="$BATS_TEST_TMPDIR/gen.txt"
-  printf '%s\n' "$output" >"$DOC"
+  assert_output - <<-'EOM'
+	---
+	% generated: `cg organize -group-by status -query "_terminal=no" caldav:http://127.0.0.1:43101/dav/cal/`
+	- _base = @blake2b256-tctuw2agyz68ny7knvp3s7z7rkq88pzl4w28frf3343v6wt87uwse3ffes
+	- _anchor = caldav:http://127.0.0.1:43101/dav/cal/
+	- _query = _terminal=no
+	- _type = !caldav-object-vtodo-v1
+	! organize-base-v1
+	---
+
+	- [task1.ics] Buy milk
+	- [task2.ics] Walk dog
+
+	# status=
+
+	## =NEEDS-ACTION
+
+	## =IN-PROCESS
+
+	## =COMPLETED
+
+	## =CANCELLED
+	EOM
 }
 
-# move_task1_under writes an edited document ($1=target status value, $2=out
-# path): task1's box line is pulled out of the ungrouped section and re-filed
-# under the (pre-rendered) `## =<value>` bucket.
-move_task1_under() {
-  local value="$1" out="$2" t1
-  t1="$(grep 'task1.ics' "$DOC")"
-  [[ -n $t1 ]] || fail "no task1 box line in document: $(cat "$DOC")"
-  awk -v t1="$t1" -v h="## =$value" '
-    $0 == t1 { next }
-    { print }
-    $0 == h { print ""; print t1 }
-  ' "$DOC" >"$out"
+# write_task1_under writes the edited document to $2: task1's box is pulled out
+# of the ungrouped section and re-filed under the `## =<$1>` bucket, against the
+# generated `_base`.
+write_task1_under() {
+  local value="$1" out="$2"
+  cat >"$out" <<-EOM
+	---
+	% generated: \`cg organize -group-by status -query "_terminal=no" caldav:http://127.0.0.1:43101/dav/cal/\`
+	- _base = @blake2b256-tctuw2agyz68ny7knvp3s7z7rkq88pzl4w28frf3343v6wt87uwse3ffes
+	- _anchor = caldav:http://127.0.0.1:43101/dav/cal/
+	- _query = _terminal=no
+	- _type = !caldav-object-vtodo-v1
+	! organize-base-v1
+	---
+
+	- [task2.ics] Walk dog
+
+	# status=
+
+	## =NEEDS-ACTION
+
+	## =IN-PROCESS
+
+	## =COMPLETED
+
+	## =CANCELLED
+	EOM
+  # Re-file task1 under the target bucket (its heading is pre-rendered).
+  sed -i "s|^## =$value\$|## =$value\n\n- [task1.ics] Buy milk|" "$out"
+}
+
+# assert_task1_completed re-renders the calendar and asserts the "after"
+# document in full. organize's default `_terminal=no` selection windows a
+# COMPLETED task OUT of the document, so task1 is simply gone: only task2 remains
+# (still ungrouped), every bucket is empty, and the `_base` pin moved with the
+# content. The live status itself is proven by the `list -query` check.
+assert_task1_completed() {
+  run_cg organize -group-by status "$CAL"
+  assert_success
+  assert_output - <<-'EOM'
+	---
+	% generated: `cg organize -group-by status -query "_terminal=no" caldav:http://127.0.0.1:43101/dav/cal/`
+	- _base = @blake2b256-chphhva9fu4yqz6uvl43vxedv59t7y9h2tt3g362d0p2emnf5xvsasermd
+	- _anchor = caldav:http://127.0.0.1:43101/dav/cal/
+	- _query = _terminal=no
+	- _type = !caldav-object-vtodo-v1
+	! organize-base-v1
+	---
+
+	- [task2.ics] Walk dog
+
+	# status=
+
+	## =NEEDS-ACTION
+
+	## =IN-PROCESS
+
+	## =COMPLETED
+
+	## =CANCELLED
+	EOM
 }
 
 # Generate emits the hyphence-envelope dialect: the fenced envelope with the
@@ -57,25 +141,15 @@ move_task1_under() {
 # `## =VALUE` buckets, and the two VTODOs as bare espalier boxes.
 function organize_generate_emits_envelope { # @test
   generate_doc
-  assert_line '---'
-  assert_line '! organize-base-v1'
-  assert_line '- _type = !caldav-object-vtodo-v1'
-  assert_line --partial '- _base = @'
-  assert_line --partial '- _anchor = '
-  assert_line '# status='
-  assert_line '## =COMPLETED'
-  assert_output --partial '- [task1.ics]'
-  assert_output --partial '- [task2.ics]'
-  # The lone VEVENT windows out of the object listing, so it is not organized.
-  refute_output --partial 'event1.ics'
 }
 
 # The core tracer: generate, move task1 under `## =COMPLETED`, apply with
-# --commit, and confirm the status landed on the live object via a facet query.
+# --commit, and confirm the status landed on the live object via a facet query
+# and the re-rendered document.
 function organize_apply_status_move_commits { # @test
   generate_doc
   local edited="$BATS_TEST_TMPDIR/edited.txt"
-  move_task1_under COMPLETED "$edited"
+  write_task1_under COMPLETED "$edited"
 
   run_cg organize -apply "$edited" -commit
   assert_success
@@ -91,14 +165,17 @@ EOF
   assert_success
   assert_output --partial 'task1.ics'
   refute_output --partial 'task2.ics'
+
+  assert_task1_completed
 }
 
 # The default is a dry-run: apply without --commit prints the intended move but
-# does not write, so the live status query still finds nothing.
+# does not write, so the live status query still finds nothing and the document
+# re-renders unchanged.
 function organize_apply_dry_run_does_not_write { # @test
   generate_doc
   local edited="$BATS_TEST_TMPDIR/edited.txt"
-  move_task1_under COMPLETED "$edited"
+  write_task1_under COMPLETED "$edited"
 
   run_cg organize -apply "$edited"
   assert_success
@@ -113,6 +190,8 @@ EOF
   run_cg list -query 'status=COMPLETED' "$CAL"
   assert_success
   refute_output --partial 'task1.ics'
+
+  generate_doc
 }
 
 # -commit-directly reads the edited document from stdin and commits it — the
@@ -121,7 +200,7 @@ EOF
 function organize_commit_directly_from_stdin_writes { # @test
   generate_doc
   local edited="$BATS_TEST_TMPDIR/edited.txt"
-  move_task1_under COMPLETED "$edited"
+  write_task1_under COMPLETED "$edited"
 
   run_cg organize -commit-directly <"$edited"
   assert_success
@@ -137,22 +216,26 @@ EOF
   assert_success
   assert_output --partial 'task1.ics'
   refute_output --partial 'task2.ics'
+
+  assert_task1_completed
 }
 
 # A pinned base whose live state has drifted is a conflict, not a silent clobber:
 # commit one move, then apply a second edit built against the ORIGINAL base — the
-# merge must reject.
+# merge must reject, and the live document still shows only the first move.
 function organize_apply_conflict_rejects { # @test
   generate_doc
 
   local edited_a="$BATS_TEST_TMPDIR/edited_a.txt"
-  move_task1_under COMPLETED "$edited_a"
+  write_task1_under COMPLETED "$edited_a"
   run_cg organize -apply "$edited_a" -commit
   assert_success
 
   local edited_b="$BATS_TEST_TMPDIR/edited_b.txt"
-  move_task1_under CANCELLED "$edited_b"
+  write_task1_under CANCELLED "$edited_b"
   run_cg organize -apply "$edited_b" -commit
   assert_failure
   assert_output --partial 'conflict'
+
+  assert_task1_completed
 }

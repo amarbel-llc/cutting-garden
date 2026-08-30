@@ -30,7 +30,15 @@ import (
 )
 
 func main() {
-	srv := caldavtestserver.Start("/dav/cal/")
+	// CG_TEST_CALDAV_PORT pins the listen port (else an ephemeral one). The
+	// organize bats lanes set it so the server URL — which reaches the organize
+	// document's `_anchor`/provenance lines and thus its `_base` digest — is
+	// stable enough for whole-document vectors.
+	var addr string
+	if port := os.Getenv("CG_TEST_CALDAV_PORT"); port != "" {
+		addr = "127.0.0.1:" + port
+	}
+	srv := caldavtestserver.StartAt("/dav/cal/", addr)
 
 	// Seed a deterministic fixture set: two VTODOs and one VEVENT under the
 	// advertised calendar. The bats lane asserts capture/restore/diff

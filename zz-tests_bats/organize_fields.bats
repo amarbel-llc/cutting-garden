@@ -14,13 +14,21 @@
 # richest editable box the fixtures provide. Grouped by priority so the edited
 # fields (location, summary) are orthogonal to the grouping dimension: a field edit,
 # never a move.
+#
+# Every organize step is a WHOLE-DOCUMENT vector (native tags design G16) with
+# verbatim `_base` digests, so the testserver is pinned to this file's own port
+# (43106) and the file's tests are serialized (see lib/caldav.bash).
+
+setup_file() {
+  export BATS_NO_PARALLELIZE_WITHIN_FILE=true
+}
 
 setup() {
   load "$(dirname "$BATS_TEST_FILE")/lib/common.bash"
   load "$(dirname "$BATS_TEST_FILE")/lib/caldav.bash"
   export output
   export CG_TEST_CALDAV_FIELDS=1
-  start_caldav_server
+  start_caldav_server 43106
   init_store
   CAL="${CALDAV_SOURCE%/dav/}/dav/fields/"
 }
@@ -31,13 +39,110 @@ teardown() {
 
 # bats file_tags=organize
 
-# generate_fields runs `organize -group-by priority` and saves the document, whose
-# field1 box surfaces the editable location/status/priority atoms + SUMMARY trailer.
+# generate_fields runs `organize -group-by priority` and asserts the document in
+# full; its field1 box surfaces the editable location/status/priority atoms +
+# SUMMARY trailer.
 generate_fields() {
   run_cg organize -group-by priority "$CAL"
   assert_success
-  DOC="$BATS_TEST_TMPDIR/fields.txt"
-  printf '%s\n' "$output" >"$DOC"
+  assert_output - <<-'EOM'
+	---
+	% generated: `cg organize -group-by priority -query "_terminal=no" caldav:http://127.0.0.1:43106/dav/fields/`
+	- _base = @blake2b256-dvhce5xqj6ece5w8m4r4qrqkhfs9fwywjuwytgregd2qjf55t4gspan0z4
+	- _anchor = caldav:http://127.0.0.1:43106/dav/fields/
+	- _query = _terminal=no
+	- _type = !caldav-object-vtodo-v1
+	! organize-base-v1
+	---
+
+	# priority=
+
+	## =0_must
+
+	- [field1.ics location=Bank status=NEEDS-ACTION priority=1] Pay rent
+
+	## =1_should
+
+	- [field2.ics priority=5] Read book
+
+	## =2_nice
+
+	- [field3.ics priority=9] Water plants
+
+	## =3_unspecified
+
+	- [field4.ics] Someday idea
+	EOM
+}
+
+# write_field1_edited writes the generated document to $2 with field1's box line
+# replaced by $1 — a field edit against the generated `_base`, never a move.
+write_field1_edited() {
+  local box="$1" out="$2"
+  cat >"$out" <<-EOM
+	---
+	% generated: \`cg organize -group-by priority -query "_terminal=no" caldav:http://127.0.0.1:43106/dav/fields/\`
+	- _base = @blake2b256-dvhce5xqj6ece5w8m4r4qrqkhfs9fwywjuwytgregd2qjf55t4gspan0z4
+	- _anchor = caldav:http://127.0.0.1:43106/dav/fields/
+	- _query = _terminal=no
+	- _type = !caldav-object-vtodo-v1
+	! organize-base-v1
+	---
+
+	# priority=
+
+	## =0_must
+
+	$box
+
+	## =1_should
+
+	- [field2.ics priority=5] Read book
+
+	## =2_nice
+
+	- [field3.ics priority=9] Water plants
+
+	## =3_unspecified
+
+	- [field4.ics] Someday idea
+	EOM
+}
+
+# assert_field1_office re-renders the calendar and asserts the "after" document
+# of the location edit in full: field1's box now reads location=Office in its
+# unchanged 0_must bucket, and the `_base` pin moved with the content.
+assert_field1_office() {
+  run_cg organize -group-by priority "$CAL"
+  assert_success
+  assert_output - <<-'EOM'
+	---
+	% generated: `cg organize -group-by priority -query "_terminal=no" caldav:http://127.0.0.1:43106/dav/fields/`
+	- _base = @blake2b256-ds4f8w92rpvu69uknkg748xdv0vc0e93xhpksccxederq4e4s7xssznydf
+	- _anchor = caldav:http://127.0.0.1:43106/dav/fields/
+	- _query = _terminal=no
+	- _type = !caldav-object-vtodo-v1
+	! organize-base-v1
+	---
+
+	# priority=
+
+	## =0_must
+
+	- [field1.ics location=Office status=NEEDS-ACTION priority=1] Pay rent
+
+	## =1_should
+
+	- [field2.ics priority=5] Read book
+
+	## =2_nice
+
+	- [field3.ics priority=9] Water plants
+
+	## =3_unspecified
+
+	- [field4.ics] Someday idea
+	EOM
 }
 
 # Editing a plain atom value (location Bank -> Office) writes the property through
@@ -46,7 +151,7 @@ generate_fields() {
 function organize_fields_location_edit_writes { # @test
   generate_fields
   local edited="$BATS_TEST_TMPDIR/edited.txt"
-  sed 's/location=Bank/location=Office/' "$DOC" >"$edited"
+  write_field1_edited '- [field1.ics location=Office status=NEEDS-ACTION priority=1] Pay rent' "$edited"
 
   run_cg organize -apply "$edited" -commit
   assert_success
@@ -61,6 +166,8 @@ EOF
   run curl -fsS "${CALDAV_SOURCE#caldav:}fields/field1.ics"
   assert_success
   assert_output --partial 'LOCATION:Office'
+
+  assert_field1_office
 }
 
 # Editing the SUMMARY trailer writes it back to the same field it was rendered from
@@ -69,7 +176,7 @@ EOF
 function organize_fields_summary_trailer_edit_writes { # @test
   generate_fields
   local edited="$BATS_TEST_TMPDIR/edited.txt"
-  sed 's/\] Pay rent/] Pay rent now/' "$DOC" >"$edited"
+  write_field1_edited '- [field1.ics location=Bank status=NEEDS-ACTION priority=1] Pay rent now' "$edited"
 
   run_cg organize -apply "$edited" -commit
   assert_success
@@ -84,21 +191,55 @@ EOF
   run curl -fsS "${CALDAV_SOURCE#caldav:}fields/field1.ics"
   assert_success
   assert_output --partial 'SUMMARY:Pay rent now'
+
+  run_cg organize -group-by priority "$CAL"
+  assert_success
+  assert_output - <<-'EOM'
+	---
+	% generated: `cg organize -group-by priority -query "_terminal=no" caldav:http://127.0.0.1:43106/dav/fields/`
+	- _base = @blake2b256-xknyqykj8dwheke548ydh3mzkqyhgv3hvym9lh9728htpxwxezjqlvk092
+	- _anchor = caldav:http://127.0.0.1:43106/dav/fields/
+	- _query = _terminal=no
+	- _type = !caldav-object-vtodo-v1
+	! organize-base-v1
+	---
+
+	# priority=
+
+	## =0_must
+
+	- [field1.ics location=Bank status=NEEDS-ACTION priority=1] Pay rent now
+
+	## =1_should
+
+	- [field2.ics priority=5] Read book
+
+	## =2_nice
+
+	- [field3.ics priority=9] Water plants
+
+	## =3_unspecified
+
+	- [field4.ics] Someday idea
+	EOM
 }
 
 # A pinned base whose live field has drifted is a conflict, not a silent clobber:
 # commit one location edit, then apply a second built against the ORIGINAL base
-# (still location=Bank) — the merge must reject because the live value is Office.
+# (still location=Bank) — the merge must reject because the live value is Office,
+# and the live document still shows only the first edit.
 function organize_fields_conflict_rejects { # @test
   generate_fields
   local edited_a="$BATS_TEST_TMPDIR/edited_a.txt"
-  sed 's/location=Bank/location=Office/' "$DOC" >"$edited_a"
+  write_field1_edited '- [field1.ics location=Office status=NEEDS-ACTION priority=1] Pay rent' "$edited_a"
   run_cg organize -apply "$edited_a" -commit
   assert_success
 
   local edited_b="$BATS_TEST_TMPDIR/edited_b.txt"
-  sed 's/location=Bank/location=Warehouse/' "$DOC" >"$edited_b"
+  write_field1_edited '- [field1.ics location=Warehouse status=NEEDS-ACTION priority=1] Pay rent' "$edited_b"
   run_cg organize -apply "$edited_b" -commit
   assert_failure
   assert_output --partial 'conflict'
+
+  assert_field1_office
 }

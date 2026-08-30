@@ -29,6 +29,7 @@ package caldavtestserver
 import (
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -76,6 +77,17 @@ type Server struct {
 // when done. Call AddCalendar afterward to seed additional calendars under
 // the same calendar-home for multi-calendar discovery tests.
 func Start(calendarPath string) *Server {
+	return StartAt(calendarPath, "")
+}
+
+// StartAt is Start bound to a FIXED listen address (e.g. "127.0.0.1:43101")
+// instead of an ephemeral port. The bats organize lanes need this: the
+// server's URL lands in the organize document's `_anchor` and provenance
+// lines and therefore in its `_base` digest, so whole-document vectors are
+// only reproducible against a stable port. An empty addr keeps the ephemeral
+// default; a bind failure is a panic (test-only code — a colliding port is a
+// harness bug to surface loudly, not to paper over).
+func StartAt(calendarPath, addr string) *Server {
 	if calendarPath == "" {
 		calendarPath = "/dav/cal/"
 	}
@@ -85,7 +97,17 @@ func Start(calendarPath string) *Server {
 		CalendarPath: calendarPath,
 		Calendars:    []Calendar{{Path: calendarPath, DisplayName: "Personal"}},
 	}
-	s.httptest = httptest.NewServer(http.HandlerFunc(s.handle))
+	if addr == "" {
+		s.httptest = httptest.NewServer(http.HandlerFunc(s.handle))
+		return s
+	}
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		panic(fmt.Sprintf("caldavtestserver: listen %s: %v", addr, err))
+	}
+	s.httptest = httptest.NewUnstartedServer(http.HandlerFunc(s.handle))
+	s.httptest.Listener = listener
+	s.httptest.Start()
 	return s
 }
 

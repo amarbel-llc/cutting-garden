@@ -25,6 +25,14 @@
 # project-client-baxter, nsC project-cutting_garden, nsD other). Its own env gate
 # keeps it out of the shared fixture so the caldav.bats home-capture counts and
 # the fields/sched lanes are undisturbed.
+#
+# Every organize step is a WHOLE-DOCUMENT vector (native tags design G16) with
+# verbatim `_base` digests, so the testserver is pinned to this file's own port
+# (43103) and the file's tests are serialized (see lib/caldav.bash).
+
+setup_file() {
+  export BATS_NO_PARALLELIZE_WITHIN_FILE=true
+}
 
 setup() {
   load "$(dirname "$BATS_TEST_FILE")/lib/common.bash"
@@ -41,7 +49,7 @@ setup() {
 	[tags]
 	interpreter = "dodder-hyphen"
 	EOF
-  start_caldav_server
+  start_caldav_server 43103
   init_store
   CAL="${CALDAV_SOURCE%/dav/}/dav/ns/"
 }
@@ -52,30 +60,36 @@ teardown() {
 
 # bats file_tags=organize
 
-# generate_grouped runs `organize -group-by project` and saves the document.
+# generate_grouped runs `organize -group-by project` and asserts the document in
+# full: the hoisted dialect (a `- _group-by = categories/project` envelope
+# directive, no `# categories=` parent heading, bare `## -<segment>` rollup
+# buckets), the out-of-namespace nsD ungrouped above the first heading, nsA + nsB
+# coalesced under `-client`, and nsC under `-cutting_garden`.
 generate_grouped() {
   run_cg organize -group-by project "$CAL"
   assert_success
-  DOC="$BATS_TEST_TMPDIR/ns.txt"
-  printf '%s\n' "$output" >"$DOC"
-}
+  assert_output - <<-'EOM'
+	---
+	% generated: `cg organize -group-by project -query "_terminal=no" caldav:http://127.0.0.1:43103/dav/ns/`
+	- _base = @blake2b256-3r4jkz948l7agg3985hkgcahhh4sm290xk82ca84a9szs4ekyvvs3ryhes
+	- _anchor = caldav:http://127.0.0.1:43103/dav/ns/
+	- _query = _terminal=no
+	- _type = !caldav-object-vtodo-v1
+	- _group-by = categories/project
+	! organize-base-v1
+	---
 
-# lines_under_bucket prints the object box lines directly beneath the bare
-# `## <bucket>` heading ($1), stopping at the next heading — so a lane can assert
-# which tasks a rollup bucket contains.
-lines_under_bucket() {
-  awk -v h="## $1" '
-    $0 == h { in_bucket = 1; next }
-    /^#/ { in_bucket = 0 }
-    in_bucket && /^- \[/ { print }
-  ' "$DOC"
-}
+	- [nsD.ics] Loose idea
 
-# lines_ungrouped prints the object box lines above the first `##` heading — the
-# ungrouped set (spelling 2's type-less preamble). The envelope's `- _*` lines
-# are not `- [` boxes, so only object boxes are printed.
-lines_ungrouped() {
-  awk '/^#/ { exit } /^- \[/ { print }' "$DOC"
+	## -client
+
+	- [nsA.ics] Acme retainer
+	- [nsB.ics] Baxter audit
+
+	## -cutting_garden
+
+	- [nsC.ics] CG roadmap
+	EOM
 }
 
 # Grouping by the `project` namespace hoists the dialect: a `- _group-by =
@@ -85,29 +99,6 @@ lines_ungrouped() {
 # out-of-namespace `other` task (nsD) is ungrouped above the first heading.
 function organize_ns_namespace_rollup_render { # @test
   generate_grouped
-  assert_line '- _group-by = categories/project'
-  refute_line '# categories='
-  assert_line '## -client'
-  assert_line '## -cutting_garden'
-
-  # nsA + nsB roll up to -client; nsC to -cutting_garden.
-  run lines_under_bucket -client
-  assert_output --partial 'nsA.ics'
-  assert_output --partial 'nsB.ics'
-  refute_output --partial 'nsC.ics'
-  refute_output --partial 'nsD.ics'
-
-  run lines_under_bucket -cutting_garden
-  assert_output --partial 'nsC.ics'
-  refute_output --partial 'nsA.ics'
-  refute_output --partial 'nsB.ics'
-  refute_output --partial 'nsD.ics'
-
-  # nsD (project-less `other`) is ungrouped, above the first bucket heading.
-  run lines_ungrouped
-  assert_output --partial 'nsD.ics'
-  refute_output --partial 'nsA.ics'
-  refute_output --partial 'nsC.ics'
 }
 
 # The rollup write-back tracer (B4): move nsA from `## -client` to
@@ -117,23 +108,43 @@ function organize_ns_namespace_rollup_render { # @test
 # -cutting_garden → adds project-cutting_garden), then the caldav full-set write
 # replaces CATEGORIES verbatim — so nsA's stored CATEGORIES becomes
 # project-cutting_garden, having LOST project-client-acme and GAINED
-# project-cutting_garden.
+# project-cutting_garden, and the re-rendered document rolls nsA up under
+# `-cutting_garden`.
 function organize_ns_rollup_move_writes_reconstructed_tag { # @test
   generate_grouped
-  local edited="$BATS_TEST_TMPDIR/edited.txt" line
-  line="$(grep 'nsA.ics' "$DOC")"
-  [[ -n $line ]] || fail "no nsA box in document: $(cat "$DOC")"
-  # Pull nsA's box from -client and re-file it under -cutting_garden.
-  awk -v ln="$line" -v h='## -cutting_garden' '
-    $0 == ln { next }
-    { print }
-    $0 == h { print ""; print ln }
-  ' "$DOC" >"$edited"
+  local edited="$BATS_TEST_TMPDIR/edited.txt"
+  cat >"$edited" <<-'EOM'
+	---
+	% generated: `cg organize -group-by project -query "_terminal=no" caldav:http://127.0.0.1:43103/dav/ns/`
+	- _base = @blake2b256-3r4jkz948l7agg3985hkgcahhh4sm290xk82ca84a9szs4ekyvvs3ryhes
+	- _anchor = caldav:http://127.0.0.1:43103/dav/ns/
+	- _query = _terminal=no
+	- _type = !caldav-object-vtodo-v1
+	- _group-by = categories/project
+	! organize-base-v1
+	---
+
+	- [nsD.ics] Loose idea
+
+	## -client
+
+	- [nsB.ics] Baxter audit
+
+	## -cutting_garden
+
+	- [nsA.ics] Acme retainer
+	- [nsC.ics] CG roadmap
+	EOM
 
   run_cg organize -apply "$edited" -commit
   assert_success
-  assert_output --partial 'nsA.ics'
-  assert_output --partial 'organize: wrote 1 change(s)'
+  assert_output - <<'EOF'
+organize: 1 change(s):
+
+  - [nsA.ics  categories=[-project-client-acme-]{+project-cutting_garden+}]
+
+organize: wrote 1 change(s)
+EOF
 
   # The membership write rewrote nsA's live CATEGORIES to the reconstructed
   # namespace tag: project-cutting_garden replaces project-client-acme.
@@ -141,6 +152,31 @@ function organize_ns_rollup_move_writes_reconstructed_tag { # @test
   assert_success
   assert_output --partial 'CATEGORIES:project-cutting_garden'
   refute_output --partial 'project-client-acme'
+
+  run_cg organize -group-by project "$CAL"
+  assert_success
+  assert_output - <<-'EOM'
+	---
+	% generated: `cg organize -group-by project -query "_terminal=no" caldav:http://127.0.0.1:43103/dav/ns/`
+	- _base = @blake2b256-9qfenazum39g5ggy0xw000qee809r0amw0qslztzc39y3gagtets89khw4
+	- _anchor = caldav:http://127.0.0.1:43103/dav/ns/
+	- _query = _terminal=no
+	- _type = !caldav-object-vtodo-v1
+	- _group-by = categories/project
+	! organize-base-v1
+	---
+
+	- [nsD.ics] Loose idea
+
+	## -client
+
+	- [nsB.ics] Baxter audit
+
+	## -cutting_garden
+
+	- [nsA.ics] Acme retainer
+	- [nsC.ics] CG roadmap
+	EOM
 }
 
 # Namespace grouping under the naive interpreter is rejected with a clear,

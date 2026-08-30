@@ -14,12 +14,24 @@
 # calls socket.socketpair(AF_UNIX); amarbel-llc/dodder#117). This server is
 # a pure net/http TCP listener, so it runs in-sandbox.
 
+#
+# An optional $1 pins the server's listen port (CG_TEST_CALDAV_PORT): the
+# organize lanes need it because the server URL lands in the organize
+# document's `_anchor` + provenance lines and thus its `_base` digest, so
+# whole-document vectors only reproduce against a stable port. The bats lane
+# runs files AND tests concurrently (`--jobs`), so a lane pinning a port MUST
+# (a) pick one no other file uses and (b) serialize its own tests via
+# `setup_file() { export BATS_NO_PARALLELIZE_WITHIN_FILE=true; }` — each test
+# starts its own server on the same port, and stop_caldav_server waits for the
+# previous one to exit first.
+
 start_caldav_server() {
   require_bin CG_TEST_CALDAV cutting-garden-caldav-testserver
   local bin="${CG_TEST_CALDAV:-cutting-garden-caldav-testserver}"
+  local port="${1:-}"
 
   local stderr_file="$BATS_TEST_TMPDIR/caldav-server.stderr"
-  coproc CALDAV_PROC { "$bin" 2>"$stderr_file"; }
+  coproc CALDAV_PROC { CG_TEST_CALDAV_PORT="$port" "$bin" 2>"$stderr_file"; }
   export CALDAV_STDOUT_FD="${CALDAV_PROC[0]}"
   export CALDAV_STDIN_FD="${CALDAV_PROC[1]}"
   export CALDAV_PID="$CALDAV_PROC_PID"

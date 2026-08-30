@@ -19,13 +19,21 @@
 # CATEGORIES work (one-tag); field1/field4 carry no CATEGORIES. Reusing the
 # fields calendar keeps CATEGORIES groupable-only (never a box atom), so the
 # priority/field-edit lanes' exact box assertions are undisturbed.
+#
+# Every organize step is a WHOLE-DOCUMENT vector (native tags design G16) with
+# verbatim `_base` digests, so the testserver is pinned to this file's own port
+# (43102) and the file's tests are serialized (see lib/caldav.bash).
+
+setup_file() {
+  export BATS_NO_PARALLELIZE_WITHIN_FILE=true
+}
 
 setup() {
   load "$(dirname "$BATS_TEST_FILE")/lib/common.bash"
   load "$(dirname "$BATS_TEST_FILE")/lib/caldav.bash"
   export output
   export CG_TEST_CALDAV_FIELDS=1
-  start_caldav_server
+  start_caldav_server 43102
   init_store
   CAL="${CALDAV_SOURCE%/dav/}/dav/fields/"
 }
@@ -36,23 +44,37 @@ teardown() {
 
 # bats file_tags=organize
 
-# generate_grouped runs `organize -group-by categories` and saves the document.
+# generate_grouped runs `organize -group-by categories` and asserts the document
+# in full: the hoisted dialect (a `- _group-by = categories` envelope directive,
+# no `# categories=` parent heading, bare `## <tag>` buckets sorted ascending —
+# errand before work), the untagged field1/field4 ungrouped, and the two-tag
+# field2 filed under BOTH buckets while the one-tag field3 sits under work only.
 generate_grouped() {
   run_cg organize -group-by categories "$CAL"
   assert_success
-  DOC="$BATS_TEST_TMPDIR/categories.txt"
-  printf '%s\n' "$output" >"$DOC"
-}
+  assert_output - <<-'EOM'
+	---
+	% generated: `cg organize -group-by categories -query "_terminal=no" caldav:http://127.0.0.1:43102/dav/fields/`
+	- _base = @blake2b256-gy636x6nfyzjtmrkppx058xe7aw5p34258hflt895tvmlg7margss8yxtf
+	- _anchor = caldav:http://127.0.0.1:43102/dav/fields/
+	- _query = _terminal=no
+	- _type = !caldav-object-vtodo-v1
+	- _group-by = categories
+	! organize-base-v1
+	---
 
-# lines_under_bucket prints the object box lines directly beneath the
-# `## <value>` heading ($1), stopping at the next heading — so a lane can assert
-# which tasks a tag bucket contains.
-lines_under_bucket() {
-  awk -v h="## $1" '
-    $0 == h { in_bucket = 1; next }
-    /^#/ { in_bucket = 0 }
-    in_bucket && /^- \[/ { print }
-  ' "$DOC"
+	- [field1.ics location=Bank status=NEEDS-ACTION priority=1] Pay rent
+	- [field4.ics] Someday idea
+
+	## errand
+
+	- [field2.ics priority=5] Read book
+
+	## work
+
+	- [field2.ics priority=5] Read book
+	- [field3.ics priority=9] Water plants
+	EOM
 }
 
 # Grouping by categories files a two-tag task under BOTH its buckets and a
@@ -62,19 +84,6 @@ lines_under_bucket() {
 # sort ascending — errand before work).
 function organize_categories_multi_membership { # @test
   generate_grouped
-  assert_line '- _group-by = categories'
-  refute_line '# categories='
-  assert_line '## errand'
-  assert_line '## work'
-
-  # field2 (work,errand) is filed under BOTH buckets; field3 (work) under work only.
-  run lines_under_bucket errand
-  assert_output --partial 'field2.ics'
-  refute_output --partial 'field3.ics'
-
-  run lines_under_bucket work
-  assert_output --partial 'field2.ics'
-  assert_output --partial 'field3.ics'
 }
 
 # `list --facets --filter 'categories=<tag>'` narrows the summary to the objects
@@ -98,26 +107,74 @@ function list_facets_categories_filter { # @test
 # to errand and commit; the membership path folds the base->edited set-diff
 # (remove work, add errand) onto the live {work} set through the naive interpreter,
 # so field3's CATEGORIES becomes errand while the two-tag field2 (present under both
-# buckets, unmoved) is left untouched.
+# buckets, unmoved) is left untouched — and the re-rendered document files field3
+# under errand only.
 function organize_categories_apply_writes { # @test
   generate_grouped
-  local edited="$BATS_TEST_TMPDIR/edited.txt" line
-  line="$(grep 'field3.ics' "$DOC")"
-  [[ -n $line ]] || fail "no field3 box in document: $(cat "$DOC")"
-  awk -v ln="$line" -v h='## errand' '
-    $0 == ln { next }
-    { print }
-    $0 == h { print ""; print ln }
-  ' "$DOC" >"$edited"
+  local edited="$BATS_TEST_TMPDIR/edited.txt"
+  cat >"$edited" <<-'EOM'
+	---
+	% generated: `cg organize -group-by categories -query "_terminal=no" caldav:http://127.0.0.1:43102/dav/fields/`
+	- _base = @blake2b256-gy636x6nfyzjtmrkppx058xe7aw5p34258hflt895tvmlg7margss8yxtf
+	- _anchor = caldav:http://127.0.0.1:43102/dav/fields/
+	- _query = _terminal=no
+	- _type = !caldav-object-vtodo-v1
+	- _group-by = categories
+	! organize-base-v1
+	---
+
+	- [field1.ics location=Bank status=NEEDS-ACTION priority=1] Pay rent
+	- [field4.ics] Someday idea
+
+	## errand
+
+	- [field2.ics priority=5] Read book
+	- [field3.ics priority=9] Water plants
+
+	## work
+
+	- [field2.ics priority=5] Read book
+	EOM
 
   run_cg organize -apply "$edited" -commit
   assert_success
-  assert_output --partial '  - [field3.ics  categories=[-work-]{+errand+}]'
-  assert_output --partial 'organize: wrote 1 change(s)'
+  assert_output - <<'EOF'
+organize: 1 change(s):
+
+  - [field3.ics  categories=[-work-]{+errand+}]
+
+organize: wrote 1 change(s)
+EOF
 
   # The membership write rewrote field3's CATEGORIES to errand on the live object.
   run curl -fsS "${CALDAV_SOURCE#caldav:}fields/field3.ics"
   assert_success
   assert_output --partial 'CATEGORIES:errand'
   refute_output --partial 'CATEGORIES:work'
+
+  run_cg organize -group-by categories "$CAL"
+  assert_success
+  assert_output - <<-'EOM'
+	---
+	% generated: `cg organize -group-by categories -query "_terminal=no" caldav:http://127.0.0.1:43102/dav/fields/`
+	- _base = @blake2b256-f2ydp8y7sx3ff9mtzqhgnyty7zkv8d98lw5xcxdpeaka8ygq6ztq92kk8w
+	- _anchor = caldav:http://127.0.0.1:43102/dav/fields/
+	- _query = _terminal=no
+	- _type = !caldav-object-vtodo-v1
+	- _group-by = categories
+	! organize-base-v1
+	---
+
+	- [field1.ics location=Bank status=NEEDS-ACTION priority=1] Pay rent
+	- [field4.ics] Someday idea
+
+	## errand
+
+	- [field2.ics priority=5] Read book
+	- [field3.ics priority=9] Water plants
+
+	## work
+
+	- [field2.ics priority=5] Read book
+	EOM
 }

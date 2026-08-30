@@ -16,13 +16,21 @@
 #   field2 Read book     PRIORITY 5 (1_should)
 #   field3 Water plants  PRIORITY 9 (2_nice)
 #   field4 Someday idea  no PRIORITY (3_unspecified)
+#
+# Every organize step is a WHOLE-DOCUMENT vector (native tags design G16) with
+# verbatim `_base` digests, so the testserver is pinned to this file's own port
+# (43105) and the file's tests are serialized (see lib/caldav.bash).
+
+setup_file() {
+  export BATS_NO_PARALLELIZE_WITHIN_FILE=true
+}
 
 setup() {
   load "$(dirname "$BATS_TEST_FILE")/lib/common.bash"
   load "$(dirname "$BATS_TEST_FILE")/lib/caldav.bash"
   export output
   export CG_TEST_CALDAV_FIELDS=1
-  start_caldav_server
+  start_caldav_server 43105
   init_store
   CAL="${CALDAV_SOURCE%/dav/}/dav/fields/"
 }
@@ -33,26 +41,41 @@ teardown() {
 
 # bats file_tags=organize
 
-# generate_priority runs `organize -group-by priority` and saves the document.
+# generate_priority runs `organize -group-by priority` and asserts the document
+# in full: the four bands pre-rendered urgency-first, each task under its own
+# band, every box surfacing its redundant priority atom (the heading/atom overlap
+# #229 tracks) plus location/status where present.
 generate_priority() {
   run_cg organize -group-by priority "$CAL"
   assert_success
-  DOC="$BATS_TEST_TMPDIR/priority.txt"
-  printf '%s\n' "$output" >"$DOC"
-}
+  assert_output - <<-'EOM'
+	---
+	% generated: `cg organize -group-by priority -query "_terminal=no" caldav:http://127.0.0.1:43105/dav/fields/`
+	- _base = @blake2b256-s4q5ertf9nmhp27axwvxsxdf9dw6ayugjhlw7vv9m73qznty9chsmzsmla
+	- _anchor = caldav:http://127.0.0.1:43105/dav/fields/
+	- _query = _terminal=no
+	- _type = !caldav-object-vtodo-v1
+	! organize-base-v1
+	---
 
-# move_box refiles a box line ($1=box substring) under the `## =<band>` bucket
-# ($2), writing the edited document to $3 — the box's priority atom is carried
-# verbatim (an unchanged atom is no field edit), so the reorganize is a pure move.
-move_box() {
-  local box="$1" band="$2" out="$3" line
-  line="$(grep "$box" "$DOC")"
-  [[ -n $line ]] || fail "no $box box in document: $(cat "$DOC")"
-  awk -v ln="$line" -v h="## =$band" '
-    $0 == ln { next }
-    { print }
-    $0 == h { print ""; print ln }
-  ' "$DOC" >"$out"
+	# priority=
+
+	## =0_must
+
+	- [field1.ics location=Bank status=NEEDS-ACTION priority=1] Pay rent
+
+	## =1_should
+
+	- [field2.ics priority=5] Read book
+
+	## =2_nice
+
+	- [field3.ics priority=9] Water plants
+
+	## =3_unspecified
+
+	- [field4.ics] Someday idea
+	EOM
 }
 
 # Grouping by priority pre-renders the four bands (urgency-first) and files each
@@ -60,23 +83,43 @@ move_box() {
 # heading/atom overlap #229 tracks), plus location/status where present.
 function organize_priority_generate_buckets { # @test
   generate_priority
-  assert_line '# priority='
-  assert_line '## =0_must'
-  assert_line '## =1_should'
-  assert_line '## =2_nice'
-  assert_line '## =3_unspecified'
-  assert_output --partial '- [field1.ics location=Bank status=NEEDS-ACTION priority=1] Pay rent'
-  assert_output --partial '- [field2.ics priority=5] Read book'
-  assert_output --partial '- [field3.ics priority=9] Water plants'
-  assert_output --partial '- [field4.ics] Someday idea'
 }
 
-# The core tracer: move field2 from 1_should to 0_must and commit. The band
-# completes to its canonical PRIORITY value (must->1) on the live object.
+# The core tracer: move field2 from 1_should to 0_must and commit. The box's
+# priority atom is carried verbatim (an unchanged atom is no field edit), so the
+# reorganize is a pure move; the band completes to its canonical PRIORITY value
+# (must->1) on the live object, and the re-rendered document shows field2 under
+# 0_must with priority=1.
 function organize_priority_band_move_rewrites { # @test
   generate_priority
   local edited="$BATS_TEST_TMPDIR/edited.txt"
-  move_box 'field2.ics' 0_must "$edited"
+  cat >"$edited" <<-'EOM'
+	---
+	% generated: `cg organize -group-by priority -query "_terminal=no" caldav:http://127.0.0.1:43105/dav/fields/`
+	- _base = @blake2b256-s4q5ertf9nmhp27axwvxsxdf9dw6ayugjhlw7vv9m73qznty9chsmzsmla
+	- _anchor = caldav:http://127.0.0.1:43105/dav/fields/
+	- _query = _terminal=no
+	- _type = !caldav-object-vtodo-v1
+	! organize-base-v1
+	---
+
+	# priority=
+
+	## =0_must
+
+	- [field1.ics location=Bank status=NEEDS-ACTION priority=1] Pay rent
+	- [field2.ics priority=5] Read book
+
+	## =1_should
+
+	## =2_nice
+
+	- [field3.ics priority=9] Water plants
+
+	## =3_unspecified
+
+	- [field4.ics] Someday idea
+	EOM
 
   run_cg organize -apply "$edited" -commit
   assert_success
@@ -96,15 +139,72 @@ EOF
   run_cg list -query 'priority=0_must' "$CAL"
   assert_success
   assert_output --partial 'field2.ics'
+
+  run_cg organize -group-by priority "$CAL"
+  assert_success
+  assert_output - <<-'EOM'
+	---
+	% generated: `cg organize -group-by priority -query "_terminal=no" caldav:http://127.0.0.1:43105/dav/fields/`
+	- _base = @blake2b256-6pcxtgqndw97kcj7af40vqje5ql85saafxppwxyx30z4c2asfy2qtvvz0n
+	- _anchor = caldav:http://127.0.0.1:43105/dav/fields/
+	- _query = _terminal=no
+	- _type = !caldav-object-vtodo-v1
+	! organize-base-v1
+	---
+
+	# priority=
+
+	## =0_must
+
+	- [field1.ics location=Bank status=NEEDS-ACTION priority=1] Pay rent
+	- [field2.ics priority=1] Read book
+
+	## =1_should
+
+	## =2_nice
+
+	- [field3.ics priority=9] Water plants
+
+	## =3_unspecified
+
+	- [field4.ics] Someday idea
+	EOM
 }
 
 # Moving into 3_unspecified completes to PRIORITY 0, which the serializer OMITS:
 # the property is CLEARED, not written as literal 0. The task's LOCATION/STATUS
-# are untouched — only the banded field changes.
+# are untouched — only the banded field changes — so the re-rendered box keeps
+# its location/status atoms and drops priority.
 function organize_priority_unspecified_clears { # @test
   generate_priority
   local edited="$BATS_TEST_TMPDIR/edited.txt"
-  move_box 'field1.ics' 3_unspecified "$edited"
+  cat >"$edited" <<-'EOM'
+	---
+	% generated: `cg organize -group-by priority -query "_terminal=no" caldav:http://127.0.0.1:43105/dav/fields/`
+	- _base = @blake2b256-s4q5ertf9nmhp27axwvxsxdf9dw6ayugjhlw7vv9m73qznty9chsmzsmla
+	- _anchor = caldav:http://127.0.0.1:43105/dav/fields/
+	- _query = _terminal=no
+	- _type = !caldav-object-vtodo-v1
+	! organize-base-v1
+	---
+
+	# priority=
+
+	## =0_must
+
+	## =1_should
+
+	- [field2.ics priority=5] Read book
+
+	## =2_nice
+
+	- [field3.ics priority=9] Water plants
+
+	## =3_unspecified
+
+	- [field1.ics location=Bank status=NEEDS-ACTION priority=1] Pay rent
+	- [field4.ics] Someday idea
+	EOM
 
   run_cg organize -apply "$edited" -commit
   assert_success
@@ -122,4 +222,34 @@ EOF
   refute_output --partial 'PRIORITY'
   assert_output --partial 'LOCATION:Bank'
   assert_output --partial 'STATUS:NEEDS-ACTION'
+
+  run_cg organize -group-by priority "$CAL"
+  assert_success
+  assert_output - <<-'EOM'
+	---
+	% generated: `cg organize -group-by priority -query "_terminal=no" caldav:http://127.0.0.1:43105/dav/fields/`
+	- _base = @blake2b256-gwx98hhywlx2sulqfjccr3ygsg5fe6rqd7yd68t8p77pucy3q8wqqw4w4v
+	- _anchor = caldav:http://127.0.0.1:43105/dav/fields/
+	- _query = _terminal=no
+	- _type = !caldav-object-vtodo-v1
+	! organize-base-v1
+	---
+
+	# priority=
+
+	## =0_must
+
+	## =1_should
+
+	- [field2.ics priority=5] Read book
+
+	## =2_nice
+
+	- [field3.ics priority=9] Water plants
+
+	## =3_unspecified
+
+	- [field1.ics location=Bank status=NEEDS-ACTION] Pay rent
+	- [field4.ics] Someday idea
+	EOM
 }
