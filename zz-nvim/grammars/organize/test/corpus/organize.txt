@@ -1,20 +1,225 @@
-==================
-heading ladder and espalier boxes
-==================
-
-# month=
-
-## =2026-08
-
-- [sched1.ics date_due=2026-08-15 time_due=14-30] Book flights
-
-## =2026-09
-
-- [event1.ics !caldav-object-vevent-v1 date_start=2026-09-10 time_start=16-30 location=HQ] Standup
-
+========================================
+(tags) grouping: buckets at `#`, a quoted tag heading (organize_literal.bats generate_grouped)
+========================================
+---
+% generated: `cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:43107/dav/lit/`
+- _base = @blake2b256-uhrs68g8fye4lj3pfwt90rj54qfnra2j03nxufxjj5gz5aqdv8vs7tkhaw
+- _anchor = caldav:http://127.0.0.1:43107/dav/lit/
+- _query = _terminal=no
+- _type = !caldav-object-vtodo-v1
+- _group-by = (tags)
+! organize-base-v1
 ---
 
+- [lit2.ics location=Bank] Read book
+
+# "_ inbox"
+
+- [lit1.ics] Triage inbox
+
+----------------------------------------
+
 (source_file
+  (metadata
+    (comment_line
+      (comment_text))
+    (field_line
+      (field_key)
+      (field_blob
+        (markl_id
+          (markl_format)
+          (markl_data))))
+    (field_line
+      (field_key)
+      (field_bare))
+    (field_line
+      (field_key)
+      (field_bare))
+    (field_line
+      (field_key)
+      (field_type
+        (field_type_name)))
+    (group_by_line
+      (field_key)
+      (qualifier
+        (qualifier_name)))
+    (type_line
+      (type_name)))
+  (blank_line)
+  (blank_line)
+  (object_line
+    (box
+      (box_object_id)
+      (box_field
+        (box_ident)
+        (box_bare_value)))
+    (description))
+  (blank_line)
+  (heading
+    (heading_marker)
+    (heading_tag
+      (heading_tag_quoted)))
+  (blank_line)
+  (object_line
+    (box
+      (box_object_id))
+    (description)))
+
+========================================
+namespace grouping: `- _group-by = project`, `# -client` buckets (organize_ns.bats generate_grouped)
+========================================
+---
+% generated: `cg organize -group-by project -query "_terminal=no" caldav:http://127.0.0.1:43103/dav/ns/`
+- _base = @blake2b256-pkfjs5lmjf9afnp2w9jwumnrwsg88ju0ch3daqzs4lcnrk5nt23sg2hkxu
+- _anchor = caldav:http://127.0.0.1:43103/dav/ns/
+- _query = _terminal=no
+- _type = !caldav-object-vtodo-v1
+- _group-by = project
+! organize-base-v1
+---
+
+- [nsD.ics] Loose idea
+
+# -client
+
+- [nsA.ics] Acme retainer
+- [nsB.ics] Baxter audit
+
+# -cutting_garden
+
+- [nsC.ics] CG roadmap
+
+----------------------------------------
+
+(source_file
+  (metadata
+    (comment_line
+      (comment_text))
+    (field_line
+      (field_key)
+      (field_blob
+        (markl_id
+          (markl_format)
+          (markl_data))))
+    (field_line
+      (field_key)
+      (field_bare))
+    (field_line
+      (field_key)
+      (field_bare))
+    (field_line
+      (field_key)
+      (field_type
+        (field_type_name)))
+    (group_by_line
+      (field_key)
+      (group_by_tag
+        (heading_tag_name)))
+    (type_line
+      (type_name)))
+  (blank_line)
+  (blank_line)
+  (object_line
+    (box
+      (box_object_id))
+    (description))
+  (blank_line)
+  (heading
+    (heading_marker)
+    (heading_tag
+      (heading_tag_name)))
+  (blank_line)
+  (object_line
+    (box
+      (box_object_id))
+    (description))
+  (object_line
+    (box
+      (box_object_id))
+    (description))
+  (blank_line)
+  (heading
+    (heading_marker)
+    (heading_tag
+      (heading_tag_name)))
+  (blank_line)
+  (object_line
+    (box
+      (box_object_id))
+    (description)))
+
+========================================
+field grouping: `# status=` dimension heading, `## =value` buckets (organize_groupby.bats organize_groupby_field)
+========================================
+---
+% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:43108/dav/fields/`
+- _base = @blake2b256-t8lr6e6y9phvzpl9atlc7x5uhtm2uyrqz0cznhv4u2nynmp7dh3qpdy83u
+- _anchor = caldav:http://127.0.0.1:43108/dav/fields/
+- _query = _terminal=no
+- _type = !caldav-object-vtodo-v1
+! organize-base-v1
+---
+
+- [field2.ics priority=5] Read book
+- [field3.ics priority=9] Water plants
+- [field4.ics] Someday idea
+
+# status=
+
+## =NEEDS-ACTION
+
+- [field1.ics location=Bank priority=1] Pay rent
+
+## =IN-PROCESS
+
+## =COMPLETED
+
+## =CANCELLED
+
+----------------------------------------
+
+(source_file
+  (metadata
+    (comment_line
+      (comment_text))
+    (field_line
+      (field_key)
+      (field_blob
+        (markl_id
+          (markl_format)
+          (markl_data))))
+    (field_line
+      (field_key)
+      (field_bare))
+    (field_line
+      (field_key)
+      (field_bare))
+    (field_line
+      (field_key)
+      (field_type
+        (field_type_name)))
+    (type_line
+      (type_name)))
+  (blank_line)
+  (blank_line)
+  (object_line
+    (box
+      (box_object_id)
+      (box_field
+        (box_ident)
+        (box_bare_value)))
+    (description))
+  (object_line
+    (box
+      (box_object_id)
+      (box_field
+        (box_ident)
+        (box_bare_value)))
+    (description))
+  (object_line
+    (box
+      (box_object_id))
+    (description))
   (blank_line)
   (heading
     (heading_marker)
@@ -42,6 +247,364 @@ heading ladder and espalier boxes
     (heading_value
       (heading_value_text)))
   (blank_line)
+  (heading
+    (heading_marker)
+    (heading_value
+      (heading_value_text)))
+  (blank_line)
+  (heading
+    (heading_marker)
+    (heading_value
+      (heading_value_text))))
+
+========================================
+date field at a granularity: `# date_due=(month)` qualifier (organize_groupby.bats organize_groupby_date_granularity)
+========================================
+---
+% generated: `cg organize -group-by date_due=(month) -query "_terminal=no" caldav:http://127.0.0.1:43108/dav/sched/`
+- _base = @blake2b256-gencqx53cka0dgfqa3gakt9hunzujhkl0s6kyw4wychdj7s688ssr4unyf
+- _anchor = caldav:http://127.0.0.1:43108/dav/sched/
+- _query = _terminal=no
+- _type = !caldav-object-vtodo-v1
+! organize-base-v1
+---
+
+# date_due=(month)
+
+## =2026-08
+
+- [sched1.ics date_due=2026-08-15 time_due=14-30] Book flights
+
+## =2026-09
+
+- [sched2.ics date_due=2026-09-10 time_due=16-30] Renew passport
+
+----------------------------------------
+
+(source_file
+  (metadata
+    (comment_line
+      (comment_text))
+    (field_line
+      (field_key)
+      (field_blob
+        (markl_id
+          (markl_format)
+          (markl_data))))
+    (field_line
+      (field_key)
+      (field_bare))
+    (field_line
+      (field_key)
+      (field_bare))
+    (field_line
+      (field_key)
+      (field_type
+        (field_type_name)))
+    (type_line
+      (type_name)))
+  (blank_line)
+  (blank_line)
+  (heading
+    (heading_marker)
+    (heading_dimension
+      (heading_dim_name)
+      (qualifier
+        (qualifier_name))))
+  (blank_line)
+  (heading
+    (heading_marker)
+    (heading_value
+      (heading_value_text)))
+  (blank_line)
+  (object_line
+    (box
+      (box_object_id)
+      (box_field
+        (box_ident)
+        (box_bare_value))
+      (box_field
+        (box_ident)
+        (box_bare_value)))
+    (description))
+  (blank_line)
+  (heading
+    (heading_marker)
+    (heading_value
+      (heading_value_text)))
+  (blank_line)
+  (object_line
+    (box
+      (box_object_id)
+      (box_field
+        (box_ident)
+        (box_bare_value))
+      (box_field
+        (box_ident)
+        (box_bare_value)))
+    (description)))
+
+========================================
+box tag atoms: bare (`work-x status`) and quoted (`"_ inbox"`) tags after the id (organize_literal.bats write_lit2_edited)
+========================================
+- [lit2.ics work-x status location=Bank] Read book
+- [lit2.ics "_ inbox" location=Bank] Read book
+
+----------------------------------------
+
+(source_file
+  (object_line
+    (box
+      (box_object_id)
+      (box_tag
+        (box_ident))
+      (box_tag
+        (box_ident))
+      (box_field
+        (box_ident)
+        (box_bare_value)))
+    (description))
+  (object_line
+    (box
+      (box_object_id)
+      (box_tag
+        (box_tag_quoted))
+      (box_field
+        (box_ident)
+        (box_bare_value)))
+    (description)))
+
+========================================
+empty headings are resets: `##` pops to the parent, `#` to ungrouped (organize_headings.bats organize_headings_reset_pops_to_parent_and_ungrouped)
+========================================
+---
+% generated: `cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:43109/dav/fields/`
+- _base = @blake2b256-3cqzc5cknaq8v5t9xuc0jp07egvllras05avln3tavafg9dtwm2qwznkhy
+- _anchor = caldav:http://127.0.0.1:43109/dav/fields/
+- _query = _terminal=no
+- _type = !caldav-object-vtodo-v1
+- _group-by = (tags)
+! organize-base-v1
+---
+
+# work
+
+- [field3.ics priority=9] Water plants
+
+## errand
+
+- [field4.ics] Someday idea
+
+##
+
+- [field1.ics location=Bank status=NEEDS-ACTION priority=1] Pay rent
+
+#
+
+- [field2.ics priority=5] Read book
+
+----------------------------------------
+
+(source_file
+  (metadata
+    (comment_line
+      (comment_text))
+    (field_line
+      (field_key)
+      (field_blob
+        (markl_id
+          (markl_format)
+          (markl_data))))
+    (field_line
+      (field_key)
+      (field_bare))
+    (field_line
+      (field_key)
+      (field_bare))
+    (field_line
+      (field_key)
+      (field_type
+        (field_type_name)))
+    (group_by_line
+      (field_key)
+      (qualifier
+        (qualifier_name)))
+    (type_line
+      (type_name)))
+  (blank_line)
+  (blank_line)
+  (heading
+    (heading_marker)
+    (heading_tag
+      (heading_tag_name)))
+  (blank_line)
+  (object_line
+    (box
+      (box_object_id)
+      (box_field
+        (box_ident)
+        (box_bare_value)))
+    (description))
+  (blank_line)
+  (heading
+    (heading_marker)
+    (heading_tag
+      (heading_tag_name)))
+  (blank_line)
+  (object_line
+    (box
+      (box_object_id))
+    (description))
+  (blank_line)
+  (heading_reset
+    (heading_marker))
+  (blank_line)
+  (object_line
+    (box
+      (box_object_id)
+      (box_field
+        (box_ident)
+        (box_bare_value))
+      (box_field
+        (box_ident)
+        (box_bare_value))
+      (box_field
+        (box_ident)
+        (box_bare_value)))
+    (description))
+  (blank_line)
+  (heading_reset
+    (heading_marker))
+  (blank_line)
+  (object_line
+    (box
+      (box_object_id)
+      (box_field
+        (box_ident)
+        (box_bare_value)))
+    (description)))
+
+========================================
+heading depth is structure-only: a `##`-rooted document (organize_headings.bats organize_headings_double_hash_document_applies_identically)
+========================================
+---
+% generated: `cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:43109/dav/fields/`
+- _base = @blake2b256-3cqzc5cknaq8v5t9xuc0jp07egvllras05avln3tavafg9dtwm2qwznkhy
+- _anchor = caldav:http://127.0.0.1:43109/dav/fields/
+- _query = _terminal=no
+- _type = !caldav-object-vtodo-v1
+- _group-by = (tags)
+! organize-base-v1
+---
+
+- [field1.ics location=Bank status=NEEDS-ACTION priority=1] Pay rent
+- [field4.ics] Someday idea
+
+## errand
+
+- [field2.ics priority=5] Read book
+- [field3.ics priority=9] Water plants
+
+## work
+
+- [field2.ics priority=5] Read book
+
+----------------------------------------
+
+(source_file
+  (metadata
+    (comment_line
+      (comment_text))
+    (field_line
+      (field_key)
+      (field_blob
+        (markl_id
+          (markl_format)
+          (markl_data))))
+    (field_line
+      (field_key)
+      (field_bare))
+    (field_line
+      (field_key)
+      (field_bare))
+    (field_line
+      (field_key)
+      (field_type
+        (field_type_name)))
+    (group_by_line
+      (field_key)
+      (qualifier
+        (qualifier_name)))
+    (type_line
+      (type_name)))
+  (blank_line)
+  (blank_line)
+  (object_line
+    (box
+      (box_object_id)
+      (box_field
+        (box_ident)
+        (box_bare_value))
+      (box_field
+        (box_ident)
+        (box_bare_value))
+      (box_field
+        (box_ident)
+        (box_bare_value)))
+    (description))
+  (object_line
+    (box
+      (box_object_id))
+    (description))
+  (blank_line)
+  (heading
+    (heading_marker)
+    (heading_tag
+      (heading_tag_name)))
+  (blank_line)
+  (object_line
+    (box
+      (box_object_id)
+      (box_field
+        (box_ident)
+        (box_bare_value)))
+    (description))
+  (object_line
+    (box
+      (box_object_id)
+      (box_field
+        (box_ident)
+        (box_bare_value)))
+    (description))
+  (blank_line)
+  (heading
+    (heading_marker)
+    (heading_tag
+      (heading_tag_name)))
+  (blank_line)
+  (object_line
+    (box
+      (box_object_id)
+      (box_field
+        (box_ident)
+        (box_bare_value)))
+    (description)))
+
+========================================
+type heading (spelling 1) and a typed, blob-bearing box (legacy ladder, kept parsing)
+========================================
+# !caldav-object-vevent-v1
+
+- [event1.ics !caldav-object-vevent-v1 date_start=2026-09-10 time_start=16-30 location=HQ @blake2b256-9ft3x] Standup
+
+----------------------------------------
+
+(source_file
+  (heading
+    (heading_marker)
+    (heading_type
+      (heading_type_name)))
+  (blank_line)
   (object_line
     (box
       (box_object_id)
@@ -55,5 +618,9 @@ heading ladder and espalier boxes
         (box_bare_value))
       (box_field
         (box_ident)
-        (box_bare_value)))
+        (box_bare_value))
+      (box_blob
+        (markl_id
+          (markl_format)
+          (markl_data))))
     (description)))

@@ -15,12 +15,23 @@ extracting shared tree-sitter grammar homes (mirroring the `marklid.peg` /
 One grammar, `cutting_garden_organize`:
 
 - the `---`-fenced hyphence **envelope** (`- _base = @digest`, `- _anchor`,
-  `- _type = !type`, `% provenance`, `! organize-base-v1`);
-- the RFC 0015 **heading ladder** — `# !<type>`, a `# <dim>=` dimension heading,
-  and a `## =<value>` bucket;
-- **espalier object lines** — `- [<id> !<type> <key>=<value> @<digest>] <desc>`,
-  with the box interior's id / type / `date_start=…`/`time_start=…` field atoms
-  (#47) / digest highlighted distinctly.
+  `- _type = !type`, `- _group-by = (tags)` / `project`, `% provenance`,
+  `! organize-base-v1`);
+- the RFC 0015 **heading ladder** — `# !<type>`, a `# <dim>=` /
+  `# date_due=(month)` dimension heading, a `## =<value>` bucket, a **tag
+  bucket** (`# work`, `# -client`, `# "_ inbox"`), and an empty **reset**
+  heading (`#`, `##`); heading depth is structure-only, so a `##`-rooted
+  document parses like a `#`-rooted one;
+- **espalier object lines** —
+  `- [<id> !<type> <tag> "<quoted tag>" <key>=<value> @<digest>] <desc>`, with
+  the box interior's id / type / bare and quoted **tag atoms** (native tags
+  design G9: a bare word is always a tag) / `date_start=…`/`time_start=…` field
+  atoms (#47) / digest highlighted distinctly — tags carry their own `@tag`
+  capture so the planned elide-on-hover feature can key on them.
+
+The corpus under `grammars/organize/test/corpus/` mirrors the
+`zz-tests_bats/organize_*.bats` vectors and is the dialect's conformance vector
+(design G11); `just test-grammar-corpus` runs it in the merge gate.
 
 Query-string highlighting (the trellis grammar) and a completion/LSP layer
 (cutting-garden#219) are out of scope here.
@@ -60,9 +71,9 @@ The tree-sitter CLI is not in the devshell (it needs node too); run it via
 `nix shell`:
 
 ```
-cd grammars/organize
-nix shell nixpkgs#nodejs nixpkgs#tree-sitter -c tree-sitter generate   # after a grammar.js edit
-nix shell nixpkgs#nodejs nixpkgs#tree-sitter -c tree-sitter test        # or: just debug-tree-sitter-corpus
+just codemod-generate-tree-sitter   # after a grammar.js edit (tree-sitter generate)
+just test-grammar-corpus            # tree-sitter test
+just debug-tree-sitter-corpus -u    # rewrite the expected trees; review the diff
 ```
 
 Commit the regenerated `grammars/organize/src/` (the build uses the committed

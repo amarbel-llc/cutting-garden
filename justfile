@@ -24,7 +24,7 @@ build-nix-check:
     nix flake check --show-trace
 
 [group('post-build')]
-test: validate-generate validate-generate-dagnabit validate-grammar test-go lint-go lint-fmt lint-worktree lint-go-analyzers test-bats
+test: validate-generate validate-generate-dagnabit validate-grammar test-grammar-corpus test-go lint-go lint-fmt lint-worktree lint-go-analyzers test-bats
 
 # run the Go test suite across all packages
 [group('post-build')]
@@ -89,15 +89,28 @@ lint-go-analyzers: (lint-go-analyzer "seqerror") (lint-go-analyzer "repool") (li
 test-bats:
     nix build .#bats-capture --show-trace
 
-# Run the organize tree-sitter grammar's corpus tests (zz-nvim, cutting-garden#43).
-# A debug helper (deliberately NOT the `test` aggregate) so the merge gate stays
-# Go-focused and needs no tree-sitter CLI. Uses `nix shell` (node + tree-sitter)
-# rather than the devshell, so it needs no devshell restart. After a grammar.js
-# edit, regenerate the committed parser first:
-# cd zz-nvim/grammars/organize && nix shell nixpkgs#nodejs nixpkgs#tree-sitter -c tree-sitter generate
-[group('debug')]
-debug-tree-sitter-corpus:
+# Run the organize tree-sitter grammar's corpus (zz-nvim, cutting-garden#43) as a
+# merge-gate leaf: the corpus is the organize dialect's conformance vector
+# (native tags design G11 — each test mirrors a zz-tests_bats/organize_*.bats
+# document), so a dialect change that outruns the grammar fails here, not in the
+# editor. Uses `nix shell` (node + tree-sitter) rather than the devshell, so it
+# needs no devshell restart; compiles the COMMITTED src/parser.c, so regenerate
+# with `just codemod-generate-tree-sitter` after a grammar.js edit.
+#
+# run the organize tree-sitter grammar's corpus tests
+[group('post-build')]
+test-grammar-corpus:
     cd zz-nvim/grammars/organize && nix shell nixpkgs#nodejs nixpkgs#tree-sitter -c tree-sitter test
+    gum log --level info "test-grammar-corpus: ok"
+
+# The corpus with tree-sitter's own flags passed through — `-u` rewrites each
+# test's expected tree from the current parser (review the diff!), `-d` shows
+# the parse trace. The agent dev-loop while editing grammar.js.
+#
+# run the organize grammar corpus with extra tree-sitter test flags (e.g. -u)
+[group('debug')]
+debug-tree-sitter-corpus *ARGS:
+    cd zz-nvim/grammars/organize && nix shell nixpkgs#nodejs nixpkgs#tree-sitter -c tree-sitter test {{ ARGS }}
 
 [group('maintenance')]
 update: update-go update-nix
@@ -206,7 +219,18 @@ release version:
     gum log --level info "Pushed $tag"
 
 [group('codemod')]
-codemod: codemod-fmt codemod-generate codemod-generate-dagnabit
+codemod: codemod-fmt codemod-generate codemod-generate-dagnabit codemod-generate-tree-sitter
+
+# Regenerate the organize tree-sitter grammar's committed parser (zz-nvim/
+# grammars/organize/src/) from grammar.js + common/*.js. The flake compiles the
+# committed parser.c (`generate = false`) and `test-grammar-corpus` runs it, so
+# every grammar.js edit needs this. Uses `nix shell` (node + tree-sitter) — the
+# tree-sitter CLI is not in the devshell.
+#
+# regenerate the organize tree-sitter grammar's committed parser
+[group('codemod')]
+codemod-generate-tree-sitter:
+    cd zz-nvim/grammars/organize && nix shell nixpkgs#nodejs nixpkgs#tree-sitter -c tree-sitter generate
 
 # Format all source via conformist (the treefmt successor): Go
 # (goimports -> gofumpt), Nix (nixfmt), shell/bats (shfmt), TOML (tommy
