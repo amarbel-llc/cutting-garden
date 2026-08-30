@@ -107,9 +107,7 @@ write_lit2_edited() {
 # no CATEGORIES and its LOCATION is unchanged, and the re-rendered document is
 # byte-identical to the generated one (same `_base`).
 assert_lit2_untouched() {
-  run curl -fsS "${CALDAV_SOURCE#caldav:}lit/lit2.ics"
-  assert_success
-  refute_output --partial 'CATEGORIES'
+  assert_categories "${CALDAV_SOURCE#caldav:}lit/lit2.ics" ''
   assert_output --partial 'LOCATION:Bank'
   generate_grouped
 }
@@ -185,9 +183,7 @@ organize: 1 change(s):
 organize: wrote 1 change(s)
 EOF
 
-  run curl -fsS "${CALDAV_SOURCE#caldav:}lit/lit2.ics"
-  assert_success
-  assert_output --partial 'CATEGORIES:_ inbox'
+  assert_categories "${CALDAV_SOURCE#caldav:}lit/lit2.ics" '_ inbox'
 
   run_cg organize -group-by '(tags)' "$CAL"
   assert_success

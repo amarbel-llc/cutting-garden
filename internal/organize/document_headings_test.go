@@ -82,19 +82,52 @@ func TestParseDepthNormalization_ShallowestIsRoot(t *testing.T) {
 		assertMembership(t, m, "a.ics", "work")
 		assertMembership(t, m, "b.ics", "errand")
 	}
+}
 
-	// The parsed sections carry the NORMALIZED depth, so a `##`-rooted document
-	// renders back at `#`.
-	doc, err := parseDocument(tagEnvelope + "\n## work\n\n- [a.ics] A\n")
-	if err != nil {
-		t.Fatalf("parse: %v", err)
+// TestParseDepthNormalization_RendersAtRoot pins that the parsed sections carry
+// the NORMALIZED depth, so a `##`-rooted document renders back at `#` — and that
+// the root is computed over NON-EMPTY headings only: a `#` reset shallower than
+// every real heading does not push `work` to depth 2.
+func TestParseDepthNormalization_RendersAtRoot(t *testing.T) {
+	for _, body := range []string{
+		"\n## work\n\n- [a.ics] A\n",
+		"\n## work\n\n- [a.ics] A\n\n#\n\n- [d.ics] D\n",
+	} {
+		doc, err := parseDocument(tagEnvelope + body)
+		if err != nil {
+			t.Fatalf("parse %q: %v", body, err)
+		}
+		if len(doc.Sections) != 1 || doc.Sections[0].Depth != 1 {
+			t.Fatalf("%q: sections = %+v, want one section at depth 1", body, doc.Sections)
+		}
+		if out := render(doc); !strings.Contains(out, "\n# work\n") || strings.Contains(out, "##") {
+			t.Errorf("%q: a `##`-rooted document must render at `#`:\n%s", body, out)
+		}
 	}
-	if len(doc.Sections) != 1 || doc.Sections[0].Depth != 1 {
-		t.Fatalf("sections = %+v, want one section at depth 1", doc.Sections)
-	}
-	if out := render(doc); !strings.Contains(out, "\n# work\n") || strings.Contains(out, "##") {
-		t.Errorf("a `##`-rooted document must render at `#`:\n%s", out)
-	}
+	// The reset in the second body is shallower than `work`, so it still pops it.
+	m := parseTagBody(t, "\n## work\n\n- [a.ics] A\n\n#\n\n- [d.ics] D\n")
+	assertMembership(t, m, "a.ics", "work")
+	assertMembership(t, m, "d.ics")
+}
+
+// TestParseReset_PopsToNearestOpenHeading pins the rule precisely: a reset lands
+// the following lines under the nearest OPEN heading shallower than it, not the
+// literal depth N−1 — on a non-contiguous ladder `# a` / `### b` / `###` the
+// line lands under `a`.
+func TestParseReset_PopsToNearestOpenHeading(t *testing.T) {
+	m := parseTagBody(t, `
+# work
+
+### errand
+
+- [b.ics] B
+
+###
+
+- [c.ics] C
+`)
+	assertMembership(t, m, "b.ics", "errand")
+	assertMembership(t, m, "c.ics", "work")
 }
 
 // TestParseDepthNormalization_NestingIsRelative pins that nesting survives

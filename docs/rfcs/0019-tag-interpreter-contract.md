@@ -493,7 +493,7 @@ covered by two layers:
 - **Host surface where naive semantics show through.** The bats lanes exercised
   through `cg` against the caldav testserver (`zz-tests_bats/`, the slice-1
   categories lane): `cg organize --group-by (tags)` (native tags G10; formerly
-  `categories`) renders one line per tag under a `## <tag>` bucket
+  `categories`) renders one line per tag under a `# <tag>` bucket
   (whole-dimension `Buckets`), and
   `cg list --facets --filter 'categories=<tag>'` counts exact naive matches. A
   move under a read-only categories bucket rejects loudly (slice 1 declares the

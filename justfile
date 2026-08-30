@@ -798,63 +798,63 @@ debug-organize-vectors:
     start_srv 43109 CG_TEST_CALDAV_FIELDS=1
     cal="${home}fields/"
     gen headings-generate "$cal" '(tags)'
-    with_body "$hd" "$hd.double" <<'EOM'
+    with_body "$hd" "$hd.double" <<-'EOM'
 
-    - [field1.ics location=Bank status=NEEDS-ACTION priority=1] Pay rent
-    - [field4.ics] Someday idea
+    	- [field1.ics location=Bank status=NEEDS-ACTION priority=1] Pay rent
+    	- [field4.ics] Someday idea
 
-    ## errand
+    	## errand
 
-    - [field2.ics priority=5] Read book
-    - [field3.ics priority=9] Water plants
+    	- [field2.ics priority=5] Read book
+    	- [field3.ics priority=9] Water plants
 
-    ## work
+    	## work
 
-    - [field2.ics priority=5] Read book
-    EOM
+    	- [field2.ics priority=5] Read book
+    	EOM
     apply_doc headings-double "$hd.double"
     gen headings-after-double "$cal" '(tags)'
     stop_srv
     start_srv 43109 CG_TEST_CALDAV_FIELDS=1
-    with_body "$hd" "$hd.reset" <<'EOM'
+    with_body "$hd" "$hd.reset" <<-'EOM'
 
-    # work
+    	# work
 
-    - [field3.ics priority=9] Water plants
+    	- [field3.ics priority=9] Water plants
 
-    ## errand
+    	## errand
 
-    - [field4.ics] Someday idea
+    	- [field4.ics] Someday idea
 
-    ##
+    	##
 
-    - [field1.ics location=Bank status=NEEDS-ACTION priority=1] Pay rent
+    	- [field1.ics location=Bank status=NEEDS-ACTION priority=1] Pay rent
 
-    #
+    	#
 
-    - [field2.ics priority=5] Read book
-    EOM
+    	- [field2.ics priority=5] Read book
+    	EOM
     apply_doc headings-reset "$hd.reset"
     gen headings-after-reset "$cal" '(tags)'
     stop_srv
     start_srv 43109 CG_TEST_CALDAV_FIELDS=1
-    with_body "$hd" "$hd.noop" <<'EOM'
+    with_body "$hd" "$hd.noop" <<-'EOM'
 
-    - [field1.ics location=Bank status=NEEDS-ACTION priority=1] Pay rent
+    	- [field1.ics location=Bank status=NEEDS-ACTION priority=1] Pay rent
 
-    # errand
+    	# errand
 
-    - [field2.ics priority=5] Read book
+    	- [field2.ics priority=5] Read book
 
-    # work
+    	# work
 
-    - [field2.ics priority=5] Read book
-    - [field3.ics priority=9] Water plants
+    	- [field2.ics priority=5] Read book
+    	- [field3.ics priority=9] Water plants
 
-    ##
+    	##
 
-    - [field4.ics] Someday idea
-    EOM
+    	- [field4.ics] Someday idea
+    	EOM
     apply_doc headings-noop "$hd.noop"
     gen headings-after-noop "$cal" '(tags)'
     stop_srv

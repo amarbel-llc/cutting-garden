@@ -158,7 +158,7 @@ func TestPlanMemberships_IdempotentAgainstLive(t *testing.T) {
 // line is out of scope (cutting-garden#215).
 func TestPlanMemberships_LastLineVanish(t *testing.T) {
 	base := categoriesDoc(t, map[string][]string{"t1.ics": {"work"}})
-	// Edited document has NO line for t1.ics at all — just the empty heading.
+	// Edited document has NO line for t1.ics at all — just the empty bucket.
 	edited := document{
 		Anchor:   membershipAnchor,
 		Sections: []section{{Depth: 1, Term: membershipDim + "="}},
@@ -176,7 +176,7 @@ func TestPlanMemberships_LastLineVanish(t *testing.T) {
 // single apply attempt, mirroring planMoves/planFieldEdits' batched conflicts.
 func TestPlanMemberships_LastLineVanishBatched(t *testing.T) {
 	base := categoriesDoc(t, map[string][]string{"id1.ics": {"work"}, "id2.ics": {"urgent"}})
-	// Edited document has NO line for either id — just the empty heading.
+	// Edited document has NO line for either id — just the empty bucket.
 	edited := document{
 		Anchor:   membershipAnchor,
 		Sections: []section{{Depth: 1, Term: membershipDim + "="}},

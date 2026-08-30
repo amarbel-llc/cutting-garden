@@ -312,7 +312,7 @@ func tagDimensionSections(buckets []bucket, baseDepth int) []section {
 
 // writableBuckets returns the plugin's declared target buckets for the grouped
 // dimension on node type tag (FacetWrite.Values) — the values organize
-// pre-renders as empty headings. nil for a plugin without the write capability or
+// pre-renders as empty buckets. nil for a plugin without the write capability or
 // one declaring no values for the dimension.
 func writableBuckets(lister cgp.RootLister, tag, dim string) []string {
 	describer, ok := lister.(cgp.FacetWriteDescriber)

@@ -35,6 +35,21 @@
 #   43108  organize_groupby.bats
 #   43109  organize_headings.bats
 
+# assert_categories URL EXPECTED curl-reads the live iCalendar object at URL (the
+# plain-HTTP form, `${CALDAV_SOURCE#caldav:}<cal>/<id>.ics`) and asserts its
+# CATEGORIES line is exactly EXPECTED — or absent when EXPECTED is empty. The
+# organize tag lanes' write-back check.
+assert_categories() {
+  local url="$1" want="$2"
+  run curl -fsS "$url"
+  assert_success
+  if [[ -z $want ]]; then
+    refute_line --regexp '^CATEGORIES'
+  else
+    assert_line --regexp "^CATEGORIES:${want}[[:space:]]*$"
+  fi
+}
+
 start_caldav_server() {
   require_bin CG_TEST_CALDAV cutting-garden-caldav-testserver
   local bin="${CG_TEST_CALDAV:-cutting-garden-caldav-testserver}"

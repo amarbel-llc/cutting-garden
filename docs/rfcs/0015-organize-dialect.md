@@ -169,9 +169,11 @@ document — the exact bytes presented to and edited by the end-user:
   spelling-1 document one level deeper under its `# !<type>`.
 - **Empty headings are context resets.** A heading with no text at depth N
   (`#`, `##`, … after normalization) pops the heading context at N and deeper:
-  the object lines that follow fall under the depth N−1 heading, exactly as if
-  they had been written beneath it, and a bare `#` returns to the UNGROUPED
-  context. A reset deeper than the current context is a no-op; re-entering a
+  the object lines that follow fall under the nearest enclosing heading
+  shallower than N (the ungrouped context if none), exactly as if they had
+  been written beneath it — so a bare `#` always returns to the UNGROUPED
+  context, and on a non-contiguous ladder `# a` / `### b` / `###` the line
+  lands under `a`. A reset deeper than the current context is a no-op; re-entering a
   bucket needs a new non-empty heading. Apply reads placement THROUGH the
   resets (a line under a reset is a membership/bucket change to the parent
   context), and generation MUST NOT emit them — they are a hand-edit
@@ -181,7 +183,7 @@ document — the exact bytes presented to and edited by the end-user:
   # work
   - [a.ics] …            ← under work
   ## -client
-  - [b.ics] …            ← under work, -client
+  - [b.ics] …            ← under -client (deepest heading wins)
   ##
   - [c.ics] …            ← under work only
   #

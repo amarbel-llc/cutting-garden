@@ -158,7 +158,7 @@ Generation and `fmt-organize` never emit them.
     # work
     - [a.ics] …            ← under work
     ## -client
-    - [b.ics] …            ← under work, -client
+    - [b.ics] …            ← under -client (deepest heading wins)
     ##
     - [c.ics] …            ← under work only
     #

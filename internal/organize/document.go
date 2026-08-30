@@ -395,10 +395,12 @@ func splitEnvelope(text string) (
 //
 // An EMPTY heading is a RESET: `##` (after normalization) pops the heading
 // context at its depth and deeper WITHOUT pushing anything, so the object lines
-// that follow attach to the depth N−1 heading — exactly as if they had been
-// written under that parent heading — and a bare `#` empties the stack, returning
-// to the ungrouped context. A reset deeper than the current context pops nothing
-// (a no-op); re-entering a bucket needs a new non-empty heading. Resets never
+// that follow attach to the nearest enclosing heading shallower than N (the
+// ungrouped context if none) — exactly as if they had been written under that
+// heading; a bare `#` empties the stack. Note "nearest open", not "N−1": a
+// non-contiguous ladder `# a` / `### b` / `###` lands under `a`. A reset deeper
+// than the current context pops nothing (a no-op); re-entering a bucket needs a
+// new non-empty heading. Resets never
 // become sections, so a parsed document renders without them (generate never
 // emits one) and every derived view (assignments, memberships, groupedSpec,
 // hasBuckets) reads the resolved placement with no reset awareness of its own.
@@ -422,9 +424,7 @@ func parseBody(doc *document, body string) error {
 		case strings.HasPrefix(line, "#"):
 			rawDepth, term := splitHeading(line)
 			depth := rawDepth - root + 1
-			for len(open) > 0 && doc.Sections[open[len(open)-1]].Depth >= depth {
-				open = open[:len(open)-1]
-			}
+			open = popTo(open, doc.Sections, depth)
 			if term == "" {
 				continue // a reset: the pop above IS the effect
 			}
@@ -459,9 +459,12 @@ func splitHeading(line string) (depth int, term string) {
 	return depth, strings.TrimSpace(line[depth:])
 }
 
-// rootHeadingDepth returns the shallowest `#` count among the body's heading
-// lines (resets included) — the level that normalizes to depth 1. 1 when the
-// body has no heading at all.
+// rootHeadingDepth returns the shallowest `#` count among the body's NON-EMPTY
+// heading lines — the level that normalizes to depth 1. Resets are excluded:
+// every reset comparison is relative, so counting them would not change any
+// placement, but it would let a `## work` / `#` document parse `work` at depth
+// 2 and re-render one level deeper than minimal. 1 when the body has no
+// non-empty heading at all.
 func rootHeadingDepth(lines []string) int {
 	root := 0
 	for _, raw := range lines {
@@ -469,7 +472,10 @@ func rootHeadingDepth(lines []string) int {
 		if !strings.HasPrefix(line, "#") {
 			continue
 		}
-		depth, _ := splitHeading(line)
+		depth, term := splitHeading(line)
+		if term == "" {
+			continue
+		}
 		if root == 0 || depth < root {
 			root = depth
 		}
@@ -478,6 +484,17 @@ func rootHeadingDepth(lines []string) int {
 		return 1
 	}
 	return root
+}
+
+// popTo pops every open section (open holds indices into secs, shallowest first)
+// whose depth is depth or deeper, returning the shortened stack — the one
+// ladder-walking rule the parser (parseBody) and the value walker
+// (walkSectionValues) share.
+func popTo(open []int, secs []section, depth int) []int {
+	for len(open) > 0 && secs[open[len(open)-1]].Depth >= depth {
+		open = open[:len(open)-1]
+	}
+	return open
 }
 
 // parseObjectLine parses one espalier box literal `[<id> !<type> …] <desc>`:
@@ -605,15 +622,13 @@ func (doc document) assignments() (map[string]string, error) {
 // deepest value heading wins). Shared by assignments and memberships.
 func (doc document) walkSectionValues(place func(objectLine, string) error) error {
 	readValue := doc.sectionValueReader()
-	var stack []section
-	for _, s := range doc.Sections {
-		for len(stack) > 0 && stack[len(stack)-1].Depth >= s.Depth {
-			stack = stack[:len(stack)-1]
-		}
-		stack = append(stack, s)
+	var stack []int // indices into doc.Sections, the open heading path
+	for i, s := range doc.Sections {
+		stack = popTo(stack, doc.Sections, s.Depth)
+		stack = append(stack, i)
 		value := ""
-		for _, anc := range stack {
-			v, ok, err := readValue(anc.Term)
+		for _, idx := range stack {
+			v, ok, err := readValue(doc.Sections[idx].Term)
 			if err != nil {
 				return err
 			}

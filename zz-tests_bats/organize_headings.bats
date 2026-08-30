@@ -95,24 +95,17 @@ generate_grouped() {
   )"
 }
 
-# assert_categories curl-reads the live object $1 and asserts its CATEGORIES is
-# exactly $2 (or absent when $2 is empty).
-assert_categories() {
-  local ics="$1" want="$2"
-  run curl -fsS "${CALDAV_SOURCE#caldav:}fields/$ics"
-  assert_success
-  if [[ -z $want ]]; then
-    refute_output --partial 'CATEGORIES'
-  else
-    assert_output --partial "CATEGORIES:$want"
-  fi
+# fields_categories ID EXPECTED asserts the live /dav/fields/ object's CATEGORIES
+# (lib/caldav.bash assert_categories against this lane's calendar).
+fields_categories() {
+  assert_categories "${CALDAV_SOURCE#caldav:}fields/$1" "$2"
 }
 
 # G10 depth normalization (generator side): a `(tags)` document puts its buckets
 # at `#` with no dimension heading above them.
 function organize_headings_tags_buckets_at_minimal_depth { # @test
   generate_grouped
-  refute_output --regexp '^##'
+  refute_line --regexp '^##'
   refute_output --partial 'categories='
 }
 
@@ -149,8 +142,8 @@ organize: 1 change(s):
 organize: wrote 1 change(s)
 EOF
 
-  assert_categories field3.ics errand
-  assert_categories field2.ics 'work,errand'
+  fields_categories field3.ics errand
+  fields_categories field2.ics 'work,errand'
 
   run_cg organize -group-by '(tags)' "$CAL"
   assert_success
@@ -222,10 +215,10 @@ organize: 3 change(s):
 organize: wrote 3 change(s)
 EOF
 
-  assert_categories field1.ics work
-  assert_categories field2.ics ''
-  assert_categories field3.ics work
-  assert_categories field4.ics errand
+  fields_categories field1.ics work
+  fields_categories field2.ics ''
+  fields_categories field3.ics work
+  fields_categories field4.ics errand
 
   run_cg organize -group-by '(tags)' "$CAL"
   assert_success
@@ -280,7 +273,7 @@ organize: 1 change(s):
 organize: wrote 1 change(s)
 EOF
 
-  assert_categories field4.ics work
+  fields_categories field4.ics work
 
   run_cg organize -group-by '(tags)' "$CAL"
   assert_success
@@ -306,5 +299,5 @@ EOF
 # is empty (resets are a hand-edit affordance only).
 function organize_headings_generate_never_emits_reset { # @test
   generate_grouped
-  refute_output --regexp '^#+[[:space:]]*$'
+  refute_line --regexp '^#+[[:space:]]*$'
 }

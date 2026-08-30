@@ -147,10 +147,7 @@ organize: wrote 1 change(s)
 EOF
 
   # The membership write rewrote field3's CATEGORIES to errand on the live object.
-  run curl -fsS "${CALDAV_SOURCE#caldav:}fields/field3.ics"
-  assert_success
-  assert_output --partial 'CATEGORIES:errand'
-  refute_output --partial 'CATEGORIES:work'
+  assert_categories "${CALDAV_SOURCE#caldav:}fields/field3.ics" errand
 
   run_cg organize -group-by '(tags)' "$CAL"
   assert_success
