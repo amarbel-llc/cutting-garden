@@ -73,12 +73,13 @@ func (cmd *Organize) runCommitDirectly(ctx errors.Context) error {
 	return err
 }
 
-// rejectTagAtoms refuses an edited document whose box carries bare tag tokens
+// rejectTagAtoms refuses an edited document whose boxes carry bare tag tokens
 // (`- [x.ics work-x location=Bank]`): the parser round-trips them (design G13)
 // but nothing writes them until native tags slice 2, and a silent drop would
-// discard the user's edit — so the refusal is loud, naming the object and the
-// tags as the user spelled them.
+// discard the user's edit — so the refusal is loud, naming EVERY offending
+// object and its tags as the user spelled them, in one error.
 func rejectTagAtoms(doc document) error {
+	var offending []string
 	for _, ln := range doc.objectLines() {
 		if len(ln.Tags) == 0 {
 			continue
@@ -87,13 +88,15 @@ func rejectTagAtoms(doc document) error {
 		for i, tag := range ln.Tags {
 			spelled[i] = trellis.QuoteIfNeeded(tag)
 		}
-		return errors.BadRequestf(
-			"organize --apply: object %s carries tag atoms %s: tag atoms are not "+
-				"writable yet (native tags slice 2)",
-			ln.ID, strings.Join(spelled, " "),
-		)
+		offending = append(offending, "object "+ln.ID+" carries tag atoms "+strings.Join(spelled, " "))
 	}
-	return nil
+	if len(offending) == 0 {
+		return nil
+	}
+	return errors.BadRequestf(
+		"organize --apply: %s: tag atoms are not writable yet (native tags slice 2)",
+		strings.Join(offending, "; "),
+	)
 }
 
 // applyDocument three-way-merges an edited organize document against its pinned

@@ -10,6 +10,8 @@ import (
 func spelling2Doc() document {
 	return document{
 		Provenance: "generated: cg organize -group-by status caldav://host/dav/cal/",
+		// A blech32-only stub: `_base` parses through trellis's DigestTerm,
+		// whose data slot is charset-strict (no `b`, `i`, `o`, `1`).
 		BaseDigest: "blake2b256-acdef9",
 		Anchor:     "caldav://host/dav/cal/",
 		Type:       "caldav-object-v1",

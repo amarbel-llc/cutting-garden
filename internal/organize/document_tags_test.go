@@ -15,6 +15,8 @@ import (
 // `## <tag>` buckets — one carrying a space, so it must quote (`## "_ inbox"`).
 func tagWholeDoc() document {
 	return document{
+		// A blech32-only stub: `_base` parses through trellis's DigestTerm,
+		// whose data slot is charset-strict (no `b`, `i`, `o`, `1`).
 		BaseDigest: "blake2b256-acdef9",
 		Anchor:     "caldav://host/dav/cal/",
 		Type:       "caldav-object-v1",

@@ -73,19 +73,4 @@ func TestObjectLineTagRoundTrip(t *testing.T) {
 	if err == nil || !errors.Is400BadRequest(err) || !strings.Contains(err.Error(), "status*=y") {
 		t.Errorf("non-ground interior: err = %v, want a bad request naming `status*=y`", err)
 	}
-
-	// The apply gate: a tagged line is refused, naming the object and its tags
-	// as spelled.
-	err = rejectTagAtoms(document{Ungrouped: []objectLine{parsed}})
-	if err == nil || !errors.Is400BadRequest(err) {
-		t.Fatalf("rejectTagAtoms: err = %v, want a bad request", err)
-	}
-	for _, want := range []string{"field2.ics", `work-x status "_ inbox"`, "not writable yet"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("rejectTagAtoms error %q should mention %q", err, want)
-		}
-	}
-	if err := rejectTagAtoms(document{Ungrouped: []objectLine{{ID: "x.ics"}}}); err != nil {
-		t.Errorf("untagged document must pass: %v", err)
-	}
 }

@@ -1,6 +1,7 @@
 package trellis
 
 import (
+	stderrors "errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -206,30 +207,70 @@ func TestQuoteIfNeeded(t *testing.T) {
 }
 
 func TestParseTerm(t *testing.T) {
-	term, err := ParseTerm(`@blake2b256-9ft3x`)
-	if err != nil {
-		t.Fatalf("ParseTerm: %v", err)
+	cases := []struct {
+		src  string
+		want Term
+	}{
+		{`@blake2b256-9ft3x`, Term{Basic: DigestBasicTerm{Digest: DigestTerm{Digest: "blake2b256-9ft3x"}}}},
+		{`!caldav-object-vtodo-v1`, Term{Basic: TypeBasicTerm{Type: TypeTerm{Name: "caldav-object-vtodo-v1"}}}},
+		{`=COMPLETED`, Term{Exact: true, Basic: IdentBasicTerm{Ident: Ident{Name: "COMPLETED"}}}},
+		{`"_ inbox"`, Term{Basic: QuotedRefBasicTerm{Ref: QuotedRef{Value: "_ inbox"}}}},
+		{`  -client  `, Term{Basic: IdentBasicTerm{Ident: Ident{Name: "-client"}}}},
 	}
-	if d, ok := term.Basic.(DigestBasicTerm); !ok || d.Digest.Digest != "blake2b256-9ft3x" {
-		t.Fatalf("ParseTerm(@…) = %+v, want a DigestBasicTerm", term)
-	}
-	term, err = ParseTerm(`!caldav-object-vtodo-v1`)
-	if err != nil {
-		t.Fatalf("ParseTerm: %v", err)
-	}
-	if ty, ok := term.Basic.(TypeBasicTerm); !ok || ty.Type.Name != "caldav-object-vtodo-v1" {
-		t.Fatalf("ParseTerm(!…) = %+v, want a TypeBasicTerm", term)
-	}
-	term, err = ParseTerm(`=COMPLETED`)
-	if err != nil {
-		t.Fatalf("ParseTerm: %v", err)
-	}
-	if !term.Exact {
-		t.Fatalf("ParseTerm(=…) = %+v, want Exact", term)
+	for _, tc := range cases {
+		got, err := ParseTerm(tc.src)
+		if err != nil {
+			t.Errorf("ParseTerm(%q): %v", tc.src, err)
+			continue
+		}
+		if !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("ParseTerm(%q) = %+v, want %+v", tc.src, got, tc.want)
+		}
 	}
 	for _, src := range []string{``, `a b`, `a -> b`, `-> a`, `@blake2b256-9bt3`} {
 		if _, err := ParseTerm(src); err == nil || !errors.Is400BadRequest(err) {
 			t.Errorf("ParseTerm(%q) = %v; want a bad request", src, err)
+		}
+	}
+}
+
+// TestParseLiteralPrefix pins the organize entry point: the leading group is
+// read by the real parser — a quoted tag holding an escaped quote AND a `]`
+// neither ends the string nor the box — and the remainder is handed back
+// verbatim for the caller's trailer.
+func TestParseLiteralPrefix(t *testing.T) {
+	src := `[t.ics "say \"hi\"] x" k=v] Read book`
+	lit, rest, err := ParseLiteralPrefix(src)
+	if err != nil {
+		t.Fatalf("ParseLiteralPrefix(%q): %v", src, err)
+	}
+	want := Literal{ID: "t.ics", Tags: []string{`say "hi"] x`}, Atoms: []Atom{{"k", "v"}}}
+	if !reflect.DeepEqual(lit, want) {
+		t.Fatalf("Literal = %+v, want %+v", lit, want)
+	}
+	if rest != " Read book" {
+		t.Fatalf("rest = %q, want %q", rest, " Read book")
+	}
+	var b strings.Builder
+	WriteLiteral(&b, lit)
+	if got := b.String(); got != `t.ics "say \"hi\"] x" k=v` {
+		t.Fatalf("WriteLiteral = %q", got)
+	}
+	again, _, err := ParseLiteralPrefix("[" + b.String() + "]")
+	if err != nil || !reflect.DeepEqual(again, lit) {
+		t.Fatalf("re-parse = %+v, %v; want %+v", again, err, lit)
+	}
+
+	// No leading group: a bad request that still carries the SyntaxError.
+	for _, src := range []string{`t.ics] no open bracket`, ``, `[t.ics`} {
+		_, _, err := ParseLiteralPrefix(src)
+		if err == nil || !errors.Is400BadRequest(err) {
+			t.Errorf("ParseLiteralPrefix(%q) = %v; want a bad request", src, err)
+			continue
+		}
+		var se *SyntaxError
+		if !stderrors.As(err, &se) {
+			t.Errorf("ParseLiteralPrefix(%q) error %v does not wrap *SyntaxError", src, err)
 		}
 	}
 }

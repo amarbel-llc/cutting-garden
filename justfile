@@ -596,8 +596,9 @@ debug-organize-categories: debug-build-go
 
 # Render + exercise the /dav/lit/ calendar (native tags slice 1, G9/G13): grouped
 # by categories (the `## "_ inbox"` QUOTED bucket), then a bucket move of lit2 into
-# that quoted bucket (apply + curl + re-render), then the two apply REFUSALS — a
-# hand-edited bare tag token and a non-ground `status*=y` atom (expected exit 64).
+# that quoted bucket (apply + curl + re-render), then the three apply REFUSALS —
+# a hand-edited bare tag token, a quoted tag token, and a non-ground `status*=y`
+# atom (expected exit 64 each).
 # The host-run source for the whole-document heredocs in
 # zz-tests_bats/organize_literal.bats: pins CG_TEST_CALDAV_PORT=43107 (the lane's
 # port, lib/caldav.bash) so the `_base` digests match. WRITES to the throwaway

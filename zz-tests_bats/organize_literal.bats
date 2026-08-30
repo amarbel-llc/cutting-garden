@@ -41,6 +41,34 @@ teardown() {
 
 # bats file_tags=organize
 
+# The generated document's `_base` digest, and the digest after lit2 has moved
+# into the `"_ inbox"` bucket.
+BASE_GENERATED=blake2b256-m5wr5rw94rmypsz26p070dsrwlaf6y98uafe7kncxdl9ww86wnusrv4p5y
+BASE_MOVED=blake2b256-7a5dxlhh4fdx7pvrj6njjjrd05gatzc7nx5zm6uemg4xvxg8aywquszy42
+
+# envelope_header prints the `-group-by categories` document's hyphence envelope
+# pinned at `_base` $1 — the part every document in this lane shares.
+envelope_header() {
+  cat <<-EOM
+	---
+	% generated: \`cg organize -group-by categories -query "_terminal=no" caldav:http://127.0.0.1:43107/dav/lit/\`
+	- _base = @$1
+	- _anchor = caldav:http://127.0.0.1:43107/dav/lit/
+	- _query = _terminal=no
+	- _type = !caldav-object-vtodo-v1
+	- _group-by = categories
+	! organize-base-v1
+	---
+	EOM
+}
+
+# lit_doc prints a whole document: the envelope at `_base` $1, then the body
+# read from stdin.
+lit_doc() {
+  envelope_header "$1"
+  cat
+}
+
 # generate_grouped runs `organize -group-by categories` and asserts the document
 # in full: the untagged lit2 ungrouped, and lit1 under the QUOTED `## "_ inbox"`
 # bucket — its CATEGORIES value carries whitespace, so the heading spells it as a
@@ -48,16 +76,8 @@ teardown() {
 generate_grouped() {
   run_cg organize -group-by categories "$CAL"
   assert_success
-  assert_output - <<-'EOM'
-	---
-	% generated: `cg organize -group-by categories -query "_terminal=no" caldav:http://127.0.0.1:43107/dav/lit/`
-	- _base = @blake2b256-m5wr5rw94rmypsz26p070dsrwlaf6y98uafe7kncxdl9ww86wnusrv4p5y
-	- _anchor = caldav:http://127.0.0.1:43107/dav/lit/
-	- _query = _terminal=no
-	- _type = !caldav-object-vtodo-v1
-	- _group-by = categories
-	! organize-base-v1
-	---
+  assert_output "$(
+    lit_doc "$BASE_GENERATED" <<-'EOM'
 
 	- [lit2.ics location=Bank] Read book
 
@@ -65,6 +85,7 @@ generate_grouped() {
 
 	- [lit1.ics] Triage inbox
 	EOM
+  )"
 }
 
 # write_lit2_edited writes the generated document to $2 with lit2's ungrouped box
@@ -72,16 +93,7 @@ generate_grouped() {
 # `_base`, never a move.
 write_lit2_edited() {
   local box="$1" out="$2"
-  cat >"$out" <<-EOM
-	---
-	% generated: \`cg organize -group-by categories -query "_terminal=no" caldav:http://127.0.0.1:43107/dav/lit/\`
-	- _base = @blake2b256-m5wr5rw94rmypsz26p070dsrwlaf6y98uafe7kncxdl9ww86wnusrv4p5y
-	- _anchor = caldav:http://127.0.0.1:43107/dav/lit/
-	- _query = _terminal=no
-	- _type = !caldav-object-vtodo-v1
-	- _group-by = categories
-	! organize-base-v1
-	---
+  lit_doc "$BASE_GENERATED" >"$out" <<-EOM
 
 	$box
 
@@ -155,16 +167,7 @@ function organize_literal_non_ground_interior_rejects { # @test
 function organize_literal_quoted_tag_heading_round_trips { # @test
   generate_grouped
   local edited="$BATS_TEST_TMPDIR/edited.txt"
-  cat >"$edited" <<-'EOM'
-	---
-	% generated: `cg organize -group-by categories -query "_terminal=no" caldav:http://127.0.0.1:43107/dav/lit/`
-	- _base = @blake2b256-m5wr5rw94rmypsz26p070dsrwlaf6y98uafe7kncxdl9ww86wnusrv4p5y
-	- _anchor = caldav:http://127.0.0.1:43107/dav/lit/
-	- _query = _terminal=no
-	- _type = !caldav-object-vtodo-v1
-	- _group-by = categories
-	! organize-base-v1
-	---
+  lit_doc "$BASE_GENERATED" >"$edited" <<-'EOM'
 
 	## "_ inbox"
 
@@ -188,20 +191,13 @@ EOF
 
   run_cg organize -group-by categories "$CAL"
   assert_success
-  assert_output - <<-'EOM'
-	---
-	% generated: `cg organize -group-by categories -query "_terminal=no" caldav:http://127.0.0.1:43107/dav/lit/`
-	- _base = @blake2b256-7a5dxlhh4fdx7pvrj6njjjrd05gatzc7nx5zm6uemg4xvxg8aywquszy42
-	- _anchor = caldav:http://127.0.0.1:43107/dav/lit/
-	- _query = _terminal=no
-	- _type = !caldav-object-vtodo-v1
-	- _group-by = categories
-	! organize-base-v1
-	---
+  assert_output "$(
+    lit_doc "$BASE_MOVED" <<-'EOM'
 
 	## "_ inbox"
 
 	- [lit1.ics] Triage inbox
 	- [lit2.ics location=Bank] Read book
 	EOM
+  )"
 }

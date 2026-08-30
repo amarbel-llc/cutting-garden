@@ -42,27 +42,53 @@ type Atom struct {
 // excluded) as a trellis Group and projects it to a Literal, rejecting with
 // a bad request NAMING THE OFFENDING TERM anything outside the ground subset
 // (see Literal). The first term must be the object id (a bare or quoted
-// identifier); an empty interior is an error.
+// identifier); an empty interior is an error. A SyntaxError offset is
+// relative to the bracketed form (one past the interior's own offset).
 func ParseLiteral(interior string) (Literal, error) {
-	q, err := Parse("[" + interior + "]")
+	lit, rest, err := ParseLiteralPrefix("[" + interior + "]")
 	if err != nil {
-		return Literal{}, errors.BadRequestf("box literal %q: %v", interior, err)
+		return Literal{}, err
 	}
-	// Parse guarantees Query → one Path; a bracketed source yields exactly one
-	// Step holding the Group term (Parse rejects trailing input).
-	if len(q.Path.Steps) != 1 || len(q.Path.Steps[0].Terms) != 1 {
-		return Literal{}, errors.BadRequestf("box literal %q: not a single group", interior)
+	if strings.TrimSpace(rest) != "" {
+		return Literal{}, errors.BadRequestf("box literal %q: unexpected trailing input %q", interior, rest)
 	}
-	group, ok := q.Path.Steps[0].Terms[0].Basic.(GroupBasicTerm)
+	return lit, nil
+}
+
+// ParseLiteralPrefix parses the LEADING `[…]` group of src (after optional
+// whitespace) with the real trellis parser — so quoted content, escapes
+// (`\"`), and nested brackets are read by the one lexer, never re-scanned by
+// a caller — projects it to a Literal, and returns the unparsed remainder
+// (an organize box's description trailer, untrimmed). The projection is
+// ParseLiteral's; a src that does not open with a group is a bad request
+// wrapping the *SyntaxError.
+func ParseLiteralPrefix(src string) (Literal, string, error) {
+	p := &parser{src: []rune(src)}
+	p.skipSPOpt()
+	start := p.pos
+	group, ok := p.parseGroup()
 	if !ok {
-		return Literal{}, errors.BadRequestf("box literal %q: not a group", interior)
+		return Literal{}, "", errors.BadRequestf(
+			"box literal: %w", p.syntaxError("expected a `[…]` group"),
+		)
 	}
-	alts, ok := group.Group.Body.(Alternatives)
+	interior := string(p.src[start+1 : p.pos-1])
+	lit, err := projectLiteral(group, interior)
+	if err != nil {
+		return Literal{}, "", err
+	}
+	return lit, string(p.src[p.pos:]), nil
+}
+
+// projectLiteral applies the groundness bar to a parsed Group; interior is
+// the group's source text, quoted in diagnostics.
+func projectLiteral(group Group, interior string) (Literal, error) {
+	alts, ok := group.Body.(Alternatives)
 	if !ok {
 		return Literal{}, errors.BadRequestf(
 			"box literal %q: %s is not ground (a box holds an id, a type, tags, "+
 				"and name=value atoms; not a subpath or version subpath)",
-			interior, groupBodyString(group.Group.Body),
+			interior, groupBodyString(group.Body),
 		)
 	}
 	if len(alts.Alts) != 1 {
@@ -203,6 +229,8 @@ func isBareIdent(s string) bool {
 }
 
 // quoteString is decodeEscape's writer half: the doddish String spelling of s.
+// The writer always emits double quotes; the reader (parseString) also
+// accepts a single-quoted String, which round-trips back to this form.
 func quoteString(s string) string {
 	var b strings.Builder
 	b.WriteByte('"')
@@ -241,7 +269,9 @@ func quoteString(s string) string {
 func ParseTerm(src string) (Term, error) {
 	q, err := Parse(src)
 	if err != nil {
-		return Term{}, errors.BadRequestf("%v", err)
+		// BadRequestf formats via fmt.Errorf, so %w keeps the *SyntaxError
+		// reachable through errors.As.
+		return Term{}, errors.BadRequestf("%w", err)
 	}
 	if q.Path.Leading != nil || len(q.Path.Steps) != 1 || len(q.Path.Steps[0].Terms) != 1 {
 		return Term{}, errors.BadRequestf("trellis: %q is not a single term", src)
@@ -252,8 +282,10 @@ func ParseTerm(src string) (Term, error) {
 // ---- diagnostics: spelling a term back for an error message ---------------
 
 // termString re-spells a parsed Term in its grammar form, for diagnostics
-// (ParseLiteral names the offending term). Nested groups are elided to
-// `[…]` — the message points at the term, not at its interior.
+// (ParseLiteral names the offending term). DIAGNOSTIC-ONLY: this is not a
+// canonical printer and is not a Query.String() — nested groups are elided
+// to `[…]` (the message points at the term, not at its interior) and no
+// spelling here is promised to re-parse.
 func termString(t Term) string {
 	var b strings.Builder
 	if t.Negate {

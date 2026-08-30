@@ -429,53 +429,20 @@ func parseBody(doc *document, body string) error {
 }
 
 // parseObjectLine parses one espalier box literal `[<id> !<type> …] <desc>`:
-// the interior through trellis.ParseLiteral (design G13 — the ground subset of a
-// trellis Group; a non-ground term is a loud bad request naming it), the rest
-// of the line as the description trailer.
+// the leading group through trellis.ParseLiteralPrefix (design G13 — the ground
+// subset of a trellis Group, read by the real lexer so quotes/escapes/nesting are
+// never re-scanned here; a non-ground term is a loud bad request naming it), the
+// remainder of the line as the description trailer.
 func parseObjectLine(rest string) (objectLine, error) {
-	interior, desc, err := splitBox(rest)
+	lit, trailer, err := trellis.ParseLiteralPrefix(rest)
 	if err != nil {
 		return objectLine{}, err
 	}
-	lit, err := trellis.ParseLiteral(interior)
-	if err != nil {
-		return objectLine{}, err
-	}
-	ln := objectLine{ID: lit.ID, Type: lit.Type, Tags: lit.Tags, Desc: desc}
+	ln := objectLine{ID: lit.ID, Type: lit.Type, Tags: lit.Tags, Desc: strings.TrimSpace(trailer)}
 	for _, a := range lit.Atoms {
 		ln.Fields = append(ln.Fields, cgp.BoxAtom{Name: a.Name, Value: a.Value})
 	}
 	return ln, nil
-}
-
-// splitBox separates a `[<interior>] <desc>` line into its box interior and
-// trimmed trailer. The closing bracket is found by a quote- and nesting-aware
-// scan (a `]` inside a quoted tag or a nested `[…]` does not end the box), so a
-// malformed interior reaches ParseLiteral whole and fails there, by name.
-func splitBox(rest string) (interior, desc string, err error) {
-	if !strings.HasPrefix(rest, "[") {
-		return "", "", errors.BadRequestf("object line is not an espalier box: %q", rest)
-	}
-	depth := 0
-	var quote rune
-	for i, r := range rest {
-		switch {
-		case quote != 0:
-			if r == quote {
-				quote = 0
-			}
-		case r == '"' || r == '\'':
-			quote = r
-		case r == '[':
-			depth++
-		case r == ']':
-			depth--
-			if depth == 0 {
-				return rest[1:i], strings.TrimSpace(rest[i+1:]), nil
-			}
-		}
-	}
-	return "", "", errors.BadRequestf("object line box is unterminated: %q", rest)
 }
 
 // --- derived views -----------------------------------------------------------

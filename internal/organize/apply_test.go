@@ -13,6 +13,39 @@ import (
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
+// TestRejectTagAtoms pins the apply gate for hand-edited tag tokens (design G13,
+// native tags slice 1): EVERY tagged line is reported in ONE bad request, each
+// naming its object and tags as spelled (a quoted tag re-quotes); an untagged
+// document passes.
+func TestRejectTagAtoms(t *testing.T) {
+	doc := document{
+		Ungrouped: []objectLine{{ID: "a.ics", Tags: []string{"work-x", "_ inbox"}}},
+		Sections: []section{{Depth: 2, Term: "work", Lines: []objectLine{
+			{ID: "b.ics"},
+			{ID: "c.ics", Tags: []string{"status"}},
+		}}},
+	}
+	err := rejectTagAtoms(doc)
+	if err == nil || !errors.Is400BadRequest(err) {
+		t.Fatalf("rejectTagAtoms: err = %v, want a bad request", err)
+	}
+	for _, want := range []string{
+		`object a.ics carries tag atoms work-x "_ inbox"`,
+		`object c.ics carries tag atoms status`,
+		"not writable yet",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("rejectTagAtoms error %q should mention %q", err, want)
+		}
+	}
+	if strings.Contains(err.Error(), "b.ics") {
+		t.Errorf("untagged b.ics must not be reported: %v", err)
+	}
+	if err := rejectTagAtoms(document{Ungrouped: []objectLine{{ID: "x.ics"}}}); err != nil {
+		t.Errorf("untagged document must pass: %v", err)
+	}
+}
+
 // taskNode builds a live caldav VTODO node with the given status membership; an
 // empty status omits the facet (the node contributes nothing to the dimension).
 func taskNode(t *testing.T, uri, status string) cgp.Node {
