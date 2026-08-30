@@ -114,8 +114,8 @@ document — the exact bytes presented to and edited by the end-user:
 
   | spelling | meaning | persisted as |
   |---|---|---|
-  | `(tags)` | the type's whole tag set (one bucket per tag) | `- _group-by = (tags)`; buckets `## <tag>` |
-  | `project` | tag namespace `project` (bare = tag; `project-client` drills deeper) | `- _group-by = project`; buckets `## -client` |
+  | `(tags)` | the type's whole tag set (one bucket per tag) | `- _group-by = (tags)`; buckets `# <tag>` |
+  | `project` | tag namespace `project` (bare = tag; `project-client` drills deeper) | `- _group-by = project`; buckets `# -client` |
   | `status=` | field grouping | heading `# status=`; buckets `## =<value>` |
   | `date_due=(month)` | date field at month granularity (`year`/`month`/`day`; bare `date_due=` resolves `[organize] date_granularity`, then day) | heading `# date_due=(month)` |
 
@@ -138,11 +138,12 @@ document — the exact bytes presented to and edited by the end-user:
   the heading. The directive names no dimension: the tag DIMENSION it applies
   to is the plugin's designated tag field (caldav `categories`), resolved from
   the plugin schema at generate and again at apply. Buckets are bare
-  `## <value>` headings with no `=` value prefix; a value bearing whitespace or
-  a reserved rune is quoted as a trellis String (`## "_ inbox"`) so it stays on
-  one physical line, and the parser unquotes it. An object appears under one
-  `## <tag>` heading per tag it carries (multi-membership). A namespace rollup
-  buckets by segment prefix (`## -client`, `## -cutting_garden`):
+  `# <value>` headings with no `=` value prefix, at MINIMAL depth (there is no
+  dimension heading to nest under; see §Heading depth below); a value bearing
+  whitespace or a reserved rune is quoted as a trellis String (`# "_ inbox"`)
+  so it stays on one physical line, and the parser unquotes it. An object
+  appears under one `# <tag>` heading per tag it carries (multi-membership). A
+  namespace rollup buckets by segment prefix (`# -client`, `# -cutting_garden`):
 
   ```
   ---
@@ -153,10 +154,38 @@ document — the exact bytes presented to and edited by the end-user:
   ! organize-base-v1
   ---
 
-  ## -client
+  # -client
   - [acme.ics] Acme
-  ## -cutting_garden
+  # -cutting_garden
   - [cg.ics] CG
+  ```
+- **Heading depth is structure-only (native tags design G10).** A heading's
+  `#` count encodes NESTING, not an absolute level: the parser takes the
+  shallowest level present in the body as the root and reads deeper levels
+  relative to it, so a hand-written document starting at `##` MUST parse
+  identically to the same document starting at `#`. Generation (and
+  `fmt-organize`) MUST emit minimal depth: a tag grouping's buckets at `#`
+  (`# work`, `# -client`), a field grouping's `# <dim>=` / `## =<value>`, and a
+  spelling-1 document one level deeper under its `# !<type>`.
+- **Empty headings are context resets.** A heading with no text at depth N
+  (`#`, `##`, … after normalization) pops the heading context at N and deeper:
+  the object lines that follow fall under the depth N−1 heading, exactly as if
+  they had been written beneath it, and a bare `#` returns to the UNGROUPED
+  context. A reset deeper than the current context is a no-op; re-entering a
+  bucket needs a new non-empty heading. Apply reads placement THROUGH the
+  resets (a line under a reset is a membership/bucket change to the parent
+  context), and generation MUST NOT emit them — they are a hand-edit
+  affordance only:
+
+  ```
+  # work
+  - [a.ics] …            ← under work
+  ## -client
+  - [b.ics] …            ← under work, -client
+  ##
+  - [c.ics] …            ← under work only
+  #
+  - [d.ics] …            ← ungrouped
   ```
 - **Two type spellings** (marker symmetry — the same `!<type>` term, scoped vs
   distributed):
@@ -191,9 +220,10 @@ term; every object beneath it satisfies that term; moving an object under
 a heading is an instruction to *make the term true* through the
 substrate's mapping. Generation (facet bucketing → headings) and
 interpretation (heading position → writes) are fully decoupled: the
-parser is structure-only (`#`-depth and heading text), exactly as
-dodder's reader already behaves — it never knows or cares what grouping
-generated the tree.
+parser is structure-only (`#`-depth relative to the shallowest level
+present, and heading text — an empty heading being a context reset;
+§Implemented dialect), exactly as dodder's reader already behaves — it
+never knows or cares what grouping generated the tree.
 
 ## Document structure
 

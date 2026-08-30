@@ -107,8 +107,8 @@ func main() {
 	// A fifth calendar dedicated to the organize NAMESPACE-ROLLUP grouping lane
 	// (RFC 0019 tags slice 3 B5, cutting-garden#231): VTODOs whose CATEGORIES form a
 	// `project-*` hyphen hierarchy, so `--group-by project` under the dodder-hyphen
-	// interpreter rolls each task up to its immediate segment — `## -client`
-	// (nsA + nsB) and `## -cutting_garden` (nsC) — while a task tagged outside the
+	// interpreter rolls each task up to its immediate segment — `# -client`
+	// (nsA + nsB) and `# -cutting_garden` (nsC) — while a task tagged outside the
 	// namespace (nsD, `other`) lands ungrouped, above the first bucket heading.
 	// Moving a task between rollup buckets rewrites the reconstructed namespace tag
 	// through the CATEGORIES full-set write (the naive interpreter rejects a
@@ -135,7 +135,7 @@ func main() {
 
 	// A sixth calendar dedicated to the organize BOX-LITERAL lane
 	// (zz-tests_bats/organize_literal.bats, native tags slice 1 G9/G13): a task
-	// whose CATEGORIES value carries whitespace, so its `## "_ inbox"` bucket
+	// whose CATEGORIES value carries whitespace, so its `# "_ inbox"` bucket
 	// heading MUST quote (trellis String) and the quoted spelling round-trips
 	// through a bucket move; and a task with a LOCATION atom for the hand-edited
 	// bare-token / non-ground box refusals. OPT-IN via CG_TEST_CALDAV_LIT so it

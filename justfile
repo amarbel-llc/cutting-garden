@@ -713,7 +713,7 @@ debug-organize-vectors:
     start_srv 43102 CG_TEST_CALDAV_FIELDS=1
     cal="${home}fields/"
     gen tags-generate "$cal" '(tags)'
-    move_line .tmp/organize-vectors-tags-generate.txt '## errand' '^- .field3.ics'
+    move_line .tmp/organize-vectors-tags-generate.txt '# errand' '^- .field3.ics'
     apply_doc tags .tmp/organize-vectors-tags-generate.txt.edited
     gen tags-after "$cal" '(tags)'
     stop_srv
@@ -722,7 +722,7 @@ debug-organize-vectors:
     start_srv 43103 CG_TEST_CALDAV_NS=1
     cal="${home}ns/"
     gen ns-generate "$cal" 'project'
-    move_line .tmp/organize-vectors-ns-generate.txt '## -cutting_garden' '^- .nsA.ics'
+    move_line .tmp/organize-vectors-ns-generate.txt '# -cutting_garden' '^- .nsA.ics'
     apply_doc ns .tmp/organize-vectors-ns-generate.txt.edited
     gen ns-after "$cal" 'project'
     stop_srv
@@ -788,6 +788,76 @@ debug-organize-vectors:
     reject groupby-reject-qualifier "${home}fields/" '(foo)'
     stop_srv
     no_config
+
+    # organize_headings.bats (design G10 depth normalization + empty-heading
+    # resets): each apply runs against a FRESH server, as the bats lane does.
+    # with_body DOC OUT writes OUT as DOC's envelope (through the closing `---`)
+    # followed by the body on stdin.
+    with_body() { { awk '{print} /^---$/ && ++c == 2 {exit}' "$1"; cat; } >"$2"; }
+    hd=.tmp/organize-vectors-headings-generate.txt
+    start_srv 43109 CG_TEST_CALDAV_FIELDS=1
+    cal="${home}fields/"
+    gen headings-generate "$cal" '(tags)'
+    with_body "$hd" "$hd.double" <<'EOM'
+
+    - [field1.ics location=Bank status=NEEDS-ACTION priority=1] Pay rent
+    - [field4.ics] Someday idea
+
+    ## errand
+
+    - [field2.ics priority=5] Read book
+    - [field3.ics priority=9] Water plants
+
+    ## work
+
+    - [field2.ics priority=5] Read book
+    EOM
+    apply_doc headings-double "$hd.double"
+    gen headings-after-double "$cal" '(tags)'
+    stop_srv
+    start_srv 43109 CG_TEST_CALDAV_FIELDS=1
+    with_body "$hd" "$hd.reset" <<'EOM'
+
+    # work
+
+    - [field3.ics priority=9] Water plants
+
+    ## errand
+
+    - [field4.ics] Someday idea
+
+    ##
+
+    - [field1.ics location=Bank status=NEEDS-ACTION priority=1] Pay rent
+
+    #
+
+    - [field2.ics priority=5] Read book
+    EOM
+    apply_doc headings-reset "$hd.reset"
+    gen headings-after-reset "$cal" '(tags)'
+    stop_srv
+    start_srv 43109 CG_TEST_CALDAV_FIELDS=1
+    with_body "$hd" "$hd.noop" <<'EOM'
+
+    - [field1.ics location=Bank status=NEEDS-ACTION priority=1] Pay rent
+
+    # errand
+
+    - [field2.ics priority=5] Read book
+
+    # work
+
+    - [field2.ics priority=5] Read book
+    - [field3.ics priority=9] Water plants
+
+    ##
+
+    - [field4.ics] Someday idea
+    EOM
+    apply_doc headings-noop "$hd.noop"
+    gen headings-after-noop "$cal" '(tags)'
+    stop_srv
 
 # Drop into an interactive shell in a throwaway tempdir with a fresh madder store
 # and the Fastmail caldav creds (CALDAV_USERNAME/PASSWORD) exported — the manual

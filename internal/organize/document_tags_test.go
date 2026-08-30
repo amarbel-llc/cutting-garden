@@ -12,7 +12,8 @@ import (
 
 // tagWholeDoc is a representative hoisted TAG-whole-dimension document: the
 // `_group-by = (tags)` directive, NO parent dimension heading, and bare
-// `## <tag>` buckets — one carrying a space, so it must quote (`## "_ inbox"`).
+// `# <tag>` buckets at minimal depth (design G10) — one carrying a space, so it
+// must quote (`# "_ inbox"`).
 func tagWholeDoc() document {
 	return document{
 		// A blech32-only stub: `_base` parses through trellis's DigestTerm,
@@ -24,9 +25,9 @@ func tagWholeDoc() document {
 		Sections: []section{
 			// The bucket Term carries the RENDERED heading text — quoted for a
 			// space-bearing value exactly as tagDimensionSections would store it.
-			{Depth: 2, Term: trellis.QuoteIfNeeded("_ inbox"), Lines: []objectLine{{ID: "t3.ics", Desc: "Loose"}}},
-			{Depth: 2, Term: "errand", Lines: []objectLine{{ID: "t2.ics", Desc: "Post"}}},
-			{Depth: 2, Term: "work", Lines: []objectLine{
+			{Depth: 1, Term: trellis.QuoteIfNeeded("_ inbox"), Lines: []objectLine{{ID: "t3.ics", Desc: "Loose"}}},
+			{Depth: 1, Term: "errand", Lines: []objectLine{{ID: "t2.ics", Desc: "Post"}}},
+			{Depth: 1, Term: "work", Lines: []objectLine{
 				{ID: "t1.ics", Desc: "Buy milk"},
 				{ID: "t2.ics", Desc: "Post"},
 			}},
@@ -35,7 +36,7 @@ func tagWholeDoc() document {
 }
 
 // tagNamespaceDoc is a representative hoisted namespace-rollup document:
-// `_group-by = project` and `## -<segment>` rollup buckets.
+// `_group-by = project` and `# -<segment>` rollup buckets.
 func tagNamespaceDoc() document {
 	return document{
 		BaseDigest: "blake2b256-acdef9",
@@ -43,18 +44,18 @@ func tagNamespaceDoc() document {
 		Type:       "caldav-object-v1",
 		GroupBy:    "project",
 		Sections: []section{
-			{Depth: 2, Term: "-client", Lines: []objectLine{
+			{Depth: 1, Term: "-client", Lines: []objectLine{
 				{ID: "acme.ics", Desc: "Acme"},
 				{ID: "baxter.ics", Desc: "Baxter"},
 			}},
-			{Depth: 2, Term: "-cutting_garden", Lines: []objectLine{{ID: "cg.ics", Desc: "CG"}}},
+			{Depth: 1, Term: "-cutting_garden", Lines: []objectLine{{ID: "cg.ics", Desc: "CG"}}},
 		},
 	}
 }
 
 // TestRenderTagWhole pins the hoisted whole-dimension dialect: the `_group-by`
-// directive, NO `# categories=` parent heading, bare no-`=` `## <tag>` buckets,
-// and a space-bearing tag quoted (`## "_ inbox"`).
+// directive, NO `# categories=` parent heading, bare no-`=` `# <tag>` buckets at
+// depth 1 (no `##` anywhere), and a space-bearing tag quoted (`# "_ inbox"`).
 func TestRenderTagWhole(t *testing.T) {
 	out := render(tagWholeDoc())
 
@@ -64,10 +65,13 @@ func TestRenderTagWhole(t *testing.T) {
 	if strings.Contains(out, "# categories=") {
 		t.Errorf("hoisted tag grouping must NOT render a parent dimension heading:\n%s", out)
 	}
-	if strings.Contains(out, "## =") {
+	if strings.Contains(out, "\n##") {
+		t.Errorf("tag buckets must sit at minimal depth (`#`, never `##`):\n%s", out)
+	}
+	if strings.Contains(out, "# =") {
 		t.Errorf("tag buckets must have no `=` value prefix:\n%s", out)
 	}
-	for _, want := range []string{"## work\n", "## errand\n", "## \"_ inbox\"\n"} {
+	for _, want := range []string{"\n# work\n", "\n# errand\n", "\n# \"_ inbox\"\n"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing bucket heading %q:\n%s", want, out)
 		}
@@ -75,17 +79,18 @@ func TestRenderTagWhole(t *testing.T) {
 }
 
 // TestRenderTagNamespace pins the namespace dialect: `_group-by = <namespace>`
-// and `## -<segment>` rollup buckets, still no parent heading, still no `=`.
+// and `# -<segment>` rollup buckets at depth 1, still no parent heading, still
+// no `=`.
 func TestRenderTagNamespace(t *testing.T) {
 	out := render(tagNamespaceDoc())
 
 	if !strings.Contains(out, "- _group-by = project\n") {
 		t.Errorf("missing `- _group-by = project` directive:\n%s", out)
 	}
-	if strings.Contains(out, "# categories=") || strings.Contains(out, "## =") {
-		t.Errorf("namespace grouping must be hoisted with no `=` buckets:\n%s", out)
+	if strings.Contains(out, "# categories=") || strings.Contains(out, "# =") || strings.Contains(out, "\n##") {
+		t.Errorf("namespace grouping must be hoisted to depth-1 no-`=` buckets:\n%s", out)
 	}
-	for _, want := range []string{"## -client\n", "## -cutting_garden\n"} {
+	for _, want := range []string{"\n# -client\n", "\n# -cutting_garden\n"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing rollup bucket %q:\n%s", want, out)
 		}
@@ -179,17 +184,17 @@ func TestParseNewlineBearingBucketValue(t *testing.T) {
 		Type:       "caldav-object-v1",
 		GroupBy:    "(tags)",
 		Sections: []section{
-			{Depth: 2, Term: trellis.QuoteIfNeeded("a\nb"), Lines: []objectLine{{ID: "t1.ics"}}},
+			{Depth: 1, Term: trellis.QuoteIfNeeded("a\nb"), Lines: []objectLine{{ID: "t1.ics"}}},
 		},
 	}
 
 	out := render(doc)
-	if !strings.Contains(out, "## \"a\\nb\"\n") {
+	if !strings.Contains(out, "# \"a\\nb\"\n") {
 		t.Errorf("newline-bearing bucket must render quoted on one physical line:\n%s", out)
 	}
 	// The heading must be exactly one physical line — no bare newline mid-heading.
 	for _, line := range strings.Split(out, "\n") {
-		if strings.HasPrefix(line, "## ") && line != "## \"a\\nb\"" {
+		if strings.HasPrefix(line, "# ") && line != "# \"a\\nb\"" {
 			t.Errorf("unexpected heading line %q (heading split across lines?)", line)
 		}
 	}
@@ -273,7 +278,7 @@ func TestBuildDocument_TagWhole(t *testing.T) {
 }
 
 // TestBuildDocument_TagNamespace pins the namespace grouping through the
-// dodder-hyphen interpreter: `## -client` / `## -cutting_garden` rollup buckets
+// dodder-hyphen interpreter: `# -client` / `# -cutting_garden` rollup buckets
 // and the `project` encoding.
 func TestBuildDocument_TagNamespace(t *testing.T) {
 	interp, ok := cgp.LookupTagInterpreter("dodder-hyphen")

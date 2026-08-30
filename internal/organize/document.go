@@ -44,8 +44,10 @@ import (
 //
 // Object lines are espalier boxes `- [<id> !<type>] <desc>` with anchor-relative
 // short ids; a bare heading term (`# !type`) drops the brackets a box carries.
-// The parser accepts either spelling and any depth; render emits spelling 2 for a
-// single-type node set (flatter), spelling 1 for a multi-type set.
+// The parser accepts either spelling and any depth (normalized to the shallowest
+// level present, with empty headings as context resets — see parseBody); render
+// emits spelling 2 for a single-type node set (flatter), spelling 1 for a
+// multi-type set, always at minimal depth (a tag grouping's buckets sit at `#`).
 const (
 	envelopeType = "organize-base-v1"
 	fieldBase    = "_base"
@@ -110,7 +112,7 @@ type document struct {
 	// set, groupedSpec reads the kind and namespace from it alone; the tag
 	// DIMENSION it applies to is resolved from the plugin at apply time
 	// (resolveTagDimension). The hoisted body has no parent dimension heading —
-	// its buckets are bare `## <value>` headings.
+	// its buckets are bare `# <value>` headings at minimal depth.
 	GroupBy string
 	// Distributed carries any other bare `- <term>` envelope lines the user
 	// hand-added (RFC 0015 distribution rule) — preserved verbatim on parse.
@@ -134,7 +136,7 @@ func isDimTerm(t string) bool {
 
 // isTagGrouping reports whether the document uses the hoisted TAG-grouping
 // dialect (RFC 0019 tags slice 3 B3): a `_group-by` directive present, its
-// buckets bare `## <value>` headings with no parent dimension heading. A field
+// buckets bare `# <value>` headings with no parent dimension heading. A field
 // grouping (GroupBy empty) keeps the `# <dim>=` heading + `## =<value>` buckets.
 func (doc document) isTagGrouping() bool { return doc.GroupBy != "" }
 
@@ -383,10 +385,34 @@ func splitEnvelope(text string) (
 }
 
 // parseBody walks the heading-ladder body, attaching object lines to their
-// enclosing section (or the ungrouped set before any heading).
+// enclosing section (or the ungrouped set before any heading). Heading depth is
+// STRUCTURE-ONLY (native tags design G10): the shallowest `#` level present in
+// the body is the root, and deeper levels nest relative to it, so a hand-written
+// document starting at `##` parses identically to one starting at `#`
+// (rootHeadingDepth). The open heading path is kept as a stack of section
+// indices; a non-empty heading at depth N pops every open heading at N or
+// deeper and pushes itself, and object lines attach to the top of the stack.
+//
+// An EMPTY heading is a RESET: `##` (after normalization) pops the heading
+// context at its depth and deeper WITHOUT pushing anything, so the object lines
+// that follow attach to the depth N−1 heading — exactly as if they had been
+// written under that parent heading — and a bare `#` empties the stack, returning
+// to the ungrouped context. A reset deeper than the current context pops nothing
+// (a no-op); re-entering a bucket needs a new non-empty heading. Resets never
+// become sections, so a parsed document renders without them (generate never
+// emits one) and every derived view (assignments, memberships, groupedSpec,
+// hasBuckets) reads the resolved placement with no reset awareness of its own.
+// A spelling-1 `# !<type>` heading is just another stack frame: `##` under
+// `# !type` / `## status=` / `### =A` lands lines under the type alone (its
+// ungrouped set), and `#` pops past the type heading to the document's
+// ungrouped set.
 func parseBody(doc *document, body string) error {
-	curSection := -1
-	for i, raw := range strings.Split(body, "\n") {
+	lines := strings.Split(body, "\n")
+	root := rootHeadingDepth(lines)
+	// open is the stack of open heading sections (indices into doc.Sections),
+	// shallowest first; the top is where object lines attach.
+	var open []int
+	for i, raw := range lines {
 		line := strings.TrimSpace(raw)
 		if line == "" {
 			continue
@@ -394,21 +420,25 @@ func parseBody(doc *document, body string) error {
 
 		switch {
 		case strings.HasPrefix(line, "#"):
-			depth := 0
-			for depth < len(line) && line[depth] == '#' {
-				depth++
+			rawDepth, term := splitHeading(line)
+			depth := rawDepth - root + 1
+			for len(open) > 0 && doc.Sections[open[len(open)-1]].Depth >= depth {
+				open = open[:len(open)-1]
 			}
-			term := strings.TrimSpace(line[depth:])
+			if term == "" {
+				continue // a reset: the pop above IS the effect
+			}
 			doc.Sections = append(doc.Sections, section{Depth: depth, Term: term})
-			curSection = len(doc.Sections) - 1
+			open = append(open, len(doc.Sections)-1)
 
 		case strings.HasPrefix(line, "-"):
 			ln, err := parseObjectLine(strings.TrimSpace(line[1:]))
 			if err != nil {
 				return errors.BadRequestf("organize: body line %d: %s", i+1, err)
 			}
-			if curSection >= 0 {
-				doc.Sections[curSection].Lines = append(doc.Sections[curSection].Lines, ln)
+			if len(open) > 0 {
+				cur := open[len(open)-1]
+				doc.Sections[cur].Lines = append(doc.Sections[cur].Lines, ln)
 			} else {
 				doc.Ungrouped = append(doc.Ungrouped, ln)
 			}
@@ -418,6 +448,36 @@ func parseBody(doc *document, body string) error {
 		}
 	}
 	return nil
+}
+
+// splitHeading splits a heading line into its `#` count and its (trimmed) text —
+// empty for a reset heading.
+func splitHeading(line string) (depth int, term string) {
+	for depth < len(line) && line[depth] == '#' {
+		depth++
+	}
+	return depth, strings.TrimSpace(line[depth:])
+}
+
+// rootHeadingDepth returns the shallowest `#` count among the body's heading
+// lines (resets included) — the level that normalizes to depth 1. 1 when the
+// body has no heading at all.
+func rootHeadingDepth(lines []string) int {
+	root := 0
+	for _, raw := range lines {
+		line := strings.TrimSpace(raw)
+		if !strings.HasPrefix(line, "#") {
+			continue
+		}
+		depth, _ := splitHeading(line)
+		if root == 0 || depth < root {
+			root = depth
+		}
+	}
+	if root == 0 {
+		return 1
+	}
+	return root
 }
 
 // parseObjectLine parses one espalier box literal `[<id> !<type> …] <desc>`:

@@ -6,7 +6,7 @@
 # native tags design G10 spelling; the retired bare `categories` now rejects with
 # a hint naming it — uses the hoisted tag-grouping
 # dialect (RFC 0019 slice 3 B3): a `- _group-by = (tags)` envelope directive,
-# NO `# categories=` parent heading, and a bare no-`=` `## <tag>` bucket for EVERY
+# NO `# categories=` parent heading, and a bare no-`=` `# <tag>` bucket for EVERY
 # tag an object carries — a two-tag task appears under both buckets — and
 # `list --facets --filter 'categories=<tag>'` narrows the facet
 # summary to the objects carrying that tag. Slice 2 makes the dimension writable:
@@ -14,7 +14,7 @@
 # the single-bucket move merge (which would reject a multi-membership document as
 # "appears twice"), routing a write:many dimension through the SET-merge membership
 # path (planMemberships → BuildMembershipWritePatch). Reorganizing a task between
-# `## <tag>` buckets now REWRITES its CATEGORIES to the interpreter-resolved set.
+# `# <tag>` buckets now REWRITES its CATEGORIES to the interpreter-resolved set.
 #
 # The fixture calendar (/dav/fields/, opt-in via CG_TEST_CALDAV_FIELDS) holds
 # field2 "Read book" CATEGORIES work,errand (two-tag) and field3 "Water plants"
@@ -46,7 +46,7 @@ teardown() {
 
 # generate_grouped runs `organize -group-by (tags)` and asserts the document
 # in full: the hoisted dialect (a `- _group-by = (tags)` envelope directive,
-# no `# categories=` parent heading, bare `## <tag>` buckets sorted ascending —
+# no `# categories=` parent heading, bare `# <tag>` buckets sorted ascending —
 # errand before work), the untagged field1/field4 ungrouped, and the two-tag
 # field2 filed under BOTH buckets while the one-tag field3 sits under work only.
 generate_grouped() {
@@ -55,7 +55,7 @@ generate_grouped() {
   assert_output - <<-'EOM'
 	---
 	% generated: `cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:43102/dav/fields/`
-	- _base = @blake2b256-jn900g70uh7w8esmn9a8cyxjv5t36573sls4xq5a7l63n5m0eg9sw2895d
+	- _base = @blake2b256-56up38uguawu2gpcuzjx30v39dznz0rf05wrpyzjsmu0asf75xqsjnapru
 	- _anchor = caldav:http://127.0.0.1:43102/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -66,11 +66,11 @@ generate_grouped() {
 	- [field1.ics location=Bank status=NEEDS-ACTION priority=1] Pay rent
 	- [field4.ics] Someday idea
 
-	## errand
+	# errand
 
 	- [field2.ics priority=5] Read book
 
-	## work
+	# work
 
 	- [field2.ics priority=5] Read book
 	- [field3.ics priority=9] Water plants
@@ -80,7 +80,7 @@ generate_grouped() {
 # Grouping by (tags) files a two-tag task under BOTH its buckets and a
 # one-tag task under its single bucket — multi-membership (tags design D7). The
 # grouping is hoisted: a `- _group-by = (tags)` envelope directive, no
-# `# categories=` parent heading, and bare `## <tag>` buckets (observed tag values
+# `# categories=` parent heading, and bare `# <tag>` buckets (observed tag values
 # sort ascending — errand before work).
 function organize_categories_multi_membership { # @test
   generate_grouped
@@ -115,7 +115,7 @@ function organize_categories_apply_writes { # @test
   cat >"$edited" <<-'EOM'
 	---
 	% generated: `cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:43102/dav/fields/`
-	- _base = @blake2b256-jn900g70uh7w8esmn9a8cyxjv5t36573sls4xq5a7l63n5m0eg9sw2895d
+	- _base = @blake2b256-56up38uguawu2gpcuzjx30v39dznz0rf05wrpyzjsmu0asf75xqsjnapru
 	- _anchor = caldav:http://127.0.0.1:43102/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -126,12 +126,12 @@ function organize_categories_apply_writes { # @test
 	- [field1.ics location=Bank status=NEEDS-ACTION priority=1] Pay rent
 	- [field4.ics] Someday idea
 
-	## errand
+	# errand
 
 	- [field2.ics priority=5] Read book
 	- [field3.ics priority=9] Water plants
 
-	## work
+	# work
 
 	- [field2.ics priority=5] Read book
 	EOM
@@ -157,7 +157,7 @@ EOF
   assert_output - <<-'EOM'
 	---
 	% generated: `cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:43102/dav/fields/`
-	- _base = @blake2b256-fkwcvfnv90vc4zvqnnf62sxeql238c4vqh4n5mtscwufheqlxwuqkwmhhj
+	- _base = @blake2b256-pr88t6wdafqs6kjl68x7tetdnzuzkkymxurveugjw66xdyck36us7p0guh
 	- _anchor = caldav:http://127.0.0.1:43102/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -168,12 +168,12 @@ EOF
 	- [field1.ics location=Bank status=NEEDS-ACTION priority=1] Pay rent
 	- [field4.ics] Someday idea
 
-	## errand
+	# errand
 
 	- [field2.ics priority=5] Read book
 	- [field3.ics priority=9] Water plants
 
-	## work
+	# work
 
 	- [field2.ics priority=5] Read book
 	EOM

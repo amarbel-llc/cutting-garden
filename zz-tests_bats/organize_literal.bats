@@ -13,7 +13,7 @@
 #   - G9: a non-ground interior (`status*=y`) is a loud bad request naming the
 #     offending term.
 #   - G9: a quoted tag round-trips in a box (parsed, re-spelled in the refusal)
-#     and in a heading: the `## "_ inbox"` bucket a whitespace-bearing CATEGORIES
+#     and in a heading: the `# "_ inbox"` bucket a whitespace-bearing CATEGORIES
 #     value renders as, moved INTO by a bucket move, re-rendered quoted.
 #
 # The fixture calendar (/dav/lit/, opt-in via CG_TEST_CALDAV_LIT) holds lit1
@@ -43,8 +43,8 @@ teardown() {
 
 # The generated document's `_base` digest, and the digest after lit2 has moved
 # into the `"_ inbox"` bucket.
-BASE_GENERATED=blake2b256-tp85mz32plvghw88vgtktz6yqqpa9zjytfxqvqlz5knxj5dfuadsfw6009
-BASE_MOVED=blake2b256-n05uwrrjky9jzdew4t94mxk8svs4x8ucfwmmkj938q882fzvxnus9knnt8
+BASE_GENERATED=blake2b256-uhrs68g8fye4lj3pfwt90rj54qfnra2j03nxufxjj5gz5aqdv8vs7tkhaw
+BASE_MOVED=blake2b256-5n9sc827ktjjarvnz7gvnqzstp2pdsdv5t8ywh492306dm7s0m3sv9kgkp
 
 # envelope_header prints the `-group-by (tags)` document's hyphence envelope
 # pinned at `_base` $1 — the part every document in this lane shares.
@@ -70,7 +70,7 @@ lit_doc() {
 }
 
 # generate_grouped runs `organize -group-by (tags)` and asserts the document
-# in full: the untagged lit2 ungrouped, and lit1 under the QUOTED `## "_ inbox"`
+# in full: the untagged lit2 ungrouped, and lit1 under the QUOTED `# "_ inbox"`
 # bucket — its CATEGORIES value carries whitespace, so the heading spells it as a
 # trellis String.
 generate_grouped() {
@@ -81,7 +81,7 @@ generate_grouped() {
 
 	- [lit2.ics location=Bank] Read book
 
-	## "_ inbox"
+	# "_ inbox"
 
 	- [lit1.ics] Triage inbox
 	EOM
@@ -97,7 +97,7 @@ write_lit2_edited() {
 
 	$box
 
-	## "_ inbox"
+	# "_ inbox"
 
 	- [lit1.ics] Triage inbox
 	EOM
@@ -160,7 +160,7 @@ function organize_literal_non_ground_interior_rejects { # @test
   assert_lit2_untouched
 }
 
-# G9: the quoted heading round-trips. Move lit2 under `## "_ inbox"` and commit:
+# G9: the quoted heading round-trips. Move lit2 under `# "_ inbox"` and commit:
 # the parser decodes the quoted bucket value to `_ inbox`, the membership write
 # stores exactly that CATEGORIES value, and the re-rendered document spells the
 # bucket quoted again with both tasks beneath it.
@@ -169,7 +169,7 @@ function organize_literal_quoted_tag_heading_round_trips { # @test
   local edited="$BATS_TEST_TMPDIR/edited.txt"
   lit_doc "$BASE_GENERATED" >"$edited" <<-'EOM'
 
-	## "_ inbox"
+	# "_ inbox"
 
 	- [lit1.ics] Triage inbox
 	- [lit2.ics location=Bank] Read book
@@ -194,7 +194,7 @@ EOF
   assert_output "$(
     lit_doc "$BASE_MOVED" <<-'EOM'
 
-	## "_ inbox"
+	# "_ inbox"
 
 	- [lit1.ics] Triage inbox
 	- [lit2.ics location=Bank] Read book

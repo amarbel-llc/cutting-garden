@@ -129,7 +129,8 @@ func (cmd *Organize) runGenerate(ctx errors.Context, uriStr string) error {
 // or `# date_due=(month)` for a date grouping, cutting-garden#230) with a
 // `=<value>` bucket per declared / observed value. A TAG grouping (design G10)
 // is hoisted: no parent dimension heading, its spelling recorded in the
-// `_group-by` envelope directive, and its buckets bare `## <value>` headings.
+// `_group-by` envelope directive, and its buckets bare `# <value>` headings at
+// minimal depth.
 // interp is the resolved tag interpreter — required for a namespace grouping
 // (groupKindTagNamespace), nil otherwise.
 func buildDocument(
@@ -192,7 +193,7 @@ func groupForSpec(
 
 // sectionsForSpec renders a grouping's buckets in the dialect the spec selects: a
 // FIELD grouping keeps the `<spec>=` heading + `## =<value>` buckets
-// (dimensionSections); a TAG grouping is hoisted to bare `## <value>` buckets
+// (dimensionSections); a TAG grouping is hoisted to bare `# <value>` buckets
 // with no parent heading (tagDimensionSections).
 func sectionsForSpec(spec groupSpec, buckets []bucket, baseDepth int) []section {
 	if spec.Kind == groupKindField {
@@ -289,21 +290,21 @@ func dimensionSections(spec groupSpec, buckets []bucket, baseDepth int) []sectio
 }
 
 // tagDimensionSections renders a TAG grouping's buckets in the hoisted dialect
-// (design G10): a bare `## <value>` heading per bucket with NO
-// parent dimension heading (the spec lives in the `_group-by` envelope directive)
-// and NO `=` value prefix. The buckets sit at baseDepth+1 — the SAME depth a
-// field grouping's `## =<value>` buckets occupy (dimensionSections) — so the
-// hoisting only elides the parent heading, it does not shift the buckets up:
-// spelling 2 renders `## work`, spelling 1 `### work` under its `# !<type>`. A
-// value containing whitespace or a reserved rune is quoted as a trellis String
-// (`## "_ inbox"`, design G9); the parser unquotes.
-// The bucket value already IS the tag (`work`) or the namespace-rollup segment
-// (`-client`) from groupForSpec.
+// (design G10): a bare `# <value>` heading per bucket with NO parent dimension
+// heading (the spec lives in the `_group-by` envelope directive) and NO `=`
+// value prefix. Heading depth is MINIMAL: with no dimension heading to nest
+// under, the buckets sit AT baseDepth — spelling 2 renders `# work` / `# -client`,
+// spelling 1 `## work` under its `# !<type>` — while a field grouping keeps its
+// `# <dim>=` / `## =<value>` ladder (dimensionSections). The parser normalizes
+// depth (parseBody), so a document at either depth reads the same. A value
+// containing whitespace or a reserved rune is quoted as a trellis String
+// (`# "_ inbox"`, design G9); the parser unquotes. The bucket value already IS
+// the tag (`work`) or the namespace-rollup segment (`-client`) from groupForSpec.
 func tagDimensionSections(buckets []bucket, baseDepth int) []section {
 	secs := make([]section, 0, len(buckets))
 	for _, bk := range buckets {
 		secs = append(secs, section{
-			Depth: baseDepth + 1, Term: trellis.QuoteIfNeeded(bk.Value), Lines: bk.Lines,
+			Depth: baseDepth, Term: trellis.QuoteIfNeeded(bk.Value), Lines: bk.Lines,
 		})
 	}
 	return secs

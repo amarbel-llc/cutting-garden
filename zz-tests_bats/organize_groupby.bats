@@ -5,8 +5,8 @@
 # G10): ONE grammar for the `--group-by` flag, the `_group-by` envelope
 # directive, and the dimension heading, read by the trellis term parser:
 #
-#   (tags)             the type's whole tag set     → `_group-by = (tags)`, `## <tag>`
-#   project            tag namespace (bare = tag)   → `_group-by = project`, `## -client`
+#   (tags)             the type's whole tag set     → `_group-by = (tags)`, `# <tag>`
+#   project            tag namespace (bare = tag)   → `_group-by = project`, `# -client`
 #   status=            field grouping               → `# status=` / `## =value`
 #   date_due=(month)   date field at a granularity  → `# date_due=(month)`
 #
@@ -55,14 +55,14 @@ teardown() {
 
 # G10 row 1: `(tags)` groups by the type's whole tag set — the `_group-by`
 # directive carries the same spelling, there is NO dimension heading, and the
-# buckets are bare `## <tag>` headings (one per tag an object carries).
+# buckets are bare `# <tag>` headings (one per tag an object carries).
 function organize_groupby_tags_whole_set { # @test
   run_cg organize -group-by '(tags)' "$FIELDS"
   assert_success
   assert_output - <<-'EOM'
 	---
 	% generated: `cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:43108/dav/fields/`
-	- _base = @blake2b256-en4ah6m78skysv53ahsxklt8agkfcfp00jfcen0dwzlaec65ukdq9klwcd
+	- _base = @blake2b256-ts20e5057dhlna0j2cts740vff0qzrcsdqedv2x0nay0hugteytshxnnvc
 	- _anchor = caldav:http://127.0.0.1:43108/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -73,11 +73,11 @@ function organize_groupby_tags_whole_set { # @test
 	- [field1.ics location=Bank status=NEEDS-ACTION priority=1] Pay rent
 	- [field4.ics] Someday idea
 
-	## errand
+	# errand
 
 	- [field2.ics priority=5] Read book
 
-	## work
+	# work
 
 	- [field2.ics priority=5] Read book
 	- [field3.ics priority=9] Water plants
@@ -85,7 +85,7 @@ function organize_groupby_tags_whole_set { # @test
 }
 
 # G10 row 2: a bare name is a tag NAMESPACE (G9: bare is always a tag) — `project`
-# rolls the `project-*` hierarchy up to `## -client` / `## -cutting_garden`
+# rolls the `project-*` hierarchy up to `# -client` / `# -cutting_garden`
 # continuation buckets, and `_group-by` persists the same bare spelling.
 function organize_groupby_namespace_rollup { # @test
   run_cg organize -group-by project "$NS"
@@ -93,7 +93,7 @@ function organize_groupby_namespace_rollup { # @test
   assert_output - <<-'EOM'
 	---
 	% generated: `cg organize -group-by project -query "_terminal=no" caldav:http://127.0.0.1:43108/dav/ns/`
-	- _base = @blake2b256-96r4nsudkceg8xavjpk7k8x0sstzqyzwpv5weyvp04ev7ff2hfwsxx5xdd
+	- _base = @blake2b256-6fzl6h9uj8tgsh7a7f5lh50sm56y7celccdju4j4rzsu307r7urqwv595s
 	- _anchor = caldav:http://127.0.0.1:43108/dav/ns/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -103,12 +103,12 @@ function organize_groupby_namespace_rollup { # @test
 
 	- [nsD.ics] Loose idea
 
-	## -client
+	# -client
 
 	- [nsA.ics] Acme retainer
 	- [nsB.ics] Baxter audit
 
-	## -cutting_garden
+	# -cutting_garden
 
 	- [nsC.ics] CG roadmap
 	EOM
