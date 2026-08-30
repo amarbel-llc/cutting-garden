@@ -28,13 +28,20 @@ func isSigilRune(r rune) bool {
 	}
 }
 
-// reservedRunes are the literal (non-sigil) members of trellis.peg's
+// reservedRunes are the literal (non-sigil) members of hyphence-content.peg's
+// (imported by trellis.peg)
 //
-//	Reserved <- [\[\]^=,!@<>*$~%#"'] / SigilRune
+//	Reserved <- [\[\]^=,!@<>*$~%#"'()] / SigilRune
+//
+// `(` and `)` joined the set with hyphence master 0ac8742 (native tags
+// design G10): a parenthetical is trellis's meta-qualifier term
+// (`Qualifier <- '(' Ident ')'`), so parens can no longer be identifier
+// content — `c(1)` is identifier `c` followed by a qualifier, and a tag
+// whose content contains parens must be quoted (`"c(1)"`).
 //
 // Sigil runes are handled separately by isSigilRune wherever Reserved is
 // consulted (see IsIdentRuneAt), so this set omits them.
-const reservedRunes = "[]^=,!@<>*$~%#\"'"
+const reservedRunes = "[]^=,!@<>*$~%#\"'()"
 
 func isReservedRune(r rune) bool {
 	return strings.ContainsRune(reservedRunes, r)

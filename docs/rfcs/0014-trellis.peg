@@ -79,6 +79,7 @@ Term         <- '^'? '='? BasicTerm
 // for content containing reserved runes ("one/uno.zettel", a URI with a
 // query string).
 BasicTerm    <- Group
+              / Qualifier             // (tags): a meta qualifier as its own term
               / FieldPred
               / TypeTerm Sigil?
               / DigestTerm Sigil?
@@ -90,6 +91,19 @@ QuotedRef    <- String
 
 TypeTerm     <- '!' Ident             // type identity (not genre; dodder FDR 0018)
 // DigestTerm imported from hyphence-content.peg (see @import at top)
+
+// A parenthetical is a META QUALIFIER, never a predicate over objects
+// (native tags design G10). `(` and `)` are Reserved (hyphence master
+// 0ac8742), so the identifier inside can never swallow the closing paren
+// and a bare `c(1)` is identifier `c` + qualifier `(1)` — a tag whose
+// content contains parens is quoted (`"c(1)"`, QuotedRef). Two positions:
+//   - as a BasicTerm on its own: `(tags)` — the type's whole tag set
+//   - as a FieldPred Value: `date_due=(month)` — a value HOLE carrying a
+//     granularity qualifier ("group this field at month granularity")
+// Both are the spellings organize's `--group-by` / `_group-by` / heading
+// dialect shares (RFC 0015). In QUERY position both are RESERVED: parsed
+// here, rejected at validation until a query-side meaning exists.
+Qualifier    <- '(' Ident ')'
 
 // Sigils choose the step's candidate version-set and are combinable
 // (`:.`). A sigil on any term — or bare — scopes the WHOLE step (pair
@@ -146,8 +160,11 @@ FieldOp      <- '*=' / '^=' / '$=' / '!=' / '<=' / '>=' / '~=' / '=' / '<' / '>'
 // hyphence RFC 0002's isometry check): digest-valued field predicates
 // are the query-side spelling of reference-valued fields / typed edges
 // (`_mother=@blake2b256-…`, `_base=@…`) and of edge-target matching.
+// Qualifier is admitted as a value (2026-08-30, native tags G10): `k=(x)`
+// is a field predicate whose value is a qualifier, not a literal. Tried
+// first: `(` is Reserved, so no other alternative can begin with it.
 ValueList    <- '[' SP? Value (SP? ',' SP? Value)* SP? ']'
-Value        <- MarklTerm / String / DigestTerm / Bareword
+Value        <- Qualifier / MarklTerm / String / DigestTerm / Bareword
 
 // ---- combinators: typed-arrow traversal ----------------------------------
 
@@ -173,7 +190,10 @@ TypedBack    <- '<-[' SP? ConjRun SP? ']-'
 // matching doddish's scanner discipline: everything that is not
 // whitespace and not a reserved delimiter is identifier. `-` and `/` are
 // admitted inline (`area-personal`, `one/uno`, leading `-` for dependent
-// tags).
+// tags). The reserved set is hyphence-content.peg's Reserved (imported
+// transitively via IdentRune) — since hyphence master 0ac8742 it includes
+// `(` and `)`, which trellis spends on the Qualifier term above; the
+// hand-rolled lexer's reservedRunes (internal/trellis/lex.go) mirrors it.
 //
 // THE STRICT SIGIL RULE: sigil runes are identifier-INTERIOR unless the
 // run is term-final — a SigilRune continues an identifier only when
@@ -253,3 +273,15 @@ EOF          <- !.
 //     — spaced field operator: ONE field predicate (greedy FieldPred),
 //       never identifier `due` + exact-match term; per-medium canonical
 //       spacing (spaced in hyphence lines, unspaced in box interiors)
+//   date_due=(month)
+//     — qualifier as a field VALUE: a value hole with a meta qualifier
+//       (group-by at month granularity, native tags G10); parses,
+//       validation rejects in query position (reserved)
+//   (tags)
+//     — qualifier as its own term (the whole tag set); parses, validation
+//       rejects in query position (reserved)
+//   "c(1)"
+//     — quoted opaque reference whose CONTENT contains parens: since `(`
+//       and `)` are Reserved, a bare `c(1)` is NOT one identifier (it is
+//       `c` + qualifier `(1)` with no separating space — a syntax error);
+//       the quoted form is the only spelling of that tag

@@ -12,6 +12,12 @@ import (
 // remaining deferrals are tracked in cutting-garden#211 (the slice-2 tracker).
 const unsupported = "trellis: %s is not yet supported by the evaluator (cutting-garden#211)"
 
+// qualifierReserved is the rejection for a `(x)` / `k=(x)` qualifier term in
+// QUERY position (native tags design G10): the spelling belongs to organize's
+// group-by dialect this slice and has no evaluator meaning yet.
+const qualifierReserved = "trellis: qualifier terms are reserved; not evaluable yet " +
+	"(%s is a group-by spelling — see `organize --group-by`)"
+
 // Validate reports whether q is within the explicit-anchor evaluator's supported
 // subset, returning a descriptive bad-request error for the first deferred form
 // it encounters. Evaluate calls it before any traversal, so a query that reaches
@@ -22,7 +28,9 @@ const unsupported = "trellis: %s is not yet supported by the evaluator (cutting-
 // (tag) predicates, OR-alternatives, and existential single-step forward subpaths,
 // with only the `:` sigil. Typed edges, the default-anchor (root-aggregate
 // leading-combinator) origin, version subpaths, non-`:` sigils, and mid-query
-// object-identity terms remain deferred. A bare-identifier term is NOT deferred
+// object-identity terms remain deferred. Qualifier terms (`(x)`, `k=(x)`) are
+// RESERVED in query position (native tags G10) — organize's group-by dialect
+// is their only consumer this slice. A bare-identifier term is NOT deferred
 // (#231 slice 3): it evaluates as a tag predicate through the node's
 // tag-dimension interpreter (RFC 0014's deferred bare term, RFC 0019 §5/§6.2).
 // A leading-URI origin term is NOT handled here — resolving it
@@ -81,7 +89,15 @@ func validateBasic(basic trellis.BasicTerm) error {
 	switch b := basic.(type) {
 	case trellis.TypeBasicTerm:
 		return validateSigil(b.Sigil)
+	case trellis.QualifierBasicTerm:
+		return errors.BadRequestf(qualifierReserved, "`"+b.String()+"`")
 	case trellis.FieldPredBasicTerm:
+		for _, v := range b.FieldPred.Values {
+			if qv, ok := v.(trellis.QualifierValue); ok {
+				return errors.BadRequestf(qualifierReserved,
+					"`"+b.FieldPred.Field.Name+b.FieldPred.Op.String()+qv.String()+"`")
+			}
+		}
 		if b.FieldPred.Op == trellis.FieldOpRegex {
 			// Reject an invalid pattern up front (fail fast, actionable)
 			// rather than at match time, where the evaluator has no error

@@ -333,6 +333,25 @@ func (p *parser) parseMarklTerm() (MarklTerm, bool) {
 	return MarklTerm{Purpose: purpose, PurposeQuoted: quoted, Digest: digest}, true
 }
 
+// parseQualifier: '(' Ident ')'. Parens are Reserved runes (hyphence
+// master 0ac8742), so the Ident inside can never swallow the closing `)`.
+func (p *parser) parseQualifier() (Qualifier, bool) {
+	save := p.pos
+	if !p.literal("(") {
+		return Qualifier{}, false
+	}
+	id, ok := p.parseIdent()
+	if !ok {
+		p.pos = save
+		return Qualifier{}, false
+	}
+	if !p.literal(")") {
+		p.pos = save
+		return Qualifier{}, false
+	}
+	return Qualifier{Name: id.Name}, true
+}
+
 func (p *parser) parseQuotedRef() (QuotedRef, bool) {
 	s, ok := p.parseString()
 	if !ok {
@@ -383,6 +402,9 @@ func (p *parser) parseFieldOp() (FieldOp, bool) {
 }
 
 func (p *parser) parseValue() (Value, bool) {
+	if q, ok := p.parseQualifier(); ok {
+		return QualifierValue{Qualifier: q}, true
+	}
 	if m, ok := p.parseMarklTerm(); ok {
 		return m, true
 	}
@@ -671,14 +693,17 @@ func (p *parser) parseTerm() (Term, bool) {
 	return Term{Negate: negate, Exact: exact, Basic: basic}, true
 }
 
-// parseBasicTerm tries BasicTerm's eight alternatives in the grammar's own
+// parseBasicTerm tries BasicTerm's nine alternatives in the grammar's own
 // order:
 //
-//	Group / FieldPred / TypeTerm Sigil? / DigestTerm Sigil?
+//	Group / Qualifier / FieldPred / TypeTerm Sigil? / DigestTerm Sigil?
 //	/ MarklTerm Sigil? / QuotedRef Sigil? / Ident Sigil? / Sigil
 func (p *parser) parseBasicTerm() (BasicTerm, bool) {
 	if g, ok := p.parseGroup(); ok {
 		return GroupBasicTerm{Group: g}, true
+	}
+	if q, ok := p.parseQualifier(); ok {
+		return QualifierBasicTerm{Qualifier: q}, true
 	}
 	if fp, ok := p.parseFieldPred(); ok {
 		return FieldPredBasicTerm{FieldPred: fp}, true

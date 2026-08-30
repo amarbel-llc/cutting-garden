@@ -75,9 +75,10 @@ type Term struct {
 	Basic  BasicTerm
 }
 
-// BasicTerm is the sum type of BasicTerm's eight grammar alternatives:
+// BasicTerm is the sum type of BasicTerm's nine grammar alternatives:
 //
 //	BasicTerm <- Group
+//	           / Qualifier
 //	           / FieldPred
 //	           / TypeTerm Sigil?
 //	           / DigestTerm Sigil?
@@ -93,6 +94,13 @@ type BasicTerm interface{ isBasicTerm() }
 
 // GroupBasicTerm is BasicTerm's `Group` alternative.
 type GroupBasicTerm struct{ Group Group }
+
+// QualifierBasicTerm is BasicTerm's `Qualifier` alternative: a parenthetical
+// standing as its own term (`(tags)`), a META QUALIFIER rather than a
+// predicate over objects (native tags design G10). Reserved in query
+// position — the evaluator's validation layer rejects it; organize's
+// group-by spelling is its consumer.
+type QualifierBasicTerm struct{ Qualifier Qualifier }
 
 // FieldPredBasicTerm is BasicTerm's `FieldPred` alternative.
 type FieldPredBasicTerm struct{ FieldPred FieldPred }
@@ -137,6 +145,7 @@ type IdentBasicTerm struct {
 type SigilBasicTerm struct{ Sigil Sigil }
 
 func (GroupBasicTerm) isBasicTerm()     {}
+func (QualifierBasicTerm) isBasicTerm() {}
 func (FieldPredBasicTerm) isBasicTerm() {}
 func (TypeBasicTerm) isBasicTerm()      {}
 func (DigestBasicTerm) isBasicTerm()    {}
@@ -144,6 +153,23 @@ func (MarklBasicTerm) isBasicTerm()     {}
 func (QuotedRefBasicTerm) isBasicTerm() {}
 func (IdentBasicTerm) isBasicTerm()     {}
 func (SigilBasicTerm) isBasicTerm()     {}
+
+// String renders the term back in its grammar spelling, `(name)`.
+func (q QualifierBasicTerm) String() string { return q.Qualifier.String() }
+
+// Qualifier <- '(' Ident ')'
+//
+// A parenthesized identifier: a meta qualifier ON a term rather than a
+// predicate over objects. It appears in two positions — as a BasicTerm on
+// its own (`(tags)`: the type's whole tag set) and as a FieldPred Value
+// (`date_due=(month)`: a value hole carrying a granularity qualifier). Both
+// are the native-tags group-by spellings (design G10); in query position
+// both are RESERVED and rejected by trellis_eval's validation.
+type Qualifier struct{ Name string }
+
+// String renders the qualifier in its grammar spelling, `(name)` — the
+// writer half of the parse round-trip.
+func (q Qualifier) String() string { return "(" + q.Name + ")" }
 
 // TypeTerm <- '!' Ident
 //
@@ -324,18 +350,31 @@ func (op FieldOp) String() string {
 	}
 }
 
-// Value <- MarklTerm / String / DigestTerm / Bareword
+// Value <- Qualifier / MarklTerm / String / DigestTerm / Bareword
 //
 // One element of a FieldPred's value (or value list). MarklTerm and
 // DigestTerm implement this directly (Value's grammar carries no trailing
 // Sigil, unlike BasicTerm's alternatives); String is represented as
-// StringValue and Bareword as the Bareword type above.
+// StringValue, Bareword as the Bareword type above, and Qualifier as
+// QualifierValue.
 type Value interface{ isValue() }
 
 // StringValue is Value's `String` alternative (decoded content).
 type StringValue struct{ Value string }
 
 func (StringValue) isValue() {}
+
+// QualifierValue is Value's `Qualifier` alternative: `k=(x)` is a FieldPred
+// whose value is a value HOLE with a meta qualifier (`date_due=(month)` —
+// group the field at month granularity), not a literal to compare against.
+// Reserved in query position (rejected by trellis_eval's validation).
+type QualifierValue struct{ Qualifier Qualifier }
+
+func (QualifierValue) isValue() {}
+
+// String renders the value back in its grammar spelling, `(name)`, so a
+// writer emits `k=(x)` for the FieldPred that parsed it.
+func (v QualifierValue) String() string { return v.Qualifier.String() }
 
 func (DigestTerm) isValue() {}
 
