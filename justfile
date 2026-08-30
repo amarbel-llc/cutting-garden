@@ -1048,3 +1048,23 @@ debug-gofumpt-diff FILE:
     gofumpt=$(grep -A1 '\[formatter.gofumpt\]' "$config" | grep command | sed 's/.*= "//; s/"$//')
     echo "gofumpt: $gofumpt"
     "$gofumpt" -d "{{ FILE }}"
+
+# Run each impure (git-state) conformist linter directly against the worktree
+# and report its own stdout/stderr and exit status. `just lint-worktree` runs
+# the same set through conformist, which swallows per-linter output on success —
+# so when that recipe fails with the opaque "one or more findings were detected"
+# (cutting-garden#246), this recipe names which linter fired and why.
+#
+# run each impure conformist linter directly and show its output
+[group('debug')]
+debug-impure-linters:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    config=$(nix build "{{ justfile_directory() }}#conformist-impure-config" --no-link --print-out-paths)
+    echo "config: $config"
+    cd "{{ justfile_directory() }}"
+    while read -r linter; do
+      echo "=== $linter"
+      "$linter"
+      echo "--- exit=$?"
+    done < <(sed -n 's/^command = "\(.*\)"$/\1/p' "$config")
