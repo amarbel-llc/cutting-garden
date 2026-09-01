@@ -329,9 +329,9 @@ func tagDimensionSections(buckets []bucket, baseDepth int) []section {
 func namespaceSections(buckets []bucket, baseDepth int) []section {
 	secs := make([]section, 0, len(buckets))
 	for i, bk := range buckets {
-		depth := baseDepth + 1
-		if i == 0 {
-			depth = baseDepth
+		depth := baseDepth
+		if i > 0 {
+			depth++
 		}
 		secs = append(secs, section{
 			Depth: depth, Term: trellis.QuoteIfNeeded(bk.Value), Lines: bk.Lines,

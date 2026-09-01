@@ -1,6 +1,7 @@
 package organize
 
 import (
+	"slices"
 	"sort"
 
 	cgp "code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
@@ -136,13 +137,7 @@ func groupNodesByNamespace(
 		// Root membership (design G10a): the bare namespace tag files the node
 		// DIRECTLY under the root heading. Compared exactly — both builtin
 		// interpreters' Normalize is the identity (RFC 0019 §5/§7).
-		root := false
-		for _, tag := range tags {
-			if tag == spec.Namespace {
-				root = true
-				break
-			}
-		}
+		root := slices.Contains(tags, spec.Namespace)
 		if len(mems) == 0 && !root {
 			ungrouped = append(ungrouped, ln)
 			continue

@@ -137,7 +137,6 @@ func planMemberships(
 			// Complete never does a subtree remove); an ADD reconstructs and appends
 			// the namespace tag exactly (the unambiguous leaf).
 			for _, bucket := range removes {
-				fullTag := reconstructNamespaceTag(namespace, bucket)
 				if bucket == namespace {
 					// The G10a ROOT bucket: the only tag realizing direct-root
 					// placement is the bare namespace tag itself (deeper
@@ -145,12 +144,13 @@ func planMemberships(
 					// leaving the root removes exactly `project` — a subtree
 					// enumeration here would wrongly strip continuation
 					// memberships the document still shows.
-					newTags, err = interp.Complete(newTags, cgp.TagRemove, fullTag)
+					newTags, err = interp.Complete(newTags, cgp.TagRemove, namespace)
 					if err != nil {
-						return nil, errors.Wrapf(err, "organize: %s remove %q", id, fullTag)
+						return nil, errors.Wrapf(err, "organize: %s remove %q", id, namespace)
 					}
 					continue
 				}
+				fullTag := reconstructNamespaceTag(namespace, bucket)
 				for _, liveTag := range liveTags {
 					if liveTag == fullTag || strings.HasPrefix(liveTag, fullTag+"-") {
 						newTags, err = interp.Complete(newTags, cgp.TagRemove, liveTag)

@@ -331,6 +331,16 @@ deliberately mirrors the date-facet granularity ladder (day → month → year,
 cutting-garden#230): a coarser grouping is the same values rolled to a shallower
 prefix.
 
+A tag EXACTLY equal to the namespace (`project` under namespace `project`) has
+no segment beneath it and MUST yield no continuation bucket from `Buckets` — as
+must a tag not under the namespace at all. The bare tag is not thereby
+invisible: under the G10a root-heading rendering (native tags design amendment,
+2026-09-01) it places the node DIRECTLY under the namespace's root heading, but
+that root membership is the CONSUMER/apply layer's concern — the layer that
+holds the namespace detects the bare tag and owns the root bucket's write-back
+(reconstruction is exactly the bare tag), exactly as it owns the rollup-bucket
+write-back mechanics of §6.2. `Buckets` reports continuation rollups only.
+
 #### 6.2 Matching and write-back
 
 - **Bare-term transitive matching.** `Matches(tags, term)` is transitive along

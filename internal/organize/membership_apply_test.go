@@ -304,6 +304,25 @@ func TestPlanMemberships_RootBucketRemoveBareOnly(t *testing.T) {
 	}
 }
 
+// TestPlanMemberships_RootBucketRemoveConcurrentNoOp pins the root-REMOVE
+// idempotence against live drift: when the live set ALREADY lacks the bare
+// namespace tag (a concurrent edit removed it), the root removal folds to a
+// no-op — the result is set-equal to live, so nothing is written.
+func TestPlanMemberships_RootBucketRemoveConcurrentNoOp(t *testing.T) {
+	base := categoriesDoc(t, map[string][]string{"t1.ics": {"project"}})
+	edited := categoriesDoc(t, map[string][]string{"t1.ics": {}})
+	// Live already lost the bare tag; only the unrelated tag remains.
+	live := []cgp.Node{liveNode(t, "t1.ics", "other")}
+
+	edits, err := planMemberships(edited, base, live, membershipAnchor, mustDodderHyphen(t), membershipDim, "project")
+	if err != nil {
+		t.Fatalf("planMemberships: %v", err)
+	}
+	if len(edits) != 0 {
+		t.Fatalf("edit count = %d, want 0 — live already matches (%+v)", len(edits), edits)
+	}
+}
+
 // TestPlanMemberships_RootToContinuationMove pins that the root and continuation
 // rules COMPOSE: moving an object from the root bucket to a continuation removes
 // the bare `project` and adds the reconstructed `project-client`.

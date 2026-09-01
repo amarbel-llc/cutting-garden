@@ -22,7 +22,8 @@ Resets compose: `##` under a continuation pops to the root (= bare-tag
 membership on apply), empty `#` pops to ungrouped. `(tags)` unchanged.
 Re-point organize_ns.bats + organize_groupby.bats (ns row) + the nvim corpus ns
 test; add a vector for direct-under-root placement (move nsD's line under
-`# project` → CATEGORIES becomes `project`); resolve the TODO in
+`# project` → the reconstructed tag is exactly `project`; out-of-namespace tags
+survive, so nsD ends `other,project`); resolve the TODO in
 organize_ns.bats; RFC 0015 hoisted-dialect section + example; design G10a
 already records the decision.
 
