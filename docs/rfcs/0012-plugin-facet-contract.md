@@ -83,7 +83,7 @@ A **facet value** is one node's membership in one bucket of one dimension:
 // FacetValue is one node's value for one dimension.
 type FacetValue struct {
     // Key is the bucket identifier within a dimension — what a filter matches
-    // and what a histogram counts under (e.g. "CONFIRMED", "github.com",
+    // and what a histogram counts under (e.g. "confirmed", "github.com",
     // "2026", a feed id "512"). MUST be non-empty.
     Key string
     // Order is an optional sort hint for numeric-bucket dimensions; consumers

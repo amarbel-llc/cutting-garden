@@ -388,7 +388,18 @@ the plugin-side counting path (`facetsFromView`) folds the status facet
 value, and caldav declares `TerminalValues` (`completed`/`cancelled`) and the
 per-component `WriteValues` enums lowercase, so buckets, facets, summaries,
 `_terminal`, and pre-rendered `## =needs-action` headings all agree without
-any per-consumer fold. The cancel-remap stays future work.
+any per-consumer fold.
+
+Deliberate carve-outs from "lowercase everywhere": (a) enriched-listing
+`Node.Fields` stay the STORED domain (uppercase) — listing fields are the raw
+substrate projection, and the presented layer is the codec's, not theirs;
+(b) raw substrate writes (mcp `patch_node`/`put_node` bodies) bypass the codec
+and can persist any casing — equivalent to PUTting raw ics, outside the
+organize/field-edit paths the codec owns; (c) the RFC 0013 wire DTO
+(`FacetDimensionView`) does not carry `FoldCase` yet, so a wire plugin's
+folded dimension degrades to exact matching host-side (see the marker comment
+in `internal/traversal_serve/wire.go`; #239-adjacent). The cancel-remap stays
+future work.
 
 ## More information
 

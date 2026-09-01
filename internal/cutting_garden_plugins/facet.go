@@ -14,7 +14,7 @@ import (
 // RFC 0012 §1.
 type FacetValue struct {
 	// Key is the bucket identifier within a dimension: what a FacetPredicate
-	// matches and what a FacetHistogram counts under (e.g. "CONFIRMED",
+	// matches and what a FacetHistogram counts under (e.g. "confirmed",
 	// "github.com", "2026", a feed id "512"). MUST be non-empty. It is stable
 	// only for as long as the node's identity is stable — durable for durable
 	// sources, session-scoped for live handles. A derived key (e.g. a domain
@@ -77,8 +77,10 @@ type FacetDimension struct {
 	// exempt from degenerate suppression (RFC 0012 §3, §8).
 	Values []FacetValue
 	// TerminalValues names the Values that mark an object DONE / terminal —
-	// caldav VTODO ["COMPLETED", "CANCELLED"], a jira done-category, newsblur
-	// "read" (cutting-garden#214). Orthogonal to the closed/open Values
+	// caldav VTODO ["completed", "cancelled"], a jira done-category, newsblur
+	// "read" (cutting-garden#214). Spelled in the PRESENTED domain (what the
+	// plugin's counting path emits as facet values), like every other
+	// framework-side value. Orthogonal to the closed/open Values
 	// machinery: a dimension may be OPEN (caldav keeps status open) yet still
 	// name terminal values. The framework derives a synthetic `_terminal` yes/no
 	// dimension from these — an object is `_terminal=yes` iff it holds a terminal
@@ -262,6 +264,11 @@ func (f FacetFilter) Matches(facets map[string][]FacetValue) bool {
 // case-insensitively instead (both sides folded).
 func (p FacetPredicate) matches(values []FacetValue) bool {
 	for _, v := range values {
+		// prefixMatch and foldCase are mutually exclusive in practice:
+		// Validate sets prefixMatch only for a FacetDate dimension, and
+		// FoldCase is a categorical-dimension declaration — no in-tree
+		// dimension (sensibly) declares both. The switch order makes
+		// prefixMatch win if one ever did.
 		switch {
 		case p.prefixMatch:
 			if DateBucketMatches(v.Key, p.Value) {

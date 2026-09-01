@@ -714,12 +714,21 @@ func (ev *evaluator) facetTraits(tag, field string) (facetDimTraits, bool) {
 // a date key stays an unvalidated string prefix (RFC 0014).
 //
 // A FoldCase dimension (FDR 0025 case-fold; caldav status) compares
-// case-insensitively: both sides are lowercased before every operator EXCEPT
-// `~=` — folding a regex pattern would rewrite its character classes (`\D` →
-// `\d`), so the pattern keeps its authored semantics and the author reaches
-// for `(?i)` when they want a fold. So `status=COMPLETED` and
-// `status=completed` match the same nodes, mirroring FacetPredicate.matches
-// on the `list --filter` / read_facets surface.
+// case-insensitively, with per-operator-family semantics:
+//
+//   - equality (`=` / `!=`) is UNICODE case-insensitive via strings.EqualFold —
+//     the SAME primitive FacetPredicate.matches and the closed-domain checks
+//     use, so trellis and the `list --filter` / read_facets surface agree even
+//     on non-ASCII values;
+//   - the ordered/substring operators (`<` `<=` `>` `>=` `*=` `^=` `$=`) are
+//     simple-fold lexicographic: both sides lowercased (strings.ToLower), then
+//     compared raw — EqualFold has no ordering, so this is the honest fold for
+//     them;
+//   - `~=` keeps its authored pattern untouched — folding a regex would
+//     rewrite its character classes (`\D` → `\d`); the author reaches for
+//     `(?i)` when they want a fold.
+//
+// So `status=COMPLETED` and `status=completed` match the same nodes.
 func (ev *evaluator) matchFacet(
 	values []cgp.FacetValue, fp trellis.FieldPred, traits facetDimTraits,
 ) bool {
@@ -737,11 +746,19 @@ func (ev *evaluator) matchFacet(
 				continue
 			}
 		}
-		if traits.foldCase && fp.Op != trellis.FieldOpRegex {
+		foldEq := traits.foldCase &&
+			(fp.Op == trellis.FieldOpEq || fp.Op == trellis.FieldOpNotEq)
+		if traits.foldCase && !foldEq && fp.Op != trellis.FieldOpRegex {
 			want = strings.ToLower(want)
 		}
 		for _, fv := range values {
 			got := fv.Key
+			if foldEq {
+				if strings.EqualFold(got, want) == (fp.Op == trellis.FieldOpEq) {
+					return true
+				}
+				continue
+			}
 			if traits.foldCase && fp.Op != trellis.FieldOpRegex {
 				got = strings.ToLower(got)
 			}

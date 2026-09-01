@@ -184,6 +184,13 @@ Ordered comparisons are lexicographic on the field's canonical string form
 in v1; typed comparisons arrive via the field index (dodder FDR 0017) with
 no syntax change. No existence predicate (idiom: `^k=""`).
 
+**Case folding.** Against a facet dimension declaring `FoldCase`
+(RFC 0012 §6, FDR 0025 case-fold — caldav `status`), `=`/`!=` compare
+Unicode case-insensitively (both sides folded), the ordered/substring
+operators compare simple-folded lexicographically (both sides lowercased),
+and `~=` keeps its authored pattern untouched (spell `(?i)` for a folded
+regex). Every other field compares exactly.
+
 **Value lists** (walkthrough #1): `k OP [v1, v2, ...]` distributes the
 operator as OR: `_body*=["zettelkasten", "roam research"]` ≡
 `[_body*="zettelkasten", _body*="roam research"]`.

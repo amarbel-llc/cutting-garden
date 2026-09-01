@@ -842,7 +842,9 @@ func (v NodeTypeView) ToNodeType() cutting_garden_plugins.NodeType {
 // Values present ≙ a CLOSED domain (RFC 0012 §2);
 // revalidate_after_seconds (absent ≙ 0) marks a VOLATILE dimension
 // (RFC 0012 §11.3) — the additive-field precedent of RFC 0013
-// §Compatibility.
+// §Compatibility. FoldCase (RFC 0012 §6, FDR 0025 case-fold) is NOT
+// carried yet, so a wire plugin's case-folded dimension degrades to
+// exact matching host-side; adding it is the same additive-field move.
 type FacetDimensionView struct {
 	Key                    string           `json:"key"`
 	Label                  string           `json:"label,omitempty"`

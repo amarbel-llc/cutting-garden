@@ -70,7 +70,7 @@ func applyNode(t *testing.T, uri, component string, fields map[string]any) cutti
 }
 
 // TestBuildFacetWritePatch pins the write shapes through the per-property date
-// dimensions (#230): a status passthrough, and shape-dispatched reschedules —
+// dimensions (#230): a status case-fold-up, and shape-dispatched reschedules —
 // a YYYY-MM bucket month-splices, a YYYY bucket year-splices, a YYYY-MM-DD
 // bucket day-edits — each writing the dimension's OWN property (date_due →
 // DUE, date_start → DTSTART) with no cross-property fallback.
@@ -81,10 +81,13 @@ func TestBuildFacetWritePatch(t *testing.T) {
 		Event     map[string]string `json:"event"`
 	}
 
-	t.Run("status passthrough", func(t *testing.T) {
+	t.Run("status folds up to canonical uppercase", func(t *testing.T) {
+		// The bucket spelling real documents now produce is the presented
+		// lowercase (`## =completed`, native tags slice 1.5 E); the patch
+		// carries the canonical RFC 5545 uppercase the codec's Parse folds to.
 		node := applyNode(t, "caldav://h/c/t1.ics", "VTODO", map[string]any{"status": "NEEDS-ACTION"})
 		w := cutting_garden_plugins.FacetWrite{DimensionKey: facetStatus, Mode: cutting_garden_plugins.FacetWriteOne, Field: "status"}
-		body, err := (Plugin{}).BuildFacetWritePatch(context.Background(), node, w, "COMPLETED")
+		body, err := (Plugin{}).BuildFacetWritePatch(context.Background(), node, w, "completed")
 		if err != nil {
 			t.Fatalf("BuildFacetWritePatch: %v", err)
 		}

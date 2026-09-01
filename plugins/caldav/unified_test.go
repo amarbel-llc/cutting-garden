@@ -1,6 +1,7 @@
 package caldav
 
 import (
+	"slices"
 	"testing"
 
 	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
@@ -82,8 +83,7 @@ func TestStatusDimensionFoldCase(t *testing.T) {
 		t.Error("status FacetDimension.FoldCase = false, want true")
 	}
 	want := []string{"completed", "cancelled"}
-	if len(dim.TerminalValues) != len(want) ||
-		dim.TerminalValues[0] != want[0] || dim.TerminalValues[1] != want[1] {
+	if !slices.Equal(dim.TerminalValues, want) {
 		t.Errorf("status TerminalValues = %v, want %v (presented domain)",
 			dim.TerminalValues, want)
 	}
