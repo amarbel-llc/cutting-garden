@@ -269,13 +269,22 @@ intentionally plugin-side counting.
 | Field kind | Example | Present (atom) | Groupable (heading) | Write |
 |---|---|---|---|---|
 | categorical | `status` | ✅ IdentityCodec | ✅ same field, `Groupable` | field ✅ · bucket ✅ |
-| numeric-bucket (band) | `priority` | ✅ priorityCodec | ✅ same codec, band `Values` | field ✅ · band ✅ (`Parse` completes band→int) |
+| numeric-bucket (band) | `priority` | ✅ priorityCodec (band atom — `0_must`, not the raw int; slice 1.5 D) | ✅ same codec, band `Values` | field ✅ (band completes to int; a raw-int edit writes verbatim) · band ✅ (`Parse` completes band→int) |
 | date | `dtstart`/`due`/`dtend` | ✅ dateCodec (split) | ✅ same date codec, prefix-granular (`FacetDate`: `date_start`/`date_due`) | field ✅ (splice) · bucket ✅ (`Parse` shape-dispatches year/month/day splices) |
 | date (volatile) | `due_band` | — | ✅ facetOnlyCodec + `RevalidateAfter` | — (read-only, declared write:none) |
 | text | `location` | ✅ IdentityCodec | — | ✅ |
 | text (trailer) | `summary` | ✅ IdentityCodec/Trailer | — | ✅ |
 | duration | `duration` (P6D) | ✅ derived end — the dtend codec falls back to DTSTART+DURATION (#233) | — | — (end atoms read-only) |
 | tag (multi) | `CATEGORIES` | — | ✅ categoriesCodec, naive (RFC 0019) | ✅ write:many, full-set replace (slice 2, N-way merge) |
+
+Priority's Present column changed 2026-09-01 (native tags slice 1.5 D):
+`Codec.Format` presents the BAND — the same derived value the buckets and
+facets use — instead of the raw RFC 5545 int, so a `--group-by priority=`
+document strips the redundant atom under its band heading (#229), exactly like
+status. The presentation is lossy (1–4 all render `0_must`), so `Parse` stays
+asymmetric: a band edit completes to the band's canonical value, while an
+explicit raw-int FIELD edit writes verbatim (the intra-band escape hatch);
+bucket moves stay closed-domain (a raw-int bucket rejects).
 
 ### Option B — collapse the facet surface (landed 2026-08-19)
 

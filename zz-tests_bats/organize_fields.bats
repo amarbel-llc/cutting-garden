@@ -1,5 +1,7 @@
 #! /usr/bin/env bats
 
+# TODO: we're missing the test where a VTODO is missing a status field entirely and it's presented outside of the groups
+
 # The organize field-edit write-back lane (FDR 0023 field write-side,
 # cutting-garden#218 / #55): editing a box-interior ATOM value (location, status,
 # priority) or the box's SUMMARY trailer in place, then applying, writes the change
@@ -13,7 +15,8 @@
 # field1 "Pay rent" carrying LOCATION Bank + STATUS NEEDS-ACTION + PRIORITY 1 — the
 # richest editable box the fixtures provide. Grouped by priority so the edited
 # fields (location, summary) are orthogonal to the grouping dimension: a field edit,
-# never a move.
+# never a move. Since native tags slice 1.5 D the priority atom presents its BAND
+# and thus equals its bucket key, so it is stripped from every box here (#229).
 #
 # Whole-document vectors (G16): pinned port + serialized tests, see lib/caldav.bash.
 
@@ -39,14 +42,15 @@ teardown() {
 
 # generate_fields runs `organize -group-by priority=` (the field spelling,
 # design G10) and asserts the document in full; its field1 box surfaces the
-# editable location/status/priority atoms + SUMMARY trailer.
+# editable location/status atoms + SUMMARY trailer (the grouped priority atom
+# is stripped, #229).
 generate_fields() {
   run_cg organize -group-by priority= "$CAL"
   assert_success
   assert_output - <<-'EOM'
 	---
 	% generated: `cg organize -group-by priority= -query "_terminal=no" caldav:http://127.0.0.1:43106/dav/fields/`
-	- _base = @blake2b256-xgw8lhk2ddufzv8jz2ntsvc4syyzl4umy2vr57ezwzyn4hzd294s8tuczj
+	- _base = @blake2b256-asj0sjmsx4gf22wp0g6qtedyqmegwsvecfc76m9m47ldcs3pgndsyw9rnz
 	- _anchor = caldav:http://127.0.0.1:43106/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -57,15 +61,15 @@ generate_fields() {
 
 	## =0_must
 
-	- [field1.ics location=Bank status=NEEDS-ACTION priority=1] Pay rent
+	- [field1.ics location=Bank status=NEEDS-ACTION] Pay rent
 
 	## =1_should
 
-	- [field2.ics priority=5] Read book
+	- [field2.ics] Read book
 
 	## =2_nice
 
-	- [field3.ics priority=9] Water plants
+	- [field3.ics] Water plants
 
 	## =3_unspecified
 
@@ -80,7 +84,7 @@ write_field1_edited() {
   cat >"$out" <<-EOM
 	---
 	% generated: \`cg organize -group-by priority= -query "_terminal=no" caldav:http://127.0.0.1:43106/dav/fields/\`
-	- _base = @blake2b256-xgw8lhk2ddufzv8jz2ntsvc4syyzl4umy2vr57ezwzyn4hzd294s8tuczj
+	- _base = @blake2b256-asj0sjmsx4gf22wp0g6qtedyqmegwsvecfc76m9m47ldcs3pgndsyw9rnz
 	- _anchor = caldav:http://127.0.0.1:43106/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -95,11 +99,11 @@ write_field1_edited() {
 
 	## =1_should
 
-	- [field2.ics priority=5] Read book
+	- [field2.ics] Read book
 
 	## =2_nice
 
-	- [field3.ics priority=9] Water plants
+	- [field3.ics] Water plants
 
 	## =3_unspecified
 
@@ -116,7 +120,7 @@ assert_field1_office() {
   assert_output - <<-'EOM'
 	---
 	% generated: `cg organize -group-by priority= -query "_terminal=no" caldav:http://127.0.0.1:43106/dav/fields/`
-	- _base = @blake2b256-nyq9xyypqrfawnw3mcchz00shpjh09klzvdz7a7c7lg9m2v5k2xq6hvfrj
+	- _base = @blake2b256-7kxhlwadnnahxj7ua5h7n4qkypqw92jytgz4kzrpk6m2xsfwmpus2rgzvk
 	- _anchor = caldav:http://127.0.0.1:43106/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -127,15 +131,15 @@ assert_field1_office() {
 
 	## =0_must
 
-	- [field1.ics location=Office status=NEEDS-ACTION priority=1] Pay rent
+	- [field1.ics location=Office status=NEEDS-ACTION] Pay rent
 
 	## =1_should
 
-	- [field2.ics priority=5] Read book
+	- [field2.ics] Read book
 
 	## =2_nice
 
-	- [field3.ics priority=9] Water plants
+	- [field3.ics] Water plants
 
 	## =3_unspecified
 
@@ -145,11 +149,11 @@ assert_field1_office() {
 
 # Editing a plain atom value (location Bank -> Office) writes the property through
 # FieldWriteApplier — the box stays in its bucket, so this is a field edit, not a
-# move. The unchanged status/priority atoms produce no edit.
+# move. The unchanged status atom produces no edit.
 function organize_fields_location_edit_writes { # @test
   generate_fields
   local edited="$BATS_TEST_TMPDIR/edited.txt"
-  write_field1_edited '- [field1.ics location=Office status=NEEDS-ACTION priority=1] Pay rent' "$edited"
+  write_field1_edited '- [field1.ics location=Office status=NEEDS-ACTION] Pay rent' "$edited"
 
   run_cg organize -apply "$edited" -commit
   assert_success
@@ -174,7 +178,7 @@ EOF
 function organize_fields_summary_trailer_edit_writes { # @test
   generate_fields
   local edited="$BATS_TEST_TMPDIR/edited.txt"
-  write_field1_edited '- [field1.ics location=Bank status=NEEDS-ACTION priority=1] Pay rent now' "$edited"
+  write_field1_edited '- [field1.ics location=Bank status=NEEDS-ACTION] Pay rent now' "$edited"
 
   run_cg organize -apply "$edited" -commit
   assert_success
@@ -195,7 +199,7 @@ EOF
   assert_output - <<-'EOM'
 	---
 	% generated: `cg organize -group-by priority= -query "_terminal=no" caldav:http://127.0.0.1:43106/dav/fields/`
-	- _base = @blake2b256-40hkm2ygpa98t2wyntxrnkf40n6thpvv4gu4cy4nsx0uu0kqm2lq86qstz
+	- _base = @blake2b256-m0f8aelklts3nm2yetw5g3gyw3wc7thw2zcvlhrxnk3ddk20etwsnn5x3q
 	- _anchor = caldav:http://127.0.0.1:43106/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -206,15 +210,15 @@ EOF
 
 	## =0_must
 
-	- [field1.ics location=Bank status=NEEDS-ACTION priority=1] Pay rent now
+	- [field1.ics location=Bank status=NEEDS-ACTION] Pay rent now
 
 	## =1_should
 
-	- [field2.ics priority=5] Read book
+	- [field2.ics] Read book
 
 	## =2_nice
 
-	- [field3.ics priority=9] Water plants
+	- [field3.ics] Water plants
 
 	## =3_unspecified
 
@@ -229,12 +233,12 @@ EOF
 function organize_fields_conflict_rejects { # @test
   generate_fields
   local edited_a="$BATS_TEST_TMPDIR/edited_a.txt"
-  write_field1_edited '- [field1.ics location=Office status=NEEDS-ACTION priority=1] Pay rent' "$edited_a"
+  write_field1_edited '- [field1.ics location=Office status=NEEDS-ACTION] Pay rent' "$edited_a"
   run_cg organize -apply "$edited_a" -commit
   assert_success
 
   local edited_b="$BATS_TEST_TMPDIR/edited_b.txt"
-  write_field1_edited '- [field1.ics location=Warehouse status=NEEDS-ACTION priority=1] Pay rent' "$edited_b"
+  write_field1_edited '- [field1.ics location=Warehouse status=NEEDS-ACTION] Pay rent' "$edited_b"
   run_cg organize -apply "$edited_b" -commit
   assert_failure
   assert_output --partial 'conflict'

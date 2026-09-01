@@ -786,6 +786,23 @@ debug-organize-vectors:
     apply_doc priority-unspecified .tmp/organize-vectors-priority-generate.txt.edited
     gen priority-after-unspecified "$cal" 'priority='
     stop_srv
+    # slice 1.5 D field-edit lane (organize_priority.bats): grouped by status=
+    # so the band atoms are visible (not stripped); a band-valued atom edit
+    # (field3 2_nice -> 0_must) completes to the canonical RFC 5545 int, and a
+    # raw-int edit (field2 1_should -> 7) writes verbatim.
+    start_srv 43105 CG_TEST_CALDAV_FIELDS=1
+    cal="${home}fields/"
+    gen priority-fieldedit-generate "$cal" 'status='
+    sed 's/priority=2_nice/priority=0_must/' .tmp/organize-vectors-priority-fieldedit-generate.txt >.tmp/organize-vectors-priority-fieldedit-generate.txt.edited
+    apply_doc priority-fieldedit-band .tmp/organize-vectors-priority-fieldedit-generate.txt.edited
+    gen priority-fieldedit-after-band "$cal" 'status='
+    stop_srv
+    start_srv 43105 CG_TEST_CALDAV_FIELDS=1
+    cal="${home}fields/"
+    sed 's/priority=1_should/priority=7/' .tmp/organize-vectors-priority-fieldedit-generate.txt >.tmp/organize-vectors-priority-fieldedit-generate.txt.edited
+    apply_doc priority-fieldedit-rawint .tmp/organize-vectors-priority-fieldedit-generate.txt.edited
+    gen priority-fieldedit-after-rawint "$cal" 'status='
+    stop_srv
 
     start_srv 43106 CG_TEST_CALDAV_FIELDS=1
     cal="${home}fields/"
@@ -836,17 +853,17 @@ debug-organize-vectors:
     gen headings-generate "$cal" '(tags)'
     with_body "$hd" "$hd.double" <<-'EOM'
 
-    	- [field1.ics location=Bank status=NEEDS-ACTION priority=1] Pay rent
+    	- [field1.ics location=Bank status=NEEDS-ACTION priority=0_must] Pay rent
     	- [field4.ics] Someday idea
 
     	## errand
 
-    	- [field2.ics priority=5] Read book
-    	- [field3.ics priority=9] Water plants
+    	- [field2.ics priority=1_should] Read book
+    	- [field3.ics priority=2_nice] Water plants
 
     	## work
 
-    	- [field2.ics priority=5] Read book
+    	- [field2.ics priority=1_should] Read book
     	EOM
     apply_doc headings-double "$hd.double"
     gen headings-after-double "$cal" '(tags)'
@@ -856,7 +873,7 @@ debug-organize-vectors:
 
     	# work
 
-    	- [field3.ics priority=9] Water plants
+    	- [field3.ics priority=2_nice] Water plants
 
     	## errand
 
@@ -864,11 +881,11 @@ debug-organize-vectors:
 
     	##
 
-    	- [field1.ics location=Bank status=NEEDS-ACTION priority=1] Pay rent
+    	- [field1.ics location=Bank status=NEEDS-ACTION priority=0_must] Pay rent
 
     	#
 
-    	- [field2.ics priority=5] Read book
+    	- [field2.ics priority=1_should] Read book
     	EOM
     apply_doc headings-reset "$hd.reset"
     gen headings-after-reset "$cal" '(tags)'
@@ -876,16 +893,16 @@ debug-organize-vectors:
     start_srv 43109 CG_TEST_CALDAV_FIELDS=1
     with_body "$hd" "$hd.noop" <<-'EOM'
 
-    	- [field1.ics location=Bank status=NEEDS-ACTION priority=1] Pay rent
+    	- [field1.ics location=Bank status=NEEDS-ACTION priority=0_must] Pay rent
 
     	# errand
 
-    	- [field2.ics priority=5] Read book
+    	- [field2.ics priority=1_should] Read book
 
     	# work
 
-    	- [field2.ics priority=5] Read book
-    	- [field3.ics priority=9] Water plants
+    	- [field2.ics priority=1_should] Read book
+    	- [field3.ics priority=2_nice] Water plants
 
     	##
 

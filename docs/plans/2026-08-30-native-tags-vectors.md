@@ -48,3 +48,9 @@ below (the case title names the lane), and `just test-grammar-corpus`
 | G12 | `describe_node_types` reports `tag_set` | 4 | — |
 | G13 | hand-written bare token round-trips through parse→write | 1 | `organize_literal.bats:organize_literal_bare_token_is_tag_apply_refuses` (+ Go `internal/organize` `TestObjectLineTagRoundTrip`) |
 | G16 | existing lanes converted to whole-document vectors | 1 | all `organize*.bats` |
+
+## UAT feedback (slice 1.5)
+
+| item | test (file:function) |
+|---|---|
+| D: priority atoms present the band (stripped under their `## =<band>` heading per #229); a band FIELD edit completes to the RFC 5545 int, a raw-int edit writes verbatim | `organize_priority.bats:organize_priority_field_edit_band_completes`, `organize_priority.bats:organize_priority_field_edit_raw_int_writes_verbatim` (+ Go `plugins/caldav` `TestBuildFieldWritePatch_PriorityBandAndRawInt`) |

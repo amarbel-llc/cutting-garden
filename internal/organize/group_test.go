@@ -177,9 +177,13 @@ func TestGroupNodes_StripsRedundantGroupedAtom(t *testing.T) {
 }
 
 // TestGroupNodes_KeepsAtomUnderCoarserHeading pins the other side of #229: when
-// the heading is COARSER than the atom (a month bucket over a day-precise date,
-// a priority band over the raw integer), the atom carries precision the heading
-// drops and MUST be kept.
+// the heading is COARSER than the atom (a month bucket over a day-precise
+// date), the atom carries precision the heading drops and MUST be kept. The
+// rule is rendered-value equality, never dimension identity — the second case
+// pins that an atom whose rendered value differs from its bucket key survives
+// even when it names the grouped dimension. (caldav's priority atom now renders
+// its band, so in practice it strips; a presenter that renders something finer
+// than the bucket keeps its atom, which is what this pins.)
 func TestGroupNodes_KeepsAtomUnderCoarserHeading(t *testing.T) {
 	anchor := "caldav://h/c/"
 	gMonth, _ := cgp.ParseDateGranularity("month")
@@ -212,7 +216,7 @@ func TestGroupNodes_KeepsAtomUnderCoarserHeading(t *testing.T) {
 		[]cgp.Node{priNode}, groupSpec{Dim: "priority"}, anchor, nil, false, presentPri,
 	)
 	if got := pb[0].Lines[0].Fields; len(got) != 1 || got[0].Name != "priority" {
-		t.Errorf("raw-int priority atom must be kept under a band bucket; got %+v", got)
+		t.Errorf("an atom rendered finer than its bucket key must be kept; got %+v", got)
 	}
 }
 

@@ -56,8 +56,8 @@ func TestBuildFieldWritePatch_PlainFields(t *testing.T) {
 }
 
 // TestBuildFieldWritePatch_Rejects pins the fail-hard guards: a read-only date
-// atom (slice 2), a non-integer priority, and an empty batch are all bad
-// requests rather than silent no-ops.
+// atom (slice 2), a priority that is neither a band nor an integer, and an
+// empty batch are all bad requests rather than silent no-ops.
 func TestBuildFieldWritePatch_Rejects(t *testing.T) {
 	ctx := context.Background()
 	node := vtodoFieldNode(t)
@@ -68,10 +68,50 @@ func TestBuildFieldWritePatch_Rejects(t *testing.T) {
 	}
 	if _, err := (Plugin{}).BuildFieldWritePatch(ctx, node,
 		[]cutting_garden_plugins.FieldEdit{{Name: listingFieldPriority, Value: "high"}}); err == nil {
-		t.Error("a non-integer priority must be rejected")
+		t.Error("a priority that is neither a band nor an integer must be rejected")
 	}
 	if _, err := (Plugin{}).BuildFieldWritePatch(ctx, node, nil); err == nil {
 		t.Error("an empty edit batch must be rejected")
+	}
+}
+
+// TestBuildFieldWritePatch_PriorityBandAndRawInt pins the priority field-edit
+// asymmetry (native tags slice 1.5 D): the atom presents the BAND, so a band
+// edit completes to its canonical RFC 5545 value, while an explicit raw
+// integer — the power-user path to an intra-band value the band spelling
+// cannot express — still writes verbatim.
+func TestBuildFieldWritePatch_PriorityBandAndRawInt(t *testing.T) {
+	cases := []struct {
+		value string
+		want  int
+	}{
+		{priorityMust, 1},
+		{priorityNice, 9},
+		{priorityUnspecified, 0},
+		{"7", 7}, // raw int, verbatim
+		{"2", 2}, // an intra-band value no band spelling reaches
+	}
+	for _, tc := range cases {
+		t.Run(tc.value, func(t *testing.T) {
+			body, err := (Plugin{}).BuildFieldWritePatch(
+				context.Background(), vtodoFieldNode(t),
+				[]cutting_garden_plugins.FieldEdit{{Name: listingFieldPriority, Value: tc.value}},
+			)
+			if err != nil {
+				t.Fatalf("BuildFieldWritePatch(%q): %v", tc.value, err)
+			}
+			var got struct {
+				Task struct {
+					Priority int `json:"priority"`
+				} `json:"task"`
+			}
+			if err := json.Unmarshal(body, &got); err != nil {
+				t.Fatalf("unmarshal %s: %v", body, err)
+			}
+			if got.Task.Priority != tc.want {
+				t.Errorf("edit %q: patch = %s, want task.priority=%d", tc.value, body, tc.want)
+			}
+		})
 	}
 }
 

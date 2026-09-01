@@ -399,15 +399,19 @@ func (c caldavDateCodec) Parse(
 	return map[string]any{c.storedKey: spliced}, nil
 }
 
-// caldavPriorityCodec presents a task's raw RFC 5545 PRIORITY as a numeric atom
-// and declares its GROUPABLE surface: the four named bands (cutting-garden#221),
-// urgency-first — the band values are computed by the counting path
-// (priorityBandOf); only the declaration and the write derive from here. Kind is
-// categorical, matching the band-shaped grouping domain (the atom presentation
-// carries no kind). PRIORITY 0 / absent is "undefined" and emits no atom —
-// mirroring the legacy presenter, which omits the field entirely below 1.
-// Distinct from IdentityCodec because the write side must be a JSON number, not
-// a string, for applyPatch to decode it.
+// caldavPriorityCodec presents a task's RFC 5545 PRIORITY as its named BAND
+// atom (`priority=0_must`, native tags slice 1.5 D) and declares its GROUPABLE
+// surface: the four named bands (cutting-garden#221), urgency-first. Atom,
+// bucket heading, and facet value all carry the SAME derived band
+// (priorityBandOf), so a `--group-by priority=` document strips the redundant
+// atom under its band heading exactly like status (#229). The presentation is
+// LOSSY (1–4 all render 0_must), which makes Parse deliberately ASYMMETRIC: a
+// band edit completes to the band's canonical value, while an explicit raw
+// integer still writes verbatim — the power-user path to an intra-band value
+// (e.g. 2) the band spelling cannot express. PRIORITY 0 / absent is
+// "undefined" and emits no atom — mirroring the legacy presenter, which omits
+// the field entirely below 1. Distinct from IdentityCodec because the write
+// side must be a JSON number, not a string, for applyPatch to decode it.
 type caldavPriorityCodec struct{}
 
 func (caldavPriorityCodec) Fields() []cutting_garden_plugins.UnifiedField {
@@ -425,17 +429,26 @@ func (caldavPriorityCodec) Fields() []cutting_garden_plugins.UnifiedField {
 	}}
 }
 
+// Format presents the BAND, not the raw integer — the same derived value the
+// counting path computes (priorityBandOf), so the atom always equals the
+// object's band bucket and facet value. An out-of-range positive (>9) folds to
+// 3_unspecified exactly as the facet does.
 func (caldavPriorityCodec) Format(stored map[string]any) (map[string][]string, error) {
 	p, ok := intOf(stored[listingFieldPriority])
 	if !ok || p <= 0 {
 		return map[string][]string{}, nil
 	}
-	return map[string][]string{listingFieldPriority: {strconv.Itoa(p)}}, nil
+	band, _ := priorityBandOf(p)
+	return map[string][]string{listingFieldPriority: {band}}, nil
 }
 
-// Parse accepts either presentation of the field: a band name (a bucket move, or
-// a hand-typed atom edit naming a declared band) completes to its canonical
-// RFC 5545 PRIORITY value; anything else must be the raw integer.
+// Parse accepts either spelling of a FIELD edit: a band name completes to its
+// canonical RFC 5545 PRIORITY value; anything else must be the raw integer,
+// written verbatim (the asymmetry the type comment documents — Format is lossy,
+// so the int stays the precise escape hatch). Bucket MOVES never reach the
+// integer arm: ParseUnifiedBucketMove validates the target against the closed
+// band domain first, so a `## =7` heading rejects loudly instead of
+// re-bucketing under a different band than it was moved to.
 func (caldavPriorityCodec) Parse(
 	edited map[string][]string, _ map[string]any,
 ) (map[string]any, error) {

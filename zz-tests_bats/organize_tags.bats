@@ -55,7 +55,7 @@ generate_grouped() {
   assert_output - <<-'EOM'
 	---
 	% generated: `cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:43102/dav/fields/`
-	- _base = @blake2b256-56up38uguawu2gpcuzjx30v39dznz0rf05wrpyzjsmu0asf75xqsjnapru
+	- _base = @blake2b256-qk73p25uk92x5s8l7t0wgp0c9q9m8yd2vqtusuy437c58hxfkm0se6eh48
 	- _anchor = caldav:http://127.0.0.1:43102/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -63,17 +63,17 @@ generate_grouped() {
 	! organize-base-v1
 	---
 
-	- [field1.ics location=Bank status=NEEDS-ACTION priority=1] Pay rent
+	- [field1.ics location=Bank status=NEEDS-ACTION priority=0_must] Pay rent
 	- [field4.ics] Someday idea
 
 	# errand
 
-	- [field2.ics priority=5] Read book
+	- [field2.ics priority=1_should] Read book
 
 	# work
 
-	- [field2.ics priority=5] Read book
-	- [field3.ics priority=9] Water plants
+	- [field2.ics priority=1_should] Read book
+	- [field3.ics priority=2_nice] Water plants
 	EOM
 }
 
@@ -115,7 +115,7 @@ function organize_categories_apply_writes { # @test
   cat >"$edited" <<-'EOM'
 	---
 	% generated: `cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:43102/dav/fields/`
-	- _base = @blake2b256-56up38uguawu2gpcuzjx30v39dznz0rf05wrpyzjsmu0asf75xqsjnapru
+	- _base = @blake2b256-qk73p25uk92x5s8l7t0wgp0c9q9m8yd2vqtusuy437c58hxfkm0se6eh48
 	- _anchor = caldav:http://127.0.0.1:43102/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -123,17 +123,17 @@ function organize_categories_apply_writes { # @test
 	! organize-base-v1
 	---
 
-	- [field1.ics location=Bank status=NEEDS-ACTION priority=1] Pay rent
+	- [field1.ics location=Bank status=NEEDS-ACTION priority=0_must] Pay rent
 	- [field4.ics] Someday idea
 
 	# errand
 
-	- [field2.ics priority=5] Read book
-	- [field3.ics priority=9] Water plants
+	- [field2.ics priority=1_should] Read book
+	- [field3.ics priority=2_nice] Water plants
 
 	# work
 
-	- [field2.ics priority=5] Read book
+	- [field2.ics priority=1_should] Read book
 	EOM
 
   run_cg organize -apply "$edited" -commit
@@ -154,7 +154,7 @@ EOF
   assert_output - <<-'EOM'
 	---
 	% generated: `cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:43102/dav/fields/`
-	- _base = @blake2b256-pr88t6wdafqs6kjl68x7tetdnzuzkkymxurveugjw66xdyck36us7p0guh
+	- _base = @blake2b256-yp37tvxqch0ra6kapyhamu7x49432zhjz5pee7xxcfmd2a7nwmzslywmft
 	- _anchor = caldav:http://127.0.0.1:43102/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -162,16 +162,16 @@ EOF
 	! organize-base-v1
 	---
 
-	- [field1.ics location=Bank status=NEEDS-ACTION priority=1] Pay rent
+	- [field1.ics location=Bank status=NEEDS-ACTION priority=0_must] Pay rent
 	- [field4.ics] Someday idea
 
 	# errand
 
-	- [field2.ics priority=5] Read book
-	- [field3.ics priority=9] Water plants
+	- [field2.ics priority=1_should] Read book
+	- [field3.ics priority=2_nice] Water plants
 
 	# work
 
-	- [field2.ics priority=5] Read book
+	- [field2.ics priority=1_should] Read book
 	EOM
 }

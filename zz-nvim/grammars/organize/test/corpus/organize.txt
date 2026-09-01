@@ -159,22 +159,22 @@ field grouping: `# status=` dimension heading, `## =value` buckets (organize_gro
 ========================================
 ---
 % generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:43108/dav/fields/`
-- _base = @blake2b256-t8lr6e6y9phvzpl9atlc7x5uhtm2uyrqz0cznhv4u2nynmp7dh3qpdy83u
+- _base = @blake2b256-mmfartm9s7pz3c4mv57qkuz049vlgt9urmd2rjl7ut87etpw5reqq5mrvp
 - _anchor = caldav:http://127.0.0.1:43108/dav/fields/
 - _query = _terminal=no
 - _type = !caldav-object-vtodo-v1
 ! organize-base-v1
 ---
 
-- [field2.ics priority=5] Read book
-- [field3.ics priority=9] Water plants
+- [field2.ics priority=1_should] Read book
+- [field3.ics priority=2_nice] Water plants
 - [field4.ics] Someday idea
 
 # status=
 
 ## =NEEDS-ACTION
 
-- [field1.ics location=Bank priority=1] Pay rent
+- [field1.ics location=Bank priority=0_must] Pay rent
 
 ## =IN-PROCESS
 
@@ -385,7 +385,7 @@ empty headings are resets: `##` pops to the parent, `#` to ungrouped (organize_h
 ========================================
 ---
 % generated: `cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:43109/dav/fields/`
-- _base = @blake2b256-3cqzc5cknaq8v5t9xuc0jp07egvllras05avln3tavafg9dtwm2qwznkhy
+- _base = @blake2b256-plcta2x228afcs5fau26gutlcxtrczqsn4svhe00j2muen7cmlrqec7yyq
 - _anchor = caldav:http://127.0.0.1:43109/dav/fields/
 - _query = _terminal=no
 - _type = !caldav-object-vtodo-v1
@@ -395,7 +395,7 @@ empty headings are resets: `##` pops to the parent, `#` to ungrouped (organize_h
 
 # work
 
-- [field3.ics priority=9] Water plants
+- [field3.ics priority=2_nice] Water plants
 
 ## errand
 
@@ -403,11 +403,11 @@ empty headings are resets: `##` pops to the parent, `#` to ungrouped (organize_h
 
 ##
 
-- [field1.ics location=Bank status=NEEDS-ACTION priority=1] Pay rent
+- [field1.ics location=Bank status=NEEDS-ACTION priority=0_must] Pay rent
 
 #
 
-- [field2.ics priority=5] Read book
+- [field2.ics priority=1_should] Read book
 
 ----------------------------------------
 
@@ -520,13 +520,13 @@ bare `# status` is a tag bucket, `# status=` a field grouping (the LR(1) split o
 ========================================
 # status
 
-- [field2.ics priority=5] Read book
+- [field2.ics priority=1_should] Read book
 
 # status=
 
 ## =NEEDS-ACTION
 
-- [field1.ics location=Bank priority=1] Pay rent
+- [field1.ics location=Bank priority=0_must] Pay rent
 
 ----------------------------------------
 
@@ -568,17 +568,17 @@ bare `# status` is a tag bucket, `# status=` a field grouping (the LR(1) split o
 ========================================
 heading depth is structure-only: a `##`-rooted document (organize_headings.bats organize_headings_double_hash_document_applies_identically)
 ========================================
-- [field1.ics location=Bank status=NEEDS-ACTION priority=1] Pay rent
+- [field1.ics location=Bank status=NEEDS-ACTION priority=0_must] Pay rent
 - [field4.ics] Someday idea
 
 ## errand
 
-- [field2.ics priority=5] Read book
-- [field3.ics priority=9] Water plants
+- [field2.ics priority=1_should] Read book
+- [field3.ics priority=2_nice] Water plants
 
 ## work
 
-- [field2.ics priority=5] Read book
+- [field2.ics priority=1_should] Read book
 
 ----------------------------------------
 

@@ -1,7 +1,5 @@
 #! /usr/bin/env bats
 
-# TODO: priority atoms in boxes should use the same derived enum variants (not ints) as --group-by
-
 # shellcheck disable=SC2016  # the asserted messages quote spellings in backticks; no expansion intended
 
 # The organize group-by SPELLING lane (native tags slice 1 task 4; design G9 /
@@ -65,7 +63,7 @@ function organize_groupby_tags_whole_set { # @test
   assert_output - <<-'EOM'
 	---
 	% generated: `cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:43108/dav/fields/`
-	- _base = @blake2b256-ts20e5057dhlna0j2cts740vff0qzrcsdqedv2x0nay0hugteytshxnnvc
+	- _base = @blake2b256-j6dpwr0h2v5wtym7yrq36xjlpjvtkspnshjplzpsmp9rrg8akutqc0fgpq
 	- _anchor = caldav:http://127.0.0.1:43108/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -73,17 +71,17 @@ function organize_groupby_tags_whole_set { # @test
 	! organize-base-v1
 	---
 
-	- [field1.ics location=Bank status=NEEDS-ACTION priority=1] Pay rent
+	- [field1.ics location=Bank status=NEEDS-ACTION priority=0_must] Pay rent
 	- [field4.ics] Someday idea
 
 	# errand
 
-	- [field2.ics priority=5] Read book
+	- [field2.ics priority=1_should] Read book
 
 	# work
 
-	- [field2.ics priority=5] Read book
-	- [field3.ics priority=9] Water plants
+	- [field2.ics priority=1_should] Read book
+	- [field3.ics priority=2_nice] Water plants
 	EOM
 }
 
@@ -132,22 +130,22 @@ function organize_groupby_field { # @test
   assert_output - <<-'EOM'
 	---
 	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:43108/dav/fields/`
-	- _base = @blake2b256-t8lr6e6y9phvzpl9atlc7x5uhtm2uyrqz0cznhv4u2nynmp7dh3qpdy83u
+	- _base = @blake2b256-mmfartm9s7pz3c4mv57qkuz049vlgt9urmd2rjl7ut87etpw5reqq5mrvp
 	- _anchor = caldav:http://127.0.0.1:43108/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
 	! organize-base-v1
 	---
 
-	- [field2.ics priority=5] Read book
-	- [field3.ics priority=9] Water plants
+	- [field2.ics priority=1_should] Read book
+	- [field3.ics priority=2_nice] Water plants
 	- [field4.ics] Someday idea
 
 	# status=
 
 	## =NEEDS-ACTION
 
-	- [field1.ics location=Bank priority=1] Pay rent
+	- [field1.ics location=Bank priority=0_must] Pay rent
 
 	## =IN-PROCESS
 

@@ -50,10 +50,11 @@ func groupNodes(
 			// Drop the grouped dimension's box atom when the `=<value>` heading it
 			// is filed under already shows that atom's value in FULL — pure
 			// redundancy (cutting-garden#229). A coarser heading keeps the atom: it
-			// carries precision the heading drops (a `date_due=(month)` bucket over a
-			// day-precise date_due atom; a priority band over the raw priority
-			// integer). The comparison is against the atom's rendered value, not the
-			// facet key, so a band/raw-int split is correctly kept.
+			// carries precision the heading drops (a `date_due=(month)` bucket over
+			// a day-precise date_due atom). The comparison is against the atom's
+			// RENDERED value, not the facet key — a priority atom renders its band
+			// (native tags slice 1.5 D), so it equals its band bucket and strips
+			// exactly like status.
 			if a, ok := findAtom(ln.Fields, spec.Dim); ok && a.Value == key {
 				bucketLine.Fields = withoutAtom(ln.Fields, spec.Dim)
 			}

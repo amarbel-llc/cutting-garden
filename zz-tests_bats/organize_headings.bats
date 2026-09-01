@@ -42,10 +42,10 @@ teardown() {
 # bats file_tags=organize
 
 # The generated document's `_base` digest, and the digests after each edit.
-BASE_GENERATED=blake2b256-3cqzc5cknaq8v5t9xuc0jp07egvllras05avln3tavafg9dtwm2qwznkhy
-BASE_AFTER_DOUBLE=blake2b256-6yqhaezupdrhmgedkxej8z0jenfzwv2l59xs0f5upk7l5gckgumqv72lca
-BASE_AFTER_RESET=blake2b256-krd9lnkm0a3dhq9hn9sk5ptn9lypst383u7luwwkf9n9sw555zjs4c7gce
-BASE_AFTER_NOOP=blake2b256-jwexalh3hhel7nvzfcrxkzxsew9skq88cdqsg7apfzwr9nzzvmtstzwv8v
+BASE_GENERATED=blake2b256-plcta2x228afcs5fau26gutlcxtrczqsn4svhe00j2muen7cmlrqec7yyq
+BASE_AFTER_DOUBLE=blake2b256-nstj5rfrva6c34r3plj0czww2d6axdmchjfp2lle50mpkl7fdhhsyml2pp
+BASE_AFTER_RESET=blake2b256-mneq9ux7zjarqvly0xzzzz99w5q7hwk0cpjwyxv2tv4snmk4g3kqa9u04z
+BASE_AFTER_NOOP=blake2b256-aylz2flh8n67uvkmpx82l4d7n6prkd8j6l04ec6ssfd72zhask7qk398ke
 
 # envelope_header prints the `-group-by (tags)` document's hyphence envelope
 # pinned at `_base` $1 — the part every document in this lane shares.
@@ -80,17 +80,17 @@ generate_grouped() {
   assert_output "$(
     headings_doc "$BASE_GENERATED" <<-'EOM'
 
-	- [field1.ics location=Bank status=NEEDS-ACTION priority=1] Pay rent
+	- [field1.ics location=Bank status=NEEDS-ACTION priority=0_must] Pay rent
 	- [field4.ics] Someday idea
 
 	# errand
 
-	- [field2.ics priority=5] Read book
+	- [field2.ics priority=1_should] Read book
 
 	# work
 
-	- [field2.ics priority=5] Read book
-	- [field3.ics priority=9] Water plants
+	- [field2.ics priority=1_should] Read book
+	- [field3.ics priority=2_nice] Water plants
 	EOM
   )"
 }
@@ -119,17 +119,17 @@ function organize_headings_double_hash_document_applies_identically { # @test
   local edited="$BATS_TEST_TMPDIR/edited.txt"
   headings_doc "$BASE_GENERATED" >"$edited" <<-'EOM'
 
-	- [field1.ics location=Bank status=NEEDS-ACTION priority=1] Pay rent
+	- [field1.ics location=Bank status=NEEDS-ACTION priority=0_must] Pay rent
 	- [field4.ics] Someday idea
 
 	## errand
 
-	- [field2.ics priority=5] Read book
-	- [field3.ics priority=9] Water plants
+	- [field2.ics priority=1_should] Read book
+	- [field3.ics priority=2_nice] Water plants
 
 	## work
 
-	- [field2.ics priority=5] Read book
+	- [field2.ics priority=1_should] Read book
 	EOM
 
   run_cg organize -apply "$edited" -commit
@@ -150,17 +150,17 @@ EOF
   assert_output "$(
     headings_doc "$BASE_AFTER_DOUBLE" <<-'EOM'
 
-	- [field1.ics location=Bank status=NEEDS-ACTION priority=1] Pay rent
+	- [field1.ics location=Bank status=NEEDS-ACTION priority=0_must] Pay rent
 	- [field4.ics] Someday idea
 
 	# errand
 
-	- [field2.ics priority=5] Read book
-	- [field3.ics priority=9] Water plants
+	- [field2.ics priority=1_should] Read book
+	- [field3.ics priority=2_nice] Water plants
 
 	# work
 
-	- [field2.ics priority=5] Read book
+	- [field2.ics priority=1_should] Read book
 	EOM
   )"
 }
@@ -188,7 +188,7 @@ function organize_headings_reset_pops_to_parent_and_ungrouped { # @test
 
 	# work
 
-	- [field3.ics priority=9] Water plants
+	- [field3.ics priority=2_nice] Water plants
 
 	## errand
 
@@ -196,11 +196,11 @@ function organize_headings_reset_pops_to_parent_and_ungrouped { # @test
 
 	##
 
-	- [field1.ics location=Bank status=NEEDS-ACTION priority=1] Pay rent
+	- [field1.ics location=Bank status=NEEDS-ACTION priority=0_must] Pay rent
 
 	#
 
-	- [field2.ics priority=5] Read book
+	- [field2.ics priority=1_should] Read book
 	EOM
 
   run_cg organize -apply "$edited" -commit
@@ -225,7 +225,7 @@ EOF
   assert_output "$(
     headings_doc "$BASE_AFTER_RESET" <<-'EOM'
 
-	- [field2.ics priority=5] Read book
+	- [field2.ics priority=1_should] Read book
 
 	# errand
 
@@ -233,8 +233,8 @@ EOF
 
 	# work
 
-	- [field1.ics location=Bank status=NEEDS-ACTION priority=1] Pay rent
-	- [field3.ics priority=9] Water plants
+	- [field1.ics location=Bank status=NEEDS-ACTION priority=0_must] Pay rent
+	- [field3.ics priority=2_nice] Water plants
 	EOM
   )"
 }
@@ -247,16 +247,16 @@ function organize_headings_reset_deeper_than_current_is_noop { # @test
   local edited="$BATS_TEST_TMPDIR/edited.txt"
   headings_doc "$BASE_GENERATED" >"$edited" <<-'EOM'
 
-	- [field1.ics location=Bank status=NEEDS-ACTION priority=1] Pay rent
+	- [field1.ics location=Bank status=NEEDS-ACTION priority=0_must] Pay rent
 
 	# errand
 
-	- [field2.ics priority=5] Read book
+	- [field2.ics priority=1_should] Read book
 
 	# work
 
-	- [field2.ics priority=5] Read book
-	- [field3.ics priority=9] Water plants
+	- [field2.ics priority=1_should] Read book
+	- [field3.ics priority=2_nice] Water plants
 
 	##
 
@@ -280,16 +280,16 @@ EOF
   assert_output "$(
     headings_doc "$BASE_AFTER_NOOP" <<-'EOM'
 
-	- [field1.ics location=Bank status=NEEDS-ACTION priority=1] Pay rent
+	- [field1.ics location=Bank status=NEEDS-ACTION priority=0_must] Pay rent
 
 	# errand
 
-	- [field2.ics priority=5] Read book
+	- [field2.ics priority=1_should] Read book
 
 	# work
 
-	- [field2.ics priority=5] Read book
-	- [field3.ics priority=9] Water plants
+	- [field2.ics priority=1_should] Read book
+	- [field3.ics priority=2_nice] Water plants
 	- [field4.ics] Someday idea
 	EOM
   )"
