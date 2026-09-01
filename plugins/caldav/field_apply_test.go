@@ -78,18 +78,23 @@ func TestBuildFieldWritePatch_Rejects(t *testing.T) {
 // TestBuildFieldWritePatch_PriorityBandAndRawInt pins the priority field-edit
 // asymmetry (native tags slice 1.5 D): the atom presents the BAND, so a band
 // edit completes to its canonical RFC 5545 value, while an explicit raw
-// integer — the power-user path to an intra-band value the band spelling
-// cannot express — still writes verbatim.
+// integer in the RFC's 0–9 domain — the power-user path to an intra-band value
+// the band spelling cannot express — still writes verbatim; outside 0–9
+// rejects loudly.
 func TestBuildFieldWritePatch_PriorityBandAndRawInt(t *testing.T) {
 	cases := []struct {
 		value string
 		want  int
 	}{
 		{priorityMust, 1},
+		{priorityShould, 5},
 		{priorityNice, 9},
 		{priorityUnspecified, 0},
 		{"7", 7}, // raw int, verbatim
 		{"2", 2}, // an intra-band value no band spelling reaches
+		// A literal "0" clears via the integer arm — behaviorally identical to
+		// the 3_unspecified band (the serializer omits a zero PRIORITY).
+		{"0", 0},
 	}
 	for _, tc := range cases {
 		t.Run(tc.value, func(t *testing.T) {
@@ -112,6 +117,17 @@ func TestBuildFieldWritePatch_PriorityBandAndRawInt(t *testing.T) {
 				t.Errorf("edit %q: patch = %s, want task.priority=%d", tc.value, body, tc.want)
 			}
 		})
+	}
+
+	// Out-of-range integers reject loudly: RFC 5545 PRIORITY is 0–9, and a
+	// silently-written 10 would present as 3_unspecified while storing junk.
+	for _, bad := range []string{"-1", "10"} {
+		if _, err := (Plugin{}).BuildFieldWritePatch(
+			context.Background(), vtodoFieldNode(t),
+			[]cutting_garden_plugins.FieldEdit{{Name: listingFieldPriority, Value: bad}},
+		); err == nil {
+			t.Errorf("out-of-range priority %q must be rejected", bad)
+		}
 	}
 }
 

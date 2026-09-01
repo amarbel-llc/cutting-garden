@@ -65,6 +65,27 @@ func priorityBandOf(p int) (key string, order int64) {
 	}
 }
 
+// priorityValueOf completes a priority band to its canonical RFC 5545 PRIORITY
+// value — the write-side inverse of priorityBandOf (each band's value folds
+// back onto that band; TestPriorityBandRoundTrip pins the invariant). must→1
+// (high), should→5 (medium), nice→9 (low), unspecified→0 (undefined): the
+// serializer omits a zero PRIORITY, so moving a task into the unspecified band
+// clears the property. ok == false for a value that names no band.
+func priorityValueOf(band string) (value int, ok bool) {
+	switch band {
+	case priorityMust:
+		return 1, true
+	case priorityShould:
+		return 5, true
+	case priorityNice:
+		return 9, true
+	case priorityUnspecified:
+		return 0, true
+	default:
+		return 0, false
+	}
+}
+
 // The due_band closed domain: a total partition of time relative to the
 // current host-local day, so every contributing task occupies exactly
 // one bucket at every instant. Order renders urgency-first.

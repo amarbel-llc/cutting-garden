@@ -211,6 +211,21 @@ func TestPriorityBandOf(t *testing.T) {
 	}
 }
 
+// TestPriorityBandRoundTrip states the inverse invariant once: each band's
+// canonical write value (priorityValueOf) folds back onto the same band
+// (priorityBandOf).
+func TestPriorityBandRoundTrip(t *testing.T) {
+	for _, band := range []string{priorityMust, priorityShould, priorityNice, priorityUnspecified} {
+		n, ok := priorityValueOf(band)
+		if !ok {
+			t.Fatalf("priorityValueOf(%q): not a band", band)
+		}
+		if got, _ := priorityBandOf(n); got != band {
+			t.Errorf("priorityBandOf(priorityValueOf(%q) = %d) = %q, want %q", band, n, got, band)
+		}
+	}
+}
+
 // TestFacetCounts_PriorityBands drives the priority band facet end to end
 // (cutting-garden#221): tasks bucket by their PRIORITY band, a task with no
 // PRIORITY is 3_unspecified, and a COMPLETED task STILL contributes its band —

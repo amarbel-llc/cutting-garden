@@ -70,12 +70,12 @@ func TestPresentBoxAtoms(t *testing.T) {
 		{
 			name:   "task priority renders as its band atom (native tags slice 1.5 D)",
 			fields: map[string]any{listingFieldPriority: 3},
-			want:   []cutting_garden_plugins.BoxAtom{atom("priority", "0_must")},
+			want:   []cutting_garden_plugins.BoxAtom{atom("priority", priorityMust)},
 		},
 		{
 			name:   "priority survives a json round-trip (float64) from the wire path",
 			fields: map[string]any{listingFieldPriority: float64(5)},
-			want:   []cutting_garden_plugins.BoxAtom{atom("priority", "1_should")},
+			want:   []cutting_garden_plugins.BoxAtom{atom("priority", priorityShould)},
 		},
 		{
 			name:   "zero priority emits no atom",

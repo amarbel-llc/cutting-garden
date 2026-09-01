@@ -443,12 +443,15 @@ func (caldavPriorityCodec) Format(stored map[string]any) (map[string][]string, e
 }
 
 // Parse accepts either spelling of a FIELD edit: a band name completes to its
-// canonical RFC 5545 PRIORITY value; anything else must be the raw integer,
-// written verbatim (the asymmetry the type comment documents — Format is lossy,
-// so the int stays the precise escape hatch). Bucket MOVES never reach the
-// integer arm: ParseUnifiedBucketMove validates the target against the closed
-// band domain first, so a `## =7` heading rejects loudly instead of
-// re-bucketing under a different band than it was moved to.
+// canonical RFC 5545 PRIORITY value; anything else must be a raw integer in
+// RFC 5545's 0–9 PRIORITY domain, written verbatim (the asymmetry the type
+// comment documents — Format is lossy, so the int stays the precise escape
+// hatch). An out-of-domain integer rejects loudly, and a literal 0 clears the
+// property exactly as 3_unspecified does (the serializer omits a zero
+// PRIORITY). Bucket MOVES never reach the integer arm: ParseUnifiedBucketMove
+// validates the target against the closed band domain first, so a `## =7`
+// heading rejects loudly instead of re-bucketing under a different band than
+// it was moved to.
 func (caldavPriorityCodec) Parse(
 	edited map[string][]string, _ map[string]any,
 ) (map[string]any, error) {
@@ -462,30 +465,16 @@ func (caldavPriorityCodec) Parse(
 	n, err := strconv.Atoi(v[0])
 	if err != nil {
 		return nil, errors.BadRequestf(
-			"priority %q is neither an integer nor a priority band", v[0],
+			"priority %q is neither an integer nor a priority band (%s, %s, %s, %s)",
+			v[0], priorityMust, priorityShould, priorityNice, priorityUnspecified,
+		)
+	}
+	if n < 0 || n > 9 {
+		return nil, errors.BadRequestf(
+			"priority %d is outside the RFC 5545 PRIORITY domain 0–9", n,
 		)
 	}
 	return map[string]any{listingFieldPriority: n}, nil
-}
-
-// priorityValueOf completes a priority band to its canonical RFC 5545 PRIORITY
-// value — the write-side inverse of priorityBandOf. must→1 (high), should→5
-// (medium), nice→9 (low), unspecified→0 (undefined): the serializer omits a zero
-// PRIORITY, so moving a task into the unspecified band clears the property.
-// ok == false for a value that names no band.
-func priorityValueOf(band string) (value int, ok bool) {
-	switch band {
-	case priorityMust:
-		return 1, true
-	case priorityShould:
-		return 5, true
-	case priorityNice:
-		return 9, true
-	case priorityUnspecified:
-		return 0, true
-	default:
-		return 0, false
-	}
 }
 
 // stringOf reads a string-valued field from a node's stored field map, tolerating
