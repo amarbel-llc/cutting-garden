@@ -157,9 +157,11 @@ EOF
 
   # The membership write rewrote nsA's live CATEGORIES to the reconstructed
   # namespace tag: project-cutting_garden replaces project-client-acme.
+  # Exact full line (the rewritten body is CRLF-serialized with a volatile
+  # DTSTAMP, so the whole body cannot be pinned); the old tag is gone entirely.
   run curl -fsS "${CALDAV_SOURCE#caldav:}ns/nsA.ics"
   assert_success
-  assert_output --partial 'CATEGORIES:project-cutting_garden'
+  assert_line --regexp $'^CATEGORIES:project-cutting_garden\r?$'
   refute_output --partial 'project-client-acme'
 
   run_cg organize -group-by project "$CAL"
@@ -241,7 +243,7 @@ EOF
   # out-of-namespace `other` survives on the same comma-joined CATEGORIES line.
   run curl -fsS "${CALDAV_SOURCE#caldav:}ns/nsD.ics"
   assert_success
-  assert_output --partial 'CATEGORIES:other,project'
+  assert_line --regexp $'^CATEGORIES:other,project\r?$'
 
   run_cg organize -group-by project "$CAL"
   assert_success
@@ -284,6 +286,7 @@ function organize_ns_naive_rejects_namespace_grouping { # @test
 
   run_cg organize -group-by project "$CAL"
   assert_failure
-  assert_output --partial 'namespace grouping'
-  assert_output --partial 'dodder-hyphen'
+  # The rejection line is the WHOLE output — it names the grouping, the
+  # dimension, the resolved interpreter, and the [tags] fix.
+  assert_output 'cutting-garden: organize: namespace grouping (--group-by project) needs a tag interpreter that declares namespaces, but dimension "categories" uses the "naive" interpreter; set [tags] interpreter = dodder-hyphen'
 }

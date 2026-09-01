@@ -211,25 +211,26 @@ function organize_groupby_date_granularity { # @test
 function organize_groupby_rejects_legacy_spellings { # @test
   run_cg organize -group-by date_due:month "$SCHED"
   assert_failure 64
-  assert_output --partial 'organize: --group-by date_due:month: the `dim:granularity` spelling is retired; spell a date granularity as `date_due=(month)`'
+  assert_output 'cutting-garden: organize: --group-by date_due:month: the `dim:granularity` spelling is retired; spell a date granularity as `date_due=(month)`'
 
   run_cg organize -group-by categories "$FIELDS"
   assert_failure 64
-  assert_output --partial 'organize: --group-by categories: a bare name is a tag namespace, and "categories" names the tag dimension itself; group by the whole tag set with `(tags)`'
+  assert_output 'cutting-garden: organize: --group-by categories: a bare name is a tag namespace, and "categories" names the tag dimension itself; group by the whole tag set with `(tags)`'
 
   run_cg organize -group-by categories/project "$NS"
   assert_failure 64
-  assert_output --partial 'organize: --group-by categories/project: the `dim/namespace` spelling is retired; a bare name is a tag namespace (`project`), and `(tags)` is the whole tag set'
+  assert_output 'cutting-garden: organize: --group-by categories/project: the `dim/namespace` spelling is retired; a bare name is a tag namespace (`project`), and `(tags)` is the whole tag set'
 }
 
 # G9/G10: a bare FIELD name is read as a tag namespace, and when that namespace
 # matches nothing while a field of that name exists, generate fails suggesting
 # the field spelling `status=` rather than emitting an all-ungrouped document.
+# The rejection line is the WHOLE output — no partial document (no `_anchor`
+# envelope) is emitted.
 function organize_groupby_empty_namespace_suggests_field { # @test
   run_cg organize -group-by status "$FIELDS"
   assert_failure 64
-  assert_output --partial 'organize: --group-by status: no tag is under the "status" namespace, but "status" is a field dimension; to group by the field spell it `status=`'
-  refute_output --partial '_anchor'
+  assert_output 'cutting-garden: organize: --group-by status: no tag is under the "status" namespace, but "status" is a field dimension; to group by the field spell it `status=`'
 }
 
 # G10: a query shape is not a grouping — a literal field value and an unknown
@@ -237,9 +238,9 @@ function organize_groupby_empty_namespace_suggests_field { # @test
 function organize_groupby_rejects_query_shapes { # @test
   run_cg organize -group-by status=x "$FIELDS"
   assert_failure 64
-  assert_output --partial 'organize: --group-by status=x: `status=<value>` is a query predicate; group by the field with `status=`, or at a granularity with `status=(year|month|day)`'
+  assert_output 'cutting-garden: organize: --group-by status=x: `status=<value>` is a query predicate; group by the field with `status=`, or at a granularity with `status=(year|month|day)`'
 
   run_cg organize -group-by '(foo)' "$FIELDS"
   assert_failure 64
-  assert_output --partial 'organize: --group-by (foo): unknown qualifier; the only bare qualifier is `(tags)` (the type'"'"'s whole tag set)'
+  assert_output 'cutting-garden: organize: --group-by (foo): unknown qualifier; the only bare qualifier is `(tags)` (the type'"'"'s whole tag set)'
 }

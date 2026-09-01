@@ -104,7 +104,9 @@ fields_categories() {
 }
 
 # G10 depth normalization (generator side): a `(tags)` document puts its buckets
-# at `#` with no dimension heading above them.
+# at `#` with no dimension heading above them. generate_grouped already asserts
+# the whole document; the refutes restate the property the vector encodes (no
+# `##`, no hoisted-away `categories=` dimension heading) for documentation.
 function organize_headings_tags_buckets_at_minimal_depth { # @test
   generate_grouped
   refute_line --regexp '^##'
@@ -305,7 +307,8 @@ EOF
 }
 
 # G10: generation never emits a reset — no heading line in a generated document
-# is empty (resets are a hand-edit affordance only).
+# is empty (resets are a hand-edit affordance only). generate_grouped already
+# asserts the whole document; the refute restates the property it encodes.
 function organize_headings_generate_never_emits_reset { # @test
   generate_grouped
   refute_line --regexp '^#+[[:space:]]*$'

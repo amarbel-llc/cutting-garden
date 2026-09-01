@@ -103,12 +103,23 @@ write_lit2_edited() {
 	EOM
 }
 
-# assert_lit2_untouched proves a refused apply wrote NOTHING: lit2 still carries
-# no CATEGORIES and its LOCATION is unchanged, and the re-rendered document is
-# byte-identical to the generated one (same `_base`).
+# assert_lit2_untouched proves a refused apply wrote NOTHING: the live object
+# is byte-identical to the seeded fixture (a write would have rewritten it with
+# PRODID/DTSTAMP — and above all, no CATEGORIES ever appeared), and the
+# re-rendered document is byte-identical to the generated one (same `_base`).
 assert_lit2_untouched() {
-  assert_categories "${CALDAV_SOURCE#caldav:}lit/lit2.ics" ''
-  assert_output --partial 'LOCATION:Bank'
+  run curl -fsS "${CALDAV_SOURCE#caldav:}lit/lit2.ics"
+  assert_success
+  assert_output - <<-'EOM'
+	BEGIN:VCALENDAR
+	VERSION:2.0
+	BEGIN:VTODO
+	UID:lit2
+	SUMMARY:Read book
+	LOCATION:Bank
+	END:VTODO
+	END:VCALENDAR
+	EOM
   generate_grouped
 }
 
@@ -123,7 +134,7 @@ function organize_literal_bare_token_is_tag_apply_refuses { # @test
 
   run_cg organize -apply "$edited" -commit
   assert_failure 64
-  assert_output --partial 'organize --apply: object lit2.ics carries tag atoms work-x status: tag atoms are not writable yet (native tags slice 2)'
+  assert_output 'cutting-garden: organize --apply: object lit2.ics carries tag atoms work-x status: tag atoms are not writable yet (native tags slice 2)'
 
   assert_lit2_untouched
 }
@@ -137,7 +148,7 @@ function organize_literal_quoted_box_token_parses { # @test
 
   run_cg organize -apply "$edited" -commit
   assert_failure 64
-  assert_output --partial 'organize --apply: object lit2.ics carries tag atoms "_ inbox": tag atoms are not writable yet (native tags slice 2)'
+  assert_output 'cutting-garden: organize --apply: object lit2.ics carries tag atoms "_ inbox": tag atoms are not writable yet (native tags slice 2)'
 
   assert_lit2_untouched
 }
@@ -153,7 +164,7 @@ function organize_literal_non_ground_interior_rejects { # @test
   run_cg organize -apply "$edited" -commit
   assert_failure 64
   # shellcheck disable=SC2016  # the backticks are the message's own quoting, not expansion
-  assert_output --partial 'box literal "lit2.ics status*=y location=Bank": term `status*=y` is not ground: only `=` is ground (`*=` is a query operator)'
+  assert_output 'cutting-garden: organize: body line 1: box literal "lit2.ics status*=y location=Bank": term `status*=y` is not ground: only `=` is ground (`*=` is a query operator)'
 
   assert_lit2_untouched
 }

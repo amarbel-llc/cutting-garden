@@ -1,7 +1,5 @@
 #! /usr/bin/env bats
 
-# TODO: examine if using complete assertions on queries works too (avoid partials as much as possible)
-
 # The organize pipeline lane (FDR 0023, RFC 0015): generate a hyphence-envelope
 # organize document from a caldav calendar, edit it, and apply the edit as a
 # substrate write — proving select -> group -> render -> edit -> three-way-merge
@@ -194,23 +192,30 @@ organize: wrote 1 change(s)
 EOF
 
   # The stored property is canonical RFC 5545 UPPERCASE — never lowercase.
+  # A written body is CRLF-serialized and carries a volatile DTSTAMP
+  # (plugins/caldav/ical TaskToIcal), so the whole body cannot be pinned; the
+  # property is asserted as an exact full line (anchored, tolerating the CR).
   run curl -fsS "${CALDAV_SOURCE#caldav:}cal/task1.ics"
   assert_success
-  assert_output --partial 'STATUS:COMPLETED'
+  assert_line --regexp $'^STATUS:COMPLETED\r?$'
   refute_output --partial 'STATUS:completed'
 
+  # The full query listing: task1 matched, task2 (still status-less) did not.
   run_cg list -query 'status=completed' "$CAL"
   assert_success
-  # TODO why is this partial?
-  assert_output --partial 'task1.ics'
-  refute_output --partial 'task2.ics'
+  assert_output - <<-'EOM'
+	URI                                              NAME       TYPE
+	caldav:http://127.0.0.1:43101/dav/cal/task1.ics  task1.ics  caldav-object-vtodo-v1
+	EOM
 
   # The old uppercase spelling still matches — the FoldCase dimension folds
   # BOTH sides of the predicate (FDR 0025 case-fold matching rule).
   run_cg list -query 'status=COMPLETED' "$CAL"
   assert_success
-  assert_output --partial 'task1.ics'
-  refute_output --partial 'task2.ics'
+  assert_output - <<-'EOM'
+	URI                                              NAME       TYPE
+	caldav:http://127.0.0.1:43101/dav/cal/task1.ics  task1.ics  caldav-object-vtodo-v1
+	EOM
 
   assert_task1_completed
 }
@@ -233,9 +238,10 @@ organize: 1 change(s):
 organize: dry-run — nothing written
 EOF
 
+  # The live status query finds nothing — the listing is the bare header.
   run_cg list -query 'status=completed' "$CAL"
   assert_success
-  refute_output --partial 'task1.ics'
+  assert_output 'URI  NAME  TYPE'
 
   # The re-render is byte-identical to the generated vector — proves no write.
   generate_doc
@@ -261,8 +267,10 @@ EOF
 
   run_cg list -query 'status=completed' "$CAL"
   assert_success
-  assert_output --partial 'task1.ics'
-  refute_output --partial 'task2.ics'
+  assert_output - <<-'EOM'
+	URI                                              NAME       TYPE
+	caldav:http://127.0.0.1:43101/dav/cal/task1.ics  task1.ics  caldav-object-vtodo-v1
+	EOM
 
   assert_task1_completed
 }
@@ -284,16 +292,25 @@ function organize_apply_conflict_rejects { # @test
   local edited_b="$BATS_TEST_TMPDIR/edited_b.txt"
   write_task1_cancelled "$edited_b"
   run_cg organize -apply "$edited_b" -commit
-  assert_failure
-  assert_output --partial 'conflict'
+  assert_failure 2
+  # The whole rejection: completed windowed task1 OUT of the `_terminal=no`
+  # live listing, so the merge sees no live bucket at all (live="") — still a
+  # drift from the pinned base, and the exact refused move is named.
+  assert_output - <<-'EOM'
+	cutting-garden: organize --apply: 1 conflict(s) — the live state drifted from the pinned base; regenerate and re-edit:
+	  task1.ics: base="" live="" (your edit moved it to "cancelled")
+	EOM
 
   run_cg list -query 'status=completed' "$CAL"
   assert_success
-  assert_output --partial 'task1.ics'
+  assert_output - <<-'EOM'
+	URI                                              NAME       TYPE
+	caldav:http://127.0.0.1:43101/dav/cal/task1.ics  task1.ics  caldav-object-vtodo-v1
+	EOM
 
   run_cg list -query 'status=cancelled' "$CAL"
   assert_success
-  refute_output --partial 'task1.ics'
+  assert_output 'URI  NAME  TYPE'
 
   assert_task1_completed
 }

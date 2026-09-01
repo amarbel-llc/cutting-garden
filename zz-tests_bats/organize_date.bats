@@ -129,18 +129,23 @@ EOF
   # the design's uniformity decision end to end (#230).
   run_cg list -query 'date_due=2026-09' "$CAL"
   assert_success
-  assert_output --partial 'sched1.ics'
-  assert_output --partial 'sched2.ics'
+  assert_output - <<-'EOM'
+	URI                                                 NAME        TYPE
+	caldav:http://127.0.0.1:43104/dav/sched/sched1.ics  sched1.ics  caldav-object-vtodo-v1
+	caldav:http://127.0.0.1:43104/dav/sched/sched2.ics  sched2.ics  caldav-object-vtodo-v1
+	EOM
 
   run_cg list -query 'date_due=2026-08' "$CAL"
   assert_success
-  refute_output --partial 'sched1.ics'
+  assert_output 'URI  NAME  TYPE'
 
-  # The authoritative check: the object's stored iCalendar shows the spliced DUE
-  # with day/clock/TZID intact.
+  # The authoritative check: the object's stored iCalendar shows the spliced
+  # DUE with day/clock/TZID intact — an exact full line (the rewritten body is
+  # CRLF-serialized with a volatile DTSTAMP, so the whole body cannot be
+  # pinned).
   run curl -fsS "${CALDAV_SOURCE#caldav:}sched/sched1.ics"
   assert_success
-  assert_output --partial 'DUE;TZID=America/Los_Angeles:20260915T143000'
+  assert_line --regexp $'^DUE;TZID=America/Los_Angeles:20260915T143000\r?$'
 
   # The re-rendered document: both tasks under 2026-09, sched1's date_due atom
   # spliced to the 15th of the new month, the emptied 2026-08 bucket gone.
@@ -221,16 +226,26 @@ function organize_date_config_default_month { # @test
 function list_facets_date_filter_prefix_matches { # @test
   run_cg list -facets -filter 'date_due=2026' "$CAL"
   assert_success
-  assert_output --partial '2026-08 1'
-  assert_output --partial '2026-09 1'
+  # Exact full rows for every stable dimension. The fifth row, due_band, is
+  # computed against the wall clock (a fixture DUE drifts from later to
+  # overdue as real time passes), so it is the one line that cannot be
+  # pinned; everything else is asserted whole.
+  assert_line 'component  VTODO 2'
+  assert_line 'date_due   2026-08 1  2026-09 1'
+  assert_line 'priority   3_unspecified 2'
+  assert_line 'timezone   America/Los_Angeles 2'
 
   run_cg list -facets -filter 'date_due=2026-08' "$CAL"
   assert_success
-  assert_output --partial '2026-08 1'
+  assert_line 'component  VTODO 1'
+  assert_line 'date_due   2026-08 1'
+  assert_line 'priority   3_unspecified 1'
+  assert_line 'timezone   America/Los_Angeles 1'
+  # Nothing of the excluded month leaks anywhere — including the volatile
+  # due_band line the exact-row asserts above cannot cover.
   refute_output --partial '2026-09'
 
   run_cg list -facets -filter 'date_due=aug' "$CAL"
   assert_failure
-  assert_output --partial 'not a date bucket'
-  assert_output --partial 'YYYY'
+  assert_output 'cutting-garden: filter value "aug" is not a date bucket for dimension "date_due"; expected YYYY, YYYY-MM, or YYYY-MM-DD'
 }

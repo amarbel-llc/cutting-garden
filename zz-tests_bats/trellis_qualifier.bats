@@ -1,5 +1,7 @@
 #! /usr/bin/env bats
 
+# shellcheck disable=SC2016  # the asserted messages quote spellings in backticks; no expansion intended
+
 # The trellis `(…)` qualifier term in QUERY position (native tags design G10,
 # slice 1 task 2): `k=(x)` and `(x)` PARSE (they are organize's group-by
 # spellings, RFC 0014 `Qualifier <- '(' Ident ')'`) but are RESERVED for
@@ -28,18 +30,13 @@ function list_query_rejects_qualifier_value_as_reserved { # @test
   # 64 = EX_USAGE: a reserved-in-query form is the CALLER's mistake
   # (Is400BadRequest), not "trouble".
   assert_failure 64
-  assert_output --partial 'qualifier terms are reserved; not evaluable yet'
-  assert_output --partial '(x)'
-  assert_output --partial 'in field'
-  assert_output --partial 'status'
-  # Loud, not a silent empty result: nothing from the listing leaks through.
-  refute_output --partial 'Personal'
-  refute_output --partial 'Work'
+  # The rejection line is the WHOLE output — loud, never a silent empty
+  # listing, and nothing from the listing (Personal/Work) leaks through.
+  assert_output 'cutting-garden: trellis: qualifier terms are reserved; not evaluable yet (`(x)` in field `status` is a group-by spelling — see `organize --group-by`)'
 }
 
 function list_query_rejects_qualifier_term_as_reserved { # @test
   run_cg list -query '(tags)' "$CALDAV_SOURCE"
   assert_failure 64
-  assert_output --partial 'qualifier terms are reserved; not evaluable yet'
-  assert_output --partial '(tags)'
+  assert_output 'cutting-garden: trellis: qualifier terms are reserved; not evaluable yet (`(tags)` is a group-by spelling — see `organize --group-by`)'
 }

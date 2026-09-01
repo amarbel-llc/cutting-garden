@@ -174,9 +174,11 @@ organize: 1 change(s):
 organize: wrote 1 change(s)
 EOF
 
+  # Exact full line (the rewritten body is CRLF-serialized with a volatile
+  # DTSTAMP, so the whole body cannot be pinned).
   run curl -fsS "${CALDAV_SOURCE#caldav:}fields/field1.ics"
   assert_success
-  assert_output --partial 'LOCATION:Office'
+  assert_line --regexp $'^LOCATION:Office\r?$'
 
   assert_field1_office
 }
@@ -201,7 +203,7 @@ EOF
 
   run curl -fsS "${CALDAV_SOURCE#caldav:}fields/field1.ics"
   assert_success
-  assert_output --partial 'SUMMARY:Pay rent now'
+  assert_line --regexp $'^SUMMARY:Pay rent now\r?$'
 
   run_cg organize -group-by priority= "$CAL"
   assert_success
@@ -250,8 +252,13 @@ function organize_fields_conflict_rejects { # @test
   local edited_b="$BATS_TEST_TMPDIR/edited_b.txt"
   write_field1_edited '- [field1.ics location=Warehouse status=needs-action] Pay rent' "$edited_b"
   run_cg organize -apply "$edited_b" -commit
-  assert_failure
-  assert_output --partial 'conflict'
+  assert_failure 2
+  # The whole rejection: the exact refused field edit with base/live/edited
+  # values named.
+  assert_output - <<-'EOM'
+	cutting-garden: organize --apply: 1 field conflict(s) — the live state drifted from the pinned base; regenerate and re-edit:
+	  field1.ics.location: base="Bank" live="Office" (your edit set "Warehouse")
+	EOM
 
   assert_field1_office
 }
@@ -348,7 +355,7 @@ EOF
 
   run curl -fsS "${CALDAV_SOURCE#caldav:}fields/field5.ics"
   assert_success
-  assert_output --partial 'STATUS:NEEDS-ACTION'
+  assert_line --regexp $'^STATUS:NEEDS-ACTION\r?$'
   refute_output --partial 'STATUS:needs-action'
 
   run_cg organize -group-by status= "$CAL"

@@ -137,14 +137,21 @@ organize: 1 change(s):
 organize: wrote 1 change(s)
 EOF
 
-  # The reorganize wrote the must-band canonical PRIORITY (1) into the live object.
+  # The reorganize wrote the must-band canonical PRIORITY (1) into the live
+  # object — an exact full line (the rewritten body is CRLF-serialized with a
+  # volatile DTSTAMP, so the whole body cannot be pinned).
   run curl -fsS "${CALDAV_SOURCE#caldav:}fields/field2.ics"
   assert_success
-  assert_output --partial 'PRIORITY:1'
+  assert_line --regexp $'^PRIORITY:1\r?$'
 
+  # The full band query: field1 (already must) plus the moved field2.
   run_cg list -query 'priority=0_must' "$CAL"
   assert_success
-  assert_output --partial 'field2.ics'
+  assert_output - <<-'EOM'
+	URI                                                  NAME        TYPE
+	caldav:http://127.0.0.1:43105/dav/fields/field1.ics  field1.ics  caldav-object-vtodo-v1
+	caldav:http://127.0.0.1:43105/dav/fields/field2.ics  field2.ics  caldav-object-vtodo-v1
+	EOM
 
   run_cg organize -group-by priority= "$CAL"
   assert_success
@@ -224,12 +231,14 @@ organize: 1 change(s):
 organize: wrote 1 change(s)
 EOF
 
-  # unspecified -> PRIORITY 0 -> the property is dropped, LOCATION/STATUS kept.
+  # unspecified -> PRIORITY 0 -> the property is dropped, LOCATION/STATUS kept
+  # as exact full lines (the rewritten body is CRLF-serialized with a volatile
+  # DTSTAMP, so the whole body cannot be pinned).
   run curl -fsS "${CALDAV_SOURCE#caldav:}fields/field1.ics"
   assert_success
   refute_output --partial 'PRIORITY'
-  assert_output --partial 'LOCATION:Bank'
-  assert_output --partial 'STATUS:NEEDS-ACTION'
+  assert_line --regexp $'^LOCATION:Bank\r?$'
+  assert_line --regexp $'^STATUS:NEEDS-ACTION\r?$'
 
   run_cg organize -group-by priority= "$CAL"
   assert_success
@@ -266,8 +275,7 @@ EOF
 # generate_status_fields runs `organize -group-by status=` on the same calendar —
 # a grouping ORTHOGONAL to priority, so every box shows its band atom (nothing
 # strips): the status-less field2/field3/field4/field5 sit ungrouped above the
-# heading,
-# field1 under =needs-action (its grouped status atom elided instead).
+# heading, field1 under =needs-action (its grouped status atom elided instead).
 generate_status_fields() {
   run_cg organize -group-by status= "$CAL"
   assert_success
@@ -346,10 +354,11 @@ organize: 1 change(s):
 organize: wrote 1 change(s)
 EOF
 
-  # The band edit wrote the must-band canonical PRIORITY (1) into the live object.
+  # The band edit wrote the must-band canonical PRIORITY (1) into the live
+  # object — an exact full line.
   run curl -fsS "${CALDAV_SOURCE#caldav:}fields/field3.ics"
   assert_success
-  assert_output --partial 'PRIORITY:1'
+  assert_line --regexp $'^PRIORITY:1\r?$'
 
   run_cg organize -group-by status= "$CAL"
   assert_success
@@ -428,10 +437,10 @@ organize: 1 change(s):
 organize: wrote 1 change(s)
 EOF
 
-  # The raw int landed verbatim — not band-completed.
+  # The raw int landed verbatim — not band-completed — as an exact full line.
   run curl -fsS "${CALDAV_SOURCE#caldav:}fields/field2.ics"
   assert_success
-  assert_output --partial 'PRIORITY:7'
+  assert_line --regexp $'^PRIORITY:7\r?$'
 
   run_cg organize -group-by status= "$CAL"
   assert_success

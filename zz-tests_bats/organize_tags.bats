@@ -91,16 +91,19 @@ function organize_categories_multi_membership { # @test
 # carrying that tag: the two work-tagged tasks (component VTODO 2, not the full
 # 5), whose categories histogram reads work=2, errand=1 — field2 contributes
 # BOTH tags, so errand stays visible even under a work filter. The untagged
-# field1/field4/field5 drop out of the narrowed summary.
+# field1/field4/field5 drop out of the narrowed summary (no 0_must, no
+# 3_unspecified). The whole summary is deterministic here: no fields task
+# carries a DUE/DTSTART, so even the wall-clock-derived due_band renders its
+# declared values stably all-zero.
 function list_facets_categories_filter { # @test
   run_cg list -facets -filter 'categories=work' "$CAL"
   assert_success
-  assert_output --partial 'work 2'
-  assert_output --partial 'errand 1'
-  assert_output --partial 'VTODO 2'
-  refute_output --partial 'VTODO 5'
-  refute_output --partial '0_must'
-  refute_output --partial '3_unspecified'
+  assert_output - <<-'EOM'
+	categories  work 2  errand 1
+	component   VTODO 2
+	due_band    later 0  overdue 0  this-week 0  today 0
+	priority    1_should 1  2_nice 1
+	EOM
 }
 
 # categories is writable in slice 2: applying a moved categories document REWRITES
