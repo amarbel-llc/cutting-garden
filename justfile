@@ -616,7 +616,7 @@ debug-organize-categories: debug-build-go
     cal="${source_url%/dav/}/dav/fields/"
     echo '# --- list -facets -filter categories=work (expect VTODO 2; work 2 errand 1) ---' >&2
     .tmp/cutting-garden list -facets -filter 'categories=work' "$cal"
-    echo '# --- list -facets (full: VTODO 4; work 2 errand 1) ---' >&2
+    echo '# --- list -facets (full: VTODO 5; work 2 errand 1) ---' >&2
     .tmp/cutting-garden list -facets "$cal"
     echo '# --- list -query categories=work (expect field2, field3) ---' >&2
     .tmp/cutting-garden list -query 'categories=work' "$cal"
@@ -817,6 +817,28 @@ debug-organize-vectors:
     apply_doc fields-now .tmp/organize-vectors-fields-generate.txt.edited
     gen fields-after-now "$cal" 'priority='
     stop_srv
+    # slice 1.5 C missing-STATUS lane (organize_fields.bats): grouped by status=
+    # the status-less field2..field5 sit ungrouped with no status atom; moving
+    # field5 under `## =needs-action` ASSIGNS its STATUS (RFC 0015 write:one
+    # move-in), while leaving it ungrouped across an unrelated apply
+    # (field1 -> =in-process) writes NOTHING to it (absence is a no-op).
+    start_srv 43106 CG_TEST_CALDAV_FIELDS=1
+    cal="${home}fields/"
+    gen fields-status-generate "$cal" 'status='
+    move_line .tmp/organize-vectors-fields-status-generate.txt '## =needs-action' '^- .field5.ics'
+    apply_doc fields-status-movein .tmp/organize-vectors-fields-status-generate.txt.edited
+    banner 'fields-status-movein curl field5 (expect STATUS:NEEDS-ACTION)'
+    curl -fsS "${home#caldav:}fields/field5.ics"
+    gen fields-status-after-movein "$cal" 'status='
+    stop_srv
+    start_srv 43106 CG_TEST_CALDAV_FIELDS=1
+    cal="${home}fields/"
+    move_line .tmp/organize-vectors-fields-status-generate.txt '## =in-process' '^- .field1.ics'
+    apply_doc fields-status-noop .tmp/organize-vectors-fields-status-generate.txt.edited
+    banner 'fields-status-noop curl field5 (expect NO STATUS line)'
+    curl -fsS "${home#caldav:}fields/field5.ics"
+    gen fields-status-after-noop "$cal" 'status='
+    stop_srv
 
     start_srv 43107 CG_TEST_CALDAV_LIT=1
     cal="${home}lit/"
@@ -855,6 +877,7 @@ debug-organize-vectors:
 
     	- [field1.ics location=Bank status=needs-action priority=0_must] Pay rent
     	- [field4.ics] Someday idea
+    	- [field5.ics] Waiting idea
 
     	## errand
 
@@ -870,6 +893,8 @@ debug-organize-vectors:
     stop_srv
     start_srv 43109 CG_TEST_CALDAV_FIELDS=1
     with_body "$hd" "$hd.reset" <<-'EOM'
+
+    	- [field5.ics] Waiting idea
 
     	# work
 
@@ -894,6 +919,7 @@ debug-organize-vectors:
     with_body "$hd" "$hd.noop" <<-'EOM'
 
     	- [field1.ics location=Bank status=needs-action priority=0_must] Pay rent
+    	- [field5.ics] Waiting idea
 
     	# errand
 

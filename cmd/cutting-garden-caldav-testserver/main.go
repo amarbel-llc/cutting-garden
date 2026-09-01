@@ -88,10 +88,18 @@ func main() {
 	// caldav.bats asserts against — only the priority, field-edit, and categories
 	// lanes, which set the env var, see this calendar.
 	//
+	// field5 is the designated MISSING-STATUS object (native tags slice 1.5 C):
+	// no STATUS, no PRIORITY, no LOCATION, no CATEGORIES — under a
+	// `--group-by status=` document it sits ungrouped above the first heading
+	// with no status atom in its box, and the RFC 0015 write:one rule keeps an
+	// un-bucketed placement a no-op while a move into a bucket ASSIGNS the
+	// property.
+	//
 	//   field1  Pay rent      PRIORITY 1 (0_must)        LOCATION Bank  STATUS NEEDS-ACTION
 	//   field2  Read book     PRIORITY 5 (1_should)      CATEGORIES work,errand
 	//   field3  Water plants  PRIORITY 9 (2_nice)        CATEGORIES work
 	//   field4  Someday idea  no PRIORITY (3_unspecified)
+	//   field5  Waiting idea  no PRIORITY (3_unspecified)  no STATUS
 	if os.Getenv("CG_TEST_CALDAV_FIELDS") != "" {
 		srv.AddCalendar("/dav/fields/", "Fields")
 		srv.Seed("/dav/fields/field1.ics", "VTODO",
@@ -102,6 +110,8 @@ func main() {
 			vtodoRich("field3", "Water plants", 9, "", "", "work"))
 		srv.Seed("/dav/fields/field4.ics", "VTODO",
 			vtodoRich("field4", "Someday idea", 0, "", "", ""))
+		srv.Seed("/dav/fields/field5.ics", "VTODO",
+			vtodoRich("field5", "Waiting idea", 0, "", "", ""))
 	}
 
 	// A fifth calendar dedicated to the organize NAMESPACE-ROLLUP grouping lane

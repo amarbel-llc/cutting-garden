@@ -17,7 +17,8 @@
 #
 # The fixture calendar (/dav/fields/, opt-in via CG_TEST_CALDAV_FIELDS) holds
 # field2 "Read book" CATEGORIES work,errand, field3 "Water plants" CATEGORIES
-# work, and the untagged field1 "Pay rent" / field4 "Someday idea".
+# work, and the untagged field1 "Pay rent" / field4 "Someday idea" / field5
+# "Waiting idea".
 #
 # Whole-document vectors (G16): pinned port + serialized tests, see lib/caldav.bash.
 
@@ -42,10 +43,10 @@ teardown() {
 # bats file_tags=organize
 
 # The generated document's `_base` digest, and the digests after each edit.
-BASE_GENERATED=blake2b256-0m28p5d8ykftpl7zhchv6t874zvq7z0a4k4fmql0xcr52jledmnsu8h0la
-BASE_AFTER_DOUBLE=blake2b256-7w3fk97fq5xfpn6udzv7whxvwxqn2dc2ls59644wvvcaqxycxwdstaxrky
-BASE_AFTER_RESET=blake2b256-t7x9wrn3dh8554h0kslyaetpplr3n8h00ddgkxmff62auh2akrjslad624
-BASE_AFTER_NOOP=blake2b256-fxjfeyn5nm6y893jpmgtnqqyercpz2gdnau33t42y84zrdp6f45q9vpzed
+BASE_GENERATED=blake2b256-gwts3z7hz0hsxafj49rme8dd96pzgfqxfxf79k8utak9fthzhhdqnsg9l8
+BASE_AFTER_DOUBLE=blake2b256-zk334uskun4wsq8qz70xwm5ew5fg9ckued65tu0tfndhl22zxxksvu2a7d
+BASE_AFTER_RESET=blake2b256-scs2rd038u7ygjgncruj0yu0tkmkd4nxfywujd7vwag80xmqkudsdfjqjq
+BASE_AFTER_NOOP=blake2b256-h8e0flph30uyqrjmawja7edka3sgf7qwhfxjtch3uhef5pevkdeqmn802l
 
 # envelope_header prints the `-group-by (tags)` document's hyphence envelope
 # pinned at `_base` $1 — the part every document in this lane shares.
@@ -82,6 +83,7 @@ generate_grouped() {
 
 	- [field1.ics location=Bank status=needs-action priority=0_must] Pay rent
 	- [field4.ics] Someday idea
+	- [field5.ics] Waiting idea
 
 	# errand
 
@@ -121,6 +123,7 @@ function organize_headings_double_hash_document_applies_identically { # @test
 
 	- [field1.ics location=Bank status=needs-action priority=0_must] Pay rent
 	- [field4.ics] Someday idea
+	- [field5.ics] Waiting idea
 
 	## errand
 
@@ -152,6 +155,7 @@ EOF
 
 	- [field1.ics location=Bank status=needs-action priority=0_must] Pay rent
 	- [field4.ics] Someday idea
+	- [field5.ics] Waiting idea
 
 	# errand
 
@@ -185,6 +189,8 @@ function organize_headings_reset_pops_to_parent_and_ungrouped { # @test
   generate_grouped
   local edited="$BATS_TEST_TMPDIR/edited.txt"
   headings_doc "$BASE_GENERATED" >"$edited" <<-'EOM'
+
+	- [field5.ics] Waiting idea
 
 	# work
 
@@ -226,6 +232,7 @@ EOF
     headings_doc "$BASE_AFTER_RESET" <<-'EOM'
 
 	- [field2.ics priority=1_should] Read book
+	- [field5.ics] Waiting idea
 
 	# errand
 
@@ -248,6 +255,7 @@ function organize_headings_reset_deeper_than_current_is_noop { # @test
   headings_doc "$BASE_GENERATED" >"$edited" <<-'EOM'
 
 	- [field1.ics location=Bank status=needs-action priority=0_must] Pay rent
+	- [field5.ics] Waiting idea
 
 	# errand
 
@@ -281,6 +289,7 @@ EOF
     headings_doc "$BASE_AFTER_NOOP" <<-'EOM'
 
 	- [field1.ics location=Bank status=needs-action priority=0_must] Pay rent
+	- [field5.ics] Waiting idea
 
 	# errand
 

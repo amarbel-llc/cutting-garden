@@ -18,7 +18,7 @@
 #
 # The fixture calendar (/dav/fields/, opt-in via CG_TEST_CALDAV_FIELDS) holds
 # field2 "Read book" CATEGORIES work,errand (two-tag) and field3 "Water plants"
-# CATEGORIES work (one-tag); field1/field4 carry no CATEGORIES. Reusing the
+# CATEGORIES work (one-tag); field1/field4/field5 carry no CATEGORIES. Reusing the
 # fields calendar keeps CATEGORIES groupable-only (never a box atom), so the
 # priority/field-edit lanes' exact box assertions are undisturbed.
 #
@@ -55,7 +55,7 @@ generate_grouped() {
   assert_output - <<-'EOM'
 	---
 	% generated: `cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:43102/dav/fields/`
-	- _base = @blake2b256-7y6ff2ljzv8tp0p7jr7p8224kpcvlyvf3czxpkka0mac29d9lhqsgzqezy
+	- _base = @blake2b256-ve9z2sjazx3vsvd4n9l4lexwdwhn2a6vzg4qctgxehkzwp7vx6mqkcey05
 	- _anchor = caldav:http://127.0.0.1:43102/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -65,6 +65,7 @@ generate_grouped() {
 
 	- [field1.ics location=Bank status=needs-action priority=0_must] Pay rent
 	- [field4.ics] Someday idea
+	- [field5.ics] Waiting idea
 
 	# errand
 
@@ -88,16 +89,16 @@ function organize_categories_multi_membership { # @test
 
 # `list --facets --filter 'categories=<tag>'` narrows the summary to the objects
 # carrying that tag: the two work-tagged tasks (component VTODO 2, not the full
-# 4), whose categories histogram reads work=2, errand=1 — field2 contributes
+# 5), whose categories histogram reads work=2, errand=1 — field2 contributes
 # BOTH tags, so errand stays visible even under a work filter. The untagged
-# field1/field4 (0_must / 3_unspecified bands) drop out of the narrowed summary.
+# field1/field4/field5 drop out of the narrowed summary.
 function list_facets_categories_filter { # @test
   run_cg list -facets -filter 'categories=work' "$CAL"
   assert_success
   assert_output --partial 'work 2'
   assert_output --partial 'errand 1'
   assert_output --partial 'VTODO 2'
-  refute_output --partial 'VTODO 4'
+  refute_output --partial 'VTODO 5'
   refute_output --partial '0_must'
   refute_output --partial '3_unspecified'
 }
@@ -115,7 +116,7 @@ function organize_categories_apply_writes { # @test
   cat >"$edited" <<-'EOM'
 	---
 	% generated: `cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:43102/dav/fields/`
-	- _base = @blake2b256-7y6ff2ljzv8tp0p7jr7p8224kpcvlyvf3czxpkka0mac29d9lhqsgzqezy
+	- _base = @blake2b256-ve9z2sjazx3vsvd4n9l4lexwdwhn2a6vzg4qctgxehkzwp7vx6mqkcey05
 	- _anchor = caldav:http://127.0.0.1:43102/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -125,6 +126,7 @@ function organize_categories_apply_writes { # @test
 
 	- [field1.ics location=Bank status=needs-action priority=0_must] Pay rent
 	- [field4.ics] Someday idea
+	- [field5.ics] Waiting idea
 
 	# errand
 
@@ -154,7 +156,7 @@ EOF
   assert_output - <<-'EOM'
 	---
 	% generated: `cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:43102/dav/fields/`
-	- _base = @blake2b256-3we8a4l96w0yrzjwh6kwyxt5ekqmqzkhv70nf8garlnemjvedpesft7wrx
+	- _base = @blake2b256-63xx27wxxcyntzyzq262jlktpa6c4xfq6lga0qklpaf47fzq9c4saz2f8e
 	- _anchor = caldav:http://127.0.0.1:43102/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -164,6 +166,7 @@ EOF
 
 	- [field1.ics location=Bank status=needs-action priority=0_must] Pay rent
 	- [field4.ics] Someday idea
+	- [field5.ics] Waiting idea
 
 	# errand
 
