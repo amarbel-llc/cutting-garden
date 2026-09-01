@@ -750,9 +750,17 @@ debug-organize-vectors:
     start_srv 43103 CG_TEST_CALDAV_NS=1
     cal="${home}ns/"
     gen ns-generate "$cal" 'project'
-    move_line .tmp/organize-vectors-ns-generate.txt '# -cutting_garden' '^- .nsA.ics'
+    move_line .tmp/organize-vectors-ns-generate.txt '## -cutting_garden' '^- .nsA.ics'
     apply_doc ns .tmp/organize-vectors-ns-generate.txt.edited
     gen ns-after "$cal" 'project'
+    stop_srv
+    # G10a direct-under-root lane (fresh server, same generate doc): move nsD
+    # directly under the `# project` root heading — apply writes the BARE tag.
+    start_srv 43103 CG_TEST_CALDAV_NS=1
+    cal="${home}ns/"
+    move_line .tmp/organize-vectors-ns-generate.txt '# project' '^- .nsD.ics'
+    apply_doc ns-root .tmp/organize-vectors-ns-generate.txt.edited
+    gen ns-after-root "$cal" 'project'
     stop_srv
     no_config
 

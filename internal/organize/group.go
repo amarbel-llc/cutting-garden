@@ -101,14 +101,25 @@ func groupNodes(
 // no-value case. An interpreter that declares no namespaces (naive) rejects a
 // non-empty namespace — that error is propagated, not swallowed. The grouped
 // dimension is not itself a box atom for a tag grouping, so no #229-style atom
-// stripping applies; the box carries its other fields unchanged. Buckets are the
-// open set of observed rollup keys (no declared/pre-rendered values), ordered by
-// their `-<segment>` string.
+// stripping applies; the box carries its other fields unchanged.
+//
+// The returned bucket list is the G10a ladder: buckets[0] is ALWAYS the ROOT
+// bucket — Value == spec.Namespace, Lines the nodes carrying the BARE namespace
+// tag — whenever the grouping matched anything at all, followed by the open set
+// of observed rollup keys ordered by their `-<segment>` string
+// (namespaceSections renders the root at baseDepth and the continuations one
+// deeper). A tag exactly equal to the namespace is the root membership: the
+// interpreter reports only continuation rollups (a tag equal to N contributes
+// nothing, RFC 0019 §6.1), so root detection is the organize layer's, mirroring
+// how apply owns the rollup write-back mechanics (§6.2). An entirely unmatched
+// namespace returns no buckets at all — no lone root heading — preserving the
+// all-ungrouped shape rejectEmptyNamespace keys off.
 func groupNodesByNamespace(
 	nodes []cgp.Node, spec groupSpec, anchor string, interp cgp.TagInterpreter,
 	inlineType bool, present func(cgp.Node) []cgp.BoxAtom,
 ) (ungrouped []objectLine, buckets []bucket, err error) {
 	byBucket := map[string][]objectLine{}
+	var rootLines []objectLine
 	for _, n := range nodes {
 		ln := objectLine{ID: relativeID(n.URIString(), anchor), Desc: nodeDescription(n)}
 		if inlineType {
@@ -117,13 +128,27 @@ func groupNodesByNamespace(
 		if present != nil {
 			ln.Fields = present(n)
 		}
-		mems, e := interp.Buckets(facetKeys(n.Facets[spec.Dim]), spec.Namespace)
+		tags := facetKeys(n.Facets[spec.Dim])
+		mems, e := interp.Buckets(tags, spec.Namespace)
 		if e != nil {
 			return nil, nil, e
 		}
-		if len(mems) == 0 {
+		// Root membership (design G10a): the bare namespace tag files the node
+		// DIRECTLY under the root heading. Compared exactly — both builtin
+		// interpreters' Normalize is the identity (RFC 0019 §5/§7).
+		root := false
+		for _, tag := range tags {
+			if tag == spec.Namespace {
+				root = true
+				break
+			}
+		}
+		if len(mems) == 0 && !root {
 			ungrouped = append(ungrouped, ln)
 			continue
+		}
+		if root {
+			rootLines = append(rootLines, ln)
 		}
 		for _, m := range mems {
 			byBucket[m.Bucket] = append(byBucket[m.Bucket], ln)
@@ -131,6 +156,11 @@ func groupNodesByNamespace(
 	}
 
 	sort.Slice(ungrouped, func(i, j int) bool { return ungrouped[i].ID < ungrouped[j].ID })
+	sort.Slice(rootLines, func(i, j int) bool { return rootLines[i].ID < rootLines[j].ID })
+
+	if len(byBucket) == 0 && len(rootLines) == 0 {
+		return ungrouped, nil, nil
+	}
 
 	order := make([]string, 0, len(byBucket))
 	for k := range byBucket {
@@ -138,7 +168,8 @@ func groupNodesByNamespace(
 	}
 	sort.Strings(order)
 
-	buckets = make([]bucket, 0, len(order))
+	buckets = make([]bucket, 0, len(order)+1)
+	buckets = append(buckets, bucket{Value: spec.Namespace, Lines: rootLines})
 	for _, k := range order {
 		lines := byBucket[k]
 		sort.Slice(lines, func(i, j int) bool { return lines[i].ID < lines[j].ID })

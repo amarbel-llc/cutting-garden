@@ -66,11 +66,11 @@
     (description)))
 
 ========================================
-namespace grouping: `- _group-by = project`, `# -client` buckets (organize_ns.bats generate_grouped)
+namespace grouping: `- _group-by = project`, `# project` root + nested `## -client` buckets (organize_ns.bats generate_grouped)
 ========================================
 ---
 % generated: `cg organize -group-by project -query "_terminal=no" caldav:http://127.0.0.1:43103/dav/ns/`
-- _base = @blake2b256-pkfjs5lmjf9afnp2w9jwumnrwsg88ju0ch3daqzs4lcnrk5nt23sg2hkxu
+- _base = @blake2b256-gqf8sncxct6jgfpda9zzf5r7pktxzunq4nz9vzg2uwjfqmr9zh5qx907va
 - _anchor = caldav:http://127.0.0.1:43103/dav/ns/
 - _query = _terminal=no
 - _type = !caldav-object-vtodo-v1
@@ -80,12 +80,14 @@ namespace grouping: `- _group-by = project`, `# -client` buckets (organize_ns.ba
 
 - [nsD.ics] Loose idea
 
-# -client
+# project
+
+## -client
 
 - [nsA.ics] Acme retainer
 - [nsB.ics] Baxter audit
 
-# -cutting_garden
+## -cutting_garden
 
 - [nsC.ics] CG roadmap
 
@@ -122,6 +124,11 @@ namespace grouping: `- _group-by = project`, `# -client` buckets (organize_ns.ba
     (box
       (box_object_id))
     (description))
+  (blank_line)
+  (heading
+    (heading_marker)
+    (heading_tag
+      (tag_name)))
   (blank_line)
   (heading
     (heading_marker)

@@ -46,7 +46,13 @@ type membershipEdit struct {
 // (`project-client`, the only unambiguous leaf, §6.2) and a REMOVE enumerates the
 // live tags realizing that rollup subtree and exact-removes each — the interpreter
 // Complete is EXACT (never a subtree remove), so subtree removal is this apply
-// layer's job (§6.2).
+// layer's job (§6.2). The G10a ROOT bucket — the bucket whose value IS the
+// namespace, i.e. a line placed directly under the `# project` heading — is a tag
+// bucket whose reconstruction is exactly the bare namespace tag: ADD appends
+// `project`, and REMOVE drops the bare `project` ONLY, never the subtree — the
+// deeper `project-*` tags realize the CONTINUATION buckets, whose removal is
+// governed by their own bucket rows, so the one-bucket-one-realizing-set rule the
+// continuations follow gives the root exactly the bare tag.
 func planMemberships(
 	edited, base document,
 	live []cgp.Node,
@@ -132,6 +138,19 @@ func planMemberships(
 			// the namespace tag exactly (the unambiguous leaf).
 			for _, bucket := range removes {
 				fullTag := reconstructNamespaceTag(namespace, bucket)
+				if bucket == namespace {
+					// The G10a ROOT bucket: the only tag realizing direct-root
+					// placement is the bare namespace tag itself (deeper
+					// `project-*` tags realize the continuation buckets), so
+					// leaving the root removes exactly `project` — a subtree
+					// enumeration here would wrongly strip continuation
+					// memberships the document still shows.
+					newTags, err = interp.Complete(newTags, cgp.TagRemove, fullTag)
+					if err != nil {
+						return nil, errors.Wrapf(err, "organize: %s remove %q", id, fullTag)
+					}
+					continue
+				}
 				for _, liveTag := range liveTags {
 					if liveTag == fullTag || strings.HasPrefix(liveTag, fullTag+"-") {
 						newTags, err = interp.Complete(newTags, cgp.TagRemove, liveTag)
@@ -180,9 +199,15 @@ func planMemberships(
 // reconstructNamespaceTag rebuilds the full namespace tag a rollup bucket stands
 // for (RFC 0019 §6.2): the bucket carries its leading `-` (dodder-hyphen's
 // continuation form, `-client`), so `"project" + "-client" = "project-client"`.
-// The interpreter always yields a `-<segment>` bucket, so plain concatenation is
-// correct; the leading-`-` guard is defence against a bucket that somehow lacks it.
+// The G10a ROOT bucket — the bucket value equal to the namespace itself, from a
+// line placed directly under the `# project` heading — reconstructs to exactly
+// the BARE namespace tag (`project`). The interpreter always yields a
+// `-<segment>` continuation bucket, so plain concatenation is correct there; the
+// leading-`-` guard is defence against a bucket that somehow lacks it.
 func reconstructNamespaceTag(namespace, bucket string) string {
+	if bucket == namespace {
+		return namespace
+	}
 	if strings.HasPrefix(bucket, "-") {
 		return namespace + bucket
 	}

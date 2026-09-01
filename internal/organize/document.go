@@ -143,8 +143,13 @@ func (doc document) isTagGrouping() bool { return doc.GroupBy != "" }
 // sectionValueReader returns the function that extracts a bucket VALUE from a
 // heading term for this document's grouping dialect. A field grouping's buckets
 // are `=<value>` terms (isValueTerm); a TAG grouping's buckets are the hoisted
-// bare/quoted headings `<value>` — every non-type heading is a value. Either
-// way the value is one trellis term (parseHeadingValue): a bare or quoted
+// bare/quoted headings `<value>` — every non-type heading is a value, INCLUDING
+// a namespace grouping's root heading (`# project`), which is a live bucket
+// whose value is the bare namespace (design G10a): walkSectionValues'
+// deepest-value-wins rule then places a line under a nested continuation
+// (`## -client`) in the continuation bucket, and a line directly under the root
+// (equivalently, after a `##` reset popping a continuation) in the root bucket.
+// Either way the value is one trellis term (parseHeadingValue): a bare or quoted
 // identifier, decoded. A type heading (`!<type>`) and, for a field grouping, a
 // `<dim>=` heading are never buckets. A heading that is not a single plain term
 // is a bad request. Shared by assignments and memberships so both dialects read

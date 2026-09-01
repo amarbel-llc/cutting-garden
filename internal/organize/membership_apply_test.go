@@ -258,6 +258,72 @@ func TestPlanMemberships_NamespaceRemoveSubtree(t *testing.T) {
 	}
 }
 
+// TestPlanMemberships_RootBucketAdd pins the G10a root bucket's ADD semantics
+// (native tags slice 1.5 A): filing an object DIRECTLY under the `# project`
+// root heading (bucket value == the namespace) reconstructs exactly the BARE
+// namespace tag `project` — never `project-project` — and leaves an unrelated
+// out-of-namespace tag (`other`) untouched.
+func TestPlanMemberships_RootBucketAdd(t *testing.T) {
+	base := categoriesDoc(t, map[string][]string{"t1.ics": {}})
+	edited := categoriesDoc(t, map[string][]string{"t1.ics": {"project"}})
+	live := []cgp.Node{liveNode(t, "t1.ics", "other")}
+
+	edits, err := planMemberships(edited, base, live, membershipAnchor, mustDodderHyphen(t), membershipDim, "project")
+	if err != nil {
+		t.Fatalf("planMemberships: %v", err)
+	}
+	if len(edits) != 1 {
+		t.Fatalf("edit count = %d, want 1 (%+v)", len(edits), edits)
+	}
+	if !setEqual(edits[0].NewTags, []string{"other", "project"}) {
+		t.Errorf("NewTags = %v, want set {other, project}", edits[0].NewTags)
+	}
+}
+
+// TestPlanMemberships_RootBucketRemoveBareOnly pins the G10a root bucket's
+// REMOVE semantics: leaving the root bucket removes the bare tag `project` ONLY
+// — never the `project-*` subtree, whose tags realize the CONTINUATION buckets
+// (their removal is governed by their own bucket rows) — and an unrelated tag
+// survives.
+func TestPlanMemberships_RootBucketRemoveBareOnly(t *testing.T) {
+	base := categoriesDoc(t, map[string][]string{"t1.ics": {"project", "-client"}})
+	// t1.ics stays under -client but leaves the root bucket.
+	edited := categoriesDoc(t, map[string][]string{"t1.ics": {"-client"}})
+	live := []cgp.Node{liveNode(t, "t1.ics", "project", "project-client-acme", "other")}
+
+	edits, err := planMemberships(edited, base, live, membershipAnchor, mustDodderHyphen(t), membershipDim, "project")
+	if err != nil {
+		t.Fatalf("planMemberships: %v", err)
+	}
+	if len(edits) != 1 {
+		t.Fatalf("edit count = %d, want 1 (%+v)", len(edits), edits)
+	}
+	if !setEqual(edits[0].NewTags, []string{"project-client-acme", "other"}) {
+		t.Errorf("NewTags = %v, want set {project-client-acme, other} (bare project removed, subtree kept)",
+			edits[0].NewTags)
+	}
+}
+
+// TestPlanMemberships_RootToContinuationMove pins that the root and continuation
+// rules COMPOSE: moving an object from the root bucket to a continuation removes
+// the bare `project` and adds the reconstructed `project-client`.
+func TestPlanMemberships_RootToContinuationMove(t *testing.T) {
+	base := categoriesDoc(t, map[string][]string{"t1.ics": {"project"}})
+	edited := categoriesDoc(t, map[string][]string{"t1.ics": {"-client"}})
+	live := []cgp.Node{liveNode(t, "t1.ics", "project")}
+
+	edits, err := planMemberships(edited, base, live, membershipAnchor, mustDodderHyphen(t), membershipDim, "project")
+	if err != nil {
+		t.Fatalf("planMemberships: %v", err)
+	}
+	if len(edits) != 1 {
+		t.Fatalf("edit count = %d, want 1 (%+v)", len(edits), edits)
+	}
+	if !setEqual(edits[0].NewTags, []string{"project-client"}) {
+		t.Errorf("NewTags = %v, want set {project-client}", edits[0].NewTags)
+	}
+}
+
 // TestPlanMemberships_NamespaceAddKeepsSiblings pins that a namespace ADD only
 // appends the reconstructed leaf and leaves an existing sibling-namespace tag
 // (project-sales) untouched: filing under `-client` while already under `-sales`

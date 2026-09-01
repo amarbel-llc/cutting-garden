@@ -221,7 +221,9 @@ func TestGroupNodes_KeepsAtomUnderCoarserHeading(t *testing.T) {
 // rolls each node's deeper tags up to their immediate next segment. Two nodes
 // under project-client-* fold into one `-client` bucket, a project-cutting_garden
 // node into `-cutting_garden`, and a node whose only tag (`other`) is not under
-// `project` lands ungrouped. Buckets order by their `-<segment>` key.
+// `project` lands ungrouped. buckets[0] is the synthesized ROOT bucket (design
+// G10a) — empty here, since no node carries the bare `project` tag — followed by
+// the continuations ordered by their `-<segment>` key.
 func TestGroupNodesByNamespace(t *testing.T) {
 	interp, ok := cgp.LookupTagInterpreter("dodder-hyphen")
 	if !ok {
@@ -256,7 +258,7 @@ func TestGroupNodesByNamespace(t *testing.T) {
 	if len(ungrouped) != 1 || ungrouped[0].ID != "other.ics" {
 		t.Fatalf("ungrouped = %+v, want just other.ics (not under project)", ungrouped)
 	}
-	wantBuckets := []string{"-client", "-cutting_garden"}
+	wantBuckets := []string{"project", "-client", "-cutting_garden"}
 	if len(buckets) != len(wantBuckets) {
 		t.Fatalf("bucket count = %d, want %d (%+v)", len(buckets), len(wantBuckets), buckets)
 	}
@@ -265,13 +267,72 @@ func TestGroupNodesByNamespace(t *testing.T) {
 			t.Errorf("bucket[%d] = %q, want %q", i, buckets[i].Value, want)
 		}
 	}
-	client := buckets[0].Lines
+	if len(buckets[0].Lines) != 0 {
+		t.Errorf("root bucket lines = %+v, want none (no bare `project` tag)", buckets[0].Lines)
+	}
+	client := buckets[1].Lines
 	if len(client) != 2 || client[0].ID != "acme.ics" || client[1].ID != "baxter.ics" {
 		t.Fatalf("-client lines not the id-sorted client nodes: %+v", client)
 	}
-	cg := buckets[1].Lines
+	cg := buckets[2].Lines
 	if len(cg) != 1 || cg[0].ID != "cg.ics" {
 		t.Fatalf("-cutting_garden lines = %+v, want just cg.ics", cg)
+	}
+}
+
+// TestGroupNodesByNamespace_RootPlacement pins the G10a root bucket: a node
+// carrying the BARE namespace tag files under buckets[0] (Value == the
+// namespace), a node carrying the bare tag AND a deeper one files under the root
+// AND its continuation, and a namespace matching NOTHING returns no buckets at
+// all (no lone root heading — the all-ungrouped shape rejectEmptyNamespace keys
+// off).
+func TestGroupNodesByNamespace_RootPlacement(t *testing.T) {
+	interp, _ := cgp.LookupTagInterpreter("dodder-hyphen")
+	anchor := "caldav://h/c/"
+	spec := groupSpec{Dim: "categories", Namespace: "project", Kind: groupKindTagNamespace}
+
+	nodes := []cgp.Node{
+		{
+			URI: mustURL(t, "caldav://h/c/bare.ics"), Type: "caldav-object-v1",
+			Facets: map[string][]cgp.FacetValue{"categories": {{Key: "project"}}},
+		},
+		{
+			URI: mustURL(t, "caldav://h/c/both.ics"), Type: "caldav-object-v1",
+			Facets: map[string][]cgp.FacetValue{
+				"categories": {{Key: "project"}, {Key: "project-client-acme"}},
+			},
+		},
+	}
+	ungrouped, buckets, err := groupNodesByNamespace(nodes, spec, anchor, interp, false, nil)
+	if err != nil {
+		t.Fatalf("groupNodesByNamespace: %v", err)
+	}
+	if len(ungrouped) != 0 {
+		t.Fatalf("ungrouped = %+v, want none", ungrouped)
+	}
+	if len(buckets) != 2 || buckets[0].Value != "project" || buckets[1].Value != "-client" {
+		t.Fatalf("buckets = %+v, want [project -client]", buckets)
+	}
+	root := buckets[0].Lines
+	if len(root) != 2 || root[0].ID != "bare.ics" || root[1].ID != "both.ics" {
+		t.Errorf("root lines = %+v, want id-sorted [bare.ics both.ics]", root)
+	}
+	if client := buckets[1].Lines; len(client) != 1 || client[0].ID != "both.ics" {
+		t.Errorf("-client lines = %+v, want just both.ics", client)
+	}
+
+	// A namespace matching nothing: no buckets, everything ungrouped.
+	none := []cgp.Node{{
+		URI: mustURL(t, "caldav://h/c/o.ics"), Type: "caldav-object-v1",
+		Facets: map[string][]cgp.FacetValue{"categories": {{Key: "other"}}},
+	}}
+	ungrouped, buckets, err = groupNodesByNamespace(none, spec, anchor, interp, false, nil)
+	if err != nil {
+		t.Fatalf("groupNodesByNamespace: %v", err)
+	}
+	if len(buckets) != 0 || len(ungrouped) != 1 {
+		t.Errorf("unmatched namespace: buckets = %+v ungrouped = %+v, want none / [o.ics]",
+			buckets, ungrouped)
 	}
 }
 
@@ -299,10 +360,10 @@ func TestGroupNodesByNamespace_Coalesces(t *testing.T) {
 	if len(ungrouped) != 0 {
 		t.Fatalf("ungrouped = %+v, want none", ungrouped)
 	}
-	if len(buckets) != 1 || buckets[0].Value != "-client" {
-		t.Fatalf("buckets = %+v, want a single -client bucket", buckets)
+	if len(buckets) != 2 || buckets[0].Value != "project" || buckets[1].Value != "-client" {
+		t.Fatalf("buckets = %+v, want the root + a single -client bucket", buckets)
 	}
-	if lines := buckets[0].Lines; len(lines) != 1 || lines[0].ID != "multi.ics" {
+	if lines := buckets[1].Lines; len(lines) != 1 || lines[0].ID != "multi.ics" {
 		t.Errorf("-client lines = %+v, want the single multi.ics line (coalesced)", lines)
 	}
 }

@@ -1,4 +1,7 @@
 #! /usr/bin/env bats
+
+# TODO: priority atoms in boxes should use the same derived enum variants (not ints) as --group-by
+
 # shellcheck disable=SC2016  # the asserted messages quote spellings in backticks; no expansion intended
 
 # The organize group-by SPELLING lane (native tags slice 1 task 4; design G9 /
@@ -84,16 +87,18 @@ function organize_groupby_tags_whole_set { # @test
 	EOM
 }
 
-# G10 row 2: a bare name is a tag NAMESPACE (G9: bare is always a tag) — `project`
-# rolls the `project-*` hierarchy up to `# -client` / `# -cutting_garden`
-# continuation buckets, and `_group-by` persists the same bare spelling.
+# G10 row 2: a bare name is a tag NAMESPACE (G9: bare is always a tag) —
+# `project` renders the namespace ROOT as a top-level `# project` tag heading
+# (G10a) with the rollup continuations nested one deeper (`## -client` /
+# `## -cutting_garden`), and `_group-by` persists the same bare spelling. The
+# out-of-namespace nsD stays ungrouped ABOVE the root heading.
 function organize_groupby_namespace_rollup { # @test
   run_cg organize -group-by project "$NS"
   assert_success
   assert_output - <<-'EOM'
 	---
 	% generated: `cg organize -group-by project -query "_terminal=no" caldav:http://127.0.0.1:43108/dav/ns/`
-	- _base = @blake2b256-6fzl6h9uj8tgsh7a7f5lh50sm56y7celccdju4j4rzsu307r7urqwv595s
+	- _base = @blake2b256-rhnf5stu5kj2q58dcv2yfd064vnx0evjawug5xmjewr6x9mwru4qmcwc02
 	- _anchor = caldav:http://127.0.0.1:43108/dav/ns/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -103,12 +108,14 @@ function organize_groupby_namespace_rollup { # @test
 
 	- [nsD.ics] Loose idea
 
-	# -client
+	# project
+
+	## -client
 
 	- [nsA.ics] Acme retainer
 	- [nsB.ics] Baxter audit
 
-	# -cutting_garden
+	## -cutting_garden
 
 	- [nsC.ics] CG roadmap
 	EOM

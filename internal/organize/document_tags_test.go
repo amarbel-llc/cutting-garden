@@ -35,8 +35,10 @@ func tagWholeDoc() document {
 	}
 }
 
-// tagNamespaceDoc is a representative hoisted namespace-rollup document:
-// `_group-by = project` and `# -<segment>` rollup buckets.
+// tagNamespaceDoc is a representative hoisted namespace-rollup document (design
+// G10a): `_group-by = project`, the namespace ROOT as a top-level `# project`
+// tag heading — itself a live bucket, here holding one direct (bare-tag) line —
+// and the `## -<segment>` rollup continuations nested one deeper.
 func tagNamespaceDoc() document {
 	return document{
 		BaseDigest: "blake2b256-acdef9",
@@ -44,11 +46,12 @@ func tagNamespaceDoc() document {
 		Type:       "caldav-object-v1",
 		GroupBy:    "project",
 		Sections: []section{
-			{Depth: 1, Term: "-client", Lines: []objectLine{
+			{Depth: 1, Term: "project", Lines: []objectLine{{ID: "bare.ics", Desc: "Bare"}}},
+			{Depth: 2, Term: "-client", Lines: []objectLine{
 				{ID: "acme.ics", Desc: "Acme"},
 				{ID: "baxter.ics", Desc: "Baxter"},
 			}},
-			{Depth: 1, Term: "-cutting_garden", Lines: []objectLine{{ID: "cg.ics", Desc: "CG"}}},
+			{Depth: 2, Term: "-cutting_garden", Lines: []objectLine{{ID: "cg.ics", Desc: "CG"}}},
 		},
 	}
 }
@@ -78,21 +81,26 @@ func TestRenderTagWhole(t *testing.T) {
 	}
 }
 
-// TestRenderTagNamespace pins the namespace dialect: `_group-by = <namespace>`
-// and `# -<segment>` rollup buckets at depth 1, still no parent heading, still
-// no `=`.
+// TestRenderTagNamespace pins the namespace dialect (design G10a):
+// `_group-by = <namespace>`, the namespace ROOT as a top-level `# project` tag
+// heading with its direct (bare-tag) lines beneath it, and the `## -<segment>`
+// rollup continuations one deeper — still no `# categories=` dimension heading,
+// still no `=` value prefixes.
 func TestRenderTagNamespace(t *testing.T) {
 	out := render(tagNamespaceDoc())
 
 	if !strings.Contains(out, "- _group-by = project\n") {
 		t.Errorf("missing `- _group-by = project` directive:\n%s", out)
 	}
-	if strings.Contains(out, "# categories=") || strings.Contains(out, "# =") || strings.Contains(out, "\n##") {
-		t.Errorf("namespace grouping must be hoisted to depth-1 no-`=` buckets:\n%s", out)
+	if strings.Contains(out, "# categories=") || strings.Contains(out, "# =") || strings.Contains(out, "## =") {
+		t.Errorf("namespace grouping must be hoisted (no dimension heading, no `=` buckets):\n%s", out)
 	}
-	for _, want := range []string{"\n# -client\n", "\n# -cutting_garden\n"} {
+	if !strings.Contains(out, "\n# project\n\n- [bare.ics] Bare\n") {
+		t.Errorf("missing the `# project` root heading with its direct line:\n%s", out)
+	}
+	for _, want := range []string{"\n## -client\n", "\n## -cutting_garden\n"} {
 		if !strings.Contains(out, want) {
-			t.Errorf("missing rollup bucket %q:\n%s", want, out)
+			t.Errorf("missing nested rollup continuation %q:\n%s", want, out)
 		}
 	}
 }
@@ -149,11 +157,63 @@ func TestRoundTripTagWhole(t *testing.T) {
 	roundTripTagDoc(t, tagWholeDoc(), groupSpec{Kind: groupKindTagWhole})
 }
 
-// TestRoundTripTagNamespace pins the namespace round trip: the `-client`/
-// `-cutting_garden` rollup buckets and the `project` spec.
+// TestRoundTripTagNamespace pins the namespace round trip: the `# project` root
+// bucket (a direct bare-tag line), the nested `## -client`/`## -cutting_garden`
+// continuations, and the `project` spec — walkSectionValues' deepest-value-wins
+// gives the direct line the root value `project` and the nested lines their
+// continuation values.
 func TestRoundTripTagNamespace(t *testing.T) {
 	roundTripTagDoc(t, tagNamespaceDoc(),
 		groupSpec{Namespace: "project", Kind: groupKindTagNamespace})
+}
+
+// TestNamespaceResetPopsToRootBucket pins that resets COMPOSE with the G10a
+// ladder (native tags slice 1.5 A): a `##` reset under a continuation pops back
+// to the `# project` root heading, so the line that follows sits DIRECTLY under
+// the root — a bare-tag (`project`) membership — and an empty `#` pops all the
+// way to the ungrouped context (empty membership).
+func TestNamespaceResetPopsToRootBucket(t *testing.T) {
+	doc, err := parseDocument(strings.Join([]string{
+		"---",
+		"- _base = @blake2b256-acdef9",
+		"- _anchor = caldav://host/dav/cal/",
+		"- _type = !caldav-object-v1",
+		"- _group-by = project",
+		"! organize-base-v1",
+		"---",
+		"",
+		"# project",
+		"",
+		"## -client",
+		"",
+		"- [acme.ics] Acme",
+		"",
+		"##",
+		"",
+		"- [bare.ics] Bare",
+		"",
+		"#",
+		"",
+		"- [loose.ics] Loose",
+		"",
+	}, "\n"))
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+
+	m, err := doc.memberships(true)
+	if err != nil {
+		t.Fatalf("memberships: %v", err)
+	}
+	if v := m["acme.ics"]; len(v) != 1 || v[0] != "-client" {
+		t.Errorf("acme.ics memberships = %v, want [-client]", v)
+	}
+	if v := m["bare.ics"]; len(v) != 1 || v[0] != "project" {
+		t.Errorf("bare.ics memberships = %v, want [project] (## pops to the root bucket)", v)
+	}
+	if v, ok := m["loose.ics"]; !ok || len(v) != 0 {
+		t.Errorf("loose.ics memberships = %v (present %v), want present with empty set (# pops to ungrouped)", v, ok)
+	}
 }
 
 // TestParseSpaceBearingBucketValue pins the quoting scheme end to end: a
@@ -278,8 +338,9 @@ func TestBuildDocument_TagWhole(t *testing.T) {
 }
 
 // TestBuildDocument_TagNamespace pins the namespace grouping through the
-// dodder-hyphen interpreter: `# -client` / `# -cutting_garden` rollup buckets
-// and the `project` encoding.
+// dodder-hyphen interpreter (design G10a): the `# project` root heading with the
+// nested `## -client` / `## -cutting_garden` rollup continuations and the
+// `project` encoding.
 func TestBuildDocument_TagNamespace(t *testing.T) {
 	interp, ok := cgp.LookupTagInterpreter("dodder-hyphen")
 	if !ok {
@@ -305,9 +366,14 @@ func TestBuildDocument_TagNamespace(t *testing.T) {
 	if doc.GroupBy != "project" {
 		t.Errorf("GroupBy = %q, want project", doc.GroupBy)
 	}
-	if len(doc.Sections) != 2 ||
-		doc.Sections[0].Term != "-client" || doc.Sections[1].Term != "-cutting_garden" {
-		t.Fatalf("sections = %+v, want [-client -cutting_garden]", doc.Sections)
+	if len(doc.Sections) != 3 ||
+		doc.Sections[0].Term != "project" || doc.Sections[0].Depth != 1 ||
+		doc.Sections[1].Term != "-client" || doc.Sections[1].Depth != 2 ||
+		doc.Sections[2].Term != "-cutting_garden" || doc.Sections[2].Depth != 2 {
+		t.Fatalf("sections = %+v, want [project@1 -client@2 -cutting_garden@2]", doc.Sections)
+	}
+	if len(doc.Sections[0].Lines) != 0 {
+		t.Errorf("root section lines = %+v, want none (no bare `project` tag)", doc.Sections[0].Lines)
 	}
 }
 

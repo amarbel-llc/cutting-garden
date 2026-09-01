@@ -115,7 +115,7 @@ document — the exact bytes presented to and edited by the end-user:
   | spelling | meaning | persisted as |
   |---|---|---|
   | `(tags)` | the type's whole tag set (one bucket per tag) | `- _group-by = (tags)`; buckets `# <tag>` |
-  | `project` | tag namespace `project` (bare = tag; `project-client` drills deeper) | `- _group-by = project`; buckets `# -client` |
+  | `project` | tag namespace `project` (bare = tag; `project-client` drills deeper) | `- _group-by = project`; root `# project`, buckets `## -client` |
   | `status=` | field grouping | heading `# status=`; buckets `## =<value>` |
   | `date_due=(month)` | date field at month granularity (`year`/`month`/`day`; bare `date_due=` resolves `[organize] date_granularity`, then day) | heading `# date_due=(month)` |
 
@@ -143,7 +143,18 @@ document — the exact bytes presented to and edited by the end-user:
   whitespace or a reserved rune is quoted as a trellis String (`# "_ inbox"`)
   so it stays on one physical line, and the parser unquotes it. An object
   appears under one `# <tag>` heading per tag it carries (multi-membership). A
-  namespace rollup buckets by segment prefix (`# -client`, `# -cutting_garden`):
+  namespace rollup (native tags design G10a) renders the namespace ROOT as a
+  real top-level tag heading with the rollup continuations nested one deeper —
+  `# project` / `## -client` / `## -cutting_garden` — the ladder IS the tag
+  hierarchy (future drill-down nests deeper: `### -acme`). The root heading is
+  itself a LIVE bucket: an object placed DIRECTLY under it (not under any
+  continuation) carries the BARE namespace tag — its membership write
+  reconstructs exactly `project`, and leaving the root bucket removes the bare
+  tag only (the deeper `project-*` tags realize the continuation buckets, whose
+  removal — the whole realizing subtree — is governed by their own rows).
+  Ungrouped (out-of-namespace) objects stay ABOVE the root heading, and
+  placement composes with resets (§Empty headings): a `##` under a continuation
+  pops to the root = bare-tag membership; an empty `#` pops to ungrouped:
 
   ```
   ---
@@ -154,9 +165,11 @@ document — the exact bytes presented to and edited by the end-user:
   ! organize-base-v1
   ---
 
-  # -client
+  # project
+  - [bare.ics] Bare
+  ## -client
   - [acme.ics] Acme
-  # -cutting_garden
+  ## -cutting_garden
   - [cg.ics] CG
   ```
 - **Heading depth is structure-only (native tags design G10).** A heading's
@@ -164,9 +177,11 @@ document — the exact bytes presented to and edited by the end-user:
   shallowest level present in the body as the root and reads deeper levels
   relative to it, so a hand-written document starting at `##` MUST parse
   identically to the same document starting at `#`. Generation (and
-  `fmt-organize`) MUST emit minimal depth: a tag grouping's buckets at `#`
-  (`# work`, `# -client`), a field grouping's `# <dim>=` / `## =<value>`, and a
-  spelling-1 document one level deeper under its `# !<type>`.
+  `fmt-organize`) MUST emit minimal depth: a whole-dimension tag grouping's
+  buckets at `#` (`# work`), a namespace grouping's root at `#` with its
+  continuations at `##` (`# project` / `## -client`, G10a), a field grouping's
+  `# <dim>=` / `## =<value>`, and a spelling-1 document one level deeper under
+  its `# !<type>`.
 - **Empty headings are context resets.** A heading with no text at depth N
   (`#`, `##`, … after normalization) pops the heading context at N and deeper:
   the object lines that follow fall under the nearest enclosing heading

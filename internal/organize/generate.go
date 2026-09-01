@@ -193,13 +193,18 @@ func groupForSpec(
 
 // sectionsForSpec renders a grouping's buckets in the dialect the spec selects: a
 // FIELD grouping keeps the `<spec>=` heading + `## =<value>` buckets
-// (dimensionSections); a TAG grouping is hoisted to bare `# <value>` buckets
-// with no parent heading (tagDimensionSections).
+// (dimensionSections); a whole-dimension TAG grouping is hoisted to bare
+// `# <value>` buckets with no parent heading (tagDimensionSections); a namespace
+// grouping renders the G10a root-heading ladder (namespaceSections).
 func sectionsForSpec(spec groupSpec, buckets []bucket, baseDepth int) []section {
-	if spec.Kind == groupKindField {
+	switch spec.Kind {
+	case groupKindField:
 		return dimensionSections(spec, buckets, baseDepth)
+	case groupKindTagNamespace:
+		return namespaceSections(buckets, baseDepth)
+	default:
+		return tagDimensionSections(buckets, baseDepth)
 	}
-	return tagDimensionSections(buckets, baseDepth)
 }
 
 // describedFacets probes the plugin's declared facet schema, nil for a plugin
@@ -305,6 +310,31 @@ func tagDimensionSections(buckets []bucket, baseDepth int) []section {
 	for _, bk := range buckets {
 		secs = append(secs, section{
 			Depth: baseDepth, Term: trellis.QuoteIfNeeded(bk.Value), Lines: bk.Lines,
+		})
+	}
+	return secs
+}
+
+// namespaceSections renders a namespace grouping's G10a ladder: the namespace
+// ROOT as a real top-level tag heading with the rollup continuations nested one
+// deeper — `# project` / `## -client` / `## -cutting_garden` — the ladder IS the
+// tag hierarchy. buckets[0] is the root bucket groupNodesByNamespace always
+// synthesizes (Value == the namespace, Lines the objects carrying the BARE
+// namespace tag, which render directly under the root heading); the
+// continuations follow at baseDepth+1. Like the whole-dimension dialect the
+// grouping's spelling lives in the `_group-by` envelope directive, values quote
+// as trellis Strings when needed, and depth stays minimal for spelling 2
+// (baseDepth 1) while spelling 1 nests the whole ladder one deeper under its
+// `# !<type>`.
+func namespaceSections(buckets []bucket, baseDepth int) []section {
+	secs := make([]section, 0, len(buckets))
+	for i, bk := range buckets {
+		depth := baseDepth + 1
+		if i == 0 {
+			depth = baseDepth
+		}
+		secs = append(secs, section{
+			Depth: depth, Term: trellis.QuoteIfNeeded(bk.Value), Lines: bk.Lines,
 		})
 	}
 	return secs

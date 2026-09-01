@@ -1,19 +1,22 @@
 #! /usr/bin/env bats
 
 # The organize namespace-rollup grouping lane (RFC 0019 tags slice 3 B5,
-# cutting-garden#231): `--group-by project` groups the caldav `categories` tag
-# dimension by the `project` NAMESPACE (dodder-hyphen segment hierarchy),
-# rendering the HOISTED continuation-heading dialect — a `- _group-by =
-# project` envelope directive (the SAME bare spelling as the flag, design G10),
-# NO `# categories=` parent heading, and rollup buckets `# -client` /
-# `# -cutting_garden` (bare, no `=`). Each task
-# rolls up to its immediate segment under `project`: nsA/nsB (project-client-*)
-# to `-client`, nsC (project-cutting_garden) to `-cutting_garden`, while nsD
-# (`other`, not under project) lands ungrouped above the first heading. Moving a
-# task between rollup buckets REWRITES its CATEGORIES to the reconstructed
-# namespace tag through the caldav full-set membership write (B4): the object
-# loses every tag under the old bucket's namespace path and gains the new
-# bucket's namespace tag.
+# cutting-garden#231; G10a root heading, native tags slice 1.5 A): `--group-by
+# project` groups the caldav `categories` tag dimension by the `project`
+# NAMESPACE (dodder-hyphen segment hierarchy), rendering the HOISTED dialect —
+# a `- _group-by = project` envelope directive (the SAME bare spelling as the
+# flag, design G10), NO `# categories=` parent heading, the namespace ROOT as a
+# top-level `# project` tag heading, and the rollup continuations nested one
+# deeper (`## -client` / `## -cutting_garden`). Each task rolls up to its
+# immediate segment under `project`: nsA/nsB (project-client-*) to `-client`,
+# nsC (project-cutting_garden) to `-cutting_garden`, while nsD (`other`, not
+# under project) lands ungrouped ABOVE the root heading. Moving a task between
+# rollup buckets REWRITES its CATEGORIES to the reconstructed namespace tag
+# through the caldav full-set membership write (B4): the object loses every tag
+# under the old bucket's namespace path and gains the new bucket's namespace
+# tag. The root heading is itself a LIVE bucket (G10a): a line placed DIRECTLY
+# under `# project` carries the BARE tag `project` (reconstruction is exactly
+# `project`; out-of-namespace tags are untouched).
 #
 # Namespace grouping REQUIRES an interpreter that declares namespaces. The caldav
 # categories field defaults to `naive` (exact-match, no namespaces), which
@@ -60,17 +63,18 @@ teardown() {
 # bats file_tags=organize
 
 # generate_grouped runs `organize -group-by project` and asserts the document in
-# full: the hoisted dialect (a `- _group-by = project` envelope
-# directive, no `# categories=` parent heading, bare `# -<segment>` rollup
-# buckets), the out-of-namespace nsD ungrouped above the first heading, nsA + nsB
-# coalesced under `-client`, and nsC under `-cutting_garden`.
+# full: the hoisted G10a dialect (a `- _group-by = project` envelope directive,
+# no `# categories=` parent heading, the `# project` root heading with nested
+# `## -<segment>` rollup continuations), the out-of-namespace nsD ungrouped
+# above the root heading, nsA + nsB coalesced under `-client`, and nsC under
+# `-cutting_garden`.
 generate_grouped() {
   run_cg organize -group-by project "$CAL"
   assert_success
   assert_output - <<-'EOM'
 	---
 	% generated: `cg organize -group-by project -query "_terminal=no" caldav:http://127.0.0.1:43103/dav/ns/`
-	- _base = @blake2b256-pkfjs5lmjf9afnp2w9jwumnrwsg88ju0ch3daqzs4lcnrk5nt23sg2hkxu
+	- _base = @blake2b256-gqf8sncxct6jgfpda9zzf5r7pktxzunq4nz9vzg2uwjfqmr9zh5qx907va
 	- _anchor = caldav:http://127.0.0.1:43103/dav/ns/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -80,28 +84,32 @@ generate_grouped() {
 
 	- [nsD.ics] Loose idea
 
-	# -client
+	# project
+
+	## -client
 
 	- [nsA.ics] Acme retainer
 	- [nsB.ics] Baxter audit
 
-	# -cutting_garden
+	## -cutting_garden
 
 	- [nsC.ics] CG roadmap
 	EOM
 }
 
-# Grouping by the `project` namespace hoists the dialect: a `- _group-by =
-# project` envelope directive (the SAME bare spelling as the flag, design G10),
-# NO `# categories=` parent heading, and bare `# -<segment>` rollup buckets. project-client-* tasks (nsA, nsB) coalesce
-# under `-client`; project-cutting_garden (nsC) lands under `-cutting_garden`; the
-# out-of-namespace `other` task (nsD) is ungrouped above the first heading.
+# Grouping by the `project` namespace hoists the dialect (G10/G10a): a
+# `- _group-by = project` envelope directive (the SAME bare spelling as the
+# flag), NO `# categories=` parent heading, the namespace root as a top-level
+# `# project` tag heading, and the rollup continuations nested one deeper.
+# project-client-* tasks (nsA, nsB) coalesce under `## -client`;
+# project-cutting_garden (nsC) lands under `## -cutting_garden`; the
+# out-of-namespace `other` task (nsD) is ungrouped above the root heading.
 function organize_ns_namespace_rollup_render { # @test
   generate_grouped
 }
 
-# The rollup write-back tracer (B4): move nsA from `# -client` to
-# `# -cutting_garden` and commit. planMemberships enumerates nsA's live tags
+# The rollup write-back tracer (B4): move nsA from `## -client` to
+# `## -cutting_garden` and commit. planMemberships enumerates nsA's live tags
 # under the old bucket's namespace path (project-client → removes
 # project-client-acme) and reconstructs the new bucket's namespace tag (project +
 # -cutting_garden → adds project-cutting_garden), then the caldav full-set write
@@ -115,7 +123,7 @@ function organize_ns_rollup_move_writes_reconstructed_tag { # @test
   cat >"$edited" <<-'EOM'
 	---
 	% generated: `cg organize -group-by project -query "_terminal=no" caldav:http://127.0.0.1:43103/dav/ns/`
-	- _base = @blake2b256-pkfjs5lmjf9afnp2w9jwumnrwsg88ju0ch3daqzs4lcnrk5nt23sg2hkxu
+	- _base = @blake2b256-gqf8sncxct6jgfpda9zzf5r7pktxzunq4nz9vzg2uwjfqmr9zh5qx907va
 	- _anchor = caldav:http://127.0.0.1:43103/dav/ns/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -125,11 +133,13 @@ function organize_ns_rollup_move_writes_reconstructed_tag { # @test
 
 	- [nsD.ics] Loose idea
 
-	# -client
+	# project
+
+	## -client
 
 	- [nsB.ics] Baxter audit
 
-	# -cutting_garden
+	## -cutting_garden
 
 	- [nsA.ics] Acme retainer
 	- [nsC.ics] CG roadmap
@@ -157,7 +167,7 @@ EOF
   assert_output - <<-'EOM'
 	---
 	% generated: `cg organize -group-by project -query "_terminal=no" caldav:http://127.0.0.1:43103/dav/ns/`
-	- _base = @blake2b256-2pa4ujaeyqgcp7f5ec4xkmxvhzenw24q4ey9y8rcjj4fdmdeezxqfm7e4m
+	- _base = @blake2b256-u9a0zdrxghelhd7wxk3g856uvvjc6dcydpq9pnjvpsquwmrukyws729xp4
 	- _anchor = caldav:http://127.0.0.1:43103/dav/ns/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -167,13 +177,96 @@ EOF
 
 	- [nsD.ics] Loose idea
 
-	# -client
+	# project
+
+	## -client
 
 	- [nsB.ics] Baxter audit
 
-	# -cutting_garden
+	## -cutting_garden
 
 	- [nsA.ics] Acme retainer
+	- [nsC.ics] CG roadmap
+	EOM
+}
+
+# The G10a direct-under-root tracer (native tags slice 1.5 A): move nsD's line
+# from the ungrouped set to DIRECTLY under the `# project` root heading and
+# commit. The root heading is a live tag bucket whose reconstruction is exactly
+# the BARE namespace tag, so planMemberships adds `project` to nsD's live tag
+# set — its out-of-namespace `other` tag is untouched (the ns document never
+# shows it, and namespace scoping only edits tags the document governs) — and
+# the caldav full-set write serializes both as one comma-joined CATEGORIES.
+# The re-rendered document shows nsD under `# project` (direct root placement,
+# above the continuations) and no longer ungrouped.
+function organize_ns_direct_root_placement_writes_bare_tag { # @test
+  generate_grouped
+  local edited="$BATS_TEST_TMPDIR/edited.txt"
+  cat >"$edited" <<-'EOM'
+	---
+	% generated: `cg organize -group-by project -query "_terminal=no" caldav:http://127.0.0.1:43103/dav/ns/`
+	- _base = @blake2b256-gqf8sncxct6jgfpda9zzf5r7pktxzunq4nz9vzg2uwjfqmr9zh5qx907va
+	- _anchor = caldav:http://127.0.0.1:43103/dav/ns/
+	- _query = _terminal=no
+	- _type = !caldav-object-vtodo-v1
+	- _group-by = project
+	! organize-base-v1
+	---
+
+	# project
+
+	- [nsD.ics] Loose idea
+
+	## -client
+
+	- [nsA.ics] Acme retainer
+	- [nsB.ics] Baxter audit
+
+	## -cutting_garden
+
+	- [nsC.ics] CG roadmap
+	EOM
+
+  run_cg organize -apply "$edited" -commit
+  assert_success
+  assert_output - <<'EOF'
+organize: 1 change(s):
+
+  - [nsD.ics  categories=[-other-]{+other,project+}]
+
+organize: wrote 1 change(s)
+EOF
+
+  # The membership write ADDED the bare namespace tag `project`; the
+  # out-of-namespace `other` survives on the same comma-joined CATEGORIES line.
+  run curl -fsS "${CALDAV_SOURCE#caldav:}ns/nsD.ics"
+  assert_success
+  assert_output --partial 'CATEGORIES:other,project'
+
+  run_cg organize -group-by project "$CAL"
+  assert_success
+  assert_output - <<-'EOM'
+	---
+	% generated: `cg organize -group-by project -query "_terminal=no" caldav:http://127.0.0.1:43103/dav/ns/`
+	- _base = @blake2b256-99puthjwcd9nhv8f4xakufjty35eftpcwxp0gakus5whz4d9lgrs64qhd0
+	- _anchor = caldav:http://127.0.0.1:43103/dav/ns/
+	- _query = _terminal=no
+	- _type = !caldav-object-vtodo-v1
+	- _group-by = project
+	! organize-base-v1
+	---
+
+	# project
+
+	- [nsD.ics] Loose idea
+
+	## -client
+
+	- [nsA.ics] Acme retainer
+	- [nsB.ics] Baxter audit
+
+	## -cutting_garden
+
 	- [nsC.ics] CG roadmap
 	EOM
 }
