@@ -285,7 +285,9 @@ function organize_ns_naive_rejects_namespace_grouping { # @test
 	EOF
 
   run_cg organize -group-by project "$CAL"
-  assert_failure
+  # 64 = EX_USAGE: a namespace grouping under an incapable interpreter is the
+  # caller's (config's) mistake, not "trouble".
+  assert_failure 64
   # The rejection line is the WHOLE output — it names the grouping, the
   # dimension, the resolved interpreter, and the [tags] fix.
   assert_output 'cutting-garden: organize: namespace grouping (--group-by project) needs a tag interpreter that declares namespaces, but dimension "categories" uses the "naive" interpreter; set [tags] interpreter = dodder-hyphen'

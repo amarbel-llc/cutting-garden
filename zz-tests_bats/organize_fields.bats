@@ -353,6 +353,8 @@ organize: 1 change(s):
 organize: wrote 1 change(s)
 EOF
 
+  # Exact full line (the rewritten body is CRLF-serialized with a volatile
+  # DTSTAMP, so the whole body cannot be pinned).
   run curl -fsS "${CALDAV_SOURCE#caldav:}fields/field5.ics"
   assert_success
   assert_line --regexp $'^STATUS:NEEDS-ACTION\r?$'

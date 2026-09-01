@@ -229,7 +229,10 @@ function list_facets_date_filter_prefix_matches { # @test
   # Exact full rows for every stable dimension. The fifth row, due_band, is
   # computed against the wall clock (a fixture DUE drifts from later to
   # overdue as real time passes), so it is the one line that cannot be
-  # pinned; everything else is asserted whole.
+  # pinned; everything else is asserted whole, and the row count proves the
+  # volatile line is not hiding an extra row.
+  # shellcheck disable=SC2154  # $lines is populated by bats' `run` (via run_cg)
+  assert_equal "${#lines[@]}" 5
   assert_line 'component  VTODO 2'
   assert_line 'date_due   2026-08 1  2026-09 1'
   assert_line 'priority   3_unspecified 2'
@@ -237,6 +240,8 @@ function list_facets_date_filter_prefix_matches { # @test
 
   run_cg list -facets -filter 'date_due=2026-08' "$CAL"
   assert_success
+  # Same five rows here — four pinned whole, due_band covered by the count.
+  assert_equal "${#lines[@]}" 5
   assert_line 'component  VTODO 1'
   assert_line 'date_due   2026-08 1'
   assert_line 'priority   3_unspecified 1'
@@ -246,6 +251,8 @@ function list_facets_date_filter_prefix_matches { # @test
   refute_output --partial '2026-09'
 
   run_cg list -facets -filter 'date_due=aug' "$CAL"
-  assert_failure
+  # Exit 2 ("trouble"), not 64: the filter-shape rejection is not classified
+  # as a bad request today — this pins the current behavior.
+  assert_failure 2
   assert_output 'cutting-garden: filter value "aug" is not a date bucket for dimension "date_due"; expected YYYY, YYYY-MM, or YYYY-MM-DD'
 }
