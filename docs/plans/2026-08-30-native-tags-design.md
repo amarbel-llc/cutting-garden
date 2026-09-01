@@ -149,6 +149,18 @@ replace `categories`, `categories/project`, and `date_due:month=`.
 `#`; the parser stays structure-only (`#`-depth + text), generate/fmt emit
 minimal depth.
 
+**G10a (2026-09-01 UAT amendment — supersedes the T5 rendering for namespace
+groupings):** a namespace grouping renders the namespace ROOT as a real
+top-level tag heading with the continuations nested one deeper — `# project` /
+`## -client` / `## -cutting_garden` — the ladder IS the tag hierarchy (future
+drill-down nests deeper: `### -acme`). An object placed DIRECTLY under the root
+heading (not under any continuation) carries the BARE namespace tag
+(`project`) — the parent heading is the namespace tag itself and continuations
+extend it, so placement semantics compose with resets (`##` pops to the root =
+bare-tag membership; `#`+empty pops to ungrouped). `_group-by = <ns>` stays in
+the envelope unchanged (the heading alone is a tag term, not self-describing).
+Whole-dimension `(tags)` grouping is unchanged (`# <tag>` buckets, no parent).
+
 **Empty headings are resets**: an empty heading at depth N pops the heading
 context at N and deeper, leaving subsequent object lines under the depth N−1
 context (`#` alone returns to the ungrouped context). A reset deeper than the
