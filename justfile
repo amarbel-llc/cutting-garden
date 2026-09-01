@@ -733,7 +733,7 @@ debug-organize-vectors:
     start_srv 43101
     cal="${home}cal/"
     gen organize-generate "$cal" 'status='
-    move_line .tmp/organize-vectors-organize-generate.txt '## =COMPLETED' '^- .task1.ics'
+    move_line .tmp/organize-vectors-organize-generate.txt '## =completed' '^- .task1.ics'
     apply_doc organize .tmp/organize-vectors-organize-generate.txt.edited
     gen organize-after "$cal" 'status='
     stop_srv
@@ -853,7 +853,7 @@ debug-organize-vectors:
     gen headings-generate "$cal" '(tags)'
     with_body "$hd" "$hd.double" <<-'EOM'
 
-    	- [field1.ics location=Bank status=NEEDS-ACTION priority=0_must] Pay rent
+    	- [field1.ics location=Bank status=needs-action priority=0_must] Pay rent
     	- [field4.ics] Someday idea
 
     	## errand
@@ -881,7 +881,7 @@ debug-organize-vectors:
 
     	##
 
-    	- [field1.ics location=Bank status=NEEDS-ACTION priority=0_must] Pay rent
+    	- [field1.ics location=Bank status=needs-action priority=0_must] Pay rent
 
     	#
 
@@ -893,7 +893,7 @@ debug-organize-vectors:
     start_srv 43109 CG_TEST_CALDAV_FIELDS=1
     with_body "$hd" "$hd.noop" <<-'EOM'
 
-    	- [field1.ics location=Bank status=NEEDS-ACTION priority=0_must] Pay rent
+    	- [field1.ics location=Bank status=needs-action priority=0_must] Pay rent
 
     	# errand
 
@@ -981,7 +981,7 @@ debug-organize-live CAL='' GROUP_BY='status=': debug-build-go
 #
 # dry-run --apply against a live Fastmail calendar (no writes)
 [group('debug')]
-debug-organize-live-apply CAL='zz-ax-vtodo-playground' GROUP_BY='status=' VALUE='COMPLETED': debug-build-go
+debug-organize-live-apply CAL='zz-ax-vtodo-playground' GROUP_BY='status=' VALUE='completed': debug-build-go
     #!/usr/bin/env bash
     set -euo pipefail
     set +x

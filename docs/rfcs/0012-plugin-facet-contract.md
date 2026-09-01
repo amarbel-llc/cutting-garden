@@ -163,6 +163,12 @@ type FacetDimension struct {
     // Multi is true when one node contributes several values (categories,
     // tags). false means at most one value per node.
     Multi bool
+    // FoldCase declares the dimension CASE-INSENSITIVE for matching (§6): a
+    // filter predicate against it compares both sides folded, and the
+    // closed-domain validation folds too. The dimension's values stay
+    // whatever the plugin emits (its presented domain); FoldCase only widens
+    // matching, never rewrites data.
+    FoldCase bool
     // Values, when non-nil, declares a CLOSED domain: the complete set of
     // values this dimension can take, known up front (read/unread, a boolean).
     // nil means an OPEN domain whose values are discovered at enumeration
@@ -342,6 +348,14 @@ negation are out of scope (compose successive reads). Repeating a dimension is
 RESERVED (a future within-axis "or"); until specified, a consumer MUST reject a
 filter that names the same dimension twice. A predicate naming an undeclared
 dimension MUST be rejected as a usage error.
+
+**Case folding.** A predicate against a dimension declaring `FoldCase` (§2)
+MUST compare case-insensitively — both sides folded — so `status=COMPLETED`
+and `status=completed` match the same nodes; the closed-domain validation
+below MUST fold identically. Every other dimension compares exactly. Which
+casing the dimension's VALUES carry is the plugin's presentation decision
+(caldav emits its case-fold codec's lowercase, FDR 0025); FoldCase governs
+only matching.
 
 **Filter validation.** A `FacetFilter` MUST be validated against the
 resolved node type's declared schema (§2) before it is applied to either a

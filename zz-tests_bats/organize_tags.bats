@@ -55,7 +55,7 @@ generate_grouped() {
   assert_output - <<-'EOM'
 	---
 	% generated: `cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:43102/dav/fields/`
-	- _base = @blake2b256-qk73p25uk92x5s8l7t0wgp0c9q9m8yd2vqtusuy437c58hxfkm0se6eh48
+	- _base = @blake2b256-7y6ff2ljzv8tp0p7jr7p8224kpcvlyvf3czxpkka0mac29d9lhqsgzqezy
 	- _anchor = caldav:http://127.0.0.1:43102/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -63,7 +63,7 @@ generate_grouped() {
 	! organize-base-v1
 	---
 
-	- [field1.ics location=Bank status=NEEDS-ACTION priority=0_must] Pay rent
+	- [field1.ics location=Bank status=needs-action priority=0_must] Pay rent
 	- [field4.ics] Someday idea
 
 	# errand
@@ -115,7 +115,7 @@ function organize_categories_apply_writes { # @test
   cat >"$edited" <<-'EOM'
 	---
 	% generated: `cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:43102/dav/fields/`
-	- _base = @blake2b256-qk73p25uk92x5s8l7t0wgp0c9q9m8yd2vqtusuy437c58hxfkm0se6eh48
+	- _base = @blake2b256-7y6ff2ljzv8tp0p7jr7p8224kpcvlyvf3czxpkka0mac29d9lhqsgzqezy
 	- _anchor = caldav:http://127.0.0.1:43102/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -123,7 +123,7 @@ function organize_categories_apply_writes { # @test
 	! organize-base-v1
 	---
 
-	- [field1.ics location=Bank status=NEEDS-ACTION priority=0_must] Pay rent
+	- [field1.ics location=Bank status=needs-action priority=0_must] Pay rent
 	- [field4.ics] Someday idea
 
 	# errand
@@ -154,7 +154,7 @@ EOF
   assert_output - <<-'EOM'
 	---
 	% generated: `cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:43102/dav/fields/`
-	- _base = @blake2b256-yp37tvxqch0ra6kapyhamu7x49432zhjz5pee7xxcfmd2a7nwmzslywmft
+	- _base = @blake2b256-3we8a4l96w0yrzjwh6kwyxt5ekqmqzkhv70nf8garlnemjvedpesft7wrx
 	- _anchor = caldav:http://127.0.0.1:43102/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -162,7 +162,7 @@ EOF
 	! organize-base-v1
 	---
 
-	- [field1.ics location=Bank status=NEEDS-ACTION priority=0_must] Pay rent
+	- [field1.ics location=Bank status=needs-action priority=0_must] Pay rent
 	- [field4.ics] Someday idea
 
 	# errand

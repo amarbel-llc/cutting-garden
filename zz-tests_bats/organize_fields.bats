@@ -50,7 +50,7 @@ generate_fields() {
   assert_output - <<-'EOM'
 	---
 	% generated: `cg organize -group-by priority= -query "_terminal=no" caldav:http://127.0.0.1:43106/dav/fields/`
-	- _base = @blake2b256-asj0sjmsx4gf22wp0g6qtedyqmegwsvecfc76m9m47ldcs3pgndsyw9rnz
+	- _base = @blake2b256-rfwztad4mvg7jxs8w8jynwstdsaknut0m0wcp86js47m3t5vs5rsyhxy7v
 	- _anchor = caldav:http://127.0.0.1:43106/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -61,7 +61,7 @@ generate_fields() {
 
 	## =0_must
 
-	- [field1.ics location=Bank status=NEEDS-ACTION] Pay rent
+	- [field1.ics location=Bank status=needs-action] Pay rent
 
 	## =1_should
 
@@ -84,7 +84,7 @@ write_field1_edited() {
   cat >"$out" <<-EOM
 	---
 	% generated: \`cg organize -group-by priority= -query "_terminal=no" caldav:http://127.0.0.1:43106/dav/fields/\`
-	- _base = @blake2b256-asj0sjmsx4gf22wp0g6qtedyqmegwsvecfc76m9m47ldcs3pgndsyw9rnz
+	- _base = @blake2b256-rfwztad4mvg7jxs8w8jynwstdsaknut0m0wcp86js47m3t5vs5rsyhxy7v
 	- _anchor = caldav:http://127.0.0.1:43106/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -120,7 +120,7 @@ assert_field1_office() {
   assert_output - <<-'EOM'
 	---
 	% generated: `cg organize -group-by priority= -query "_terminal=no" caldav:http://127.0.0.1:43106/dav/fields/`
-	- _base = @blake2b256-7kxhlwadnnahxj7ua5h7n4qkypqw92jytgz4kzrpk6m2xsfwmpus2rgzvk
+	- _base = @blake2b256-gj9eu8878z63fxhmex7ktrhqnqagevy48kq6ceslqachzhelnxkql3y78k
 	- _anchor = caldav:http://127.0.0.1:43106/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -131,7 +131,7 @@ assert_field1_office() {
 
 	## =0_must
 
-	- [field1.ics location=Office status=NEEDS-ACTION] Pay rent
+	- [field1.ics location=Office status=needs-action] Pay rent
 
 	## =1_should
 
@@ -153,7 +153,7 @@ assert_field1_office() {
 function organize_fields_location_edit_writes { # @test
   generate_fields
   local edited="$BATS_TEST_TMPDIR/edited.txt"
-  write_field1_edited '- [field1.ics location=Office status=NEEDS-ACTION] Pay rent' "$edited"
+  write_field1_edited '- [field1.ics location=Office status=needs-action] Pay rent' "$edited"
 
   run_cg organize -apply "$edited" -commit
   assert_success
@@ -178,7 +178,7 @@ EOF
 function organize_fields_summary_trailer_edit_writes { # @test
   generate_fields
   local edited="$BATS_TEST_TMPDIR/edited.txt"
-  write_field1_edited '- [field1.ics location=Bank status=NEEDS-ACTION] Pay rent now' "$edited"
+  write_field1_edited '- [field1.ics location=Bank status=needs-action] Pay rent now' "$edited"
 
   run_cg organize -apply "$edited" -commit
   assert_success
@@ -199,7 +199,7 @@ EOF
   assert_output - <<-'EOM'
 	---
 	% generated: `cg organize -group-by priority= -query "_terminal=no" caldav:http://127.0.0.1:43106/dav/fields/`
-	- _base = @blake2b256-m0f8aelklts3nm2yetw5g3gyw3wc7thw2zcvlhrxnk3ddk20etwsnn5x3q
+	- _base = @blake2b256-gzj9cw0wl3e94we7xsml88euh7j6e0yc0kmlf9tvrhmndx95ydwqk9sfds
 	- _anchor = caldav:http://127.0.0.1:43106/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -210,7 +210,7 @@ EOF
 
 	## =0_must
 
-	- [field1.ics location=Bank status=NEEDS-ACTION] Pay rent now
+	- [field1.ics location=Bank status=needs-action] Pay rent now
 
 	## =1_should
 
@@ -233,12 +233,12 @@ EOF
 function organize_fields_conflict_rejects { # @test
   generate_fields
   local edited_a="$BATS_TEST_TMPDIR/edited_a.txt"
-  write_field1_edited '- [field1.ics location=Office status=NEEDS-ACTION] Pay rent' "$edited_a"
+  write_field1_edited '- [field1.ics location=Office status=needs-action] Pay rent' "$edited_a"
   run_cg organize -apply "$edited_a" -commit
   assert_success
 
   local edited_b="$BATS_TEST_TMPDIR/edited_b.txt"
-  write_field1_edited '- [field1.ics location=Warehouse status=NEEDS-ACTION] Pay rent' "$edited_b"
+  write_field1_edited '- [field1.ics location=Warehouse status=needs-action] Pay rent' "$edited_b"
   run_cg organize -apply "$edited_b" -commit
   assert_failure
   assert_output --partial 'conflict'

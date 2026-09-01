@@ -268,7 +268,7 @@ intentionally plugin-side counting.
 
 | Field kind | Example | Present (atom) | Groupable (heading) | Write |
 |---|---|---|---|---|
-| categorical | `status` | ✅ IdentityCodec | ✅ same field, `Groupable` | field ✅ · bucket ✅ |
+| categorical | `status` | ✅ caseFoldCodec (presents lowercase; slice 1.5 E) | ✅ same field, `Groupable` + `FoldCase` | field ✅ · bucket ✅ (`Parse` folds up to canonical uppercase) |
 | numeric-bucket (band) | `priority` | ✅ priorityCodec (band atom — `0_must`, not the raw int; slice 1.5 D) | ✅ same codec, band `Values` | field ✅ (band completes to int; a raw-int edit writes verbatim) · band ✅ (`Parse` completes band→int) |
 | date | `dtstart`/`due`/`dtend` | ✅ dateCodec (split) | ✅ same date codec, prefix-granular (`FacetDate`: `date_start`/`date_due`) | field ✅ (splice) · bucket ✅ (`Parse` shape-dispatches year/month/day splices) |
 | date (volatile) | `due_band` | — | ✅ facetOnlyCodec + `RevalidateAfter` | — (read-only, declared write:none) |
@@ -364,6 +364,31 @@ vector on a pinned testserver port; the nvim corpus mirrors the vectors. The
 buckets are `# <tag>`). Key-free tag atoms in boxes (rendering the tag set from
 data, `_tag-atoms` / `_tag-strip`, atom edits → memberships) are slice 2;
 `fmt-organize` slice 3; `list -format espalier` / JSON `tags` slice 4.
+
+### Case-fold status — delivered (2026-09-01, native tags slice 1.5 E)
+
+The model's named case-fold codec landed as caldav's plugin-local
+`caseFoldCodec` (`plugins/caldav/unified.go`), replacing status's
+IdentityCodec: `Format` presents the stored STATUS lowercased
+(`needs-action`, `completed`) and `Parse` folds EVERY write path — a field
+edit and a bucket move both — UP to canonical RFC 5545 uppercase, so
+lowercase is never persisted. An observed out-of-enum stored value still
+presents (lowercased) and round-trips to ITS uppercase. The SDK deliberately
+gained no shared `CaseFoldCodec` (build only what's consumed); what it DID
+gain is the **matching rule**: `UnifiedField.FoldCase` flows into the derived
+`FacetDimension.FoldCase`, and every framework matching surface folds BOTH
+sides for such a dimension — `FacetPredicate.matches` (armed by
+`FacetFilter.Validate`, which also folds its closed-domain containment
+check), `ParseUnifiedBucketMove`'s closed-domain check, and the trellis
+evaluator's facet field compare (every operator except `~=`, whose pattern
+keeps its authored semantics) — so `status=completed` and the legacy
+`status=COMPLETED` match the same nodes while the framework stays
+plugin-agnostic. Everything framework-side operates in the PRESENTED domain:
+the plugin-side counting path (`facetsFromView`) folds the status facet
+value, and caldav declares `TerminalValues` (`completed`/`cancelled`) and the
+per-component `WriteValues` enums lowercase, so buckets, facets, summaries,
+`_terminal`, and pre-rendered `## =needs-action` headings all agree without
+any per-consumer fold. The cancel-remap stays future work.
 
 ## More information
 

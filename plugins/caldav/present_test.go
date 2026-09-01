@@ -83,9 +83,9 @@ func TestPresentBoxAtoms(t *testing.T) {
 			want:   nil,
 		},
 		{
-			name:   "status renders as a plain field-editable atom (cutting-garden#229)",
+			name:   "status presents lowercased (case-fold codec, native tags slice 1.5 E)",
 			fields: map[string]any{listingFieldStatus: "NEEDS-ACTION"},
-			want:   []cutting_garden_plugins.BoxAtom{atom("status", "NEEDS-ACTION")},
+			want:   []cutting_garden_plugins.BoxAtom{atom("status", "needs-action")},
 		},
 		{
 			name:   "summary (the box trailer) is not an atom",

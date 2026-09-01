@@ -55,8 +55,10 @@ func TestListEnriched_PopulatesFacetsAndFields(t *testing.T) {
 	if standup.Type != typeVEVENT {
 		t.Errorf("event1.ics type = %q, want %q", standup.Type, typeVEVENT)
 	}
-	if got := standup.Facets[facetStatus]; len(got) != 1 || got[0].Key != "CONFIRMED" {
-		t.Errorf("event1.ics status facet = %+v, want CONFIRMED", standup.Facets[facetStatus])
+	// The status facet value is the PRESENTED (lowercase) form (case-fold
+	// codec, native tags slice 1.5 E); Fields keeps the stored uppercase.
+	if got := standup.Facets[facetStatus]; len(got) != 1 || got[0].Key != "confirmed" {
+		t.Errorf("event1.ics status facet = %+v, want confirmed", standup.Facets[facetStatus])
 	}
 	if standup.Fields[listingFieldSummary] != "Standup" {
 		t.Errorf("event1.ics fields = %+v, want summary=Standup", standup.Fields)

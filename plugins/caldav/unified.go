@@ -2,6 +2,7 @@ package caldav
 
 import (
 	"strconv"
+	"strings"
 	"sync"
 
 	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
@@ -35,21 +36,25 @@ var (
 	_ cutting_garden_plugins.Codec            = caldavPriorityCodec{}
 	_ cutting_garden_plugins.Codec            = facetOnlyCodec{}
 	_ cutting_garden_plugins.Codec            = categoriesCodec{}
+	_ cutting_garden_plugins.Codec            = caseFoldCodec{}
 	_ cutting_garden_plugins.UnifiedDescriber = (*Plugin)(nil)
 )
 
 // The per-component STATUS write enums, each in RFC 5545 §3.8.1.11 progression
-// order — organize pre-renders them as empty `## =VALUE` buckets so an object is
+// order — organize pre-renders them as empty `## =value` buckets so an object is
 // reorganized by moving its line under an existing heading. Splitting the object
 // leaf into per-component types is what lets STATUS carry the CORRECT enum per
 // component: the RFC gives VTODO, VEVENT, and VJOURNAL disjoint STATUS domains,
 // so a single union type could only ever pre-list one of them. They are
 // write-side convenience lists (UnifiedField.WriteValues), not closed read
-// domains — an observed out-of-list value still renders and filters.
+// domains — an observed out-of-list value still renders and filters. Spelled in
+// the PRESENTED (lowercase) domain the case-fold codec establishes (native tags
+// slice 1.5 E): the buckets render lowercase, and caseFoldCodec.Parse folds the
+// moved-to bucket up to its canonical RFC 5545 uppercase on write.
 var (
-	taskStatuses    = []string{"NEEDS-ACTION", "IN-PROCESS", "COMPLETED", "CANCELLED"}
-	eventStatuses   = []string{"TENTATIVE", "CONFIRMED", "CANCELLED"}
-	journalStatuses = []string{"DRAFT", "FINAL", "CANCELLED"}
+	taskStatuses    = []string{"needs-action", "in-process", "completed", "cancelled"}
+	eventStatuses   = []string{"tentative", "confirmed", "cancelled"}
+	journalStatuses = []string{"draft", "final", "cancelled"}
 )
 
 // priorityHint documents the band write's completion (cutting-garden#221
@@ -103,18 +108,26 @@ var unifiedFieldSets = sync.OnceValue(func() []cutting_garden_plugins.NodeTypeUn
 		},
 		RevalidateAfter: dueBandRevalidateAfter,
 	}}}
-	status := func(writeEnum []string) cutting_garden_plugins.IdentityCodec {
-		return cutting_garden_plugins.IdentityCodec{Field: cutting_garden_plugins.UnifiedField{
+	status := func(writeEnum []string) caseFoldCodec {
+		return caseFoldCodec{Field: cutting_garden_plugins.UnifiedField{
 			Key: listingFieldStatus, Label: "Status",
 			Kind:   cutting_garden_plugins.FieldCategorical,
 			Inline: true, Groupable: true, Writable: true,
+			// FoldCase makes matching case-insensitive framework-wide (the
+			// derived FacetDimension folds filter predicates, closed-domain
+			// validation, and trellis field predicates), so the old uppercase
+			// query spelling (`status=COMPLETED`) still matches the presented
+			// lowercase domain.
+			FoldCase: true,
 			// The terminal (done) statuses (cutting-garden#214): organize
 			// excludes objects in these by default. Shared across components —
-			// COMPLETED is a VTODO status and CANCELLED spans all three; a
+			// completed is a VTODO status and cancelled spans all three; a
 			// component that never takes a listed value simply never matches it.
 			// status stays an OPEN read domain (Values nil); TerminalValues and
-			// the WriteValues enum are both orthogonal to that.
-			TerminalValues: []string{"COMPLETED", "CANCELLED"},
+			// the WriteValues enum are both orthogonal to that. Spelled in the
+			// PRESENTED (lowercase) domain, like the facet values the counting
+			// path emits, so the framework's exact comparisons line up.
+			TerminalValues: []string{"completed", "cancelled"},
 			WriteValues:    writeEnum,
 		}}
 	}
@@ -215,6 +228,51 @@ var unifiedCodecs = sync.OnceValue(func() []cutting_garden_plugins.Codec {
 	}
 	return union
 })
+
+// caseFoldCodec is FDR 0025's named case-fold codec (native tags slice 1.5 E):
+// a 1↔1 status codec that PRESENTS the stored value lowercased and folds every
+// write UP to canonical RFC 5545 uppercase — never persisting lowercase. Format
+// lowercases whatever is stored, so an observed out-of-enum value ("X-CUSTOM",
+// or a server's mixed-case oddity) still presents (lowercased) and round-trips
+// to ITS uppercase on write; Parse runs on BOTH write paths (a field edit via
+// ParseUnifiedFieldEdits and a bucket move via ParseUnifiedBucketMove), so a
+// `## =needs-action` move and a `status=completed` atom edit both write the
+// canonical uppercase property. Plugin-local on purpose: the SDK gains a shared
+// CaseFoldCodec only when a second plugin consumes one (build only what's
+// consumed — the FDR 0025 staging rule).
+type caseFoldCodec struct {
+	// Field is the single presentation field this codec produces; its Key is
+	// also the stored field name (like IdentityCodec's default).
+	Field cutting_garden_plugins.UnifiedField
+}
+
+func (c caseFoldCodec) Fields() []cutting_garden_plugins.UnifiedField {
+	return []cutting_garden_plugins.UnifiedField{c.Field}
+}
+
+// Format presents the stored value lowercased. Absent or empty stored values
+// contribute nothing, exactly as IdentityCodec.
+func (c caseFoldCodec) Format(stored map[string]any) (map[string][]string, error) {
+	s := stringOf(stored, c.Field.Key)
+	if s == "" {
+		return map[string][]string{}, nil
+	}
+	return map[string][]string{c.Field.Key: {strings.ToLower(s)}}, nil
+}
+
+// Parse folds the edited value UP to canonical uppercase before writing — the
+// "never persist lowercase" half of the codec. It does not gate on the
+// WriteValues enum: status is an OPEN domain, so an out-of-enum value writes
+// too (as ITS uppercase), mirroring the read side's out-of-enum tolerance.
+func (c caseFoldCodec) Parse(
+	edited map[string][]string, _ map[string]any,
+) (map[string]any, error) {
+	vals, ok := edited[c.Field.Key]
+	if !ok || len(vals) == 0 {
+		return map[string]any{}, nil
+	}
+	return map[string]any{c.Field.Key: strings.ToUpper(vals[0])}, nil
+}
 
 // facetOnlyCodec declares GROUPABLE-only presentation fields with no stored
 // counterpart of their own — caldav's computed facet dimensions (component,

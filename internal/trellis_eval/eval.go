@@ -129,11 +129,12 @@ type evaluator struct {
 	enriched cgp.EnrichedLister // nil when the plugin serves no enriched listing
 	anchor   *url.URL
 	leaf     cgp.LeafReader // nil when the plugin cannot fetch leaves
-	// facets maps tag -> declared dimension key -> the dimension's Kind. The
-	// Kind is carried (not just presence) so matchFacet can give a FacetDate
-	// dimension's `=` the hierarchy-prefix semantics the rest of the facet
-	// surface has (cutting-garden#230).
-	facets map[string]map[string]cgp.FacetKind
+	// facets maps tag -> declared dimension key -> the dimension traits
+	// matching needs. The Kind is carried (not just presence) so matchFacet can
+	// give a FacetDate dimension's `=` the hierarchy-prefix semantics the rest
+	// of the facet surface has (cutting-garden#230); FoldCase so a case-folded
+	// dimension's predicates compare both sides folded (FDR 0025 case-fold).
+	facets map[string]map[string]facetDimTraits
 
 	// unified is the plugin's once-probed UnifiedDescriber, letting a bare-tag
 	// term enumerate a node type's FieldTag dimensions (#231 slice 3). nil when
@@ -171,13 +172,13 @@ func newEvaluator(
 		ev.unified = ud
 	}
 	if fd, ok := lister.(cgp.FacetDescriber); ok {
-		ev.facets = make(map[string]map[string]cgp.FacetKind)
+		ev.facets = make(map[string]map[string]facetDimTraits)
 		for _, ntf := range fd.DescribeFacets() {
-			kinds := make(map[string]cgp.FacetKind, len(ntf.Dimensions))
+			traits := make(map[string]facetDimTraits, len(ntf.Dimensions))
 			for _, dim := range ntf.Dimensions {
-				kinds[dim.Key] = dim.Kind
+				traits[dim.Key] = facetDimTraits{kind: dim.Kind, foldCase: dim.FoldCase}
 			}
-			ev.facets[ntf.Tag] = kinds
+			ev.facets[ntf.Tag] = traits
 		}
 	}
 	for _, opt := range opts {
@@ -667,20 +668,27 @@ func (ev *evaluator) matchFieldPred(
 	if field == bodyField {
 		return ev.matchBody(ctx, n, fp)
 	}
-	if kind, ok := ev.facetKind(n.Type, field); ok {
-		return ev.matchFacet(n.Facets[field], fp, kind), nil
+	if traits, ok := ev.facetTraits(n.Type, field); ok {
+		return ev.matchFacet(n.Facets[field], fp, traits), nil
 	}
 	return ev.matchLeafField(ctx, n, field, fp)
 }
 
 const bodyField = "_body"
 
-// facetKind reports whether field is a declared facet dimension of tag,
-// and that dimension's Kind — matchFacet needs the Kind to give a date
-// dimension's `=` its hierarchy-prefix semantics.
-func (ev *evaluator) facetKind(tag, field string) (cgp.FacetKind, bool) {
-	kind, ok := ev.facets[tag][field]
-	return kind, ok
+// facetDimTraits is the slice of a FacetDimension's declaration matchFacet
+// dispatches on: the Kind (date hierarchy-prefix `=`) and FoldCase
+// (case-insensitive comparison, FDR 0025 case-fold).
+type facetDimTraits struct {
+	kind     cgp.FacetKind
+	foldCase bool
+}
+
+// facetTraits reports whether field is a declared facet dimension of tag,
+// and that dimension's matching traits.
+func (ev *evaluator) facetTraits(tag, field string) (facetDimTraits, bool) {
+	traits, ok := ev.facets[tag][field]
+	return traits, ok
 }
 
 // matchFacet matches fp against a node's membership in one facet dimension.
@@ -704,12 +712,20 @@ func (ev *evaluator) facetKind(tag, field string) (cgp.FacetKind, bool) {
 // as raw inequality (`!=`), exactly as any other non-existent bucket key
 // would. Every other operator keeps trellis's raw string semantics — `^=` on
 // a date key stays an unvalidated string prefix (RFC 0014).
+//
+// A FoldCase dimension (FDR 0025 case-fold; caldav status) compares
+// case-insensitively: both sides are lowercased before every operator EXCEPT
+// `~=` — folding a regex pattern would rewrite its character classes (`\D` →
+// `\d`), so the pattern keeps its authored semantics and the author reaches
+// for `(?i)` when they want a fold. So `status=COMPLETED` and
+// `status=completed` match the same nodes, mirroring FacetPredicate.matches
+// on the `list --filter` / read_facets surface.
 func (ev *evaluator) matchFacet(
-	values []cgp.FacetValue, fp trellis.FieldPred, kind cgp.FacetKind,
+	values []cgp.FacetValue, fp trellis.FieldPred, traits facetDimTraits,
 ) bool {
 	for _, qv := range fp.Values {
 		want := valueString(qv)
-		if kind == cgp.FacetDate &&
+		if traits.kind == cgp.FacetDate &&
 			(fp.Op == trellis.FieldOpEq || fp.Op == trellis.FieldOpNotEq) {
 			if _, ok := cgp.ParseDateBucket(want); ok {
 				for _, fv := range values {
@@ -721,8 +737,15 @@ func (ev *evaluator) matchFacet(
 				continue
 			}
 		}
+		if traits.foldCase && fp.Op != trellis.FieldOpRegex {
+			want = strings.ToLower(want)
+		}
 		for _, fv := range values {
-			if ev.satisfies(fp.Op, fv.Key, want) {
+			got := fv.Key
+			if traits.foldCase && fp.Op != trellis.FieldOpRegex {
+				got = strings.ToLower(got)
+			}
+			if ev.satisfies(fp.Op, got, want) {
 				return true
 			}
 		}

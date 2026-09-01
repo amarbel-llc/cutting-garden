@@ -102,12 +102,23 @@ type UnifiedField struct {
 	// MultiValued is true when one node contributes several values (tags). false
 	// means at most one value per node. Mirrors FacetDimension.Multi.
 	MultiValued bool
+	// FoldCase declares the field CASE-INSENSITIVE for matching (FDR 0025's
+	// case-fold codec, native tags slice 1.5 E): the derived FacetDimension
+	// carries it, and every framework-side comparison against this field's
+	// values — a filter predicate, a closed-domain validation, a trellis field
+	// predicate — folds BOTH sides, so `status=completed` and `status=COMPLETED`
+	// match the same nodes. Orthogonal to the codec's own presentation fold
+	// (Format lowercases, Parse re-canonicalizes): FoldCase governs MATCHING,
+	// the codec governs presentation and the stored spelling.
+	FoldCase bool
 	// Values, when non-nil, declares a CLOSED domain (the complete value set, known
 	// up front) — the grouping headings pre-rendered in Order. nil is an OPEN domain
 	// (values discovered from data).
 	Values []FieldValue
 	// TerminalValues names the Values marking a node DONE / terminal (caldav VTODO
-	// ["COMPLETED","CANCELLED"]; cutting-garden#214). Orthogonal to open/closed.
+	// ["completed","cancelled"]; cutting-garden#214). Orthogonal to open/closed.
+	// Spelled in the PRESENTED domain (what the codec's Format emits and the facet
+	// counting path computes), like every other framework-side value.
 	TerminalValues []string
 	// WriteValues, when non-empty, is the ordered write-side convenience list for a
 	// groupable+writable field: the target buckets organize pre-renders as headings

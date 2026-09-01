@@ -155,7 +155,8 @@ func TestDescribeFacets_DeclaresObjectDimensions(t *testing.T) {
 // statuses on the status dimension (cutting-garden#214) — the primitive
 // organize's default terminal exclusion derives its synthetic `_terminal` from.
 // status stays an OPEN dimension (no closed Values); TerminalValues is
-// orthogonal.
+// orthogonal. Spelled in the PRESENTED (lowercase) domain the case-fold codec
+// establishes (native tags slice 1.5 E), matching the folded facet values.
 func TestDescribeFacets_StatusTerminalValues(t *testing.T) {
 	seen := 0
 	for _, ntf := range (Plugin{}).DescribeFacets() {
@@ -168,8 +169,8 @@ func TestDescribeFacets_StatusTerminalValues(t *testing.T) {
 			for _, v := range d.TerminalValues {
 				got[v] = true
 			}
-			if !got["COMPLETED"] || !got["CANCELLED"] {
-				t.Errorf("%s status TerminalValues = %v, want COMPLETED and CANCELLED",
+			if !got["completed"] || !got["cancelled"] {
+				t.Errorf("%s status TerminalValues = %v, want completed and cancelled",
 					ntf.Tag, d.TerminalValues)
 			}
 			if len(d.Values) != 0 {
@@ -609,9 +610,11 @@ func TestFacetCounts_AggregatesAcrossComponents(t *testing.T) {
 
 	assertCount(t, result.Summary, facetComponent, "VEVENT", 2)
 	assertCount(t, result.Summary, facetComponent, "VTODO", 1)
-	assertCount(t, result.Summary, facetStatus, "CONFIRMED", 1)
-	assertCount(t, result.Summary, facetStatus, "CANCELLED", 1)
-	assertCount(t, result.Summary, facetStatus, "NEEDS-ACTION", 1)
+	// status facet values are the PRESENTED (lowercase) form (case-fold codec,
+	// native tags slice 1.5 E); the stored properties stay uppercase.
+	assertCount(t, result.Summary, facetStatus, "confirmed", 1)
+	assertCount(t, result.Summary, facetStatus, "cancelled", 1)
+	assertCount(t, result.Summary, facetStatus, "needs-action", 1)
 	assertCount(t, result.Summary, facetDateStart, "2026-02", 1)
 	assertCount(t, result.Summary, facetDateStart, "2026-01", 1)
 	assertCount(t, result.Summary, facetDateStart, "2025-01", 1)

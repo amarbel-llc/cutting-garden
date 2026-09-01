@@ -325,6 +325,11 @@ func facetsFromView(view objectView) map[string][]cutting_garden_plugins.FacetVa
 		status = view.Journal.Status
 	}
 
+	// The status facet value is the PRESENTED (lowercase) form — the case-fold
+	// codec's domain (native tags slice 1.5 E) — so buckets, facet summaries,
+	// filters, and queries all see the same spelling the box atoms present.
+	// The stored value stays canonical uppercase; only this projection folds.
+	status = strings.ToLower(status)
 	if status != "" {
 		facets[facetStatus] = []cutting_garden_plugins.FacetValue{{Key: status}}
 	}
@@ -349,7 +354,7 @@ func facetsFromView(view objectView) map[string][]cutting_garden_plugins.FacetVa
 	// because it answers "when is this actionable", not "which property
 	// holds a date". The band anchors in the date's own zone (#141).
 	if view.Task != nil &&
-		status != "COMPLETED" && status != "CANCELLED" {
+		status != "completed" && status != "cancelled" {
 		due, dueTZID := view.Task.Due, view.Task.DueTZID
 		if due == "" {
 			due, dueTZID = view.Task.DtStart, view.Task.DtStartTZID

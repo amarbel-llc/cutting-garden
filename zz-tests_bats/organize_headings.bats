@@ -42,10 +42,10 @@ teardown() {
 # bats file_tags=organize
 
 # The generated document's `_base` digest, and the digests after each edit.
-BASE_GENERATED=blake2b256-plcta2x228afcs5fau26gutlcxtrczqsn4svhe00j2muen7cmlrqec7yyq
-BASE_AFTER_DOUBLE=blake2b256-nstj5rfrva6c34r3plj0czww2d6axdmchjfp2lle50mpkl7fdhhsyml2pp
-BASE_AFTER_RESET=blake2b256-mneq9ux7zjarqvly0xzzzz99w5q7hwk0cpjwyxv2tv4snmk4g3kqa9u04z
-BASE_AFTER_NOOP=blake2b256-aylz2flh8n67uvkmpx82l4d7n6prkd8j6l04ec6ssfd72zhask7qk398ke
+BASE_GENERATED=blake2b256-0m28p5d8ykftpl7zhchv6t874zvq7z0a4k4fmql0xcr52jledmnsu8h0la
+BASE_AFTER_DOUBLE=blake2b256-7w3fk97fq5xfpn6udzv7whxvwxqn2dc2ls59644wvvcaqxycxwdstaxrky
+BASE_AFTER_RESET=blake2b256-t7x9wrn3dh8554h0kslyaetpplr3n8h00ddgkxmff62auh2akrjslad624
+BASE_AFTER_NOOP=blake2b256-fxjfeyn5nm6y893jpmgtnqqyercpz2gdnau33t42y84zrdp6f45q9vpzed
 
 # envelope_header prints the `-group-by (tags)` document's hyphence envelope
 # pinned at `_base` $1 — the part every document in this lane shares.
@@ -80,7 +80,7 @@ generate_grouped() {
   assert_output "$(
     headings_doc "$BASE_GENERATED" <<-'EOM'
 
-	- [field1.ics location=Bank status=NEEDS-ACTION priority=0_must] Pay rent
+	- [field1.ics location=Bank status=needs-action priority=0_must] Pay rent
 	- [field4.ics] Someday idea
 
 	# errand
@@ -119,7 +119,7 @@ function organize_headings_double_hash_document_applies_identically { # @test
   local edited="$BATS_TEST_TMPDIR/edited.txt"
   headings_doc "$BASE_GENERATED" >"$edited" <<-'EOM'
 
-	- [field1.ics location=Bank status=NEEDS-ACTION priority=0_must] Pay rent
+	- [field1.ics location=Bank status=needs-action priority=0_must] Pay rent
 	- [field4.ics] Someday idea
 
 	## errand
@@ -150,7 +150,7 @@ EOF
   assert_output "$(
     headings_doc "$BASE_AFTER_DOUBLE" <<-'EOM'
 
-	- [field1.ics location=Bank status=NEEDS-ACTION priority=0_must] Pay rent
+	- [field1.ics location=Bank status=needs-action priority=0_must] Pay rent
 	- [field4.ics] Someday idea
 
 	# errand
@@ -196,7 +196,7 @@ function organize_headings_reset_pops_to_parent_and_ungrouped { # @test
 
 	##
 
-	- [field1.ics location=Bank status=NEEDS-ACTION priority=0_must] Pay rent
+	- [field1.ics location=Bank status=needs-action priority=0_must] Pay rent
 
 	#
 
@@ -233,7 +233,7 @@ EOF
 
 	# work
 
-	- [field1.ics location=Bank status=NEEDS-ACTION priority=0_must] Pay rent
+	- [field1.ics location=Bank status=needs-action priority=0_must] Pay rent
 	- [field3.ics priority=2_nice] Water plants
 	EOM
   )"
@@ -247,7 +247,7 @@ function organize_headings_reset_deeper_than_current_is_noop { # @test
   local edited="$BATS_TEST_TMPDIR/edited.txt"
   headings_doc "$BASE_GENERATED" >"$edited" <<-'EOM'
 
-	- [field1.ics location=Bank status=NEEDS-ACTION priority=0_must] Pay rent
+	- [field1.ics location=Bank status=needs-action priority=0_must] Pay rent
 
 	# errand
 
@@ -280,7 +280,7 @@ EOF
   assert_output "$(
     headings_doc "$BASE_AFTER_NOOP" <<-'EOM'
 
-	- [field1.ics location=Bank status=NEEDS-ACTION priority=0_must] Pay rent
+	- [field1.ics location=Bank status=needs-action priority=0_must] Pay rent
 
 	# errand
 

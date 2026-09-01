@@ -10,7 +10,7 @@
 //   ---
 //
 //   # status=
-//   ## =COMPLETED
+//   ## =completed
 //   - [task1.ics work "_ inbox" date_start=2026-08-15] Buy milk
 //
 // A hyphence metadata envelope, then a body of heading-ladder lines and espalier

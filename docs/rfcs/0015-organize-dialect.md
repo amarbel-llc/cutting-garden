@@ -83,9 +83,9 @@ document — the exact bytes presented to and edited by the end-user:
 
 # status=                              (spelling 2: dimension at depth 1)
 
-## =NEEDS-ACTION
+## =needs-action
 
-## =COMPLETED
+## =completed
 
 - [task1.ics] Buy milk
 ```
@@ -554,13 +554,14 @@ dodder.
 ## Terminal exclusion (cutting-garden#214)
 
 organize is a triage-the-active-work surface, so it **excludes terminal
-(done) objects by default** — caldav VTODO `COMPLETED`/`CANCELLED`, and
-the analogous done state on other plugins.
+(done) objects by default** — caldav VTODO `completed`/`cancelled` (the
+case-fold codec's presented spelling, FDR 0025), and the analogous done
+state on other plugins.
 
 - **Marking.** A read-side `FacetDimension.TerminalValues []string`
   (RFC 0012) names a dimension's done values. It is orthogonal to the
   closed/open `Values` machinery: caldav keeps `status` OPEN yet names
-  `["COMPLETED", "CANCELLED"]` terminal.
+  `["completed", "cancelled"]` terminal (the presented domain).
 - **Synthetic `_terminal`.** The framework derives a closed yes/no
   `_terminal` dimension — an object is `_terminal=yes` iff it holds a
   terminal value in any terminal-bearing dimension. The `_` prefix marks
@@ -576,7 +577,7 @@ the analogous done state on other plugins.
   echoed query verbatim (never re-injecting), so generate and apply agree.
 - **`--include-terminal`** is pure sugar for omitting the default clause
   (→ everything); `_terminal=yes` selects only the done.
-- **Rendering.** Terminal value *headings* (`## =COMPLETED`) still render
+- **Rendering.** Terminal value *headings* (`## =completed`) still render
   as empty drop-targets (sourced from the write descriptor's
   `FacetWrite.Values`), so an object can still be moved INTO done; only
   terminal *objects* are filtered from selection.

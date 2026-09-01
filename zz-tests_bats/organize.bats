@@ -1,5 +1,7 @@
 #! /usr/bin/env bats
 
+# TODO: examine if using complete assertions on queries works too (avoid partials as much as possible)
+
 # The organize pipeline lane (FDR 0023, RFC 0015): generate a hyphence-envelope
 # organize document from a caldav calendar, edit it, and apply the edit as a
 # substrate write — proving select -> group -> render -> edit -> three-way-merge
@@ -7,11 +9,11 @@
 #
 # The document is the RFC 0015 heading-ladder dialect: a `---` hyphence envelope
 # (% comment, - _base/_anchor/_type, ! organize-base-v1), then a `# status=`
-# dimension heading with pre-rendered `## =VALUE` buckets, and object lines as
+# dimension heading with pre-rendered `## =value` buckets, and object lines as
 # espalier boxes `- [<id>] <desc>` (envelope `_type` spelling). The writable
 # dimension exercised is `status` (a passthrough enum, Slice 2a). The seeded
 # VTODOs carry no STATUS, so they start ungrouped (above the dimension heading);
-# moving task1 under a `## =COMPLETED` bucket ASSIGNS its status through PatchNode.
+# moving task1 under a `## =completed` bucket ASSIGNS its status through PatchNode.
 #
 # Whole-document vectors (G16): pinned port + serialized tests, see lib/caldav.bash.
 
@@ -40,7 +42,7 @@ teardown() {
 # G10) and asserts the emitted document in full: the fenced envelope with the
 # framework fields + type, the two VTODOs
 # ungrouped (no STATUS yet), then the `# status=` dimension heading with its
-# pre-rendered, empty `## =VALUE` buckets. The lone VEVENT windows out of the
+# pre-rendered, empty `## =value` buckets. The lone VEVENT windows out of the
 # object listing, so it is not organized.
 generate_doc() {
   run_cg organize -group-by status= "$CAL"
@@ -48,7 +50,7 @@ generate_doc() {
   assert_output - <<-'EOM'
 	---
 	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:43101/dav/cal/`
-	- _base = @blake2b256-y5l6466y0x0h8lfy62r42d7puc3m0uxq9suu2dc33dn3xuueg6lsxewkkc
+	- _base = @blake2b256-a6cg9xeaq0a4902fwktqpjd9rs2zt5r0mj0w6qcyf7clsj3g8nssnkpaym
 	- _anchor = caldav:http://127.0.0.1:43101/dav/cal/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -60,25 +62,25 @@ generate_doc() {
 
 	# status=
 
-	## =NEEDS-ACTION
+	## =needs-action
 
-	## =IN-PROCESS
+	## =in-process
 
-	## =COMPLETED
+	## =completed
 
-	## =CANCELLED
+	## =cancelled
 	EOM
 }
 
 # write_task1_completed writes the edited document to $1: task1's box is pulled
 # out of the ungrouped section and re-filed under the pre-rendered
-# `## =COMPLETED` bucket, against the generated `_base`. The full input document
+# `## =completed` bucket, against the generated `_base`. The full input document
 # is spelled out (G16) rather than spliced.
 write_task1_completed() {
   cat >"$1" <<-'EOM'
 	---
 	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:43101/dav/cal/`
-	- _base = @blake2b256-y5l6466y0x0h8lfy62r42d7puc3m0uxq9suu2dc33dn3xuueg6lsxewkkc
+	- _base = @blake2b256-a6cg9xeaq0a4902fwktqpjd9rs2zt5r0mj0w6qcyf7clsj3g8nssnkpaym
 	- _anchor = caldav:http://127.0.0.1:43101/dav/cal/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -89,27 +91,27 @@ write_task1_completed() {
 
 	# status=
 
-	## =NEEDS-ACTION
+	## =needs-action
 
-	## =IN-PROCESS
+	## =in-process
 
-	## =COMPLETED
+	## =completed
 
 	- [task1.ics] Buy milk
 
-	## =CANCELLED
+	## =cancelled
 	EOM
 }
 
 # write_task1_cancelled is write_task1_completed's sibling: the same edit
-# against the same generated `_base`, but re-filing task1 under `## =CANCELLED`
-# — the conflicting second edit the conflict lane applies after a COMPLETED move
+# against the same generated `_base`, but re-filing task1 under `## =cancelled`
+# — the conflicting second edit the conflict lane applies after a completed move
 # has already landed.
 write_task1_cancelled() {
   cat >"$1" <<-'EOM'
 	---
 	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:43101/dav/cal/`
-	- _base = @blake2b256-y5l6466y0x0h8lfy62r42d7puc3m0uxq9suu2dc33dn3xuueg6lsxewkkc
+	- _base = @blake2b256-a6cg9xeaq0a4902fwktqpjd9rs2zt5r0mj0w6qcyf7clsj3g8nssnkpaym
 	- _anchor = caldav:http://127.0.0.1:43101/dav/cal/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -120,13 +122,13 @@ write_task1_cancelled() {
 
 	# status=
 
-	## =NEEDS-ACTION
+	## =needs-action
 
-	## =IN-PROCESS
+	## =in-process
 
-	## =COMPLETED
+	## =completed
 
-	## =CANCELLED
+	## =cancelled
 
 	- [task1.ics] Buy milk
 	EOM
@@ -134,7 +136,7 @@ write_task1_cancelled() {
 
 # assert_task1_completed re-renders the calendar and asserts the "after"
 # document in full. organize's default `_terminal=no` selection windows a
-# COMPLETED task OUT of the document, so task1 is simply gone: only task2 remains
+# completed task OUT of the document, so task1 is simply gone: only task2 remains
 # (still ungrouped), every bucket is empty, and the `_base` pin moved with the
 # content. The live status itself is proven by the `list -query` check.
 assert_task1_completed() {
@@ -143,7 +145,7 @@ assert_task1_completed() {
   assert_output - <<-'EOM'
 	---
 	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:43101/dav/cal/`
-	- _base = @blake2b256-fknza3rf93azza2z89p6ddqufxvr5hpe4lcxmjuzq344ep3xn3dsp8ys5e
+	- _base = @blake2b256-90vj30rjmsvjh2z5aymsgr25e0e679zm760ywskgzjhhcnpeatnqvu4pge
 	- _anchor = caldav:http://127.0.0.1:43101/dav/cal/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -154,26 +156,28 @@ assert_task1_completed() {
 
 	# status=
 
-	## =NEEDS-ACTION
+	## =needs-action
 
-	## =IN-PROCESS
+	## =in-process
 
-	## =COMPLETED
+	## =completed
 
-	## =CANCELLED
+	## =cancelled
 	EOM
 }
 
 # Generate emits the hyphence-envelope dialect: the fenced envelope with the
 # framework fields + type, the `# status=` dimension heading, its pre-rendered
-# `## =VALUE` buckets, and the two VTODOs as bare espalier boxes.
+# `## =value` buckets, and the two VTODOs as bare espalier boxes.
 function organize_generate_emits_envelope { # @test
   generate_doc
 }
 
-# The core tracer: generate, move task1 under `## =COMPLETED`, apply with
+# The core tracer: generate, move task1 under `## =completed`, apply with
 # --commit, and confirm the status landed on the live object via a facet query
-# and the re-rendered document.
+# and the re-rendered document. The move writes the CANONICAL RFC 5545 uppercase
+# (`STATUS:COMPLETED`, curl-verified) — the case-fold codec's Parse folds the
+# lowercase bucket up; lowercase is never persisted.
 function organize_apply_status_move_commits { # @test
   generate_doc
   local edited="$BATS_TEST_TMPDIR/edited.txt"
@@ -184,11 +188,25 @@ function organize_apply_status_move_commits { # @test
   assert_output - <<'EOF'
 organize: 1 change(s):
 
-  - [task1.ics  status={+COMPLETED+}]  Buy milk
+  - [task1.ics  status={+completed+}]  Buy milk
 
 organize: wrote 1 change(s)
 EOF
 
+  # The stored property is canonical RFC 5545 UPPERCASE — never lowercase.
+  run curl -fsS "${CALDAV_SOURCE#caldav:}cal/task1.ics"
+  assert_success
+  assert_output --partial 'STATUS:COMPLETED'
+  refute_output --partial 'STATUS:completed'
+
+  run_cg list -query 'status=completed' "$CAL"
+  assert_success
+  # TODO why is this partial?
+  assert_output --partial 'task1.ics'
+  refute_output --partial 'task2.ics'
+
+  # The old uppercase spelling still matches — the FoldCase dimension folds
+  # BOTH sides of the predicate (FDR 0025 case-fold matching rule).
   run_cg list -query 'status=COMPLETED' "$CAL"
   assert_success
   assert_output --partial 'task1.ics'
@@ -210,12 +228,12 @@ function organize_apply_dry_run_does_not_write { # @test
   assert_output - <<'EOF'
 organize: 1 change(s):
 
-  - [task1.ics  status={+COMPLETED+}]  Buy milk
+  - [task1.ics  status={+completed+}]  Buy milk
 
 organize: dry-run — nothing written
 EOF
 
-  run_cg list -query 'status=COMPLETED' "$CAL"
+  run_cg list -query 'status=completed' "$CAL"
   assert_success
   refute_output --partial 'task1.ics'
 
@@ -236,12 +254,12 @@ function organize_commit_directly_from_stdin_writes { # @test
   assert_output - <<'EOF'
 organize: 1 change(s):
 
-  - [task1.ics  status={+COMPLETED+}]  Buy milk
+  - [task1.ics  status={+completed+}]  Buy milk
 
 organize: wrote 1 change(s)
 EOF
 
-  run_cg list -query 'status=COMPLETED' "$CAL"
+  run_cg list -query 'status=completed' "$CAL"
   assert_success
   assert_output --partial 'task1.ics'
   refute_output --partial 'task2.ics'
@@ -251,10 +269,10 @@ EOF
 
 # A pinned base whose live state has drifted is a conflict, not a silent clobber:
 # commit one move, then apply a second edit built against the ORIGINAL base — the
-# merge must reject. COMPLETED and CANCELLED are BOTH terminal, so the after-
-# render alone cannot tell a rejected CANCELLED move from a silently applied one
+# merge must reject. completed and cancelled are BOTH terminal, so the after-
+# render alone cannot tell a rejected cancelled move from a silently applied one
 # (task1 is windowed out either way); the discriminating check is the live
-# status query — task1 is still COMPLETED, never CANCELLED.
+# status query — task1 is still completed, never cancelled.
 function organize_apply_conflict_rejects { # @test
   generate_doc
 
@@ -269,11 +287,11 @@ function organize_apply_conflict_rejects { # @test
   assert_failure
   assert_output --partial 'conflict'
 
-  run_cg list -query 'status=COMPLETED' "$CAL"
+  run_cg list -query 'status=completed' "$CAL"
   assert_success
   assert_output --partial 'task1.ics'
 
-  run_cg list -query 'status=CANCELLED' "$CAL"
+  run_cg list -query 'status=cancelled' "$CAL"
   assert_success
   refute_output --partial 'task1.ics'
 

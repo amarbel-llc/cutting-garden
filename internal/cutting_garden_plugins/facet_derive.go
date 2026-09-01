@@ -73,6 +73,7 @@ func DeriveFacetDimensions(codecs []Codec) []FacetDimension {
 				Label:           f.Label,
 				Kind:            facetKindOf(f.Kind),
 				Multi:           f.MultiValued,
+				FoldCase:        f.FoldCase,
 				Values:          facetValuesOf(f.Values),
 				TerminalValues:  f.TerminalValues,
 				RevalidateAfter: f.RevalidateAfter,
@@ -155,7 +156,7 @@ func ParseUnifiedBucketMove(
 					"dimension %q is not writable via organize", dimension,
 				)
 			}
-			if f.Values != nil && !fieldValuesContain(f.Values, toBucket) {
+			if f.Values != nil && !fieldValuesContain(f.Values, toBucket, f.FoldCase) {
 				return nil, errors.BadRequestf(
 					"dimension %q has no declared bucket %q; declared buckets: %s",
 					dimension, toBucket, strings.Join(fieldValueKeys(f.Values), ", "),
@@ -206,9 +207,12 @@ func ParseUnifiedMembershipWrite(
 	)
 }
 
-func fieldValuesContain(values []FieldValue, key string) bool {
+// fieldValuesContain reports whether key names one of a closed domain's declared
+// values. fold widens the comparison to case-insensitive (a FoldCase field's
+// bucket move accepts any casing of a declared bucket; Parse re-canonicalizes).
+func fieldValuesContain(values []FieldValue, key string, fold bool) bool {
 	for _, v := range values {
-		if v.Value == key {
+		if v.Value == key || (fold && strings.EqualFold(v.Value, key)) {
 			return true
 		}
 	}

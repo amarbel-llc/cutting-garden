@@ -62,6 +62,14 @@ type FacetDimension struct {
 	// Multi is true when one node contributes several values to this dimension
 	// (categories, tags). false means at most one value per node.
 	Multi bool
+	// FoldCase declares the dimension CASE-INSENSITIVE for matching (derived
+	// from UnifiedField.FoldCase; FDR 0025 case-fold, RFC 0012 §6): a filter
+	// predicate against it folds BOTH sides before comparing, and the
+	// closed-domain Validate check folds too, so `status=COMPLETED` and
+	// `status=completed` name the same bucket. The dimension's VALUES stay
+	// whatever the plugin emits (the presented, typically lowercase, domain);
+	// FoldCase only widens matching, never rewrites data.
+	FoldCase bool
 	// Values, when non-nil, declares a CLOSED domain: the complete set of
 	// values this dimension can take, known up front (read/unread, a boolean).
 	// nil means an OPEN domain whose values are discovered at enumeration
@@ -221,6 +229,13 @@ type FacetPredicate struct {
 	// derived per side from the declared schema — it never crosses a wire.
 	// An unvalidated filter (dims unknown) degrades to exact matching.
 	prefixMatch bool
+	// foldCase is set by Validate when Dimension declares FoldCase: the
+	// predicate then compares case-insensitively (both sides folded), so
+	// `status=COMPLETED` matches the presented lowercase "completed" bucket.
+	// Same annotation mechanics as prefixMatch — derived per side from the
+	// declared schema, never crossing a wire; an unvalidated filter degrades
+	// to exact matching.
+	foldCase bool
 }
 
 // FacetFilter is a set of predicates, AND-composed. The empty filter matches
@@ -243,23 +258,34 @@ func (f FacetFilter) Matches(facets map[string][]FacetValue) bool {
 // exact equality, or (for a Validate-annotated date predicate) hierarchy
 // containment per DateBucketMatches: the value must equal the predicate or
 // extend it at a "-" boundary, so "2026-08" matches "2026-08-15" but never a
-// hypothetical "2026-081".
+// hypothetical "2026-081". A Validate-annotated FoldCase predicate compares
+// case-insensitively instead (both sides folded).
 func (p FacetPredicate) matches(values []FacetValue) bool {
 	for _, v := range values {
-		if p.prefixMatch {
+		switch {
+		case p.prefixMatch:
 			if DateBucketMatches(v.Key, p.Value) {
 				return true
 			}
-		} else if v.Key == p.Value {
-			return true
+		case p.foldCase:
+			if strings.EqualFold(v.Key, p.Value) {
+				return true
+			}
+		default:
+			if v.Key == p.Value {
+				return true
+			}
 		}
 	}
 	return false
 }
 
-func containsFacetValue(values []FacetValue, key string) bool {
+// containsFacetValue reports whether key names one of values. fold widens the
+// comparison to case-insensitive — the FoldCase closed-domain rule, so a folded
+// dimension's declared set admits any casing of a declared value.
+func containsFacetValue(values []FacetValue, key string, fold bool) bool {
 	for _, v := range values {
-		if v.Key == key {
+		if v.Key == key || (fold && strings.EqualFold(v.Key, key)) {
 			return true
 		}
 	}
@@ -331,12 +357,15 @@ func (f FacetFilter) Validate(dims []NodeTypeFacets) error {
 			}
 			f[i].prefixMatch = true
 		}
+		if dim.FoldCase {
+			f[i].foldCase = true
+		}
 		if dim.Values == nil {
 			// Open domain: values are discovered at enumeration, not
 			// declared up front, so any value is accepted.
 			continue
 		}
-		if !containsFacetValue(dim.Values, f[i].Value) {
+		if !containsFacetValue(dim.Values, f[i].Value, dim.FoldCase) {
 			return fmt.Errorf(
 				"filter value %q is not valid for dimension %q; valid "+
 					"values: %s (see describe_node_types)",
