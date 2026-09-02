@@ -142,7 +142,7 @@ function organize_headings_double_hash_document_applies_identically { # @test
   assert_output - <<'EOF'
 organize: 1 change(s):
 
-  - [field3.ics  categories=[-work-]{+errand+}]
+  - [field3.ics  categories=[-work-]{+errand+}]  Water plants
 
 organize: wrote 1 change(s)
 EOF
@@ -187,10 +187,10 @@ EOF
 # parent heading (not errand, not ungrouped) and a line under `#` landed
 # ungrouped. The re-rendered document — generated, so at minimal depth with no
 # resets — shows the resolved placement. field2's ungrouped line is spelled
-# BARE (no tag atoms): its per-bucket boxes carried the OTHER tag
-# (Via-stripped, native tags slice 2), and pulling one out to ungrouped WITH
-# that sibling tag would read as a tag-atom edit and refuse under the interim
-# slice-2 gate.
+# BARE (no tag atoms), expressing the remove-all: box atoms are authoritative
+# membership edits since slice 2 T3 (design G7), so pulling the line out WITH
+# its sibling tag atom would re-assert that tag as a membership add rather
+# than remove it.
 function organize_headings_reset_pops_to_parent_and_ungrouped { # @test
   generate_grouped
   local edited="$BATS_TEST_TMPDIR/edited.txt"
@@ -220,9 +220,9 @@ function organize_headings_reset_pops_to_parent_and_ungrouped { # @test
   assert_output - <<'EOF'
 organize: 3 change(s):
 
-  - [field1.ics  categories={+work+}]
-  - [field2.ics  categories=[-errand,work-]]
-  - [field4.ics  categories={+errand+}]
+  - [field1.ics  categories={+work+}]  Pay rent
+  - [field2.ics  categories=[-errand,work-]]  Read book
+  - [field4.ics  categories={+errand+}]  Someday idea
 
 organize: wrote 3 change(s)
 EOF
@@ -282,7 +282,7 @@ function organize_headings_reset_deeper_than_current_is_noop { # @test
   assert_output - <<'EOF'
 organize: 1 change(s):
 
-  - [field4.ics  categories={+work+}]
+  - [field4.ics  categories={+work+}]  Someday idea
 
 organize: wrote 1 change(s)
 EOF

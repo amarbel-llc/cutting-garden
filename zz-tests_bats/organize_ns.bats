@@ -154,7 +154,7 @@ function organize_ns_rollup_move_writes_reconstructed_tag { # @test
   assert_output - <<'EOF'
 organize: 1 change(s):
 
-  - [nsA.ics  categories=[-project-client-acme-]{+project-cutting_garden+}]
+  - [nsA.ics  categories=[-project-client-acme-]{+project-cutting_garden+}]  Acme retainer
 
 organize: wrote 1 change(s)
 EOF
@@ -240,7 +240,7 @@ function organize_ns_direct_root_placement_writes_bare_tag { # @test
   assert_output - <<'EOF'
 organize: 1 change(s):
 
-  - [nsD.ics  categories=[-other-]{+other,project+}]
+  - [nsD.ics  categories=[-other-]{+other,project+}]  Loose idea
 
 organize: wrote 1 change(s)
 EOF

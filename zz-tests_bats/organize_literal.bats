@@ -8,8 +8,9 @@
 # bucket headings share. Pinned here:
 #
 #   - G13: a HAND-EDITED bare token in a box (`work-x`) parses as a tag — even
-#     one spelled like a field name — and apply REFUSES it loudly (exit 64,
-#     "not writable yet") rather than silently dropping it; nothing is written.
+#     one spelled like a field name — and apply reads it as a MEMBERSHIP add
+#     (design G7, slice 2 T3), previewed as a categories change (dry-run here,
+#     so nothing is written) rather than silently dropped.
 #   - G9: a non-ground interior (`status*=y`) is a loud bad request naming the
 #     offending term.
 #   - G9: a quoted tag round-trips in a box (parsed, re-spelled in the refusal)
@@ -144,31 +145,45 @@ assert_lit2_untouched() {
 }
 
 # G13 / G9: a bare token after the id is a TAG (bare is always a tag, even a
-# token that names a field like `status`), it survives the parse — the refusal
-# re-spells it verbatim — and apply refuses the line as a bad request (64) rather
-# than silently dropping the token. Nothing is written.
-function organize_literal_bare_token_is_tag_apply_refuses { # @test
+# token that names a field like `status`) — it survives the parse and apply
+# reads it as a MEMBERSHIP add (design G7), previewed as a categories change.
+# The apply runs headless without -commit, so it is a dry-run: the preview
+# proves the parse and nothing is written.
+function organize_literal_bare_token_is_tag { # @test
   generate_grouped
   local edited="$BATS_TEST_TMPDIR/edited.txt"
   write_lit2_edited '- [lit2.ics work-x status location=Bank] Read book' "$edited"
 
-  run_cg organize -apply "$edited" -commit
-  assert_failure 64
-  assert_output 'cutting-garden: organize --apply: object lit2.ics carries tag atoms work-x status: tag atoms are not writable yet (native tags slice 2)'
+  run_cg organize -apply "$edited"
+  assert_success
+  assert_output - <<'EOF'
+organize: 1 change(s):
+
+  - [lit2.ics  categories={+status,work-x+}]  Read book
+
+organize: dry-run — nothing written
+EOF
 
   assert_lit2_untouched
 }
 
-# G9: a QUOTED tag token in a box parses (the doddish String decodes to `_ inbox`)
-# and is re-spelled quoted by the same rule — the refusal names it as `"_ inbox"`.
+# G9: a QUOTED tag token in a box parses (the doddish String decodes to
+# `_ inbox`) and is re-spelled quoted by the same rule — the membership
+# preview names it as `"_ inbox"` (#248). Dry-run: nothing is written.
 function organize_literal_quoted_box_token_parses { # @test
   generate_grouped
   local edited="$BATS_TEST_TMPDIR/edited.txt"
   write_lit2_edited '- [lit2.ics "_ inbox" location=Bank] Read book' "$edited"
 
-  run_cg organize -apply "$edited" -commit
-  assert_failure 64
-  assert_output 'cutting-garden: organize --apply: object lit2.ics carries tag atoms "_ inbox": tag atoms are not writable yet (native tags slice 2)'
+  run_cg organize -apply "$edited"
+  assert_success
+  assert_output - <<'EOF'
+organize: 1 change(s):
+
+  - [lit2.ics  categories={+"_ inbox"+}]  Read book
+
+organize: dry-run — nothing written
+EOF
 
   assert_lit2_untouched
 }
@@ -213,7 +228,7 @@ function organize_literal_quoted_tag_heading_round_trips { # @test
   assert_output - <<'EOF'
 organize: 1 change(s):
 
-  - [lit2.ics  categories={+_ inbox+}]
+  - [lit2.ics  categories={+"_ inbox"+}]  Read book
 
 organize: wrote 1 change(s)
 EOF

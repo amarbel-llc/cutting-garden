@@ -238,6 +238,22 @@ func TestTagLeverEnvelopeRoundTrip(t *testing.T) {
 	}
 }
 
+// TestParseObjectLine_PercentMarkedTermRejects pins the `%`-prefixed atom
+// story (RFC 0015 §Object lines: `%`-marked atoms are display-only; design
+// G7): `%` is a reserved trellis rune with no box production, so a `%`-marked
+// term inside a box is a LOUD parse error today — it can never reach the
+// membership planner as an edit. Nothing emits such atoms yet; when a plugin
+// does, the parse path (not this rejection) is the thing to extend.
+func TestParseObjectLine_PercentMarkedTermRejects(t *testing.T) {
+	_, err := parseObjectLine("[t1.ics %computed] Some idea")
+	if err == nil {
+		t.Fatal("a %-marked box term must be a loud parse error")
+	}
+	if !errors.Is400BadRequest(err) {
+		t.Errorf("expected a bad request, got %v", err)
+	}
+}
+
 // TestUnifiedTagPresenter_SortsBySortKey pins the framework half of G6: the
 // presenter orders the codec's stored-order tag set by the interpreter's
 // SortKey (lexical for both builtins) without mutating the codec's slice.

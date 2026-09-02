@@ -150,7 +150,7 @@ function organize_categories_apply_writes { # @test
   assert_output - <<'EOF'
 organize: 1 change(s):
 
-  - [field3.ics  categories=[-work-]{+errand+}]
+  - [field3.ics  categories=[-work-]{+errand+}]  Water plants
 
 organize: wrote 1 change(s)
 EOF

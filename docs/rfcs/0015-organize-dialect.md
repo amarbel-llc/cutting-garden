@@ -53,6 +53,16 @@ revised: |
     tag-grouped document strips each appearance's placement Via tag(s);
     default placement) — omitted at their defaults, defaultable via
     `[organize] tag_atoms` / `tag_strip`, the document's field winning.
+  2026-09-02 (slice 2 T3) — box tag EDITS are membership edits (design G7):
+    the interim "not writable yet" gate is removed. An added/removed box tag
+    folds through the tag interpreter's EXACT `Complete` (RFC 0019 §6.2) into
+    the same full-set write a heading move takes; `_tag-strip` tells apply
+    what a box elides (`placement`: placement-derived tags are never atom
+    deltas; `none`: the box is authoritative — membership = box tags ∪ the
+    current placements' bucket tags, so a moved line's old tag survives until
+    the box is edited). Two conflict rules (exit 2): appearances must agree on
+    the non-placement tags, and (under `placement`) a tag removed from a box
+    while its bucket placement stands is "placement says X, box says not-X".
 ---
 
 # The organize document dialect
@@ -253,10 +263,45 @@ document — the exact bytes presented to and edited by the end-user:
     also an atom) — while every other tag stays; `none` keeps the full set in
     every box. A FIELD grouping strips nothing (no tag placement exists).
 
-  An out-of-domain lever value is a loud bad request. Write-side (interim,
-  native tags slice 2): apply passes an UNCHANGED tag set through and refuses
-  an added or removed box tag ("not writable yet"); the box-tag-edit →
-  membership write lands with design G7.
+  An out-of-domain lever value is a loud bad request.
+
+  **Write-side (design G7, slice 2 T3): box tag edits are membership
+  edits.** Adding or removing a bare/quoted tag term in a box is a membership
+  add/remove on the tag dimension, folded through the interpreter's EXACT
+  `Complete` (RFC 0019 §6.2 — typing `project` adds the literal tag
+  `project`, never a namespace) into the SAME full-set write a heading move
+  takes; under a tag grouping the placement (bucket) diff and the atom diff
+  compose into one write per object. The effective `_tag-strip` tells apply
+  what a box ELIDES:
+
+  - `placement` (and every FIELD grouping): a box tag some placement of the
+    object derives is placement-expressed — never an atom delta (the bucket
+    diff owns placement changes); the remaining NON-placement tags diff
+    against the pinned base's. A base box tag now expressed by an EDITED
+    placement is a box→placement migration, not a removal. A stale atom
+    whose placement was removed RE-ASSERTS its tag (the box is authoritative
+    for non-placement tags): dropping a bucket line while a sibling box
+    still carries the tag as an atom folds to no change, never a silent
+    removal.
+  - `none`: NOTHING is placement-derived — the box is authoritative, and an
+    object's membership is the union of its box tags and its current
+    placements' reconstructed bucket tags (the bucket value under `(tags)`;
+    the namespace-reconstructed leaf, or the bare namespace for a G10a root,
+    under a namespace grouping). Consequences: a MOVED line whose box still
+    carries the old tag keeps it (a tag is removed only when gone from both
+    every box and the placement); deleting a still-placed tag from the boxes
+    is a no-op (the placement re-derives it); and placement removal alone
+    never strips a namespace subtree.
+
+  Two conflict rules refuse an ambiguous document (exit 2, batched like the
+  drift conflicts): an object's appearances MUST agree on the tags placement
+  does not explain (an atom added to or removed from one box but not its
+  siblings' names the tag and the appearances); and, under `placement`
+  strip, a tag removed from a matched box while the object still sits under
+  that tag's bucket is "placement says X, box says not-X". The apply summary
+  renders a membership edit as the object's sorted old→new tag sets, each
+  value spelled through the one quoting rule, with the summary trailer
+  (#247/#248).
 - **The trailing `! <type>` type-anchor of the earlier draft is removed** (it was a
   mistake): the object type is the leading heading or the envelope field, never a
   trailing line, which is distinct from the envelope's own `! organize-base-v1`.
@@ -420,9 +465,13 @@ fields, and a field shadowing a harness-reserved name is a type error.
 trailer, per RFC 0014's isometry. `%` object-line prefix (virtual /
 inferred type) preserved from dodder. `%`-marked atoms inside the box
 (computed tags, derived fields) are display-only; editing them is an
-error. Object ids are substrate node ids (strict sigil rule; quoted for
-reserved runes). Aliased short ids are reserved-but-unspecified
-(deferred).
+error. (As of native tags slice 2 nothing emits them and the trellis box
+grammar has no `%` production — `%` is a reserved rune — so a `%`-marked
+box term is a loud PARSE error today; the display-only affordance is
+reserved for when a plugin emits computed tags, at which point the parse
+path is what grows.) Object ids are substrate node ids (strict sigil
+rule; quoted for reserved runes). Aliased short ids are
+reserved-but-unspecified (deferred).
 
 ### Bindings
 

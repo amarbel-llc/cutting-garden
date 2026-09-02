@@ -159,10 +159,10 @@ type objectLine struct {
 	// bare is ALWAYS a tag; leading by default, after the atoms under
 	// `_tag-atoms = trailing`). Since native tags slice 2 generate RENDERS them
 	// from the type's designated tag field (tagRender), SortKey-ordered, with
-	// the placement Via stripped under a tag grouping (`_tag-strip`). Apply
-	// still does not WRITE them: an edited tag set (vs the pinned base) is
-	// refused loudly (rejectEditedTagAtoms) until slice 2 Task 3's membership
-	// write.
+	// the placement Via stripped under a tag grouping (`_tag-strip`) — and
+	// apply WRITES them: an edited tag set (vs the pinned base) is a
+	// membership add/remove on the tag dimension (design G7, planTagAtomDeltas
+	// in tagatom_apply.go), folded through the interpreter's exact Complete.
 	Tags   []string
 	Fields []cgp.BoxAtom
 	Desc   string

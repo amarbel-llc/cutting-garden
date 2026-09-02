@@ -370,7 +370,10 @@ write-back mechanics of §6.2. `Buckets` reports continuation rollups only.
   is DISALLOWED — it would strip an independent whole-dimension sibling (`work`
   vs a coincidentally hyphen-sharing `work-urgent`). `Complete`'s exactness is
   thus uniform across both builtins; the hierarchy lives in `Buckets` and
-  `Matches`.
+  `Matches`. Box tag-atom edits (native tags slice 2, RFC 0015 design G7) ride
+  the SAME exact `Complete`: a typed atom names a literal full tag under every
+  interpreter — typing `project` into a box adds exactly `project` — so this
+  contract is unchanged by the atom write path.
 
 #### 6.3 Continuation-heading rendering (presentation-layer; RESOLVED — decision A)
 

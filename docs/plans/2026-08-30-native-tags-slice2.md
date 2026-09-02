@@ -82,6 +82,26 @@ task's vectors are whole-document heredocs (G16); `_base` digests verbatim.
   conflict; membership diff lines now show the trailer (#247 — fix here since
   this task owns the membership diff path) and quote tag values via
   `QuoteIfNeeded` (#248).
+- **T3 decisions (as landed):** the planner is `planTagAtomDeltas`
+  (`internal/organize/tagatom_apply.go`, grown from the gate's ledger
+  helpers); deltas fold through the interpreter's exact `Complete` AFTER the
+  bucket folds in `planMemberships` (tag grouping) or via
+  `planAtomMembershipEdits` on the designated tag dimension (facet branch —
+  the status-grouped add path). `_tag-strip = none` apply reading, pinned in
+  RFC 0015: membership = box tags ∪ the current placements' reconstructed
+  bucket tags, diffed as EFFECTIVE sets with the bucket folds skipped
+  (`placementFolds=false`) — a moved line's old tag stays until the box is
+  edited, deleting a still-placed tag is a no-op, placement alone never
+  removes a namespace subtree. Under `placement` strip, a base box tag now
+  expressed by an edited placement is a box→placement migration (not a
+  removal), and a stale atom whose placement vanished RE-ASSERTS its tag
+  (folds to no change). Conflicts are exit-2 trouble, batched like planMoves':
+  `N tag conflict(s) — box tag atoms disagree with placement or across
+  appearances; re-edit the document`. `%`-marked atoms don't parse (reserved
+  rune, no box production) — pinned as a parse-level rejection, no plugin
+  emission built. The literal lane's two gate-refusal tests re-pointed to
+  dry-run membership previews (`organize_literal_bare_token_is_tag`,
+  `organize_literal_quoted_box_token_parses`).
 
 ## Task 4: JSON `tags` + `describe_node_types` `tag_set` (G12, half)
 

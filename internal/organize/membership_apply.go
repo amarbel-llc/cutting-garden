@@ -53,6 +53,15 @@ type membershipEdit struct {
 // deeper `project-*` tags realize the CONTINUATION buckets, whose removal is
 // governed by their own bucket rows, so the one-bucket-one-realizing-set rule the
 // continuations follow gives the root exactly the bare tag.
+//
+// atomDeltas carries each object's box tag-atom edit (design G7, native tags
+// slice 2 T3; planTagAtomDeltas guarantees its ids are present in base): the
+// deltas fold AFTER the bucket folds, removes then adds, each EXACT — a typed
+// atom names a literal tag under every interpreter. placementFolds=false skips
+// the bucket folds entirely — the `_tag-strip = none` reading, whose deltas
+// are the diff of the box-∪-placement EFFECTIVE sets and so already encode
+// every placement change (a moved line's old tag then survives in its box; a
+// namespace subtree is never removed by placement alone).
 func planMemberships(
 	edited, base document,
 	live []cgp.Node,
@@ -60,6 +69,8 @@ func planMemberships(
 	interp cgp.TagInterpreter,
 	dim string,
 	namespace string,
+	atomDeltas map[string]tagDelta,
+	placementFolds bool,
 ) ([]membershipEdit, error) {
 	baseM, err := base.memberships(true)
 	if err != nil {
@@ -105,17 +116,25 @@ func planMemberships(
 			continue
 		}
 
-		baseSet := stringSet(baseM[id])
-		editedSet := stringSet(editedM[id])
-		adds := setDifference(editedSet, baseSet)
-		removes := setDifference(baseSet, editedSet)
-		if len(adds) == 0 && len(removes) == 0 {
+		var adds, removes []string
+		if placementFolds {
+			baseSet := stringSet(baseM[id])
+			editedSet := stringSet(editedM[id])
+			adds = setDifference(editedSet, baseSet)
+			removes = setDifference(baseSet, editedSet)
+		}
+		delta := atomDeltas[id]
+		if len(adds)+len(removes)+len(delta.adds)+len(delta.removes) == 0 {
 			continue
 		}
 
 		liveTags := facetKeys(liveNode.Facets[dim])
 		newTags := liveTags
-		if namespace == "" {
+		switch {
+		case !placementFolds:
+			// The `_tag-strip = none` reading: the atom deltas below are the
+			// whole membership diff; no bucket folds.
+		case namespace == "":
 			// Whole-dimension (or field) grouping: buckets ARE full tags, folded
 			// through the interpreter exactly — the byte-for-byte slice-2 behavior.
 			for _, bucket := range removes {
@@ -130,7 +149,7 @@ func planMemberships(
 					return nil, errors.Wrapf(err, "organize: %s add %q", id, bucket)
 				}
 			}
-		} else {
+		default:
 			// Namespace rollup: a bucket is a segment (`-client`), not a full tag.
 			// A REMOVE enumerates the live tags under the reconstructed namespace tag
 			// and exact-removes each realizing tag (the subtree, apply-owned §6.2 —
@@ -167,6 +186,12 @@ func planMemberships(
 					return nil, errors.Wrapf(err, "organize: %s add %q", id, fullTag)
 				}
 			}
+		}
+
+		// Box tag-atom deltas fold AFTER the bucket folds (removes then adds,
+		// each exact) — under the `none` strip they ARE the whole diff.
+		if newTags, err = foldTagDelta(newTags, delta, interp, id); err != nil {
+			return nil, err
 		}
 
 		if setEqual(newTags, liveTags) {

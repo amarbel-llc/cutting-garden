@@ -5,6 +5,8 @@ import (
 	"io"
 	"sort"
 	"strings"
+
+	"code.linenisgreat.com/cutting-garden/internal/trellis"
 )
 
 // The apply diff (cutting-garden#224): before writing, organize renders each
@@ -241,25 +243,50 @@ func renderDiff(w io.Writer, changes []objectChange, color bool) {
 // multi-valued dimension's membership edits (RFC 0019, #231 slice 2): each line
 // shows the object id and its OLD tag set (from the live node's Facets[dim]),
 // whole-value-diffed to the NEW replacement set, reusing renderWholeValue so the
-// markers and color match the single-valued box diff. It is intentionally lighter
-// than buildChanges' folded box — a membership edit re-files a whole SET, not one
-// atom. The caller writes the header and the confirm/dry-run footer around it.
+// markers and color match the single-valued box diff, followed by the object's
+// summary trailer from the edited document (#247 — the same trailer the
+// field-edit boxes show). Tag values are spelled through the ONE quoting rule
+// (trellis.QuoteIfNeeded, #248), so the summary and the document agree on
+// `"_ inbox"`. It is intentionally lighter than buildChanges' folded box — a
+// membership edit re-files a whole SET, not one atom. The caller writes the
+// header and the confirm/dry-run footer around it.
 func renderMembershipChanges(
-	w io.Writer, edits []membershipEdit, dim, anchor string, color bool,
+	w io.Writer, edits []membershipEdit, dim, anchor string,
+	descs map[string]string, color bool,
 ) {
 	for _, e := range edits {
 		id := relativeID(e.URI, anchor)
-		old := sortedCopy(facetKeys(e.Node.Facets[dim]))
-		set := sortedCopy(e.NewTags)
-		fmt.Fprintf(w, "  - [%s  %s=%s]\n", id, dim,
-			renderWholeValue(strings.Join(old, ","), strings.Join(set, ","), color))
+		old := spelledSortedTags(facetKeys(e.Node.Facets[dim]))
+		set := spelledSortedTags(e.NewTags)
+		fmt.Fprintf(w, "  - [%s  %s=%s]", id, dim, renderWholeValue(old, set, color))
+		if d := descs[id]; d != "" {
+			fmt.Fprintf(w, "  %s", d)
+		}
+		fmt.Fprintln(w)
 	}
 }
 
-// sortedCopy returns a lexically sorted copy of in, leaving the input untouched —
-// so a membership preview renders its tag sets in a stable order.
-func sortedCopy(in []string) []string {
-	out := append([]string(nil), in...)
-	sort.Strings(out)
+// spelledSortedTags renders a tag set for the membership preview: lexically
+// sorted (stable regardless of live/fold order), each value spelled through
+// trellis.QuoteIfNeeded (#248), comma-joined.
+func spelledSortedTags(in []string) string {
+	sorted := append([]string(nil), in...)
+	sort.Strings(sorted)
+	spelled := make([]string, len(sorted))
+	for i, t := range sorted {
+		spelled[i] = trellis.QuoteIfNeeded(t)
+	}
+	return strings.Join(spelled, ",")
+}
+
+// descByID indexes a document's object-line description trailers by box id —
+// the membership preview's trailer source. Last line wins, exactly like
+// buildChanges' editedLines fold (a multi-appearance object's lines normally
+// share one trailer anyway).
+func descByID(doc document) map[string]string {
+	out := map[string]string{}
+	for _, ln := range doc.objectLines() {
+		out[ln.ID] = ln.Desc
+	}
 	return out
 }

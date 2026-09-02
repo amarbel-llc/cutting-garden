@@ -17,21 +17,21 @@ below (the case title names the lane), and `just test-grammar-corpus`
 | G1 | bare atoms after id/type; `_tag-atoms = leading` default | 2 | `organize_tagatoms.bats:organize_tagatoms_leading_default` (+ every field-grouped lane re-pointed; Go `TestObjectLineTagRoundTrip`) |
 | G1 | `_tag-atoms = trailing` | 2 | `organize_tagatoms.bats:organize_tagatoms_trailing_config` (+ Go `internal/organize` `TestTagLeverEnvelopeRoundTrip`) |
 | G1 | `_tag-atoms = none` | 2 | `organize_tagatoms.bats:organize_tagatoms_none_config` |
-| G2 | tag-grouped: strip only `Via`, siblings stay | 2 | `organize_tagatoms.bats:organize_tagatoms_strip_placement_keeps_sibling`, `organize_tagatoms.bats:organize_tagatoms_ns_root_strip` (G10a root), `organize_tagatoms.bats:organize_tagatoms_ns_strip_all_contributors` (both same-bucket tags strip), `organize_tagatoms.bats:organize_tagatoms_whole_dim_move_passes_gate` (bucket-to-bucket move through the gate; + `organize_tags.bats`, `organize_ns.bats`, `organize_headings.bats` re-pointed; Go `TestTagRenderFill_*`) |
+| G2 | tag-grouped: strip only `Via`, siblings stay | 2 | `organize_tagatoms.bats:organize_tagatoms_strip_placement_keeps_sibling`, `organize_tagatoms.bats:organize_tagatoms_ns_root_strip` (G10a root), `organize_tagatoms.bats:organize_tagatoms_ns_strip_all_contributors` (both same-bucket tags strip), `organize_tagatoms.bats:organize_tagatoms_whole_dim_move_applies` (bucket-to-bucket move with sibling atoms untouched; + `organize_tags.bats`, `organize_ns.bats`, `organize_headings.bats` re-pointed; Go `TestTagRenderFill_*`) |
 | G2 | `_tag-strip = none` | 2 | `organize_tagatoms.bats:organize_tagatoms_strip_none` (+ Go `TestTagRenderFill_StripNoneKeepsVia`) |
 | G3 | levers omitted at default; config default; doc wins | 2 | `organize_tagatoms.bats:organize_tagatoms_leading_default` (omitted), `organize_tagatoms.bats:organize_tagatoms_trailing_config` / `organize_tagatoms_none_config` / `organize_tagatoms_strip_none` (config default + `_base`-addressed echo), `organize_tagatoms.bats:organize_tagatoms_doc_wins` (+ Go `TestEffectiveTagLevers` — the doc-wins resolution itself; full doc-wins apply semantics land with G7) |
 | G4 | `fmt-organize` regenerates + rewrites `_base` | 3 | — |
 | G4 | `fmt-organize` refuses on unapplied edits | 3 | — |
 | G4 | `fmt-organize` never emits reset headings | 3 | — |
 | G6 | `categoriesCodec.Format` produces the tag set (Go unit) | 2 | — |
-| G7 | box atom added → membership add (exact) | 2 | — |
-| G7 | box atom removed → membership remove | 2 | — |
-| G7 | cross-appearance tag disagreement → conflict | 2 | — |
-| G7 | `%`-atom edit rejected | 2 | — |
+| G7 | box atom added → membership add (exact) | 2 | `organize_tagatoms.bats:organize_tagatoms_add_writes_membership`, `organize_literal.bats:organize_literal_bare_token_is_tag` (dry-run preview) (+ Go `TestPlanTagAtomDeltas_AddAndRemove`, `TestPlanMemberships_AtomDeltasFoldAfterBuckets`, `TestPlanAtomMembershipEdits_FoldsExact`) |
+| G7 | box atom removed → membership remove | 2 | `organize_tagatoms.bats:organize_tagatoms_remove_writes_membership` (+ Go `TestPlanTagAtomDeltas_AddAndRemove`, `TestPlanTagAtomDeltas_NamespaceMoveKeepsSiblings`) |
+| G7 | cross-appearance tag disagreement → conflict; placement-vs-box → conflict; `_tag-strip = none` move-is-not-an-edit | 2 | `organize_tagatoms.bats:organize_tagatoms_cross_appearance_disagreement_conflicts`, `organize_tagatoms.bats:organize_tagatoms_placement_vs_box_conflicts`, `organize_tagatoms.bats:organize_tagatoms_strip_none_move_is_not_an_edit` (+ Go `TestPlanTagAtomDeltas_CrossAppearanceDisagreement`, `TestPlanTagAtomDeltas_PlacementVsBox`, `TestPlanTagAtomDeltas_StripNoneMoveIsNotAnEdit`, `TestPlanTagAtomDeltas_MigratedToPlacementIsNotARemove`) |
+| G7 | `%`-atom edit rejected (parse-level: `%` is reserved, no box production) | 2 | Go `internal/organize` `TestParseObjectLine_PercentMarkedTermRejects` |
 | G8 | `list -format espalier` == organize boxes | 4 | — |
 | G8 | JSON `tags` array | 4 | — |
 | G8 | mesa table (golden) | 4 | — |
-| G9 | bare token in box is a tag, even if it names a field | 1 | `organize_literal.bats:organize_literal_bare_token_is_tag_apply_refuses` (+ Go `internal/trellis` `TestLiteral_RoundTrip`) |
+| G9 | bare token in box is a tag, even if it names a field | 1 | `organize_literal.bats:organize_literal_bare_token_is_tag` (+ Go `internal/trellis` `TestLiteral_RoundTrip`) |
 | G9 | non-ground interior is a loud bad request | 1 | `organize_literal.bats:organize_literal_non_ground_interior_rejects` (+ Go `TestLiteral_NotGround`) |
 | G9 | quoted tag (`"_ inbox"`) round-trips in box and heading | 1 | `organize_literal.bats:organize_literal_quoted_tag_heading_round_trips`, `organize_literal.bats:organize_literal_quoted_box_token_parses` |
 | G10 | `--group-by (tags)` → `# <tag>` buckets at minimal depth, no dim heading | 1 | `organize_groupby.bats:organize_groupby_tags_whole_set`, `organize_headings.bats:organize_headings_tags_buckets_at_minimal_depth` (+ `organize_tags.bats`, `organize_literal.bats` re-pointed; Go `TestParseGroupSpec_Tags`, `TestGenerate_TagBucketsAtMinimalDepth`) |
@@ -46,7 +46,7 @@ below (the case title names the lane), and `just test-grammar-corpus`
 | G10 | empty-heading reset (`##` pops one; `#` → ungrouped; deeper no-op) | 1 | `organize_headings.bats:organize_headings_reset_pops_to_parent_and_ungrouped`, `organize_headings.bats:organize_headings_reset_deeper_than_current_is_noop` (+ Go `TestParseReset_*`) |
 | G11 | nvim corpus mirrors the slice-1 vectors | 1 | `zz-nvim/grammars/organize/test/corpus/organize.txt` (`just test-grammar-corpus`) |
 | G12 | `describe_node_types` reports `tag_set` | 4 | — |
-| G13 | hand-written bare token round-trips through parse→write | 1 | `organize_literal.bats:organize_literal_bare_token_is_tag_apply_refuses` (+ Go `internal/organize` `TestObjectLineTagRoundTrip`) |
+| G13 | hand-written bare token round-trips through parse→write | 1 | `organize_literal.bats:organize_literal_bare_token_is_tag` (+ Go `internal/organize` `TestObjectLineTagRoundTrip`) |
 | G16 | existing lanes converted to whole-document vectors | 1 | all `organize*.bats` |
 
 ## UAT feedback (slice 1.5)

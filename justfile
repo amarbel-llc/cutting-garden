@@ -624,9 +624,10 @@ debug-organize-categories: debug-build-go
 
 # Render + exercise the /dav/lit/ calendar (native tags slice 1, G9/G13): grouped
 # by categories (the `## "_ inbox"` QUOTED bucket), then a bucket move of lit2 into
-# that quoted bucket (apply + curl + re-render), then the three apply REFUSALS —
-# a hand-edited bare tag token, a quoted tag token, and a non-ground `status*=y`
-# atom (expected exit 64 each). A second, fresh-server phase exercises the
+# that quoted bucket (apply + curl + re-render), then the tag-token parses — a
+# hand-edited bare tag token and a quoted tag token each preview as a G7
+# membership add (DRY-RUN, nothing written) — and the non-ground `status*=y`
+# atom refusal (exit 64). A second, fresh-server phase exercises the
 # RFC 5545 TEXT-escaping vector (native tags slice 1.5 F): lit3's wire-escaped
 # `SUMMARY:Plan\, then do` renders unescaped, a trailer edit appends " now", and
 # the write-back re-escapes on the wire.
@@ -658,12 +659,12 @@ debug-organize-literal:
     echo "# cg organize -group-by '(tags)' $cal" >&2
     echo '# ---------------------------------------------------------------' >&2
     "$cg" organize -group-by '(tags)' "$cal" | tee "$doc"
-    echo '# --- refusal: bare tag token (expect exit 64) ---' >&2
+    echo '# --- bare tag token: G7 membership-add preview (dry-run) ---' >&2
     sed 's/^- \[lit2.ics location=Bank\]/- [lit2.ics work-x location=Bank]/' "$doc" >"$doc.tagged"
-    "$cg" organize -apply "$doc.tagged" -commit || echo "exit=$?"
-    echo '# --- refusal: quoted tag token (expect exit 64) ---' >&2
+    "$cg" organize -apply "$doc.tagged"
+    echo '# --- quoted tag token: G7 membership-add preview (dry-run) ---' >&2
     sed 's/^- \[lit2.ics location=Bank\]/- [lit2.ics "_ inbox" location=Bank]/' "$doc" >"$doc.quoted"
-    "$cg" organize -apply "$doc.quoted" -commit || echo "exit=$?"
+    "$cg" organize -apply "$doc.quoted"
     echo '# --- refusal: non-ground status*=y (expect exit 64) ---' >&2
     sed 's/^- \[lit2.ics location=Bank\]/- [lit2.ics status*=y location=Bank]/' "$doc" >"$doc.nonground"
     "$cg" organize -apply "$doc.nonground" -commit || echo "exit=$?"
@@ -942,10 +943,10 @@ debug-organize-vectors:
 
     	- [field2.ics priority=1_should] Read book
     	EOM
-    # (field2's ungrouped line above is spelled BARE — pulling a rendered
-    # per-bucket box (`work`/`errand` Via-stripped) out to ungrouped WITH its
-    # sibling tag would read as a tag-atom edit and refuse under the slice-2
-    # interim gate.)
+    # (field2's ungrouped line above is spelled BARE, expressing the remove-all:
+    # pulling it out WITH its sibling tag atoms would re-assert them as
+    # membership adds — box atoms are authoritative since slice 2 T3 (G7) —
+    # and the apply would fold to no change.)
     apply_doc headings-reset "$hd.reset"
     gen headings-after-reset "$cal" '(tags)'
     stop_srv
@@ -993,16 +994,26 @@ debug-organize-vectors:
     curl -fsS "${home#caldav:}lit/lit1.ics"
     gen tagatoms-pass-after "$cal" 'status='
     stop_srv
-    # rejectEditedTagAtoms both ways: an ADDED and a REMOVED box tag refuse.
+    # G7 box tag edits are membership writes (slice 2 T3): an ADDED atom and a
+    # REMOVED atom each land as a full-set CATEGORIES write (curl-verified,
+    # after-render shows the box).
     start_srv 43110 CG_TEST_CALDAV_LIT=1
     cal="${home}lit/"
-    gen tagatoms-reject-generate "$cal" 'status='
-    sed 's/^- \[lit2.ics location=Bank\]/- [lit2.ics urgent location=Bank]/' .tmp/organize-vectors-tagatoms-reject-generate.txt >.tmp/organize-vectors-tagatoms-reject-generate.txt.edited
-    banner 'tagatoms-reject-added apply (expect exit 64)'
-    "$cg" organize -apply .tmp/organize-vectors-tagatoms-reject-generate.txt.edited -commit || echo "exit=$?"
-    sed 's/^- \[lit1.ics "_ inbox"\]/- [lit1.ics]/' .tmp/organize-vectors-tagatoms-reject-generate.txt >.tmp/organize-vectors-tagatoms-reject-generate.txt.edited
-    banner 'tagatoms-reject-removed apply (expect exit 64)'
-    "$cg" organize -apply .tmp/organize-vectors-tagatoms-reject-generate.txt.edited -commit || echo "exit=$?"
+    gen tagatoms-add-generate "$cal" 'status='
+    sed 's/^- \[lit2.ics location=Bank\]/- [lit2.ics urgent location=Bank]/' .tmp/organize-vectors-tagatoms-add-generate.txt >.tmp/organize-vectors-tagatoms-add-generate.txt.edited
+    apply_doc tagatoms-add .tmp/organize-vectors-tagatoms-add-generate.txt.edited
+    banner 'tagatoms-add curl lit2 (expect CATEGORIES:urgent)'
+    curl -fsS "${home#caldav:}lit/lit2.ics"
+    gen tagatoms-add-after "$cal" 'status='
+    stop_srv
+    start_srv 43110 CG_TEST_CALDAV_LIT=1
+    cal="${home}lit/"
+    gen tagatoms-remove-generate "$cal" 'status='
+    sed 's/^- \[lit1.ics "_ inbox"\]/- [lit1.ics]/' .tmp/organize-vectors-tagatoms-remove-generate.txt >.tmp/organize-vectors-tagatoms-remove-generate.txt.edited
+    apply_doc tagatoms-remove .tmp/organize-vectors-tagatoms-remove-generate.txt.edited
+    banner 'tagatoms-remove curl lit1 (expect NO CATEGORIES line)'
+    curl -fsS "${home#caldav:}lit/lit1.ics"
+    gen tagatoms-remove-after "$cal" 'status='
     stop_srv
     # G1 trailing via config (+ G3 doc-wins: the doc's `- _tag-atoms = leading`
     # edit wins over the trailing config, and repositioned tags are not an edit).
@@ -1058,7 +1069,7 @@ debug-organize-vectors:
     	END:VCALENDAR
     	EOF
     gen tagatoms-strip "$cal" '(tags)'
-    # …and a whole-dimension bucket-to-bucket MOVE through the gate: lit3 from
+    # …and a whole-dimension bucket-to-bucket MOVE: lit3 from
     # `# "planning, misc"` to `# urgent` (the target bucket's lit1 keeps its
     # sibling tag atom untouched).
     move_line .tmp/organize-vectors-tagatoms-strip.txt '# urgent' '^- .lit3.ics'
@@ -1066,6 +1077,29 @@ debug-organize-vectors:
     banner 'tagatoms-tagmove curl lit3 (expect CATEGORIES:urgent)'
     curl -fsS "${home#caldav:}lit/lit3.ics"
     gen tagatoms-tagmove-after "$cal" '(tags)'
+    stop_srv
+    # G7 conflicts against the two-tag strip document (fresh server, re-seeded
+    # lit1): a non-placement tag added to ONE box only (cross-appearance
+    # disagreement) and a still-placed tag removed from a box
+    # (placement-vs-box) each refuse with exit 2.
+    start_srv 43110 CG_TEST_CALDAV_LIT=1
+    cal="${home}lit/"
+    put_ics "${home#caldav:}lit/lit1.ics" <<-'EOF'
+    	BEGIN:VCALENDAR
+    	VERSION:2.0
+    	BEGIN:VTODO
+    	UID:lit1
+    	SUMMARY:Triage inbox
+    	CATEGORIES:_ inbox,urgent
+    	END:VTODO
+    	END:VCALENDAR
+    	EOF
+    sed 's/^- \[lit1.ics urgent\] Triage inbox$/- [lit1.ics urgent foo] Triage inbox/' .tmp/organize-vectors-tagatoms-strip.txt >.tmp/organize-vectors-tagatoms-strip.txt.edited
+    banner 'tagatoms-conflict-disagree apply (expect exit 2)'
+    "$cg" organize -apply .tmp/organize-vectors-tagatoms-strip.txt.edited -commit || echo "exit=$?"
+    sed 's/^- \[lit1.ics urgent\] Triage inbox$/- [lit1.ics] Triage inbox/' .tmp/organize-vectors-tagatoms-strip.txt >.tmp/organize-vectors-tagatoms-strip.txt.edited
+    banner 'tagatoms-conflict-placement apply (expect exit 2)'
+    "$cg" organize -apply .tmp/organize-vectors-tagatoms-strip.txt.edited -commit || echo "exit=$?"
     stop_srv
     # G10a root strip: nsD carrying other,project files under `# project` with
     # only `other` in the box.
@@ -1114,6 +1148,14 @@ debug-organize-vectors:
     start_srv 43110 CG_TEST_CALDAV_NS=1
     cal="${home}ns/"
     gen tagatoms-stripnone "$cal" 'project'
+    # …and the G7 `_tag-strip = none` move-is-not-an-edit reading: nsA moved
+    # between rollup buckets with its box atom untouched KEEPS the old tag
+    # (box authoritative); only the new bucket's reconstructed tag is added.
+    move_line .tmp/organize-vectors-tagatoms-stripnone.txt '## -cutting_garden' '^- .nsA.ics'
+    apply_doc tagatoms-stripnone-move .tmp/organize-vectors-tagatoms-stripnone.txt.edited
+    banner 'tagatoms-stripnone-move curl nsA (expect CATEGORIES:project-client-acme,project-cutting_garden)'
+    curl -fsS "${home#caldav:}ns/nsA.ics"
+    gen tagatoms-stripnone-after "$cal" 'project'
     stop_srv
     no_config
 

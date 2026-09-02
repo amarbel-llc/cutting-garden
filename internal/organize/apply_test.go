@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/url"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -13,11 +14,11 @@ import (
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
-// tagWholeGateDoc builds a `(tags)`-grouped document shaped like generate's
+// tagAtomWholeDoc builds a `(tags)`-grouped document shaped like generate's
 // output under `_tag-strip = placement`: t1 carries {work, errand} so it
 // appears under BOTH buckets, each box showing only the OTHER (non-Via) tag;
 // t2 is untagged and ungrouped.
-func tagWholeGateDoc() document {
+func tagAtomWholeDoc() document {
 	return document{
 		GroupBy:   "(tags)",
 		Ungrouped: []objectLine{{ID: "t2.ics"}},
@@ -28,23 +29,23 @@ func tagWholeGateDoc() document {
 	}
 }
 
-// TestRejectEditedTagAtoms_UnchangedPasses pins the interim slice-2 gate's
-// pass-through half: a document whose boxes carry the GENERATED tag atoms
-// unchanged is not refused — including a pure membership edit, where a line
-// leaves both tag buckets (the placement-derived tags vanish WITH the
-// placements, so nothing reads as a box edit) and where a line MOVES between
-// field buckets carrying its tags along.
-func TestRejectEditedTagAtoms_UnchangedPasses(t *testing.T) {
-	base := tagWholeGateDoc()
+var tagWholeSpec = groupSpec{Dim: "categories", Kind: groupKindTagWhole}
 
-	// Byte-identical: trivially unchanged.
-	if err := rejectEditedTagAtoms(tagWholeGateDoc(), base, groupSpec{Dim: "categories", Kind: groupKindTagWhole}, nil); err != nil {
-		t.Errorf("unchanged document must pass: %v", err)
+// TestPlanTagAtomDeltas_UnchangedYieldsNothing pins the pass-through half of
+// the G7 planner: an unchanged document, a pure membership removal (the boxes
+// gone with their lines), and a field-bucket move carrying a reordered-but-
+// equal tag set all produce zero deltas and no conflict.
+func TestPlanTagAtomDeltas_UnchangedYieldsNothing(t *testing.T) {
+	base := tagAtomWholeDoc()
+
+	deltas, err := planTagAtomDeltas(tagAtomWholeDoc(), base, tagWholeSpec, false, nil)
+	if err != nil || len(deltas) != 0 {
+		t.Errorf("unchanged document: deltas=%v err=%v, want none", deltas, err)
 	}
 
 	// The headings-reset shape: t1 removed from BOTH buckets to ungrouped, its
-	// box (as generated, per-bucket Via-stripped) gone with the placements. A
-	// membership removal, not a tag-atom edit.
+	// boxes (per-bucket Via-stripped) gone with the placements — a membership
+	// removal for the bucket diff, never a tag-atom delta.
 	edited := document{
 		GroupBy: "(tags)",
 		Ungrouped: []objectLine{
@@ -56,8 +57,9 @@ func TestRejectEditedTagAtoms_UnchangedPasses(t *testing.T) {
 			{Depth: 1, Term: "work"},
 		},
 	}
-	if err := rejectEditedTagAtoms(edited, base, groupSpec{Dim: "categories", Kind: groupKindTagWhole}, nil); err != nil {
-		t.Errorf("membership removal must pass the gate: %v", err)
+	deltas, err = planTagAtomDeltas(edited, base, tagWholeSpec, false, nil)
+	if err != nil || len(deltas) != 0 {
+		t.Errorf("membership removal: deltas=%v err=%v, want none", deltas, err)
 	}
 
 	// A FIELD-grouped move carrying the full rendered tag set along: nothing is
@@ -76,54 +78,115 @@ func TestRejectEditedTagAtoms_UnchangedPasses(t *testing.T) {
 			{Depth: 2, Term: "=B", Lines: []objectLine{{ID: "f.ics", Tags: []string{"work", "errand"}}}},
 		},
 	}
-	if err := rejectEditedTagAtoms(fieldEdited, fieldBase, groupSpec{Dim: "status"}, nil); err != nil {
-		t.Errorf("field-bucket move with reordered-but-equal tags must pass: %v", err)
+	deltas, err = planTagAtomDeltas(fieldEdited, fieldBase, groupSpec{Dim: "status"}, false, nil)
+	if err != nil || len(deltas) != 0 {
+		t.Errorf("field-bucket move with reordered tags: deltas=%v err=%v, want none", deltas, err)
 	}
 }
 
-// TestRejectEditedTagAtoms_ChangedRefuses pins the refusal half: an ADDED box
-// tag and a REMOVED one are both loud bad requests naming the object and the
-// tags as spelled (a quoted tag re-quotes) — the pre-slice-2 message, now
-// fired only on a real edit (Task 3 replaces it with the membership write).
-func TestRejectEditedTagAtoms_ChangedRefuses(t *testing.T) {
-	base := tagWholeGateDoc()
-	spec := groupSpec{Dim: "categories", Kind: groupKindTagWhole}
-
-	added := tagWholeGateDoc()
+// TestPlanTagAtomDeltas_AddAndRemove pins the delta half (G7): a tag typed
+// into a box is an add, a tag deleted from a box is a remove — both EXACT tag
+// values, quoted or not.
+func TestPlanTagAtomDeltas_AddAndRemove(t *testing.T) {
+	// Add: `work-x` and the quoted `_ inbox` typed into t2's ungrouped box.
+	added := tagAtomWholeDoc()
 	added.Ungrouped[0].Tags = []string{"work-x", "_ inbox"}
-	err := rejectEditedTagAtoms(added, base, spec, nil)
-	if err == nil || !errors.Is400BadRequest(err) {
-		t.Fatalf("added tags: err = %v, want a bad request", err)
+	deltas, err := planTagAtomDeltas(added, tagAtomWholeDoc(), tagWholeSpec, false, nil)
+	if err != nil {
+		t.Fatalf("added tags: %v", err)
+	}
+	if d := deltas["t2.ics"]; !reflect.DeepEqual(d.adds, []string{"work-x", "_ inbox"}) || len(d.removes) != 0 {
+		t.Errorf("added-tags delta = %+v, want adds [work-x, _ inbox]", d)
+	}
+	if _, dirty := deltas["t1.ics"]; dirty {
+		t.Errorf("unedited t1.ics must carry no delta: %+v", deltas)
+	}
+
+	// Remove: a non-placement tag deleted from a field-grouped box.
+	fieldBase := document{
+		Sections: []section{
+			{Depth: 1, Term: "status="},
+			{Depth: 2, Term: "=A", Lines: []objectLine{{ID: "f.ics", Tags: []string{"errand", "work"}}}},
+		},
+	}
+	fieldEdited := document{
+		Sections: []section{
+			{Depth: 1, Term: "status="},
+			{Depth: 2, Term: "=A", Lines: []objectLine{{ID: "f.ics", Tags: []string{"errand"}}}},
+		},
+	}
+	deltas, err = planTagAtomDeltas(fieldEdited, fieldBase, groupSpec{Dim: "status"}, false, nil)
+	if err != nil {
+		t.Fatalf("removed tag: %v", err)
+	}
+	if d := deltas["f.ics"]; !reflect.DeepEqual(d.removes, []string{"work"}) || len(d.adds) != 0 {
+		t.Errorf("removed-tag delta = %+v, want removes [work]", d)
+	}
+}
+
+// TestPlanTagAtomDeltas_CrossAppearanceDisagreement pins the N-way conflict
+// (G7): a non-placement tag added to ONE of an object's boxes but not its
+// siblings' refuses with exit-2 trouble naming both appearances.
+func TestPlanTagAtomDeltas_CrossAppearanceDisagreement(t *testing.T) {
+	edited := tagAtomWholeDoc()
+	edited.Sections[0].Lines[0].Tags = []string{"work", "foo"} // errand box only
+	_, err := planTagAtomDeltas(edited, tagAtomWholeDoc(), tagWholeSpec, false, nil)
+	if err == nil {
+		t.Fatal("one-box tag add on a multi-appearance object must conflict")
+	}
+	if errors.Is400BadRequest(err) {
+		t.Errorf("a tag conflict is trouble (exit 2), not a bad request: %v", err)
 	}
 	for _, want := range []string{
-		`object t2.ics carries tag atoms work-x "_ inbox"`,
-		"not writable yet (native tags slice 2)",
+		"tag conflict(s)",
+		"object t1.ics: appearances disagree on tag foo: present under errand, absent under work",
 	} {
 		if !strings.Contains(err.Error(), want) {
-			t.Errorf("added-tags error %q should mention %q", err, want)
+			t.Errorf("conflict %q should mention %q", err, want)
 		}
-	}
-	if strings.Contains(err.Error(), "t1.ics") {
-		t.Errorf("unedited t1.ics must not be reported: %v", err)
-	}
-
-	removed := tagWholeGateDoc()
-	removed.Sections[0].Lines[0].Tags = nil // drop `work` from t1's errand box
-	err = rejectEditedTagAtoms(removed, base, spec, nil)
-	if err == nil || !errors.Is400BadRequest(err) {
-		t.Fatalf("removed tag: err = %v, want a bad request", err)
-	}
-	if !strings.Contains(err.Error(), "object t1.ics removed tag atoms work") {
-		t.Errorf("removed-tag error %q should name the removed tag", err)
 	}
 }
 
-// TestRejectEditedTagAtoms_NamespaceMoveKeepsSiblings pins the gate under a
-// NAMESPACE grouping (design G10a): a line moved from a continuation bucket to
-// the root — its box keeping the out-of-namespace sibling tag the strip left
-// behind — passes, because the sibling is unchanged and the placement change is
-// the membership path's business.
-func TestRejectEditedTagAtoms_NamespaceMoveKeepsSiblings(t *testing.T) {
+// TestPlanTagAtomDeltas_PlacementVsBox pins G7 rule 1 under `_tag-strip =
+// placement`: a tag REMOVED from a matched box while the object still sits
+// under that tag's bucket is "placement says X, box says not-X".
+func TestPlanTagAtomDeltas_PlacementVsBox(t *testing.T) {
+	edited := tagAtomWholeDoc()
+	edited.Sections[0].Lines[0].Tags = nil // drop `work` from t1's errand box
+	_, err := planTagAtomDeltas(edited, tagAtomWholeDoc(), tagWholeSpec, false, nil)
+	if err == nil {
+		t.Fatal("removing a still-placed tag from a box must conflict")
+	}
+	want := "object t1.ics: placement says work (still under work), box says not-work (removed under errand)"
+	if !strings.Contains(err.Error(), want) {
+		t.Errorf("conflict %q should mention %q", err, want)
+	}
+
+	// The SAME removal is clean once the placement goes too: t1 also leaves
+	// the `work` bucket, so the bucket diff owns the removal and no atom delta
+	// or conflict remains.
+	consistent := document{
+		GroupBy: "(tags)",
+		Ungrouped: []objectLine{
+			{ID: "t2.ics"},
+		},
+		Sections: []section{
+			{Depth: 1, Term: "errand", Lines: []objectLine{{ID: "t1.ics"}}},
+			{Depth: 1, Term: "work"},
+		},
+	}
+	deltas, err := planTagAtomDeltas(consistent, tagAtomWholeDoc(), tagWholeSpec, false, nil)
+	if err != nil || len(deltas) != 0 {
+		t.Errorf("consistent removal: deltas=%v err=%v, want none", deltas, err)
+	}
+}
+
+// TestPlanTagAtomDeltas_NamespaceMoveKeepsSiblings pins the planner under a
+// NAMESPACE grouping (G10a): a line moved from a continuation bucket to the
+// root — its box keeping the out-of-namespace sibling tag the strip left
+// behind — yields no delta (the placement change is the bucket diff's), while
+// DROPPING the sibling is a real membership remove.
+func TestPlanTagAtomDeltas_NamespaceMoveKeepsSiblings(t *testing.T) {
 	interp, ok := cgp.LookupTagInterpreter("dodder-hyphen")
 	if !ok {
 		t.Fatal("dodder-hyphen interpreter not registered")
@@ -147,15 +210,126 @@ func TestRejectEditedTagAtoms_NamespaceMoveKeepsSiblings(t *testing.T) {
 			{Depth: 2, Term: "-client"},
 		},
 	}
-	if err := rejectEditedTagAtoms(edited, base, spec, interp); err != nil {
-		t.Errorf("namespace move keeping sibling tags must pass: %v", err)
+	deltas, err := planTagAtomDeltas(edited, base, spec, false, interp)
+	if err != nil || len(deltas) != 0 {
+		t.Errorf("namespace move keeping siblings: deltas=%v err=%v, want none", deltas, err)
 	}
 
-	// The same move with the sibling tag dropped IS an edit.
+	// The same move with the sibling tag dropped IS a membership remove now
+	// (the pre-T3 gate refused it).
 	edited.Sections[0].Lines[1].Tags = nil
-	err := rejectEditedTagAtoms(edited, base, spec, interp)
-	if err == nil || !strings.Contains(err.Error(), "object d.ics removed tag atoms other") {
-		t.Errorf("dropped sibling must refuse naming it, got %v", err)
+	deltas, err = planTagAtomDeltas(edited, base, spec, false, interp)
+	if err != nil {
+		t.Fatalf("dropped sibling: %v", err)
+	}
+	if d := deltas["d.ics"]; !reflect.DeepEqual(d.removes, []string{"other"}) || len(d.adds) != 0 {
+		t.Errorf("dropped-sibling delta = %+v, want removes [other]", d)
+	}
+}
+
+// TestPlanTagAtomDeltas_StripNoneMoveIsNotAnEdit pins the `_tag-strip = none`
+// reading (G2/G7, the pre-T3 gate's known false reject): membership = the
+// box's tag set ∪ the current placement's bucket tag, so a MOVED line whose
+// box still carries the old tag keeps it — the only delta is the new
+// placement's add — and deleting a still-placed tag from the boxes is a no-op
+// (the placement re-derives it).
+func TestPlanTagAtomDeltas_StripNoneMoveIsNotAnEdit(t *testing.T) {
+	base := document{
+		GroupBy: "(tags)",
+		Sections: []section{
+			{Depth: 1, Term: "urgent", Lines: []objectLine{{ID: "t1.ics", Tags: []string{"urgent", "work"}}}},
+			{Depth: 1, Term: "work", Lines: []objectLine{{ID: "t1.ics", Tags: []string{"urgent", "work"}}}},
+		},
+	}
+	// The `work` line moved to `# done`, box untouched.
+	moved := document{
+		GroupBy: "(tags)",
+		Sections: []section{
+			{Depth: 1, Term: "done", Lines: []objectLine{{ID: "t1.ics", Tags: []string{"urgent", "work"}}}},
+			{Depth: 1, Term: "urgent", Lines: []objectLine{{ID: "t1.ics", Tags: []string{"urgent", "work"}}}},
+		},
+	}
+	deltas, err := planTagAtomDeltas(moved, base, tagWholeSpec, true, nil)
+	if err != nil {
+		t.Fatalf("strip=none move: %v", err)
+	}
+	if d := deltas["t1.ics"]; !reflect.DeepEqual(d.adds, []string{"done"}) || len(d.removes) != 0 {
+		t.Errorf("strip=none move delta = %+v, want adds [done] only (old tag stays)", d)
+	}
+
+	// Deleting `work` from every box while the line still sits under `# work`:
+	// the placement re-derives it — no delta, no conflict.
+	trimmed := document{
+		GroupBy: "(tags)",
+		Sections: []section{
+			{Depth: 1, Term: "urgent", Lines: []objectLine{{ID: "t1.ics", Tags: []string{"urgent"}}}},
+			{Depth: 1, Term: "work", Lines: []objectLine{{ID: "t1.ics", Tags: []string{"urgent"}}}},
+		},
+	}
+	deltas, err = planTagAtomDeltas(trimmed, base, tagWholeSpec, true, nil)
+	if err != nil || len(deltas) != 0 {
+		t.Errorf("strip=none still-placed removal: deltas=%v err=%v, want none", deltas, err)
+	}
+
+	// Removing `work` from ONE box only under `none` disagrees across the
+	// appearances (the boxes are authoritative) — a conflict, not a guess.
+	oneBox := document{
+		GroupBy: "(tags)",
+		Sections: []section{
+			{Depth: 1, Term: "done", Lines: []objectLine{{ID: "t1.ics", Tags: []string{"urgent"}}}},
+			{Depth: 1, Term: "urgent", Lines: []objectLine{{ID: "t1.ics", Tags: []string{"urgent", "work"}}}},
+		},
+	}
+	if _, err := planTagAtomDeltas(oneBox, base, tagWholeSpec, true, nil); err == nil ||
+		!strings.Contains(err.Error(), "appearances disagree on tag work") {
+		t.Errorf("strip=none one-box removal must conflict naming the tag, got %v", err)
+	}
+}
+
+// TestPlanTagAtomDeltas_MigratedToPlacementIsNotARemove pins the box→placement
+// migration: an ungrouped line whose box carried `work` moved UNDER `# work`
+// with the (now redundant) atom cleaned from the box is not an atom remove —
+// the bucket diff adds the membership; the atom planner stays silent.
+func TestPlanTagAtomDeltas_MigratedToPlacementIsNotARemove(t *testing.T) {
+	base := document{
+		GroupBy:   "(tags)",
+		Ungrouped: []objectLine{{ID: "t1.ics", Tags: []string{"work"}}},
+		Sections:  []section{{Depth: 1, Term: "work"}},
+	}
+	edited := document{
+		GroupBy:  "(tags)",
+		Sections: []section{{Depth: 1, Term: "work", Lines: []objectLine{{ID: "t1.ics"}}}},
+	}
+	deltas, err := planTagAtomDeltas(edited, base, tagWholeSpec, false, nil)
+	if err != nil || len(deltas) != 0 {
+		t.Errorf("box→placement migration: deltas=%v err=%v, want none", deltas, err)
+	}
+}
+
+// TestPlanAtomMembershipEdits_FoldsExact pins the single-valued branch's
+// planner: each object's delta folds onto its live tags exactly (removes then
+// adds), a live-equal result is skipped, and an id absent from live is out of
+// scope.
+func TestPlanAtomMembershipEdits_FoldsExact(t *testing.T) {
+	interp, _ := cgp.LookupTagInterpreter("naive")
+	live := []cgp.Node{
+		categoriesNode(t, "caldav://h/c/t1.ics", "work"),
+		categoriesNode(t, "caldav://h/c/t2.ics", "urgent"),
+	}
+	deltas := map[string]tagDelta{
+		"t1.ics":   {adds: []string{"urgent"}, removes: []string{"work"}},
+		"t2.ics":   {adds: []string{"urgent"}}, // live already has it — no write
+		"gone.ics": {adds: []string{"x"}},      // not live — skipped
+	}
+	edits, err := planAtomMembershipEdits(deltas, live, "caldav://h/c/", interp, "categories")
+	if err != nil {
+		t.Fatalf("planAtomMembershipEdits: %v", err)
+	}
+	if len(edits) != 1 {
+		t.Fatalf("edits = %+v, want exactly one (t1)", edits)
+	}
+	if edits[0].URI != "caldav://h/c/t1.ics" || !setEqual(edits[0].NewTags, []string{"urgent"}) {
+		t.Errorf("edit = %+v, want t1 → {urgent}", edits[0])
 	}
 }
 
@@ -434,7 +608,8 @@ func TestApplyMemberships_AddApplies(t *testing.T) {
 	fake := &membershipFake{}
 	cmd := newWithOutput(io.Discard)
 	wrote, err := cmd.applyMemberships(
-		context.Background(), edited, base, live, fake, "categories", "", "", true, false, false,
+		context.Background(), edited, base, live, fake, "categories", "", "",
+		nil, true, true, false, false,
 	)
 	if err != nil {
 		t.Fatalf("applyMemberships: %v", err)
