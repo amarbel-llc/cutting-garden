@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"sort"
 	"strings"
 
 	"code.linenisgreat.com/cutting-garden/internal/command_components"
@@ -42,27 +43,50 @@ func (cmd *Organize) buildAndStore(ctx errors.Context, uriStr string) (string, e
 	if err != nil {
 		return "", err
 	}
+	// The unified declaration's cross-codec invariants (a second FieldTag field
+	// per type, G6 v1) are checked ONCE here — generate's resolution point, the
+	// first consumer that reads THE designated tag field — so a bad declaration
+	// fails the command loudly instead of PresentUnifiedTags silently picking
+	// the first.
+	if err := validateUnifiedDeclaration(lister); err != nil {
+		return "", err
+	}
 	dims := describedFacets(lister)
-	spec, err := parseGroupSpec(cmd.GroupBy, dims, describedTagDims(lister), cfg.Organize.DateGranularity)
+	tagDims := describedTagDims(lister)
+	spec, err := parseGroupSpec(cmd.GroupBy, dims, tagDims, cfg.Organize.DateGranularity)
 	if err != nil {
 		return "", err
 	}
 
-	// A namespace grouping needs a tag interpreter that declares namespaces
-	// (RFC 0019 tags slice 3): resolve it from the field default + the global
-	// [tags] override, then reject the naive (exact-match) interpreter up front
-	// with a clear message rather than surfacing the interpreter's raw "declares
-	// no namespaces". A whole-dimension or field grouping needs no interpreter.
+	// The tag interpreter serves two jobs here: a NAMESPACE grouping's rollup
+	// (RFC 0019 tags slice 3 — reject the naive interpreter up front with a
+	// clear message rather than its raw "declares no namespaces"), and the
+	// SortKey ordering of every rendered tag set (design G1, slice 2). So it is
+	// resolved whenever the plugin declares a tag dimension at all, from the
+	// field's declared default + the global [tags] override.
 	var interp cgp.TagInterpreter
-	if spec.Kind == groupKindTagNamespace {
+	if len(tagDims) > 0 {
 		var interpName string
-		interp, interpName, err = interpreterForDimension(lister, spec.Dim, cfg.Tags.Interpreter)
+		interp, interpName, err = interpreterForDimension(lister, tagDims[0], cfg.Tags.Interpreter)
 		if err != nil {
 			return "", err
 		}
-		if err := requireNamespaceInterpreter(interp, interpName, cmd.GroupBy, spec); err != nil {
-			return "", err
+		if spec.Kind == groupKindTagNamespace {
+			if err := requireNamespaceInterpreter(interp, interpName, cmd.GroupBy, spec); err != nil {
+				return "", err
+			}
 		}
+	}
+
+	// The tag-atom levers (design G1/G2/G3): resolved from config at generate
+	// (there is no document yet, so the doc-wins half of effectiveTagAtoms is
+	// apply's) and persisted as envelope fields ONLY when non-default, so
+	// default documents stay byte-identical.
+	tagAtoms := effectiveTagAtoms("", cfg.Organize.TagAtoms)
+	tagStrip := effectiveTagStrip("", cfg.Organize.TagStrip)
+	tags := tagRender{strip: tagStrip == tagStripPlacement}
+	if tagAtoms != tagAtomsNone {
+		tags.present = unifiedTagPresenter(lister, interp)
 	}
 
 	// The effective query is the user's query with organize's default
@@ -86,12 +110,20 @@ func (cmd *Organize) buildAndStore(ctx errors.Context, uriStr string) (string, e
 		anchor = uriStr
 	}
 
-	doc, err := buildDocument(nodes, anchor, effective, spec, lister, interp)
+	doc, err := buildDocument(nodes, anchor, effective, spec, lister, interp, tags)
 	if err != nil {
 		return "", err
 	}
 	if err := rejectEmptyNamespace(spec, doc, dims); err != nil {
 		return "", err
+	}
+	// Non-default levers are DATA-plane envelope fields (design G3): they reach
+	// the canonical base below, so `_base` content-addresses them.
+	if tagAtoms != tagAtomsLeading {
+		doc.TagAtoms = tagAtoms
+	}
+	if tagStrip != tagStripPlacement {
+		doc.TagStrip = tagStrip
 	}
 	// Provenance records what the user actually typed for the URI (e.g. the
 	// short alias), even though _anchor is the canonical common prefix — but
@@ -133,10 +165,11 @@ func (cmd *Organize) runGenerate(ctx errors.Context, uriStr string) error {
 // `_group-by` envelope directive, and its buckets bare `# <value>` headings at
 // minimal depth.
 // interp is the resolved tag interpreter — required for a namespace grouping
-// (groupKindTagNamespace), nil otherwise.
+// (groupKindTagNamespace), nil otherwise. tags is the tag-atom render view
+// (design G1/G2, slice 2); the zero value renders no tag atoms.
 func buildDocument(
 	nodes []cgp.Node, anchor, query string, spec groupSpec, lister cgp.RootLister,
-	interp cgp.TagInterpreter,
+	interp cgp.TagInterpreter, tags tagRender,
 ) (document, error) {
 	doc := document{
 		Anchor:     anchor,
@@ -157,6 +190,7 @@ func buildDocument(
 		if err != nil {
 			return document{}, err
 		}
+		tags.fill(nodes, anchor, spec, interp, ungrouped, buckets)
 		doc.Ungrouped = ungrouped
 		doc.Sections = sectionsForSpec(spec, buckets, 1)
 	default:
@@ -169,6 +203,7 @@ func buildDocument(
 			if err != nil {
 				return document{}, err
 			}
+			tags.fill(typeNodes, anchor, spec, interp, ungrouped, buckets)
 			doc.Sections = append(doc.Sections, section{Depth: 1, Term: "!" + typ, Lines: ungrouped})
 			doc.Sections = append(doc.Sections, sectionsForSpec(spec, buckets, 2)...)
 		}
@@ -290,6 +325,145 @@ func boxAtomPresenter(lister cgp.RootLister) func(cgp.Node) []cgp.BoxAtom {
 		}
 		return atoms
 	}
+}
+
+// tagRender is generate's tag-atom view (native tags design G1/G2, slice 2):
+// present resolves a node's rendered tag set (SortKey-ordered; nil renders no
+// tag atoms — a plugin without a tag dimension, or `_tag-atoms = none`), and
+// strip applies the `_tag-strip = placement` rule to tag-grouped buckets.
+type tagRender struct {
+	present func(cgp.Node) []string
+	strip   bool
+}
+
+// fill populates each object line's Tags from the presented tag sets, keyed by
+// the same relativeID the lines were built with. Under a TAG grouping with
+// strip on, each bucket appearance drops exactly the placement tag(s) that
+// filed it there (placementVia — the membership's Via reconstruction); every
+// other tag stays, and ungrouped lines always keep their full set. A FIELD
+// grouping strips nothing (no tag placement exists). Mutation is safe: each
+// line is a value copy in its own slice (a multi-membership object's line was
+// COPIED into every bucket), so per-appearance Tags never alias.
+func (tr tagRender) fill(
+	nodes []cgp.Node, anchor string, spec groupSpec, interp cgp.TagInterpreter,
+	ungrouped []objectLine, buckets []bucket,
+) {
+	if tr.present == nil {
+		return
+	}
+	byID := make(map[string][]string, len(nodes))
+	for _, n := range nodes {
+		if ts := tr.present(n); len(ts) > 0 {
+			byID[relativeID(n.URIString(), anchor)] = ts
+		}
+	}
+	for i := range ungrouped {
+		ungrouped[i].Tags = byID[ungrouped[i].ID]
+	}
+	for bi := range buckets {
+		for li := range buckets[bi].Lines {
+			ln := &buckets[bi].Lines[li]
+			ts := byID[ln.ID]
+			if tr.strip {
+				ts = withoutPlacementTags(ts, spec, interp, buckets[bi].Value)
+			}
+			ln.Tags = ts
+		}
+	}
+}
+
+// withoutPlacementTags returns tags minus every tag whose placement under spec
+// IS bucketValue (placementVia); the input slice is returned untouched when
+// nothing strips, and nil when everything does.
+func withoutPlacementTags(
+	tags []string, spec groupSpec, interp cgp.TagInterpreter, bucketValue string,
+) []string {
+	strip := false
+	for _, t := range tags {
+		if placementVia(t, bucketValue, spec, interp) {
+			strip = true
+			break
+		}
+	}
+	if !strip {
+		return tags
+	}
+	var out []string
+	for _, t := range tags {
+		if !placementVia(t, bucketValue, spec, interp) {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// placementVia reports whether tag PRODUCES the bucketValue placement under
+// the spec's grouping — the strip rule's (and the apply gate's) one derivation
+// (design G2): under a whole-dimension grouping a tag's bucket is itself
+// (Via == Bucket); under a namespace grouping the ROOT bucket (== the
+// namespace) is produced by the bare namespace tag (G10a) and a continuation
+// bucket by any tag the interpreter rolls up to it (all contributors — the
+// interpreter's Membership.Via names one representative, but every tag rolling
+// to the bucket produced the placement, and the §6.2 write-back removes the
+// whole subtree symmetrically). A field grouping has no tag placement, so
+// nothing is ever a Via there.
+func placementVia(tag, bucketValue string, spec groupSpec, interp cgp.TagInterpreter) bool {
+	switch spec.Kind {
+	case groupKindTagWhole:
+		return tag == bucketValue
+	case groupKindTagNamespace:
+		if bucketValue == spec.Namespace {
+			return tag == spec.Namespace
+		}
+		if interp == nil {
+			return false
+		}
+		ms, err := interp.Buckets([]string{tag}, spec.Namespace)
+		return err == nil && len(ms) == 1 && ms[0].Bucket == bucketValue
+	default:
+		return false
+	}
+}
+
+// unifiedTagPresenter returns the node → rendered-tag-set function (design G1):
+// the type's designated FieldTag field's values (PresentUnifiedTags, stored
+// order), ordered by the resolved interpreter's SortKey. nil for a plugin
+// without the UnifiedDescriber capability — no tag dimension, no tag atoms.
+// The presented slice is cloned before sorting: the codec's Format output must
+// never be reordered in place (it may alias plugin state).
+func unifiedTagPresenter(
+	lister cgp.RootLister, interp cgp.TagInterpreter,
+) func(cgp.Node) []string {
+	d, ok := lister.(cgp.UnifiedDescriber)
+	if !ok {
+		return nil
+	}
+	byType := map[string][]cgp.Codec{}
+	for _, set := range d.DescribeUnified() {
+		byType[set.Tag] = set.Codecs
+	}
+	return func(n cgp.Node) []string {
+		tags := slices.Clone(cgp.PresentUnifiedTags(byType[n.Type], n))
+		if interp != nil {
+			sort.SliceStable(tags, func(i, j int) bool {
+				return interp.SortKey(tags[i]) < interp.SortKey(tags[j])
+			})
+		}
+		return tags
+	}
+}
+
+// validateUnifiedDeclaration checks a plugin's unified field declaration's
+// cross-codec invariants (ValidateUnifiedFieldSets: at most one FieldTag field
+// per type, G6 v1) — wired at generate's resolution point so a bad declaration
+// fails the command loudly. A plugin without the capability has nothing to
+// validate.
+func validateUnifiedDeclaration(lister cgp.RootLister) error {
+	d, ok := lister.(cgp.UnifiedDescriber)
+	if !ok {
+		return nil
+	}
+	return cgp.ValidateUnifiedFieldSets(d.DescribeUnified())
 }
 
 // dimensionSections renders the grouped dimension as its spelling heading at

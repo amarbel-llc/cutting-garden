@@ -343,7 +343,7 @@ func TestBuildDocument_DateGranularityMonth(t *testing.T) {
 		dueNode(t, "b.ics", "2026-08-20"),
 	}
 
-	doc, err := buildDocument(nodes, "fake://cal/", "", spec, lister, nil)
+	doc, err := buildDocument(nodes, "fake://cal/", "", spec, lister, nil, tagRender{})
 	if err != nil {
 		t.Fatalf("buildDocument: %v", err)
 	}
@@ -386,7 +386,7 @@ func TestBuildDocument_DateGranularityBareIsDay(t *testing.T) {
 		dueNode(t, "b.ics", "2026-08-20"),
 	}
 
-	doc, err := buildDocument(nodes, "fake://cal/", "", spec, lister, nil)
+	doc, err := buildDocument(nodes, "fake://cal/", "", spec, lister, nil, tagRender{})
 	if err != nil {
 		t.Fatalf("buildDocument: %v", err)
 	}

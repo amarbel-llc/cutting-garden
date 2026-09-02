@@ -67,11 +67,35 @@ func DecodeConfigV0(input []byte) (*ConfigV0Document, error) {
 				_vOrganizeDateGranularity.MarkConsumed()
 			}
 		}
+		if _vOrganizeTagAtoms, _ok := _vOrganize.Get("tag_atoms"); _ok && _vOrganizeTagAtoms.Kind == cst.VLeaf {
+			if _x, _xok := cst.ExtractString(_vOrganizeTagAtoms.Leaf); _xok {
+				d.data.Organize.TagAtoms = _x
+				_vOrganizeTagAtoms.MarkConsumed()
+			}
+		}
+		if _vOrganizeTagStrip, _ok := _vOrganize.Get("tag_strip"); _ok && _vOrganizeTagStrip.Kind == cst.VLeaf {
+			if _x, _xok := cst.ExtractString(_vOrganizeTagStrip.Leaf); _xok {
+				d.data.Organize.TagStrip = _x
+				_vOrganizeTagStrip.MarkConsumed()
+			}
+		}
 	} else {
 		if _vDateGranularity, _ok := model.Get("date_granularity"); _ok && _vDateGranularity.Kind == cst.VLeaf {
 			if _x, _xok := cst.ExtractString(_vDateGranularity.Leaf); _xok {
 				d.data.Organize.DateGranularity = _x
 				_vDateGranularity.MarkConsumed()
+			}
+		}
+		if _vTagAtoms, _ok := model.Get("tag_atoms"); _ok && _vTagAtoms.Kind == cst.VLeaf {
+			if _x, _xok := cst.ExtractString(_vTagAtoms.Leaf); _xok {
+				d.data.Organize.TagAtoms = _x
+				_vTagAtoms.MarkConsumed()
+			}
+		}
+		if _vTagStrip, _ok := model.Get("tag_strip"); _ok && _vTagStrip.Kind == cst.VLeaf {
+			if _x, _xok := cst.ExtractString(_vTagStrip.Leaf); _xok {
+				d.data.Organize.TagStrip = _x
+				_vTagStrip.MarkConsumed()
 			}
 		}
 	}
@@ -161,6 +185,20 @@ func (d *ConfigV0Document) Encode() ([]byte, error) {
 			}
 		} else {
 			cst.DeleteValue(tableNode, "date_granularity")
+		}
+		if d.data.Organize.TagAtoms != "" {
+			if err := cst.SetAny(tableNode, "tag_atoms", d.data.Organize.TagAtoms); err != nil {
+				return nil, fmt.Errorf("%w", err)
+			}
+		} else {
+			cst.DeleteValue(tableNode, "tag_atoms")
+		}
+		if d.data.Organize.TagStrip != "" {
+			if err := cst.SetAny(tableNode, "tag_strip", d.data.Organize.TagStrip); err != nil {
+				return nil, fmt.Errorf("%w", err)
+			}
+		} else {
+			cst.DeleteValue(tableNode, "tag_strip")
 		}
 	}
 	{
@@ -254,11 +292,35 @@ func DecodeConfigV0Into(data *ConfigV0, sub *cst.Value) error {
 				_vOrganizeDateGranularity.MarkConsumed()
 			}
 		}
+		if _vOrganizeTagAtoms, _ok := _vOrganize.Get("tag_atoms"); _ok && _vOrganizeTagAtoms.Kind == cst.VLeaf {
+			if _x, _xok := cst.ExtractString(_vOrganizeTagAtoms.Leaf); _xok {
+				data.Organize.TagAtoms = _x
+				_vOrganizeTagAtoms.MarkConsumed()
+			}
+		}
+		if _vOrganizeTagStrip, _ok := _vOrganize.Get("tag_strip"); _ok && _vOrganizeTagStrip.Kind == cst.VLeaf {
+			if _x, _xok := cst.ExtractString(_vOrganizeTagStrip.Leaf); _xok {
+				data.Organize.TagStrip = _x
+				_vOrganizeTagStrip.MarkConsumed()
+			}
+		}
 	} else {
 		if _vDateGranularity, _ok := sub.Get("date_granularity"); _ok && _vDateGranularity.Kind == cst.VLeaf {
 			if _x, _xok := cst.ExtractString(_vDateGranularity.Leaf); _xok {
 				data.Organize.DateGranularity = _x
 				_vDateGranularity.MarkConsumed()
+			}
+		}
+		if _vTagAtoms, _ok := sub.Get("tag_atoms"); _ok && _vTagAtoms.Kind == cst.VLeaf {
+			if _x, _xok := cst.ExtractString(_vTagAtoms.Leaf); _xok {
+				data.Organize.TagAtoms = _x
+				_vTagAtoms.MarkConsumed()
+			}
+		}
+		if _vTagStrip, _ok := sub.Get("tag_strip"); _ok && _vTagStrip.Kind == cst.VLeaf {
+			if _x, _xok := cst.ExtractString(_vTagStrip.Leaf); _xok {
+				data.Organize.TagStrip = _x
+				_vTagStrip.MarkConsumed()
 			}
 		}
 	}
@@ -344,6 +406,20 @@ func EncodeConfigV0From(data *ConfigV0, doc *document.Document, container *cst.N
 			}
 		} else {
 			cst.DeleteValue(tableNode, "date_granularity")
+		}
+		if data.Organize.TagAtoms != "" {
+			if err := cst.SetAny(tableNode, "tag_atoms", data.Organize.TagAtoms); err != nil {
+				return fmt.Errorf("%w", err)
+			}
+		} else {
+			cst.DeleteValue(tableNode, "tag_atoms")
+		}
+		if data.Organize.TagStrip != "" {
+			if err := cst.SetAny(tableNode, "tag_strip", data.Organize.TagStrip); err != nil {
+				return fmt.Errorf("%w", err)
+			}
+		} else {
+			cst.DeleteValue(tableNode, "tag_strip")
 		}
 	}
 	{

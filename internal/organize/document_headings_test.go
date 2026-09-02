@@ -419,7 +419,7 @@ func TestGenerateNeverEmitsResetHeading(t *testing.T) {
 		{Dim: "status", Kind: groupKindField},
 	} {
 		for _, set := range [][]cgp.Node{nodes[:1], nodes} {
-			doc, err := buildDocument(set, "caldav://h/c/", "", spec, &fakeLister{}, nil)
+			doc, err := buildDocument(set, "caldav://h/c/", "", spec, &fakeLister{}, nil, tagRender{})
 			if err != nil {
 				t.Fatalf("buildDocument(%v): %v", spec, err)
 			}
@@ -455,7 +455,7 @@ func TestGenerate_TagBucketsAtMinimalDepth(t *testing.T) {
 
 	depths := func(set []cgp.Node, spec groupSpec) map[string]int {
 		t.Helper()
-		doc, err := buildDocument(set, "caldav://h/c/", "", spec, &fakeLister{}, nil)
+		doc, err := buildDocument(set, "caldav://h/c/", "", spec, &fakeLister{}, nil, tagRender{})
 		if err != nil {
 			t.Fatalf("buildDocument: %v", err)
 		}

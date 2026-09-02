@@ -1,6 +1,7 @@
 package caldav
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -559,11 +560,13 @@ func stringOf(m map[string]any, key string) string {
 // in-process listing builds (listingFieldsOf) and the []any it becomes after a
 // JSON enrichment round-trip (the wire/MCP path) — the list sibling of intOf's
 // float64 tolerance. A non-string element is skipped rather than guessed at;
-// absence is nil.
+// absence is nil. The []string arm is CLONED: the stored slice is the node's
+// own state, and a caller (the framework's tag render sorts the presented set
+// by SortKey) must never reorder it in place through a Format result.
 func stringsOf(m map[string]any, key string) []string {
 	switch t := m[key].(type) {
 	case []string:
-		return t
+		return slices.Clone(t)
 	case []any:
 		out := make([]string, 0, len(t))
 		for _, v := range t {

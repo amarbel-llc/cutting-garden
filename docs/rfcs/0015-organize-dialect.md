@@ -45,6 +45,14 @@ revised: |
     grouping's `_group-by` carries the spelling only; the tag DIMENSION it
     applies to is the plugin's designated tag field, resolved at generate and
     again at apply.
+  2026-09-02 — key-free tag atoms (native tags slice 2, design G1/G2/G3):
+    generation renders an object's tag set as bare/quoted terms in its box
+    (the type's designated `FieldTag` field, SortKey-ordered), governed by two
+    new DATA-plane envelope fields — `- _tag-atoms = leading|trailing|none`
+    (position; default leading) and `- _tag-strip = placement|none` (a
+    tag-grouped document strips each appearance's placement Via tag(s);
+    default placement) — omitted at their defaults, defaultable via
+    `[organize] tag_atoms` / `tag_strip`, the document's field winning.
 ---
 
 # The organize document dialect
@@ -212,15 +220,43 @@ document — the exact bytes presented to and edited by the end-user:
     every object; boxes drop `!type`; the ladder is one level shallower. Generation
     emits spelling 2 for a single-type node set (flatter), spelling 1 for a
     multi-type set; the parser accepts either.
-- **Object lines** are espalier boxes `- [<id> !<type> <name>=<value>…] <desc>`
-  with anchor-relative short ids and, after the id/type, the object's detail
-  fields as ground `name=value` atoms — the plugin's `FieldPresenter` render
+- **Object lines** are espalier boxes `- [<id> !<type> <tag>… <name>=<value>…]
+  <desc>` with anchor-relative short ids and, after the id/type, the object's
+  TAG SET as key-free terms followed by its detail fields as ground
+  `name=value` atoms — the plugin's `FieldPresenter` render
   (cutting-garden#47): e.g. caldav splits a DATE-TIME into `date_start`/
   `time_start` (date `YYYY-MM-DD`, time `HH-mm`), so a clock time round-trips as
   structured data rather than being scraped from `<desc>`. A bare box that
   carries only a term (no id/trailer) drops the brackets — which is why a type
   *heading* is `# !type`, not `# [!type]`. (Read-side as of #47: a *changed*
   atom is surfaced as an apply notice, not yet written back — cutting-garden#218.)
+- **Tag atoms** (native tags slice 2, design G1/G2/G9). An object's presented
+  tag set — the values of its type's designated `FieldTag` field (FDR 0025 /
+  RFC 0009's `tag_set`) — renders as bare or quoted identifier terms in its
+  box, ordered by the resolved tag interpreter's `SortKey` (RFC 0019) and
+  quoted by the ONE rule headings use (`"_ inbox"`). A bare box term is ALWAYS
+  a tag (G9) — a field is only ever addressed with an operator — and position
+  is presentation-only: the parser MUST accept tags anywhere in the interior.
+  Two DATA-plane levers govern the render, each a `- _<name> = <value>`
+  envelope field OMITTED at its default (so default documents are
+  byte-identical to pre-slice-2 output plus the atoms), content-addressed into
+  `_base` when present, defaultable via `[organize] tag_atoms` / `tag_strip`
+  config, the document's explicit field winning over config (G3):
+  - `- _tag-atoms = leading | trailing | none` (default `leading`): tags render
+    after the id/`!type` and before the `name=value` atoms (`leading`), after
+    the atoms (`trailing`), or not at all (`none`).
+  - `- _tag-strip = placement | none` (default `placement`): under a TAG
+    grouping, each appearance's box drops exactly the tag(s) that PRODUCED its
+    placement — the membership's Via: the bucket tag itself under `(tags)`,
+    the bare namespace tag directly under a G10a root heading, and every tag
+    rolling up to a continuation bucket (#229: placement carries it, never
+    also an atom) — while every other tag stays; `none` keeps the full set in
+    every box. A FIELD grouping strips nothing (no tag placement exists).
+
+  An out-of-domain lever value is a loud bad request. Write-side (interim,
+  native tags slice 2): apply passes an UNCHANGED tag set through and refuses
+  an added or removed box tag ("not writable yet"); the box-tag-edit →
+  membership write lands with design G7.
 - **The trailing `! <type>` type-anchor of the earlier draft is removed** (it was a
   mistake): the object type is the leading heading or the envelope field, never a
   trailing line, which is distinct from the envelope's own `! organize-base-v1`.
@@ -275,6 +311,13 @@ and appears ONLY on the data plane — `_genre`/`_body` on object nodes,
   FIELD grouping carries NO `_group-by` — its spelling IS the `<dim>=` /
   `<dim>=(<granularity>)` heading (see §"The base blob's shape"). A substrate
   MAY declare additional `_`-fields on its organize-document type.
+- `- _tag-atoms = leading | trailing | none` / `- _tag-strip = placement |
+  none` — the tag-atom render levers (native tags slice 2, design G1/G2/G3;
+  normative semantics in §"Implemented dialect" → "Tag atoms"). DATA plane —
+  `_tag-strip` changes what an elided tag MEANS to apply, so both are document
+  semantics, content-addressed into `_base` when present and OMITTED at their
+  defaults; `[organize] tag_atoms` / `tag_strip` config may set the defaults,
+  and the document's explicit field wins.
 
 **`%` / `%:` lines — the OPERATIONAL plane.** NOT content-addressed; **stripped
 from the base entirely** — they configure *how the apply behaves*, not what the

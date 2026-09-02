@@ -43,10 +43,10 @@ teardown() {
 # bats file_tags=organize
 
 # The generated document's `_base` digest, and the digests after each edit.
-BASE_GENERATED=blake2b256-gwts3z7hz0hsxafj49rme8dd96pzgfqxfxf79k8utak9fthzhhdqnsg9l8
-BASE_AFTER_DOUBLE=blake2b256-zk334uskun4wsq8qz70xwm5ew5fg9ckued65tu0tfndhl22zxxksvu2a7d
+BASE_GENERATED=blake2b256-8g87687xrqlx7vnx4lf5nva0hjapm4raa07sp4ygpsta7qkqtksqrcup3h
+BASE_AFTER_DOUBLE=blake2b256-69dh6d7fnl44vcv0x2pf4chd79zc9nlvdpycszjs47qx5q8r6v4qlk6nje
 BASE_AFTER_RESET=blake2b256-scs2rd038u7ygjgncruj0yu0tkmkd4nxfywujd7vwag80xmqkudsdfjqjq
-BASE_AFTER_NOOP=blake2b256-h8e0flph30uyqrjmawja7edka3sgf7qwhfxjtch3uhef5pevkdeqmn802l
+BASE_AFTER_NOOP=blake2b256-kdanaa7gt05aaua4m6pqds5jncjz2gawaf4wf2wawkj6lj6wuh0s8hwen7
 
 # envelope_header prints the `-group-by (tags)` document's hyphence envelope
 # pinned at `_base` $1 — the part every document in this lane shares.
@@ -87,11 +87,11 @@ generate_grouped() {
 
 	# errand
 
-	- [field2.ics priority=1_should] Read book
+	- [field2.ics work priority=1_should] Read book
 
 	# work
 
-	- [field2.ics priority=1_should] Read book
+	- [field2.ics errand priority=1_should] Read book
 	- [field3.ics priority=2_nice] Water plants
 	EOM
   )"
@@ -129,12 +129,12 @@ function organize_headings_double_hash_document_applies_identically { # @test
 
 	## errand
 
-	- [field2.ics priority=1_should] Read book
+	- [field2.ics work priority=1_should] Read book
 	- [field3.ics priority=2_nice] Water plants
 
 	## work
 
-	- [field2.ics priority=1_should] Read book
+	- [field2.ics errand priority=1_should] Read book
 	EOM
 
   run_cg organize -apply "$edited" -commit
@@ -161,12 +161,12 @@ EOF
 
 	# errand
 
-	- [field2.ics priority=1_should] Read book
+	- [field2.ics work priority=1_should] Read book
 	- [field3.ics priority=2_nice] Water plants
 
 	# work
 
-	- [field2.ics priority=1_should] Read book
+	- [field2.ics errand priority=1_should] Read book
 	EOM
   )"
 }
@@ -186,7 +186,11 @@ EOF
 # summary and the live CATEGORIES prove that a line under `##` landed under the
 # parent heading (not errand, not ungrouped) and a line under `#` landed
 # ungrouped. The re-rendered document — generated, so at minimal depth with no
-# resets — shows the resolved placement.
+# resets — shows the resolved placement. field2's ungrouped line is spelled
+# BARE (no tag atoms): its per-bucket boxes carried the OTHER tag
+# (Via-stripped, native tags slice 2), and pulling one out to ungrouped WITH
+# that sibling tag would read as a tag-atom edit and refuse under the interim
+# slice-2 gate.
 function organize_headings_reset_pops_to_parent_and_ungrouped { # @test
   generate_grouped
   local edited="$BATS_TEST_TMPDIR/edited.txt"
@@ -261,11 +265,11 @@ function organize_headings_reset_deeper_than_current_is_noop { # @test
 
 	# errand
 
-	- [field2.ics priority=1_should] Read book
+	- [field2.ics work priority=1_should] Read book
 
 	# work
 
-	- [field2.ics priority=1_should] Read book
+	- [field2.ics errand priority=1_should] Read book
 	- [field3.ics priority=2_nice] Water plants
 
 	##
@@ -295,11 +299,11 @@ EOF
 
 	# errand
 
-	- [field2.ics priority=1_should] Read book
+	- [field2.ics work priority=1_should] Read book
 
 	# work
 
-	- [field2.ics priority=1_should] Read book
+	- [field2.ics errand priority=1_should] Read book
 	- [field3.ics priority=2_nice] Water plants
 	- [field4.ics] Someday idea
 	EOM

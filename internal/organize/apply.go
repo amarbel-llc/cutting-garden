@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 
@@ -73,22 +74,68 @@ func (cmd *Organize) runCommitDirectly(ctx errors.Context) error {
 	return err
 }
 
-// rejectTagAtoms refuses an edited document whose boxes carry bare tag tokens
-// (`- [x.ics work-x location=Bank]`): the parser round-trips them (design G13)
-// but nothing writes them until native tags slice 2, and a silent drop would
-// discard the user's edit — so the refusal is loud, naming EVERY offending
-// object and its tags as the user spelled them, in one error.
-func rejectTagAtoms(doc document) error {
+// rejectEditedTagAtoms refuses an edited document whose box tag SETS were
+// EDITED against the pinned base — the interim slice-2 gate (Task 3 replaces
+// it with the real membership write, design G7). Generated documents now
+// legitimately carry tag atoms (design G1), so instead of rejecting every
+// tagged box (the slice-1 gate), the comparison is two-fold per object:
+//
+//   - A MATCHED appearance — the object under the SAME bucket (or ungrouped)
+//     in both documents — must carry an unchanged tag SET: an added or removed
+//     tag there is a hand edit (including a placement-contradicting removal,
+//     Task 3's placement-vs-box conflict) and refuses.
+//   - Across the rest (moved/added appearances, where the strip lever makes the
+//     per-appearance rendering bucket-dependent), the object's NON-PLACEMENT
+//     tags — its box tags minus any tag its own placements derive
+//     (placementVia) — must match the base's, so a pure membership move or
+//     removal passes while a tag smuggled onto (or dropped from) a moved line
+//     still refuses.
+//
+// Unchanged sets pass through (memberships come from placement, as today); an
+// edit is the loud "not writable yet" refusal naming every offending object,
+// exactly the pre-slice-2 message. Order and box position (leading/trailing)
+// are presentation, never an edit. Added/deleted LINES stay out of scope like
+// everywhere else in the merge — a base-only id is skipped, though a
+// hand-ADDED line carrying tags refuses (its tags have no base to match).
+func rejectEditedTagAtoms(
+	edited, base document, spec groupSpec, interp cgp.TagInterpreter,
+) error {
+	editedLed, err := tagLedgerOf(edited)
+	if err != nil {
+		return err
+	}
+	baseLed, err := tagLedgerOf(base)
+	if err != nil {
+		return errors.Wrapf(err, "organize --apply: pinned base is malformed")
+	}
+
 	var offending []string
-	for _, ln := range doc.objectLines() {
-		if len(ln.Tags) == 0 {
-			continue
+	for _, id := range editedLed.order {
+		var added, removed []string
+		// Matched appearances: same object, same bucket in both documents.
+		for _, app := range editedLed.appearances[id] {
+			baseTags, matched := baseLed.appearanceTags(id, app.bucket)
+			if !matched {
+				continue
+			}
+			added = appendMissing(added, subtractTags(app.tags, baseTags))
+			removed = appendMissing(removed, subtractTags(baseTags, app.tags))
 		}
-		spelled := make([]string, len(ln.Tags))
-		for i, tag := range ln.Tags {
-			spelled[i] = trellis.QuoteIfNeeded(tag)
+		// The cross-appearance net: non-placement tags must agree overall.
+		editedExtra := editedLed.extraTags(id, spec, interp)
+		var baseExtra []string
+		if _, inBase := baseLed.appearances[id]; inBase {
+			baseExtra = baseLed.extraTags(id, spec, interp)
 		}
-		offending = append(offending, "object "+ln.ID+" carries tag atoms "+strings.Join(spelled, " "))
+		added = appendMissing(added, subtractTags(editedExtra, baseExtra))
+		removed = appendMissing(removed, subtractTags(baseExtra, editedExtra))
+
+		if len(added) > 0 {
+			offending = append(offending, "object "+id+" carries tag atoms "+spellTags(added))
+		}
+		if len(removed) > 0 {
+			offending = append(offending, "object "+id+" removed tag atoms "+spellTags(removed))
+		}
 	}
 	if len(offending) == 0 {
 		return nil
@@ -97,6 +144,127 @@ func rejectTagAtoms(doc document) error {
 		"organize --apply: %s: tag atoms are not writable yet (native tags slice 2)",
 		strings.Join(offending, "; "),
 	)
+}
+
+// tagAppearance is one object line's placement in the gate's ledger: the
+// bucket value it sits under ("" = ungrouped) and its box tags (deduplicated).
+type tagAppearance struct {
+	bucket string
+	tags   []string
+}
+
+// docTagLedger is one document's per-object tag view for the interim gate:
+// each object's appearances (bucket + box tags) in document order, keyed by
+// box id, with ids in document order.
+type docTagLedger struct {
+	order       []string
+	appearances map[string][]tagAppearance
+}
+
+// tagLedgerOf collects a document's tag ledger via the same walk memberships
+// uses (walkSectionValues), but tolerantly — duplicate placements are the
+// membership path's error to raise, not the gate's (a repeated (id, bucket)
+// pair merges its tags).
+func tagLedgerOf(doc document) (docTagLedger, error) {
+	led := docTagLedger{appearances: map[string][]tagAppearance{}}
+	record := func(ln objectLine, value string) error {
+		apps := led.appearances[ln.ID]
+		if apps == nil {
+			led.order = append(led.order, ln.ID)
+		}
+		idx := -1
+		for i := range apps {
+			if apps[i].bucket == value {
+				idx = i
+				break
+			}
+		}
+		if idx < 0 {
+			led.appearances[ln.ID] = append(apps, tagAppearance{bucket: value})
+			idx = len(led.appearances[ln.ID]) - 1
+		}
+		app := &led.appearances[ln.ID][idx]
+		app.tags = appendMissing(app.tags, ln.Tags)
+		return nil
+	}
+	for _, ln := range doc.Ungrouped {
+		_ = record(ln, "")
+	}
+	if err := doc.walkSectionValues(record); err != nil {
+		return docTagLedger{}, err
+	}
+	return led, nil
+}
+
+// appearanceTags returns the object's box tags under bucket, and whether the
+// document has that appearance at all.
+func (led docTagLedger) appearanceTags(id, bucket string) ([]string, bool) {
+	for _, app := range led.appearances[id] {
+		if app.bucket == bucket {
+			return app.tags, true
+		}
+	}
+	return nil, false
+}
+
+// extraTags returns the object's NON-PLACEMENT box tags across every
+// appearance: each box tag (first-appearance order, deduplicated) that no
+// placement of the object in this document derives (placementVia). For a
+// field-grouped document nothing is placement-derived, so this is the full box
+// tag set.
+func (led docTagLedger) extraTags(
+	id string, spec groupSpec, interp cgp.TagInterpreter,
+) []string {
+	var out []string
+	for _, app := range led.appearances[id] {
+		for _, t := range app.tags {
+			if slices.Contains(out, t) {
+				continue
+			}
+			derived := false
+			for _, placed := range led.appearances[id] {
+				if placed.bucket != "" && placementVia(t, placed.bucket, spec, interp) {
+					derived = true
+					break
+				}
+			}
+			if !derived {
+				out = append(out, t)
+			}
+		}
+	}
+	return out
+}
+
+// appendMissing appends each tag of add not already in dst, preserving order.
+func appendMissing(dst, add []string) []string {
+	for _, t := range add {
+		if !slices.Contains(dst, t) {
+			dst = append(dst, t)
+		}
+	}
+	return dst
+}
+
+// subtractTags returns the members of a not in b, preserving a's order.
+func subtractTags(a, b []string) []string {
+	var out []string
+	for _, t := range a {
+		if !slices.Contains(b, t) {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// spellTags re-spells tags for a diagnostic through the one quoting rule
+// (trellis.QuoteIfNeeded), space-joined — exactly as the user wrote them.
+func spellTags(tags []string) string {
+	spelled := make([]string, len(tags))
+	for i, tag := range tags {
+		spelled[i] = trellis.QuoteIfNeeded(tag)
+	}
+	return strings.Join(spelled, " ")
 }
 
 // applyDocument three-way-merges an edited organize document against its pinned
@@ -110,9 +278,6 @@ func (cmd *Organize) applyDocument(
 ) (committed bool, err error) {
 	edited, err := parseDocument(editedText)
 	if err != nil {
-		return false, err
-	}
-	if err := rejectTagAtoms(edited); err != nil {
 		return false, err
 	}
 	// The document carries the whole grouping spec in the G10 spelling: a field
@@ -155,6 +320,35 @@ func (cmd *Organize) applyDocument(
 		return false, err
 	}
 	dim := spec.Dim
+
+	// Config feeds the tag-interpreter resolution — the tag-atom gate below and
+	// the membership path both need the global [tags] override — and carries the
+	// `[organize] tag_atoms` / `tag_strip` defaults the document's own
+	// `_tag-atoms` / `_tag-strip` fields win over (effectiveTagAtoms /
+	// effectiveTagStrip, design G3; the parse above already validated the doc's
+	// fields loudly). This slice the effective levers reach apply only through
+	// the base comparison — the pinned base carries the rendered tags — while
+	// Task 3's membership derivation consumes them directly.
+	cfg, err := command_components.LoadDefaultConfig(nil)
+	if err != nil {
+		return false, err
+	}
+
+	// The interim tag-atom gate (native tags slice 2): a box tag set EDITED
+	// against the pinned base refuses loudly before any merge or write; an
+	// unchanged set passes through, memberships deriving from placement as
+	// today. A namespace grouping needs the interpreter to derive each tag's
+	// placement bucket (placementVia).
+	var tagInterp cgp.TagInterpreter
+	if spec.Kind == groupKindTagNamespace {
+		if tagInterp, _, err = interpreterForDimension(lister, dim, cfg.Tags.Interpreter); err != nil {
+			return false, err
+		}
+	}
+	if err := rejectEditedTagAtoms(edited, base, spec, tagInterp); err != nil {
+		return false, err
+	}
+
 	liveNodes, err := selectNodes(ctx, lister, u, edited.Query)
 	if err != nil {
 		return false, errors.Wrapf(err, "organize --apply: re-query live state")
@@ -173,12 +367,7 @@ func (cmd *Organize) applyDocument(
 	if multiValued {
 		// The grouped dimension's tag interpreter is resolved from the field's
 		// declared default plus the global [tags] config override (RFC 0019 §4,
-		// #231 slice 3). Load the config here — on the membership path only — the
-		// same way generate does; the single-valued facet path needs no interpreter.
-		cfg, err := command_components.LoadDefaultConfig(nil)
-		if err != nil {
-			return false, err
-		}
+		// #231 slice 3), from the config loaded above.
 		return cmd.applyMemberships(
 			ctx, edited, base, liveNodes, lister, dim, spec.Namespace, cfg.Tags.Interpreter,
 			commit, interactive, color,

@@ -60,7 +60,89 @@ const (
 	// a bare `project` for a namespace. A field grouping never emits it (its
 	// spelling IS the `# <dim>=` / `# <dim>=(month)` heading).
 	fieldGroupBy = "_group-by"
+	// fieldTagAtoms / fieldTagStrip are the tag-atom render levers (native tags
+	// design G1/G2/G3, slice 2): DATA-plane envelope fields, content-addressed
+	// into `_base` when present, OMITTED at their defaults (existing documents
+	// stay byte-identical). `[organize] tag_atoms` / `tag_strip` config may set
+	// the defaults; the document's explicit field wins (effectiveTagAtoms /
+	// effectiveTagStrip).
+	fieldTagAtoms = "_tag-atoms"
+	fieldTagStrip = "_tag-strip"
 )
+
+// The `_tag-atoms` lever's domain (design G1): where an object's tag set
+// renders inside its box — leading (after id/`!type`, before the `name=value`
+// atoms; the default), trailing (after the atoms), or none (no tag atoms at
+// all). Position is presentation-only: the parser collects tags wherever they
+// sit, so every spelling re-parses identically.
+const (
+	tagAtomsLeading  = "leading"
+	tagAtomsTrailing = "trailing"
+	tagAtomsNone     = "none"
+)
+
+// The `_tag-strip` lever's domain (design G2): whether a tag-grouped document
+// strips from each appearance's box exactly the placement (Via) tag(s) that
+// filed it under its bucket — placement (the default; the #229 rule: placement
+// carries it, never also an atom) — or keeps every tag in every box (none).
+// Field-grouped documents strip nothing either way (no tag placement exists).
+const (
+	tagStripPlacement = "placement"
+	tagStripNone      = "none"
+)
+
+// parseTagAtomsField validates a `- _tag-atoms = <value>` envelope value;
+// empty (absent) stays empty. An out-of-domain value is a loud bad request,
+// never a silent default.
+func parseTagAtomsField(raw string) (string, error) {
+	switch raw {
+	case "", tagAtomsLeading, tagAtomsTrailing, tagAtomsNone:
+		return raw, nil
+	}
+	return "", errors.BadRequestf(
+		"organize: `- %s = %s` is not one of %s, %s, %s",
+		fieldTagAtoms, raw, tagAtomsLeading, tagAtomsTrailing, tagAtomsNone,
+	)
+}
+
+// parseTagStripField validates a `- _tag-strip = <value>` envelope value;
+// empty (absent) stays empty. An out-of-domain value is a loud bad request.
+func parseTagStripField(raw string) (string, error) {
+	switch raw {
+	case "", tagStripPlacement, tagStripNone:
+		return raw, nil
+	}
+	return "", errors.BadRequestf(
+		"organize: `- %s = %s` is not one of %s, %s",
+		fieldTagStrip, raw, tagStripPlacement, tagStripNone,
+	)
+}
+
+// effectiveTagAtoms resolves the `_tag-atoms` lever: the document's explicit
+// field wins over the `[organize] tag_atoms` config default, which wins over
+// the built-in default (leading) — design G3. Both inputs are already
+// domain-validated (parseTagAtomsField / cgconfig's OrganizeConfig.Validate).
+func effectiveTagAtoms(docVal, configVal string) string {
+	switch {
+	case docVal != "":
+		return docVal
+	case configVal != "":
+		return configVal
+	}
+	return tagAtomsLeading
+}
+
+// effectiveTagStrip is effectiveTagAtoms' `_tag-strip` sibling: doc field,
+// then `[organize] tag_strip`, then the built-in default (placement).
+func effectiveTagStrip(docVal, configVal string) string {
+	switch {
+	case docVal != "":
+		return docVal
+	case configVal != "":
+		return configVal
+	}
+	return tagStripPlacement
+}
 
 // objectLine is one espalier box literal: the anchor-relative node id, its type
 // tag (inline for spelling 1; empty for spelling 2, where the envelope carries
@@ -71,10 +153,14 @@ const (
 type objectLine struct {
 	ID   string
 	Type string
-	// Tags are the bare / quoted identifier tokens a box carries after its id
-	// and type (design G9: bare is ALWAYS a tag). Slice 1 parses and round-trips
-	// them verbatim but never renders them from data and never writes them —
-	// apply refuses a tagged line (rejectTagAtoms) rather than dropping it.
+	// Tags are the bare / quoted identifier tokens a box carries (design G9:
+	// bare is ALWAYS a tag; leading by default, after the atoms under
+	// `_tag-atoms = trailing`). Since native tags slice 2 generate RENDERS them
+	// from the type's designated tag field (tagRender), SortKey-ordered, with
+	// the placement Via stripped under a tag grouping (`_tag-strip`). Apply
+	// still does not WRITE them: an edited tag set (vs the pinned base) is
+	// refused loudly (rejectEditedTagAtoms) until slice 2 Task 3's membership
+	// write.
 	Tags   []string
 	Fields []cgp.BoxAtom
 	Desc   string
@@ -114,6 +200,15 @@ type document struct {
 	// (resolveTagDimension). The hoisted body has no parent dimension heading —
 	// its buckets are bare `# <value>` headings at minimal depth.
 	GroupBy string
+	// TagAtoms is `- _tag-atoms`: where tag atoms render in a box (leading /
+	// trailing / none, design G1). Empty = absent (the effective value falls
+	// back to config, then leading — effectiveTagAtoms); generate emits the
+	// field only when the effective value is non-default (G3).
+	TagAtoms string
+	// TagStrip is `- _tag-strip`: whether a tag grouping strips the placement
+	// (Via) tag(s) from each appearance's box (placement / none, design G2).
+	// Empty = absent, resolving like TagAtoms (default placement).
+	TagStrip string
 	// Distributed carries any other bare `- <term>` envelope lines the user
 	// hand-added (RFC 0015 distribution rule) — preserved verbatim on parse.
 	Distributed []string
@@ -263,6 +358,12 @@ func render(doc document) string {
 	if doc.GroupBy != "" {
 		fmt.Fprintf(&b, "- %s = %s\n", fieldGroupBy, doc.GroupBy)
 	}
+	if doc.TagAtoms != "" {
+		fmt.Fprintf(&b, "- %s = %s\n", fieldTagAtoms, doc.TagAtoms)
+	}
+	if doc.TagStrip != "" {
+		fmt.Fprintf(&b, "- %s = %s\n", fieldTagStrip, doc.TagStrip)
+	}
 	for _, d := range doc.Distributed {
 		fmt.Fprintf(&b, "- %s\n", d)
 	}
@@ -285,10 +386,11 @@ func renderCanonical(doc document) string {
 // as its heading, one blank line, and its object lines run together. Blank lines
 // separate headings and groups of objects — never individual objects.
 func writeBody(b *strings.Builder, doc document) {
+	trailingTags := doc.TagAtoms == tagAtomsTrailing
 	if len(doc.Ungrouped) > 0 {
 		b.WriteByte('\n')
 		for _, ln := range doc.Ungrouped {
-			writeObjectLine(b, ln)
+			writeObjectLine(b, ln, trailingTags)
 		}
 	}
 	for _, s := range doc.Sections {
@@ -298,23 +400,29 @@ func writeBody(b *strings.Builder, doc document) {
 			b.WriteByte('\n')
 		}
 		for _, ln := range s.Lines {
-			writeObjectLine(b, ln)
+			writeObjectLine(b, ln, trailingTags)
 		}
 	}
 }
 
 // writeObjectLine renders one espalier box literal and its description trailer:
 // `- [<id> !<type> <tag>… <name>=<value>…] <desc>`. The interior is spelled by
-// trellis.WriteLiteral (design G13): the id, the type, any tag tokens the box
-// carried on parse, then the detail atoms, each a ground `name=value` espalier
-// field (cutting-garden#47).
-func writeObjectLine(b *strings.Builder, ln objectLine) {
+// trellis.WriteLiteral (design G13): the id, the type, the tag terms, then the
+// detail atoms, each a ground `name=value` espalier field (cutting-garden#47).
+// trailingTags (the document's `_tag-atoms = trailing` lever, design G1) moves
+// the tag terms after the atoms via trellis.WriteLiteralTrailingTags —
+// presentation-only, since the parser collects tags wherever they sit.
+func writeObjectLine(b *strings.Builder, ln objectLine, trailingTags bool) {
 	lit := trellis.Literal{ID: ln.ID, Type: ln.Type, Tags: ln.Tags}
 	for _, f := range ln.Fields {
 		lit.Atoms = append(lit.Atoms, trellis.Atom{Name: f.Name, Value: f.Value})
 	}
 	b.WriteString("- [")
-	trellis.WriteLiteral(b, lit)
+	if trailingTags {
+		trellis.WriteLiteralTrailingTags(b, lit)
+	} else {
+		trellis.WriteLiteral(b, lit)
+	}
 	b.WriteByte(']')
 	if ln.Desc != "" {
 		fmt.Fprintf(b, " %s", ln.Desc)
@@ -345,6 +453,12 @@ func parseDocument(text string) (document, error) {
 		return document{}, err
 	}
 	doc.GroupBy = fields[fieldGroupBy]
+	if doc.TagAtoms, err = parseTagAtomsField(fields[fieldTagAtoms]); err != nil {
+		return document{}, err
+	}
+	if doc.TagStrip, err = parseTagStripField(fields[fieldTagStrip]); err != nil {
+		return document{}, err
+	}
 
 	if err := parseBody(&doc, body); err != nil {
 		return document{}, err

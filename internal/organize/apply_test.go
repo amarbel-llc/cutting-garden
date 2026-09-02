@@ -13,36 +13,149 @@ import (
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
-// TestRejectTagAtoms pins the apply gate for hand-edited tag tokens (design G13,
-// native tags slice 1): EVERY tagged line is reported in ONE bad request, each
-// naming its object and tags as spelled (a quoted tag re-quotes); an untagged
-// document passes.
-func TestRejectTagAtoms(t *testing.T) {
-	doc := document{
-		Ungrouped: []objectLine{{ID: "a.ics", Tags: []string{"work-x", "_ inbox"}}},
-		Sections: []section{{Depth: 2, Term: "work", Lines: []objectLine{
-			{ID: "b.ics"},
-			{ID: "c.ics", Tags: []string{"status"}},
-		}}},
+// tagWholeGateDoc builds a `(tags)`-grouped document shaped like generate's
+// output under `_tag-strip = placement`: t1 carries {work, errand} so it
+// appears under BOTH buckets, each box showing only the OTHER (non-Via) tag;
+// t2 is untagged and ungrouped.
+func tagWholeGateDoc() document {
+	return document{
+		GroupBy:   "(tags)",
+		Ungrouped: []objectLine{{ID: "t2.ics"}},
+		Sections: []section{
+			{Depth: 1, Term: "errand", Lines: []objectLine{{ID: "t1.ics", Tags: []string{"work"}}}},
+			{Depth: 1, Term: "work", Lines: []objectLine{{ID: "t1.ics", Tags: []string{"errand"}}}},
+		},
 	}
-	err := rejectTagAtoms(doc)
+}
+
+// TestRejectEditedTagAtoms_UnchangedPasses pins the interim slice-2 gate's
+// pass-through half: a document whose boxes carry the GENERATED tag atoms
+// unchanged is not refused — including a pure membership edit, where a line
+// leaves both tag buckets (the placement-derived tags vanish WITH the
+// placements, so nothing reads as a box edit) and where a line MOVES between
+// field buckets carrying its tags along.
+func TestRejectEditedTagAtoms_UnchangedPasses(t *testing.T) {
+	base := tagWholeGateDoc()
+
+	// Byte-identical: trivially unchanged.
+	if err := rejectEditedTagAtoms(tagWholeGateDoc(), base, groupSpec{Dim: "categories", Kind: groupKindTagWhole}, nil); err != nil {
+		t.Errorf("unchanged document must pass: %v", err)
+	}
+
+	// The headings-reset shape: t1 removed from BOTH buckets to ungrouped, its
+	// box (as generated, per-bucket Via-stripped) gone with the placements. A
+	// membership removal, not a tag-atom edit.
+	edited := document{
+		GroupBy: "(tags)",
+		Ungrouped: []objectLine{
+			{ID: "t1.ics"},
+			{ID: "t2.ics"},
+		},
+		Sections: []section{
+			{Depth: 1, Term: "errand"},
+			{Depth: 1, Term: "work"},
+		},
+	}
+	if err := rejectEditedTagAtoms(edited, base, groupSpec{Dim: "categories", Kind: groupKindTagWhole}, nil); err != nil {
+		t.Errorf("membership removal must pass the gate: %v", err)
+	}
+
+	// A FIELD-grouped move carrying the full rendered tag set along: nothing is
+	// placement-derived, but the set equals the base's — unchanged.
+	fieldBase := document{
+		Sections: []section{
+			{Depth: 1, Term: "status="},
+			{Depth: 2, Term: "=A", Lines: []objectLine{{ID: "f.ics", Tags: []string{"errand", "work"}}}},
+			{Depth: 2, Term: "=B"},
+		},
+	}
+	fieldEdited := document{
+		Sections: []section{
+			{Depth: 1, Term: "status="},
+			{Depth: 2, Term: "=A"},
+			{Depth: 2, Term: "=B", Lines: []objectLine{{ID: "f.ics", Tags: []string{"work", "errand"}}}},
+		},
+	}
+	if err := rejectEditedTagAtoms(fieldEdited, fieldBase, groupSpec{Dim: "status"}, nil); err != nil {
+		t.Errorf("field-bucket move with reordered-but-equal tags must pass: %v", err)
+	}
+}
+
+// TestRejectEditedTagAtoms_ChangedRefuses pins the refusal half: an ADDED box
+// tag and a REMOVED one are both loud bad requests naming the object and the
+// tags as spelled (a quoted tag re-quotes) — the pre-slice-2 message, now
+// fired only on a real edit (Task 3 replaces it with the membership write).
+func TestRejectEditedTagAtoms_ChangedRefuses(t *testing.T) {
+	base := tagWholeGateDoc()
+	spec := groupSpec{Dim: "categories", Kind: groupKindTagWhole}
+
+	added := tagWholeGateDoc()
+	added.Ungrouped[0].Tags = []string{"work-x", "_ inbox"}
+	err := rejectEditedTagAtoms(added, base, spec, nil)
 	if err == nil || !errors.Is400BadRequest(err) {
-		t.Fatalf("rejectTagAtoms: err = %v, want a bad request", err)
+		t.Fatalf("added tags: err = %v, want a bad request", err)
 	}
 	for _, want := range []string{
-		`object a.ics carries tag atoms work-x "_ inbox"`,
-		`object c.ics carries tag atoms status`,
-		"not writable yet",
+		`object t2.ics carries tag atoms work-x "_ inbox"`,
+		"not writable yet (native tags slice 2)",
 	} {
 		if !strings.Contains(err.Error(), want) {
-			t.Errorf("rejectTagAtoms error %q should mention %q", err, want)
+			t.Errorf("added-tags error %q should mention %q", err, want)
 		}
 	}
-	if strings.Contains(err.Error(), "b.ics") {
-		t.Errorf("untagged b.ics must not be reported: %v", err)
+	if strings.Contains(err.Error(), "t1.ics") {
+		t.Errorf("unedited t1.ics must not be reported: %v", err)
 	}
-	if err := rejectTagAtoms(document{Ungrouped: []objectLine{{ID: "x.ics"}}}); err != nil {
-		t.Errorf("untagged document must pass: %v", err)
+
+	removed := tagWholeGateDoc()
+	removed.Sections[0].Lines[0].Tags = nil // drop `work` from t1's errand box
+	err = rejectEditedTagAtoms(removed, base, spec, nil)
+	if err == nil || !errors.Is400BadRequest(err) {
+		t.Fatalf("removed tag: err = %v, want a bad request", err)
+	}
+	if !strings.Contains(err.Error(), "object t1.ics removed tag atoms work") {
+		t.Errorf("removed-tag error %q should name the removed tag", err)
+	}
+}
+
+// TestRejectEditedTagAtoms_NamespaceMoveKeepsSiblings pins the gate under a
+// NAMESPACE grouping (design G10a): a line moved from a continuation bucket to
+// the root — its box keeping the out-of-namespace sibling tag the strip left
+// behind — passes, because the sibling is unchanged and the placement change is
+// the membership path's business.
+func TestRejectEditedTagAtoms_NamespaceMoveKeepsSiblings(t *testing.T) {
+	interp, ok := cgp.LookupTagInterpreter("dodder-hyphen")
+	if !ok {
+		t.Fatal("dodder-hyphen interpreter not registered")
+	}
+	spec := groupSpec{Dim: "categories", Namespace: "project", Kind: groupKindTagNamespace}
+	base := document{
+		GroupBy:   "project",
+		Ungrouped: []objectLine{{ID: "d.ics", Tags: []string{"other"}}},
+		Sections: []section{
+			{Depth: 1, Term: "project"},
+			{Depth: 2, Term: "-client", Lines: []objectLine{{ID: "a.ics", Tags: []string{"urgent"}}}},
+		},
+	}
+	edited := document{
+		GroupBy: "project",
+		Sections: []section{
+			{Depth: 1, Term: "project", Lines: []objectLine{
+				{ID: "a.ics", Tags: []string{"urgent"}},
+				{ID: "d.ics", Tags: []string{"other"}},
+			}},
+			{Depth: 2, Term: "-client"},
+		},
+	}
+	if err := rejectEditedTagAtoms(edited, base, spec, interp); err != nil {
+		t.Errorf("namespace move keeping sibling tags must pass: %v", err)
+	}
+
+	// The same move with the sibling tag dropped IS an edit.
+	edited.Sections[0].Lines[1].Tags = nil
+	err := rejectEditedTagAtoms(edited, base, spec, interp)
+	if err == nil || !strings.Contains(err.Error(), "object d.ics removed tag atoms other") {
+		t.Errorf("dropped sibling must refuse naming it, got %v", err)
 	}
 }
 

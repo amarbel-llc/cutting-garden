@@ -180,23 +180,45 @@ func notGround(interior string, term Term, why string) error {
 // WriteLiteral renders lit as a box interior WITHOUT the enclosing brackets
 // (the caller writes those, alongside whatever trails the box): the id, then
 // `!type`, then each tag, then each `name=value` atom, single-space
-// separated. Every slot is spelled through QuoteIfNeeded, so the output
+// separated — the doddish leading-tags order (`_tag-atoms = leading`,
+// RFC 0015). Every slot is spelled through QuoteIfNeeded, so the output
 // re-parses (ParseLiteral) to the same Literal.
 func WriteLiteral(b *strings.Builder, lit Literal) {
+	writeLiteral(b, lit, false)
+}
+
+// WriteLiteralTrailingTags renders exactly like WriteLiteral except the tag
+// terms follow the `name=value` atoms (`_tag-atoms = trailing`, RFC 0015).
+// Position is presentation-only: the parse side (ParseLiteral) collects tags
+// and atoms wherever they appear, so both spellings re-parse to the same
+// Literal.
+func WriteLiteralTrailingTags(b *strings.Builder, lit Literal) {
+	writeLiteral(b, lit, true)
+}
+
+func writeLiteral(b *strings.Builder, lit Literal, trailingTags bool) {
+	writeTags := func() {
+		for _, tag := range lit.Tags {
+			b.WriteByte(' ')
+			b.WriteString(QuoteIfNeeded(tag))
+		}
+	}
 	b.WriteString(QuoteIfNeeded(lit.ID))
 	if lit.Type != "" {
 		b.WriteString(" !")
 		b.WriteString(lit.Type)
 	}
-	for _, tag := range lit.Tags {
-		b.WriteByte(' ')
-		b.WriteString(QuoteIfNeeded(tag))
+	if !trailingTags {
+		writeTags()
 	}
 	for _, atom := range lit.Atoms {
 		b.WriteByte(' ')
 		b.WriteString(QuoteIfNeeded(atom.Name))
 		b.WriteByte('=')
 		b.WriteString(QuoteIfNeeded(atom.Value))
+	}
+	if trailingTags {
+		writeTags()
 	}
 }
 

@@ -49,13 +49,17 @@ teardown() {
 # no `# categories=` parent heading, bare `# <tag>` buckets sorted ascending —
 # errand before work), the untagged field1/field4 ungrouped, and the two-tag
 # field2 filed under BOTH buckets while the one-tag field3 sits under work only.
+# Since native tags slice 2 each box carries its NON-PLACEMENT tag atoms
+# (design G1/G2): field2's box under errand shows `work` and vice versa (the
+# bucket's own Via tag is stripped), while field3's lone `work` vanishes under
+# its own bucket.
 generate_grouped() {
   run_cg organize -group-by '(tags)' "$CAL"
   assert_success
   assert_output - <<-'EOM'
 	---
 	% generated: `cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:43102/dav/fields/`
-	- _base = @blake2b256-ve9z2sjazx3vsvd4n9l4lexwdwhn2a6vzg4qctgxehkzwp7vx6mqkcey05
+	- _base = @blake2b256-a35sf80axhk3xfyzhg3vf7cexxxqx52cw7c8gdr8tgyjp9fnmzjq3xn6jl
 	- _anchor = caldav:http://127.0.0.1:43102/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -69,11 +73,11 @@ generate_grouped() {
 
 	# errand
 
-	- [field2.ics priority=1_should] Read book
+	- [field2.ics work priority=1_should] Read book
 
 	# work
 
-	- [field2.ics priority=1_should] Read book
+	- [field2.ics errand priority=1_should] Read book
 	- [field3.ics priority=2_nice] Water plants
 	EOM
 }
@@ -119,7 +123,7 @@ function organize_categories_apply_writes { # @test
   cat >"$edited" <<-'EOM'
 	---
 	% generated: `cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:43102/dav/fields/`
-	- _base = @blake2b256-ve9z2sjazx3vsvd4n9l4lexwdwhn2a6vzg4qctgxehkzwp7vx6mqkcey05
+	- _base = @blake2b256-a35sf80axhk3xfyzhg3vf7cexxxqx52cw7c8gdr8tgyjp9fnmzjq3xn6jl
 	- _anchor = caldav:http://127.0.0.1:43102/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -133,12 +137,12 @@ function organize_categories_apply_writes { # @test
 
 	# errand
 
-	- [field2.ics priority=1_should] Read book
+	- [field2.ics work priority=1_should] Read book
 	- [field3.ics priority=2_nice] Water plants
 
 	# work
 
-	- [field2.ics priority=1_should] Read book
+	- [field2.ics errand priority=1_should] Read book
 	EOM
 
   run_cg organize -apply "$edited" -commit
@@ -159,7 +163,7 @@ EOF
   assert_output - <<-'EOM'
 	---
 	% generated: `cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:43102/dav/fields/`
-	- _base = @blake2b256-63xx27wxxcyntzyzq262jlktpa6c4xfq6lga0qklpaf47fzq9c4saz2f8e
+	- _base = @blake2b256-dpk58j7ut89evkm283km5k2tv3f4gagcvkshs6nzle7xxyjepgvql5jggg
 	- _anchor = caldav:http://127.0.0.1:43102/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -173,11 +177,11 @@ EOF
 
 	# errand
 
-	- [field2.ics priority=1_should] Read book
+	- [field2.ics work priority=1_should] Read book
 	- [field3.ics priority=2_nice] Water plants
 
 	# work
 
-	- [field2.ics priority=1_should] Read book
+	- [field2.ics errand priority=1_should] Read book
 	EOM
 }

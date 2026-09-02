@@ -25,7 +25,7 @@ func TestObjectLineAtomRoundTrip(t *testing.T) {
 	}
 
 	var b strings.Builder
-	writeObjectLine(&b, ln)
+	writeObjectLine(&b, ln, false)
 	got := strings.TrimRight(b.String(), "\n")
 	want := "- [dentist.ics !caldav-object-vevent-v1 date_start=2026-08-15 time_start=09-30 location=HQ] Dentist"
 	if got != want {
@@ -64,9 +64,26 @@ func TestObjectLineTagRoundTrip(t *testing.T) {
 		t.Errorf("Fields = %+v, want %+v", parsed.Fields, want)
 	}
 	var b strings.Builder
-	writeObjectLine(&b, parsed)
+	writeObjectLine(&b, parsed, false)
 	if got := strings.TrimRight(b.String(), "\n"); got != line {
 		t.Errorf("render = %q\nwant     %q", got, line)
+	}
+
+	// The trailing spelling (`_tag-atoms = trailing`, design G1) moves the tag
+	// terms after the atoms and re-parses to the SAME line (position is
+	// presentation-only).
+	var tb strings.Builder
+	writeObjectLine(&tb, parsed, true)
+	trailing := strings.TrimRight(tb.String(), "\n")
+	if want := `- [field2.ics location=Bank work-x status "_ inbox"] Read book`; trailing != want {
+		t.Errorf("trailing render = %q\nwant %q", trailing, want)
+	}
+	reparsed, err := parseObjectLine(strings.TrimPrefix(trailing, "- "))
+	if err != nil {
+		t.Fatalf("parseObjectLine(trailing): %v", err)
+	}
+	if !reflect.DeepEqual(reparsed.Tags, parsed.Tags) || !reflect.DeepEqual(reparsed.Fields, parsed.Fields) {
+		t.Errorf("trailing spelling did not round-trip: %+v vs %+v", reparsed, parsed)
 	}
 
 	_, err = parseObjectLine(`[field1.ics status*=y] Pay rent`)

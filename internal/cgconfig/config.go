@@ -95,16 +95,44 @@ type OrganizeConfig struct {
 	// "year", "month", or "day". Empty means the built-in default (day).
 	// An explicit `--group-by dim=(granularity)` qualifier always wins over this.
 	DateGranularity string `toml:"date_granularity,omitempty"`
+
+	// TagAtoms is the default `_tag-atoms` render lever (native tags design
+	// G1/G3): where an object's tag set renders inside its box — "leading"
+	// (after id/type, before the `name=value` atoms), "trailing" (after the
+	// atoms), or "none" (no tag atoms). Empty means the built-in default
+	// (leading). A document's explicit `- _tag-atoms` field always wins.
+	TagAtoms string `toml:"tag_atoms,omitempty"`
+
+	// TagStrip is the default `_tag-strip` lever (design G2/G3): "placement"
+	// strips from each tag-grouped box exactly the tag(s) that produced its
+	// placement, "none" keeps every tag in every box. Empty means the built-in
+	// default (placement). A document's explicit `- _tag-strip` field wins.
+	TagStrip string `toml:"tag_strip,omitempty"`
 }
 
 func (c OrganizeConfig) Validate() error {
-	if c.DateGranularity == "" {
-		return nil
+	if c.DateGranularity != "" {
+		if _, ok := cgp.ParseDateGranularity(c.DateGranularity); !ok {
+			return errors.BadRequestf(
+				"organize.date_granularity %q is not one of year, month, day",
+				c.DateGranularity,
+			)
+		}
 	}
-	if _, ok := cgp.ParseDateGranularity(c.DateGranularity); !ok {
+	switch c.TagAtoms {
+	case "", "leading", "trailing", "none":
+	default:
 		return errors.BadRequestf(
-			"organize.date_granularity %q is not one of year, month, day",
-			c.DateGranularity,
+			"organize.tag_atoms %q is not one of leading, trailing, none",
+			c.TagAtoms,
+		)
+	}
+	switch c.TagStrip {
+	case "", "placement", "none":
+	default:
+		return errors.BadRequestf(
+			"organize.tag_strip %q is not one of placement, none",
+			c.TagStrip,
 		)
 	}
 	return nil

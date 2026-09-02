@@ -14,12 +14,12 @@ below (the case title names the lane), and `just test-grammar-corpus`
 
 | G# | decision | slice | test (file:function) |
 |---|---|---|---|
-| G1 | bare atoms after id/type; `_tag-atoms = leading` default | 2 | — |
-| G1 | `_tag-atoms = trailing` | 2 | — |
-| G1 | `_tag-atoms = none` | 2 | — |
-| G2 | tag-grouped: strip only `Via`, siblings stay | 2 | — |
-| G2 | `_tag-strip = none` | 2 | — |
-| G3 | levers omitted at default; config default; doc wins | 2 | — |
+| G1 | bare atoms after id/type; `_tag-atoms = leading` default | 2 | `organize_tagatoms.bats:organize_tagatoms_leading_default` (+ every field-grouped lane re-pointed; Go `TestObjectLineTagRoundTrip`) |
+| G1 | `_tag-atoms = trailing` | 2 | `organize_tagatoms.bats:organize_tagatoms_trailing_config` (+ Go `internal/organize` `TestTagLeverEnvelopeRoundTrip`) |
+| G1 | `_tag-atoms = none` | 2 | `organize_tagatoms.bats:organize_tagatoms_none_config` |
+| G2 | tag-grouped: strip only `Via`, siblings stay | 2 | `organize_tagatoms.bats:organize_tagatoms_strip_placement_keeps_sibling`, `organize_tagatoms.bats:organize_tagatoms_ns_root_strip` (G10a root; + `organize_tags.bats`, `organize_ns.bats`, `organize_headings.bats` re-pointed; Go `TestTagRenderFill_*`) |
+| G2 | `_tag-strip = none` | 2 | `organize_tagatoms.bats:organize_tagatoms_strip_none` (+ Go `TestTagRenderFill_StripNoneKeepsVia`) |
+| G3 | levers omitted at default; config default; doc wins | 2 | `organize_tagatoms.bats:organize_tagatoms_leading_default` (omitted), `organize_tagatoms.bats:organize_tagatoms_trailing_config` / `organize_tagatoms_none_config` / `organize_tagatoms_strip_none` (config default + `_base`-addressed echo), `organize_tagatoms.bats:organize_tagatoms_doc_wins` (+ Go `TestEffectiveTagLevers` — the doc-wins resolution itself; full doc-wins apply semantics land with G7) |
 | G4 | `fmt-organize` regenerates + rewrites `_base` | 3 | — |
 | G4 | `fmt-organize` refuses on unapplied edits | 3 | — |
 | G4 | `fmt-organize` never emits reset headings | 3 | — |

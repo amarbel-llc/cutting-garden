@@ -16,7 +16,11 @@
 # under the old bucket's namespace path and gains the new bucket's namespace
 # tag. The root heading is itself a LIVE bucket (G10a): a line placed DIRECTLY
 # under `# project` carries the BARE tag `project` (reconstruction is exactly
-# `project`; out-of-namespace tags are untouched).
+# `project`; out-of-namespace tags are untouched). Since native tags slice 2
+# each box carries its NON-PLACEMENT tag atoms (design G1/G2): the ungrouped
+# nsD shows its `other` tag, the bucketed boxes are bare (their single Via tag
+# is placement-stripped), and a root-placed line keeps `other` while the bare
+# `project` strips (the G10a root strip).
 #
 # Namespace grouping REQUIRES an interpreter that declares namespaces. The caldav
 # categories field defaults to `naive` (exact-match, no namespaces), which
@@ -74,7 +78,7 @@ generate_grouped() {
   assert_output - <<-'EOM'
 	---
 	% generated: `cg organize -group-by project -query "_terminal=no" caldav:http://127.0.0.1:43103/dav/ns/`
-	- _base = @blake2b256-gqf8sncxct6jgfpda9zzf5r7pktxzunq4nz9vzg2uwjfqmr9zh5qx907va
+	- _base = @blake2b256-yu624kdcgwz29tj8nh6eka0chs3rqpyt7u53tgyvvx6v5zznz5gs9ypmm4
 	- _anchor = caldav:http://127.0.0.1:43103/dav/ns/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -82,7 +86,7 @@ generate_grouped() {
 	! organize-base-v1
 	---
 
-	- [nsD.ics] Loose idea
+	- [nsD.ics other] Loose idea
 
 	# project
 
@@ -123,7 +127,7 @@ function organize_ns_rollup_move_writes_reconstructed_tag { # @test
   cat >"$edited" <<-'EOM'
 	---
 	% generated: `cg organize -group-by project -query "_terminal=no" caldav:http://127.0.0.1:43103/dav/ns/`
-	- _base = @blake2b256-gqf8sncxct6jgfpda9zzf5r7pktxzunq4nz9vzg2uwjfqmr9zh5qx907va
+	- _base = @blake2b256-yu624kdcgwz29tj8nh6eka0chs3rqpyt7u53tgyvvx6v5zznz5gs9ypmm4
 	- _anchor = caldav:http://127.0.0.1:43103/dav/ns/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -131,7 +135,7 @@ function organize_ns_rollup_move_writes_reconstructed_tag { # @test
 	! organize-base-v1
 	---
 
-	- [nsD.ics] Loose idea
+	- [nsD.ics other] Loose idea
 
 	# project
 
@@ -169,7 +173,7 @@ EOF
   assert_output - <<-'EOM'
 	---
 	% generated: `cg organize -group-by project -query "_terminal=no" caldav:http://127.0.0.1:43103/dav/ns/`
-	- _base = @blake2b256-u9a0zdrxghelhd7wxk3g856uvvjc6dcydpq9pnjvpsquwmrukyws729xp4
+	- _base = @blake2b256-4yfvv4wyma5yt8wz6f6umfplw7pqc72vnja5n6e77ceqharjmvvqppk96m
 	- _anchor = caldav:http://127.0.0.1:43103/dav/ns/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -177,7 +181,7 @@ EOF
 	! organize-base-v1
 	---
 
-	- [nsD.ics] Loose idea
+	- [nsD.ics other] Loose idea
 
 	# project
 
@@ -196,18 +200,20 @@ EOF
 # from the ungrouped set to DIRECTLY under the `# project` root heading and
 # commit. The root heading is a live tag bucket whose reconstruction is exactly
 # the BARE namespace tag, so planMemberships adds `project` to nsD's live tag
-# set — its out-of-namespace `other` tag is untouched (the ns document never
-# shows it, and namespace scoping only edits tags the document governs) — and
+# set — its out-of-namespace `other` tag is untouched (the box shows it as an
+# atom, and namespace scoping only edits tags the document governs) — and
 # the caldav full-set write serializes both as one comma-joined CATEGORIES.
 # The re-rendered document shows nsD under `# project` (direct root placement,
-# above the continuations) and no longer ungrouped.
+# above the continuations) and no longer ungrouped — its box keeping `other`
+# while the placement-realizing bare `project` is stripped (G2's G10a root
+# strip: Via == the bare namespace tag).
 function organize_ns_direct_root_placement_writes_bare_tag { # @test
   generate_grouped
   local edited="$BATS_TEST_TMPDIR/edited.txt"
   cat >"$edited" <<-'EOM'
 	---
 	% generated: `cg organize -group-by project -query "_terminal=no" caldav:http://127.0.0.1:43103/dav/ns/`
-	- _base = @blake2b256-gqf8sncxct6jgfpda9zzf5r7pktxzunq4nz9vzg2uwjfqmr9zh5qx907va
+	- _base = @blake2b256-yu624kdcgwz29tj8nh6eka0chs3rqpyt7u53tgyvvx6v5zznz5gs9ypmm4
 	- _anchor = caldav:http://127.0.0.1:43103/dav/ns/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -217,7 +223,7 @@ function organize_ns_direct_root_placement_writes_bare_tag { # @test
 
 	# project
 
-	- [nsD.ics] Loose idea
+	- [nsD.ics other] Loose idea
 
 	## -client
 
@@ -250,7 +256,7 @@ EOF
   assert_output - <<-'EOM'
 	---
 	% generated: `cg organize -group-by project -query "_terminal=no" caldav:http://127.0.0.1:43103/dav/ns/`
-	- _base = @blake2b256-99puthjwcd9nhv8f4xakufjty35eftpcwxp0gakus5whz4d9lgrs64qhd0
+	- _base = @blake2b256-lcdjhf2je7lpvn0vd2dp2gg4d4g5weeyu5r05qufj4p6ufqrsr0qpygaa7
 	- _anchor = caldav:http://127.0.0.1:43103/dav/ns/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -260,7 +266,7 @@ EOF
 
 	# project
 
-	- [nsD.ics] Loose idea
+	- [nsD.ics other] Loose idea
 
 	## -client
 

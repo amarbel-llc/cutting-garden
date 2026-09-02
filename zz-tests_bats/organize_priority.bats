@@ -22,6 +22,10 @@
 #   field4 Someday idea  no PRIORITY (3_unspecified)
 #   field5 Waiting idea  no PRIORITY (3_unspecified), no STATUS
 #
+# Since native tags slice 2 every box carries its tag atoms (design G1): a
+# FIELD grouping strips nothing, so field2 shows `errand work` (SortKey order)
+# and field3 shows `work` in every document here.
+#
 # Whole-document vectors (G16): pinned port + serialized tests, see lib/caldav.bash.
 
 setup_file() {
@@ -56,7 +60,7 @@ generate_priority() {
   assert_output - <<-'EOM'
 	---
 	% generated: `cg organize -group-by priority= -query "_terminal=no" caldav:http://127.0.0.1:43105/dav/fields/`
-	- _base = @blake2b256-35cpzlh3wvzk84j9tc7js8jhwqjnth9cv6s4zjfp4y6pkzjexnssvpn4dn
+	- _base = @blake2b256-9e8zackwge2wgg2aent8607azz5f3a6rg788ms95tvt5rffhwfwqk6w6hv
 	- _anchor = caldav:http://127.0.0.1:43105/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -71,11 +75,11 @@ generate_priority() {
 
 	## =1_should
 
-	- [field2.ics] Read book
+	- [field2.ics errand work] Read book
 
 	## =2_nice
 
-	- [field3.ics] Water plants
+	- [field3.ics work] Water plants
 
 	## =3_unspecified
 
@@ -101,7 +105,7 @@ function organize_priority_band_move_rewrites { # @test
   cat >"$edited" <<-'EOM'
 	---
 	% generated: `cg organize -group-by priority= -query "_terminal=no" caldav:http://127.0.0.1:43105/dav/fields/`
-	- _base = @blake2b256-35cpzlh3wvzk84j9tc7js8jhwqjnth9cv6s4zjfp4y6pkzjexnssvpn4dn
+	- _base = @blake2b256-9e8zackwge2wgg2aent8607azz5f3a6rg788ms95tvt5rffhwfwqk6w6hv
 	- _anchor = caldav:http://127.0.0.1:43105/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -113,13 +117,13 @@ function organize_priority_band_move_rewrites { # @test
 	## =0_must
 
 	- [field1.ics location=Bank status=needs-action] Pay rent
-	- [field2.ics] Read book
+	- [field2.ics errand work] Read book
 
 	## =1_should
 
 	## =2_nice
 
-	- [field3.ics] Water plants
+	- [field3.ics work] Water plants
 
 	## =3_unspecified
 
@@ -158,7 +162,7 @@ EOF
   assert_output - <<-'EOM'
 	---
 	% generated: `cg organize -group-by priority= -query "_terminal=no" caldav:http://127.0.0.1:43105/dav/fields/`
-	- _base = @blake2b256-h02a4cq54zvw9gpg8pwkvrrgm8xqtpryyxptv77k7qpa62r5gxvsq5rsnr
+	- _base = @blake2b256-gau46h37pd7wqd8ggnkak0x2crqqyuw58pphkj78el6qc0yv3gcqpl9ez8
 	- _anchor = caldav:http://127.0.0.1:43105/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -170,13 +174,13 @@ EOF
 	## =0_must
 
 	- [field1.ics location=Bank status=needs-action] Pay rent
-	- [field2.ics] Read book
+	- [field2.ics errand work] Read book
 
 	## =1_should
 
 	## =2_nice
 
-	- [field3.ics] Water plants
+	- [field3.ics work] Water plants
 
 	## =3_unspecified
 
@@ -195,7 +199,7 @@ function organize_priority_unspecified_clears { # @test
   cat >"$edited" <<-'EOM'
 	---
 	% generated: `cg organize -group-by priority= -query "_terminal=no" caldav:http://127.0.0.1:43105/dav/fields/`
-	- _base = @blake2b256-35cpzlh3wvzk84j9tc7js8jhwqjnth9cv6s4zjfp4y6pkzjexnssvpn4dn
+	- _base = @blake2b256-9e8zackwge2wgg2aent8607azz5f3a6rg788ms95tvt5rffhwfwqk6w6hv
 	- _anchor = caldav:http://127.0.0.1:43105/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -208,11 +212,11 @@ function organize_priority_unspecified_clears { # @test
 
 	## =1_should
 
-	- [field2.ics] Read book
+	- [field2.ics errand work] Read book
 
 	## =2_nice
 
-	- [field3.ics] Water plants
+	- [field3.ics work] Water plants
 
 	## =3_unspecified
 
@@ -245,7 +249,7 @@ EOF
   assert_output - <<-'EOM'
 	---
 	% generated: `cg organize -group-by priority= -query "_terminal=no" caldav:http://127.0.0.1:43105/dav/fields/`
-	- _base = @blake2b256-mrgp0r54l6jmx0wspufqft3jwhvha402a3vytz9t502ply5e4lcqgy9qdt
+	- _base = @blake2b256-aakvumshxh5gymwc0u2c3y57gwny7aswkj43ldh6q0lnhz0dwehq0w4ds2
 	- _anchor = caldav:http://127.0.0.1:43105/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -258,11 +262,11 @@ EOF
 
 	## =1_should
 
-	- [field2.ics] Read book
+	- [field2.ics errand work] Read book
 
 	## =2_nice
 
-	- [field3.ics] Water plants
+	- [field3.ics work] Water plants
 
 	## =3_unspecified
 
@@ -282,15 +286,15 @@ generate_status_fields() {
   assert_output - <<-'EOM'
 	---
 	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:43105/dav/fields/`
-	- _base = @blake2b256-4wzdwuw3azw6dr62g8une7cmpajqexm5ez42r2afnt9548739vaspjwmyy
+	- _base = @blake2b256-66glzzxqcd2dmn0kyya9xwn30225fka6vnk8e05qlsm70yztlnaqnpvdzf
 	- _anchor = caldav:http://127.0.0.1:43105/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
 	! organize-base-v1
 	---
 
-	- [field2.ics priority=1_should] Read book
-	- [field3.ics priority=2_nice] Water plants
+	- [field2.ics errand work priority=1_should] Read book
+	- [field3.ics work priority=2_nice] Water plants
 	- [field4.ics] Someday idea
 	- [field5.ics] Waiting idea
 
@@ -319,15 +323,15 @@ function organize_priority_field_edit_band_completes { # @test
   cat >"$edited" <<-'EOM'
 	---
 	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:43105/dav/fields/`
-	- _base = @blake2b256-4wzdwuw3azw6dr62g8une7cmpajqexm5ez42r2afnt9548739vaspjwmyy
+	- _base = @blake2b256-66glzzxqcd2dmn0kyya9xwn30225fka6vnk8e05qlsm70yztlnaqnpvdzf
 	- _anchor = caldav:http://127.0.0.1:43105/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
 	! organize-base-v1
 	---
 
-	- [field2.ics priority=1_should] Read book
-	- [field3.ics priority=0_must] Water plants
+	- [field2.ics errand work priority=1_should] Read book
+	- [field3.ics work priority=0_must] Water plants
 	- [field4.ics] Someday idea
 	- [field5.ics] Waiting idea
 
@@ -365,15 +369,15 @@ EOF
   assert_output - <<-'EOM'
 	---
 	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:43105/dav/fields/`
-	- _base = @blake2b256-86ft3f59qw37vzkxcu4a8t0qcnxy5f7mr7rt0l04gjhta6ag6z6qwgu0ta
+	- _base = @blake2b256-xaxgjjalj4l25zm9hldzkqetv4wrr4aae7zgln878twt2rssge6q2qfqee
 	- _anchor = caldav:http://127.0.0.1:43105/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
 	! organize-base-v1
 	---
 
-	- [field2.ics priority=1_should] Read book
-	- [field3.ics priority=0_must] Water plants
+	- [field2.ics errand work priority=1_should] Read book
+	- [field3.ics work priority=0_must] Water plants
 	- [field4.ics] Someday idea
 	- [field5.ics] Waiting idea
 
@@ -402,15 +406,15 @@ function organize_priority_field_edit_raw_int_writes_verbatim { # @test
   cat >"$edited" <<-'EOM'
 	---
 	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:43105/dav/fields/`
-	- _base = @blake2b256-4wzdwuw3azw6dr62g8une7cmpajqexm5ez42r2afnt9548739vaspjwmyy
+	- _base = @blake2b256-66glzzxqcd2dmn0kyya9xwn30225fka6vnk8e05qlsm70yztlnaqnpvdzf
 	- _anchor = caldav:http://127.0.0.1:43105/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
 	! organize-base-v1
 	---
 
-	- [field2.ics priority=7] Read book
-	- [field3.ics priority=2_nice] Water plants
+	- [field2.ics errand work priority=7] Read book
+	- [field3.ics work priority=2_nice] Water plants
 	- [field4.ics] Someday idea
 	- [field5.ics] Waiting idea
 
@@ -447,15 +451,15 @@ EOF
   assert_output - <<-'EOM'
 	---
 	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:43105/dav/fields/`
-	- _base = @blake2b256-t7wr3fpgz4qu0sljtkav6rv95k6ut3e7rhjz4g4eyrttuuq6n6esklyf7d
+	- _base = @blake2b256-jjg6uhzutljvxwr2j6cs80xa0mt5ugqxyf5t5tsmaqjqhxulvfhqd8p7jy
 	- _anchor = caldav:http://127.0.0.1:43105/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
 	! organize-base-v1
 	---
 
-	- [field2.ics priority=2_nice] Read book
-	- [field3.ics priority=2_nice] Water plants
+	- [field2.ics errand work priority=2_nice] Read book
+	- [field3.ics work priority=2_nice] Water plants
 	- [field4.ics] Someday idea
 	- [field5.ics] Waiting idea
 

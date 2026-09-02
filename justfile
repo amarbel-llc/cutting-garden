@@ -911,12 +911,12 @@ debug-organize-vectors:
 
     	## errand
 
-    	- [field2.ics priority=1_should] Read book
+    	- [field2.ics work priority=1_should] Read book
     	- [field3.ics priority=2_nice] Water plants
 
     	## work
 
-    	- [field2.ics priority=1_should] Read book
+    	- [field2.ics errand priority=1_should] Read book
     	EOM
     apply_doc headings-double "$hd.double"
     gen headings-after-double "$cal" '(tags)'
@@ -942,6 +942,10 @@ debug-organize-vectors:
 
     	- [field2.ics priority=1_should] Read book
     	EOM
+    # (field2's ungrouped line above is spelled BARE — pulling a rendered
+    # per-bucket box (`work`/`errand` Via-stripped) out to ungrouped WITH its
+    # sibling tag would read as a tag-atom edit and refuse under the slice-2
+    # interim gate.)
     apply_doc headings-reset "$hd.reset"
     gen headings-after-reset "$cal" '(tags)'
     stop_srv
@@ -953,11 +957,11 @@ debug-organize-vectors:
 
     	# errand
 
-    	- [field2.ics priority=1_should] Read book
+    	- [field2.ics work priority=1_should] Read book
 
     	# work
 
-    	- [field2.ics priority=1_should] Read book
+    	- [field2.ics errand priority=1_should] Read book
     	- [field3.ics priority=2_nice] Water plants
 
     	##
@@ -967,6 +971,127 @@ debug-organize-vectors:
     apply_doc headings-noop "$hd.noop"
     gen headings-after-noop "$cal" '(tags)'
     stop_srv
+
+    # organize_tagatoms.bats (native tags slice 2, design G1/G2/G3): key-free
+    # tag atoms + the `_tag-atoms` / `_tag-strip` levers. Fixture augmentation
+    # is per-test via curl PUT against the in-memory server (a second tag on
+    # lit1, a chore tag on lit2, the bare `project` on nsD), so the seeded
+    # /dav/lit/ + /dav/ns/ fixtures — and every other lane's vectors — stay
+    # untouched.
+    put_ics() { curl -fsS -X PUT --data-binary @- "$1" >/dev/null; }
+    org_config() { # multi-line config body on stdin
+      cat >"$XDG_CONFIG_HOME/cutting-garden/config.toml"
+    }
+    no_config
+    # G1 leading default (+ pass-through apply: a move keeps the box's tags).
+    start_srv 43110 CG_TEST_CALDAV_LIT=1
+    cal="${home}lit/"
+    gen tagatoms-leading "$cal" 'status='
+    move_line .tmp/organize-vectors-tagatoms-leading.txt '## =needs-action' '^- .lit1.ics'
+    apply_doc tagatoms-pass .tmp/organize-vectors-tagatoms-leading.txt.edited
+    banner 'tagatoms-pass curl lit1 (expect STATUS:NEEDS-ACTION + CATEGORIES:_ inbox)'
+    curl -fsS "${home#caldav:}lit/lit1.ics"
+    gen tagatoms-pass-after "$cal" 'status='
+    stop_srv
+    # rejectEditedTagAtoms both ways: an ADDED and a REMOVED box tag refuse.
+    start_srv 43110 CG_TEST_CALDAV_LIT=1
+    cal="${home}lit/"
+    gen tagatoms-reject-generate "$cal" 'status='
+    sed 's/^- \[lit2.ics location=Bank\]/- [lit2.ics urgent location=Bank]/' .tmp/organize-vectors-tagatoms-reject-generate.txt >.tmp/organize-vectors-tagatoms-reject-generate.txt.edited
+    banner 'tagatoms-reject-added apply (expect exit 64)'
+    "$cg" organize -apply .tmp/organize-vectors-tagatoms-reject-generate.txt.edited -commit || echo "exit=$?"
+    sed 's/^- \[lit1.ics "_ inbox"\]/- [lit1.ics]/' .tmp/organize-vectors-tagatoms-reject-generate.txt >.tmp/organize-vectors-tagatoms-reject-generate.txt.edited
+    banner 'tagatoms-reject-removed apply (expect exit 64)'
+    "$cg" organize -apply .tmp/organize-vectors-tagatoms-reject-generate.txt.edited -commit || echo "exit=$?"
+    stop_srv
+    # G1 trailing via config (+ G3 doc-wins: the doc's `- _tag-atoms = leading`
+    # edit wins over the trailing config, and repositioned tags are not an edit).
+    org_config <<-'EOF'
+    	[organize]
+    	tag_atoms = "trailing"
+    	EOF
+    start_srv 43110 CG_TEST_CALDAV_LIT=1
+    cal="${home}lit/"
+    put_ics "${home#caldav:}lit/lit2.ics" <<-'EOF'
+    	BEGIN:VCALENDAR
+    	VERSION:2.0
+    	BEGIN:VTODO
+    	UID:lit2
+    	SUMMARY:Read book
+    	LOCATION:Bank
+    	CATEGORIES:chore
+    	END:VTODO
+    	END:VCALENDAR
+    	EOF
+    gen tagatoms-trailing "$cal" 'status='
+    sed -e 's/^- _tag-atoms = trailing$/- _tag-atoms = leading/' \
+      -e 's/^- \[lit2.ics location=Bank chore\]/- [lit2.ics chore location=Bank]/' \
+      .tmp/organize-vectors-tagatoms-trailing.txt >.tmp/organize-vectors-tagatoms-trailing.txt.edited
+    move_line .tmp/organize-vectors-tagatoms-trailing.txt.edited '## =needs-action' '^- .lit1.ics'
+    mv .tmp/organize-vectors-tagatoms-trailing.txt.edited.edited .tmp/organize-vectors-tagatoms-trailing.txt.edited
+    apply_doc tagatoms-docwins .tmp/organize-vectors-tagatoms-trailing.txt.edited
+    banner 'tagatoms-docwins curl lit1 (expect STATUS:NEEDS-ACTION)'
+    curl -fsS "${home#caldav:}lit/lit1.ics"
+    stop_srv
+    # G1 none via config.
+    org_config <<-'EOF'
+    	[organize]
+    	tag_atoms = "none"
+    	EOF
+    start_srv 43110 CG_TEST_CALDAV_LIT=1
+    cal="${home}lit/"
+    gen tagatoms-none "$cal" 'status='
+    stop_srv
+    # G2 placement strip under (tags): a two-tag lit1 keeps the OTHER tag in
+    # each bucket's box.
+    no_config
+    start_srv 43110 CG_TEST_CALDAV_LIT=1
+    cal="${home}lit/"
+    put_ics "${home#caldav:}lit/lit1.ics" <<-'EOF'
+    	BEGIN:VCALENDAR
+    	VERSION:2.0
+    	BEGIN:VTODO
+    	UID:lit1
+    	SUMMARY:Triage inbox
+    	CATEGORIES:_ inbox,urgent
+    	END:VTODO
+    	END:VCALENDAR
+    	EOF
+    gen tagatoms-strip "$cal" '(tags)'
+    stop_srv
+    # G10a root strip: nsD carrying other,project files under `# project` with
+    # only `other` in the box.
+    org_config <<-'EOF'
+    	[tags]
+    	interpreter = "dodder-hyphen"
+    	EOF
+    start_srv 43110 CG_TEST_CALDAV_NS=1
+    cal="${home}ns/"
+    put_ics "${home#caldav:}ns/nsD.ics" <<-'EOF'
+    	BEGIN:VCALENDAR
+    	VERSION:2.0
+    	BEGIN:VTODO
+    	UID:nsD
+    	SUMMARY:Loose idea
+    	CATEGORIES:other,project
+    	END:VTODO
+    	END:VCALENDAR
+    	EOF
+    gen tagatoms-nsroot "$cal" 'project'
+    stop_srv
+    # G2 `_tag-strip = none`: the Via tags stay in every box.
+    org_config <<-'EOF'
+    	[tags]
+    	interpreter = "dodder-hyphen"
+
+    	[organize]
+    	tag_strip = "none"
+    	EOF
+    start_srv 43110 CG_TEST_CALDAV_NS=1
+    cal="${home}ns/"
+    gen tagatoms-stripnone "$cal" 'project'
+    stop_srv
+    no_config
 
 # Drop into an interactive shell in a throwaway tempdir with a fresh madder store
 # and the Fastmail caldav creds (CALDAV_USERNAME/PASSWORD) exported — the manual

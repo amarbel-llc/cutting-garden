@@ -275,7 +275,7 @@ intentionally plugin-side counting.
 | text | `location` | ✅ IdentityCodec | — | ✅ |
 | text (trailer) | `summary` | ✅ IdentityCodec/Trailer | — | ✅ |
 | duration | `duration` (P6D) | ✅ derived end — the dtend codec falls back to DTSTART+DURATION (#233) | — | — (end atoms read-only) |
-| tag (multi) | `CATEGORIES` | — | ✅ categoriesCodec, naive (RFC 0019) | ✅ write:many, full-set replace (slice 2, N-way merge) |
+| tag (multi) | `CATEGORIES` | ✅ key-free atom (native tags slice 2: `Format` produces the tag set, `PresentUnifiedTags` reads the designated `FieldTag` field, organize renders it SortKey-ordered per `_tag-atoms`/`_tag-strip`) | ✅ categoriesCodec, naive (RFC 0019) | ✅ write:many, full-set replace (slice 2, N-way merge) |
 
 Priority's Present column changed 2026-09-01 (native tags slice 1.5 D):
 `Codec.Format` presents the BAND — the same derived value the buckets and

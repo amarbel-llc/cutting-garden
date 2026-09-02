@@ -63,7 +63,7 @@ function organize_groupby_tags_whole_set { # @test
   assert_output - <<-'EOM'
 	---
 	% generated: `cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:43108/dav/fields/`
-	- _base = @blake2b256-ahsqdxgmsn4h725eqwun6p0x00njvd9lu2d606dk00gfu4wn4nrqk906tw
+	- _base = @blake2b256-mu5d9d3e5hlnr65qff750ukjs49ja22ju33sedygz94ceg0387usncgrh8
 	- _anchor = caldav:http://127.0.0.1:43108/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -77,11 +77,11 @@ function organize_groupby_tags_whole_set { # @test
 
 	# errand
 
-	- [field2.ics priority=1_should] Read book
+	- [field2.ics work priority=1_should] Read book
 
 	# work
 
-	- [field2.ics priority=1_should] Read book
+	- [field2.ics errand priority=1_should] Read book
 	- [field3.ics priority=2_nice] Water plants
 	EOM
 }
@@ -97,7 +97,7 @@ function organize_groupby_namespace_rollup { # @test
   assert_output - <<-'EOM'
 	---
 	% generated: `cg organize -group-by project -query "_terminal=no" caldav:http://127.0.0.1:43108/dav/ns/`
-	- _base = @blake2b256-rhnf5stu5kj2q58dcv2yfd064vnx0evjawug5xmjewr6x9mwru4qmcwc02
+	- _base = @blake2b256-lnpcee9m69hd4yaqrtsmfux0rwpzg7zwsum08q9q35paqm53e6zssrhgpu
 	- _anchor = caldav:http://127.0.0.1:43108/dav/ns/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -105,7 +105,7 @@ function organize_groupby_namespace_rollup { # @test
 	! organize-base-v1
 	---
 
-	- [nsD.ics] Loose idea
+	- [nsD.ics other] Loose idea
 
 	# project
 
@@ -131,15 +131,15 @@ function organize_groupby_field { # @test
   assert_output - <<-'EOM'
 	---
 	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:43108/dav/fields/`
-	- _base = @blake2b256-rm9ma995u3tmrd8h86q8ed95j08ngk00l8t6ekf6wuwp9qtkt0vsrta0dh
+	- _base = @blake2b256-y3vsd27dwnf3guccl6dd6unvq9hl5edwf7qym0ccw5j0ptq3sd8s24au0d
 	- _anchor = caldav:http://127.0.0.1:43108/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
 	! organize-base-v1
 	---
 
-	- [field2.ics priority=1_should] Read book
-	- [field3.ics priority=2_nice] Water plants
+	- [field2.ics errand work priority=1_should] Read book
+	- [field3.ics work priority=2_nice] Water plants
 	- [field4.ics] Someday idea
 	- [field5.ics] Waiting idea
 
