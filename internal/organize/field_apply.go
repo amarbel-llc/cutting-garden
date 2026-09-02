@@ -56,11 +56,13 @@ func fieldWriteSchema(
 // summary->title->name projection (nodeDescription). A declared-but-empty trailer
 // yields an empty trailer (no name fallback), so the rendered trailer and the
 // value written back stay the SAME field — a title edit round-trips to the field
-// it came from.
+// it came from. Newlines collapse to single spaces exactly as nodeDescription's
+// do (collapseToSingleLine), so a live multiline value compares equal to the
+// document's single-line rendering and an untouched trailer never writes back.
 func descriptionOf(n cgp.Node, trailerField string) string {
 	if trailerField != "" {
 		if s, ok := n.Fields[trailerField].(string); ok {
-			return s
+			return collapseToSingleLine(s)
 		}
 		return ""
 	}

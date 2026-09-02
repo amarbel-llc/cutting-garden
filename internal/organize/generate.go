@@ -271,12 +271,22 @@ func describedTagDims(lister cgp.RootLister) []string {
 // boxAtomPresenter returns the plugin's box-atom presentation function when it
 // implements FieldPresenter (cutting-garden#47), or nil — in which case object
 // boxes carry no detail atoms (today's behavior for a plugin without the
-// capability).
+// capability). Atom values pass through collapseToSingleLine: a stored TEXT
+// value (e.g. a caldav LOCATION) may carry real newlines, but an atom lives
+// inside one document line — same presentation-only rule as the description
+// trailer (native tags slice 1.5 F; see collapseToSingleLine).
 func boxAtomPresenter(lister cgp.RootLister) func(cgp.Node) []cgp.BoxAtom {
-	if p, ok := lister.(cgp.FieldPresenter); ok {
-		return p.PresentBoxAtoms
+	p, ok := lister.(cgp.FieldPresenter)
+	if !ok {
+		return nil
 	}
-	return nil
+	return func(n cgp.Node) []cgp.BoxAtom {
+		atoms := p.PresentBoxAtoms(n)
+		for i := range atoms {
+			atoms[i].Value = collapseToSingleLine(atoms[i].Value)
+		}
+		return atoms
+	}
 }
 
 // dimensionSections renders the grouped dimension as its spelling heading at

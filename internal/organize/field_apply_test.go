@@ -133,3 +133,55 @@ func TestPlanFieldEdits(t *testing.T) {
 		}
 	})
 }
+
+// TestMultilineValuesCollapseInPresentationOnly pins the native tags slice 1.5 F
+// newline decision: the caldav ical layer unescapes RFC 5545 `\n` into REAL
+// newlines in the stored struct, and organize — whose trailer and atoms are
+// single-line document slots — collapses newlines to single spaces at the
+// PRESENTATION layer only (collapseToSingleLine, applied identically by
+// nodeDescription, descriptionOf, and boxAtomPresenter's wrapper). Because all
+// three collapse the same way, an untouched multiline trailer compares equal
+// across base/edited/live and writes NOTHING back.
+func TestMultilineValuesCollapseInPresentationOnly(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"single line", "single line"},
+		{"one\ntwo", "one two"},
+		{"one\r\ntwo\rthree", "one two three"},
+		{"blank\n\nrun", "blank run"},
+	}
+	for _, tc := range cases {
+		if got := collapseToSingleLine(tc.in); got != tc.want {
+			t.Errorf("collapseToSingleLine(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+
+	n := cgp.Node{Fields: map[string]any{"summary": "Plan the trip\nthen pack"}}
+	if got := nodeDescription(n); got != "Plan the trip then pack" {
+		t.Errorf("nodeDescription = %q, want the collapsed single line", got)
+	}
+	if got := descriptionOf(n, "summary"); got != "Plan the trip then pack" {
+		t.Errorf("descriptionOf = %q, want the collapsed single line", got)
+	}
+
+	// The untouched-trailer no-write guarantee: base and edited documents carry
+	// the collapsed rendering, live carries the real newline — no edit, no
+	// conflict, so the stored newlines survive the apply.
+	const typ = "caldav-object-vtodo-v1"
+	live := cgp.Node{
+		URI:    mustURL(t, "caldav:https://host/dav/cal/ml.ics"),
+		Type:   typ,
+		Fields: map[string]any{"summary": "Plan the trip\nthen pack"},
+	}
+	doc := document{Ungrouped: []objectLine{{ID: "ml.ics", Desc: "Plan the trip then pack"}}}
+	edits, notices, err := planFieldEdits(
+		doc, doc, []cgp.Node{live}, "caldav:https://host/dav/cal/",
+		map[string]map[string]bool{typ: {"summary": true}},
+		map[string]string{typ: "summary"}, nil,
+	)
+	if err != nil {
+		t.Fatalf("planFieldEdits: %v", err)
+	}
+	if len(edits) != 0 || len(notices) != 0 {
+		t.Errorf("edits = %+v notices = %v, want none (untouched multiline trailer)", edits, notices)
+	}
+}

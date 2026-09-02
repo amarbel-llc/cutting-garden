@@ -151,14 +151,24 @@ func main() {
 	// bare-token / non-ground box refusals. OPT-IN via CG_TEST_CALDAV_LIT so it
 	// never inflates the shared fixtures' object counts.
 	//
-	//   lit1  Triage inbox   CATEGORIES _ inbox
-	//   lit2  Read book      LOCATION Bank
+	// lit3 carries RFC 5545 §3.3.11 TEXT escaping ON THE WIRE (native tags
+	// slice 1.5 F, seeded raw — vtodoRich passes the value through verbatim):
+	// `SUMMARY:Plan\, then do` and `CATEGORIES:planning\, misc` (ONE category
+	// containing a literal comma). The ical layer unescapes on parse, so
+	// organize renders the trailer `Plan, then do` (no backslash) and the ONE
+	// quoted tag heading `# "planning, misc"`; a write escapes back.
+	//
+	//   lit1  Triage inbox    CATEGORIES _ inbox
+	//   lit2  Read book       LOCATION Bank
+	//   lit3  Plan\, then do  CATEGORIES planning\, misc
 	if os.Getenv("CG_TEST_CALDAV_LIT") != "" {
 		srv.AddCalendar("/dav/lit/", "Literal")
 		srv.Seed("/dav/lit/lit1.ics", "VTODO",
 			vtodoRich("lit1", "Triage inbox", 0, "", "", "_ inbox"))
 		srv.Seed("/dav/lit/lit2.ics", "VTODO",
 			vtodoRich("lit2", "Read book", 0, "Bank", "", ""))
+		srv.Seed("/dav/lit/lit3.ics", "VTODO",
+			vtodoRich("lit3", `Plan\, then do`, 0, "", "", `planning\, misc`))
 	}
 
 	// Handshake: the caldav: source arg (opaque form reaches the plain-HTTP

@@ -3,6 +3,7 @@ package organize
 import (
 	"slices"
 	"sort"
+	"strings"
 
 	cgp "code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
 )
@@ -204,10 +205,30 @@ func withoutAtom(atoms []cgp.BoxAtom, name string) []cgp.BoxAtom {
 func nodeDescription(n cgp.Node) string {
 	for _, key := range []string{"summary", "title", "name"} {
 		if s, ok := n.Fields[key].(string); ok && s != "" {
-			return s
+			return collapseToSingleLine(s)
 		}
 	}
-	return n.Name
+	return collapseToSingleLine(n.Name)
+}
+
+// collapseToSingleLine is THE organize-facing newline decision (native tags
+// slice 1.5 F): a stored value may legitimately contain real newlines — the
+// caldav ical layer unescapes RFC 5545 `\n` TEXT escapes into real newlines in
+// the STORED struct (plugins/caldav/ical/text.go) — but every organize document
+// slot is single-line (the description trailer is raw-to-EOL, a box atom lives
+// inside one line), so the PRESENTATION collapses each newline run to one
+// space. This is presentation-only: nodeDescription, descriptionOf, and
+// boxAtomPresenter all collapse identically, so base/edited/live compare equal
+// for an untouched multiline value and NOTHING is written back — the stored
+// newlines survive any apply that does not edit that value. Only a deliberate
+// edit of a collapsed trailer/atom persists the single-line form.
+func collapseToSingleLine(s string) string {
+	if !strings.ContainsAny(s, "\r\n") {
+		return s
+	}
+	return strings.Join(strings.FieldsFunc(s, func(r rune) bool {
+		return r == '\r' || r == '\n'
+	}), " ")
 }
 
 // distinctTypes returns the sorted set of node types present — one type selects

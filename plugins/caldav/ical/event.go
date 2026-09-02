@@ -141,13 +141,13 @@ func ParseVEVENT(raw string) (*Event, error) {
 		case "UID":
 			e.UID = value
 		case "SUMMARY":
-			e.Summary = value
+			e.Summary = unescapeText(value)
 		case "DESCRIPTION":
-			e.Description = value
+			e.Description = unescapeText(value)
 		case "STATUS":
 			e.Status = value
 		case "LOCATION":
-			e.Location = value
+			e.Location = unescapeText(value)
 		case "GEO":
 			e.Geo = value
 		case "DTSTART":
@@ -163,11 +163,7 @@ func ParseVEVENT(raw string) (*Event, error) {
 		case "ATTENDEE":
 			e.Attendees = append(e.Attendees, value)
 		case "CATEGORIES":
-			cats := strings.Split(value, ",")
-			for i := range cats {
-				cats[i] = strings.TrimSpace(cats[i])
-			}
-			e.Categories = cats
+			e.Categories = parseCategories(value)
 		case "RRULE":
 			e.RRule = value
 		case "RECURRENCE-ID":
@@ -269,10 +265,10 @@ func EventToIcal(e *Event) string {
 
 	writeIcalProp(&b, "UID", e.UID)
 	writeIcalProp(&b, "DTSTAMP", formatNow())
-	writeIcalProp(&b, "SUMMARY", e.Summary)
+	writeTextProp(&b, "SUMMARY", e.Summary)
 
 	if e.Description != "" {
-		writeIcalProp(&b, "DESCRIPTION", e.Description)
+		writeTextProp(&b, "DESCRIPTION", e.Description)
 	}
 	if e.Status != "" {
 		writeIcalProp(&b, "STATUS", e.Status)
@@ -287,13 +283,13 @@ func EventToIcal(e *Event) string {
 		writeIcalProp(&b, "DURATION", e.Duration)
 	}
 	if e.Location != "" {
-		writeIcalProp(&b, "LOCATION", e.Location)
+		writeTextProp(&b, "LOCATION", e.Location)
 	}
 	if e.Geo != "" {
 		writeIcalProp(&b, "GEO", e.Geo)
 	}
 	if len(e.Categories) > 0 {
-		writeIcalProp(&b, "CATEGORIES", strings.Join(e.Categories, ","))
+		writeIcalProp(&b, "CATEGORIES", formatCategories(e.Categories))
 	}
 	if e.RRule != "" {
 		writeIcalProp(&b, "RRULE", e.RRule)

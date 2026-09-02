@@ -401,6 +401,19 @@ folded dimension degrades to exact matching host-side (see the marker comment
 in `internal/traversal_serve/wire.go`; #239-adjacent). The cancel-remap stays
 future work.
 
+### RFC 5545 TEXT escaping — ical-layer-only (2026-09-02, native tags slice 1.5 F)
+
+Wire TEXT escaping (RFC 5545 §3.3.11) is decoded on parse and re-applied on
+write by `plugins/caldav/ical` (text.go) for SUMMARY/DESCRIPTION/LOCATION and
+each CATEGORIES element (escape-aware comma split: `\,` is a literal comma
+INSIDE one category), so commas never require escaping above the ical layer —
+organize trailers, atoms, tag headings, facets, and listing fields all see the
+unescaped value (the 2026-09-02 live-UAT ruling). `\n` unescapes to a REAL
+newline in the stored struct; organize's single-line document slots collapse
+newlines to spaces at the presentation layer only
+(`internal/organize` `collapseToSingleLine`), so an untouched multiline value
+never writes back flattened.
+
 ## More information
 
 - cutting-garden#229 (heading/atom redundancy — subsumed)

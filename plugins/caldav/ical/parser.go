@@ -10,6 +10,9 @@
 // subset of RFC 5545 the tasks.org / standard-calendar surface uses; it
 // is not a complete iCalendar implementation. Line folding (RFC 5545
 // §3.1) is handled on read; serialization emits CRLF-terminated lines.
+// TEXT escaping (RFC 5545 §3.3.11) is decoded on parse and re-applied on
+// write for SUMMARY/DESCRIPTION/LOCATION and each CATEGORIES element, so
+// struct fields always hold the unescaped value — see text.go.
 package ical
 
 import (
@@ -156,9 +159,9 @@ func ParseVTODO(raw string) (*Task, error) {
 		case "UID":
 			t.UID = value
 		case "SUMMARY":
-			t.Summary = value
+			t.Summary = unescapeText(value)
 		case "DESCRIPTION":
-			t.Description = value
+			t.Description = unescapeText(value)
 		case "STATUS":
 			t.Status = value
 		case "PRIORITY":
@@ -178,11 +181,7 @@ func ParseVTODO(raw string) (*Task, error) {
 		case "LAST-MODIFIED":
 			t.LastModified = value
 		case "CATEGORIES":
-			cats := strings.Split(value, ",")
-			for i := range cats {
-				cats[i] = strings.TrimSpace(cats[i])
-			}
-			t.Categories = cats
+			t.Categories = parseCategories(value)
 		case "PERCENT-COMPLETE":
 			if n, err := strconv.Atoi(value); err == nil {
 				t.PercentComplete = n
@@ -195,7 +194,7 @@ func ParseVTODO(raw string) (*Task, error) {
 		case "RRULE":
 			t.RRule = value
 		case "LOCATION":
-			t.Location = value
+			t.Location = unescapeText(value)
 		case "GEO":
 			t.Geo = value
 		case "X-APPLE-SORT-ORDER":
@@ -284,10 +283,10 @@ func TaskToIcal(t *Task) string {
 
 	writeIcalProp(&b, "UID", t.UID)
 	writeIcalProp(&b, "DTSTAMP", formatNow())
-	writeIcalProp(&b, "SUMMARY", t.Summary)
+	writeTextProp(&b, "SUMMARY", t.Summary)
 
 	if t.Description != "" {
-		writeIcalProp(&b, "DESCRIPTION", t.Description)
+		writeTextProp(&b, "DESCRIPTION", t.Description)
 	}
 	if t.Status != "" {
 		writeIcalProp(&b, "STATUS", t.Status)
@@ -308,7 +307,7 @@ func TaskToIcal(t *Task) string {
 		writeIcalProp(&b, "PERCENT-COMPLETE", strconv.Itoa(t.PercentComplete))
 	}
 	if len(t.Categories) > 0 {
-		writeIcalProp(&b, "CATEGORIES", strings.Join(t.Categories, ","))
+		writeIcalProp(&b, "CATEGORIES", formatCategories(t.Categories))
 	}
 	if t.ParentUID != "" {
 		b.WriteString("RELATED-TO;RELTYPE=PARENT:" + t.ParentUID + "\r\n")
@@ -317,7 +316,7 @@ func TaskToIcal(t *Task) string {
 		writeIcalProp(&b, "RRULE", t.RRule)
 	}
 	if t.Location != "" {
-		writeIcalProp(&b, "LOCATION", t.Location)
+		writeTextProp(&b, "LOCATION", t.Location)
 	}
 	if t.Geo != "" {
 		writeIcalProp(&b, "GEO", t.Geo)

@@ -3,7 +3,7 @@
 ========================================
 ---
 % generated: `cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:43107/dav/lit/`
-- _base = @blake2b256-uhrs68g8fye4lj3pfwt90rj54qfnra2j03nxufxjj5gz5aqdv8vs7tkhaw
+- _base = @blake2b256-7frh9cjnxar4pzj4xpy324stupzgj55snaxmja3p5vmckheg7g8sftyzfe
 - _anchor = caldav:http://127.0.0.1:43107/dav/lit/
 - _query = _terminal=no
 - _type = !caldav-object-vtodo-v1
@@ -16,6 +16,10 @@
 # "_ inbox"
 
 - [lit1.ics] Triage inbox
+
+# "planning, misc"
+
+- [lit3.ics] Plan, then do
 
 ----------------------------------------
 
@@ -53,6 +57,16 @@
       (box_field
         (box_ident)
         (box_bare_value)))
+    (description))
+  (blank_line)
+  (heading
+    (heading_marker)
+    (heading_tag
+      (heading_tag_quoted)))
+  (blank_line)
+  (object_line
+    (box
+      (box_object_id))
     (description))
   (blank_line)
   (heading

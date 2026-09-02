@@ -75,6 +75,30 @@ so). Error-message tests keep `--partial` ONLY where the message embeds a
 tmpdir path; assert the full line otherwise. Resolve the two TODOs
 (organize.bats, organize_date.bats). Test-only; no product change.
 
+## Task F: RFC 5545 TEXT escaping is ical-layer-only (added 2026-09-02)
+
+User-reported during live UAT (`cg organize --group-by project caldav:task`): a
+stored `SUMMARY:Plan\, then do` reached the trailer with the backslash visible —
+the ical layer implemented §3.1 line folding but not §3.3.11 TEXT escaping.
+**The user's ruling: commas must never require escaping in trailers — the
+escaping is wire-format only and must be invisible above the ical layer.**
+
+`plugins/caldav/ical` gains `unescapeText` (`\\`→`\`, `\;`→`;`, `\,`→`,`,
+`\n`/`\N`→newline) applied on PARSE and `escapeText` on WRITE for the TEXT
+properties SUMMARY / DESCRIPTION / LOCATION across VTODO/VEVENT/VJOURNAL; date,
+int, and enum properties are never escaped, VALARM stays an opaque pass-through.
+CATEGORIES splits escape-aware (unescaped commas separate; `\,` is a literal
+comma INSIDE one category) and escape-joins on write, so `planning\, misc` is
+ONE tag `planning, misc` — which the tag layer quotes in headings per the
+reserved-rune rule, unchanged. Newline decision: `\n` unescapes to a REAL
+newline in the stored struct; organize's presentation (trailer + atoms, both
+single-line document slots) collapses newlines to single spaces
+(`collapseToSingleLine`) — presentation-only, so an untouched multiline value
+compares equal across base/edited/live and never writes back flattened.
+Vectors: lit3 (`/dav/lit/`, seeded RAW with the wire escapes) — generate shows
+the unescaped trailer + the ONE quoted `# "planning, misc"` heading; a trailer
+edit writes back the exact escaped wire line `SUMMARY:Plan\, then do now`.
+
 ## Not in this batch
 
 - feedback.md items left untracked BY CHOICE (not selected for filing):

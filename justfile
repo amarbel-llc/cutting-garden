@@ -626,7 +626,10 @@ debug-organize-categories: debug-build-go
 # by categories (the `## "_ inbox"` QUOTED bucket), then a bucket move of lit2 into
 # that quoted bucket (apply + curl + re-render), then the three apply REFUSALS —
 # a hand-edited bare tag token, a quoted tag token, and a non-ground `status*=y`
-# atom (expected exit 64 each).
+# atom (expected exit 64 each). A second, fresh-server phase exercises the
+# RFC 5545 TEXT-escaping vector (native tags slice 1.5 F): lit3's wire-escaped
+# `SUMMARY:Plan\, then do` renders unescaped, a trailer edit appends " now", and
+# the write-back re-escapes on the wire.
 # The host-run source for the whole-document heredocs in
 # zz-tests_bats/organize_literal.bats: pins CG_TEST_CALDAV_PORT=43107 (the lane's
 # port, lib/caldav.bash) so the `_base` digests match. WRITES to the throwaway
@@ -667,12 +670,29 @@ debug-organize-literal:
     echo '# --- GET lit2.ics (expect NO CATEGORIES, LOCATION:Bank) ---' >&2
     curl -fsS "${source_url#caldav:}lit/lit2.ics"
     echo '# --- move: lit2 into the "_ inbox" bucket ---' >&2
-    { grep -v '^- \[lit2.ics ' "$doc"; printf -- '- [lit2.ics location=Bank] Read book\n'; } >"$doc.moved"
+    # Insert lit2 right after the `# "_ inbox"` heading (NOT at EOF — the
+    # document now ends with the `# "planning, misc"` bucket, slice 1.5 F).
+    awk -v ins='- [lit2.ics location=Bank] Read book' \
+      '/^- \[lit2.ics /{next} {print} $0=="# \"_ inbox\""{print ""; print ins}' \
+      "$doc" >"$doc.moved"
     cat "$doc.moved"
     "$cg" organize -apply "$doc.moved" -commit
     echo '# --- GET lit2.ics (expect CATEGORIES:_ inbox) ---' >&2
     curl -fsS "${source_url#caldav:}lit/lit2.ics"
     echo '# --- re-render ---' >&2
+    "$cg" organize -group-by '(tags)' "$cal"
+    exec {SRV[1]}>&- || true
+    wait "$SRV_PID" 2>/dev/null || true
+    # Phase 2 (fresh seed): the lit3 TEXT-escaping trailer edit.
+    coproc SRV { .tmp/cutting-garden-caldav-testserver; }
+    read -r -u "${SRV[0]}" source_url _calpath
+    echo '# --- lit3 summary trailer edit: append " now" ---' >&2
+    "$cg" organize -group-by '(tags)' "$cal" >"$doc"
+    sed 's/^- \[lit3.ics\] Plan, then do$/- [lit3.ics] Plan, then do now/' "$doc" >"$doc.summary"
+    "$cg" organize -apply "$doc.summary" -commit
+    echo '# --- GET lit3.ics (expect SUMMARY:Plan\, then do now + CATEGORIES:planning\, misc) ---' >&2
+    curl -fsS "${source_url#caldav:}lit/lit3.ics"
+    echo '# --- re-render after summary edit ---' >&2
     "$cg" organize -group-by '(tags)' "$cal"
     exec {SRV[1]}>&- || true
 
@@ -843,9 +863,19 @@ debug-organize-vectors:
     start_srv 43107 CG_TEST_CALDAV_LIT=1
     cal="${home}lit/"
     gen literal-generate "$cal" '(tags)'
-    { grep -v '^- \[lit2.ics ' .tmp/organize-vectors-literal-generate.txt; printf -- '- [lit2.ics location=Bank] Read book\n'; } >.tmp/organize-vectors-literal-generate.txt.edited
+    move_line .tmp/organize-vectors-literal-generate.txt '# "_ inbox"' '^- .lit2.ics'
     apply_doc literal .tmp/organize-vectors-literal-generate.txt.edited
     gen literal-after "$cal" '(tags)'
+    stop_srv
+    # slice 1.5 F TEXT-escaping lane (fresh server): lit3's trailer edit
+    # re-escapes `SUMMARY:Plan\, then do now` on the wire.
+    start_srv 43107 CG_TEST_CALDAV_LIT=1
+    cal="${home}lit/"
+    sed 's/^- \[lit3.ics\] Plan, then do$/- [lit3.ics] Plan, then do now/' .tmp/organize-vectors-literal-generate.txt >.tmp/organize-vectors-literal-generate.txt.edited
+    apply_doc literal-summary .tmp/organize-vectors-literal-generate.txt.edited
+    banner 'literal-summary curl lit3 (expect SUMMARY:Plan\, then do now)'
+    curl -fsS "${home#caldav:}lit/lit3.ics"
+    gen literal-summary-after "$cal" '(tags)'
     stop_srv
 
     dodder_hyphen

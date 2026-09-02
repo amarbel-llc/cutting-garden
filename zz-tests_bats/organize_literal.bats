@@ -17,7 +17,15 @@
 #     value renders as, moved INTO by a bucket move, re-rendered quoted.
 #
 # The fixture calendar (/dav/lit/, opt-in via CG_TEST_CALDAV_LIT) holds lit1
-# "Triage inbox" CATEGORIES `_ inbox` and lit2 "Read book" LOCATION Bank.
+# "Triage inbox" CATEGORIES `_ inbox`, lit2 "Read book" LOCATION Bank, and lit3
+# — the RFC 5545 §3.3.11 TEXT-escaping vector (native tags slice 1.5 F), seeded
+# with the actual wire escaping: `SUMMARY:Plan\, then do` and
+# `CATEGORIES:planning\, misc` (ONE category containing a literal comma). The
+# ical layer unescapes on parse — the escaping is wire-format only, commas never
+# require escaping in trailers — so the document shows the trailer
+# `Plan, then do` and the ONE quoted tag heading `# "planning, misc"` (the tag
+# layer's reserved-rune quoting, same rule as `"_ inbox"`); a write-back
+# re-escapes on the wire.
 #
 # Whole-document vectors (G16): pinned port + serialized tests, see lib/caldav.bash.
 
@@ -41,10 +49,11 @@ teardown() {
 
 # bats file_tags=organize
 
-# The generated document's `_base` digest, and the digest after lit2 has moved
-# into the `"_ inbox"` bucket.
-BASE_GENERATED=blake2b256-uhrs68g8fye4lj3pfwt90rj54qfnra2j03nxufxjj5gz5aqdv8vs7tkhaw
-BASE_MOVED=blake2b256-5n9sc827ktjjarvnz7gvnqzstp2pdsdv5t8ywh492306dm7s0m3sv9kgkp
+# The generated document's `_base` digest, the digest after lit2 has moved
+# into the `"_ inbox"` bucket, and the digest after lit3's summary trailer edit.
+BASE_GENERATED=blake2b256-7frh9cjnxar4pzj4xpy324stupzgj55snaxmja3p5vmckheg7g8sftyzfe
+BASE_MOVED=blake2b256-unlx9rq9jr5kl6hyjd0f3mzcx9cz33tswfrnah0veegnpnt79lgsllzz7r
+BASE_SUMMARY_EDITED=blake2b256-mjsll3smgpepl5ma2aysf0k5zvkqlfndyjsepfv2qgzz89lt5kwsxcxd3r
 
 # envelope_header prints the `-group-by (tags)` document's hyphence envelope
 # pinned at `_base` $1 — the part every document in this lane shares.
@@ -70,9 +79,12 @@ lit_doc() {
 }
 
 # generate_grouped runs `organize -group-by (tags)` and asserts the document
-# in full: the untagged lit2 ungrouped, and lit1 under the QUOTED `# "_ inbox"`
-# bucket — its CATEGORIES value carries whitespace, so the heading spells it as a
-# trellis String.
+# in full: the untagged lit2 ungrouped, lit1 under the QUOTED `# "_ inbox"`
+# bucket — its CATEGORIES value carries whitespace, so the heading spells it as
+# a trellis String — and lit3 under the QUOTED `# "planning, misc"` bucket: its
+# wire-escaped `CATEGORIES:planning\, misc` is ONE comma-bearing tag (never
+# two), and its trailer shows `Plan, then do` with NO backslash (slice 1.5 F:
+# TEXT escaping is invisible above the ical layer).
 generate_grouped() {
   run_cg organize -group-by '(tags)' "$CAL"
   assert_success
@@ -84,6 +96,10 @@ generate_grouped() {
 	# "_ inbox"
 
 	- [lit1.ics] Triage inbox
+
+	# "planning, misc"
+
+	- [lit3.ics] Plan, then do
 	EOM
   )"
 }
@@ -100,6 +116,10 @@ write_lit2_edited() {
 	# "_ inbox"
 
 	- [lit1.ics] Triage inbox
+
+	# "planning, misc"
+
+	- [lit3.ics] Plan, then do
 	EOM
 }
 
@@ -182,6 +202,10 @@ function organize_literal_quoted_tag_heading_round_trips { # @test
 
 	- [lit1.ics] Triage inbox
 	- [lit2.ics location=Bank] Read book
+
+	# "planning, misc"
+
+	- [lit3.ics] Plan, then do
 	EOM
 
   run_cg organize -apply "$edited" -commit
@@ -205,6 +229,69 @@ EOF
 
 	- [lit1.ics] Triage inbox
 	- [lit2.ics location=Bank] Read book
+
+	# "planning, misc"
+
+	- [lit3.ics] Plan, then do
+	EOM
+  )"
+}
+
+# Slice 1.5 F (the user-reported live-UAT bug): RFC 5545 TEXT escaping is
+# wire-format only. lit3 is STORED as `SUMMARY:Plan\, then do` +
+# `CATEGORIES:planning\, misc`; generate_grouped (run first) already proved the
+# document shows the unescaped trailer `Plan, then do` and ONE quoted
+# comma-bearing tag heading `# "planning, misc"`. Here the trailer edit
+# (append " now") round-trips back THROUGH the escaping: the stored wire form
+# is the exact escaped line `SUMMARY:Plan\, then do now`, the CATEGORIES line
+# keeps its escape, and the re-rendered document reads unescaped again.
+function organize_literal_text_escaping_round_trips { # @test
+  generate_grouped
+  local edited="$BATS_TEST_TMPDIR/edited.txt"
+  lit_doc "$BASE_GENERATED" >"$edited" <<-'EOM'
+
+	- [lit2.ics location=Bank] Read book
+
+	# "_ inbox"
+
+	- [lit1.ics] Triage inbox
+
+	# "planning, misc"
+
+	- [lit3.ics] Plan, then do now
+	EOM
+
+  run_cg organize -apply "$edited" -commit
+  assert_success
+  assert_output - <<'EOF'
+organize: 1 change(s):
+
+  - [lit3.ics]  Plan, then do {+now+}
+
+organize: wrote 1 change(s)
+EOF
+
+  # The ESCAPED wire form, exact lines (the rewritten body is CRLF-serialized
+  # with a volatile DTSTAMP, so the whole body cannot be pinned).
+  run curl -fsS "${CALDAV_SOURCE#caldav:}lit/lit3.ics"
+  assert_success
+  assert_line --regexp $'^SUMMARY:Plan\\\\, then do now\r?$'
+  assert_line --regexp $'^CATEGORIES:planning\\\\, misc\r?$'
+
+  run_cg organize -group-by '(tags)' "$CAL"
+  assert_success
+  assert_output "$(
+    lit_doc "$BASE_SUMMARY_EDITED" <<-'EOM'
+
+	- [lit2.ics location=Bank] Read book
+
+	# "_ inbox"
+
+	- [lit1.ics] Triage inbox
+
+	# "planning, misc"
+
+	- [lit3.ics] Plan, then do now
 	EOM
   )"
 }

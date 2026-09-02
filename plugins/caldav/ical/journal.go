@@ -86,19 +86,15 @@ func ParseVJOURNAL(raw string) (*Journal, error) {
 		case "UID":
 			j.UID = value
 		case "SUMMARY":
-			j.Summary = value
+			j.Summary = unescapeText(value)
 		case "DESCRIPTION":
-			j.Description = value
+			j.Description = unescapeText(value)
 		case "STATUS":
 			j.Status = value
 		case "DTSTART":
 			j.DtStart = value
 		case "CATEGORIES":
-			cats := strings.Split(value, ",")
-			for i := range cats {
-				cats[i] = strings.TrimSpace(cats[i])
-			}
-			j.Categories = cats
+			j.Categories = parseCategories(value)
 		case "CREATED":
 			j.Created = value
 		case "LAST-MODIFIED":
@@ -130,10 +126,10 @@ func JournalToIcal(j *Journal) string {
 
 	writeIcalProp(&b, "UID", j.UID)
 	writeIcalProp(&b, "DTSTAMP", formatNow())
-	writeIcalProp(&b, "SUMMARY", j.Summary)
+	writeTextProp(&b, "SUMMARY", j.Summary)
 
 	if j.Description != "" {
-		writeIcalProp(&b, "DESCRIPTION", j.Description)
+		writeTextProp(&b, "DESCRIPTION", j.Description)
 	}
 	if j.Status != "" {
 		writeIcalProp(&b, "STATUS", j.Status)
@@ -142,7 +138,7 @@ func JournalToIcal(j *Journal) string {
 		writeDateProp(&b, "DTSTART", j.DtStart)
 	}
 	if len(j.Categories) > 0 {
-		writeIcalProp(&b, "CATEGORIES", strings.Join(j.Categories, ","))
+		writeIcalProp(&b, "CATEGORIES", formatCategories(j.Categories))
 	}
 	if j.Sequence > 0 {
 		writeIcalProp(&b, "SEQUENCE", strconv.Itoa(j.Sequence))
