@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strings"
 
+	"code.linenisgreat.com/cutting-garden/internal/cgconfig"
 	cgp "code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
 	"code.linenisgreat.com/cutting-garden/internal/trellis"
 	"code.linenisgreat.com/hyphence/go/hyphence"
@@ -74,11 +75,12 @@ const (
 // renders inside its box — leading (after id/`!type`, before the `name=value`
 // atoms; the default), trailing (after the atoms), or none (no tag atoms at
 // all). Position is presentation-only: the parser collects tags wherever they
-// sit, so every spelling re-parses identically.
+// sit, so every spelling re-parses identically. The vocabulary is cgconfig's —
+// one spelling shared with the `[organize] tag_atoms` config validation.
 const (
-	tagAtomsLeading  = "leading"
-	tagAtomsTrailing = "trailing"
-	tagAtomsNone     = "none"
+	tagAtomsLeading  = cgconfig.TagAtomsLeading
+	tagAtomsTrailing = cgconfig.TagAtomsTrailing
+	tagAtomsNone     = cgconfig.TagAtomsNone
 )
 
 // The `_tag-strip` lever's domain (design G2): whether a tag-grouped document
@@ -86,9 +88,10 @@ const (
 // filed it under its bucket — placement (the default; the #229 rule: placement
 // carries it, never also an atom) — or keeps every tag in every box (none).
 // Field-grouped documents strip nothing either way (no tag placement exists).
+// Vocabulary shared with `[organize] tag_strip`, like tagAtoms above.
 const (
-	tagStripPlacement = "placement"
-	tagStripNone      = "none"
+	tagStripPlacement = cgconfig.TagStripPlacement
+	tagStripNone      = cgconfig.TagStripNone
 )
 
 // parseTagAtomsField validates a `- _tag-atoms = <value>` envelope value;
@@ -123,25 +126,24 @@ func parseTagStripField(raw string) (string, error) {
 // the built-in default (leading) — design G3. Both inputs are already
 // domain-validated (parseTagAtomsField / cgconfig's OrganizeConfig.Validate).
 func effectiveTagAtoms(docVal, configVal string) string {
-	switch {
-	case docVal != "":
-		return docVal
-	case configVal != "":
-		return configVal
-	}
-	return tagAtomsLeading
+	return firstNonEmpty(docVal, configVal, tagAtomsLeading)
 }
 
 // effectiveTagStrip is effectiveTagAtoms' `_tag-strip` sibling: doc field,
 // then `[organize] tag_strip`, then the built-in default (placement).
 func effectiveTagStrip(docVal, configVal string) string {
-	switch {
-	case docVal != "":
-		return docVal
-	case configVal != "":
-		return configVal
+	return firstNonEmpty(docVal, configVal, tagStripPlacement)
+}
+
+// firstNonEmpty returns the first non-empty value — the one G3 resolution
+// order (document field, config default, built-in default) both levers share.
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
 	}
-	return tagStripPlacement
+	return ""
 }
 
 // objectLine is one espalier box literal: the anchor-relative node id, its type

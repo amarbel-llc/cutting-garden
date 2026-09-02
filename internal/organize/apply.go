@@ -97,6 +97,11 @@ func (cmd *Organize) runCommitDirectly(ctx errors.Context) error {
 // are presentation, never an edit. Added/deleted LINES stay out of scope like
 // everywhere else in the merge — a base-only id is skipped, though a
 // hand-ADDED line carrying tags refuses (its tags have no base to match).
+// Known INTERIM conservatism, not intent: under `_tag-strip = none` a line
+// MOVED between tag buckets keeps its old Via tag in the box, which the new
+// placement no longer derives — so the move falsely refuses; Task 3's
+// box-authoritative `_tag-strip = none` semantics (design G2/G7) replace this
+// gate rather than inheriting the restriction.
 func rejectEditedTagAtoms(
 	edited, base document, spec groupSpec, interp cgp.TagInterpreter,
 ) error {
@@ -208,10 +213,10 @@ func (led docTagLedger) appearanceTags(id, bucket string) ([]string, bool) {
 }
 
 // extraTags returns the object's NON-PLACEMENT box tags across every
-// appearance: each box tag (first-appearance order, deduplicated) that no
-// placement of the object in this document derives (placementVia). For a
-// field-grouped document nothing is placement-derived, so this is the full box
-// tag set.
+// appearance: each box tag (first-appearance order, deduplicated) whose
+// realized bucket (bucketOfTag, derived once per tag) is not among the
+// object's placements in this document. For a field-grouped document no tag
+// realizes a bucket, so this is the full box tag set.
 func (led docTagLedger) extraTags(
 	id string, spec groupSpec, interp cgp.TagInterpreter,
 ) []string {
@@ -222,10 +227,12 @@ func (led docTagLedger) extraTags(
 				continue
 			}
 			derived := false
-			for _, placed := range led.appearances[id] {
-				if placed.bucket != "" && placementVia(t, placed.bucket, spec, interp) {
-					derived = true
-					break
+			if b := bucketOfTag(t, spec, interp); b != "" {
+				for _, placed := range led.appearances[id] {
+					if placed.bucket == b {
+						derived = true
+						break
+					}
 				}
 			}
 			if !derived {

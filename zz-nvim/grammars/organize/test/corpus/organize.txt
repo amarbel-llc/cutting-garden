@@ -705,7 +705,7 @@ tag-atom levers: `- _tag-atoms` / `- _tag-strip` envelope fields; leading and tr
 ========================================
 ---
 % generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:43110/dav/lit/`
-- _base = @blake2b256-mvdp7h560r84657w9mfld8vuwfk28x8up4mvxp0pkwhdekurp23q90l3vu
+- _base = @blake2b256-acdef9
 - _anchor = caldav:http://127.0.0.1:43110/dav/lit/
 - _type = !caldav-object-vtodo-v1
 - _tag-atoms = trailing

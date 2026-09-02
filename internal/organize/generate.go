@@ -339,11 +339,13 @@ type tagRender struct {
 // fill populates each object line's Tags from the presented tag sets, keyed by
 // the same relativeID the lines were built with. Under a TAG grouping with
 // strip on, each bucket appearance drops exactly the placement tag(s) that
-// filed it there (placementVia — the membership's Via reconstruction); every
+// filed it there (bucketOfTag — the membership's Via reconstruction); every
 // other tag stays, and ungrouped lines always keep their full set. A FIELD
-// grouping strips nothing (no tag placement exists). Mutation is safe: each
-// line is a value copy in its own slice (a multi-membership object's line was
-// COPIED into every bucket), so per-appearance Tags never alias.
+// grouping strips nothing (no tag placement exists). Assigning .Tags is safe —
+// each line is a value copy in its own slice, so one appearance's assignment
+// never changes another's — but the assigned SLICES may share a backing array
+// (appearances that strip nothing all receive byID's slice), so Tags must
+// never be element-mutated after fill; every consumer only reads.
 func (tr tagRender) fill(
 	nodes []cgp.Node, anchor string, spec groupSpec, interp cgp.TagInterpreter,
 	ungrouped []objectLine, buckets []bucket,
@@ -372,56 +374,61 @@ func (tr tagRender) fill(
 	}
 }
 
-// withoutPlacementTags returns tags minus every tag whose placement under spec
-// IS bucketValue (placementVia); the input slice is returned untouched when
-// nothing strips, and nil when everything does.
+// withoutPlacementTags returns tags minus every tag whose realized bucket
+// under spec IS bucketValue (bucketOfTag); the input slice is returned
+// untouched when nothing strips, and nil when everything does. Single-pass:
+// each tag's bucket is derived exactly once.
 func withoutPlacementTags(
 	tags []string, spec groupSpec, interp cgp.TagInterpreter, bucketValue string,
 ) []string {
-	strip := false
-	for _, t := range tags {
-		if placementVia(t, bucketValue, spec, interp) {
-			strip = true
-			break
-		}
-	}
-	if !strip {
-		return tags
-	}
 	var out []string
-	for _, t := range tags {
-		if !placementVia(t, bucketValue, spec, interp) {
+	stripped := false
+	for i, t := range tags {
+		if bucketOfTag(t, spec, interp) == bucketValue {
+			if !stripped {
+				out = append(out, tags[:i]...)
+				stripped = true
+			}
+			continue
+		}
+		if stripped {
 			out = append(out, t)
 		}
+	}
+	if !stripped {
+		return tags
 	}
 	return out
 }
 
-// placementVia reports whether tag PRODUCES the bucketValue placement under
-// the spec's grouping — the strip rule's (and the apply gate's) one derivation
-// (design G2): under a whole-dimension grouping a tag's bucket is itself
-// (Via == Bucket); under a namespace grouping the ROOT bucket (== the
-// namespace) is produced by the bare namespace tag (G10a) and a continuation
-// bucket by any tag the interpreter rolls up to it (all contributors — the
-// interpreter's Membership.Via names one representative, but every tag rolling
-// to the bucket produced the placement, and the §6.2 write-back removes the
-// whole subtree symmetrically). A field grouping has no tag placement, so
-// nothing is ever a Via there.
-func placementVia(tag, bucketValue string, spec groupSpec, interp cgp.TagInterpreter) bool {
+// bucketOfTag returns the ONE bucket a single tag realizes under the spec's
+// grouping, or "" when it realizes none — the strip rule's (and the apply
+// gate's) shared derivation (design G2): under a whole-dimension grouping a
+// tag's bucket is itself (Via == Bucket); under a namespace grouping the bare
+// namespace tag realizes the ROOT bucket (G10a) and any tag the interpreter
+// rolls up realizes its continuation bucket — so EVERY contributor to a
+// bucket derives it, not just the interpreter's representative Membership.Via,
+// matching the §6.2 write-back's whole-subtree removal. A field grouping has
+// no tag placement, so no tag ever realizes a bucket there. A returned "" is
+// never a valid bucket value, so comparing against a real bucket is safe.
+func bucketOfTag(tag string, spec groupSpec, interp cgp.TagInterpreter) string {
 	switch spec.Kind {
 	case groupKindTagWhole:
-		return tag == bucketValue
+		return tag
 	case groupKindTagNamespace:
-		if bucketValue == spec.Namespace {
-			return tag == spec.Namespace
+		if tag == spec.Namespace {
+			return spec.Namespace
 		}
 		if interp == nil {
-			return false
+			return ""
 		}
 		ms, err := interp.Buckets([]string{tag}, spec.Namespace)
-		return err == nil && len(ms) == 1 && ms[0].Bucket == bucketValue
+		if err != nil || len(ms) != 1 {
+			return ""
+		}
+		return ms[0].Bucket
 	default:
-		return false
+		return ""
 	}
 }
 

@@ -80,6 +80,27 @@ func (c ConfigV0) Validate() error {
 	return traversal_serve.ValidateStanzas(c.Plugins, c.TraversalPlugins)
 }
 
+// The tag-atom lever vocabularies (native tags design G1/G2, RFC 0015):
+// the ONE spelling shared by the `[organize] tag_atoms` / `tag_strip` config
+// defaults validated here and the `- _tag-atoms` / `- _tag-strip` envelope
+// fields internal/organize parses — hoisted so the two surfaces can never
+// drift.
+const (
+	// TagAtomsLeading / TagAtomsTrailing / TagAtomsNone are the `_tag-atoms`
+	// values: where an object's tag set renders inside its box (before the
+	// `name=value` atoms, after them, or not at all). Leading is the built-in
+	// default.
+	TagAtomsLeading  = "leading"
+	TagAtomsTrailing = "trailing"
+	TagAtomsNone     = "none"
+
+	// TagStripPlacement / TagStripNone are the `_tag-strip` values: whether a
+	// tag-grouped document strips each appearance's placement (Via) tag(s)
+	// from its box. Placement is the built-in default.
+	TagStripPlacement = "placement"
+	TagStripNone      = "none"
+)
+
 // OrganizeConfig configures the organize command (FDR 0023). Not a plugin
 // section — organize is framework-side — so it lives here rather than being
 // delegated.
@@ -120,19 +141,19 @@ func (c OrganizeConfig) Validate() error {
 		}
 	}
 	switch c.TagAtoms {
-	case "", "leading", "trailing", "none":
+	case "", TagAtomsLeading, TagAtomsTrailing, TagAtomsNone:
 	default:
 		return errors.BadRequestf(
-			"organize.tag_atoms %q is not one of leading, trailing, none",
-			c.TagAtoms,
+			"organize.tag_atoms %q is not one of %s, %s, %s",
+			c.TagAtoms, TagAtomsLeading, TagAtomsTrailing, TagAtomsNone,
 		)
 	}
 	switch c.TagStrip {
-	case "", "placement", "none":
+	case "", TagStripPlacement, TagStripNone:
 	default:
 		return errors.BadRequestf(
-			"organize.tag_strip %q is not one of placement, none",
-			c.TagStrip,
+			"organize.tag_strip %q is not one of %s, %s",
+			c.TagStrip, TagStripPlacement, TagStripNone,
 		)
 	}
 	return nil

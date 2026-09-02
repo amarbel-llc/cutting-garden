@@ -69,9 +69,11 @@ func PresentUnifiedTags(codecs []Codec, node Node) []string {
 // invariants that no single codec can see: at most one FieldTag field per node
 // type (G6 v1 — one designated tag set per type). PresentUnifiedTags reads THE
 // designated field, so a second FieldTag declaration is a declaration error
-// naming both keys, never a silent first-wins. There is no framework-side
-// enforcement point — DescribeUnified's consumers each walk the sets directly —
-// so a plugin pins its declaration with a unit test calling this (caldav does).
+// naming both keys, never a silent first-wins. The framework wires it at
+// organize generate's resolution point (native tags slice 2), so a bad
+// declaration fails the command loudly; a plugin SHOULD additionally pin its
+// declaration with a unit test calling this (caldav does), catching the error
+// before any command runs.
 func ValidateUnifiedFieldSets(sets []NodeTypeUnifiedFields) error {
 	for _, set := range sets {
 		var tagKey string

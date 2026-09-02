@@ -449,6 +449,92 @@ function organize_tagatoms_strip_placement_keeps_sibling { # @test
 	EOM
 }
 
+# A whole-dimension BUCKET-TO-BUCKET move passes the interim gate: against the
+# two-tag strip document above, lit3 moves from `# "planning, misc"` to
+# `# urgent` — the moved line's (empty) tag set is placement-explained on both
+# sides, and the target bucket's lit1 keeps its `"_ inbox"` sibling atom
+# untouched and unflagged — so the membership write lands (CATEGORIES rewritten
+# to urgent, curl-verified) and the re-render files lit3 under urgent.
+function organize_tagatoms_whole_dim_move_passes_gate { # @test
+  put_ics "${CALDAV_SOURCE#caldav:}lit/lit1.ics" <<-'EOF'
+	BEGIN:VCALENDAR
+	VERSION:2.0
+	BEGIN:VTODO
+	UID:lit1
+	SUMMARY:Triage inbox
+	CATEGORIES:_ inbox,urgent
+	END:VTODO
+	END:VCALENDAR
+	EOF
+  run_cg organize -group-by '(tags)' "$LIT"
+  assert_success
+
+  local edited="$BATS_TEST_TMPDIR/edited.txt"
+  cat >"$edited" <<-'EOM'
+	---
+	% generated: `cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:43110/dav/lit/`
+	- _base = @blake2b256-pprpzrjd28t3ldp04fgp4fy9pxsmfq9upt75rek0nh0058hg0qhs6v6csd
+	- _anchor = caldav:http://127.0.0.1:43110/dav/lit/
+	- _query = _terminal=no
+	- _type = !caldav-object-vtodo-v1
+	- _group-by = (tags)
+	! organize-base-v1
+	---
+
+	- [lit2.ics location=Bank] Read book
+
+	# "_ inbox"
+
+	- [lit1.ics urgent] Triage inbox
+
+	# "planning, misc"
+
+	# urgent
+
+	- [lit1.ics "_ inbox"] Triage inbox
+	- [lit3.ics] Plan, then do
+	EOM
+
+  run_cg organize -apply "$edited" -commit
+  assert_success
+  assert_output - <<'EOF'
+organize: 1 change(s):
+
+  - [lit3.ics  categories=[-planning, misc-]{+urgent+}]
+
+organize: wrote 1 change(s)
+EOF
+
+  run curl -fsS "${CALDAV_SOURCE#caldav:}lit/lit3.ics"
+  assert_success
+  assert_line --regexp $'^CATEGORIES:urgent\r?$'
+
+  run_cg organize -group-by '(tags)' "$LIT"
+  assert_success
+  assert_output - <<-'EOM'
+	---
+	% generated: `cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:43110/dav/lit/`
+	- _base = @blake2b256-8dr2vzg9qwj9qv58y03are8r9q0xvcct3h8mej8vh5p6fv4qvt3sl46j9w
+	- _anchor = caldav:http://127.0.0.1:43110/dav/lit/
+	- _query = _terminal=no
+	- _type = !caldav-object-vtodo-v1
+	- _group-by = (tags)
+	! organize-base-v1
+	---
+
+	- [lit2.ics location=Bank] Read book
+
+	# "_ inbox"
+
+	- [lit1.ics urgent] Triage inbox
+
+	# urgent
+
+	- [lit1.ics "_ inbox"] Triage inbox
+	- [lit3.ics] Plan, then do
+	EOM
+}
+
 # G2's G10a root strip: nsD seeded with `other,project` files DIRECTLY under
 # the `# project` root heading (the bare namespace tag IS the root membership),
 # its box keeping the out-of-namespace `other` while the placement-realizing
@@ -490,6 +576,56 @@ function organize_tagatoms_ns_root_strip { # @test
 
 	- [nsA.ics] Acme retainer
 	- [nsB.ics] Baxter audit
+
+	## -cutting_garden
+
+	- [nsC.ics] CG roadmap
+	EOM
+}
+
+# G2 strips ALL contributors, not just the interpreter's representative Via:
+# nsE carries TWO tags rolling to `-client` (project-client-acme AND
+# project-client-baxter) plus the out-of-namespace `urgent` — its `## -client`
+# box drops BOTH contributors (symmetric with the RFC 0019 §6.2 write-back's
+# whole-subtree removal) and keeps only the sibling.
+function organize_tagatoms_ns_strip_all_contributors { # @test
+  cat >"$XDG_CONFIG_HOME/cutting-garden/config.toml" <<-'EOF'
+	[tags]
+	interpreter = "dodder-hyphen"
+	EOF
+  put_ics "${CALDAV_SOURCE#caldav:}ns/nsE.ics" <<-'EOF'
+	BEGIN:VCALENDAR
+	VERSION:2.0
+	BEGIN:VTODO
+	UID:nsE
+	SUMMARY:Two clients
+	CATEGORIES:project-client-acme,project-client-baxter,urgent
+	END:VTODO
+	END:VCALENDAR
+	EOF
+
+  run_cg organize -group-by project "$NS"
+  assert_success
+  assert_output - <<-'EOM'
+	---
+	% generated: `cg organize -group-by project -query "_terminal=no" caldav:http://127.0.0.1:43110/dav/ns/`
+	- _base = @blake2b256-4ym7tmy7k05a2al2p80nrjn4dleg2za723f8anlqmxe98np94r5s9s2ags
+	- _anchor = caldav:http://127.0.0.1:43110/dav/ns/
+	- _query = _terminal=no
+	- _type = !caldav-object-vtodo-v1
+	- _group-by = project
+	! organize-base-v1
+	---
+
+	- [nsD.ics other] Loose idea
+
+	# project
+
+	## -client
+
+	- [nsA.ics] Acme retainer
+	- [nsB.ics] Baxter audit
+	- [nsE.ics urgent] Two clients
 
 	## -cutting_garden
 

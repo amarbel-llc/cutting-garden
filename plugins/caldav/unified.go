@@ -560,9 +560,10 @@ func stringOf(m map[string]any, key string) string {
 // in-process listing builds (listingFieldsOf) and the []any it becomes after a
 // JSON enrichment round-trip (the wire/MCP path) — the list sibling of intOf's
 // float64 tolerance. A non-string element is skipped rather than guessed at;
-// absence is nil. The []string arm is CLONED: the stored slice is the node's
-// own state, and a caller (the framework's tag render sorts the presented set
-// by SortKey) must never reorder it in place through a Format result.
+// absence is nil. The []string arm is CLONED: a Codec.Format result must
+// never alias mutable plugin/node state — callers own what Format hands back
+// and may reorder or filter it freely, so returning the stored slice by
+// reference would let any such use corrupt the node's own fields.
 func stringsOf(m map[string]any, key string) []string {
 	switch t := m[key].(type) {
 	case []string:

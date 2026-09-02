@@ -1058,6 +1058,14 @@ debug-organize-vectors:
     	END:VCALENDAR
     	EOF
     gen tagatoms-strip "$cal" '(tags)'
+    # …and a whole-dimension bucket-to-bucket MOVE through the gate: lit3 from
+    # `# "planning, misc"` to `# urgent` (the target bucket's lit1 keeps its
+    # sibling tag atom untouched).
+    move_line .tmp/organize-vectors-tagatoms-strip.txt '# urgent' '^- .lit3.ics'
+    apply_doc tagatoms-tagmove .tmp/organize-vectors-tagatoms-strip.txt.edited
+    banner 'tagatoms-tagmove curl lit3 (expect CATEGORIES:urgent)'
+    curl -fsS "${home#caldav:}lit/lit3.ics"
+    gen tagatoms-tagmove-after "$cal" '(tags)'
     stop_srv
     # G10a root strip: nsD carrying other,project files under `# project` with
     # only `other` in the box.
@@ -1078,6 +1086,22 @@ debug-organize-vectors:
     	END:VCALENDAR
     	EOF
     gen tagatoms-nsroot "$cal" 'project'
+    stop_srv
+    # G2 all-contributors strip: BOTH of nsE's -client-rolling tags strip under
+    # `## -client`; the out-of-namespace `urgent` sibling stays in the box.
+    start_srv 43110 CG_TEST_CALDAV_NS=1
+    cal="${home}ns/"
+    put_ics "${home#caldav:}ns/nsE.ics" <<-'EOF'
+    	BEGIN:VCALENDAR
+    	VERSION:2.0
+    	BEGIN:VTODO
+    	UID:nsE
+    	SUMMARY:Two clients
+    	CATEGORIES:project-client-acme,project-client-baxter,urgent
+    	END:VTODO
+    	END:VCALENDAR
+    	EOF
+    gen tagatoms-nse "$cal" 'project'
     stop_srv
     # G2 `_tag-strip = none`: the Via tags stay in every box.
     org_config <<-'EOF'
