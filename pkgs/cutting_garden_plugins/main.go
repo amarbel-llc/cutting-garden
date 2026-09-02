@@ -862,6 +862,18 @@ var ParseUnifiedMembershipWrite = internal.ParseUnifiedMembershipWrite
 // than aborting the whole box — so it has no error return.
 var PresentUnifiedAtoms = internal.PresentUnifiedAtoms
 
+// PresentUnifiedTags returns a node's presented tag set: the values of the
+// type's DESIGNATED FieldTag field (exactly one per type, G6 v1 —
+// ValidateUnifiedFieldSets enforces the declaration invariant), produced by the
+// owning codec's Format in STORED order. Interpreter-normalized ordering
+// (SortKey) is the FRAMEWORK's render-time job, not the codec's or this
+// helper's. A type declaring no FieldTag field has no tag notion and presents
+// nil, as does an untagged node (the codec omits the key). Resilient like
+// PresentUnifiedAtoms: a Format failure on a malformed value contributes
+// nothing rather than aborting. Wire plugins (RFC 0013) will instead carry
+// tags as a listing field named by the type's tag_set — out of scope here.
+var PresentUnifiedTags = internal.PresentUnifiedTags
+
 // RecognizedPatchFields returns the subset of supported keys present in
 // fields, preserving supported's order — callers pass a SORTED supported
 // list so the result, and the PatchNode applied report built from it, is
@@ -980,6 +992,15 @@ var ValidateFacetWrites = internal.ValidateFacetWrites
 // date-kind predicate to exact matching). A lister without FacetDescriber has
 // no schema; the filter passes through unchecked, exactly as Validate(nil).
 var ValidateFilterFor = internal.ValidateFilterFor
+
+// ValidateUnifiedFieldSets checks a unified declaration's cross-codec
+// invariants that no single codec can see: at most one FieldTag field per node
+// type (G6 v1 — one designated tag set per type). PresentUnifiedTags reads THE
+// designated field, so a second FieldTag declaration is a declaration error
+// naming both keys, never a silent first-wins. There is no framework-side
+// enforcement point — DescribeUnified's consumers each walk the sets directly —
+// so a plugin pins its declaration with a unit test calling this (caldav does).
+var ValidateUnifiedFieldSets = internal.ValidateUnifiedFieldSets
 
 // BulkAtomic requires all-or-nothing completion. A plugin that cannot
 // honor it — for this request or at all — MUST reject the request with

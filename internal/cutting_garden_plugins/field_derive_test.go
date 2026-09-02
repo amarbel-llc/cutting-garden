@@ -128,6 +128,66 @@ func TestParseUnifiedFieldEdits_UnknownFieldRejected(t *testing.T) {
 	}
 }
 
+// PresentUnifiedTags returns the designated FieldTag field's values (produced
+// by tagTestCodec, facet_derive_test.go) in STORED order, skipping the non-tag
+// codecs around it.
+func TestPresentUnifiedTags_PicksDesignatedField(t *testing.T) {
+	codecs := []Codec{
+		IdentityCodec{Field: UnifiedField{Key: "location", Inline: true}},
+		tagTestCodec{},
+		splitTestCodec{},
+	}
+	node := Node{Fields: map[string]any{
+		"location": "Bank",
+		"cats":     []string{"work", "errand", "planning, misc"},
+	}}
+	got := PresentUnifiedTags(codecs, node)
+	want := []string{"work", "errand", "planning, misc"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("PresentUnifiedTags = %v, want %v (stored order)", got, want)
+	}
+}
+
+// A type declaring no FieldTag field has no tag notion: nil, not a panic or an
+// error. So is an untagged node (the codec omits the key).
+func TestPresentUnifiedTags_EmptyWhenNoFieldTag(t *testing.T) {
+	noTagCodecs := []Codec{IdentityCodec{Field: UnifiedField{Key: "location", Inline: true}}}
+	if got := PresentUnifiedTags(noTagCodecs, Node{Fields: map[string]any{"location": "x"}}); got != nil {
+		t.Fatalf("PresentUnifiedTags with no FieldTag = %v, want nil", got)
+	}
+
+	tagCodecs := []Codec{tagTestCodec{}}
+	if got := PresentUnifiedTags(tagCodecs, Node{Fields: map[string]any{}}); got != nil {
+		t.Fatalf("PresentUnifiedTags of an untagged node = %v, want nil", got)
+	}
+}
+
+// ValidateUnifiedFieldSets accepts one FieldTag per type (and none) and rejects
+// a second, naming the type and both keys.
+func TestValidateUnifiedFieldSets_OneFieldTagPerType(t *testing.T) {
+	valid := []NodeTypeUnifiedFields{
+		{Tag: "a", Codecs: []Codec{tagTestCodec{}, splitTestCodec{}}},
+		{Tag: "b", Codecs: []Codec{IdentityCodec{Field: UnifiedField{Key: "location"}}}},
+	}
+	if err := ValidateUnifiedFieldSets(valid); err != nil {
+		t.Fatalf("ValidateUnifiedFieldSets(valid) = %v, want nil", err)
+	}
+
+	doubled := []NodeTypeUnifiedFields{{
+		Tag:    "a",
+		Codecs: []Codec{tagTestCodec{}, tagTestCodec{key: "labels"}},
+	}}
+	err := ValidateUnifiedFieldSets(doubled)
+	if err == nil {
+		t.Fatal("ValidateUnifiedFieldSets(two FieldTag fields): want error, got nil")
+	}
+	for _, want := range []string{`"a"`, `"tags"`, `"labels"`} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not name %s", err, want)
+		}
+	}
+}
+
 // An edit to a field declared read-only (Writable false) is a bad request even
 // without the framework's own writability gate in front — the declaration is the
 // single source of writability, and a direct SDK caller must not slip past it.

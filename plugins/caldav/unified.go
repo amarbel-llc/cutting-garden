@@ -306,10 +306,11 @@ func (facetOnlyCodec) Parse(map[string][]string, map[string]any) (map[string]any
 // that complete set as the object's CATEGORIES verbatim — no per-value delta, no
 // normalization. Because MultiValued makes the derived FacetWrite Mode `many`
 // (DeriveFacetWrites), the field's stored target is its Key ("categories", which
-// equals listingFieldCategories), so Source stays empty. Only the DECLARATION
-// derives from here (a Multi FacetDimension, a Mode-many FacetWrite): the counting
-// path (facetsFromView's categoriesOf loop) computes the per-tag membership VALUES,
-// the same as it does for the other computed dimensions.
+// equals listingFieldCategories), so Source stays empty. The facet COUNTING path
+// (facetsFromView's categoriesOf loop) still computes the per-tag membership
+// VALUES for summaries, like the other computed dimensions; Format presents the
+// same set from the stored fields (G6, native tags slice 2), and
+// TestCategoriesCodec_FormatAgreesWithFacetValues pins the two agree.
 type categoriesCodec struct{}
 
 func (categoriesCodec) Fields() []cutting_garden_plugins.UnifiedField {
@@ -323,11 +324,23 @@ func (categoriesCodec) Fields() []cutting_garden_plugins.UnifiedField {
 	}}
 }
 
-// Format is empty: the per-tag membership values flow through the plugin-side
-// counting path (facetsFromView), like the other computed dimensions — the codec
-// declares the dimension, it does not count.
-func (categoriesCodec) Format(map[string]any) (map[string][]string, error) {
-	return map[string][]string{}, nil
+// Format produces the tag set (G6, native tags slice 2): the stored CATEGORIES
+// list presented verbatim under the categories key, one string per tag, in
+// STORED order — interpreter-normalized (SortKey) ordering is the FRAMEWORK's
+// render-time job, not the codec's. The stored shape is the []string the ical
+// parser builds (listingFieldsOf reports view.*.Categories raw), or the []any
+// it becomes after a JSON enrichment round-trip on the wire/MCP path — the
+// list sibling of intOf's float64 tolerance. An absent or empty list
+// contributes nothing (absent key), matching the other codecs' absent-value
+// behavior. The facet COUNTING path (facetsFromView) keeps computing the same
+// per-tag values for summaries; the agreement is pinned by
+// TestCategoriesCodec_FormatAgreesWithFacetValues.
+func (categoriesCodec) Format(stored map[string]any) (map[string][]string, error) {
+	tags := stringsOf(stored, listingFieldCategories)
+	if len(tags) == 0 {
+		return map[string][]string{}, nil
+	}
+	return map[string][]string{facetCategories: tags}, nil
 }
 
 // Parse replaces the object's stored CATEGORIES with exactly the complete set
@@ -540,6 +553,27 @@ func (caldavPriorityCodec) Parse(
 func stringOf(m map[string]any, key string) string {
 	s, _ := m[key].(string)
 	return s
+}
+
+// stringsOf reads a string-list field, tolerating both the native []string the
+// in-process listing builds (listingFieldsOf) and the []any it becomes after a
+// JSON enrichment round-trip (the wire/MCP path) — the list sibling of intOf's
+// float64 tolerance. A non-string element is skipped rather than guessed at;
+// absence is nil.
+func stringsOf(m map[string]any, key string) []string {
+	switch t := m[key].(type) {
+	case []string:
+		return t
+	case []any:
+		out := make([]string, 0, len(t))
+		for _, v := range t {
+			if s, ok := v.(string); ok {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	return nil
 }
 
 // intOf reads an integer field, tolerating the float64 an int becomes after a JSON

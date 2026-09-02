@@ -156,26 +156,41 @@ func TestParseUnifiedBucketMove(t *testing.T) {
 	}
 }
 
-// tagTestCodec is a groupable, writable, MULTI-VALUED tag codec whose Parse
-// persists the COMPLETE set passed under "tags" onto the stored field "cats" — a
-// stand-in for caldav's categoriesCodec full-set replacement.
-type tagTestCodec struct{}
+// tagTestCodec is a groupable, writable, MULTI-VALUED tag codec — a stand-in for
+// caldav's categoriesCodec: Format presents the stored "cats" list verbatim
+// under its tag key (G6), and Parse persists the COMPLETE set passed under that
+// key onto "cats" (the full-set replacement). key overrides the presentation
+// key; empty means "tags" (so tagTestCodec{} keeps the usual shape, and a second
+// instance with a different key exercises the double-FieldTag declaration
+// error).
+type tagTestCodec struct{ key string }
 
-func (tagTestCodec) Fields() []UnifiedField {
+func (c tagTestCodec) tagKey() string {
+	if c.key != "" {
+		return c.key
+	}
+	return "tags"
+}
+
+func (c tagTestCodec) Fields() []UnifiedField {
 	return []UnifiedField{{
-		Key: "tags", Label: "Tags", Kind: FieldTag, Groupable: true,
+		Key: c.tagKey(), Label: "Tags", Kind: FieldTag, Groupable: true,
 		Writable: true, MultiValued: true, Source: "cats",
 	}}
 }
 
-func (tagTestCodec) Format(map[string]any) (map[string][]string, error) {
-	return map[string][]string{}, nil
+func (c tagTestCodec) Format(stored map[string]any) (map[string][]string, error) {
+	tags, _ := stored["cats"].([]string)
+	if len(tags) == 0 {
+		return map[string][]string{}, nil
+	}
+	return map[string][]string{c.tagKey(): tags}, nil
 }
 
-func (tagTestCodec) Parse(
+func (c tagTestCodec) Parse(
 	edited map[string][]string, _ map[string]any,
 ) (map[string]any, error) {
-	return map[string]any{"cats": edited["tags"]}, nil
+	return map[string]any{"cats": edited[c.tagKey()]}, nil
 }
 
 // A full-set membership write routes the COMPLETE tag set (not a single element)
