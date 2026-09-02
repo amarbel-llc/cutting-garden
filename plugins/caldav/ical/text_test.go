@@ -33,6 +33,10 @@ func TestUnescapeText(t *testing.T) {
 		{`back\\slash`, `back\slash`},
 		{`line1\nline2`, "line1\nline2"},
 		{`line1\Nline2`, "line1\nline2"},
+		// In TEXT context `\\` is an escaped backslash and the following bare
+		// comma passes through: 5 wire chars decode to the 4 chars `a\,b` —
+		// distinct from CATEGORIES context, where that comma separates.
+		{`a\\,b`, `a\,b`},
 		// Unknown escapes and a trailing lone backslash survive verbatim.
 		{`odd\xescape`, `odd\xescape`},
 		{`trailing\`, `trailing\`},

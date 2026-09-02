@@ -3,6 +3,7 @@ package organize
 import (
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 
 	"code.linenisgreat.com/cutting-garden/internal/command_components"
@@ -281,7 +282,9 @@ func boxAtomPresenter(lister cgp.RootLister) func(cgp.Node) []cgp.BoxAtom {
 		return nil
 	}
 	return func(n cgp.Node) []cgp.BoxAtom {
-		atoms := p.PresentBoxAtoms(n)
+		// Copy before collapsing: the plugin may hand back a cached slice, and
+		// mutating it in place would corrupt the plugin's own state.
+		atoms := slices.Clone(p.PresentBoxAtoms(n))
 		for i := range atoms {
 			atoms[i].Value = collapseToSingleLine(atoms[i].Value)
 		}
