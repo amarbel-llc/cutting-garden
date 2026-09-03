@@ -24,10 +24,7 @@ import (
 func ResolveTagInterpreter(
 	fieldDefault, override string,
 ) (cutting_garden_plugins.TagInterpreter, error) {
-	name := override
-	if name == "" {
-		name = fieldDefault
-	}
+	name := resolveTagInterpreterName(fieldDefault, override)
 	interp, ok := cutting_garden_plugins.LookupTagInterpreter(name)
 	if !ok {
 		return nil, errors.BadRequestf(
@@ -37,4 +34,15 @@ func ResolveTagInterpreter(
 		)
 	}
 	return interp, nil
+}
+
+// resolveTagInterpreterName is the name half of the §4 precedence, shared by
+// ResolveTagInterpreter (which validates against the registry) and the
+// discovery-only TypeTagSets (which reports the resolution as-is): the
+// override wins; an empty override falls back to fieldDefault.
+func resolveTagInterpreterName(fieldDefault, override string) string {
+	if override != "" {
+		return override
+	}
+	return fieldDefault
 }

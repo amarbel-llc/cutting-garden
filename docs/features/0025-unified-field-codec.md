@@ -277,6 +277,16 @@ intentionally plugin-side counting.
 | duration | `duration` (P6D) | ✅ derived end — the dtend codec falls back to DTSTART+DURATION (#233) | — | — (end atoms read-only) |
 | tag (multi) | `CATEGORIES` | ✅ key-free atom (native tags slice 2: `Format` produces the tag set, `PresentUnifiedTags` reads the designated `FieldTag` field, organize renders it SortKey-ordered per `_tag-atoms`/`_tag-strip`) | ✅ categoriesCodec, naive (RFC 0019) | ✅ write:many, full-set replace — placement moves AND box tag-atom edits (slice 2 T3, design G7: N-way reconcile across appearances, placement-vs-box conflicts, `_tag-strip = none` box-authoritative reading) fold into one write |
 
+The tag row's presentation also reaches the read-only node views (design G12,
+native tags slice 2 T4): `list -format json` and the mcp enriched listing
+carry a top-level `tags` array (the same `PresentUnifiedTags` values,
+SortKey-ordered by the interpreter resolved from the field default + the
+`[tags]` override), and `describe_node_types` reports each tag-declaring
+type's `tag_set: {field, interpreter}`. The shared resolution/presenter
+helpers live in `internal/command_components/tag_view.go` (moved out of
+organize so all three consumers share one copy); `facets.categories` stays on
+the enriched entries until `--filter` grows bare-tag terms (#251).
+
 Priority's Present column changed 2026-09-01 (native tags slice 1.5 D):
 `Codec.Format` presents the BAND — the same derived value the buckets and
 facets use — instead of the raw RFC 5545 int, so a `--group-by priority=`

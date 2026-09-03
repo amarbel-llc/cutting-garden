@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"slices"
-	"sort"
 	"strings"
 
 	"code.linenisgreat.com/cutting-garden/internal/command_components"
@@ -52,7 +51,7 @@ func (cmd *Organize) buildAndStore(ctx errors.Context, uriStr string) (string, e
 		return "", err
 	}
 	dims := describedFacets(lister)
-	tagDims := describedTagDims(lister)
+	tagDims := command_components.DescribedTagDims(lister)
 	spec, err := parseGroupSpec(cmd.GroupBy, dims, tagDims, cfg.Organize.DateGranularity)
 	if err != nil {
 		return "", err
@@ -67,7 +66,9 @@ func (cmd *Organize) buildAndStore(ctx errors.Context, uriStr string) (string, e
 	var interp cgp.TagInterpreter
 	if len(tagDims) > 0 {
 		var interpName string
-		interp, interpName, err = interpreterForDimension(lister, tagDims[0], cfg.Tags.Interpreter)
+		interp, interpName, err = command_components.InterpreterForDimension(
+			lister, tagDims[0], cfg.Tags.Interpreter,
+		)
 		if err != nil {
 			return "", err
 		}
@@ -86,7 +87,7 @@ func (cmd *Organize) buildAndStore(ctx errors.Context, uriStr string) (string, e
 	tagStrip := effectiveTagStrip("", cfg.Organize.TagStrip)
 	tags := tagRender{strip: tagStrip == tagStripPlacement}
 	if tagAtoms != tagAtomsNone {
-		tags.present = unifiedTagPresenter(lister, interp)
+		tags.present = command_components.UnifiedTagPresenter(lister, interp)
 	}
 
 	// The effective query is the user's query with organize's default
@@ -276,45 +277,10 @@ func requireNamespaceInterpreter(
 	return nil
 }
 
-// describedTagDims collects the plugin's TAG-dimension keys — the
-// UnifiedField.Kind == FieldTag fields declared via DescribeUnified (FDR 0025).
-// The FacetDimension surface derives a tag field to FacetCategorical
-// (facet_derive), so the unified declaration is the ONLY place a tag dimension
-// is distinguishable from a plain categorical one; a plugin without the
-// UnifiedDescriber capability has no tag dimensions. Deduplicated,
-// first-declared order — parseGroupSpec resolves an unqualified namespace arg
-// against the first.
-func describedTagDims(lister cgp.RootLister) []string {
-	d, ok := lister.(cgp.UnifiedDescriber)
-	if !ok {
-		return nil
-	}
-	seen := map[string]bool{}
-	var keys []string
-	for _, set := range d.DescribeUnified() {
-		for _, codec := range set.Codecs {
-			for _, f := range codec.Fields() {
-				if f.Kind == cgp.FieldTag && !seen[f.Key] {
-					seen[f.Key] = true
-					keys = append(keys, f.Key)
-				}
-			}
-		}
-	}
-	return keys
-}
-
-// firstTagDim returns the plugin's DESIGNATED tag dimension — the first
-// declared FieldTag key (describedTagDims order) — or "" when none is
-// declared. The single home of the "first declared wins" rule, shared by
-// resolveTagDimension (a tag grouping's dimension) and the apply-time
-// tag-atom wiring (the dimension box atoms write to).
-func firstTagDim(lister cgp.RootLister) string {
-	if dims := describedTagDims(lister); len(dims) > 0 {
-		return dims[0]
-	}
-	return ""
-}
+// The tag-dimension/interpreter resolution helpers (describedTagDims,
+// firstTagDim, interpreterForDimension, unifiedTagPresenter) moved to
+// command_components (tag_view.go) in native tags slice 2 T4, so the
+// `list -format json` and mcp node views share them with organize.
 
 // boxAtomPresenter returns the plugin's box-atom presentation function when it
 // implements FieldPresenter (cutting-garden#47), or nil — in which case object
@@ -441,34 +407,6 @@ func bucketOfTag(tag string, spec groupSpec, interp cgp.TagInterpreter) string {
 		return ms[0].Bucket
 	default:
 		return ""
-	}
-}
-
-// unifiedTagPresenter returns the node → rendered-tag-set function (design G1):
-// the type's designated FieldTag field's values (PresentUnifiedTags, stored
-// order), ordered by the resolved interpreter's SortKey. nil for a plugin
-// without the UnifiedDescriber capability — no tag dimension, no tag atoms.
-// The presented slice is cloned before sorting: the codec's Format output must
-// never be reordered in place (it may alias plugin state).
-func unifiedTagPresenter(
-	lister cgp.RootLister, interp cgp.TagInterpreter,
-) func(cgp.Node) []string {
-	d, ok := lister.(cgp.UnifiedDescriber)
-	if !ok {
-		return nil
-	}
-	byType := map[string][]cgp.Codec{}
-	for _, set := range d.DescribeUnified() {
-		byType[set.Tag] = set.Codecs
-	}
-	return func(n cgp.Node) []string {
-		tags := slices.Clone(cgp.PresentUnifiedTags(byType[n.Type], n))
-		if interp != nil {
-			sort.SliceStable(tags, func(i, j int) bool {
-				return interp.SortKey(tags[i]) < interp.SortKey(tags[j])
-			})
-		}
-		return tags
 	}
 }
 

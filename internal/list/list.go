@@ -202,7 +202,9 @@ func (cmd *List) runRoots(ctx errors.Context) error {
 	}
 
 	if cmd.Format == formatJSON {
-		return writeJSON(cmd.output, nodes)
+		// Roots span plugins and are plain address entries — no per-node
+		// tag presentation applies.
+		return writeJSON(cmd.output, nodes, nil)
 	}
 	return writeText(cmd.output, nodes)
 }
@@ -241,29 +243,53 @@ func (cmd *List) runList(ctx errors.Context, uriStr string) error {
 		return err
 	}
 
+	// The [tags] interpreter override serves two consumers here: a --query's
+	// bare-tag term resolution (RFC 0019 §4, #231 slice 3) and the JSON node
+	// view's tag presenter below; a missing config yields "".
+	cfg, cerr := command_components.LoadDefaultConfig(nil)
+	if cerr != nil {
+		return errors.Wrapf(cerr, "list %s", uriStr)
+	}
+
+	// The JSON node view carries the presented tag set (design G12, native
+	// tags slice 2): the designated FieldTag field's values, ordered by the
+	// resolved interpreter's SortKey. nil (with no error) when the plugin
+	// declares no tag dimension — the view then omits the key, and the fetch
+	// below stays the cheap metadata-only ListRoots. The text table is
+	// untouched (the espalier/mesa formats are slice 4).
+	var presentTags func(cutting_garden_plugins.Node) []string
+	if cmd.Format == formatJSON {
+		if presentTags, err = command_components.NodeTagsPresenter(
+			lister, cfg.Tags.Interpreter,
+		); err != nil {
+			return errors.Wrapf(err, "list %s", uriStr)
+		}
+	}
+
 	var nodes []cutting_garden_plugins.Node
 	if cmd.Query != "" {
 		q, perr := trellis.Parse(cmd.Query)
 		if perr != nil {
 			return errors.BadRequestf("list %s --query: %s", uriStr, perr)
 		}
-		// The [tags] interpreter override resolves a bare-tag term's dimension
-		// interpreter (RFC 0019 §4, #231 slice 3); a missing config yields "".
-		cfg, cerr := command_components.LoadDefaultConfig(nil)
-		if cerr != nil {
-			return errors.Wrapf(cerr, "list %s --query", uriStr)
-		}
 		if nodes, err = trellis_eval.Evaluate(
 			ctx, q, u, lister, trellis_eval.WithTagsInterpreter(cfg.Tags.Interpreter),
 		); err != nil {
 			return errors.Wrapf(err, "list %s --query", uriStr)
+		}
+	} else if presentTags != nil {
+		// Tags present off Node.Fields, which caldav's metadata-only
+		// ListRoots deliberately leaves empty (cutting-garden#212) — prefer
+		// the plugin's enriched listing exactly as organize's selection does.
+		if nodes, err = command_components.ListEnrichedChildren(ctx, lister, u); err != nil {
+			return errors.Wrapf(err, "list %s", uriStr)
 		}
 	} else if nodes, err = lister.ListRoots(ctx, u); err != nil {
 		return errors.Wrapf(err, "list %s", uriStr)
 	}
 
 	if cmd.Format == formatJSON {
-		return writeJSON(cmd.output, nodes)
+		return writeJSON(cmd.output, nodes, presentTags)
 	}
 	return writeText(cmd.output, nodes)
 }
@@ -290,23 +316,37 @@ func writeText(w io.Writer, nodes []cutting_garden_plugins.Node) error {
 }
 
 // nodeView is the json projection of a Node: the URI is rendered as its
-// string form rather than url.URL's struct shape.
+// string form rather than url.URL's struct shape. Tags is the node's
+// presented tag set (design G12, native tags slice 2) — the designated
+// FieldTag field's values in the resolved interpreter's SortKey order —
+// omitted entirely for an untagged node or a plugin with no tag dimension.
 type nodeView struct {
-	URI  string `json:"uri"`
-	Name string `json:"name"`
-	Type string `json:"type"`
+	URI  string   `json:"uri"`
+	Name string   `json:"name"`
+	Type string   `json:"type"`
+	Tags []string `json:"tags,omitempty"`
 }
 
 // writeJSON re-emits the nodes as NDJSON — one object per node — for
-// piping into jq.
-func writeJSON(w io.Writer, nodes []cutting_garden_plugins.Node) error {
+// piping into jq. presentTags (command_components.NodeTagsPresenter) fills
+// each view's tag set; nil renders no tags (the roots listing, a plugin
+// with no tag dimension).
+func writeJSON(
+	w io.Writer,
+	nodes []cutting_garden_plugins.Node,
+	presentTags func(cutting_garden_plugins.Node) []string,
+) error {
 	enc := json.NewEncoder(w)
 	for _, n := range nodes {
-		if err := enc.Encode(nodeView{
+		view := nodeView{
 			URI:  n.URIString(),
 			Name: n.Name,
 			Type: n.Type,
-		}); err != nil {
+		}
+		if presentTags != nil {
+			view.Tags = presentTags(n)
+		}
+		if err := enc.Encode(view); err != nil {
 			return errors.Wrap(err)
 		}
 	}

@@ -535,6 +535,24 @@ debug-organize-fixture GROUP_BY='status=': debug-build-go
     .tmp/cutting-garden organize -group-by '{{ GROUP_BY }}' "$cal"
     exec {SRV[1]}>&- || true
 
+# Eyeball loop for the G12 JSON node view (native tags slice 2 T4): start the
+# testserver with the /dav/ns/ namespace fixture and print `list -format json`'s
+# NDJSON for it — each line should carry the presented `tags` array. READ-ONLY.
+#
+# print the /dav/ns/ `list -format json` NDJSON (tags array dev-loop)
+[group('debug')]
+debug-list-ns-json: debug-build-go
+    #!/usr/bin/env bash
+    set -euo pipefail
+    root="{{ justfile_directory() }}"
+    cd "$root"
+    nix develop --command go build -o .tmp/cutting-garden-caldav-testserver ./cmd/cutting-garden-caldav-testserver
+    export CG_TEST_CALDAV_NS=1
+    coproc SRV { .tmp/cutting-garden-caldav-testserver; }
+    read -r -u "${SRV[0]}" source_url _calpath
+    XDG_CONFIG_HOME="$(mktemp -d)" .tmp/cutting-garden list -format json "${source_url%/dav/}/dav/ns/"
+    exec {SRV[1]}>&- || true
+
 # End-to-end reschedule-by-move against the testserver's /dav/sched/ calendar
 # (FDR 0023 Slice 2b, cutting-garden#230): generate the document grouped by
 # date_due=(month), move sched1 from 2026-08 to 2026-09, apply with --commit, and

@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/url"
 
+	"code.linenisgreat.com/cutting-garden/internal/command_components"
 	cgp "code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
 	"code.linenisgreat.com/cutting-garden/internal/trellis"
 	"code.linenisgreat.com/cutting-garden/internal/trellis_eval"
@@ -32,24 +33,9 @@ func selectNodes(
 		// plugin declaring no terminal values.
 		return trellis_eval.Evaluate(ctx, q, anchor, withTerminal(lister))
 	}
-	return listEnrichedChildren(ctx, lister, anchor)
-}
-
-// listEnrichedChildren returns anchor's immediate children, preferring the
-// enriched listing (Facets/Fields populated) over metadata-only ListRoots —
-// mirroring the evaluator's own listEnriched so the no-query path enriches
-// identically to the query path.
-func listEnrichedChildren(
-	ctx context.Context, lister cgp.RootLister, anchor *url.URL,
-) ([]cgp.Node, error) {
-	if el, ok := lister.(cgp.EnrichedLister); ok {
-		nodes, served, err := el.ListEnriched(ctx, anchor, nil)
-		if err != nil {
-			return nil, errors.Wrap(err)
-		}
-		if served {
-			return nodes, nil
-		}
-	}
-	return lister.ListRoots(ctx, anchor)
+	// The enriched-preferring fetch lives in command_components (shared with
+	// `list -format json`, native tags slice 2 T4); the evaluator's own
+	// listEnriched mirrors it so the no-query path enriches identically to
+	// the query path.
+	return command_components.ListEnrichedChildren(ctx, lister, anchor)
 }

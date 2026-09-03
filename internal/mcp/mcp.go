@@ -82,9 +82,11 @@ const instructions = "Resources are the capturable trees of cutting-garden " +
 	"(when the plugin tracks one) you can compare across two reads of the " +
 	"SAME container to tell whether they saw the same underlying data — so " +
 	"you descend the tree one level per read. Every listing " +
-	"entry is ENRICHED BY DEFAULT: it carries its facets and any " +
+	"entry is ENRICHED BY DEFAULT: it carries its facets, any " +
 	"plugin-declared human-readable fields (e.g. a caldav object's " +
-	"summary/status/dtstart/dtend) inline, not just {uri,name,type}. Reading a leaf " +
+	"summary/status/dtstart/dtend), and — when its type declares a tag set " +
+	"(describe_node_types' tag_set) — its tags array, inline, not just " +
+	"{uri,name,type}. Reading a leaf " +
 	"object returns its parsed fields as JSON, plus (when available) a " +
 	"madder://blobs/<digest> link to its verbatim bytes. The same surface " +
 	"is also exposed as tools (for clients that render only tools): " +
@@ -209,6 +211,18 @@ func (cmd *MCP) Run(req command.Request) {
 
 	provider := newResources(roots, mcpBlobWriter(ctx))
 	tools := newTools(roots, provider)
+	// The global `[tags] interpreter` override (RFC 0019 §4) resolves the
+	// SortKey ordering of every enriched entry's `tags` array and each
+	// type's describe_node_types tag_set (design G12). Re-read from the
+	// config mcpRoots already loaded and validated; "" (no config) falls
+	// back to each field's declared default.
+	cfg, err := command_components.LoadDefaultConfig(nil)
+	if err != nil {
+		errors.ContextCancelWithError(ctx, err)
+		return
+	}
+	provider.tagsOverride = cfg.Tags.Interpreter
+	tools.tagsOverride = cfg.Tags.Interpreter
 	// cutting-garden#120: a friendlier root label (e.g. a calendar-scoped
 	// caldav account's DAV displayname) than the default URL-derived one,
 	// for the no-uri list_nodes listing only — resources/list never

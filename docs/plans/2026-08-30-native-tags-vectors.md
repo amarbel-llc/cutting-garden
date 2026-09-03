@@ -30,7 +30,7 @@ below (the case title names the lane), and `just test-grammar-corpus`
 | G7 | stale atom RE-ASSERTS its tag (bucket line deleted, sibling box atom retained → adds=[tag]; composed fold nets ZERO edits — never a silent removal) | 2 | Go `internal/organize` `TestPlanTagAtomDeltas_StaleAtomReAsserts` (+ `organize_headings.bats` reset vector's bare-box comment attests the inverse spelling) |
 | G7 | `%`-atom edit rejected (parse-level: `%` is reserved, no box production) | 2 | Go `internal/organize` `TestParseObjectLine_PercentMarkedTermRejects` |
 | G8 | `list -format espalier` == organize boxes | 4 | — |
-| G8 | JSON `tags` array | 4 | — |
+| G8 | JSON `tags` array | 2 (landed early, with G12) | `organize_ns.bats:organize_ns_list_json_carries_tags` |
 | G8 | mesa table (golden) | 4 | — |
 | G9 | bare token in box is a tag, even if it names a field | 1 | `organize_literal.bats:organize_literal_bare_token_is_tag` (+ Go `internal/trellis` `TestLiteral_RoundTrip`) |
 | G9 | non-ground interior is a loud bad request | 1 | `organize_literal.bats:organize_literal_non_ground_interior_rejects` (+ Go `TestLiteral_NotGround`) |
@@ -46,7 +46,9 @@ below (the case title names the lane), and `just test-grammar-corpus`
 | G10 | depth normalization (a `##`-rooted document applies identically to the `#` form; generate never emits an empty heading) | 1 | `organize_headings.bats:organize_headings_double_hash_document_applies_identically`, `organize_headings.bats:organize_headings_generate_never_emits_reset` (+ Go `TestParseDepthNormalization_*`, `TestParseFieldDoc_DepthNormalizationPreservesLadder`, `TestGenerateNeverEmitsResetHeading`) |
 | G10 | empty-heading reset (`##` pops one; `#` → ungrouped; deeper no-op) | 1 | `organize_headings.bats:organize_headings_reset_pops_to_parent_and_ungrouped`, `organize_headings.bats:organize_headings_reset_deeper_than_current_is_noop` (+ Go `TestParseReset_*`) |
 | G11 | nvim corpus mirrors the slice-1 vectors | 1 | `zz-nvim/grammars/organize/test/corpus/organize.txt` (`just test-grammar-corpus`) |
-| G12 | `describe_node_types` reports `tag_set` | 4 | — |
+| G12 | `describe_node_types` reports `tag_set` `{field, interpreter}` | 2 | `mcp.bats:mcp_describe_node_types` (+ Go `internal/mcp` `TestCollectSchema_ReportsTagSet`, `internal/command_components` `TestTypeTagSets`) |
+| G12 | `list -format json` node views carry SortKey-ordered `tags` | 2 | `organize_ns.bats:organize_ns_list_json_carries_tags` (+ Go `internal/list` `TestRun_JSONCarriesTags`, `internal/command_components` `TestNodeTagsPresenter`) |
+| G12 | mcp enriched listing entries carry `tags` | 2 | `mcp.bats:mcp_list_nodes_enriched_entry_carries_tags` (+ Go `internal/mcp` `TestReadResource_EnrichedEntriesCarryTags`) |
 | G13 | hand-written bare token round-trips through parse→write | 1 | `organize_literal.bats:organize_literal_bare_token_is_tag` (+ Go `internal/organize` `TestObjectLineTagRoundTrip`) |
 | G16 | existing lanes converted to whole-document vectors | 1 | all `organize*.bats` |
 

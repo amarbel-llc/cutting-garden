@@ -112,6 +112,17 @@ task's vectors are whole-document heredocs (G16); `_base` digests verbatim.
 - Vectors: bats `list -format json` on /dav/ns/ (NDJSON lines with `tags`);
   mcp.bats `describe_node_types` shows `tag_set`; mcp `list_nodes` enriched
   entry carries `tags`.
+- **T4 decisions (as landed):** the shared enrichment lives in
+  `internal/command_components/tag_view.go` — organize's `describedTagDims`/
+  `firstTagDim`/`interpreterForDimension`/`unifiedTagPresenter` MOVED there
+  (exported), composed as `NodeTagsPresenter` (the per-listing presenter both
+  node views call) and `TypeTagSets` (describe_node_types' per-type
+  `tag_set: {field, interpreter}` — name-resolution only; the consuming
+  paths validate the registry lookup). `list -format json` prefers the
+  enriched fetch (the moved `ListEnrichedChildren`) only when a tag
+  dimension is declared; the text table is untouched. mcp threads the
+  `[tags]` override as a `tagsOverride` field on Resources/Tools, set at
+  server startup.
 
 ## Task 5: nvim corpus + docs + vectors index
 

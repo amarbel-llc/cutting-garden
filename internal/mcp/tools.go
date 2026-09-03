@@ -92,6 +92,13 @@ type Tools struct {
 	// default) means every root falls back to rootLabel's bare URL
 	// derivation, exactly as before #120.
 	rootLabels map[string]string
+	// tagsOverride is the global `[tags] interpreter` config override
+	// (RFC 0019 §4), wired at server startup: it resolves each type's
+	// `tag_set` interpreter in describe_node_types and the SortKey ordering
+	// of the enriched listing entries' `tags` arrays (design G12, native
+	// tags slice 2). Empty (the test-harness default) falls back to each
+	// field's declared default, then naive.
+	tagsOverride string
 }
 
 // creatorResolveFunc mirrors mutatorResolveFunc for the
@@ -189,7 +196,7 @@ const (
 		`"offset":{"type":"integer","minimum":0,"description":"number of child nodes to skip before applying limit (optional, default 0). An offset past the end yields an empty array, not an error."},` +
 		`"filter":{"type":"string","description":"optional comma-separated dimension=value predicates (AND-composed), e.g. \"due_band=overdue\" or \"status=CONFIRMED,year=2026\" — the SAME grammar and dimension keys as read_facets. Call describe_node_types first to see a type's declared facets: each dimension's key and, when closed=true, its complete valid values array (values); an open dimension (closed=false) accepts any value, discovered at enumeration. An undeclared dimension or an out-of-domain closed-dimension value is a REJECTED, actionable error naming what was wrong — never a silent empty/unfiltered result. When present the result is wrapped as {nodes, filterApplied, filterMode} instead of a bare array — filterApplied is false (filterMode \"none\") on the rare scheme with no way to filter, so the caller always knows whether the returned nodes are actually narrowed."},` +
 		`"query":{"type":"string","description":"optional trellis query (RFC 0014) evaluated with the uri as its anchor — the richer alternative to filter, for multi-LEVEL walks and richer predicates. Returns {query, nodes}: the nodes matched by the query's LAST step, each ENRICHED (facets + plugin fields inline) like the default listing. Mutually exclusive with filter; requires a uri. GRAMMAR — a path of STEPS joined by COMBINATORS. Combinators (between steps): \"->\" descend one level, \"<-\" reverse one level, \"->>\"/\"<<-\" transitive closure (one-or-more levels). A step is space-separated TERMS that must ALL match (AND); prefix a term with ^ to negate. Terms: (1) !type — the node's type tag, e.g. !caldav-object-v1; (2) field OP value — OP is one of = (equals) != (not) *= (contains) ^= (prefix) $= (suffix) < <= > >= (lexicographic; fixed-width dates like 20260131 sort correctly) ~= (RE2 regex); field is a declared facet dimension (matched cheaply) or any other field name (matched against the node's inline fields, else a leaf-body fetch); the pseudo-field _body matches the raw body text; (3) [a, b] — OR-alternatives, matches if it satisfies alternative a OR b; (4) [-> pred] — existential, true if some immediate child matches pred. QUOTING: a value or regex containing a reserved rune (space, ^, [, comma) must be quoted, e.g. summary~=\"query builder\". EXAMPLE: !caldav-calendar-v1 -> !caldav-object-v1 component=VTODO [summary~=bows, summary~=cake] walks calendars to their objects and keeps VTODOs whose summary matches either regex. DISCOVERY: call describe_node_types for each scheme's types, declared facet dimensions (and their closed value sets), and listing fields — the vocabulary for !type and field predicates. NOT YET SUPPORTED (rejected with a clear, actionable error, cutting-garden#211): typed edges -[pred]->, non-\":\" version sigils (+ . ?), object-identity terms (@digest), bare-tag terms, and the anchorless roots-as-nodes origin (a leading combinator)."},` +
-		`"bare":{"type":"boolean","description":"opt out of the default enrichment: true returns the cheap pre-enrichment shape {uri,name,type,container,mimeType} with no facets/fields, skipping any extra data-bearing fetch a plugin would otherwise perform (e.g. caldav skips its per-object body fetch, staying hrefs-only). Combining bare with filter still fetches whatever the filter requires; only the OUTPUT is stripped down. Default false: every entry carries its facets and any plugin-declared human-readable fields (e.g. summary/due/status) inline."}}}`
+		`"bare":{"type":"boolean","description":"opt out of the default enrichment: true returns the cheap pre-enrichment shape {uri,name,type,container,mimeType} with no facets/fields, skipping any extra data-bearing fetch a plugin would otherwise perform (e.g. caldav skips its per-object body fetch, staying hrefs-only). Combining bare with filter still fetches whatever the filter requires; only the OUTPUT is stripped down. Default false: every entry carries its facets, any plugin-declared human-readable fields (e.g. summary/due/status), and — for a type declaring a tag set (see describe_node_types' tag_set) — its tags array, inline."}}}`
 	readFacetsSchema = `{"type":"object","required":["uri"],` +
 		`"properties":{` +
 		`"uri":{"type":"string","description":"the container node URI to summarize"},` +
@@ -224,6 +231,9 @@ func readToolDefs() []protocol.ToolV1 {
 				"carry in an enriched listing (see list_nodes) — including, for a " +
 				"CLOSED dimension (closed:true), its complete valid values array so " +
 				"a read_facets/list_nodes filter value never has to be guessed — " +
+				"a tag-declaring type's tag_set ({field, interpreter}: the dimension " +
+				"whose values ride each enriched entry's tags array, and the " +
+				"interpreter ordering them), " +
 				"and, for writable types, the body payload create_node/put_node " +
 				"accept, with a concrete example. Read-only; call it first to learn " +
 				"a type tag, body shape, and filterable dimensions before create_node " +
@@ -572,7 +582,9 @@ func (t *Tools) call(
 
 	case mcp_tool_perms.ToolDescribeNodeTypes:
 		body, err := json.MarshalIndent(
-			collectSchema(cutting_garden_plugins.RegisteredPlugins()), "", "  ",
+			collectSchema(
+				cutting_garden_plugins.RegisteredPlugins(), t.tagsOverride,
+			), "", "  ",
 		)
 		if err != nil {
 			return "", errors.Wrap(err)
@@ -1061,12 +1073,19 @@ func (t *Tools) listNodesURI(
 	if err != nil {
 		return "", errors.Wrapf(err, "list %s (filtered)", uri)
 	}
+	// The per-listing tag presenter (design G12): resolved once, filling
+	// each enriched entry's `tags`; nil when the plugin declares no tag
+	// dimension. The bare opt-out strips tags with the rest.
+	presentTags, err := command_components.NodeTagsPresenter(lister, t.tagsOverride)
+	if err != nil {
+		return "", errors.Wrapf(err, "list %s (filtered)", uri)
+	}
 	views := make([]nodeView, 0, len(nodes))
 	for _, n := range nodes {
 		if bare {
 			views = append(views, bareNodeView(lister, n))
 		} else {
-			views = append(views, enrichedNodeView(lister, n))
+			views = append(views, enrichedNodeView(lister, n, presentTags))
 		}
 	}
 	views = paginate(views, offset, limit)
@@ -1121,12 +1140,18 @@ func (t *Tools) listNodesQuery(
 	if err != nil {
 		return "", errors.Wrapf(err, "list_nodes %s (query)", uri)
 	}
+	// The per-listing tag presenter (design G12), exactly as the filtered
+	// path resolves it.
+	presentTags, perr := command_components.NodeTagsPresenter(lister, t.tagsOverride)
+	if perr != nil {
+		return "", errors.Wrapf(perr, "list_nodes %s (query)", uri)
+	}
 	views := make([]nodeView, 0, len(nodes))
 	for _, n := range nodes {
 		if bare {
 			views = append(views, bareNodeView(lister, n))
 		} else {
-			views = append(views, enrichedNodeView(lister, n))
+			views = append(views, enrichedNodeView(lister, n, presentTags))
 		}
 	}
 	views = paginate(views, offset, limit)
@@ -1330,6 +1355,13 @@ type typeSchema struct {
 	// plugin declares no listing fields for this type (it may still
 	// enrich with Facets alone, via ListRoots or EnrichedLister).
 	ListingFields []listingFieldSchema `json:"listingFields,omitempty"`
+	// TagSet names the type's designated tag set (design G12, native tags
+	// slice 2): the FieldTag dimension key whose values ride each enriched
+	// listing entry's `tags` array (and whose bare terms a trellis query
+	// will address), plus the interpreter NAME resolved for it (field
+	// default + the `[tags]` config override). Absent when the type
+	// declares no tag dimension.
+	TagSet *command_components.TagSet `json:"tag_set,omitempty"`
 }
 
 // bodySchema is the create/update payload description for a writable type: the
@@ -1456,8 +1488,11 @@ func listingFieldSchemas(
 // collectSchema builds the describe_node_types catalogue from the registered
 // plugins: every RootLister contributes its node types, and a BodyDescriber
 // adds the writable types' payload detail. Plugins without traversal (the
-// file plugin) contribute nothing.
-func collectSchema(plugins []cutting_garden_plugins.Plugin) []schemeSchema {
+// file plugin) contribute nothing. tagsOverride is the `[tags] interpreter`
+// config override each type's tag_set resolution folds in (design G12).
+func collectSchema(
+	plugins []cutting_garden_plugins.Plugin, tagsOverride string,
+) []schemeSchema {
 	out := make([]schemeSchema, 0, len(plugins))
 	for _, p := range plugins {
 		rl, ok := p.(cutting_garden_plugins.RootLister)
@@ -1495,6 +1530,9 @@ func collectSchema(plugins []cutting_garden_plugins.Plugin) []schemeSchema {
 				facetWrites[ntw.Tag] = m
 			}
 		}
+		// Each type's designated tag set (design G12): the FieldTag key and
+		// its resolved interpreter, from the unified declaration.
+		tagSets := command_components.TypeTagSets(rl, tagsOverride)
 		nts := rl.Types()
 		types := make([]typeSchema, 0, len(nts))
 		for _, nt := range nts {
@@ -1517,6 +1555,9 @@ func collectSchema(plugins []cutting_garden_plugins.Plugin) []schemeSchema {
 			}
 			if fields, ok := listingFields[nt.Tag]; ok {
 				ts.ListingFields = listingFieldSchemas(fields)
+			}
+			if set, ok := tagSets[nt.Tag]; ok {
+				ts.TagSet = &set
 			}
 			types = append(types, ts)
 		}

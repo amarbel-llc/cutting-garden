@@ -608,7 +608,7 @@ func TestResourcesReadFacets_NilFilterComputeFailureDegrades(t *testing.T) {
 // surface: a FacetDescriber's dimensions appear on its node type, with the
 // closed-domain flag derived from a non-nil Values list.
 func TestCollectSchema_IncludesFacetDimensions(t *testing.T) {
-	schemes := collectSchema([]cutting_garden_plugins.Plugin{fakeFacetLister{}})
+	schemes := collectSchema([]cutting_garden_plugins.Plugin{fakeFacetLister{}}, "")
 
 	var dims []facetDimSchema
 	for _, s := range schemes {

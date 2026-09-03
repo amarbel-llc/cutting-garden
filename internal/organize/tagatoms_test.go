@@ -10,7 +10,9 @@ import (
 )
 
 // tagPresenterFor builds a tagRender presenter from a fixed id → tag-set map,
-// standing in for unifiedTagPresenter's codec path in the fill tests.
+// standing in for command_components.UnifiedTagPresenter's codec path in the
+// fill tests (its own SortKey/no-mutation behavior is pinned by
+// command_components' TestNodeTagsPresenter).
 func tagPresenterFor(t *testing.T, anchor string, byID map[string][]string) func(cgp.Node) []string {
 	t.Helper()
 	return func(n cgp.Node) []string {
@@ -252,59 +254,4 @@ func TestParseObjectLine_PercentMarkedTermRejects(t *testing.T) {
 	if !errors.Is400BadRequest(err) {
 		t.Errorf("expected a bad request, got %v", err)
 	}
-}
-
-// TestUnifiedTagPresenter_SortsBySortKey pins the framework half of G6: the
-// presenter orders the codec's stored-order tag set by the interpreter's
-// SortKey (lexical for both builtins) without mutating the codec's slice.
-func TestUnifiedTagPresenter_SortsBySortKey(t *testing.T) {
-	interp, _ := cgp.LookupTagInterpreter("naive")
-	lister := &unifiedFakeLister{}
-	present := unifiedTagPresenter(lister, interp)
-	if present == nil {
-		t.Fatal("presenter must resolve for a UnifiedDescriber lister")
-	}
-	n := cgp.Node{
-		URI: mustURL(t, "fake://c/x"), Type: "task",
-		Fields: map[string]any{"categories": []string{"work", "errand", "_ inbox"}},
-	}
-	got := present(n)
-	if want := []string{"_ inbox", "errand", "work"}; !reflect.DeepEqual(got, want) {
-		t.Errorf("presented = %v, want SortKey order %v", got, want)
-	}
-	if stored := n.Fields["categories"].([]string); !reflect.DeepEqual(stored, []string{"work", "errand", "_ inbox"}) {
-		t.Errorf("stored slice mutated by the presenter: %v", stored)
-	}
-}
-
-// unifiedFakeLister is fakeLister plus a UnifiedDescriber declaring one tag
-// field over a passthrough codec, for the presenter test.
-type unifiedFakeLister struct{ fakeLister }
-
-func (l *unifiedFakeLister) DescribeUnified() []cgp.NodeTypeUnifiedFields {
-	return []cgp.NodeTypeUnifiedFields{{
-		Tag:    "task",
-		Codecs: []cgp.Codec{stringListTagCodec{}},
-	}}
-}
-
-// stringListTagCodec presents a stored []string field verbatim as the type's
-// designated tag set.
-type stringListTagCodec struct{}
-
-func (stringListTagCodec) Fields() []cgp.UnifiedField {
-	return []cgp.UnifiedField{{
-		Key: "categories", Kind: cgp.FieldTag, Groupable: true, MultiValued: true,
-	}}
-}
-
-func (stringListTagCodec) Format(stored map[string]any) (map[string][]string, error) {
-	if ts, ok := stored["categories"].([]string); ok {
-		return map[string][]string{"categories": ts}, nil
-	}
-	return map[string][]string{}, nil
-}
-
-func (stringListTagCodec) Parse(map[string][]string, map[string]any) (map[string]any, error) {
-	return map[string]any{}, nil
 }

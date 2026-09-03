@@ -149,10 +149,67 @@ func (captureOnlyFake) CaptureRoot(cutting_garden_plugins.CaptureRootRequest) cu
 	return cutting_garden_plugins.CaptureRootResult{}
 }
 
+// taggedListFake extends listFake with a UnifiedDescriber declaring a
+// categories FieldTag dimension over its own scheme, and a ListRoots that
+// populates the stored tag list — the `list -format json` tags fixture
+// (design G12, native tags slice 2). No EnrichedLister: the fetch falls back
+// to ListRoots, whose Fields already carry what the codec presents.
+type taggedListFake struct{ listFake }
+
+func (taggedListFake) Schemes() []string { return []string{"taggedlist"} }
+
+func (taggedListFake) DescribeUnified() []cutting_garden_plugins.NodeTypeUnifiedFields {
+	return []cutting_garden_plugins.NodeTypeUnifiedFields{{
+		Tag:    "test-object-v1",
+		Codecs: []cutting_garden_plugins.Codec{tagListCodec{}},
+	}}
+}
+
+func (taggedListFake) ListRoots(
+	_ context.Context, node *url.URL,
+) ([]cutting_garden_plugins.Node, error) {
+	return []cutting_garden_plugins.Node{
+		{
+			URI:    &url.URL{Scheme: "taggedlist", Host: node.Host, Path: "/tagged"},
+			Name:   "tagged",
+			Type:   "test-object-v1",
+			Fields: map[string]any{"categories": []string{"work", "errand"}},
+		},
+		{
+			URI:  &url.URL{Scheme: "taggedlist", Host: node.Host, Path: "/plain"},
+			Name: "plain",
+			Type: "test-object-v1",
+		},
+	}, nil
+}
+
+// tagListCodec presents a stored []string categories field verbatim as the
+// designated tag set.
+type tagListCodec struct{}
+
+func (tagListCodec) Fields() []cutting_garden_plugins.UnifiedField {
+	return []cutting_garden_plugins.UnifiedField{{
+		Key: "categories", Kind: cutting_garden_plugins.FieldTag,
+		Groupable: true, MultiValued: true, Interpreter: "naive",
+	}}
+}
+
+func (tagListCodec) Format(stored map[string]any) (map[string][]string, error) {
+	if ts, ok := stored["categories"].([]string); ok && len(ts) > 0 {
+		return map[string][]string{"categories": ts}, nil
+	}
+	return map[string][]string{}, nil
+}
+
+func (tagListCodec) Parse(map[string][]string, map[string]any) (map[string]any, error) {
+	return nil, nil
+}
+
 func init() {
 	cutting_garden_plugins.MustRegisterCapture(listFake{})
 	cutting_garden_plugins.MustRegisterCapture(facetFake{})
 	cutting_garden_plugins.MustRegisterCapture(captureOnlyFake{})
+	cutting_garden_plugins.MustRegisterCapture(taggedListFake{})
 }
 
 // TestRunFacets_FilterValidateGate pins the runFacets Validate addition
@@ -225,6 +282,44 @@ func TestRun_JSONRoundTrip(t *testing.T) {
 		if n.Type != "test-container-v1" || n.URI == "" || n.Name == "" {
 			t.Errorf("node = %+v", n)
 		}
+	}
+}
+
+// TestRun_JSONCarriesTags pins the G12 CLI half (native tags slice 2): the
+// JSON node view of a tag-declaring plugin carries a top-level `tags` array —
+// the designated FieldTag field's values in the resolved interpreter's
+// SortKey order — while an untagged node omits the key, and the text table
+// stays tag-free (espalier/mesa are slice 4).
+func TestRun_JSONCarriesTags(t *testing.T) {
+	var buf bytes.Buffer
+	if code := driveList(t, &buf, "-format", "json", "taggedlist://h/"); code != 0 {
+		t.Fatalf("exit = %d, want 0; output:\n%s", code, buf.String())
+	}
+
+	byName := map[string]nodeView{}
+	dec := json.NewDecoder(&buf)
+	for dec.More() {
+		var n nodeView
+		if err := dec.Decode(&n); err != nil {
+			t.Fatalf("decode NDJSON: %v", err)
+		}
+		byName[n.Name] = n
+	}
+	if got, want := byName["tagged"].Tags, []string{"errand", "work"}; len(got) != 2 ||
+		got[0] != want[0] || got[1] != want[1] {
+		t.Errorf("tagged node tags = %v, want SortKey order %v", got, want)
+	}
+	if got := byName["plain"].Tags; len(got) != 0 {
+		t.Errorf("untagged node tags = %v, want omitted", got)
+	}
+
+	// The text table is untouched by the tag enrichment.
+	buf.Reset()
+	if code := driveList(t, &buf, "taggedlist://h/"); code != 0 {
+		t.Fatalf("text exit = %d, want 0; output:\n%s", code, buf.String())
+	}
+	if strings.Contains(buf.String(), "errand") {
+		t.Errorf("text table leaked tags:\n%s", buf.String())
 	}
 }
 

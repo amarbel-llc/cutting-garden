@@ -49,7 +49,7 @@ func findFacetDim(t *testing.T, schemes []schemeSchema, tag, key string) facetDi
 // writeMode / field / completionHint, a read-only one carries writeMode "none",
 // and a plugin WITHOUT the capability leaves the write fields absent (back-compat).
 func TestCollectSchema_FoldsFacetWrites(t *testing.T) {
-	schemes := collectSchema([]cutting_garden_plugins.Plugin{fakeFacetWriteLister{}})
+	schemes := collectSchema([]cutting_garden_plugins.Plugin{fakeFacetWriteLister{}}, "")
 
 	status := findFacetDim(t, schemes, "test-object-v1", "status")
 	if status.WriteMode != "one" {
@@ -68,7 +68,7 @@ func TestCollectSchema_FoldsFacetWrites(t *testing.T) {
 	}
 
 	// A plugin without the write capability carries no write metadata.
-	plain := collectSchema([]cutting_garden_plugins.Plugin{fakeFacetLister{}})
+	plain := collectSchema([]cutting_garden_plugins.Plugin{fakeFacetLister{}}, "")
 	if got := findFacetDim(t, plain, "test-object-v1", "status").WriteMode; got != "" {
 		t.Errorf("no-write-capability writeMode = %q, want empty", got)
 	}

@@ -78,6 +78,12 @@ type Resources struct {
 	// (cutting-garden#160 phase 3) so reads serve cached enrichment instead
 	// of recomputing a plugin's data-bearing fetch per read.
 	listings *listingCache
+	// tagsOverride is the global `[tags] interpreter` config override
+	// (RFC 0019 §4), wired at server startup: it resolves the interpreter
+	// whose SortKey orders each enriched listing entry's `tags` array
+	// (design G12, native tags slice 2). Empty (the test-harness default)
+	// falls back to each field's declared default, then naive.
+	tagsOverride string
 }
 
 var _ server.ResourceProvider = (*Resources)(nil)
@@ -230,7 +236,7 @@ func (r *Resources) ReadNode(
 	}
 
 	// The child listing (children and both).
-	listingJSON, err := renderNodeViews(lister, nodes, prov)
+	listingJSON, err := r.renderNodeViews(lister, nodes, prov)
 	if err != nil {
 		return nil, err
 	}
@@ -284,15 +290,20 @@ type listingView struct {
 // renderNodeViews marshals a container's children as the enriched listing
 // JSON — the nodes plus, when the plugin is a FacetVersioner, the version
 // block whose token corresponds to exactly these nodes (prov comes from the
-// same cache entry that produced them).
-func renderNodeViews(
+// same cache entry that produced them). Each entry carries its presented
+// `tags` array (design G12) when the plugin declares a tag dimension.
+func (r *Resources) renderNodeViews(
 	lister cutting_garden_plugins.RootLister,
 	nodes []cutting_garden_plugins.Node,
 	prov listingProvenance,
 ) (string, error) {
+	presentTags, err := command_components.NodeTagsPresenter(lister, r.tagsOverride)
+	if err != nil {
+		return "", err
+	}
 	views := make([]nodeView, 0, len(nodes))
 	for _, n := range nodes {
-		views = append(views, enrichedNodeView(lister, n))
+		views = append(views, enrichedNodeView(lister, n, presentTags))
 	}
 	body, err := json.MarshalIndent(listingView{
 		Nodes:          views,
@@ -610,6 +621,13 @@ type nodeView struct {
 	// projection (Node.Fields) — e.g. a caldav object's summary/due/
 	// status/dtstart.
 	Fields map[string]any `json:"fields,omitempty"`
+	// Tags is the node's presented tag set (design G12, native tags
+	// slice 2): the type's designated FieldTag field's values, ordered by
+	// the resolved interpreter's SortKey. Omitted for an untagged node, a
+	// type with no tag declaration, and the bare opt-out. The membership
+	// also rides facets under the tag dimension's key (`facets.categories`,
+	// retiring with #251); this is the first-class spelling.
+	Tags []string `json:"tags,omitempty"`
 }
 
 // projectNodeFacets renders a node's facet membership map for the listing
@@ -649,13 +667,22 @@ func bareNodeView(
 }
 
 // enrichedNodeView projects n onto the enriched (default) shape: bareNodeView
-// plus whatever Facets/Fields the node carries.
+// plus whatever Facets/Fields the node carries, plus its presented tag set.
+// presentTags is the per-listing tag presenter
+// (command_components.NodeTagsPresenter, resolved ONCE per render, not per
+// node); nil means the plugin declares no tag dimension and the view omits
+// the key.
 func enrichedNodeView(
-	lister cutting_garden_plugins.RootLister, n cutting_garden_plugins.Node,
+	lister cutting_garden_plugins.RootLister,
+	n cutting_garden_plugins.Node,
+	presentTags func(cutting_garden_plugins.Node) []string,
 ) nodeView {
 	v := bareNodeView(lister, n)
 	v.Facets = projectNodeFacets(n.Facets)
 	v.Fields = n.Fields
+	if presentTags != nil {
+		v.Tags = presentTags(n)
+	}
 	return v
 }
 

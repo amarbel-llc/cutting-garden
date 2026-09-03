@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/url"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -219,7 +220,7 @@ func (listingFieldsPlugin) DescribeListingFields() []cutting_garden_plugins.Node
 // discoverability surface for #160's listing-projection declaration,
 // symmetric with TestCollectSchema_IncludesFacetDimensions.
 func TestCollectSchema_IncludesListingFields(t *testing.T) {
-	schemes := collectSchema([]cutting_garden_plugins.Plugin{listingFieldsPlugin{}})
+	schemes := collectSchema([]cutting_garden_plugins.Plugin{listingFieldsPlugin{}}, "")
 
 	var fields []listingFieldSchema
 	for _, s := range schemes {
@@ -467,4 +468,139 @@ func TestAcceptance_OneFilteredListNodesCallReturnsMatchingEnrichedNodes(t *test
 	if got := n.Facets["status"]; len(got) != 1 || got[0] != "CONFIRMED" {
 		t.Errorf("matching node facets = %+v, want status=[CONFIRMED]", n.Facets)
 	}
+}
+
+// tagCodecFake presents a stored []string categories field verbatim as the
+// designated FieldTag set — the unified-declaration fixture for the G12 tag
+// enrichment tests.
+type tagCodecFake struct{}
+
+func (tagCodecFake) Fields() []cutting_garden_plugins.UnifiedField {
+	return []cutting_garden_plugins.UnifiedField{{
+		Key: "categories", Kind: cutting_garden_plugins.FieldTag,
+		Groupable: true, MultiValued: true, Interpreter: "naive",
+	}}
+}
+
+func (tagCodecFake) Format(stored map[string]any) (map[string][]string, error) {
+	if ts, ok := stored["categories"].([]string); ok && len(ts) > 0 {
+		return map[string][]string{"categories": ts}, nil
+	}
+	return map[string][]string{}, nil
+}
+
+func (tagCodecFake) Parse(map[string][]string, map[string]any) (map[string]any, error) {
+	return nil, nil
+}
+
+// taggedEnrichedLister is an EnrichedLister + UnifiedDescriber whose objects
+// carry a stored categories tag list — the caldav-shaped fixture for the
+// enriched listing's `tags` array (design G12, native tags slice 2).
+type taggedEnrichedLister struct{ fakeLister }
+
+func (taggedEnrichedLister) DescribeUnified() []cutting_garden_plugins.NodeTypeUnifiedFields {
+	return []cutting_garden_plugins.NodeTypeUnifiedFields{{
+		Tag:    "test-object-v1",
+		Codecs: []cutting_garden_plugins.Codec{tagCodecFake{}},
+	}}
+}
+
+func (taggedEnrichedLister) ListEnriched(
+	_ context.Context, node *url.URL, _ cutting_garden_plugins.FacetFilter,
+) ([]cutting_garden_plugins.Node, bool, error) {
+	return []cutting_garden_plugins.Node{
+		{
+			URI:    &url.URL{Scheme: "faketest", Host: node.Host, Path: "/work/tagged.ics"},
+			Name:   "tagged.ics",
+			Type:   "test-object-v1",
+			Fields: map[string]any{"summary": "Tagged", "categories": []string{"work", "errand"}},
+		},
+		{
+			URI:    &url.URL{Scheme: "faketest", Host: node.Host, Path: "/work/plain.ics"},
+			Name:   "plain.ics",
+			Type:   "test-object-v1",
+			Fields: map[string]any{"summary": "Untagged"},
+		},
+	}, true, nil
+}
+
+// TestReadResource_EnrichedEntriesCarryTags pins the G12 listing half at the
+// resources/read layer (shared verbatim by list_nodes' default path): an
+// enriched entry whose type declares a tag set carries a top-level `tags`
+// array — the designated FieldTag field's values in the resolved
+// interpreter's SortKey order — while an untagged sibling omits the key.
+func TestReadResource_EnrichedEntriesCarryTags(t *testing.T) {
+	r := newFakeResources(t, "faketest://h/")
+	r.resolve = func(uriStr string) (*url.URL, cutting_garden_plugins.RootLister, error) {
+		u, _, err := fakeResolve(uriStr)
+		if err != nil {
+			return nil, nil, err
+		}
+		return u, taggedEnrichedLister{}, nil
+	}
+
+	got, err := r.ReadResource(context.Background(), "faketest://h/work")
+	if err != nil {
+		t.Fatalf("ReadResource: %v", err)
+	}
+	views := listingNodes(t, got.Contents[0].Text)
+	if len(views) != 2 {
+		t.Fatalf("got %d children, want 2: %+v", len(views), views)
+	}
+	byName := map[string]nodeView{}
+	for _, v := range views {
+		byName[v.Name] = v
+	}
+	if got, want := byName["tagged.ics"].Tags, []string{"errand", "work"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("tagged.ics tags = %v, want SortKey order %v", got, want)
+	}
+	if got := byName["plain.ics"].Tags; len(got) != 0 {
+		t.Errorf("untagged plain.ics tags = %v, want omitted", got)
+	}
+}
+
+// TestCollectSchema_ReportsTagSet pins the G12 discovery half: a type
+// declaring a FieldTag dimension carries tag_set {field, interpreter} in
+// describe_node_types — the field default resolving when no [tags] override
+// is set, the override winning when it is — and a non-declaring plugin's
+// types carry no tag_set at all.
+func TestCollectSchema_ReportsTagSet(t *testing.T) {
+	schemes := collectSchema(
+		[]cutting_garden_plugins.Plugin{taggedEnrichedLister{}}, "",
+	)
+	ts := findTypeSchema(t, schemes, "test-object-v1")
+	if ts.TagSet == nil ||
+		ts.TagSet.Field != "categories" || ts.TagSet.Interpreter != "naive" {
+		t.Errorf("tag_set = %+v, want {categories naive}", ts.TagSet)
+	}
+
+	// The [tags] override wins over the declared field default.
+	schemes = collectSchema(
+		[]cutting_garden_plugins.Plugin{taggedEnrichedLister{}}, "dodder-hyphen",
+	)
+	if ts := findTypeSchema(t, schemes, "test-object-v1"); ts.TagSet == nil ||
+		ts.TagSet.Interpreter != "dodder-hyphen" {
+		t.Errorf("tag_set(override) = %+v, want interpreter dodder-hyphen", ts.TagSet)
+	}
+
+	// A plugin without the unified declaration reports no tag_set.
+	schemes = collectSchema([]cutting_garden_plugins.Plugin{fakeLister{}}, "")
+	if ts := findTypeSchema(t, schemes, "test-object-v1"); ts.TagSet != nil {
+		t.Errorf("undeclared tag_set = %+v, want absent", ts.TagSet)
+	}
+}
+
+// findTypeSchema returns the typeSchema for tag across the collected schemes,
+// failing the test when absent.
+func findTypeSchema(t *testing.T, schemes []schemeSchema, tag string) typeSchema {
+	t.Helper()
+	for _, s := range schemes {
+		for _, ts := range s.Types {
+			if ts.Tag == tag {
+				return ts
+			}
+		}
+	}
+	t.Fatalf("type %q not in collected schema: %+v", tag, schemes)
+	return typeSchema{}
 }

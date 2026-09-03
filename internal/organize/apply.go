@@ -144,9 +144,11 @@ func (cmd *Organize) applyDocument(
 	// dimension whenever one is declared — the same resolution the membership
 	// path performs for a tag-grouped dim.
 	var tagInterp cgp.TagInterpreter
-	tagDim := firstTagDim(lister)
+	tagDim := command_components.FirstTagDim(lister)
 	if tagDim != "" {
-		if tagInterp, _, err = interpreterForDimension(lister, tagDim, cfg.Tags.Interpreter); err != nil {
+		if tagInterp, _, err = command_components.InterpreterForDimension(
+			lister, tagDim, cfg.Tags.Interpreter,
+		); err != nil {
 			return false, err
 		}
 	}
@@ -332,14 +334,15 @@ func (cmd *Organize) applyDocument(
 }
 
 // resolveTagDimension fills a TAG grouping's Dim from the plugin's designated
-// tag dimension (the first FieldTag field it declares, describedTagDims) — the
+// tag dimension (the first FieldTag field it declares,
+// command_components.FirstTagDim) — the
 // `_group-by` spelling (`(tags)`, `project`) never names it (design G10). A
 // field grouping passes through untouched; a tag grouping against a plugin
 // declaring no tag dimension is a loud bad request. The returned spec always
 // has a non-empty Dim when grouped — no caller ever reads Facets[""].
 func resolveTagDimension(spec groupSpec, lister cgp.RootLister) (groupSpec, error) {
 	if spec.Kind != groupKindField {
-		tagDim := firstTagDim(lister)
+		tagDim := command_components.FirstTagDim(lister)
 		if tagDim == "" {
 			return groupSpec{}, errors.BadRequestf(
 				"organize --apply: `- %s = %s` is a tag grouping, but the plugin declares "+
@@ -580,52 +583,6 @@ func (cmd *Organize) executePlan(
 	return nil
 }
 
-// interpreterForDimension resolves the tag interpreter a grouped dimension uses
-// (RFC 0019 §4 selection): the field's plugin-declared default (its
-// UnifiedField.Interpreter, read via the optional UnifiedDescriber capability)
-// with the global [tags] config override layered on top — the override wins,
-// per A2's ResolveTagInterpreter. A lister that declares no unified fields, no
-// field for the dimension, or an empty declared interpreter defaults the
-// field-default to "naive" (the RFC 0019 §4 default and the Slice-1/2 behavior),
-// NOT an error; only an unknown interpreter NAME (from either source) is the
-// loud bad request ResolveTagInterpreter raises. The resolved name is returned
-// alongside the interpreter so a caller can name it in an error (e.g. a naive
-// interpreter rejecting a namespace grouping).
-func interpreterForDimension(
-	lister cgp.RootLister, dim string, tagsOverride string,
-) (cgp.TagInterpreter, string, error) {
-	fieldDefault := "naive"
-	if describer, ok := lister.(cgp.UnifiedDescriber); ok {
-		if declared := declaredTagInterpreter(describer, dim); declared != "" {
-			fieldDefault = declared
-		}
-	}
-	name := tagsOverride
-	if name == "" {
-		name = fieldDefault
-	}
-	interp, err := command_components.ResolveTagInterpreter(fieldDefault, tagsOverride)
-	return interp, name, err
-}
-
-// declaredTagInterpreter returns the interpreter a plugin declares for the
-// dimension's unified field — the first field whose Key == dim across the node
-// types' codecs — or "" when no such field is declared (or it names no
-// interpreter). A tag field's interpreter is a property of the dimension, so the
-// first Key match is authoritative; caller defaults "" to naive.
-func declaredTagInterpreter(describer cgp.UnifiedDescriber, dim string) string {
-	for _, nt := range describer.DescribeUnified() {
-		for _, codec := range nt.Codecs {
-			for _, field := range codec.Fields() {
-				if field.Key == dim {
-					return field.Interpreter
-				}
-			}
-		}
-	}
-	return ""
-}
-
 // applyMemberships is the multi-valued-dimension apply path (RFC 0019, #231 slice
 // 2): it three-way-merges each object's tag SET via planMemberships and writes the
 // resulting full-set replacements through the plugin's MembershipWriteApplier,
@@ -658,7 +615,7 @@ func (cmd *Organize) applyMemberships(
 	// dodder-hyphen) — and the segment prefix (`project`) for a namespace rollup, in
 	// which planMemberships reconstructs the add tag and enumerates the remove
 	// subtree (RFC 0019 §6.2, #231 slice 3 B4).
-	interp, _, err := interpreterForDimension(lister, dim, tagsOverride)
+	interp, _, err := command_components.InterpreterForDimension(lister, dim, tagsOverride)
 	if err != nil {
 		return false, err
 	}

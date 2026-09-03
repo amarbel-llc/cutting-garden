@@ -605,7 +605,7 @@ func (fakeSchemaPlugin) DescribeBodies() []cutting_garden_plugins.NodeTypeBody {
 }
 
 func TestCollectSchema_TypesAndWritability(t *testing.T) {
-	schemas := collectSchema([]cutting_garden_plugins.Plugin{fakeSchemaPlugin{}})
+	schemas := collectSchema([]cutting_garden_plugins.Plugin{fakeSchemaPlugin{}}, "")
 	if len(schemas) != 1 {
 		t.Fatalf("got %d schemes, want 1: %+v", len(schemas), schemas)
 	}
@@ -898,7 +898,7 @@ func TestPaginate_LimitZeroIsUnbounded(t *testing.T) {
 func TestCollectSchema_SkipsNonRootListers(t *testing.T) {
 	// A plugin with no traversal (here a bare NodeMutator) contributes no
 	// type catalogue.
-	if s := collectSchema([]cutting_garden_plugins.Plugin{&fakeMutator{}}); len(s) != 0 {
+	if s := collectSchema([]cutting_garden_plugins.Plugin{&fakeMutator{}}, ""); len(s) != 0 {
 		t.Errorf("got %d schemes from a non-RootLister, want 0", len(s))
 	}
 }

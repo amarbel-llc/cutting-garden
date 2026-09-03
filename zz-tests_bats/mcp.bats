@@ -95,6 +95,20 @@ function mcp_describe_node_types { # @test
     any(.[].types[]; .tag=="caldav-calendar-v1"
         and .container==true and .writable==false)' >/dev/null ||
     fail "describe missing a non-writable caldav-calendar-v1 container: $text"
+
+  # The VTODO type's designated tag set (design G12, native tags slice 2):
+  # the categories FieldTag dimension whose values ride each enriched
+  # entry's `tags`, with its resolved interpreter (the declared naive
+  # default — this lane sets no [tags] override). The calendar container
+  # declares no tag set and carries no tag_set key.
+  echo "$text" | jq -e '
+    any(.[].types[]; .tag=="caldav-object-vtodo-v1"
+        and .tag_set.field=="categories"
+        and .tag_set.interpreter=="naive")' >/dev/null ||
+    fail "describe missing the vtodo tag_set {categories, naive}: $text"
+  echo "$text" | jq -e '
+    any(.[].types[]; .tag=="caldav-calendar-v1" and (has("tag_set") | not))' >/dev/null ||
+    fail "the calendar container grew a tag_set: $text"
 }
 
 # list_nodes (browse) surfaces the configured ROOTS as the entry points — a
@@ -186,6 +200,32 @@ function mcp_list_nodes_filter_retrieves_matching_enriched_nodes { # @test
     fail "filtered nodes missing inline component facet: $text"
   echo "$text" | jq -e 'any(.nodes[]; .fields.summary=="Buy milk")' >/dev/null ||
     fail "filtered nodes missing inline summary field: $text"
+}
+
+# An enriched list_nodes entry carries the node's presented tag set (design
+# G12, native tags slice 2): seed a VTODO with CATEGORIES through create_node,
+# then list its calendar — the entry gains a top-level `tags` array with the
+# categories in the resolved interpreter's SortKey order (naive here → lexical:
+# errand before work despite the stored work,errand), while the untagged
+# task1.ics sibling omits the key entirely.
+function mcp_list_nodes_enriched_entry_carries_tags { # @test
+  local obj
+  obj="$(caldav_object_uri tagged.ics)"
+  mcp_call create_node "$(jq -nc --arg u "$obj" \
+    --arg b "$(printf 'BEGIN:VCALENDAR\nVERSION:2.0\nBEGIN:VTODO\nUID:tagged\nSUMMARY:Tagged task\nCATEGORIES:work,errand\nEND:VTODO\nEND:VCALENDAR\n')" \
+    '{uri:$u,body:$b,type:"caldav-object-vtodo-v1"}')"
+  assert_equal "$(mcp_is_error "$output" 3)" "false"
+
+  mcp_drive "$CALDAV_SOURCE" "$(tools_call 3 list_nodes \
+    "$(jq -nc --arg u "${CALDAV_SOURCE%/dav/}/dav/cal/" '{uri:$u}')")"
+  local text
+  text="$(mcp_result_text "$output" 3)"
+  echo "$text" | jq -e '
+    first(.nodes[] | select(.name=="tagged.ics")) | .tags == ["errand","work"]' >/dev/null ||
+    fail "tagged.ics entry missing SortKey-ordered tags: $text"
+  echo "$text" | jq -e '
+    first(.nodes[] | select(.name=="task1.ics")) | has("tags") | not' >/dev/null ||
+    fail "untagged task1.ics grew a tags key: $text"
 }
 
 # list_nodes' query param (cutting-garden#211's MCP host): a trellis query

@@ -279,6 +279,26 @@ EOF
 	EOM
 }
 
+# `list -format json` node views carry the presented tag set (design G12,
+# native tags slice 2 T4): each NDJSON line gains a top-level `tags` array —
+# the designated categories FieldTag values, ordered by the resolved
+# interpreter's SortKey (dodder-hyphen here via setup()'s [tags] override;
+# single-tag fixtures, so the order is trivially stable). The fetch prefers
+# the caldav enriched listing (a plain ListRoots leaves the stored CATEGORIES
+# out of Node.Fields, cutting-garden#212). Whole-output NDJSON per the lane's
+# G16 conventions; the text table stays URI/NAME/TYPE (espalier/mesa are
+# slice 4).
+function organize_ns_list_json_carries_tags { # @test
+  run_cg list -format json "$CAL"
+  assert_success
+  assert_output - <<-'EOM'
+	{"uri":"caldav:http://127.0.0.1:43103/dav/ns/nsA.ics","name":"nsA.ics","type":"caldav-object-vtodo-v1","tags":["project-client-acme"]}
+	{"uri":"caldav:http://127.0.0.1:43103/dav/ns/nsB.ics","name":"nsB.ics","type":"caldav-object-vtodo-v1","tags":["project-client-baxter"]}
+	{"uri":"caldav:http://127.0.0.1:43103/dav/ns/nsC.ics","name":"nsC.ics","type":"caldav-object-vtodo-v1","tags":["project-cutting_garden"]}
+	{"uri":"caldav:http://127.0.0.1:43103/dav/ns/nsD.ics","name":"nsD.ics","type":"caldav-object-vtodo-v1","tags":["other"]}
+	EOM
+}
+
 # Namespace grouping under the naive interpreter is rejected with a clear,
 # actionable error (requireNamespaceInterpreter): naive declares no namespaces, so
 # `--group-by project` fails up front naming the dimension, the interpreter, and

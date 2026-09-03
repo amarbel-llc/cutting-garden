@@ -1,7 +1,11 @@
 ---
 status: proposed
 date: 2026-06-20
-revised: 2026-07-21 (§12.2: a node need not correspond 1:1 to a stored
+revised: 2026-09-03 (§12.5: an enriched entry additionally carries a
+    top-level `tags` array — the presented designated-FieldTag set,
+    interpreter-SortKey-ordered — for a type declaring one; native tags
+    slice 2, design G12)
+  2026-07-21 (§12.2: a node need not correspond 1:1 to a stored
     object — caldav's VEVENT recurrence expansion is the first concrete
     case, `ListRoots`/`ListEnriched` level-scoping still holds because
     BOTH apply the same windowed expansion — resolves #176/#177)
@@ -820,6 +824,17 @@ carries each node's `Facets` (projected as `{dimension: [value keys]}`) and
 listings' pre-§12 shape (`{uri, name, type, container, mimeType}` only) —
 the settled resolution of cutting-garden#160's measured gap, not an
 oversight.
+
+For a node type declaring a designated tag dimension (a `FieldTag` unified
+field, FDR 0025 / RFC 0019), an enriched entry additionally carries a
+top-level `tags` array (native tags slice 2, design G12): the presented tag
+set, ordered by the SortKey of the interpreter resolved for that dimension
+(field default + the `[tags]` config override). The key is OMITTED for an
+untagged node and for a type with no tag declaration. The same membership
+still rides `Facets` under the tag dimension's key (the derived categorical
+dimension) until bare-tag filter terms land (cutting-garden#251);
+`describe_node_types` names the dimension and its resolved interpreter as
+the type's `tag_set: {field, interpreter}`.
 
 A consumer that wants the cheap, pre-§12 shape opts out via `list_nodes`'
 `bare` parameter: `true` skips enrichment entirely (no `EnrichedLister`
