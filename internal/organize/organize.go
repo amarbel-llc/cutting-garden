@@ -171,7 +171,7 @@ func (cmd *Organize) Run(req command.Request) {
 	// Config load precedes both paths: the plugin (and any wire plugin) is
 	// resolvable through the scheme registry only after registration, exactly
 	// as in `list` (RFC 0013 §Host integration).
-	if err := command_components.LoadAndInjectConfig(os.Stderr); err != nil {
+	if _, err := command_components.LoadAndInjectConfig(os.Stderr); err != nil {
 		errors.ContextCancelWithError(ctx, err)
 		return
 	}

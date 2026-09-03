@@ -297,13 +297,9 @@ func (r *Resources) renderNodeViews(
 	nodes []cutting_garden_plugins.Node,
 	prov listingProvenance,
 ) (string, error) {
-	presentTags, err := command_components.NodeTagsPresenter(lister, r.tagsOverride)
+	views, err := enrichedNodeViews(lister, nodes, r.tagsOverride)
 	if err != nil {
 		return "", err
-	}
-	views := make([]nodeView, 0, len(nodes))
-	for _, n := range nodes {
-		views = append(views, enrichedNodeView(lister, n, presentTags))
 	}
 	body, err := json.MarshalIndent(listingView{
 		Nodes:          views,
@@ -664,6 +660,42 @@ func bareNodeView(
 		Container: nt.Container,
 		MimeType:  nt.BodyMimeType(),
 	}
+}
+
+// bareNodeViews projects nodes onto the bare (opt-out) shape — the
+// list_nodes `bare=true` counterpart of enrichedNodeViews, resolving no
+// tag presenter at all (nothing enriched means nothing to present).
+func bareNodeViews(
+	lister cutting_garden_plugins.RootLister,
+	nodes []cutting_garden_plugins.Node,
+) []nodeView {
+	views := make([]nodeView, 0, len(nodes))
+	for _, n := range nodes {
+		views = append(views, bareNodeView(lister, n))
+	}
+	return views
+}
+
+// enrichedNodeViews resolves the per-listing tag presenter ONCE
+// (command_components.NodeTagsPresenter) and projects every node onto the
+// enriched view shape — the shared body of the container read
+// (renderNodeViews, which also serves list_nodes' default path) and the
+// list_nodes filtered/query paths. The only error is an unknown [tags]
+// interpreter name; callers wrap it with their own path context.
+func enrichedNodeViews(
+	lister cutting_garden_plugins.RootLister,
+	nodes []cutting_garden_plugins.Node,
+	tagsOverride string,
+) ([]nodeView, error) {
+	presentTags, err := command_components.NodeTagsPresenter(lister, tagsOverride)
+	if err != nil {
+		return nil, err
+	}
+	views := make([]nodeView, 0, len(nodes))
+	for _, n := range nodes {
+		views = append(views, enrichedNodeView(lister, n, presentTags))
+	}
+	return views, nil
 }
 
 // enrichedNodeView projects n onto the enriched (default) shape: bareNodeView

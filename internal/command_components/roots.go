@@ -27,21 +27,29 @@ import (
 // cutting-garden#146 slice 2). Scheme registration is not idempotent,
 // so that step runs once per process — one process loads one config —
 // and its result is replayed on later calls.
-func LoadAndInjectConfig(warnw io.Writer) error {
+//
+// The loaded config is returned so a caller that also needs a config
+// VALUE (e.g. the mcp server's [tags] override) reuses this load instead
+// of a second LoadDefaultConfig read; a caller wanting only the injection
+// discards it.
+func LoadAndInjectConfig(warnw io.Writer) (*cgconfig.ConfigV0, error) {
 	path, err := DefaultConfigPath()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	raw, cfg, err := loadConfigWithRaw(path, warnw)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	cgconfig.Inject(cfg)
 
 	pluginRegisterOnce.Do(func() {
 		pluginRegisterErr = registerPlugins(cfg, raw)
 	})
-	return pluginRegisterErr
+	if pluginRegisterErr != nil {
+		return nil, pluginRegisterErr
+	}
+	return cfg, nil
 }
 
 var (

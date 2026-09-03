@@ -1073,20 +1073,11 @@ func (t *Tools) listNodesURI(
 	if err != nil {
 		return "", errors.Wrapf(err, "list %s (filtered)", uri)
 	}
-	// The per-listing tag presenter (design G12): resolved once, filling
-	// each enriched entry's `tags`; nil when the plugin declares no tag
-	// dimension. The bare opt-out strips tags with the rest.
-	presentTags, err := command_components.NodeTagsPresenter(lister, t.tagsOverride)
-	if err != nil {
+	var views []nodeView
+	if bare {
+		views = bareNodeViews(lister, nodes)
+	} else if views, err = enrichedNodeViews(lister, nodes, t.tagsOverride); err != nil {
 		return "", errors.Wrapf(err, "list %s (filtered)", uri)
-	}
-	views := make([]nodeView, 0, len(nodes))
-	for _, n := range nodes {
-		if bare {
-			views = append(views, bareNodeView(lister, n))
-		} else {
-			views = append(views, enrichedNodeView(lister, n, presentTags))
-		}
 	}
 	views = paginate(views, offset, limit)
 	body, err := json.MarshalIndent(filteredListingView{
@@ -1129,30 +1120,19 @@ func (t *Tools) listNodesQuery(
 		return "", err
 	}
 	// The [tags] interpreter override resolves a bare-tag term's dimension
-	// interpreter (RFC 0019 §4, #231 slice 3); a missing config yields "".
-	cfg, cerr := command_components.LoadDefaultConfig(nil)
-	if cerr != nil {
-		return "", errors.Wrapf(cerr, "list_nodes %s (query)", uri)
-	}
+	// interpreter (RFC 0019 §4, #231 slice 3) — t.tagsOverride carries it
+	// from the startup config load (no per-call re-read).
 	nodes, err := trellis_eval.Evaluate(
-		ctx, q, u, lister, trellis_eval.WithTagsInterpreter(cfg.Tags.Interpreter),
+		ctx, q, u, lister, trellis_eval.WithTagsInterpreter(t.tagsOverride),
 	)
 	if err != nil {
 		return "", errors.Wrapf(err, "list_nodes %s (query)", uri)
 	}
-	// The per-listing tag presenter (design G12), exactly as the filtered
-	// path resolves it.
-	presentTags, perr := command_components.NodeTagsPresenter(lister, t.tagsOverride)
-	if perr != nil {
-		return "", errors.Wrapf(perr, "list_nodes %s (query)", uri)
-	}
-	views := make([]nodeView, 0, len(nodes))
-	for _, n := range nodes {
-		if bare {
-			views = append(views, bareNodeView(lister, n))
-		} else {
-			views = append(views, enrichedNodeView(lister, n, presentTags))
-		}
+	var views []nodeView
+	if bare {
+		views = bareNodeViews(lister, nodes)
+	} else if views, err = enrichedNodeViews(lister, nodes, t.tagsOverride); err != nil {
+		return "", errors.Wrapf(err, "list_nodes %s (query)", uri)
 	}
 	views = paginate(views, offset, limit)
 	body, err := json.MarshalIndent(queriedListingView{

@@ -321,6 +321,29 @@ func TestRun_JSONCarriesTags(t *testing.T) {
 	if strings.Contains(buf.String(), "errand") {
 		t.Errorf("text table leaked tags:\n%s", buf.String())
 	}
+
+	// --query composes with -format json: the evaluator's matched nodes
+	// present the same SortKey-ordered tags as the plain listing.
+	buf.Reset()
+	if code := driveList(
+		t, &buf,
+		"-format", "json", "-query", "!test-object-v1", "taggedlist://h/",
+	); code != 0 {
+		t.Fatalf("query exit = %d, want 0; output:\n%s", code, buf.String())
+	}
+	queried := map[string]nodeView{}
+	dec = json.NewDecoder(&buf)
+	for dec.More() {
+		var n nodeView
+		if err := dec.Decode(&n); err != nil {
+			t.Fatalf("decode queried NDJSON: %v", err)
+		}
+		queried[n.Name] = n
+	}
+	if got := queried["tagged"].Tags; len(got) != 2 ||
+		got[0] != "errand" || got[1] != "work" {
+		t.Errorf("queried tagged node tags = %v, want [errand work]", got)
+	}
 }
 
 func TestRun_UnknownSchemeIsTrouble(t *testing.T) {

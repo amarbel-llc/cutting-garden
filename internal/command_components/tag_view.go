@@ -73,6 +73,9 @@ func InterpreterForDimension(
 	lister cutting_garden_plugins.RootLister, dim string, tagsOverride string,
 ) (cutting_garden_plugins.TagInterpreter, string, error) {
 	name := resolveTagInterpreterName(declaredOrNaive(lister, dim), tagsOverride)
+	// name is already fully resolved (default + override), so the empty
+	// override here is a pass-through — ResolveTagInterpreter only performs
+	// the registry lookup.
 	interp, err := ResolveTagInterpreter(name, "")
 	return interp, name, err
 }
@@ -82,11 +85,20 @@ func InterpreterForDimension(
 // "naive" when the capability, the field, or the declaration is absent.
 func declaredOrNaive(lister cutting_garden_plugins.RootLister, dim string) string {
 	if describer, ok := lister.(cutting_garden_plugins.UnifiedDescriber); ok {
-		if declared := declaredTagInterpreter(describer, dim); declared != "" {
-			return declared
-		}
+		return orNaive(declaredTagInterpreter(describer, dim))
 	}
 	return "naive"
+}
+
+// orNaive applies the RFC 0019 §4 default: an empty (absent) interpreter
+// declaration means "naive". The one home of that rule, shared by the
+// per-dimension resolution (declaredOrNaive) and the per-type discovery
+// (TypeTagSets).
+func orNaive(name string) string {
+	if name == "" {
+		return "naive"
+	}
+	return name
 }
 
 // declaredTagInterpreter returns the interpreter a plugin declares for the
@@ -147,6 +159,12 @@ func UnifiedTagPresenter(
 // array. A (nil, nil) return means the plugin declares no tag dimension —
 // the views omit the key entirely. The only error is an unknown interpreter
 // NAME (a config typo), surfaced loudly rather than degrading to unsorted.
+//
+// This assumes ONE plugin-wide designated tag dimension (FirstTagDim; the
+// G6 v1 invariant — every type's tag field is the same dimension), so one
+// resolved interpreter orders every node's tags. Per-type interpreters
+// would need a per-type presenter map, cf. TypeTagSets' per-type
+// resolution.
 func NodeTagsPresenter(
 	lister cutting_garden_plugins.RootLister, tagsOverride string,
 ) (func(cutting_garden_plugins.Node) []string, error) {
@@ -175,6 +193,12 @@ type TagSet struct {
 // TypeTagSets maps each node type tag that declares a FieldTag dimension to
 // its resolved TagSet. Empty (never nil-vs-empty significant) for a plugin
 // without the UnifiedDescriber capability or with no tag declarations.
+//
+// Unlike NodeTagsPresenter (one plugin-wide interpreter via FirstTagDim,
+// the G6 v1 invariant), this resolves PER TYPE — for today's plugins the
+// two agree because every type declares the same tag dimension; a future
+// multi-tag-dim plugin would need NodeTagsPresenter to grow a matching
+// per-type presenter map before the views could diverge honestly.
 func TypeTagSets(
 	lister cutting_garden_plugins.RootLister, tagsOverride string,
 ) map[string]TagSet {
@@ -195,13 +219,11 @@ func TypeTagSets(
 					// validation; discovery keeps the first-declared set.
 					continue
 				}
-				declared := f.Interpreter
-				if declared == "" {
-					declared = "naive"
-				}
 				out[set.Tag] = TagSet{
-					Field:       f.Key,
-					Interpreter: resolveTagInterpreterName(declared, tagsOverride),
+					Field: f.Key,
+					Interpreter: resolveTagInterpreterName(
+						orNaive(f.Interpreter), tagsOverride,
+					),
 				}
 			}
 		}

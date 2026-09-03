@@ -102,7 +102,7 @@ func TestFilterExcludedSchemes_EmptySetIsNoOp(t *testing.T) {
 // AggregateRoots's full result is filtered post-hoc, silently dropping the
 // excluded root while leaving every other plugin's roots untouched.
 func TestMCPRoots_AggregationDropsExcludedScheme(t *testing.T) {
-	roots, _, err := mcpRoots(context.Background(), nil, []string{"mcpxa"})
+	roots, _, _, err := mcpRoots(context.Background(), nil, []string{"mcpxa"})
 	if err != nil {
 		t.Fatalf("mcpRoots: %v", err)
 	}

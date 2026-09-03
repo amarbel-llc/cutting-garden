@@ -135,7 +135,7 @@ func (cmd *List) Run(req command.Request) {
 	// this, `list fj://…` in a fresh process failed with "unknown
 	// scheme" while the no-arg listing worked — found by fj-cg's live
 	// conformance run (#140).
-	if err := command_components.LoadAndInjectConfig(os.Stderr); err != nil {
+	if _, err := command_components.LoadAndInjectConfig(os.Stderr); err != nil {
 		errors.ContextCancelWithError(ctx, err)
 		return
 	}
@@ -243,12 +243,22 @@ func (cmd *List) runList(ctx errors.Context, uriStr string) error {
 		return err
 	}
 
-	// The [tags] interpreter override serves two consumers here: a --query's
+	// The [tags] interpreter override serves two consumers here — a --query's
 	// bare-tag term resolution (RFC 0019 §4, #231 slice 3) and the JSON node
-	// view's tag presenter below; a missing config yields "".
-	cfg, cerr := command_components.LoadDefaultConfig(nil)
-	if cerr != nil {
-		return errors.Wrapf(cerr, "list %s", uriStr)
+	// view's tag presenter below — so the config VALUE is re-read only on
+	// those paths: a plain-text `list <uri>` stays load-free past Run's
+	// LoadAndInjectConfig, and a config problem cannot fail it. A missing
+	// config yields "".
+	var tagsOverride string
+	if cmd.Format == formatJSON || cmd.Query != "" {
+		cfg, cerr := command_components.LoadDefaultConfig(nil)
+		if cerr != nil {
+			if cmd.Query != "" {
+				return errors.Wrapf(cerr, "list %s --query", uriStr)
+			}
+			return errors.Wrapf(cerr, "list %s", uriStr)
+		}
+		tagsOverride = cfg.Tags.Interpreter
 	}
 
 	// The JSON node view carries the presented tag set (design G12, native
@@ -260,7 +270,7 @@ func (cmd *List) runList(ctx errors.Context, uriStr string) error {
 	var presentTags func(cutting_garden_plugins.Node) []string
 	if cmd.Format == formatJSON {
 		if presentTags, err = command_components.NodeTagsPresenter(
-			lister, cfg.Tags.Interpreter,
+			lister, tagsOverride,
 		); err != nil {
 			return errors.Wrapf(err, "list %s", uriStr)
 		}
@@ -273,7 +283,7 @@ func (cmd *List) runList(ctx errors.Context, uriStr string) error {
 			return errors.BadRequestf("list %s --query: %s", uriStr, perr)
 		}
 		if nodes, err = trellis_eval.Evaluate(
-			ctx, q, u, lister, trellis_eval.WithTagsInterpreter(cfg.Tags.Interpreter),
+			ctx, q, u, lister, trellis_eval.WithTagsInterpreter(tagsOverride),
 		); err != nil {
 			return errors.Wrapf(err, "list %s --query", uriStr)
 		}

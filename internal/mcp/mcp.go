@@ -62,6 +62,7 @@ import (
 
 	"code.linenisgreat.com/cutting-garden/internal/buildinfo"
 	"code.linenisgreat.com/cutting-garden/internal/capture_plugin"
+	"code.linenisgreat.com/cutting-garden/internal/cgconfig"
 	"code.linenisgreat.com/cutting-garden/internal/command"
 	"code.linenisgreat.com/cutting-garden/internal/command_components"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
@@ -200,7 +201,7 @@ func (*MCP) GetDescription() command.Description {
 func (cmd *MCP) Run(req command.Request) {
 	ctx := req.Context.(errors.Context)
 
-	roots, rootLabels, err := mcpRoots(ctx, req.PopArgs(), cmd.ExcludeSchemes)
+	roots, rootLabels, cfg, err := mcpRoots(ctx, req.PopArgs(), cmd.ExcludeSchemes)
 	if err != nil {
 		// A bad endpoint or malformed config is a usage error: the client
 		// misconfigured the server. Fail fast (EX_USAGE) before the
@@ -213,14 +214,9 @@ func (cmd *MCP) Run(req command.Request) {
 	tools := newTools(roots, provider)
 	// The global `[tags] interpreter` override (RFC 0019 §4) resolves the
 	// SortKey ordering of every enriched entry's `tags` array and each
-	// type's describe_node_types tag_set (design G12). Re-read from the
+	// type's describe_node_types tag_set (design G12) — read from the
 	// config mcpRoots already loaded and validated; "" (no config) falls
 	// back to each field's declared default.
-	cfg, err := command_components.LoadDefaultConfig(nil)
-	if err != nil {
-		errors.ContextCancelWithError(ctx, err)
-		return
-	}
 	provider.tagsOverride = cfg.Tags.Interpreter
 	tools.tagsOverride = cfg.Tags.Interpreter
 	// cutting-garden#120: a friendlier root label (e.g. a calendar-scoped
@@ -295,28 +291,31 @@ func (cmd *MCP) Run(req command.Request) {
 // most likely to test by hand.
 func mcpRoots(
 	ctx context.Context, args []string, excludeSchemes []string,
-) (roots []*url.URL, labels map[string]string, err error) {
+) (roots []*url.URL, labels map[string]string, cfg *cgconfig.ConfigV0, err error) {
 	// Config load precedes BOTH branches: explicit root args still
 	// resolve through the scheme registry, and a [[traversal_plugins]]
 	// wire plugin exists there only after registration (RFC 0013 §Host
-	// integration; the same gap `list <uri>` had, found via #140).
-	if err := command_components.LoadAndInjectConfig(os.Stderr); err != nil {
-		return nil, nil, err
+	// integration; the same gap `list <uri>` had, found via #140). The
+	// loaded config is returned so Run reads its [tags] override without
+	// a second load.
+	cfg, err = command_components.LoadAndInjectConfig(os.Stderr)
+	if err != nil {
+		return nil, nil, nil, err
 	}
 	excluded := excludedSchemeSet(excludeSchemes)
 	if len(args) > 0 {
-		roots, err := resolveRoots(args, excluded)
-		if err != nil {
-			return nil, nil, errors.BadRequestf("%s", err.Error())
+		roots, rerr := resolveRoots(args, excluded)
+		if rerr != nil {
+			return nil, nil, nil, errors.BadRequestf("%s", rerr.Error())
 		}
-		return roots, nil, nil
+		return roots, nil, cfg, nil
 	}
 	roots, err = command_components.AggregateRoots(ctx, os.Stderr)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	labels = command_components.AggregateRootLabels(ctx, os.Stderr)
-	return filterExcludedSchemes(roots, excluded), labels, nil
+	return filterExcludedSchemes(roots, excluded), labels, cfg, nil
 }
 
 // resolveRoots parses each endpoint argument and verifies its scheme has
