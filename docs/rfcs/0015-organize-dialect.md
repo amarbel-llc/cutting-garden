@@ -275,15 +275,16 @@ document — the exact bytes presented to and edited by the end-user:
   what a box ELIDES:
 
   - `placement` (and every FIELD grouping): a box tag some placement of the
-    object derives is placement-expressed — never an atom delta (the bucket
-    diff owns placement changes); the remaining NON-placement tags diff
+    object derives (the Via tags) is placement-expressed — never an atom
+    delta (the bucket diff owns placement changes); the remaining NON-placement tags diff
     against the pinned base's. A base box tag now expressed by an EDITED
     placement is a box→placement migration, not a removal. A stale atom
     whose placement was removed RE-ASSERTS its tag (the box is authoritative
     for non-placement tags): dropping a bucket line while a sibling box
     still carries the tag as an atom folds to no change, never a silent
     removal.
-  - `none`: NOTHING is placement-derived — the box is authoritative, and an
+  - `none`: NOTHING is placement-derived — the box is authoritative
+    (authoritative about elision, not the union), and an
     object's membership is the union of its box tags and its current
     placements' reconstructed bucket tags (the bucket value under `(tags)`;
     the namespace-reconstructed leaf, or the bare namespace for a G10a root,

@@ -144,9 +144,8 @@ func (cmd *Organize) applyDocument(
 	// dimension whenever one is declared — the same resolution the membership
 	// path performs for a tag-grouped dim.
 	var tagInterp cgp.TagInterpreter
-	tagDim := ""
-	if tagDims := describedTagDims(lister); len(tagDims) > 0 {
-		tagDim = tagDims[0]
+	tagDim := firstTagDim(lister)
+	if tagDim != "" {
 		if tagInterp, _, err = interpreterForDimension(lister, tagDim, cfg.Tags.Interpreter); err != nil {
 			return false, err
 		}
@@ -340,14 +339,14 @@ func (cmd *Organize) applyDocument(
 // has a non-empty Dim when grouped — no caller ever reads Facets[""].
 func resolveTagDimension(spec groupSpec, lister cgp.RootLister) (groupSpec, error) {
 	if spec.Kind != groupKindField {
-		tagDims := describedTagDims(lister)
-		if len(tagDims) == 0 {
+		tagDim := firstTagDim(lister)
+		if tagDim == "" {
 			return groupSpec{}, errors.BadRequestf(
 				"organize --apply: `- %s = %s` is a tag grouping, but the plugin declares "+
 					"no tag dimension", fieldGroupBy, spec,
 			)
 		}
-		spec.Dim = tagDims[0]
+		spec.Dim = tagDim
 	}
 	if spec.grouped() && spec.Dim == "" {
 		return groupSpec{}, errors.BadRequestf(
@@ -805,10 +804,14 @@ func (cmd *Organize) executeMemberships(
 	edits []membershipEdit,
 ) error {
 	for _, e := range edits {
-		// writes[e.Node.Type] needs no presence check: groupedIsMultiValued has
-		// already established every present live type maps to a many write for this
-		// dimension before applyMemberships runs, so unlike executePlan's per-move
-		// re-check there is no mixed/unmapped type to guard against here.
+		// writes[e.Node.Type] needs no presence check — each caller establishes
+		// it before dispatching here: applyMemberships runs only after
+		// groupedIsMultiValued proved every present live type maps to a many
+		// write for the grouped dimension, and the facet branch's tag-atom path
+		// (applyDocument) prechecks each atomEdit's type against the tag
+		// dimension's FacetWriteMany mapping before the diff. So unlike
+		// executePlan's per-move re-check there is no mixed/unmapped type to
+		// guard against here.
 		body, err := applier.BuildMembershipWritePatch(ctx, e.Node, writes[e.Node.Type], e.NewTags)
 		if err != nil {
 			return errors.Wrapf(err, "organize: build membership patch for %s", e.URI)

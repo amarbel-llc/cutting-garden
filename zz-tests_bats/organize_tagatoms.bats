@@ -620,9 +620,9 @@ EOF
 }
 
 # seed_two_tag_lit1 gives lit1 the `_ inbox,urgent` pair, and
-# generate_strip_doc writes the resulting `(tags)` strip document (base
-# @…pprpzrjd…, the same document organize_tagatoms_strip_placement_keeps_sibling
-# pins in full) to $1 — the shared fixture of the G7 conflict vectors.
+# generate_strip_doc writes the resulting `(tags)` strip document (the same
+# document organize_tagatoms_strip_placement_keeps_sibling pins in full) to
+# $1 — the shared fixture of the G7 conflict vectors.
 seed_two_tag_lit1() {
   put_ics "${CALDAV_SOURCE#caldav:}lit/lit1.ics" <<-'EOF'
 	BEGIN:VCALENDAR

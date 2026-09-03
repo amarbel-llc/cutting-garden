@@ -158,14 +158,8 @@ func buildChanges(
 	trailer map[string]string,
 	anchor string,
 ) []objectChange {
-	baseLines := make(map[string]objectLine)
-	for _, ln := range base.objectLines() {
-		baseLines[ln.ID] = ln
-	}
-	editedLines := make(map[string]objectLine)
-	for _, ln := range edited.objectLines() {
-		editedLines[ln.ID] = ln
-	}
+	baseLines := objectLinesByID(base)
+	editedLines := objectLinesByID(edited)
 
 	changes := make(map[string]*objectChange)
 	get := func(id string) *objectChange {
@@ -279,14 +273,24 @@ func spelledSortedTags(in []string) string {
 	return strings.Join(spelled, ",")
 }
 
-// descByID indexes a document's object-line description trailers by box id —
-// the membership preview's trailer source. Last line wins, exactly like
-// buildChanges' editedLines fold (a multi-appearance object's lines normally
-// share one trailer anyway).
-func descByID(doc document) map[string]string {
-	out := map[string]string{}
+// objectLinesByID indexes a document's object lines by box id — the ONE
+// last-line-wins rule the diff renderers share (a multi-appearance object's
+// lines normally agree on everything but their bucket anyway).
+func objectLinesByID(doc document) map[string]objectLine {
+	out := map[string]objectLine{}
 	for _, ln := range doc.objectLines() {
-		out[ln.ID] = ln.Desc
+		out[ln.ID] = ln
+	}
+	return out
+}
+
+// descByID projects objectLinesByID to the description trailers — the
+// membership preview's trailer source.
+func descByID(doc document) map[string]string {
+	lines := objectLinesByID(doc)
+	out := make(map[string]string, len(lines))
+	for id, ln := range lines {
+		out[id] = ln.Desc
 	}
 	return out
 }

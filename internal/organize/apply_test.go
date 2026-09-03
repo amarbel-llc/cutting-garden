@@ -286,6 +286,70 @@ func TestPlanTagAtomDeltas_StripNoneMoveIsNotAnEdit(t *testing.T) {
 	}
 }
 
+// TestPlanTagAtomDeltas_StaleAtomReAsserts pins the RE-ASSERT rule (RFC 0015:
+// "folds to no change, never a silent removal"): deleting ONE bucket line of a
+// two-bucket object while the surviving sibling box still carries the tag as
+// an atom yields adds=[tag] — the stale atom re-asserts it, the box being
+// authoritative for non-placement tags — and the composed planMemberships
+// fold (bucket remove + atom re-add) nets ZERO edits against the live set.
+func TestPlanTagAtomDeltas_StaleAtomReAsserts(t *testing.T) {
+	anchor := "caldav://h/c/"
+	base := tagAtomWholeDoc()
+	base.Anchor = anchor
+	// t1's `# work` line deleted; the surviving `# errand` appearance's box
+	// still carries `work` (exactly as the base rendered it).
+	edited := document{
+		GroupBy:   "(tags)",
+		Anchor:    anchor,
+		Ungrouped: []objectLine{{ID: "t2.ics"}},
+		Sections: []section{
+			{Depth: 1, Term: "errand", Lines: []objectLine{{ID: "t1.ics", Tags: []string{"work"}}}},
+			{Depth: 1, Term: "work"},
+		},
+	}
+	deltas, err := planTagAtomDeltas(edited, base, tagWholeSpec, false, nil)
+	if err != nil {
+		t.Fatalf("planTagAtomDeltas: %v", err)
+	}
+	if d := deltas["t1.ics"]; !reflect.DeepEqual(d.adds, []string{"work"}) || len(d.removes) != 0 {
+		t.Errorf("stale-atom delta = %+v, want adds [work] (the atom re-asserts)", d)
+	}
+
+	// Composition: the bucket diff removes `work`, the atom delta re-adds it —
+	// net no-op against live, so NOTHING is written (never a silent removal,
+	// never a spurious write).
+	live := []cgp.Node{categoriesNode(t, anchor+"t1.ics", "errand", "work")}
+	edits, err := planMemberships(edited, base, live, anchor, mustInterp(t), "categories", "", deltas, true)
+	if err != nil {
+		t.Fatalf("planMemberships: %v", err)
+	}
+	if len(edits) != 0 {
+		t.Errorf("edits = %+v, want none (bucket remove + atom re-add fold to live)", edits)
+	}
+}
+
+// TestPlanTagAtomDeltas_UngroupedAppearanceSpellsInConflict pins the conflict
+// message's `ungrouped` pseudo-bucket spelling (spellBucket): a non-placement
+// tag typed into an object's UNGROUPED box only, while it also appears under a
+// bucket, names `ungrouped` as one of the disagreeing appearances.
+func TestPlanTagAtomDeltas_UngroupedAppearanceSpellsInConflict(t *testing.T) {
+	base := document{
+		GroupBy:   "(tags)",
+		Ungrouped: []objectLine{{ID: "t1.ics"}},
+		Sections:  []section{{Depth: 1, Term: "work", Lines: []objectLine{{ID: "t1.ics"}}}},
+	}
+	edited := document{
+		GroupBy:   "(tags)",
+		Ungrouped: []objectLine{{ID: "t1.ics", Tags: []string{"foo"}}},
+		Sections:  []section{{Depth: 1, Term: "work", Lines: []objectLine{{ID: "t1.ics"}}}},
+	}
+	_, err := planTagAtomDeltas(edited, base, tagWholeSpec, false, nil)
+	want := "object t1.ics: appearances disagree on tag foo: present under ungrouped, absent under work"
+	if err == nil || !strings.Contains(err.Error(), want) {
+		t.Errorf("conflict %v should mention %q", err, want)
+	}
+}
+
 // TestPlanTagAtomDeltas_MigratedToPlacementIsNotARemove pins the box→placement
 // migration: an ungrouped line whose box carried `work` moved UNDER `# work`
 // with the (now redundant) atom cleaned from the box is not an atom remove —
@@ -311,7 +375,7 @@ func TestPlanTagAtomDeltas_MigratedToPlacementIsNotARemove(t *testing.T) {
 // adds), a live-equal result is skipped, and an id absent from live is out of
 // scope.
 func TestPlanAtomMembershipEdits_FoldsExact(t *testing.T) {
-	interp, _ := cgp.LookupTagInterpreter("naive")
+	interp := mustInterp(t)
 	live := []cgp.Node{
 		categoriesNode(t, "caldav://h/c/t1.ics", "work"),
 		categoriesNode(t, "caldav://h/c/t2.ics", "urgent"),

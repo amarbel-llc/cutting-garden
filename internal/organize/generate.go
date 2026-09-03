@@ -304,6 +304,18 @@ func describedTagDims(lister cgp.RootLister) []string {
 	return keys
 }
 
+// firstTagDim returns the plugin's DESIGNATED tag dimension — the first
+// declared FieldTag key (describedTagDims order) — or "" when none is
+// declared. The single home of the "first declared wins" rule, shared by
+// resolveTagDimension (a tag grouping's dimension) and the apply-time
+// tag-atom wiring (the dimension box atoms write to).
+func firstTagDim(lister cgp.RootLister) string {
+	if dims := describedTagDims(lister); len(dims) > 0 {
+		return dims[0]
+	}
+	return ""
+}
+
 // boxAtomPresenter returns the plugin's box-atom presentation function when it
 // implements FieldPresenter (cutting-garden#47), or nil — in which case object
 // boxes carry no detail atoms (today's behavior for a plugin without the

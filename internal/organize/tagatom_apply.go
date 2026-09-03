@@ -91,10 +91,14 @@ func planTagAtomDeltas(
 		// N-way reconcile: every appearance must carry the same set of tags
 		// placement does not explain.
 		if len(apps) > 1 {
+			var placed []string
+			if stripNone {
+				placed = editedLed.placementTags(id, spec)
+			}
 			comparable := make([][]string, len(apps))
 			for i, app := range apps {
 				if stripNone {
-					comparable[i] = subtractTags(app.tags, editedLed.placementTags(id, spec))
+					comparable[i] = subtractTags(app.tags, placed)
 				} else {
 					comparable[i] = editedLed.appearanceExtras(id, app, spec, interp)
 				}
@@ -105,6 +109,13 @@ func planTagAtomDeltas(
 		if stripNone {
 			editedEff := editedLed.effectiveTags(id, spec)
 			baseEff := baseLed.effectiveTags(id, spec)
+			// A move out of a namespace bucket can put a PHANTOM in removes:
+			// the base placement's reconstructed leaf (`project-client`), which
+			// the live set may never have carried (it holds the deeper
+			// `project-client-acme`). Harmless by construction — the fold is
+			// the interpreter's EXACT Complete, and removing an absent tag is
+			// a no-op — and exactly the "old tag stays" reading: only a box
+			// edit removes a live tag under `none`.
 			d := tagDelta{
 				adds:    subtractTags(editedEff, baseEff),
 				removes: subtractTags(baseEff, editedEff),
@@ -123,7 +134,7 @@ func planTagAtomDeltas(
 				continue
 			}
 			for _, t := range subtractTags(baseTags, app.tags) {
-				if b := bucketOfTag(t, spec, interp); b != "" && editedLed.hasPlacement(id, b) {
+				if b, ok := editedLed.placementDerives(id, t, spec, interp); ok {
 					conflicts = append(conflicts, fmt.Sprintf(
 						"object %s: placement says %s (still under %s), box says not-%s (removed under %s)",
 						id, trellis.QuoteIfNeeded(t), spellBucket(b),
@@ -140,7 +151,7 @@ func planTagAtomDeltas(
 		// the tag migrated from box to placement (the bucket diff adds it), as
 		// in an ungrouped→bucket move whose editor also cleaned the box.
 		for _, t := range subtractTags(baseExtra, editedExtra) {
-			if b := bucketOfTag(t, spec, interp); b != "" && editedLed.hasPlacement(id, b) {
+			if _, ok := editedLed.placementDerives(id, t, spec, interp); ok {
 				continue
 			}
 			d.removes = append(d.removes, t)
@@ -320,11 +331,27 @@ func (led docTagLedger) hasPlacement(id, bucket string) bool {
 	return ok
 }
 
+// placementDerives reports whether some placement of the object in THIS
+// document derives tag — the tag's realized bucket (bucketOfTag) is among the
+// object's placements — returning that bucket. The one predicate behind
+// "placement-expressed": appearanceExtras' subtraction, the rule-1
+// placement-vs-box conflict, and the box→placement migration guard all read
+// it.
+func (led docTagLedger) placementDerives(
+	id, tag string, spec groupSpec, interp cgp.TagInterpreter,
+) (bucket string, ok bool) {
+	b := bucketOfTag(tag, spec, interp)
+	if b == "" || !led.hasPlacement(id, b) {
+		return "", false
+	}
+	return b, true
+}
+
 // extraTags returns the object's NON-PLACEMENT box tags across every
 // appearance: each box tag (first-appearance order, deduplicated) whose
-// realized bucket (bucketOfTag, derived once per tag) is not among the
-// object's placements in this document. For a field-grouped document no tag
-// realizes a bucket, so this is the full box tag set.
+// realized bucket is not among the object's placements in this document. For
+// a field-grouped document no tag realizes a bucket, so this is the full box
+// tag set.
 func (led docTagLedger) extraTags(
 	id string, spec groupSpec, interp cgp.TagInterpreter,
 ) []string {
@@ -342,7 +369,7 @@ func (led docTagLedger) appearanceExtras(
 ) []string {
 	var out []string
 	for _, t := range app.tags {
-		if b := bucketOfTag(t, spec, interp); b != "" && led.hasPlacement(id, b) {
+		if _, ok := led.placementDerives(id, t, spec, interp); ok {
 			continue
 		}
 		out = append(out, t)
