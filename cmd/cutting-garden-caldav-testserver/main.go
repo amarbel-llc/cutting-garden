@@ -82,8 +82,9 @@ func main() {
 	// a two-tag task (work + errand) and field3 a one-tag task (work), so grouping
 	// by `categories` files field2 under BOTH `## =work` and `## =errand` while
 	// field3 lands under `## =work` only, and the categories histogram reads
-	// work=2, errand=1. CATEGORIES is groupable-only — never a box atom — so the
-	// priority and field-edit lanes' exact box assertions are undisturbed. OPT-IN
+	// work=2, errand=1. (Since native tags slice 2 CATEGORIES also renders as
+	// key-free box tag atoms, so the priority/field-edit lanes' whole-document
+	// vectors pin `errand work` in field2's box.) OPT-IN
 	// via CG_TEST_CALDAV_FIELDS so it never inflates the home-capture object count
 	// caldav.bats asserts against — only the priority, field-edit, and categories
 	// lanes, which set the env var, see this calendar.

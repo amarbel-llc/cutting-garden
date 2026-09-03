@@ -76,7 +76,17 @@ The write-side — `ListingField.Writable` as the sole writability source with
 move-vs-edit conflict, fail-hard-on-immutable, and the deferred `%`-prefixed
 read-only atom grammar — is tracked as **cutting-garden#218**.
 
-## Shape
+**2026-09-03 — key-free tag atoms (implemented, native tags slice 2).** The
+box interior described above now ALSO carries the object's tag set — the
+type's designated `FieldTag` field — as key-free bare/quoted atoms after the
+id/`!type` (`- [nsA.ics work date_due=2026-09-01] Acme retainer`),
+SortKey-ordered, governed by the `_tag-atoms` / `_tag-strip` envelope levers,
+and a box tag edit applies as a MEMBERSHIP write through the tag
+interpreter's exact `Complete` (RFC 0015 §Tag atoms is normative; FDR 0025
+carries the delivery notes). The 2026-08-09 note's framing has been
+overtaken twice since: field writes landed with FDR 0025's unified-codec
+migration (the #218 write-side), and status/priority DO render as atoms
+except under their own grouping heading (#229's renderer-placement rule).
 
 - `cg organize <uri> [--query <trellis>] [--group-by <facet-key>]
   [--mode …] [--allow-deletion]` — anchor and query per trellis's

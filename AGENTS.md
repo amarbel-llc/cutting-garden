@@ -98,7 +98,16 @@ with an operator, and a `(…)` parenthetical is a meta qualifier (reserved
 in query position). `internal/trellis/literal.go` (`ParseLiteral` /
 `WriteLiteral`) owns organize's box interiors and heading terms; heading
 depth is normalized (shallowest level = root) and an empty heading resets
-context. The organize bats lanes are whole-document vectors
+context. Since native tags slice 2, an object's tag set renders as
+key-free bare/quoted atoms in its box (SortKey-ordered), governed by the
+`_tag-atoms = leading|trailing|none` and `_tag-strip = placement|none`
+envelope levers (`[organize]` config defaults; a tag-grouped document
+strips each appearance's placement Via tag by default), and box tag
+edits apply as MEMBERSHIP writes through the tag interpreter's exact
+`Complete` (RFC 0019 §6.2); `list -format json` and the mcp enriched
+listing carry a top-level `tags` array, and `describe_node_types`
+reports each tag-declaring type's `tag_set`. The organize bats lanes are
+whole-document vectors
 (`assert_output - <<-EOM`) against the caldav testserver on a pinned port
 per lane (`CG_TEST_CALDAV_PORT`; the port table lives in
 `zz-tests_bats/lib/caldav.bash`), indexed G# → test in

@@ -412,13 +412,15 @@ empty headings are resets: `##` pops to the parent, `#` to ungrouped (organize_h
 ========================================
 ---
 % generated: `cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:43109/dav/fields/`
-- _base = @blake2b256-plcta2x228afcs5fau26gutlcxtrczqsn4svhe00j2muen7cmlrqec7yyq
+- _base = @blake2b256-8g87687xrqlx7vnx4lf5nva0hjapm4raa07sp4ygpsta7qkqtksqrcup3h
 - _anchor = caldav:http://127.0.0.1:43109/dav/fields/
 - _query = _terminal=no
 - _type = !caldav-object-vtodo-v1
 - _group-by = (tags)
 ! organize-base-v1
 ---
+
+- [field5.ics] Waiting idea
 
 # work
 
@@ -465,6 +467,11 @@ empty headings are resets: `##` pops to the parent, `#` to ungrouped (organize_h
     (type_line
       (type_name)))
   (blank_line)
+  (blank_line)
+  (object_line
+    (box
+      (box_object_id))
+    (description))
   (blank_line)
   (heading
     (heading_marker)
@@ -597,6 +604,7 @@ heading depth is structure-only: a `##`-rooted document (organize_headings.bats 
 ========================================
 - [field1.ics location=Bank status=needs-action priority=0_must] Pay rent
 - [field4.ics] Someday idea
+- [field5.ics] Waiting idea
 
 ## errand
 
@@ -622,6 +630,10 @@ heading depth is structure-only: a `##`-rooted document (organize_headings.bats 
       (box_field
         (box_ident)
         (box_bare_value)))
+    (description))
+  (object_line
+    (box
+      (box_object_id))
     (description))
   (object_line
     (box
@@ -701,20 +713,31 @@ type heading (spelling 1) and a typed, blob-bearing box (legacy ladder, kept par
     (description)))
 
 ========================================
-tag-atom levers: `- _tag-atoms` / `- _tag-strip` envelope fields; leading and trailing tag positions (organize_tagatoms.bats)
+`- _tag-atoms = trailing` envelope lever: quoted tag atoms, a trailing tag after a `k=v` atom (organize_tagatoms.bats organize_tagatoms_trailing_config)
 ========================================
 ---
 % generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:43110/dav/lit/`
-- _base = @blake2b256-acdef9
+- _base = @blake2b256-mvdp7h560r84657w9mfld8vuwfk28x8up4mvxp0pkwhdekurp23q90l3vu
 - _anchor = caldav:http://127.0.0.1:43110/dav/lit/
+- _query = _terminal=no
 - _type = !caldav-object-vtodo-v1
 - _tag-atoms = trailing
-- _tag-strip = none
 ! organize-base-v1
 ---
 
-- [lit1.ics "_ inbox" urgent] Triage inbox
+- [lit1.ics "_ inbox"] Triage inbox
 - [lit2.ics location=Bank chore] Read book
+- [lit3.ics "planning, misc"] Plan, then do
+
+# status=
+
+## =needs-action
+
+## =in-process
+
+## =completed
+
+## =cancelled
 
 ----------------------------------------
 
@@ -733,11 +756,11 @@ tag-atom levers: `- _tag-atoms` / `- _tag-strip` envelope fields; leading and tr
       (field_bare))
     (field_line
       (field_key)
-      (field_type
-        (field_type_name)))
+      (field_bare))
     (field_line
       (field_key)
-      (field_bare))
+      (field_type
+        (field_type_name)))
     (field_line
       (field_key)
       (field_bare))
@@ -749,9 +772,7 @@ tag-atom levers: `- _tag-atoms` / `- _tag-strip` envelope fields; leading and tr
     (box
       (box_object_id)
       (box_tag
-        (box_tag_quoted))
-      (box_tag
-        (box_ident)))
+        (box_tag_quoted)))
     (description))
   (object_line
     (box
@@ -759,6 +780,138 @@ tag-atom levers: `- _tag-atoms` / `- _tag-strip` envelope fields; leading and tr
       (box_field
         (box_ident)
         (box_bare_value))
+      (box_tag
+        (box_ident)))
+    (description))
+  (object_line
+    (box
+      (box_object_id)
+      (box_tag
+        (box_tag_quoted)))
+    (description))
+  (blank_line)
+  (heading
+    (heading_marker)
+    (heading_dimension
+      (dim_name)))
+  (blank_line)
+  (heading
+    (heading_marker)
+    (heading_value
+      (heading_value_text)))
+  (blank_line)
+  (heading
+    (heading_marker)
+    (heading_value
+      (heading_value_text)))
+  (blank_line)
+  (heading
+    (heading_marker)
+    (heading_value
+      (heading_value_text)))
+  (blank_line)
+  (heading
+    (heading_marker)
+    (heading_value
+      (heading_value_text))))
+
+========================================
+`- _tag-strip = none` envelope lever: placement (Via) tags kept in every box (organize_tagatoms.bats organize_tagatoms_strip_none)
+========================================
+---
+% generated: `cg organize -group-by project -query "_terminal=no" caldav:http://127.0.0.1:43110/dav/ns/`
+- _base = @blake2b256-kxd2w9tpk6qfpaafplceqf4kv7ggevz3zhn6zvprsxrgaja05n7qf7z4t9
+- _anchor = caldav:http://127.0.0.1:43110/dav/ns/
+- _query = _terminal=no
+- _type = !caldav-object-vtodo-v1
+- _group-by = project
+- _tag-strip = none
+! organize-base-v1
+---
+
+- [nsD.ics other] Loose idea
+
+# project
+
+## -client
+
+- [nsA.ics project-client-acme] Acme retainer
+- [nsB.ics project-client-baxter] Baxter audit
+
+## -cutting_garden
+
+- [nsC.ics project-cutting_garden] CG roadmap
+
+----------------------------------------
+
+(source_file
+  (metadata
+    (comment_line
+      (comment_text))
+    (field_line
+      (field_key)
+      (field_blob
+        (markl_id
+          (markl_format)
+          (markl_data))))
+    (field_line
+      (field_key)
+      (field_bare))
+    (field_line
+      (field_key)
+      (field_bare))
+    (field_line
+      (field_key)
+      (field_type
+        (field_type_name)))
+    (group_by_line
+      (field_key)
+      (tag_name))
+    (field_line
+      (field_key)
+      (field_bare))
+    (type_line
+      (type_name)))
+  (blank_line)
+  (blank_line)
+  (object_line
+    (box
+      (box_object_id)
+      (box_tag
+        (box_ident)))
+    (description))
+  (blank_line)
+  (heading
+    (heading_marker)
+    (heading_tag
+      (tag_name)))
+  (blank_line)
+  (heading
+    (heading_marker)
+    (heading_tag
+      (tag_name)))
+  (blank_line)
+  (object_line
+    (box
+      (box_object_id)
+      (box_tag
+        (box_ident)))
+    (description))
+  (object_line
+    (box
+      (box_object_id)
+      (box_tag
+        (box_ident)))
+    (description))
+  (blank_line)
+  (heading
+    (heading_marker)
+    (heading_tag
+      (tag_name)))
+  (blank_line)
+  (object_line
+    (box
+      (box_object_id)
       (box_tag
         (box_ident)))
     (description)))

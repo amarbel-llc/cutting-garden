@@ -139,3 +139,17 @@ task's vectors are whole-document heredocs (G16); `_base` digests verbatim.
 `cg fmt-organize` (slice 3); `list -format espalier` + mesa (slice 4);
 `--filter` (#251); multiple tag fields per type (G6 v1 = one designated set);
 wire-plugin tag sets (RFC 0013 follow-up); #232 tag-object editing.
+
+## Status (2026-09-03) — COMPLETE
+
+| task | commits |
+|---|---|
+| T1 — tag set as codec presentation (G6) | `f92fd30` |
+| T2 — tag atoms + levers (G1/G2/G3) | `c5702bd` + review `5ce7e22` |
+| T3 — box tag edits are membership edits (G7) | `c77d787` + review `c397f22` |
+| T4 — JSON `tags` + `tag_set` (G12) | `b7ec06a` + review `ec8ad82` |
+| T5 — corpus audit + docs sweep + vectors index | the commit carrying this table |
+
+Followups filed this slice: #257 (surface the stale-atom re-assert fold with a
+notice instead of a silent "no changes to apply"), #258 (fold
+planMemberships/applyMemberships' parameter lists into a plan-params struct).

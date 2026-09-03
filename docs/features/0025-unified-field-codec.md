@@ -108,6 +108,15 @@ A multi-valued groupable field (tags) forces the general case. An object
 grouping dimension is carried **purely by placement** (never a box atom); the
 box shows only the *other* fields.
 
+> **2026-09-03 note (native tags slice 2).** The "never a box atom" rule above
+> — and the "heading ladder only" bullet in §Renderer placement — survives as
+> the DEFAULT `_tag-strip = placement` lever, refined per-tag: each
+> appearance's box elides exactly the tag(s) that PRODUCED its placement (the
+> membership's Via), while an object's OTHER tags now do render as key-free
+> box atoms, and `_tag-strip = none` keeps even the Via tags. Box tag edits
+> apply as membership writes. RFC 0015 §Tag atoms is normative; the merge
+> semantics below are unchanged.
+
 - **Membership = placement.** An object's grouping value(s) = the set of
   headings its line sits under. Single-valued → exactly one (a move is a
   *replace*); multi-valued → N (adding/removing a line *adds/removes* a member,
@@ -124,9 +133,11 @@ box shows only the *other* fields.
 
 Live: **T1** (categories `proj-a`,`proj-b`), **T2** (`proj-a`), **T3** (none).
 
-(The rendering below predates the hoisted tag dialect — today the spelling is
-`(tags)`, there is no `# categories=` heading, and buckets are bare `## proj-a`;
-see RFC 0015. The merge semantics it illustrates are unchanged.)
+(The rendering below predates the hoisted tag dialect and key-free tag atoms —
+today the spelling is `(tags)`, there is no `# categories=` heading, buckets are
+bare `## proj-a`, and each box additionally shows the object's NON-placement
+tags as key-free atoms (T1's line under `## proj-a` would carry `proj-b`); see
+RFC 0015. The merge semantics it illustrates are unchanged.)
 
 ```
 # categories=
@@ -354,7 +365,9 @@ last unmodeled matrix column now has a read-only, naive-interpreter (RFC 0019)
 `categories` grouping dimension on caldav (`categoriesCodec`, multi-valued,
 groupable-only — placement carries membership, so it is never a box atom, the
 #229 rule), with slices 2 (N-way merge / tag write-back) and 3 (dodder-hyphen +
-config-linkable interpreter override) pending.
+config-linkable interpreter override) pending. (Both have since landed, and the
+groupable-only/never-a-box-atom framing was superseded 2026-09-02 by native
+tags slice 2 — see the slice-2 note below.)
 
 ### Native tags slice 1 — one grammar (2026-08-30)
 
@@ -372,8 +385,9 @@ empty headings reset context; every organize bats lane is a whole-document
 vector on a pinned testserver port; the nvim corpus mirrors the vectors. The
 `categories` dimension therefore has no heading of its own any more (`(tags)`
 buckets are `# <tag>`). Key-free tag atoms in boxes (rendering the tag set from
-data, `_tag-atoms` / `_tag-strip`, atom edits → memberships) are slice 2;
-`fmt-organize` slice 3; `list -format espalier` / JSON `tags` slice 4.
+data, `_tag-atoms` / `_tag-strip`, atom edits → memberships) were slice 2 —
+since delivered, with JSON `tags` pulled forward into it (see the slice-2 note
+below); `fmt-organize` is slice 3; `list -format espalier` + mesa slice 4.
 
 ### Case-fold status — delivered (2026-09-01, native tags slice 1.5 E)
 
@@ -423,6 +437,27 @@ newline in the stored struct; organize's single-line document slots collapse
 newlines to spaces at the presentation layer only
 (`internal/organize` `collapseToSingleLine`), so an untouched multiline value
 never writes back flattened.
+
+### Native tags slice 2 — key-free tag atoms (delivered 2026-09-03)
+
+Slice 2 of the native tags design (G1/G2/G3, G6, G7, G12; plan
+`…-native-tags-slice2.md`) landed in five tasks: (T1) `categoriesCodec.Format`
+produces the tag set and the SDK's `PresentUnifiedTags` reads a type's ONE
+designated `FieldTag` field (a second is a validated declaration error);
+(T2) organize renders each box's tag set as key-free bare/quoted atoms,
+SortKey-ordered, governed by the `_tag-atoms = leading|trailing|none` and
+`_tag-strip = placement|none` data-plane envelope levers (omitted at default,
+`[organize] tag_atoms`/`tag_strip` config defaults, the document winning);
+(T3) box tag EDITS are membership writes — each atom delta folds through the
+interpreter's EXACT `Complete` (RFC 0019 §6.2) into the same full-set write a
+heading move takes, N-way reconciled across appearances with two conflict
+rules (cross-appearance disagreement; placement-vs-box) and a box-authoritative
+`_tag-strip = none` reading; (T4) `list -format json` and the mcp enriched
+listing carry a top-level `tags` array and `describe_node_types` reports
+`tag_set` (the matrix-follow-on paragraph above); (T5) the nvim corpus, this
+record, RFC 0015/0019, and the vector index were reconciled to the landed
+dialect. RFC 0015 §Tag atoms is the normative spec; the bats lane is
+`organize_tagatoms.bats`.
 
 ## More information
 

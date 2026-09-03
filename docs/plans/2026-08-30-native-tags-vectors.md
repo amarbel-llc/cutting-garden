@@ -4,7 +4,10 @@ Review checklist for `2026-08-30-native-tags-design.md`. Every row is a
 whole-document vector (`assert_output - <<-EOM`) unless marked golden. Test
 names are filled in as each slice lands; `—` = not yet written. Bats names
 are the `function <name> { # @test` form; Go names are `go test` functions.
-Slice 1 rows verified against the tree 2026-08-30 (T7).
+Slice 1 rows verified against the tree 2026-08-30 (T7). Slice 2 rows (G1, G2,
+G3, G6, G7, G12, and G8's JSON row, pulled forward) verified against the tree
+2026-09-03 (slice 2 T5) — the slice-2 set is COMPLETE; slices 3/4 rows remain
+open.
 
 The nvim tree-sitter corpus,
 `zz-nvim/grammars/organize/test/corpus/organize.txt`, is the dialect's
@@ -23,7 +26,7 @@ below (the case title names the lane), and `just test-grammar-corpus`
 | G4 | `fmt-organize` regenerates + rewrites `_base` | 3 | — |
 | G4 | `fmt-organize` refuses on unapplied edits | 3 | — |
 | G4 | `fmt-organize` never emits reset headings | 3 | — |
-| G6 | `categoriesCodec.Format` produces the tag set (Go unit) | 2 | — |
+| G6 | `categoriesCodec.Format` produces the tag set (Go unit) | 2 | Go `plugins/caldav` `TestCategoriesCodec_FormatProducesTagSet`, `TestCategoriesCodec_FormatAgreesWithFacetValues` (Format ↔ facet-value agreement); `internal/cutting_garden_plugins` `TestPresentUnifiedTags_PicksDesignatedField`, `TestPresentUnifiedTags_EmptyWhenNoFieldTag`, `TestValidateUnifiedFieldSets_OneFieldTagPerType` (one `FieldTag` per type enforced) |
 | G7 | box atom added → membership add (exact) | 2 | `organize_tagatoms.bats:organize_tagatoms_add_writes_membership`, `organize_literal.bats:organize_literal_bare_token_is_tag` (dry-run preview) (+ Go `TestPlanTagAtomDeltas_AddAndRemove`, `TestPlanMemberships_AtomDeltasFoldAfterBuckets`, `TestPlanAtomMembershipEdits_FoldsExact`) |
 | G7 | box atom removed → membership remove | 2 | `organize_tagatoms.bats:organize_tagatoms_remove_writes_membership` (+ Go `TestPlanTagAtomDeltas_AddAndRemove`, `TestPlanTagAtomDeltas_NamespaceMoveKeepsSiblings`) |
 | G7 | cross-appearance tag disagreement → conflict; placement-vs-box → conflict; `_tag-strip = none` move-is-not-an-edit | 2 | `organize_tagatoms.bats:organize_tagatoms_cross_appearance_disagreement_conflicts`, `organize_tagatoms.bats:organize_tagatoms_placement_vs_box_conflicts`, `organize_tagatoms.bats:organize_tagatoms_strip_none_move_is_not_an_edit` (+ Go `TestPlanTagAtomDeltas_CrossAppearanceDisagreement`, `TestPlanTagAtomDeltas_PlacementVsBox`, `TestPlanTagAtomDeltas_StripNoneMoveIsNotAnEdit`, `TestPlanTagAtomDeltas_MigratedToPlacementIsNotARemove`) |
@@ -45,7 +48,7 @@ below (the case title names the lane), and `just test-grammar-corpus`
 | G10 | qualifier in query position is reserved (bad request) | 1 | `trellis_qualifier.bats:list_query_rejects_qualifier_value_as_reserved`, `trellis_qualifier.bats:list_query_rejects_qualifier_term_as_reserved` |
 | G10 | depth normalization (a `##`-rooted document applies identically to the `#` form; generate never emits an empty heading) | 1 | `organize_headings.bats:organize_headings_double_hash_document_applies_identically`, `organize_headings.bats:organize_headings_generate_never_emits_reset` (+ Go `TestParseDepthNormalization_*`, `TestParseFieldDoc_DepthNormalizationPreservesLadder`, `TestGenerateNeverEmitsResetHeading`) |
 | G10 | empty-heading reset (`##` pops one; `#` → ungrouped; deeper no-op) | 1 | `organize_headings.bats:organize_headings_reset_pops_to_parent_and_ungrouped`, `organize_headings.bats:organize_headings_reset_deeper_than_current_is_noop` (+ Go `TestParseReset_*`) |
-| G11 | nvim corpus mirrors the slice-1 vectors | 1 | `zz-nvim/grammars/organize/test/corpus/organize.txt` (`just test-grammar-corpus`) |
+| G11 | nvim corpus mirrors the slice-1 + slice-2 vectors (tag atoms in every dialect; `_tag-atoms`/`_tag-strip` envelope fields; audited byte-for-byte against the bats twins 2026-09-03) | 1 / 2 | `zz-nvim/grammars/organize/test/corpus/organize.txt` (`just test-grammar-corpus`) |
 | G12 | `describe_node_types` reports `tag_set` `{field, interpreter}` | 2 | `mcp.bats:mcp_describe_node_types` (+ Go `internal/mcp` `TestCollectSchema_ReportsTagSet`, `internal/command_components` `TestTypeTagSets`) |
 | G12 | `list -format json` node views carry SortKey-ordered `tags` | 2 | `organize_ns.bats:organize_ns_list_json_carries_tags` (+ Go `internal/list` `TestRun_JSONCarriesTags`, `internal/command_components` `TestNodeTagsPresenter`) |
 | G12 | mcp enriched listing entries carry `tags` | 2 | `mcp.bats:mcp_list_nodes_enriched_entry_carries_tags` (+ Go `internal/mcp` `TestReadResource_EnrichedEntriesCarryTags`) |
