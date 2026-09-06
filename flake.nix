@@ -177,7 +177,6 @@
     # onto our own tap's crane/rust-overlay collapses the duplicate —
     # mirrors madder/flake.nix's identical fix for the same collision
     # (go-module-rename playbook Gotchas, cutting-garden hyphence rename).
-    hyphence.inputs.langlang.inputs.tap.follows = "tap";
     # piggy's own langlang pin (piggy#183's markl-id framework pulls in the
     # same langlang subtree hyphence does) is bit-identical to hyphence's —
     # doppelgang lint flagged the duplicate node; collapse onto hyphence's
@@ -204,6 +203,7 @@
     # for its own validate-grammar). It is the same rev as ours; collapse the
     # duplicate lock node onto our piggy (mirrors madder.inputs.piggy above).
     hyphence.inputs.piggy.follows = "piggy";
+    hyphence.inputs.langlang.follows = "langlang";
     purse-first.inputs.conformist.follows = "conformist";
     tommy.inputs.conformist.follows = "conformist";
     bats.inputs.conformist.follows = "conformist";
