@@ -27,10 +27,12 @@ import (
 // unapplied edits; apply or discard first" (exit 64) — so a pending edit is
 // never silently regenerated over. The clean-body predicate is
 // renderCanonical(parse(file)) == the stored base blob's bytes: the same
-// data-plane projection `_base` content-addresses, so equality is exactly
-// the state in which apply would find zero edits, while benign formatting
-// noise (extra blank lines, a deeper heading root) re-renders canonically
-// and passes. The edit-preserving v2 (carry pending edits forward,
+// data-plane projection `_base` content-addresses, so equality IMPLIES the
+// state in which apply would find zero edits — conservatively: fmt also
+// refuses provenance/`%`-comment or envelope churn apply would ignore —
+// while benign formatting noise (extra blank lines, a deeper heading root)
+// re-renders canonically and passes. The edit-preserving v2 (carry pending
+// edits forward,
 // re-place object lines) is cutting-garden#252. Like generate,
 // fmt-organize never emits empty (reset) headings.
 type FmtOrganize struct {
@@ -58,7 +60,7 @@ func (*FmtOrganize) GetDescription() command.Description {
 			"dimension heading), and `_tag-atoms`/`_tag-strip` levers — " +
 			"against the live data, then rewrites the file in place " +
 			"(atomically) with a fresh `- _base` pin, printing a one-line " +
-			"changed/unchanged summary. The document is authoritative: " +
+			"rewritten/unchanged summary. The document is authoritative: " +
 			"config defaults are not re-consulted. If the body no longer " +
 			"matches its pinned base — the document has unapplied edits — " +
 			"fmt-organize refuses (exit 64) rather than regenerate over " +
@@ -139,10 +141,16 @@ func (cmd *FmtOrganize) run(ctx errors.Context, path string) error {
 	if err != nil {
 		return err
 	}
-	if doc.Anchor == "" || !spec.grouped() {
+	if doc.Anchor == "" {
 		return errors.BadRequestf(
-			"fmt-organize: %s: document is missing its `- _anchor` field or its "+
-				"grouping (a `# <dim>=` heading or a `- _group-by` directive)", path,
+			"fmt-organize: %s: document is missing its `- _anchor` field, so "+
+				"there is no plugin URI to regenerate from", path,
+		)
+	}
+	if !spec.grouped() {
+		return errors.BadRequestf(
+			"fmt-organize: %s: document has no grouping — neither a `# <dim>=` "+
+				"dimension heading nor a `- _group-by` directive", path,
 		)
 	}
 	if doc.BaseDigest == "" {
@@ -154,12 +162,13 @@ func (cmd *FmtOrganize) run(ctx errors.Context, path string) error {
 
 	// The G4 v1 clean-body gate: the document's data-plane projection
 	// (renderCanonical — the exact bytes `_base` content-addresses) must equal
-	// the pinned base blob byte for byte, i.e. the state in which apply would
-	// see zero edits. Checked BEFORE any network touch, so refusing is cheap.
+	// the pinned base blob byte for byte — equality implies apply would see
+	// zero edits (the gate is stricter: comment/envelope churn refuses too).
+	// Checked BEFORE any network touch, so refusing is cheap and works offline.
 	store := command_components.MakeBlobStoreEnv(ctx).GetDefaultBlobStore()
 	baseBody, err := readBase(store, doc.BaseDigest)
 	if err != nil {
-		return err
+		return errors.Wrapf(err, "fmt-organize: %s", path)
 	}
 	if renderCanonical(doc) != baseBody {
 		return errors.BadRequestf(
@@ -221,10 +230,10 @@ func writeFileAtomic(path, content string) (err error) {
 		return errors.Wrapf(err, "fmt-organize: write %s", tmpPath)
 	}
 	if err = tmp.Close(); err != nil {
-		return errors.Wrap(err)
+		return errors.Wrapf(err, "fmt-organize: close %s", tmpPath)
 	}
 	if err = os.Chmod(tmpPath, info.Mode().Perm()); err != nil {
-		return errors.Wrap(err)
+		return errors.Wrapf(err, "fmt-organize: chmod %s", tmpPath)
 	}
 	if err = os.Rename(tmpPath, path); err != nil {
 		return errors.Wrapf(err, "fmt-organize: replace %s", path)

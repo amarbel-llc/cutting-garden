@@ -110,7 +110,7 @@ func (cmd *Organize) applyDocument(
 	store := command_components.MakeBlobStoreEnv(ctx).GetDefaultBlobStore()
 	baseBody, err := readBase(store, edited.BaseDigest)
 	if err != nil {
-		return false, err
+		return false, errors.Wrapf(err, "organize --apply")
 	}
 	base, err := parseDocument(baseBody)
 	if err != nil {
@@ -838,16 +838,19 @@ func readApplyInput(path string) (string, error) {
 }
 
 // readBase reads the pinned base blob's bytes back from the store by digest.
+// Errors carry no command prefix — each caller (organize --apply, fmt-organize)
+// wraps with its own context, so a corrupt digest or missing blob names the
+// command that actually hit it.
 func readBase(
 	store blob_stores.BlobStoreInitialized, digest string,
 ) (text string, err error) {
 	var id markl.Id
 	if err = id.Set(digest); err != nil {
-		return "", errors.Wrapf(err, "organize --apply: parse base digest %q", digest)
+		return "", errors.Wrapf(err, "parse base digest %q", digest)
 	}
 	reader, err := store.MakeBlobReader(&id)
 	if err != nil {
-		return "", errors.Wrapf(err, "organize --apply: open base blob %s", digest)
+		return "", errors.Wrapf(err, "open base blob %s", digest)
 	}
 	defer errors.DeferredCloser(&err, reader)
 

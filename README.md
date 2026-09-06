@@ -14,7 +14,7 @@ cutting-garden knowing the difference.
 
 ## Commands
 
-The `cutting-garden` binary (aliased `cg`) has nine user-facing
+The `cutting-garden` binary (aliased `cg`) has eleven user-facing
 subcommands:
 
 - `capture [STORE_ID | URI]...` — snapshot directories or scheme-addressed
@@ -44,6 +44,15 @@ subcommands:
 - `health` — report every registered plugin and the capabilities it
   implements (capture / restore / diff / protocol / traversal). Table or
   `-format json`.
+- `organize URI GROUP_BY` — generate a grouped, editable text document
+  from a plugin's nodes (by field, tag set, or tag namespace) and apply
+  the edited document back as plugin writes — round-trip facet editing,
+  dodder's organize generalized
+  ([RFC 0015](docs/rfcs/0015-organize-dialect.md),
+  [FDR 0023](docs/features/0023-organize.md)).
+- `fmt-organize PATH` — regenerate an organize document in place from its
+  envelope against the live data, rewriting its `- _base` pin; refuses on
+  unapplied edits.
 - `version` — print the build version.
 
 Manpages and shell completions are generated from command metadata at
@@ -76,7 +85,9 @@ URI enumerate them.
   recursive-descent parser have landed; wiring into `list`/`mcp` is next.
 - **organize** ([RFC 0015](docs/rfcs/0015-organize-dialect.md)) —
   round-trip facet editing: query → grouped text document → edit →
-  write-through, generalized from dodder's organize. In design.
+  write-through, generalized from dodder's organize. Shipped as the
+  `organize` and `fmt-organize` subcommands
+  ([FDR 0023](docs/features/0023-organize.md)).
 
 ## Build
 

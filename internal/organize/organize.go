@@ -88,6 +88,7 @@ type Organize struct {
 var (
 	_ command.Cmd                       = (*Organize)(nil)
 	_ interfaces.CommandComponentWriter = (*Organize)(nil)
+	_ command.CommandWithSeeAlso        = (*Organize)(nil)
 )
 
 // New constructs an Organize with output routed to os.Stdout.
@@ -111,6 +112,13 @@ func (*Organize) GetDescription() command.Description {
 			"the re-queried live state and writes each move through the " +
 			"plugin. At a terminal apply writes by default after confirming; " +
 			"piped it is dry-run until \\-commit. See RFC 0015, FDR 0023.",
+	}
+}
+
+func (*Organize) GetSeeAlso() []string {
+	return []string{
+		"cutting-garden(1)",
+		"cutting-garden-fmt-organize(1)",
 	}
 }
 

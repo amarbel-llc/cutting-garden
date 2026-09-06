@@ -161,7 +161,10 @@ function fmt_organize_unchanged_is_byte_identical { # @test
 
 # G4 refuse: a hand-edited body (lit1's line moved under `## =needs-action`)
 # no longer matches the pinned base, so fmt refuses with exit 64 (EX_USAGE —
-# the caller's document, not trouble) and the file is NOT modified.
+# the caller's document, not trouble) and the file is NOT modified. The
+# server is stopped BEFORE the fmt call: the clean-body gate fires before any
+# network touch, so the refusal works offline (the debug recipe's fmt-refuse
+# leg is the host-run twin).
 function fmt_organize_refuses_unapplied_edits { # @test
   local doc="$BATS_TEST_TMPDIR/triage.txt" edited="$BATS_TEST_TMPDIR/edited.txt"
   local before="$BATS_TEST_TMPDIR/before.txt"
@@ -192,6 +195,10 @@ function fmt_organize_refuses_unapplied_edits { # @test
 	## =cancelled
 	EOM
   cp "$edited" "$before"
+
+  # Offline: the refusal must not need the live anchor (teardown's second
+  # stop_caldav_server is a guarded no-op).
+  stop_caldav_server
 
   run_cg fmt-organize "$edited"
   assert_failure 64
