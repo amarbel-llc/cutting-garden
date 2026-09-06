@@ -35,6 +35,7 @@
 #   43108  organize_groupby.bats
 #   43109  organize_headings.bats
 #   43110  organize_tagatoms.bats
+#   43111  fmt_organize.bats
 
 # assert_categories URL EXPECTED curl-reads the live iCalendar object at URL (the
 # plain-HTTP form, `${CALDAV_SOURCE#caldav:}<cal>/<id>.ics`) and asserts its

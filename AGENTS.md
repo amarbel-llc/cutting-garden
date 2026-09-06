@@ -6,9 +6,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A filesystem-tree capture/restore CLI atop
 [madder](https://code.linenisgreat.com/madder), grown from a port of
-dodder's command-dispatch framework. Ten user-facing subcommands —
+dodder's command-dispatch framework. Eleven user-facing subcommands —
 `capture`, `restore`, `diff`, `serve`, `failures`, `health`, `list`,
-`mcp`, `organize`, `version` — plus three hidden ones (`complete` for shell completion,
+`mcp`, `organize`, `fmt-organize` (regenerate an organize document in
+place from its envelope; refuses on unapplied edits — native tags design
+G4 v1, edit-preserving v2 is #252), `version` — plus three hidden ones
+(`complete` for shell completion,
 `__write-blob`, the RFC 0002 writer-protocol sink a config-declared
 capture plugin's v1 FALLBACK pipes node blobs into: `internal/capture_wire`
 always attempts the RFC 0008 persistent JSON-RPC/SCM_RIGHTS transport

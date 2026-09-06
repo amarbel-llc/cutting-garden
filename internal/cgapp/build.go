@@ -37,9 +37,9 @@ import (
 
 // Build returns a fully-configured cutting-garden Utility with the
 // canonical name "cutting-garden", the "cg" alias, the hidden
-// `complete` subcommand registered, and the nine user-facing
+// `complete` subcommand registered, and the eleven user-facing
 // subcommands (capture, restore, diff, serve, failures, health, list,
-// mcp, version) attached.
+// mcp, organize, fmt-organize, version) attached.
 //
 // Every cutting-garden binary main.go calls this and dispatches
 // utility.Run(os.Args).
@@ -59,6 +59,7 @@ func Build() command.Utility {
 	utility.AddCmd("list", list.New())
 	utility.AddCmd("mcp", mcp.New())
 	utility.AddCmd("organize", organize.New())
+	utility.AddCmd("fmt-organize", organize.NewFmt())
 	utility.AddCmd("version", version.New())
 	// Hidden plumbing: the RFC 0002 writer-protocol sink a config-
 	// declared capture plugin's v1 capture-batch fallback pipes node

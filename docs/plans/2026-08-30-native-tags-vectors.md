@@ -6,7 +6,8 @@ names are filled in as each slice lands; `—` = not yet written. Bats names
 are the `function <name> { # @test` form; Go names are `go test` functions.
 Slice 1 rows verified against the tree 2026-08-30 (T7). Slice 2 rows (G1, G2,
 G3, G6, G7, G12, and G8's JSON row, pulled forward) verified against the tree
-2026-09-03 (slice 2 T5) — the slice-2 set is COMPLETE; slices 3/4 rows remain
+2026-09-03 (slice 2 T5) — the slice-2 set is COMPLETE. Slice 3 (the G4
+`fmt-organize` rows) landed 2026-09-06 with the command; slice 4 rows remain
 open.
 
 The nvim tree-sitter corpus,
@@ -23,9 +24,10 @@ below (the case title names the lane), and `just test-grammar-corpus`
 | G2 | tag-grouped: strip only `Via`, siblings stay | 2 | `organize_tagatoms.bats:organize_tagatoms_strip_placement_keeps_sibling`, `organize_tagatoms.bats:organize_tagatoms_ns_root_strip` (G10a root), `organize_tagatoms.bats:organize_tagatoms_ns_strip_all_contributors` (both same-bucket tags strip), `organize_tagatoms.bats:organize_tagatoms_whole_dim_move_applies` (bucket-to-bucket move with sibling atoms untouched; + `organize_tags.bats`, `organize_ns.bats`, `organize_headings.bats` re-pointed; Go `TestTagRenderFill_*`) |
 | G2 | `_tag-strip = none` | 2 | `organize_tagatoms.bats:organize_tagatoms_strip_none` (+ Go `TestTagRenderFill_StripNoneKeepsVia`) |
 | G3 | levers omitted at default; config default; doc wins | 2 | `organize_tagatoms.bats:organize_tagatoms_leading_default` (omitted), `organize_tagatoms.bats:organize_tagatoms_trailing_config` / `organize_tagatoms_none_config` / `organize_tagatoms_strip_none` (config default + `_base`-addressed echo), `organize_tagatoms.bats:organize_tagatoms_doc_wins` (+ Go `TestEffectiveTagLevers` — the doc-wins resolution itself; full doc-wins apply semantics land with G7) |
-| G4 | `fmt-organize` regenerates + rewrites `_base` | 3 | — |
-| G4 | `fmt-organize` refuses on unapplied edits | 3 | — |
-| G4 | `fmt-organize` never emits reset headings | 3 | — |
+| G4 | `fmt-organize` regenerates + rewrites `_base` | 3 | `fmt_organize.bats:fmt_organize_regenerates_and_rewrites_base` (+ `fmt_organize.bats:fmt_organize_unchanged_is_byte_identical` — unchanged live data → byte-identical file, "unchanged" summary) |
+| G4 | `fmt-organize` refuses on unapplied edits | 3 | `fmt_organize.bats:fmt_organize_refuses_unapplied_edits` (exit 64; file byte-untouched) |
+| G4 | `fmt-organize` never emits reset headings | 3 | `fmt_organize.bats:fmt_organize_never_emits_reset_heading` (+ every whole-document AFTER assert in the lane) |
+| G4 | `fmt-organize` lever round-trip: `_tag-atoms = trailing` kept and re-rendered trailing, doc-authoritative (the `[organize]` config is REMOVED before fmt) | 3 | `fmt_organize.bats:fmt_organize_keeps_trailing_lever` |
 | G6 | `categoriesCodec.Format` produces the tag set (Go unit) | 2 | Go `plugins/caldav` `TestCategoriesCodec_FormatProducesTagSet`, `TestCategoriesCodec_FormatAgreesWithFacetValues` (Format ↔ facet-value agreement); `internal/cutting_garden_plugins` `TestPresentUnifiedTags_PicksDesignatedField`, `TestPresentUnifiedTags_EmptyWhenNoFieldTag`, `TestValidateUnifiedFieldSets_OneFieldTagPerType` (one `FieldTag` per type enforced) |
 | G7 | box atom added → membership add (exact) | 2 | `organize_tagatoms.bats:organize_tagatoms_add_writes_membership`, `organize_literal.bats:organize_literal_bare_token_is_tag` (dry-run preview) (+ Go `TestPlanTagAtomDeltas_AddAndRemove`, `TestPlanMemberships_AtomDeltasFoldAfterBuckets`, `TestPlanAtomMembershipEdits_FoldsExact`) |
 | G7 | box atom removed → membership remove | 2 | `organize_tagatoms.bats:organize_tagatoms_remove_writes_membership` (+ Go `TestPlanTagAtomDeltas_AddAndRemove`, `TestPlanTagAtomDeltas_NamespaceMoveKeepsSiblings`) |

@@ -13,11 +13,47 @@ import (
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
+// generateParams carries the resolved generate inputs shared by the FLAG path
+// (buildAndStore — organize's -group-by/-query flags plus the `[organize]`
+// config defaults) and the DOCUMENT path (fmt-organize, design G4 — an
+// existing document's envelope, which is authoritative: its `_query` is
+// already the composed effective query, its levers already resolved, and its
+// provenance preserved verbatim).
+type generateParams struct {
+	// groupBy is the grouping's G10 spelling (`(tags)`, `project`, `status=`,
+	// `date_due=(month)`).
+	groupBy string
+	// query is the selection query. Flag path: the raw -query value, composed
+	// with the default `_terminal=no` exclusion (effectiveQuery). Document
+	// path: the document's `_query` VERBATIM — it was composed at generate
+	// time and echoed precisely so re-selection never re-injects the default
+	// (the same verbatim rule apply follows).
+	query string
+	// includeTerminal is the flag path's -include-terminal; ignored when
+	// fromDocument (the doc's `_query` already reflects the choice).
+	includeTerminal bool
+	// tagAtoms / tagStrip are the document's `_tag-atoms` / `_tag-strip`
+	// fields (document path); empty on the flag path, where the `[organize]`
+	// config defaults apply instead.
+	tagAtoms, tagStrip string
+	// provenance, when non-empty, is preserved verbatim (document path);
+	// empty derives the `% generated:` note from the spelling + query + uri.
+	provenance string
+	// fromDocument marks the document path: the doc is authoritative, so the
+	// `[organize]` config defaults (levers, date_granularity) are NOT
+	// consulted — an absent envelope field means the built-in default,
+	// exactly what generate's omit-at-default rule implies — and the query is
+	// used verbatim. The `[tags]` interpreter override IS still honored, as
+	// at generate (RFC 0019 §4).
+	fromDocument bool
+}
+
 // buildAndStore selects the anchor's nodes, builds the organize document, stores
 // its canonical form as an organize-base-v1 blob, and returns the emitted form
 // (with the `- _base` pin) so a later apply three-way-merges the edits against
 // the exact pre-edit state. Shared by the stdout (runGenerate) and interactive
-// (runInteractive) paths.
+// (runInteractive) paths; fmt-organize takes the buildAndStoreFrom core
+// directly with the document's own envelope as the params.
 func (cmd *Organize) buildAndStore(ctx errors.Context, uriStr string) (string, error) {
 	if cmd.GroupBy == "" {
 		return "", errors.BadRequestf(
@@ -25,10 +61,25 @@ func (cmd *Organize) buildAndStore(ctx errors.Context, uriStr string) (string, e
 				"a field (`status=`), or a date field at a granularity (`date_due=(month)`)",
 		)
 	}
+	rendered, _, err := buildAndStoreFrom(ctx, uriStr, generateParams{
+		groupBy:         cmd.GroupBy,
+		query:           cmd.Query,
+		includeTerminal: cmd.IncludeTerminal,
+	})
+	return rendered, err
+}
 
+// buildAndStoreFrom is the generate core: it resolves the anchor's lister,
+// selects the nodes, builds + renders the document, stores the canonical base
+// blob, and returns the emitted form plus the pinned digest. The params decide
+// whether config defaults participate (flag path) or the document is
+// authoritative (fmt-organize, design G4).
+func buildAndStoreFrom(
+	ctx errors.Context, uriStr string, p generateParams,
+) (rendered, digest string, err error) {
 	u, lister, err := command_components.ResolveRootListerPlugin(uriStr)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	// Resolve the group-by spelling ONCE, at generate time (cutting-garden#230):
@@ -37,10 +88,16 @@ func (cmd *Organize) buildAndStore(ctx errors.Context, uriStr string) (string, e
 	// document's dimension heading (`# date_due=(month)`) — so a later --apply
 	// never consults config (which may change in between). The config was
 	// already loaded and warned about by Run's LoadAndInjectConfig; this re-read
-	// just fetches the value.
+	// just fetches the value. The document path drops the `[organize]` defaults
+	// (a document's persisted spelling already carries any granularity).
 	cfg, err := command_components.LoadDefaultConfig(nil)
 	if err != nil {
-		return "", err
+		return "", "", err
+	}
+	dateDefault := cfg.Organize.DateGranularity
+	configTagAtoms, configTagStrip := cfg.Organize.TagAtoms, cfg.Organize.TagStrip
+	if p.fromDocument {
+		dateDefault, configTagAtoms, configTagStrip = "", "", ""
 	}
 	// The unified declaration's cross-codec invariants (a second FieldTag field
 	// per type, G6 v1) are checked ONCE here — generate's resolution point, the
@@ -48,13 +105,13 @@ func (cmd *Organize) buildAndStore(ctx errors.Context, uriStr string) (string, e
 	// fails the command loudly instead of PresentUnifiedTags silently picking
 	// the first.
 	if err := validateUnifiedDeclaration(lister); err != nil {
-		return "", err
+		return "", "", err
 	}
 	dims := describedFacets(lister)
 	tagDims := command_components.DescribedTagDims(lister)
-	spec, err := parseGroupSpec(cmd.GroupBy, dims, tagDims, cfg.Organize.DateGranularity)
+	spec, err := parseGroupSpec(p.groupBy, dims, tagDims, dateDefault)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	// The tag interpreter serves two jobs here: a NAMESPACE grouping's rollup
@@ -70,21 +127,21 @@ func (cmd *Organize) buildAndStore(ctx errors.Context, uriStr string) (string, e
 			lister, tagDims[0], cfg.Tags.Interpreter,
 		)
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
 		if spec.Kind == groupKindTagNamespace {
-			if err := requireNamespaceInterpreter(interp, interpName, cmd.GroupBy, spec); err != nil {
-				return "", err
+			if err := requireNamespaceInterpreter(interp, interpName, p.groupBy, spec); err != nil {
+				return "", "", err
 			}
 		}
 	}
 
-	// The tag-atom levers (design G1/G2/G3): resolved from config at generate
-	// (there is no document yet, so the doc-wins half of effectiveTagAtoms is
-	// apply's) and persisted as envelope fields ONLY when non-default, so
-	// default documents stay byte-identical.
-	tagAtoms := effectiveTagAtoms("", cfg.Organize.TagAtoms)
-	tagStrip := effectiveTagStrip("", cfg.Organize.TagStrip)
+	// The tag-atom levers (design G1/G2/G3): the document's fields win, then
+	// config (flag path only), then the built-in defaults — and they are
+	// persisted as envelope fields ONLY when non-default, so default documents
+	// stay byte-identical.
+	tagAtoms := effectiveTagAtoms(p.tagAtoms, configTagAtoms)
+	tagStrip := effectiveTagStrip(p.tagStrip, configTagStrip)
 	tags := tagRender{strip: tagStrip == tagStripPlacement}
 	if tagAtoms != tagAtomsNone {
 		tags.present = command_components.UnifiedTagPresenter(lister, interp)
@@ -93,11 +150,14 @@ func (cmd *Organize) buildAndStore(ctx errors.Context, uriStr string) (string, e
 	// The effective query is the user's query with organize's default
 	// `_terminal=no` exclusion composed in (cutting-garden#214) — echoed into the
 	// document's `_query` below so the default is visible, editable, and re-applies
-	// identically.
-	effective := effectiveQuery(lister, cmd.Query, cmd.IncludeTerminal)
+	// identically. The document path takes its `_query` verbatim (it IS that echo).
+	effective := p.query
+	if !p.fromDocument {
+		effective = effectiveQuery(lister, p.query, p.includeTerminal)
+	}
 	nodes, err := selectNodes(ctx, lister, u, effective)
 	if err != nil {
-		return "", errors.Wrapf(err, "organize %s", uriStr)
+		return "", "", errors.Wrapf(err, "organize %s", uriStr)
 	}
 
 	// Anchor the document at the selected nodes' common URI prefix rather than
@@ -113,10 +173,10 @@ func (cmd *Organize) buildAndStore(ctx errors.Context, uriStr string) (string, e
 
 	doc, err := buildDocument(nodes, anchor, effective, spec, lister, interp, tags)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	if err := rejectEmptyNamespace(spec, doc, dims); err != nil {
-		return "", err
+		return "", "", err
 	}
 	// Non-default levers are DATA-plane envelope fields (design G3): they reach
 	// the canonical base below, so `_base` content-addresses them.
@@ -129,18 +189,21 @@ func (cmd *Organize) buildAndStore(ctx errors.Context, uriStr string) (string, e
 	// Provenance records what the user actually typed for the URI (e.g. the
 	// short alias), even though _anchor is the canonical common prefix — but
 	// echoes the RESOLVED group-by spelling, so a config-defaulted granularity
-	// is visible.
-	doc.Provenance = provenance(spec.String(), effective, uriStr)
+	// is visible. The document path preserves the original note verbatim.
+	doc.Provenance = p.provenance
+	if doc.Provenance == "" {
+		doc.Provenance = provenance(spec.String(), effective, uriStr)
+	}
 
 	// The canonical form (no `_base`) is the exact bytes hashed and stored; its
 	// digest becomes the pin the emitted form carries.
-	digest, err := cmd.storeBase(ctx, renderCanonical(doc))
+	digest, err = storeBase(ctx, renderCanonical(doc))
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	doc.BaseDigest = digest
 
-	return render(doc), nil
+	return render(doc), digest, nil
 }
 
 // runGenerate builds the document and prints the emitted form to stdout — the
@@ -553,7 +616,7 @@ func provenance(groupBy, query, uri string) string {
 // storeBase writes the canonical document as a content-addressed blob and returns
 // the bare digest to pin. Content addressing makes the base tamper-evident: a
 // later --apply reads back exactly what was generated.
-func (cmd *Organize) storeBase(ctx errors.Context, canonical string) (string, error) {
+func storeBase(ctx errors.Context, canonical string) (string, error) {
 	store := command_components.MakeBlobStoreEnv(ctx).GetDefaultBlobStore()
 	id, _, err := plugin_blob_io.WriteReaderBlob(ctx, store, strings.NewReader(canonical))
 	if err != nil {

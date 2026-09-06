@@ -1160,6 +1160,102 @@ debug-organize-vectors:
     stop_srv
     no_config
 
+# Regenerate the fmt_organize.bats whole-document vectors (native tags design
+# G4, slice 3): on the lane's pinned port 43111 (lib/caldav.bash), generate the
+# /dav/lit/ status document, run `fmt-organize` unchanged, drift lit2's SUMMARY
+# via curl PUT and fmt again (rewritten), then the trailing-lever lane
+# (generate under `[organize] tag_atoms = trailing`, REMOVE the config, drift,
+# fmt) — printing each summary line + rewritten file under a `###` banner so
+# the `_base` digests can be pasted into the bats heredocs. PRINTS only;
+# pasting back is manual (same caveat as debug-organize-vectors). Uses the
+# NIX-built CLI (see debug-organize-literal for why) and a throwaway XDG config
+# dir. WRITES to the throwaway in-memory server only.
+[group('debug')]
+debug-fmt-organize-vectors:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    root="{{ justfile_directory() }}"
+    cd "$root"
+    nix build .#default --out-link .tmp/cg-result
+    cg=.tmp/cg-result/bin/cutting-garden
+    nix develop --command go build -o .tmp/cutting-garden-caldav-testserver ./cmd/cutting-garden-caldav-testserver
+    nix develop --command madder init -encryption none .default 2>/dev/null || true
+    export XDG_CONFIG_HOME="$root/.tmp/fmt-organize-vectors-config"
+    rm -rf "$XDG_CONFIG_HOME"; mkdir -p "$XDG_CONFIG_HOME/cutting-garden"
+    banner() { printf '\n### %s\n' "$*"; }
+    start_srv() {
+      coproc SRV { env CG_TEST_CALDAV_PORT=43111 CG_TEST_CALDAV_LIT=1 .tmp/cutting-garden-caldav-testserver; }
+      read -r -u "${SRV[0]}" source_url _calpath
+      home="${source_url%/dav/}/dav/"
+    }
+    stop_srv() { exec {SRV[1]}>&- || true; wait "$SRV_PID" 2>/dev/null || true; }
+    put_lit2() { curl -fsS -X PUT --data-binary @- "${home#caldav:}lit/lit2.ics"; }
+    doc=.tmp/fmt-organize-vectors-doc.txt
+
+    start_srv
+    banner generate
+    "$cg" organize -group-by status= "${home}lit/" | tee "$doc"
+    banner fmt-unchanged
+    "$cg" fmt-organize "$doc"
+    put_lit2 <<-'EOF'
+    	BEGIN:VCALENDAR
+    	VERSION:2.0
+    	BEGIN:VTODO
+    	UID:lit2
+    	SUMMARY:Read many books
+    	LOCATION:Bank
+    	END:VTODO
+    	END:VCALENDAR
+    	EOF
+    banner fmt-rewritten
+    "$cg" fmt-organize "$doc"
+    banner fmt-after
+    cat "$doc"
+    stop_srv
+
+    # The refuse leg runs with the server DOWN: the clean-body gate fires
+    # before any network touch, so an unapplied edit refuses offline (exit 64).
+    awk '
+      /^- \[lit1.ics/ { saved = $0; next }
+      { print }
+      /^## =needs-action$/ { print ""; print saved }
+    ' "$doc" >"$doc.edited"
+    banner fmt-refuse
+    "$cg" fmt-organize "$doc.edited" || echo "exit=$?"
+
+    printf '[organize]\ntag_atoms = "trailing"\n' >"$XDG_CONFIG_HOME/cutting-garden/config.toml"
+    start_srv
+    put_lit2 <<-'EOF'
+    	BEGIN:VCALENDAR
+    	VERSION:2.0
+    	BEGIN:VTODO
+    	UID:lit2
+    	SUMMARY:Read book
+    	LOCATION:Bank
+    	CATEGORIES:chore
+    	END:VTODO
+    	END:VCALENDAR
+    	EOF
+    banner trailing-generate
+    "$cg" organize -group-by status= "${home}lit/" | tee "$doc"
+    rm -f "$XDG_CONFIG_HOME/cutting-garden/config.toml"
+    put_lit2 <<-'EOF'
+    	BEGIN:VCALENDAR
+    	VERSION:2.0
+    	BEGIN:VTODO
+    	UID:lit2
+    	SUMMARY:Read many books
+    	LOCATION:Bank
+    	CATEGORIES:chore
+    	END:VTODO
+    	END:VCALENDAR
+    	EOF
+    banner trailing-fmt
+    "$cg" fmt-organize "$doc"
+    banner trailing-after
+    cat "$doc"
+    stop_srv
+
 # Drop into an interactive shell in a throwaway tempdir with a fresh madder store
 # and the Fastmail caldav creds (CALDAV_USERNAME/PASSWORD) exported — the manual
 # eyeball loop for `cg organize` against a LIVE Fastmail calendar (FDR 0025 Slice 1
