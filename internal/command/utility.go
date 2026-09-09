@@ -32,10 +32,11 @@ type Config interface {
 // behavior under any binary name is identical — aliases are
 // cosmetic + completion-routing only.
 type Utility struct {
-	name    string
-	aliases []string
-	config  Config
-	cmds    map[string]Cmd
+	name        string
+	aliases     []string
+	description string
+	config      Config
+	cmds        map[string]Cmd
 }
 
 func MakeUtility(name string, defaultConfig Config) Utility {
@@ -66,6 +67,25 @@ func (utility Utility) GetAliases() []string {
 // would not propagate through a value-receiver mutation.
 func (utility *Utility) AddAlias(alias string) {
 	utility.aliases = append(utility.aliases, alias)
+}
+
+// SetDescription declares the one-line summary the utility manpage's
+// NAME section renders after the dash (`name, alias - description`),
+// which is what lexgrog/whatis/apropos extract. Keep it to a single
+// line of at most 72 characters. Pointer receiver for the same reason
+// as AddAlias.
+func (utility *Utility) SetDescription(description string) {
+	utility.description = description
+}
+
+// GetDescription returns the NAME-line summary, or the
+// "(no description)" placeholder when none was set so the manpage
+// NAME line always parses as `name - description`.
+func (utility Utility) GetDescription() string {
+	if utility.description == "" {
+		return noDescriptionPlaceholder
+	}
+	return utility.description
 }
 
 func (utility Utility) GetConfig() config_cli.Config {

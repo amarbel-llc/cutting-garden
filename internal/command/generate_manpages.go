@@ -40,19 +40,19 @@ func (utility Utility) renderManpage(name string, cmd Cmd) (string, error) {
 	var b strings.Builder
 	page := fmt.Sprintf("%s-%s", utility.GetName(), name)
 	fmt.Fprintf(&b, ".TH %s 1\n", strings.ToUpper(page))
-	fmt.Fprintf(&b, ".SH NAME\n%s", page)
-
+	// NAME always carries ` - <short>` (placeholder when absent) so
+	// lexgrog/whatis can parse it.
+	var desc Description
 	if d, ok := cmd.(CommandWithDescription); ok {
-		desc := d.GetDescription()
-		if desc.Short != "" {
-			fmt.Fprintf(&b, " - %s", desc.Short)
-		}
-		fmt.Fprintln(&b)
-		if desc.Long != "" {
-			fmt.Fprintf(&b, ".SH DESCRIPTION\n%s\n", desc.Long)
-		}
-	} else {
-		fmt.Fprintln(&b)
+		desc = d.GetDescription()
+	}
+	short := desc.Short
+	if short == "" {
+		short = noDescriptionPlaceholder
+	}
+	fmt.Fprintf(&b, ".SH NAME\n%s - %s\n", page, short)
+	if desc.Long != "" {
+		fmt.Fprintf(&b, ".SH DESCRIPTION\n%s\n", desc.Long)
 	}
 
 	if a, ok := cmd.(CommandWithArgs); ok {

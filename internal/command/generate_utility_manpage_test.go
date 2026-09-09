@@ -28,6 +28,7 @@ func (bareCmd) Run(Request) {}
 func TestGenerateUtilityManpage_BasicShape(t *testing.T) {
 	dir := t.TempDir()
 	u := MakeUtility("demo", nil)
+	u.SetDescription("demonstrate things")
 	u.AddCmd("alpha", describedCmd{short: "do alpha things"})
 	u.AddCmd("bravo", describedCmd{short: "do bravo things"})
 
@@ -44,7 +45,7 @@ func TestGenerateUtilityManpage_BasicShape(t *testing.T) {
 
 	for _, want := range []string{
 		".TH DEMO 1",
-		".SH NAME\ndemo",
+		".SH NAME\ndemo - demonstrate things\n",
 		".SH SYNOPSIS",
 		".SH SUBCOMMANDS",
 		".B alpha",
@@ -152,8 +153,8 @@ func TestGenerateUtilityManpage_AliasesInNameAndSymlinked(t *testing.T) {
 	if err != nil {
 		t.Fatalf("missing canonical manpage: %v", err)
 	}
-	if !strings.Contains(string(body), ".SH NAME\ndemo, dm, dem") {
-		t.Errorf("expected NAME line to list aliases; got:\n%s", body)
+	if !strings.Contains(string(body), ".SH NAME\ndemo, dm, dem - (no description)\n") {
+		t.Errorf("expected NAME line to list aliases then the placeholder; got:\n%s", body)
 	}
 
 	for _, alias := range []string{"dm", "dem"} {

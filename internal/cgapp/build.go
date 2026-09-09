@@ -46,6 +46,9 @@ import (
 func Build() command.Utility {
 	utility := command.MakeUtility("cutting-garden", nil)
 	utility.AddAlias("cg")
+	utility.SetDescription(
+		"capture, restore, diff, and traverse trees via URI-scheme plugins",
+	)
 	command.RegisterComplete(&utility)
 	utility.AddCmd("capture", capture.New())
 	utility.AddCmd("restore", restore.New())

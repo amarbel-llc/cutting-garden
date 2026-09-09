@@ -56,9 +56,11 @@ func (utility Utility) renderUtilityManpage() string {
 
 	// NAME lists every registered name (canonical first, then
 	// aliases) comma-separated, mirroring the convention of pages
-	// like `ls(1)` / `cp(1)` that document multiple invocations.
+	// like `ls(1)` / `cp(1)` that document multiple invocations,
+	// followed by ` - <description>` so lexgrog/whatis can parse it.
 	allNames := append([]string{name}, utility.GetAliases()...)
-	fmt.Fprintf(&b, ".SH NAME\n%s\n", strings.Join(allNames, ", "))
+	fmt.Fprintf(&b, ".SH NAME\n%s - %s\n",
+		strings.Join(allNames, ", "), utility.GetDescription())
 
 	fmt.Fprintf(&b, ".SH SYNOPSIS\n.B %s\n[\\fIflags\\fR]\n"+
 		"\\fIsubcommand\\fR\n[\\fIargs\\fR]\n", name)
@@ -76,8 +78,13 @@ func (utility Utility) renderUtilityManpage() string {
 	return b.String()
 }
 
+// noDescriptionPlaceholder stands in for a missing short description
+// so every NAME line and SUBCOMMANDS entry stays total (and lexgrog
+// keeps parsing `name - description`).
+const noDescriptionPlaceholder = "(no description)"
+
 // subcommandSummary is the per-subcommand record renderUtilityManpage
-// emits. The short description is "(no description)" when a
+// emits. The short description is noDescriptionPlaceholder when a
 // subcommand doesn't implement CommandWithDescription so the page
 // remains total.
 type subcommandSummary struct {
@@ -94,7 +101,7 @@ func (utility Utility) userFacingSubcommands() []subcommandSummary {
 		if isHidden(cmd) {
 			continue
 		}
-		short := "(no description)"
+		short := noDescriptionPlaceholder
 		if d, ok := cmd.(CommandWithDescription); ok {
 			if s := d.GetDescription().Short; s != "" {
 				short = s
