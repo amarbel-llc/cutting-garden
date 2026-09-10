@@ -27,8 +27,8 @@ schema = 3
     goVersion = '1.26'
 
   [mod.'code.linenisgreat.com/purse-first/libs/go-mcp']
-    version = 'v0.5.0'
-    hash = 'sha256-dX5SW7t2TrvJjQvzsZB+Yue9mD2yJosBN8fPWWC819c='
+    version = 'v0.6.2'
+    hash = 'sha256-JQDDIB3CFq0xICW4uMvIL9GosmIzMcu/tjGcVdgje8s='
     goVersion = '1.26'
 
   [mod.'code.linenisgreat.com/tap/go']

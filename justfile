@@ -123,6 +123,26 @@ update: update-go update-nix
 update-go: && build-gomod2nix
     nix develop --command go mod tidy
 
+# Bump one non-bridged (or go.mod-mirrored bridged) Go dep to an explicit
+# version, then tidy + regenerate gomod2nix.toml (the AGENTS.md "when
+# dependencies change" case 2 as one paved path — agents have no bare `go`
+# on PATH outside the devshell). Usage:
+#   just update-go-get code.linenisgreat.com/purse-first/libs/go-mcp@v0.6.2
+#
+# go get MODULE@VERSION in the devshell, then tidy + regenerate gomod2nix.toml
+[group('maintenance')]
+update-go-get module: && update-go
+    nix develop --command go get {{ module }}
+
+# Bump a single flake input (flake.lock-only; the AGENTS.md case-1 bridged-dep
+# path). `update-nix` bumps every input at once, which is rarely what a
+# targeted dep bump wants. Usage: just update-nix-input purse-first
+#
+# update one flake input in flake.lock
+[group('maintenance')]
+update-nix-input input:
+    nix flake update {{ input }}
+
 # update all flake inputs (flake.lock)
 [group('maintenance')]
 update-nix:
@@ -1395,6 +1415,52 @@ debug-manpage PAGE='cutting-garden-capture':
     else
       cat "$page"
     fi
+
+# Verify every shipped man page in the NIX-built package parses under
+# lexgrog (the whatis/apropos + spinclass system-prompt-index contract:
+# NAME must read `name - description`) and that each description is at
+# most 72 characters. Walks share/man/man{1,5,7} of `nix build`'s result
+# (symlinked aliases like cg.1 included), printing one `page<TAB>desc`
+# line per page. Fails on the first unparsable page or over-long
+# description. lexgrog comes from the host when present, else from
+# nixpkgs#man-db.
+#
+# lexgrog-check every man page in the nix-built package (NAME parses, desc <= 72)
+[group('debug')]
+debug-lexgrog-manpages:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    out="$(nix build "{{ justfile_directory() }}#default" --no-link --print-out-paths)"
+    if command -v lexgrog >/dev/null 2>&1; then
+      lexgrog_cmd=(lexgrog)
+    else
+      lexgrog_cmd=(nix shell nixpkgs#man-db --command lexgrog)
+    fi
+    status=0
+    count=0
+    for page in "$out"/share/man/man*/*; do
+      count=$((count + 1))
+      if ! lines="$("${lexgrog_cmd[@]}" "$page" 2>&1)"; then
+        echo "FAIL (lexgrog): $page: $lines"
+        status=1
+        continue
+      fi
+      # A multi-name page (`cutting-garden, cg - ...`) yields one
+      # `<path>: "<name> - <desc>"` line per name; check each.
+      while IFS= read -r line; do
+        entry="${line#*: \"}"
+        entry="${entry%\"}"
+        desc="${entry#* - }"
+        len=${#desc}
+        printf '%s\t%s\t(%d)\n' "$(basename "$page")" "$entry" "$len"
+        if (( len > 72 )); then
+          echo "FAIL (length $len > 72): $page"
+          status=1
+        fi
+      done <<<"$lines"
+    done
+    echo "checked $count pages"
+    exit "$status"
 
 # e2e SIGINT-cancellation probe for the capture walk (#68 follow-up;
 # pins the live-binary behavior the unit tests in

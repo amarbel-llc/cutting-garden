@@ -496,11 +496,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1788897824,
-        "narHash": "sha256-ung8J/dzm91ey00DQxtjkxI6LiKA3YAQlGw7DKFX0og=",
-        "rev": "7b0fc8b0b86ce818ecb9a3ed623e59d867713087",
+        "lastModified": 1788981969,
+        "narHash": "sha256-RMtke49tql3POEPqNCrnqXikdPHCFjohlMUYppfNaw0=",
+        "rev": "59b5571dafeb6739035db20d88b774aa96b665d4",
         "type": "tarball",
-        "url": "https://code.linenisgreat.com/purse-first/archive/7b0fc8b0b86ce818ecb9a3ed623e59d867713087.tar.gz"
+        "url": "https://code.linenisgreat.com/purse-first/archive/59b5571dafeb6739035db20d88b774aa96b665d4.tar.gz"
       },
       "original": {
         "type": "tarball",

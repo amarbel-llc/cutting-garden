@@ -8,7 +8,7 @@ require (
 	code.linenisgreat.com/madder/go v0.4.5-0.20260720184544-d463a948790d
 	code.linenisgreat.com/piggy/go v0.0.0-20260720155209-77cfdea0031e
 	code.linenisgreat.com/purse-first/libs/dewey v0.5.0
-	code.linenisgreat.com/purse-first/libs/go-mcp v0.5.0
+	code.linenisgreat.com/purse-first/libs/go-mcp v0.6.2
 	code.linenisgreat.com/tap/go v0.2.0
 	code.linenisgreat.com/tommy v0.5.0
 	github.com/charmbracelet/bubbletea v1.3.10
