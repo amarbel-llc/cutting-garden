@@ -22,6 +22,11 @@ const (
 // why this guard lives in a Go test, not a justfile recipe.
 func importEdges(t *testing.T, pattern string) [][2]string {
 	t.Helper()
+	// A per-package godyn test run has no go toolchain or module tree;
+	// `just test-go` (the devshell) is where this guard runs.
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("no go toolchain on PATH")
+	}
 	const tmpl = `{{$p := .ImportPath}}` +
 		`{{range .Imports}}{{$p}} {{.}}` + "\n" + `{{end}}` +
 		`{{range .TestImports}}{{$p}} {{.}}` + "\n" + `{{end}}` +

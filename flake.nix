@@ -437,21 +437,67 @@
         # mains forward them into internal/buildinfo (eng-versioning(7)).
         cgCommit = self.shortRev or self.dirtyShortRev or "unknown";
 
-        cuttingGarden = pkgs.buildGoApplication {
+        # godyn (igloo's per-package builder; the package graph is derived at
+        # eval time — igloo FDR 0007/0008, nothing committed) on x86_64-linux,
+        # the only system its build is validated on (godyn(7) LIMITATIONS,
+        # igloo#33); buildGoApplication elsewhere. Every Go build keeps both
+        # backends reachable as passthru.native / passthru.bga.
+        godynSystem = system == "x86_64-linux";
+
+        # The shared shape of every cutting-garden Go build (madder's
+        # buildMadderGo): buildGoAuto over the committed gomod2nix.toml pins and
+        # the goFlakeInputs bridges. `version` is explicit (igloo#70). godyn
+        # needs `cc` because madder's closure carries the cgo-only
+        # github.com/DataDog/zstd (a derived graph without cc is CGO_ENABLED=0,
+        # which leaves that package empty). buildGodynModule takes no `meta`, so
+        # it is handed to bga directly and laid over the chosen backend's result.
+        buildCuttingGardenGo =
+          {
+            meta ? { },
+            nativeArgs ? { },
+            bgaArgs ? { },
+            ...
+          }@args:
+          (pkgs.buildGoAuto (
+            builtins.removeAttrs args [
+              "meta"
+              "nativeArgs"
+              "bgaArgs"
+            ]
+            // {
+              version = cgVersion;
+              src = ./.;
+              modules = ./gomod2nix.toml;
+              inherit goFlakeInputs;
+              strategy = if godynSystem then "native" else "bga";
+              nativeArgs = {
+                cc = pkgs.stdenv.cc;
+              }
+              // nativeArgs;
+              bgaArgs = {
+                pwd = ./.;
+                go = pkgs.go_1_26;
+                GOTOOLCHAIN = "local";
+                inherit meta;
+              }
+              // bgaArgs;
+            }
+          )).overrideAttrs
+            (old: {
+              meta = (old.meta or { }) // meta;
+            });
+
+        cuttingGarden = buildCuttingGardenGo {
           pname = "cutting-garden";
-          version = cgVersion;
-          commit = cgCommit;
-          src = ./.;
-          pwd = ./.;
-          modules = ./gomod2nix.toml;
-          inherit goFlakeInputs;
           subPackages = [
             "cmd/cutting-garden"
             "cmd/cg"
             "cmd/cutting-garden-gen"
           ];
-          go = pkgs.go_1_26;
-          GOTOOLCHAIN = "local";
+          # buildGoAuto has no `commit` slot; src = ./. is a plain path with no
+          # .rev, so each backend gets it explicitly.
+          nativeArgs.commit = cgCommit;
+          bgaArgs.commit = cgCommit;
 
           # makeWrapper wraps the installed binaries so the external
           # tools a plugin shells out to via exec.LookPath are on PATH at
@@ -509,16 +555,9 @@
         # its own derivation and NOT shipped — mirrors madder's
         # madder-test-sftp-server. It runs git's pack helpers, so the bats
         # lane carries `git` on PATH (below).
-        cuttingGardenTestGitSshd = pkgs.buildGoApplication {
+        cuttingGardenTestGitSshd = buildCuttingGardenGo {
           pname = "cutting-garden-test-git-sshd";
-          version = cgVersion;
-          src = ./.;
-          pwd = ./.;
-          modules = ./gomod2nix.toml;
-          inherit goFlakeInputs;
           subPackages = [ "cmd/cutting-garden-test-git-sshd" ];
-          go = pkgs.go_1_26;
-          GOTOOLCHAIN = "local";
           meta.mainProgram = "cutting-garden-test-git-sshd";
         };
 
@@ -529,16 +568,9 @@
         # replaces Radicale, which cannot start under the nix sandbox
         # (socket.socketpair(AF_UNIX); dodder#117) — this server is a pure
         # net/http TCP listener, so it runs in-sandbox.
-        cuttingGardenCaldavTestServer = pkgs.buildGoApplication {
+        cuttingGardenCaldavTestServer = buildCuttingGardenGo {
           pname = "cutting-garden-caldav-testserver";
-          version = cgVersion;
-          src = ./.;
-          pwd = ./.;
-          modules = ./gomod2nix.toml;
-          inherit goFlakeInputs;
           subPackages = [ "cmd/cutting-garden-caldav-testserver" ];
-          go = pkgs.go_1_26;
-          GOTOOLCHAIN = "local";
           meta.mainProgram = "cutting-garden-caldav-testserver";
         };
 
@@ -548,16 +580,9 @@
         # smoke (zz-tests_bats/capture_serve.bats), which also proves
         # SOCK_SEQPACKET listen works under the nix sandbox. Built as its
         # own derivation and NOT shipped.
-        cuttingGardenTestCaptureServe = pkgs.buildGoApplication {
+        cuttingGardenTestCaptureServe = buildCuttingGardenGo {
           pname = "cutting-garden-test-capture-serve";
-          version = cgVersion;
-          src = ./.;
-          pwd = ./.;
-          modules = ./gomod2nix.toml;
-          inherit goFlakeInputs;
           subPackages = [ "cmd/cutting-garden-test-capture-serve" ];
-          go = pkgs.go_1_26;
-          GOTOOLCHAIN = "local";
           meta.mainProgram = "cutting-garden-test-capture-serve";
         };
 
@@ -568,16 +593,9 @@
         # (zz-tests_bats/traversal_serve.bats) — the cross-implementation
         # launch-pattern gate a substituted non-Go peer runs unmodified.
         # Built as its own derivation and NOT shipped.
-        cuttingGardenTestTraversalServe = pkgs.buildGoApplication {
+        cuttingGardenTestTraversalServe = buildCuttingGardenGo {
           pname = "cutting-garden-test-traversal-serve";
-          version = cgVersion;
-          src = ./.;
-          pwd = ./.;
-          modules = ./gomod2nix.toml;
-          inherit goFlakeInputs;
           subPackages = [ "cmd/cutting-garden-test-traversal-serve" ];
-          go = pkgs.go_1_26;
-          GOTOOLCHAIN = "local";
           meta.mainProgram = "cutting-garden-test-traversal-serve";
         };
 
@@ -591,17 +609,27 @@
         # (so an external peer runs `nix run .#conformance-traversal --
         # --manifest peer.toml` against its own binary) AND injected into the
         # bats lane; NOT shipped in release artifacts.
-        cuttingGardenConformanceTraversal = pkgs.buildGoApplication {
+        cuttingGardenConformanceTraversal = buildCuttingGardenGo {
           pname = "cutting-garden-conformance-traversal";
+          subPackages = [ "cmd/cutting-garden-conformance-traversal" ];
+          meta.mainProgram = "cutting-garden-conformance-traversal";
+        };
+
+        # godyn's per-package go test lane: the test graph is derived at eval
+        # time (tests = true, `godyn-gen -tests`) and each tested package's
+        # `go test` runs as its own content-addressed derivation, so an
+        # unchanged test cone never re-runs. No build tags: cutting-garden has
+        # no `//go:build` test helpers. Exported non-gating as
+        # legacyPackages.cutting-garden-godyn-tests (see there for why);
+        # `just test-go` stays the gating devshell `go test ./...` lane.
+        cuttingGardenGodynTests = pkgs.buildGodynModule {
+          pname = "cutting-garden";
           version = cgVersion;
           src = ./.;
-          pwd = ./.;
           modules = ./gomod2nix.toml;
           inherit goFlakeInputs;
-          subPackages = [ "cmd/cutting-garden-conformance-traversal" ];
-          go = pkgs.go_1_26;
-          GOTOOLCHAIN = "local";
-          meta.mainProgram = "cutting-garden-conformance-traversal";
+          cc = pkgs.stdenv.cc;
+          tests = true;
         };
 
         # cutting-garden-clown-plugin stages a clown plugin (see
@@ -704,6 +732,12 @@
       {
         packages = {
           default = cuttingGardenWithDoc;
+
+          # The buildGoApplication build of the main binary under an explicit
+          # name (spinclass's spinclass-build_go_application): the escape hatch
+          # from the godyn default on x86_64-linux, and what `default` already
+          # is elsewhere. `nix build .#cutting-garden-build_go_application`.
+          cutting-garden-build_go_application = cuttingGarden.passthru.bga;
 
           # Producer outputs for out-of-tree Go consumers (RFC 0001 producer,
           # RFC 0009 §2): a plugin in its own repo bridges
@@ -1021,6 +1055,19 @@
         # checks run via `just lint-worktree` (see conformist-impure-config).
         # `nix flake check` (the justfile's build-nix-check recipe) runs it.
         checks.formatting = conformistEval.config.build.check self;
+
+        # godyn's per-package go test lane (cuttingGardenGodynTests), exported
+        # NON-GATING: it does not evaluate yet. Several packages' tests import
+        # bridged-module packages (e.g. madder/go/pkgs/directory_layout) that
+        # no non-test package imports, and godyn rejects test-only deps outside
+        # the build graph (godyn(7) LIMITATIONS, igloo#32). legacyPackages,
+        # because `nix flake check` does not evaluate its contents, where a
+        # `checks`/`packages` attr would fail the gate at eval time. Promote to
+        # `checks` once igloo#32 lands. x86_64-linux only (igloo#33/#75).
+        # `just test-go-godyn` builds it.
+        legacyPackages = pkgs.lib.optionalAttrs godynSystem {
+          cutting-garden-godyn-tests = cuttingGardenGodynTests.passthru.checkAll;
+        };
 
         # The organize tree-sitter grammar's corpus (zz-nvim/grammars/organize/
         # test/corpus) as a sandboxed flake check: `tree-sitter test` over the

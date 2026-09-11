@@ -31,6 +31,15 @@ test: validate-generate validate-generate-dagnabit validate-grammar test-grammar
 test-go:
     nix develop --command go test ./...
 
+# godyn's per-package go test lane (legacyPackages.x86_64-linux.cutting-garden-godyn-tests).
+# NON-GATING and not a `test` aggregate leaf: it does not evaluate until godyn
+# supports test-only deps outside the build graph (igloo#32). x86_64-linux only.
+#
+# build godyn's per-package go test lane (x86_64-linux, non-gating)
+[group('post-build')]
+test-go-godyn:
+    nix build ".#legacyPackages.$(nix eval --impure --raw --expr builtins.currentSystem).cutting-garden-godyn-tests" --no-link --show-trace
+
 # vet the Go sources (the cheap pre-build static-analysis pass)
 [group('pre-build')]
 lint-go:
@@ -1581,6 +1590,33 @@ debug-test-pkg PKG='./internal/serve' RUN='':
     run=()
     if [[ -n '{{ RUN }}' ]]; then run=(-run '{{ RUN }}'); fi
     nix develop --command go test "${run[@]}" {{ PKG }}
+
+# Print the RFC 0001 producer outPaths (go-pkgs / go-pkgs-test) for FLAKEREF —
+# e.g. `git+file://$PWD?rev=<sha>` — to confirm a builder migration or an igloo
+# bump leaves them unchanged. NIX_ARGS pass through to `nix eval` (e.g.
+# `--override-input igloo <url>` to isolate one input's effect).
+#
+# print the go-pkgs / go-pkgs-test outPaths for a flake ref
+[group('debug')]
+debug-go-pkgs-outpaths FLAKEREF='.' *NIX_ARGS:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    sys=$(nix eval --impure --raw --expr builtins.currentSystem)
+    for out in go-pkgs go-pkgs-test; do
+      printf '%s\t%s\n' "$out" "$(nix eval --raw {{ NIX_ARGS }} "{{ FLAKEREF }}#packages.$sys.$out.outPath")"
+    done
+
+# Build a flake package and run one of its binaries — the smoke check for a Go
+# backend flip (e.g. `debug-run-package cutting-garden-build_go_application
+# cutting-garden version`).
+#
+# build a flake package and run one of its binaries
+[group('debug')]
+debug-run-package PKG='default' BIN='cutting-garden' *ARGS='version':
+    #!/usr/bin/env bash
+    set -euo pipefail
+    out=$(nix build ".#{{ PKG }}" --no-link --print-out-paths --show-trace)
+    "$out/bin/{{ BIN }}" {{ ARGS }}
 
 # Inspect why `serve` Tailscale auto-detection picks (or misses) an
 # address: dump every interface address, the tailscale CLI's own view,
