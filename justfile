@@ -24,21 +24,21 @@ build-nix-check:
     nix flake check --show-trace
 
 [group('post-build')]
-test: validate-generate validate-generate-dagnabit validate-grammar test-grammar-corpus test-go lint-go lint-fmt lint-worktree lint-go-analyzers test-bats
+test: validate-generate validate-generate-dagnabit validate-grammar test-grammar-corpus test-go test-go-godyn lint-go lint-fmt lint-worktree lint-go-analyzers test-bats
 
 # run the Go test suite across all packages
 [group('post-build')]
 test-go:
     nix develop --command go test ./...
 
-# godyn's per-package go test lane (legacyPackages.x86_64-linux.cutting-garden-godyn-tests).
-# NON-GATING and not a `test` aggregate leaf: it does not evaluate until godyn
-# supports test-only deps outside the build graph (igloo#32). x86_64-linux only.
+# godyn's per-package go test lane (checks.cutting-garden-godyn-tests; a skip
+# stub off x86_64-linux, where godyn is not validated). A `test` aggregate
+# leaf; build-nix-check (`nix flake check`) also builds it, as a cache hit.
 #
-# build godyn's per-package go test lane (x86_64-linux, non-gating)
+# build godyn's per-package go test lane (x86_64-linux)
 [group('post-build')]
 test-go-godyn:
-    nix build ".#legacyPackages.$(nix eval --impure --raw --expr builtins.currentSystem).cutting-garden-godyn-tests" --no-link --show-trace
+    nix build ".#checks.$(nix eval --impure --raw --expr builtins.currentSystem).cutting-garden-godyn-tests" --no-link --show-trace
 
 # vet the Go sources (the cheap pre-build static-analysis pass)
 [group('pre-build')]

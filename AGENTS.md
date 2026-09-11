@@ -130,10 +130,9 @@ divergences from dodder are intentional carry-forwards.
   `buildGoApplication` elsewhere. Both backends stay reachable as
   `passthru.native` / `passthru.bga`; the main binary's bga build is also
   `.#cutting-garden-build_go_application`. godyn's per-package `go test`
-  lane is `legacyPackages.x86_64-linux.cutting-garden-godyn-tests`
-  (`just test-go-godyn`), **non-gating**: it does not evaluate until godyn
-  supports test-only deps outside the build graph (igloo#32). The gating Go
-  test lane is the devshell `just test-go`. See godyn(7).
+  lane is `checks.cutting-garden-godyn-tests` (`just test-go-godyn`; a skip
+  stub off x86_64-linux), gated by `nix flake check` beside the devshell
+  `just test-go`. See godyn(7).
   Module sources come from two places:
     - **Flake-input bridge** (`gomod.nix`): madder, hyphence (the
       canonical `---`-fenced metadata+body document format, extracted from

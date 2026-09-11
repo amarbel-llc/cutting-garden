@@ -3,7 +3,6 @@ package capture
 import (
 	"encoding/json"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -15,13 +14,14 @@ import (
 )
 
 // setupCgEnvDir builds a cutting-garden-scoped env_dir rooted at a
-// per-test tempdir by overriding XDG_STATE_HOME. The returned env_dir's
-// GetXDG().State.MakePath(capture_log.FileName) resolves under the
-// tempdir.
+// per-test tempdir via isolateXDG. Every XDG dir is pinned, not just
+// state: env_dir construction makes its tmp dir under XDG_CACHE_HOME,
+// which would otherwise fall back to an unwritable $HOME in a sandbox.
+// The returned env_dir's GetXDG().State.MakePath(capture_log.FileName)
+// resolves under the tempdir.
 func setupCgEnvDir(t *testing.T) env_dir.Env {
 	t.Helper()
-	state := filepath.Join(t.TempDir(), "xdg-state")
-	t.Setenv("XDG_STATE_HOME", state)
+	isolateXDG(t)
 	ctx := errors.MakeContextDefault()
 	return env_dir.MakeDefault(
 		ctx,

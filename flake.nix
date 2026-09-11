@@ -540,13 +540,6 @@
                   )
                 }
             done
-
-            # godyn's install step is a plain runCommand with no fixupPhase, so
-            # stdenv's man-page gzip never runs there (install_artifacts.bats
-            # pins the .1.gz form). Compress here for both backends; bga's own
-            # fixupPhase then finds nothing left to do. Drop once godyn's
-            # install step runs the fixup hooks itself.
-            compressManPages "$out"
           '';
 
           meta = {
@@ -626,9 +619,8 @@
         # time (tests = true, `godyn-gen -tests`) and each tested package's
         # `go test` runs as its own content-addressed derivation, so an
         # unchanged test cone never re-runs. No build tags: cutting-garden has
-        # no `//go:build` test helpers. Exported non-gating as
-        # legacyPackages.cutting-garden-godyn-tests (see there for why);
-        # `just test-go` stays the gating devshell `go test ./...` lane.
+        # no `//go:build` test helpers. Gated as checks.cutting-garden-godyn-tests
+        # (x86_64-linux), beside the devshell `go test ./...` lane (`just test-go`).
         cuttingGardenGodynTests = pkgs.buildGodynModule {
           pname = "cutting-garden";
           version = cgVersion;
@@ -637,6 +629,10 @@
           inherit goFlakeInputs;
           cc = pkgs.stdenv.cc;
           tests = true;
+          # A per-package test run sees only its own package dir, so
+          # internal/trellis's conformance test gets the normative grammar
+          # (outside the package) by store path.
+          testEnv.CG_TRELLIS_GRAMMAR_PEG = "${./docs/rfcs/0014-trellis.peg}";
         };
 
         # cutting-garden-clown-plugin stages a clown plugin (see
@@ -1063,18 +1059,15 @@
         # `nix flake check` (the justfile's build-nix-check recipe) runs it.
         checks.formatting = conformistEval.config.build.check self;
 
-        # godyn's per-package go test lane (cuttingGardenGodynTests), exported
-        # NON-GATING: it does not evaluate yet. Several packages' tests import
-        # bridged-module packages (e.g. madder/go/pkgs/directory_layout) that
-        # no non-test package imports, and godyn rejects test-only deps outside
-        # the build graph (godyn(7) LIMITATIONS, igloo#32). legacyPackages,
-        # because `nix flake check` does not evaluate its contents, where a
-        # `checks`/`packages` attr would fail the gate at eval time. Promote to
-        # `checks` once igloo#32 lands. x86_64-linux only (igloo#33/#75).
-        # `just test-go-godyn` builds it.
-        legacyPackages = pkgs.lib.optionalAttrs godynSystem {
-          cutting-garden-godyn-tests = cuttingGardenGodynTests.passthru.checkAll;
-        };
+        # godyn's per-package go test lane (cuttingGardenGodynTests), gating
+        # `nix flake check` beside the bats lane. A skip stub off x86_64-linux,
+        # where godyn is not validated (igloo#33) and its eval-time graph IFD
+        # cannot run cross-system (igloo#75). `just test-go-godyn` builds it.
+        checks.cutting-garden-godyn-tests =
+          if godynSystem then
+            cuttingGardenGodynTests.passthru.checkAll
+          else
+            pkgs.runCommand "cutting-garden-godyn-tests-skipped" { } "touch \"$out\"";
 
         # The organize tree-sitter grammar's corpus (zz-nvim/grammars/organize/
         # test/corpus) as a sandboxed flake check: `tree-sitter test` over the
