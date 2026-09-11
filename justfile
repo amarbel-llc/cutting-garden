@@ -37,8 +37,8 @@ test-go:
 #
 # build godyn's per-package go test lane (x86_64-linux)
 [group('post-build')]
-test-go-godyn:
-    nix build ".#checks.$(nix eval --impure --raw --expr builtins.currentSystem).cutting-garden-godyn-tests" --no-link --show-trace
+test-go-godyn *NIX_ARGS:
+    nix build ".#checks.$(nix eval --impure --raw --expr builtins.currentSystem).cutting-garden-godyn-tests" --no-link --show-trace {{ NIX_ARGS }}
 
 # vet the Go sources (the cheap pre-build static-analysis pass)
 [group('pre-build')]
