@@ -629,10 +629,10 @@
           inherit goFlakeInputs;
           cc = pkgs.stdenv.cc;
           tests = true;
-          # A per-package test run sees only its own package dir, so
-          # internal/trellis's conformance test gets the normative grammar
-          # (outside the package) by store path.
-          testEnv.CG_TRELLIS_GRAMMAR_PEG = "${./docs/rfcs/0014-trellis.peg}";
+          # internal/trellis's conformance test reads the normative grammar
+          # from outside its package (../../docs/rfcs/0014-trellis.peg);
+          # testFiles places it at that module-relative path in the test tree.
+          testFiles."internal/trellis" = [ "docs/rfcs/0014-trellis.peg" ];
         };
 
         # cutting-garden-clown-plugin stages a clown plugin (see

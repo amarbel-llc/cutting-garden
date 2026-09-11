@@ -36,15 +36,9 @@ const conformanceVectorsPegPath = "../../docs/rfcs/0014-trellis.peg"
 // below (prose does not parse as trellis).
 func loadConformanceVectors(t *testing.T) []string {
 	t.Helper()
-	// CG_TRELLIS_GRAMMAR_PEG: the flake's godyn test lane runs each package
-	// from a copy of just its own dir, where the relative path cannot resolve.
-	path := conformanceVectorsPegPath
-	if p := os.Getenv("CG_TRELLIS_GRAMMAR_PEG"); p != "" {
-		path = p
-	}
-	raw, err := os.ReadFile(path)
+	raw, err := os.ReadFile(conformanceVectorsPegPath)
 	if err != nil {
-		t.Fatalf("read normative grammar %q: %v", path, err)
+		t.Fatalf("read normative grammar %q: %v", conformanceVectorsPegPath, err)
 	}
 
 	var (
