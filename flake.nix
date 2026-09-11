@@ -540,6 +540,13 @@
                   )
                 }
             done
+
+            # godyn's install step is a plain runCommand with no fixupPhase, so
+            # stdenv's man-page gzip never runs there (install_artifacts.bats
+            # pins the .1.gz form). Compress here for both backends; bga's own
+            # fixupPhase then finds nothing left to do. Drop once godyn's
+            # install step runs the fixup hooks itself.
+            compressManPages "$out"
           '';
 
           meta = {
