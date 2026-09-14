@@ -27,6 +27,11 @@
 
   programs.nixfmt.enable = true;
 
+  # eng-versioning(7) derived the version key from go.mod's module path; the
+  # checkout has no go.mod since go.nix (igloo FDR 0008), and the pinned
+  # conformist does not read go.nix, so name the version.env key explicitly.
+  linters.eng-versioning.key = "CUTTING_GARDEN_VERSION";
+
   # shfmt: the registry defaults (indent_size = 2, simplify, caseIndent) emit
   # `-i 2 -s -ci` — cutting-garden's house style (conformist#52 made caseIndent
   # default-on). Narrow the includes to the shell we actually format; the
@@ -53,8 +58,6 @@
 
   settings.excludes = [
     "flake.lock"
-    "go.sum"
-    "gomod2nix.toml"
     "version.env"
     "sweatfile"
     "LICENSE"

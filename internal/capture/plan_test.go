@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	_ "code.linenisgreat.com/cutting-garden/plugins/file"
-	"code.linenisgreat.com/madder/go/pkgs/blob_store_id"
+	"code.linenisgreat.com/madder/go/pkgs/scoped_id"
 )
 
 // setupFS chdirs into a fresh temp directory and creates a fixed set of
@@ -16,7 +16,7 @@ import (
 //   - dir-a, dir-b, dir-c : directories that classify as argKindCapture
 //   - not-a-dir           : regular file that classifies as argKindError
 //
-// store-a / store-b in tests use blob_store_id.Id.Set; their string form
+// store-a / store-b in tests use scoped_id.Id.Set; their string form
 // does not collide with any path in the fixture.
 func setupFS(t *testing.T) {
 	t.Helper()
@@ -32,11 +32,11 @@ func setupFS(t *testing.T) {
 	}
 }
 
-func mustParseStoreId(t *testing.T, s string) blob_store_id.Id {
+func mustParseStoreId(t *testing.T, s string) scoped_id.Id {
 	t.Helper()
-	var id blob_store_id.Id
+	var id scoped_id.Id
 	if err := id.Set(s); err != nil {
-		t.Fatalf("blob_store_id.Set(%q): %v", s, err)
+		t.Fatalf("scoped_id.Set(%q): %v", s, err)
 	}
 	return id
 }
@@ -85,7 +85,7 @@ func TestClassifyArg(t *testing.T) {
 		},
 		{
 			// Same canonical-message pattern: id.Set("") errors with
-			// "empty blob_store_id" but classifyArg surfaces the
+			// "empty scoped_id" but classifyArg surfaces the
 			// generic message.
 			name:        "EmptyStringIsError",
 			arg:         "",
@@ -143,7 +143,7 @@ func TestPlanCapture(t *testing.T) {
 
 	storeA := mustParseStoreId(t, "store-a")
 	storeB := mustParseStoreId(t, "store-b")
-	candidates := []blob_store_id.Id{storeA, storeB}
+	candidates := []scoped_id.Id{storeA, storeB}
 
 	t.Run("EmptyArgs_ImplicitDot", func(t *testing.T) {
 		groups, fails, err := planCapture(nil, candidates)

@@ -1,12 +1,7 @@
 default: build test
 
 [group('build')]
-build: build-gomod2nix build-nix build-nix-check
-
-# regenerate gomod2nix.toml from go.mod/go.sum (the organic non-bridged deps)
-[group('build')]
-build-gomod2nix:
-    nix develop --command gomod2nix
+build: build-nix build-nix-check
 
 # build the default package (result/bin/cutting-garden) via the flake
 [group('build')]
@@ -24,26 +19,30 @@ build-nix-check:
     nix flake check --show-trace
 
 [group('post-build')]
-test: validate-generate validate-generate-dagnabit validate-grammar test-grammar-corpus test-go test-go-godyn lint-go lint-fmt lint-worktree lint-go-analyzers test-bats
-
-# run the Go test suite across all packages
-[group('post-build')]
-test-go:
-    nix develop --command go test ./...
+test: validate-generate validate-generate-dagnabit validate-grammar test-grammar-corpus test-go-godyn lint-go lint-fmt lint-worktree lint-go-analyzers test-bats
 
 # godyn's per-package go test lane (checks.cutting-garden-godyn-tests; a skip
 # stub off x86_64-linux, where godyn is not validated). A `test` aggregate
 # leaf; build-nix-check (`nix flake check`) also builds it, as a cache hit.
+# There is no ambient `go test ./...` lane: go.nix (igloo FDR 0008) leaves no
+# go.mod in the checkout.
 #
 # build godyn's per-package go test lane (x86_64-linux)
 [group('post-build')]
 test-go-godyn *NIX_ARGS:
     nix build ".#checks.$(nix eval --impure --raw --expr builtins.currentSystem).cutting-garden-godyn-tests" --no-link --show-trace {{ NIX_ARGS }}
 
-# vet the Go sources (the cheap pre-build static-analysis pass)
+# godyn's per-package vet (the toolchain's go vet) and lint (godyn-lint: vet
+# passes + staticcheck defaults) lanes, checks.<system>.vet / lint. Skip stubs
+# off x86_64-linux.
+#
+# vet and lint the Go sources through godyn's per-package lanes
 [group('pre-build')]
-lint-go:
-    nix develop --command go vet ./...
+lint-go *NIX_ARGS:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    sys=$(nix eval --impure --raw --expr builtins.currentSystem)
+    nix build ".#checks.$sys.vet" ".#checks.$sys.lint" --no-link --show-trace {{ NIX_ARGS }}
     gum log --level info "lint-go: ok"
 
 # Read-only formatting + lint gate via conformist (treefmt successor):
@@ -76,18 +75,14 @@ lint-worktree:
     nix run '.#conformist' -- check --config-file "$cfg" --tree-root .
     gum log --level info "lint-worktree: ok"
 
-# Run one dewey analyzer (defererr, repool, seqerror) as a go vet -vettool.
-# Built ad-hoc into .tmp/analyzers/<name> from the module cache. See #30.
+# Run one dewey analyzer (defererr, repool, seqerror) as godyn's per-package
+# vet lane with that analyzer as vetTool (checks.<system>.dewey-<name>; a
+# skip stub off x86_64-linux). See #30.
 #
 # run one dewey analyzer as a go vet -vettool
 [group('pre-build')]
 lint-go-analyzer name:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    bin="{{ justfile_directory() }}/.tmp/analyzers/{{ name }}"
-    mkdir -p "$(dirname "$bin")"
-    nix develop --command go build -o "$bin" code.linenisgreat.com/purse-first/libs/dewey/cmd/{{ name }}
-    nix develop --command go vet -vettool="$bin" ./...
+    nix build ".#checks.$(nix eval --impure --raw --expr builtins.currentSystem).dewey-{{ name }}" --no-link --show-trace
     gum log --level info "lint-go-analyzer {{ name }}: ok"
 
 [group('pre-build')]
@@ -127,21 +122,23 @@ debug-tree-sitter-corpus *ARGS:
 [group('maintenance')]
 update: update-go update-nix
 
-# tidy go.mod/go.sum, then regenerate gomod2nix.toml to match
-[group('maintenance')]
-update-go: && build-gomod2nix
-    nix develop --command go mod tidy
-
-# Bump one non-bridged (or go.mod-mirrored bridged) Go dep to an explicit
-# version, then tidy + regenerate gomod2nix.toml (the AGENTS.md "when
-# dependencies change" case 2 as one paved path — agents have no bare `go`
-# on PATH outside the devshell). Usage:
-#   just update-go-get code.linenisgreat.com/purse-first/libs/go-mcp@v0.6.2
+# Tidy the module's requires through godyn's escape hatch (igloo FDR 0008):
+# `go mod tidy` runs inside nix against the go.mod rendered from go.nix, and
+# the result is ingested back into go.nix (hashes and Go versions included).
 #
-# go get MODULE@VERSION in the devshell, then tidy + regenerate gomod2nix.toml
+# tidy go.nix's requires via godyn-go (go mod tidy inside nix)
+[group('maintenance')]
+update-go:
+    nix run --inputs-from . igloo#godyn-go -- -- go mod tidy
+
+# Bump one non-bridged Go dep to an explicit version through godyn-go, then
+# tidy. Bridged (flakeInputs) modules bump via their flake input instead. Usage:
+#   just update-go-get github.com/google/go-cmp@v0.7.0
+#
+# go get MODULE@VERSION via godyn-go, then tidy go.nix
 [group('maintenance')]
 update-go-get module: && update-go
-    nix develop --command go get {{ module }}
+    nix run --inputs-from . igloo#godyn-go -- -- go get {{ module }}
 
 # Bump a single flake input (flake.lock-only; the AGENTS.md case-1 bridged-dep
 # path). `update-nix` bumps every input at once, which is rarely what a
@@ -267,10 +264,10 @@ codemod-generate-tree-sitter:
 
 # Format all source via conformist (the treefmt successor): Go
 # (goimports -> gofumpt), Nix (nixfmt), shell/bats (shfmt), TOML (tommy
-# fmt), and the tommy-codegen repair lane (regenerates *_tommy.go). Config
-# is the nix-module-generated conformist.toml (./conformist.nix + the eng
-# preset). The read-only counterpart is `lint-fmt`. Runs the flake `formatter`
-# output (conformistEval.config.build.wrapper, repair mode) via `nix fmt`.
+# fmt). Config is the nix-module-generated conformist.toml (./conformist.nix +
+# the eng preset). The read-only counterpart is `lint-fmt`. Runs the flake
+# `formatter` output (conformistEval.config.build.wrapper, repair mode) via
+# `nix fmt`. Codegen is NOT regenerated here: see codemod-generate*.
 #
 # format all source via conformist in repair mode
 [group('codemod')]
@@ -278,101 +275,54 @@ codemod-fmt:
     nix fmt
 
 # Regenerate the tommy TOML-codegen companions (*_tommy.go) for the config
-# subsystem (RFC 0007). Run after editing any `//go:generate tommy
-# generate` struct (config_common, plugin config sections, cgconfig). The
-# read-only drift gate is `validate-generate`, wired into `test`.
-#
-# -run tommy scopes this to the tommy directives only, keeping the tommy
-# and dagnabit (`codemod-generate-dagnabit`) codegen lanes distinct so each
-# has its own drift gate.
+# subsystem (RFC 0007) through godyn's escape hatch (igloo FDR 0008): `go
+# generate` runs inside nix against the go.mod rendered from go.nix, with tommy
+# from goRunInputs, and the patch is applied to the checkout. Run after editing
+# any `//go:generate tommy generate` struct, or after a tommy bump (the header
+# stamps the producing tommy build). A NEW Go file must be `git add -N`'d first.
+# The pure drift gate is `validate-generate`, wired into `test`.
 #
 # regenerate the tommy TOML-codegen companions (*_tommy.go)
 [group('codemod')]
 codemod-generate:
-    nix develop --command go generate -run tommy ./...
+    nix run --inputs-from . igloo#godyn-go -- -- go generate -run tommy ./...
 
-# Assert the committed *_tommy.go companions are current: regenerate, then
-# fail on any drift — a stale or hand-edited generated file, or a tommy
-# version bump (the header stamps the producing tommy build). The
-# go-generate-then-clean-diff form tommy-generate(1) recommends for CI.
+# Drift gate: checks.<system>.tommy-codegen (godyn passthru.codegenCheck) runs
+# `go generate -run tommy ./...` in the vendored module tree and fails if the
+# result differs from the committed source. A skip stub off x86_64-linux.
 #
 # drift gate: the committed *_tommy.go companions must be current
 [group('pre-build')]
-validate-generate: codemod-generate
-    #!/usr/bin/env bash
-    set -euo pipefail
-    if ! git diff --quiet -- '*_tommy.go'; then
-      git --no-pager diff -- '*_tommy.go'
-      gum log --level error "validate-generate: *_tommy.go out of date; run \`just codemod-generate\` and commit"
-      exit 1
-    fi
+validate-generate:
+    nix build ".#checks.$(nix eval --impure --raw --expr builtins.currentSystem).tommy-codegen" --no-link --show-trace
     gum log --level info "validate-generate: ok"
 
-# Regenerate the dagnabit pkgs/ facades (RFC 0009 plugin SDK). Run after
-# adding or changing a `//go:generate dagnabit export` directive
-# (internal/capture_plugin, internal/cutting_garden_plugins). dagnabit is
-# built by purse-first's gomod.nix and on the devshell PATH. The read-only
-# drift gate is `validate-generate-dagnabit`, wired into `test`.
+# Regenerate the dagnabit pkgs/ facades (RFC 0009 plugin SDK) through godyn-go,
+# like codemod-generate. Run after adding or changing a `//go:generate dagnabit
+# export` directive, or after a purse-first bump (the facades stamp dagnabit's
+# version). The flake's dagnabit wrapper pins DAGNABIT_CONFORMIST_CONFIG to the
+# generated PURE conformist config and puts the raw conformist on PATH, so the
+# post-generation format pass matches the drift check.
 #
-# -run dagnabit scopes this to the dagnabit directives, parallel to
-# `codemod-generate` (tommy).
-#
-# DAGNABIT_CONFORMIST_CONFIG points dagnabit's post-generation format pass at
-# the store-pinned `.#conformist-config`, exactly as `validate-generate-dagnabit`
-# does for the check — so the formatter toolchain resolves from the nix closure
-# rather than $PATH. Without it, dagnabit's conformist pass fails in a devshell
-# that lacks the full formatter roster (nixfmt/goimports/…), leaving the facades
-# UNFORMATTED and drifting from the hermetic check. The CEILING var bounds any
-# upward config walk at the worktree root.
+# codemod-generate (tommy) runs afterwards: copy mode prepends dagnabit's header
+# to pkgs/config_common/config_tommy.go, and that package's own tommy directive
+# rewrites the file without it.
 #
 # regenerate the dagnabit pkgs/ facades
 [group('codemod')]
-codemod-generate-dagnabit:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    config=$(nix build "{{ justfile_directory() }}#conformist-config" --no-link --print-out-paths)
-    DAGNABIT_CONFORMIST_CONFIG="$config" \
-      DAGNABIT_CEILING_DIRECTORIES="{{ justfile_directory() }}" \
-      nix develop --command go generate -run dagnabit ./...
+codemod-generate-dagnabit: && codemod-generate
+    nix run --inputs-from . igloo#godyn-go -- -- go generate -run dagnabit ./...
 
-# Assert the committed pkgs/ facades are current: dagnabit's native
-# drift check exports fresh into a temp dir and diffs against the
-# committed facades without writing, exiting nonzero on drift — a stale
-# or hand-edited facade, or a dagnabit version bump. The dagnabit
-# analogue of validate-generate (tommy).
-#
-# dagnabit formats the freshly-generated facades by running `conformist`
-# (the raw binary on the devShell PATH). Since the config is now
-# nix-module-generated (no conformist.toml on disk), point dagnabit at the
-# generated config via DAGNABIT_CONFORMIST_CONFIG (.#conformist-config) so it
-# formats with cutting-garden's REAL config instead of escalating to a stray
-# ancestor (purse-first#159); the CEILING var bounds any upward walk at the
-# worktree root.
+# Drift gate: checks.<system>.dagnabit-codegen regenerates the facades in the
+# vendored module tree and fails on any content diff from the committed source
+# (which also catches copy-mode facade drift that `dagnabit export -check` alone
+# misses, cutting-garden#198), then runs `dagnabit export -check`. A skip stub
+# off x86_64-linux.
 #
 # drift gate: the committed pkgs/ facades must be current
 [group('pre-build')]
-validate-generate-dagnabit: codemod-generate-dagnabit
-    #!/usr/bin/env bash
-    set -euo pipefail
-    config=$(nix build "{{ justfile_directory() }}#conformist-config" --no-link --print-out-paths)
-    DAGNABIT_CONFORMIST_CONFIG="$config" \
-      DAGNABIT_CEILING_DIRECTORIES="{{ justfile_directory() }}" \
-      nix develop --command dagnabit export -check
-    # `dagnabit export -check` does not catch copy-mode facade CONTENT drift
-    # (cutting-garden#198: pkgs/trellis once landed a stale parseIdent-based
-    # digest slot through a green -check). So also regenerate (the
-    # codemod-generate-dagnabit dependency) and fail on any content diff —
-    # mirroring how validate-generate gates tommy's *_tommy.go companions.
-    #
-    # The generator version stamp (`// Code generated by dagnabit (VERSION)`) is
-    # IGNORED via -I: it reflects which dagnabit build ran (a hermetic pinned
-    # build vs a dirty local one), NOT facade content, so matching on it would
-    # fail the gate on a version difference rather than on real drift.
-    if [ -n "$(git diff -I'Code generated by dagnabit' -- pkgs)" ]; then
-      git --no-pager diff -I'Code generated by dagnabit' -- pkgs
-      gum log --level error "validate-generate-dagnabit: pkgs/ facade content out of date; run \`just codemod-generate-dagnabit\` and commit"
-      exit 1
-    fi
+validate-generate-dagnabit:
+    nix build ".#checks.$(nix eval --impure --raw --expr builtins.currentSystem).dagnabit-codegen" --no-link --show-trace
     gum log --level info "validate-generate-dagnabit: ok"
 
 # Validate docs/rfcs/0014-trellis.peg parses under langlang (Sasha's
@@ -420,13 +370,17 @@ validate-grammar:
     "$langlang_bin" -grammar "$stage/0014-trellis.peg" -grammar-ast -disable-builtins -disable-spaces >/dev/null
     gum log --level info "validate-grammar: ok (0014-trellis.peg parses under langlang; @import chain trellis→hyphence→piggy resolved)"
 
-# Fast `go build` of the CLI into .tmp/cutting-garden for the tight
-# debug dev-loop (skips the full nix build).
+# Build the CLI into .tmp/cutting-garden for the debug dev-loop. godyn
+# rebuilds only the edited package cone (no ambient `go build` since go.nix,
+# igloo FDR 0008); links the nix-built binary rather than the manpage-merged
+# default package.
 #
 # go build the CLI into .tmp/cutting-garden for the debug dev-loop
 [group('debug')]
 debug-build-go:
-    nix develop --command go build -o .tmp/cutting-garden ./cmd/cutting-garden
+    mkdir -p .tmp
+    nix build '.#default' --out-link .tmp/cutting-garden-result
+    ln -sfn cutting-garden-result/bin/cutting-garden .tmp/cutting-garden
 
 # Create a small two-file capture fixture tree under .tmp/cap-fixture for
 # the capture debug recipes to point at.
@@ -1578,18 +1532,18 @@ debug-conformance-traversal:
     EOF
     "$tmp/driver" --manifest "$tmp/m.toml"
 
-# Run one package's go tests (optionally one test via RUN) without the
-# full `just test` lane — the tight agent dev-loop while iterating on a
-# single package.
+# Run one package's go tests (optionally one test via RUN, plus extra
+# test-binary FLAGS such as -test.v) without the full `just test` lane — the
+# tight agent dev-loop while iterating on a single package. Uses godyn-test
+# (igloo FDR 0008): one package's test run built from a git+file: ref of the
+# dirty tree, only the edited cone rebuilds. A NEW file must be `git add -N`'d
+# first or it is invisible. PKG is a module-relative dir. x86_64-linux only
+# (the godyn tests instance).
 #
 # run one package's go tests without the full test lane
 [group('debug')]
-debug-test-pkg PKG='./internal/serve' RUN='':
-    #!/usr/bin/env bash
-    set -euo pipefail
-    run=()
-    if [[ -n '{{ RUN }}' ]]; then run=(-run '{{ RUN }}'); fi
-    nix develop --command go test "${run[@]}" {{ PKG }}
+debug-test-pkg PKG='internal/serve' RUN='' *FLAGS='':
+    nix run --inputs-from . igloo#godyn-test -- -A "packages.$(nix eval --impure --raw --expr builtins.currentSystem).cutting-garden-godyn-tests" {{ PKG }} -- {{ if RUN == '' { '' } else { quote('-test.run=' + RUN) } }} {{ FLAGS }}
 
 # Print the RFC 0001 producer outPaths (go-pkgs / go-pkgs-test) for FLAKEREF —
 # e.g. `git+file://$PWD?rev=<sha>` — to confirm a builder migration or an igloo

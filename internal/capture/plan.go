@@ -7,8 +7,8 @@ import (
 
 	"code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
 	"code.linenisgreat.com/madder/go/pkgs/arg_resolver"
-	"code.linenisgreat.com/madder/go/pkgs/blob_store_id"
 	"code.linenisgreat.com/madder/go/pkgs/blob_stores"
+	"code.linenisgreat.com/madder/go/pkgs/scoped_id"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
@@ -45,7 +45,7 @@ type captureRoot struct {
 // explicit store-switch arg; the planner emits it before the group's first
 // root is walked.
 type captureGroup struct {
-	storeID      blob_store_id.Id
+	storeID      scoped_id.Id
 	switchNotice string
 	roots        []captureRoot
 }
@@ -65,7 +65,7 @@ const (
 
 type classifiedArg struct {
 	kind      argKind
-	storeID   blob_store_id.Id
+	storeID   scoped_id.Id
 	plugin    cutting_garden_plugins.Plugin
 	sourceURL *url.URL
 	err       error
@@ -78,7 +78,7 @@ type classifiedArg struct {
 // and a single arg that classifies as a store-id.
 func planCapture(
 	args []string,
-	shadowCandidates []blob_store_id.Id,
+	shadowCandidates []scoped_id.Id,
 ) (groups []captureGroup, classifyFails []classifyFailure, err error) {
 	if len(args) == 0 {
 		plugin, _ := resolveCapturePlugin("")
@@ -259,7 +259,7 @@ func classifyArg(arg string) classifiedArg {
 		return classifiedArg{kind: argKindError, err: errors.Wrap(err)}
 	}
 
-	var id blob_store_id.Id
+	var id scoped_id.Id
 	if perr := id.Set(arg); perr == nil {
 		return classifiedArg{kind: argKindStoreId, storeID: id}
 	}
@@ -360,7 +360,7 @@ func canonicalRootKey(r captureRoot) string {
 // configured blob-store-id (i.e. a directory `dodder-v8-take3/` exists in
 // PWD AND `dodder-v8-take3` is a configured store name). Empty string
 // when no shadow is detected.
-func shadowNoticeFor(arg string, candidates []blob_store_id.Id) string {
+func shadowNoticeFor(arg string, candidates []scoped_id.Id) string {
 	shadowed, ok := arg_resolver.DetectShadow(arg, candidates)
 	if !ok {
 		return ""
@@ -373,8 +373,8 @@ func shadowNoticeFor(arg string, candidates []blob_store_id.Id) string {
 // madder's command_components.BlobStoreIds (internal/golf, not exported
 // via pkgs/) — same shape as the makeBlobStoreEnv reimplementation in
 // capture.go.
-func blobStoreIds(m blob_stores.BlobStoreMap) []blob_store_id.Id {
-	ids := make([]blob_store_id.Id, 0, len(m))
+func blobStoreIds(m blob_stores.BlobStoreMap) []scoped_id.Id {
+	ids := make([]scoped_id.Id, 0, len(m))
 	for _, s := range m {
 		ids = append(ids, s.GetId())
 	}

@@ -65,11 +65,11 @@ tommy resolves a config field's type to its *defining* package, so an
 alias facade would make caldav's generated codec import `internal/`
 (RFC 0009 §5). The delegated aggregator is `internal/cgconfig`
 (`ConfigV0`); the loader is `command_components.LoadConfig`. `*_tommy.go`
-files are generated — run `just codemod-generate` (or `just codemod-fmt`,
-which also regenerates them via conformist's `[linter.tommy-codegen]` repair
-lane) after editing a `//go:generate tommy generate` struct; `just`'s
-`validate-generate` gate fails on drift. tommy is a flake-bridged dep
-(devshell binary + Go library at one rev; see `gomod.nix`).
+files are generated — run `just codemod-generate` (`go generate -run
+tommy` through godyn-go) after editing a `//go:generate tommy generate`
+struct; `just`'s `validate-generate` gate (`checks.tommy-codegen`) fails on
+drift. tommy is a flake-bridged dep (generator binary + Go library at one
+rev; the library arrives inherited through madder's bridge).
 
 Traversal plugins need not be linked Go code: RFC 0013 defines an
 **out-of-process wire transport** (JSON-RPC 2.0, one message per NDJSON
@@ -131,31 +131,28 @@ divergences from dodder are intentional carry-forwards.
   `passthru.native` / `passthru.bga`; the main binary's bga build is also
   `.#cutting-garden-build_go_application`. godyn's per-package `go test`
   lane is `checks.cutting-garden-godyn-tests` (`just test-go-godyn`; a skip
-  stub off x86_64-linux), gated by `nix flake check` beside the devshell
-  `just test-go`. See godyn(7).
-  Module sources come from two places:
-    - **Flake-input bridge** (`gomod.nix`): madder, hyphence (the
-      canonical `---`-fenced metadata+body document format, extracted from
-      madder in madder#253 — cutting-garden's capture-receipt/failure coders
-      consume it directly), tap, crap (`go-crap`, the shared CRAP-2 viewport
-      + ndjson-crap), dewey (`libs/dewey` within the purse-first
-      workspace), and piggy (`piggy/go`, the markl-id framework home —
-      madder deleted its `pkgs/markl` re-export in piggy#183, so
-      cutting-garden imports `piggy/go/pkgs/markl` directly) are sourced
-      from sibling flakes via `goFlakeInputs` (RFC 0001). Bumping any of
-      them is a `flake.lock`-only edit; no `go get` + `gomod2nix generate`
-      lockstep.
-    - **Organic gomod2nix** (`gomod2nix.toml`): everything else. Read from
-      `gomod2nix.toml`, **not** `go.sum`.
+  stub off x86_64-linux), gated by `nix flake check`; vet, godyn-lint and the
+  three dewey analyzers are `checks.{vet,lint,dewey-*}` (`just lint-go`,
+  `just lint-go-analyzers`). See godyn(7).
+  **Dependencies live in `go.nix`** (igloo FDR 0008): there is no go.mod,
+  go.sum or gomod2nix.toml in the checkout — igloo renders them inside nix.
+  `flakeInputs` bridges madder, dewey and go-mcp (purse-first) onto their
+  flakes' `go-pkgs` (RFC 0001); hyphence, tap, crap, tommy and piggy arrive
+  as bridges inherited through madder's passthru (they still appear as
+  versioned `require` entries, which the bridge overrides). `require` holds
+  every third-party module with its vendor hash and Go version.
   cutting-garden also **produces** `go-pkgs` / `go-pkgs-test` flake outputs
-  (RFC 0009 §2, the out-of-tree-consumer surface): a plugin in its own repo
-  bridges `code.linenisgreat.com/cutting-garden` onto `go-pkgs` to import the
+  (RFC 0009 §2, the out-of-tree-consumer surface; `mkGoPkgs` renders go.nix
+  into them): a plugin in its own repo bridges
+  `code.linenisgreat.com/cutting-garden` onto `go-pkgs` to import the
   `pkgs/` facades. Regenerate the facades with `just codemod-generate-dagnabit`
-  (hermetic — resolves formatters from the store-pinned conformist config).
-- `go test ./...` — runs the test suite (no external deps).
-- `go test ./internal/command -run TestUtility_Run_DispatchesToRegisteredCmd`
-  — single-test pattern.
-- `go build ./...` — compile check inside the devshell.
+  (through godyn-go; the pure drift gate is `checks.dagnabit-codegen`).
+- **No ambient go toolchain.** go commands run inside nix through
+  `godyn-go -- <go command>` (e.g. `just update-go-get <mod>@<ver>`,
+  `just codemod-generate`), which applies the result back to the checkout
+  and rewrites go.nix. One package's tests: `just debug-test-pkg
+  internal/command TestUtility_Run_DispatchesToRegisteredCmd` (godyn-test; a
+  NEW file needs `git add -N` first). gopls and dlv are unsupported.
 - `just codemod-fmt` formats the tree via `conformist` (goimports→gofumpt,
   nixfmt, shfmt) + lints (shellcheck) + the eng-convention linters. conformist
   is consumed as a **nix module** (`conformist.lib.evalModule`): the config is
@@ -168,32 +165,29 @@ divergences from dodder are intentional carry-forwards.
   `nix fmt` runs the same formatter. See `eng-design_patterns-conformist`(7),
   `conformist-nix`(7).
 
-The flake's `devShells.default` provides `go_1_26`, `gopls`, and `gomod2nix`.
-`GOTOOLCHAIN = "local"` is pinned in both the package build and devshell —
-never let go fetch a different toolchain.
+The flake's `devShells.default` provides `godyn-go` and `godyn-test` — no
+`go`, `gopls` or `gomod2nix`.
 
 ### When dependencies change
 
 Two cases:
 
-1. **A bridged dep (madder, hyphence, tap, crap, dewey, piggy)** — bump the flake input:
+1. **A bridged dep (madder, hyphence, tap, crap, tommy, piggy, dewey, go-mcp)**
+   — bump the flake input:
    ```sh
-   nix flake update madder   # or hyphence, tap, crap, piggy, or purse-first (dewey lives there)
+   just update-nix-input madder   # or hyphence, tap, crap, tommy, piggy, purse-first
    ```
-   `flake.lock` is the source of truth; `go.mod` keeps its real `require`
-   line (the bridge merges over it at eval time). No `gomod2nix generate`
-   needed for the bridged module, though `go.mod`'s require line still
-   needs a real version so `nix develop --command go build` (which hits
-   GOMODCACHE, not the bridge) finds the dep.
+   `flake.lock` is the source of truth; go.nix records no version for it.
 
-2. **A non-bridged dep** — `go get` it, then regenerate the nix lock:
+2. **A third-party dep** — through godyn's escape hatch, which runs `go get`
+   / `go mod tidy` inside nix and rewrites go.nix with the new hashes:
    ```sh
-   gomod2nix generate
+   just update-go-get github.com/google/go-cmp@v0.7.0
    ```
 
-Either way, `gomod2nix.toml` and any newly tracked source files must be
-`git add`'d before `nix build` sees them — `nix build` against a dirty
-tree only includes git-tracked files.
+Either way, new source files must be `git add`'d (or `git add -N`) before
+`nix build`, godyn-go or godyn-test sees them — a dirty-tree flake build
+only includes git-tracked files.
 
 ## Architecture
 

@@ -226,7 +226,7 @@ func (p *parser) parseTypeTerm() (TypeTerm, bool) {
 		p.pos = save
 		return TypeTerm{}, false
 	}
-	return TypeTerm{Name: id.Name}, true
+	return TypeTerm(id), true
 }
 
 // isDataChar reports whether r is in the blech32 alphabet (piggy RFC 0011
@@ -349,7 +349,7 @@ func (p *parser) parseQualifier() (Qualifier, bool) {
 		p.pos = save
 		return Qualifier{}, false
 	}
-	return Qualifier{Name: id.Name}, true
+	return Qualifier(id), true
 }
 
 func (p *parser) parseQuotedRef() (QuotedRef, bool) {

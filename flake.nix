@@ -235,7 +235,7 @@
       tommy,
       langlang,
       ...
-    }:
+    }@inputs:
     {
       # System-independent module outputs. cutting-garden EXPORTS the modules;
       # circus consumes them as a flake input and sets
@@ -256,17 +256,6 @@
         # buildGoApplication that doesn't know about goFlakeInputs.
         pkgs = import igloo { inherit system; };
 
-        # Pure-consumer goFlakeInputs map. Sources Go module trees for
-        # specific deps from sibling flake outputs instead of the
-        # organic gomod2nix.toml hash (RFC 0001 §Consumer interface).
-        goFlakeInputs = import ./gomod.nix {
-          inherit
-            madder
-            purse-first
-            system
-            ;
-        };
-
         # Producer half of the flake-input-go_mod protocol (RFC 0001) and the
         # out-of-tree-consumer surface of the plugin SDK (RFC 0009 §2): publish
         # go-pkgs / go-pkgs-test so a plugin in its own repo can bridge
@@ -274,13 +263,14 @@
         # — e.g. chrest importing pkgs/capture_plugin to emit RFC 0002 receipts,
         # or a traversal plugin importing pkgs/cgapp / pkgs/cutting_garden_plugins.
         # cutting-garden's Go module is at the repo root, so the producer filters
-        # the whole repo (no go/ subdir to scope to). goFlakeInputs is threaded
-        # so go-pkgs carries passthru.goFlakeInputs, letting a downstream
-        # consumer inherit cutting-garden's own bridges (madder, dewey, tap, …)
-        # at depth-1 rather than re-declaring them.
+        # the whole repo (no go/ subdir to scope to). go.nix (igloo FDR 0008) is
+        # rendered into go-pkgs as go.mod + gomod2nix.toml, and its flakeInputs
+        # become passthru.goFlakeInputs, letting a downstream consumer inherit
+        # cutting-garden's own bridges (madder, dewey, go-mcp) at depth-1.
         goPkgs = pkgs.mkGoPkgs {
           src = ./.;
-          inherit goFlakeInputs;
+          manifest = ./go.nix;
+          inherit inputs;
         };
 
         # pkgsUpstream is the bare Hydra-blessed nixpkgs (no overlays)
@@ -299,15 +289,15 @@
         # pre-commit hook from it (all store-pinned, so the formatter toolchain
         # need not be on the ambient PATH — the conformist#51 trap is gone).
         #
-        # tommy + the tommy-codegen repair linter have no registry program, so
-        # they are inlined here as freeform blocks where the `tommy` flake input
-        # is in scope (a standalone ./conformist.nix can't see flake inputs).
-        # Both binaries are store-pinned with lib.getExe' (explicit binary
-        # name): the module's exeType would lib.getExe the `command`, but tommy
-        # lacks meta.mainProgram (deprecation warning) and — critically —
-        # `repair-command` is a FREEFORM field that is NOT coerced, so a bare
-        # derivation there serializes to the store DIRECTORY, not the binary.
-        # getExe' on both sidesteps both issues.
+        # The tommy formatter has no registry program, so it is inlined here as
+        # a freeform block where the `tommy` flake input is in scope (a
+        # standalone ./conformist.nix can't see flake inputs). Store-pinned with
+        # lib.getExe' because tommy lacks meta.mainProgram.
+        #
+        # The former tommy-codegen and dewey-facade-export repair lanes are gone:
+        # both type-load packages through a checkout go.mod, which go.nix (igloo
+        # FDR 0008) removed. Codegen drift is the pure checks.tommy-codegen /
+        # checks.dagnabit-codegen instead; regeneration goes through godyn-go.
         conformistTommyModule =
           { ... }:
           {
@@ -316,56 +306,34 @@
               options = [ "fmt" ];
               includes = [ "*.toml" ];
             };
-            settings.linter.tommy-codegen = {
-              command = "true";
-              "repair-command" =
-                pkgs.lib.getExe' tommy.packages.${system}.conformist-tommy-codegen
-                  "conformist-tommy-codegen";
-              # `flake.lock` is here, not just `*.go` (madder's hard-won
-              # trigger shape): the generated header embeds tommy's
-              # build-commit hash, so the bump commit that moves the tommy pin
-              # stages NO *.go — a *.go-only trigger would never fire and the
-              # stale stamp would survive to the merge gate. Triggering on the
-              # lock makes the bump commit restamp + restage its own drift.
-              includes = [
-                "*.go"
-                "flake.lock"
-              ];
-              "passes-files" = false;
-              "restage-repair-outputs" = true; # tier 2: restage modified *_tommy.go
-              "stage-new-outputs" = true; # tier 3: stage a brand-new companion
-              "stage-deleted-outputs" = true; # tier 4: stage a removed companion
-            };
           };
 
-        # The dagnabit pkgs/ facade lane, consumed from purse-first's published
-        # conformist module (purse-first#163) — the same self-healing shape
-        # madder/piggy use. deweyDir "." + library=false: cutting-garden's
-        # internal/ + pkgs/ live at the repo root and export via //go:generate
-        # directives (RFC 0009), not --library mode. The facades embed
-        # dagnabit's version stamp ("Code generated by dagnabit (0.4.1+…)"),
-        # so a purse-first bump restamps every facade from a flake.lock-only
-        # commit — hence flake.lock in the trigger includes, mirroring the
-        # tommy lane above. conformistConfig comes from the PURE eval's
-        # configFile (a separate eval — no self-reference).
-        conformistFacadeModule =
-          { ... }:
-          {
-            imports = [ purse-first.lib.conformistLinters.dewey-facade-export ];
-            linters.dewey-facade-export = {
-              enable = true;
-              deweyDir = ".";
-              library = false;
-              dagnabitPackage = purse-first.packages.${system}.dagnabit;
-              conformistConfig = conformistEval.config.build.configFile;
-            };
-            settings.linter.dewey-facade-export = {
-              includes = [ "flake.lock" ];
-              "restage-repair-outputs" = true; # tier 2: restage modified facades
-              "stage-new-outputs" = true; # tier 3: stage a brand-new pkgs/ facade
-              "stage-deleted-outputs" = true; # tier 4: stage a removed facade
-            };
-          };
+        # dagnabit with its post-generation conformist pass pinned: the raw
+        # conformist binary on PATH (dagnabit passes --tree-root, which the
+        # module wrapper would collide with, purse-first#159) and
+        # DAGNABIT_CONFORMIST_CONFIG naming this repo's generated PURE config, so
+        # the facades format identically in the codegen check and in a godyn-go
+        # regeneration (neither sees a conformist.toml on disk).
+        dagnabitPinned =
+          pkgs.runCommand "dagnabit-pinned"
+            {
+              nativeBuildInputs = [ pkgs.makeWrapper ];
+              meta.mainProgram = "dagnabit";
+            }
+            ''
+              makeWrapper ${
+                pkgs.lib.getExe' purse-first.packages.${system}.dagnabit "dagnabit"
+              } $out/bin/dagnabit \
+                --set DAGNABIT_CONFORMIST_CONFIG ${conformistEval.config.build.configFile} \
+                --prefix PATH : ${pkgs.lib.makeBinPath [ conformist.packages.${system}.default ]}
+            '';
+
+        # Generators on PATH for godyn-go (`just codemod-generate*`) and the
+        # codegen drift checks.
+        codegenTools = [
+          tommy.packages.${system}.default
+          dagnabitPinned
+        ];
 
         # Pure lane: the eng preset (sandboxed eng-convention linters) + this
         # repo's formatters/excludes + the tommy blocks. Drives `nix fmt`
@@ -380,19 +348,16 @@
           package = conformist.packages.${system}.default;
         };
 
-        # Dedicated PRE-COMMIT/REPAIR (codegen) eval, madder's proven layout:
-        # the repo's formatters/excludes + the two codegen lanes, deliberately
-        # NOT presets.eng (the convention linters stay at the merge/worktree
-        # gate, not commit/repair time). build.preCommit from THIS eval is the
-        # sweatfile pre-commit hook; build.repair is the spinclass merge-REPAIR
-        # hook — the tier-B self-healing that heals a bump commit's codegen
-        # restamps with the post-bump drivers (the pre-commit hook's
-        # store-pinned driver predates the very bump it would need to heal).
+        # Dedicated PRE-COMMIT/REPAIR eval: the repo's formatters/excludes,
+        # deliberately NOT presets.eng (the convention linters stay at the
+        # merge/worktree gate, not commit/repair time). build.preCommit from THIS
+        # eval is the sweatfile pre-commit hook; build.repair is the spinclass
+        # merge-REPAIR hook. Formatting only since go.nix: codegen drift is the
+        # checks.*-codegen gate, regenerated through godyn-go.
         conformistCodegenEval = conformist.lib.evalModule pkgs {
           imports = [
             ./conformist.nix
             conformistTommyModule
-            conformistFacadeModule
           ];
           package = conformist.packages.${system}.default;
         };
@@ -445,8 +410,9 @@
         godynSystem = system == "x86_64-linux";
 
         # The shared shape of every cutting-garden Go build (madder's
-        # buildMadderGo): buildGoAuto over the committed gomod2nix.toml pins and
-        # the goFlakeInputs bridges. `version` is explicit (igloo#70). godyn
+        # buildMadderGo): buildGoAuto over the go.nix manifest (igloo FDR 0008;
+        # its flakeInputs name entries of `inputs`, and go.mod/gomod2nix.toml are
+        # rendered inside nix). `version` is explicit (igloo#70). godyn
         # needs `cc` because madder's closure carries the cgo-only
         # github.com/DataDog/zstd (a derived graph without cc is CGO_ENABLED=0,
         # which leaves that package empty). buildGodynModule takes no `meta`, so
@@ -467,8 +433,10 @@
             // {
               version = cgVersion;
               src = ./.;
-              modules = ./gomod2nix.toml;
-              inherit goFlakeInputs;
+              manifest = ./go.nix;
+              inherit inputs;
+              # On PATH in every godyn-go run (`just codemod-generate*`).
+              goRunInputs = codegenTools;
               strategy = if godynSystem then "native" else "bga";
               nativeArgs = {
                 cc = pkgs.stdenv.cc;
@@ -476,7 +444,6 @@
               // nativeArgs;
               bgaArgs = {
                 pwd = ./.;
-                go = pkgs.go_1_26;
                 GOTOOLCHAIN = "local";
                 inherit meta;
               }
@@ -621,19 +588,44 @@
         # unchanged test cone never re-runs. No build tags: cutting-garden has
         # no `//go:build` test helpers. Gated as checks.cutting-garden-godyn-tests
         # (x86_64-linux), beside the devshell `go test ./...` lane (`just test-go`).
-        cuttingGardenGodynTests = pkgs.buildGodynModule {
+        godynModuleArgs = {
           pname = "cutting-garden";
           version = cgVersion;
           src = ./.;
-          modules = ./gomod2nix.toml;
-          inherit goFlakeInputs;
+          manifest = ./go.nix;
+          inherit inputs system;
           cc = pkgs.stdenv.cc;
-          tests = true;
-          # internal/trellis's conformance test reads the normative grammar
-          # from outside its package (../../docs/rfcs/0014-trellis.peg);
-          # testFiles places it at that module-relative path in the test tree.
-          testFiles."internal/trellis" = [ "docs/rfcs/0014-trellis.peg" ];
         };
+
+        cuttingGardenGodynTests = pkgs.buildGodynModule (
+          godynModuleArgs
+          // {
+            tests = true;
+            # internal/trellis's conformance test reads the normative grammar
+            # from outside its package (../../docs/rfcs/0014-trellis.peg);
+            # testFiles places it at that module-relative path in the test tree.
+            testFiles."internal/trellis" = [ "docs/rfcs/0014-trellis.peg" ];
+            # the git plugin's integration tests build real-git fixture repos
+            # with the `git` CLI (and skip without it).
+            nativeCheckInputs = [ pkgs.git ];
+          }
+        );
+
+        # The dewey analyzers (formerly go.mod `tool` deps run as `go vet
+        # -vettool`), each as godyn's per-package vet lane with that analyzer as
+        # vetTool. One instance per analyzer; they share every compile
+        # (content-addressed), so the added cost is the vet runs.
+        deweyAnalyzerVet =
+          name:
+          (pkgs.buildGodynModule (godynModuleArgs // { vetTool = purse-first.packages.${system}.${name}; }))
+          .passthru.vetAll;
+
+        # A godyn-backed flake check on x86_64-linux; a skip stub elsewhere,
+        # where godyn is not validated (igloo#33) and its eval-time graph IFD
+        # cannot run cross-system (igloo#75).
+        godynCheck =
+          name: drv:
+          if godynSystem then drv else pkgs.runCommand "cutting-garden-${name}-skipped" { } "touch \"$out\"";
 
         # cutting-garden-clown-plugin stages a clown plugin (see
         # clown-plugin-protocol(7) / clown-json(5)) that exposes
@@ -730,6 +722,8 @@
             cuttingGardenDoc
           ];
           meta = cuttingGarden.meta;
+          # godyn-go (the default attr) needs goRun / ingest / manifest.
+          inherit (cuttingGarden) passthru;
         };
       in
       {
@@ -741,6 +735,10 @@
           # from the godyn default on x86_64-linux, and what `default` already
           # is elsewhere. `nix build .#cutting-garden-build_go_application`.
           cutting-garden-build_go_application = cuttingGarden.passthru.bga;
+
+          # godyn's tests instance (tests = true), exposed for its
+          # passthru.testWith: `just debug-test-pkg` (godyn-test -A).
+          cutting-garden-godyn-tests = cuttingGardenGodynTests;
 
           # Producer outputs for out-of-tree Go consumers (RFC 0001 producer,
           # RFC 0009 §2): a plugin in its own repo bridges
@@ -941,20 +939,17 @@
 
         devShells.default = pkgs.mkShell {
           packages = [
-            pkgs.go_1_26
-            pkgs.gopls
+            # No ambient `go`, gopls or gomod2nix: dependencies live in go.nix
+            # (igloo FDR 0008). go commands run through `godyn-go -- <cmd>`
+            # (inside nix, results patched back), one package's tests through
+            # `godyn-test <dir> -- <flags>`.
+            pkgs.godyn-go
+            pkgs.godyn-test
             # gum (charmbracelet) backs the `just tag` / `just release`
             # recipes' pretty logging per eng-versioning(7) §JUSTFILE
             # RELEASE RECIPES. Devshell-only — release machinery is
             # not in the package closure.
             pkgs.gum
-            # gomod2nix CLI for `just build-gomod2nix` / `just update-go`.
-            # Sourced from igloo (pkgs.gomod2nix = gomod2nix-1.0.0) so the
-            # `gomod2nix.toml` this regenerates byte-matches what conformist's
-            # `gomod2nix` drift linter produces (the linter also runs igloo's
-            # 1.0.0) — a separate gomod2nix flake input drifted on the
-            # `goVersion` fields the 1.0.0 emits (cutting-garden#114).
-            pkgs.gomod2nix
             madder.packages.${system}.madder
             # yt-dlp matches the wrap in the installed binary so
             # `go run ./cmd/cutting-garden capture ytdlp:…` from inside
@@ -992,28 +987,9 @@
             # Both from the CODEGEN eval so commit + merge-repair regenerate
             # tommy/dagnabit stamp drift, not just formatting.
             conformistCodegenEval.config.build.repair
-            # tommy: the `tommy generate` codegen binary for RFC 0007's
-            # config format (`//go:generate tommy generate`). Devshell-
-            # only; generated `*_tommy.go` companions are committed, so
-            # the package build needs no codegen at build time.
-            tommy.packages.${system}.default
-            # dagnabit: the `dagnabit export` codegen binary that generates
-            # the public pkgs/ facades over internal/ packages
-            # (`//go:generate dagnabit export`). Built by purse-first's
-            # gomod.nix (cmd/dagnabit). Devshell-only; generated pkgs/
-            # facades are committed, so the package build needs no codegen
-            # at build time. Run via `just generate-dagnabit`; the drift
-            # gate is `generate-check-dagnabit`, wired into `test`
-            # (RFC 0009 §The public surface).
-            purse-first.packages.${system}.dagnabit
-            # conformist-tommy-codegen: dagnabit runs `conformist` as a
-            # post-generation repair pass, which initialises every lane in the
-            # generated config — including [linter.tommy-codegen], whose repair
-            # command this binary provides (the module store-pins it in the
-            # config, but dagnabit's own `conformist` invocation resolves it
-            # from PATH, so keep it here too — otherwise `go generate -run
-            # dagnabit` exits nonzero).
-            tommy.packages.${system}.conformist-tommy-codegen
+            # tommy and dagnabit (the go:generate codegen binaries) are not
+            # here: they run inside godyn-go (goRunInputs = codegenTools) and
+            # the checks.*-codegen drift gates.
             # scdoc: compiles the hand-written section 5/7 man pages under
             # doc/ (eng-manpages(7) SCDOC PATTERN). Devshell-only, mirrors
             # cuttingGardenDoc's nativeBuildInputs below; `just debug-manpage`
@@ -1068,6 +1044,37 @@
             cuttingGardenGodynTests.passthru.checkAll
           else
             pkgs.runCommand "cutting-garden-godyn-tests-skipped" { } "touch \"$out\"";
+
+        # godyn's per-package analysis lanes and the codegen drift checks, from
+        # go.nix (igloo FDR 0008). Skip stubs off x86_64-linux, like the tests.
+        # The toolchain's go vet and godyn-lint (vet passes + staticcheck
+        # defaults, //nolint honored): `just lint-go` builds both.
+        checks.vet = godynCheck "vet" cuttingGardenGodynTests.passthru.vetAll;
+        checks.lint = godynCheck "lint" cuttingGardenGodynTests.passthru.lintAll;
+        # `just lint-go-analyzers`.
+        checks.dewey-defererr = godynCheck "dewey-defererr" (deweyAnalyzerVet "defererr");
+        checks.dewey-repool = godynCheck "dewey-repool" (deweyAnalyzerVet "repool");
+        checks.dewey-seqerror = godynCheck "dewey-seqerror" (deweyAnalyzerVet "seqerror");
+        # `go generate` in the vendored module tree, failing on any diff from the
+        # committed source: the tommy *_tommy.go companions (`just
+        # validate-generate`) and the dagnabit pkgs/ facades (`just
+        # validate-generate-dagnabit`, which also runs dagnabit's `export -check`).
+        checks.tommy-codegen = godynCheck "tommy-codegen" (
+          cuttingGarden.passthru.codegenCheck {
+            command = "go generate -run tommy ./...";
+            nativeBuildInputs = codegenTools;
+          }
+        );
+        checks.dagnabit-codegen = godynCheck "dagnabit-codegen" (
+          cuttingGarden.passthru.codegenCheck {
+            # tommy re-runs after dagnabit: copy mode prepends dagnabit's header
+            # to pkgs/config_common/config_tommy.go, which that package's own
+            # `//go:generate tommy generate` then rewrites without it — the
+            # committed state `just codemod-generate-dagnabit` produces.
+            command = "go generate -run dagnabit ./... && go generate -run tommy ./... && dagnabit export -check";
+            nativeBuildInputs = codegenTools;
+          }
+        );
 
         # The organize tree-sitter grammar's corpus (zz-nvim/grammars/organize/
         # test/corpus) as a sandboxed flake check: `tree-sitter test` over the

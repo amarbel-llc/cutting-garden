@@ -84,14 +84,16 @@ URI enumerate them.
 nix build            # -> result/bin/cutting-garden (+ cg, manpages, completions)
 ```
 
-The flake ships a devshell (`go_1_26`, `gopls`, `gomod2nix`) and a `just`
+Go dependencies live in `go.nix` (igloo FDR 0008): the checkout has no
+go.mod, and there is no ambient go toolchain — go commands run inside nix via
+`godyn-go`, which the devshell provides alongside `godyn-test` and a `just`
 task runner. `just` (build + test + analyzers + format/lint checks) is the
 full gate.
 
 ## Test
 
 ```sh
-go test ./...        # unit + integration suite (no external deps)
+just test-go-godyn   # per-package unit + integration suite (godyn)
 just test            # the full gate (adds bats, dewey analyzers, format/lint)
 ```
 

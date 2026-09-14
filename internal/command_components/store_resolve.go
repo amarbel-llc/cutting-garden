@@ -5,8 +5,8 @@ import (
 	"io"
 
 	"code.linenisgreat.com/cutting-garden/internal/capture_receipt"
-	"code.linenisgreat.com/madder/go/pkgs/blob_store_id"
 	"code.linenisgreat.com/madder/go/pkgs/blob_stores"
+	"code.linenisgreat.com/madder/go/pkgs/scoped_id"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
@@ -34,7 +34,7 @@ func ResolveStoreByID(
 	env MaterializationEnv,
 	idStr string,
 ) (blob_stores.BlobStoreInitialized, error) {
-	var id blob_store_id.Id
+	var id scoped_id.Id
 	if err := id.Set(idStr); err != nil {
 		return blob_stores.BlobStoreInitialized{}, errors.Wrapf(
 			err, "parse -store value %q", idStr,
@@ -95,7 +95,7 @@ func ResolveMaterializationStore(
 		return env.GetDefaultBlobStore(), nil
 	}
 
-	var hintID blob_store_id.Id
+	var hintID scoped_id.Id
 	if err := hintID.Set(hint.StoreId); err != nil {
 		fmt.Fprintf(diagnostics,
 			"notice: receipt store-hint id %q is malformed: %v\n",

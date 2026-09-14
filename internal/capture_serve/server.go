@@ -188,7 +188,7 @@ func (w *blobProtocolWriter) WriteBlob(
 
 	var fin BlobFinishResult
 	if err := w.peer.Call(
-		ctx, MethodBlobFinish, BlobFinishParams{Blob: begin.Blob}, &fin,
+		ctx, MethodBlobFinish, BlobFinishParams(begin), &fin,
 	); err != nil {
 		return "", 0, errors.Wrapf(err, "blob.finish")
 	}

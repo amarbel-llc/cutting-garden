@@ -161,7 +161,9 @@ func splicePeriod(
 			"caldav plugin: cannot reschedule to the %s bucket: unrecognized date value %q", g, value,
 		)
 	}
-	year, month, day := digits[0:4], digits[4:6], digits[6:8]
+	// year is always replaced by the bucket (or the switch rejects g).
+	var year string
+	month, day := digits[4:6], digits[6:8]
 
 	switch g {
 	case cutting_garden_plugins.GranularityMonth:
