@@ -7,8 +7,9 @@ are the `function <name> { # @test` form; Go names are `go test` functions.
 Slice 1 rows verified against the tree 2026-08-30 (T7). Slice 2 rows (G1, G2,
 G3, G6, G7, G12, and G8's JSON row, pulled forward) verified against the tree
 2026-09-03 (slice 2 T5) — the slice-2 set is COMPLETE. Slice 3 (the G4
-`fmt-organize` rows) landed 2026-09-06 with the command; slice 4 rows remain
-open.
+`fmt-organize` rows) landed 2026-09-06 with the command; slice 4 (the G8
+espalier/mesa rows) landed 2026-09-20 with `list -format espalier` and the
+mesa text table — every row is now filled.
 
 The nvim tree-sitter corpus,
 `zz-nvim/grammars/organize/test/corpus/organize.txt`, is the dialect's
@@ -34,9 +35,9 @@ below (the case title names the lane), and `just test-grammar-corpus`
 | G7 | cross-appearance tag disagreement → conflict; placement-vs-box → conflict; `_tag-strip = none` move-is-not-an-edit | 2 | `organize_tagatoms.bats:organize_tagatoms_cross_appearance_disagreement_conflicts`, `organize_tagatoms.bats:organize_tagatoms_placement_vs_box_conflicts`, `organize_tagatoms.bats:organize_tagatoms_strip_none_move_is_not_an_edit` (+ Go `TestPlanTagAtomDeltas_CrossAppearanceDisagreement`, `TestPlanTagAtomDeltas_PlacementVsBox`, `TestPlanTagAtomDeltas_StripNoneMoveIsNotAnEdit`, `TestPlanTagAtomDeltas_MigratedToPlacementIsNotARemove`) |
 | G7 | stale atom RE-ASSERTS its tag (bucket line deleted, sibling box atom retained → adds=[tag]; composed fold nets ZERO edits — never a silent removal) | 2 | Go `internal/organize` `TestPlanTagAtomDeltas_StaleAtomReAsserts` (+ `organize_headings.bats` reset vector's bare-box comment attests the inverse spelling) |
 | G7 | `%`-atom edit rejected (parse-level: `%` is reserved, no box production) | 2 | Go `internal/organize` `TestParseObjectLine_PercentMarkedTermRejects` |
-| G8 | `list -format espalier` == organize boxes | 4 | — |
+| G8 | `list -format espalier` == organize boxes | 4 | `list_espalier.bats:list_espalier_matches_organize_object_lines` (the isometry pin: organize's object lines are grep-derived from a live render and asserted byte-equal, then pinned literally), `list_espalier.bats:list_espalier_query_filters_and_renders_boxes` (+ Go `internal/list` `TestRun_EspalierBoxes`, `TestRun_EspalierNoTagPlugin`, `TestRunFacets_EspalierRejects`) |
 | G8 | JSON `tags` array | 2 (landed early, with G12) | `organize_ns.bats:organize_ns_list_json_carries_tags` |
-| G8 | mesa table (golden) | 4 | — |
+| G8 | mesa table (golden) | 4 | `list_espalier.bats:list_text_mesa_table_carries_tags_column` (TAB-separated pipe form + TAGS column), `list_espalier.bats:list_text_no_tag_plugin_keeps_three_columns` (+ Go `TestRun_TextTable`, `TestRun_JSONCarriesTags`'s text half; the `organize.bats` / `organize_date.bats` / `organize_priority.bats` `list -query` asserts re-pointed to the TAB form) |
 | G9 | bare token in box is a tag, even if it names a field | 1 | `organize_literal.bats:organize_literal_bare_token_is_tag` (+ Go `internal/trellis` `TestLiteral_RoundTrip`) |
 | G9 | non-ground interior is a loud bad request | 1 | `organize_literal.bats:organize_literal_non_ground_interior_rejects` (+ Go `TestLiteral_NotGround`) |
 | G9 | quoted tag (`"_ inbox"`) round-trips in box and heading | 1 | `organize_literal.bats:organize_literal_quoted_tag_heading_round_trips`, `organize_literal.bats:organize_literal_quoted_box_token_parses` |

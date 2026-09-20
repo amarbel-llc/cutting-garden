@@ -109,7 +109,11 @@ strips each appearance's placement Via tag by default), and box tag
 edits apply as MEMBERSHIP writes through the tag interpreter's exact
 `Complete` (RFC 0019 §6.2); `list -format json` and the mcp enriched
 listing carry a top-level `tags` array, and `describe_node_types`
-reports each tag-declaring type's `tag_set`. The organize bats lanes are
+reports each tag-declaring type's `tag_set`. `list -format espalier`
+(slice 4, G8) renders one organize object line per node through the
+shared writer + the `command_components` espalier-view helpers, and
+`list -format text` is a dewey mesa table (TAB-separated on a pipe)
+with a TAGS column when the plugin declares a tag dimension. The organize bats lanes are
 whole-document vectors
 (`assert_output - <<-EOM`) against the caldav testserver on a pinned port
 per lane (`CG_TEST_CALDAV_PORT`; the port table lives in

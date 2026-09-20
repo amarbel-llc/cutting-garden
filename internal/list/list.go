@@ -5,18 +5,22 @@
 //
 // Positional surface:
 //
-//	list [-format text|json] [-facets [-filter PRED]] [-query TRELLIS] [URI]
+//	list [-format text|json|espalier] [-facets [-filter PRED]] [-query TRELLIS] [URI]
 //
 // One level per invocation: `list caldav://host/dav/me/` lists the
 // calendar collections; `list caldav://host/dav/me/personal/` lists that
 // calendar's VTODO/VEVENT objects. With no URI it lists every plugin's
-// configured roots. `-facets` prints the node's hoisted facet summary
-// instead of its children (narrowed by `-filter`); `-query` filters the
-// listing by a trellis query evaluated against the URI's subtree (RFC 0014,
-// FDR 0022, cutting-garden#164). Both `-facets` and `-query` require a URI.
-// Read-only — no blob store is touched. Exit 0 on success, 2 on a resolution
-// or traversal error, 64 on a bad -format value, a bad query, or a wrong
-// argument count.
+// configured roots. `-format text` renders a mesa table (styled on a TTY,
+// TAB-separated on a pipe — purse-first RFC 0003), with a TAGS column when
+// the plugin declares a tag dimension; `-format espalier` renders one
+// organize object line per node through the shared trellis literal writer
+// (native tags design G8/G13). `-facets` prints the node's hoisted facet
+// summary instead of its children (narrowed by `-filter`); `-query` filters
+// the listing by a trellis query evaluated against the URI's subtree
+// (RFC 0014, FDR 0022, cutting-garden#164). Both `-facets` and `-query`
+// require a URI. Read-only — no blob store is touched. Exit 0 on success,
+// 2 on a resolution or traversal error, 64 on a bad -format value, a bad
+// query, or a wrong argument count.
 package list
 
 import (
@@ -37,12 +41,14 @@ import (
 	"code.linenisgreat.com/cutting-garden/internal/trellis_eval"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/interfaces"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/mesa"
 )
 
 // Format flag values.
 const (
-	formatText = "text"
-	formatJSON = "json"
+	formatText     = "text"
+	formatJSON     = "json"
+	formatEspalier = "espalier"
 )
 
 // List is the value registered for the `list` subcommand. Format selects
@@ -98,7 +104,8 @@ func (cmd *List) SetFlagDefinitions(flagSet interfaces.CLIFlagDefinitions) {
 		&cmd.Format,
 		"format",
 		formatText,
-		"output format: text (aligned table) or json (one object per node)",
+		"output format: text (table; TAB-separated on a pipe), json (one "+
+			"object per node), or espalier (organize object lines)",
 	)
 	flagSet.BoolVar(
 		&cmd.Facets,
@@ -201,12 +208,16 @@ func (cmd *List) runRoots(ctx errors.Context) error {
 		})
 	}
 
-	if cmd.Format == formatJSON {
-		// Roots span plugins and are plain address entries — no per-node
-		// tag presentation applies.
+	// Roots span plugins and are plain address entries — no per-node tag
+	// presentation (or atom presentation) applies to any format.
+	switch cmd.Format {
+	case formatJSON:
 		return writeJSON(cmd.output, nodes, nil)
+	case formatEspalier:
+		// No anchor: a root's box id is its full URI, the trailer its label.
+		return writeEspalier(cmd.output, nodes, "", nil, nil)
 	}
-	return writeText(cmd.output, nodes)
+	return writeText(cmd.output, nodes, nil)
 }
 
 // rootLabel derives a short display name for a root URI: the last path
@@ -243,37 +254,26 @@ func (cmd *List) runList(ctx errors.Context, uriStr string) error {
 		return err
 	}
 
-	// The [tags] interpreter override serves two consumers here — a --query's
-	// bare-tag term resolution (RFC 0019 §4, #231 slice 3) and the JSON node
-	// view's tag presenter below — so the config VALUE is re-read only on
-	// those paths: a plain-text `list <uri>` stays load-free past Run's
-	// LoadAndInjectConfig, and a config problem cannot fail it. A missing
-	// config yields "".
-	var tagsOverride string
-	if cmd.Format == formatJSON || cmd.Query != "" {
-		cfg, cerr := command_components.LoadDefaultConfig(nil)
-		if cerr != nil {
-			if cmd.Query != "" {
-				return errors.Wrapf(cerr, "list %s --query", uriStr)
-			}
-			return errors.Wrapf(cerr, "list %s", uriStr)
-		}
-		tagsOverride = cfg.Tags.Interpreter
+	// The [tags] interpreter override serves every path since native tags
+	// slice 4 — a --query's bare-tag term resolution (RFC 0019 §4, #231
+	// slice 3) AND each format's tag presentation (the JSON `tags` array,
+	// the text table's TAGS column, the espalier boxes' tag atoms) — so the
+	// config VALUE is re-read unconditionally. A missing config yields "".
+	cfg, cerr := command_components.LoadDefaultConfig(nil)
+	if cerr != nil {
+		return errors.Wrapf(cerr, "list %s", uriStr)
 	}
+	tagsOverride := cfg.Tags.Interpreter
 
-	// The JSON node view carries the presented tag set (design G12, native
-	// tags slice 2): the designated FieldTag field's values, ordered by the
-	// resolved interpreter's SortKey. nil (with no error) when the plugin
-	// declares no tag dimension — the view then omits the key, and the fetch
-	// below stays the cheap metadata-only ListRoots. The text table is
-	// untouched (the espalier/mesa formats are slice 4).
-	var presentTags func(cutting_garden_plugins.Node) []string
-	if cmd.Format == formatJSON {
-		if presentTags, err = command_components.NodeTagsPresenter(
-			lister, tagsOverride,
-		); err != nil {
-			return errors.Wrapf(err, "list %s", uriStr)
-		}
+	// The presented tag set (design G12/G8): the designated FieldTag field's
+	// values, ordered by the resolved interpreter's SortKey. nil (with no
+	// error) when the plugin declares no tag dimension — the JSON view then
+	// omits the key, the text table its TAGS column, and the espalier box its
+	// tag atoms, and the non-espalier fetch below stays the cheap
+	// metadata-only ListRoots.
+	presentTags, err := command_components.NodeTagsPresenter(lister, tagsOverride)
+	if err != nil {
+		return errors.Wrapf(err, "list %s", uriStr)
 	}
 
 	var nodes []cutting_garden_plugins.Node
@@ -287,10 +287,12 @@ func (cmd *List) runList(ctx errors.Context, uriStr string) error {
 		); err != nil {
 			return errors.Wrapf(err, "list %s --query", uriStr)
 		}
-	} else if presentTags != nil {
-		// Tags present off Node.Fields, which caldav's metadata-only
-		// ListRoots deliberately leaves empty (cutting-garden#212) — prefer
-		// the plugin's enriched listing exactly as organize's selection does.
+	} else if presentTags != nil || cmd.Format == formatEspalier {
+		// Tags, box atoms, and the description trailer all present off
+		// Node.Fields, which caldav's metadata-only ListRoots deliberately
+		// leaves empty (cutting-garden#212) — prefer the plugin's enriched
+		// listing exactly as organize's selection does. Espalier opts in even
+		// without a tag dimension: its trailer/atoms want the enriched fields.
 		if nodes, err = command_components.ListEnrichedChildren(ctx, lister, u); err != nil {
 			return errors.Wrapf(err, "list %s", uriStr)
 		}
@@ -298,31 +300,136 @@ func (cmd *List) runList(ctx errors.Context, uriStr string) error {
 		return errors.Wrapf(err, "list %s", uriStr)
 	}
 
-	if cmd.Format == formatJSON {
+	switch cmd.Format {
+	case formatJSON:
 		return writeJSON(cmd.output, nodes, presentTags)
+	case formatEspalier:
+		return writeEspalier(
+			cmd.output, nodes, uriStr, presentTags,
+			command_components.BoxAtomPresenter(lister),
+		)
 	}
-	return writeText(cmd.output, nodes)
+	return writeText(cmd.output, nodes, presentTags)
 }
 
-// writeText renders the nodes as an aligned URI / NAME / TYPE table.
-func writeText(w io.Writer, nodes []cutting_garden_plugins.Node) error {
-	var buf strings.Builder
-	tw := tabwriter.NewWriter(&buf, 0, 2, 2, ' ', 0)
-
-	// Writes to a strings.Builder cannot fail; only the final flush to w
-	// is fallible.
-	fmt.Fprintln(tw, "URI\tNAME\tTYPE")
-	for _, n := range nodes {
-		fmt.Fprintf(tw, "%s\t%s\t%s\n", n.URIString(), n.Name, n.Type)
+// writeText renders the nodes as a mesa table (purse-first FDR 0015 /
+// RFC 0003): styled when w is a terminal, plain TAB-separated on a pipe —
+// the machine-friendly form the bats vectors assert. Columns are URI (the
+// Flex column — it absorbs the terminal width), NAME, TYPE, and — only when
+// the plugin declares a tag dimension (presentTags != nil, design G8) —
+// TAGS, the presented tag set space-joined in SortKey order. An empty
+// listing renders nothing (mesa's zero-row plain form).
+func writeText(
+	w io.Writer,
+	nodes []cutting_garden_plugins.Node,
+	presentTags func(cutting_garden_plugins.Node) []string,
+) error {
+	table := mesa.New().
+		Col("URI", mesa.Flex).
+		Col("NAME", mesa.Pin).
+		Col("TYPE", mesa.Pin)
+	if presentTags != nil {
+		table.Col("TAGS", mesa.Pin)
 	}
-	if err := tw.Flush(); err != nil {
+	for _, n := range nodes {
+		cells := []mesa.Cell{
+			mesa.Text(n.URIString()),
+			mesa.Text(n.Name),
+			mesa.Text(n.Type),
+		}
+		if presentTags != nil {
+			cells = append(cells, mesa.Text(strings.Join(presentTags(n), " ")))
+		}
+		table.Row(cells...)
+	}
+	if err := table.Render(w); err != nil {
 		return errors.Wrap(err)
 	}
+	return nil
+}
 
+// writeEspalier renders one organize object line per node — `- [<id>
+// <tag>… <k>=<v>…] <desc>` — through the SAME projection organize's
+// document builder uses (native tags design G8/G13): the box id is
+// anchor-relative against the listed URI (command_components.RelativeID),
+// the interior is spelled by trellis.WriteLiteral (tags leading, SortKey
+// order, QuoteIfNeeded), and the trailer is the node's description field
+// (command_components.NodeDescription). Lines sort by box id, mirroring
+// organize's in-section ordering, so `list -format espalier <uri>` prints
+// exactly the object lines `organize` would emit for the same node set —
+// RFC 0014's isometry, pinned end to end by the list_espalier bats lane.
+// A `!type` term is inlined only when the set spans several node types,
+// organize's spelling-1/spelling-2 rule (there is no envelope here to
+// distribute a single type, and a single-type listing must match
+// spelling 2's bare boxes). A node of a plugin without the tag/atom
+// capabilities renders id + trailer only: `- [<id>] <name>`.
+func writeEspalier(
+	w io.Writer,
+	nodes []cutting_garden_plugins.Node,
+	anchor string,
+	presentTags func(cutting_garden_plugins.Node) []string,
+	presentAtoms func(cutting_garden_plugins.Node) []cutting_garden_plugins.BoxAtom,
+) error {
+	type line struct{ id, rendered string }
+	inlineType := multipleDistinctTypes(nodes)
+	lines := make([]line, 0, len(nodes))
+	for _, n := range nodes {
+		lit := trellis.Literal{
+			ID: command_components.RelativeID(n.URIString(), anchor),
+		}
+		if inlineType {
+			lit.Type = n.Type
+		}
+		if presentTags != nil {
+			lit.Tags = presentTags(n)
+		}
+		if presentAtoms != nil {
+			for _, a := range presentAtoms(n) {
+				lit.Atoms = append(lit.Atoms, trellis.Atom{Name: a.Name, Value: a.Value})
+			}
+		}
+
+		var b strings.Builder
+		b.WriteString("- [")
+		trellis.WriteLiteral(&b, lit)
+		b.WriteByte(']')
+		if desc := command_components.NodeDescription(n); desc != "" {
+			b.WriteByte(' ')
+			b.WriteString(desc)
+		}
+		lines = append(lines, line{id: lit.ID, rendered: b.String()})
+	}
+	sort.SliceStable(lines, func(i, j int) bool { return lines[i].id < lines[j].id })
+
+	var buf strings.Builder
+	for _, ln := range lines {
+		buf.WriteString(ln.rendered)
+		buf.WriteByte('\n')
+	}
 	if _, err := io.WriteString(w, buf.String()); err != nil {
 		return errors.Wrap(err)
 	}
 	return nil
+}
+
+// multipleDistinctTypes reports whether nodes span more than one node type —
+// organize's spelling selector (buildDocument's distinctTypes rule): one type
+// keeps boxes bare, several inline each box's `!type`.
+func multipleDistinctTypes(nodes []cutting_garden_plugins.Node) bool {
+	first := ""
+	for _, n := range nodes {
+		if n.Type == "" {
+			continue
+		}
+		if first == "" {
+			first = n.Type
+			continue
+		}
+		if n.Type != first {
+			return true
+		}
+	}
+	return false
 }
 
 // nodeView is the json projection of a Node: the URI is rendered as its
@@ -368,6 +475,14 @@ func writeJSON(
 // consumes only the one-shot FacetCounter path (RFC 0012 §4.1); a plugin
 // that does not implement it reports that facets are unavailable.
 func (cmd *List) runFacets(ctx errors.Context, uriStr string) error {
+	if cmd.Format == formatEspalier {
+		// A facet summary has no object lines to render; espalier is a
+		// node-listing format only (#251 owns the --facets successor story).
+		return errors.BadRequestf(
+			"list --facets renders text or json, not espalier",
+		)
+	}
+
 	u, lister, err := command_components.ResolveRootListerPlugin(uriStr)
 	if err != nil {
 		return err
@@ -485,13 +600,13 @@ func writeFacetsJSON(w io.Writer, result cutting_garden_plugins.FacetResult) err
 }
 
 // validateFormat enforces the -format value constraint. Mirrors
-// failures.validateFormat / health.validateFormat.
+// failures.validateFormat / health.validateFormat, plus list's own espalier.
 func validateFormat(value string) error {
 	switch value {
-	case formatText, formatJSON:
+	case formatText, formatJSON, formatEspalier:
 		return nil
 	}
 	return errors.ErrorWithStackf(
-		"invalid -format value %q; expected text or json", value,
+		"invalid -format value %q; expected text, json, or espalier", value,
 	)
 }

@@ -43,6 +43,12 @@ func (*List) GetExamples() []command.Example {
 			Description: "Machine-readable listing, one object per node.",
 			Command:     "cutting-garden list -format json caldav://dav.host/dav/me/ | jq .",
 		},
+		{
+			Description: "Organize-style object lines \\(em one espalier box " +
+				"per node, tags leading, exactly what `organize` would emit " +
+				"for the same set.",
+			Command: "cutting-garden list -format espalier caldav://dav.host/dav/me/personal/",
+		},
 	}
 }
 

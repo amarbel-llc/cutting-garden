@@ -201,21 +201,18 @@ EOF
   refute_output --partial 'STATUS:completed'
 
   # The full query listing: task1 matched, task2 (still status-less) did not.
+  # The mesa plain form (TAB-separated, native tags slice 4): caldav declares
+  # the categories tag dimension, so the TAGS column is present — empty (a
+  # trailing TAB) for these untagged fixtures.
   run_cg list -query 'status=completed' "$CAL"
   assert_success
-  assert_output - <<-'EOM'
-	URI                                              NAME       TYPE
-	caldav:http://127.0.0.1:43101/dav/cal/task1.ics  task1.ics  caldav-object-vtodo-v1
-	EOM
+  assert_output "$(printf 'URI\tNAME\tTYPE\tTAGS\ncaldav:http://127.0.0.1:43101/dav/cal/task1.ics\ttask1.ics\tcaldav-object-vtodo-v1\t')"
 
   # The old uppercase spelling still matches — the FoldCase dimension folds
   # BOTH sides of the predicate (FDR 0025 case-fold matching rule).
   run_cg list -query 'status=COMPLETED' "$CAL"
   assert_success
-  assert_output - <<-'EOM'
-	URI                                              NAME       TYPE
-	caldav:http://127.0.0.1:43101/dav/cal/task1.ics  task1.ics  caldav-object-vtodo-v1
-	EOM
+  assert_output "$(printf 'URI\tNAME\tTYPE\tTAGS\ncaldav:http://127.0.0.1:43101/dav/cal/task1.ics\ttask1.ics\tcaldav-object-vtodo-v1\t')"
 
   assert_task1_completed
 }
@@ -238,10 +235,11 @@ organize: 1 change(s):
 organize: dry-run — nothing written
 EOF
 
-  # The live status query finds nothing — the listing is the bare header.
+  # The live status query finds nothing — mesa's zero-row plain form renders
+  # nothing at all (native tags slice 4).
   run_cg list -query 'status=completed' "$CAL"
   assert_success
-  assert_output 'URI  NAME  TYPE'
+  assert_output ''
 
   # The re-render is byte-identical to the generated vector — proves no write.
   generate_doc
@@ -267,10 +265,7 @@ EOF
 
   run_cg list -query 'status=completed' "$CAL"
   assert_success
-  assert_output - <<-'EOM'
-	URI                                              NAME       TYPE
-	caldav:http://127.0.0.1:43101/dav/cal/task1.ics  task1.ics  caldav-object-vtodo-v1
-	EOM
+  assert_output "$(printf 'URI\tNAME\tTYPE\tTAGS\ncaldav:http://127.0.0.1:43101/dav/cal/task1.ics\ttask1.ics\tcaldav-object-vtodo-v1\t')"
 
   assert_task1_completed
 }
@@ -303,14 +298,11 @@ function organize_apply_conflict_rejects { # @test
 
   run_cg list -query 'status=completed' "$CAL"
   assert_success
-  assert_output - <<-'EOM'
-	URI                                              NAME       TYPE
-	caldav:http://127.0.0.1:43101/dav/cal/task1.ics  task1.ics  caldav-object-vtodo-v1
-	EOM
+  assert_output "$(printf 'URI\tNAME\tTYPE\tTAGS\ncaldav:http://127.0.0.1:43101/dav/cal/task1.ics\ttask1.ics\tcaldav-object-vtodo-v1\t')"
 
   run_cg list -query 'status=cancelled' "$CAL"
   assert_success
-  assert_output 'URI  NAME  TYPE'
+  assert_output ''
 
   assert_task1_completed
 }

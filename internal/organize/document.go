@@ -3,10 +3,10 @@ package organize
 import (
 	"bytes"
 	"fmt"
-	"net/url"
 	"strings"
 
 	"code.linenisgreat.com/cutting-garden/internal/cgconfig"
+	"code.linenisgreat.com/cutting-garden/internal/command_components"
 	cgp "code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
 	"code.linenisgreat.com/cutting-garden/internal/trellis"
 	"code.linenisgreat.com/hyphence/go/hyphence"
@@ -844,34 +844,11 @@ func (doc document) memberships(multi bool) (map[string][]string, error) {
 
 // --- id resolution -----------------------------------------------------------
 
-// relativeID renders a node URI relative to the anchor when it sits under it (the
-// short `task1.ics` form), else the full URI. Comparison is form-independent: it
-// matches on host+path so an anchor spelled `caldav:https://host/cal/` shortens a
-// node URI spelled `caldav://host/cal/x.ics` (a real caldav divergence — the
-// plugin normalizes node URIs but not the anchor arg). Deterministic on
-// (uri, anchor), which lets the apply engine re-derive a stored box id from a live
-// node URI and match it.
+// relativeID is command_components.RelativeID — THE anchor-relative box-id
+// derivation, moved there in native tags slice 4 so `list -format espalier`
+// shortens ids against its listed URI exactly as organize does against its
+// `_anchor` (design G8/G13). The apply engine re-derives a stored box id
+// from a live node URI through the same function, so the two stay matched.
 func relativeID(uriStr, anchorStr string) string {
-	u, err1 := url.Parse(uriStr)
-	a, err2 := url.Parse(anchorStr)
-	if err1 == nil && err2 == nil {
-		up, ap := canonicalHostPath(u), canonicalHostPath(a)
-		if ap != "" && strings.HasPrefix(up, ap) {
-			return strings.TrimPrefix(up, ap)
-		}
-	}
-	return uriStr
-}
-
-// canonicalHostPath projects a URL to a scheme-form-independent "host/path" key,
-// handling the caldav opaque spelling (`caldav:https://host/path`) as well as the
-// plain hierarchical form (`caldav://host/path`).
-func canonicalHostPath(u *url.URL) string {
-	if u.Opaque != "" {
-		s := u.Opaque
-		s = strings.TrimPrefix(s, "https://")
-		s = strings.TrimPrefix(s, "http://")
-		return s
-	}
-	return u.Host + u.Path
+	return command_components.RelativeID(uriStr, anchorStr)
 }

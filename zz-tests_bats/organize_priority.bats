@@ -148,14 +148,13 @@ EOF
   assert_success
   assert_line --regexp $'^PRIORITY:1\r?$'
 
-  # The full band query: field1 (already must) plus the moved field2.
+  # The full band query: field1 (already must) plus the moved field2. Mesa
+  # plain form (TAB-separated, native tags slice 4): the TAGS column carries
+  # field2's SortKey-ordered categories and stays empty (a trailing TAB) for
+  # the untagged field1.
   run_cg list -query 'priority=0_must' "$CAL"
   assert_success
-  assert_output - <<-'EOM'
-	URI                                                  NAME        TYPE
-	caldav:http://127.0.0.1:43105/dav/fields/field1.ics  field1.ics  caldav-object-vtodo-v1
-	caldav:http://127.0.0.1:43105/dav/fields/field2.ics  field2.ics  caldav-object-vtodo-v1
-	EOM
+  assert_output "$(printf 'URI\tNAME\tTYPE\tTAGS\ncaldav:http://127.0.0.1:43105/dav/fields/field1.ics\tfield1.ics\tcaldav-object-vtodo-v1\t\ncaldav:http://127.0.0.1:43105/dav/fields/field2.ics\tfield2.ics\tcaldav-object-vtodo-v1\terrand work')"
 
   run_cg organize -group-by priority= "$CAL"
   assert_success

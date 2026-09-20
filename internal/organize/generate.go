@@ -3,7 +3,6 @@ package organize
 import (
 	"fmt"
 	"io"
-	"slices"
 	"strings"
 
 	"code.linenisgreat.com/cutting-garden/internal/command_components"
@@ -345,27 +344,13 @@ func requireNamespaceInterpreter(
 // command_components (tag_view.go) in native tags slice 2 T4, so the
 // `list -format json` and mcp node views share them with organize.
 
-// boxAtomPresenter returns the plugin's box-atom presentation function when it
-// implements FieldPresenter (cutting-garden#47), or nil — in which case object
-// boxes carry no detail atoms (today's behavior for a plugin without the
-// capability). Atom values pass through collapseToSingleLine: a stored TEXT
-// value (e.g. a caldav LOCATION) may carry real newlines, but an atom lives
-// inside one document line — same presentation-only rule as the description
-// trailer (native tags slice 1.5 F; see collapseToSingleLine).
+// boxAtomPresenter is command_components.BoxAtomPresenter — the FieldPresenter
+// → box-atom projection (cutting-garden#47), moved there in native tags
+// slice 4 so `list -format espalier` renders the same detail atoms
+// (design G8/G13). nil for a plugin without the capability, and every atom
+// value passes through CollapseToSingleLine (slice 1.5 F).
 func boxAtomPresenter(lister cgp.RootLister) func(cgp.Node) []cgp.BoxAtom {
-	p, ok := lister.(cgp.FieldPresenter)
-	if !ok {
-		return nil
-	}
-	return func(n cgp.Node) []cgp.BoxAtom {
-		// Copy before collapsing: the plugin may hand back a cached slice, and
-		// mutating it in place would corrupt the plugin's own state.
-		atoms := slices.Clone(p.PresentBoxAtoms(n))
-		for i := range atoms {
-			atoms[i].Value = collapseToSingleLine(atoms[i].Value)
-		}
-		return atoms
-	}
+	return command_components.BoxAtomPresenter(lister)
 }
 
 // tagRender is generate's tag-atom view (native tags design G1/G2, slice 2):

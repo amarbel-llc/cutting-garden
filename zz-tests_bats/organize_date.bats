@@ -127,17 +127,16 @@ EOF
   # on the date-kind date_due dimension prefix-matches the day-precise facet
   # by validated month shape — the same semantics as `list --filter`, pinning
   # the design's uniformity decision end to end (#230).
+  # Mesa plain form (TAB-separated, native tags slice 4); the sched fixtures
+  # are untagged, so the TAGS column renders empty (a trailing TAB), and the
+  # zero-row listing renders nothing.
   run_cg list -query 'date_due=2026-09' "$CAL"
   assert_success
-  assert_output - <<-'EOM'
-	URI                                                 NAME        TYPE
-	caldav:http://127.0.0.1:43104/dav/sched/sched1.ics  sched1.ics  caldav-object-vtodo-v1
-	caldav:http://127.0.0.1:43104/dav/sched/sched2.ics  sched2.ics  caldav-object-vtodo-v1
-	EOM
+  assert_output "$(printf 'URI\tNAME\tTYPE\tTAGS\ncaldav:http://127.0.0.1:43104/dav/sched/sched1.ics\tsched1.ics\tcaldav-object-vtodo-v1\t\ncaldav:http://127.0.0.1:43104/dav/sched/sched2.ics\tsched2.ics\tcaldav-object-vtodo-v1\t')"
 
   run_cg list -query 'date_due=2026-08' "$CAL"
   assert_success
-  assert_output 'URI  NAME  TYPE'
+  assert_output ''
 
   # The authoritative check: the object's stored iCalendar shows the spliced
   # DUE with day/clock/TZID intact — an exact full line (the rewritten body is

@@ -286,8 +286,8 @@ EOF
 # single-tag fixtures, so the order is trivially stable). The fetch prefers
 # the caldav enriched listing (a plain ListRoots leaves the stored CATEGORIES
 # out of Node.Fields, cutting-garden#212). Whole-output NDJSON per the lane's
-# G16 conventions; the text table stays URI/NAME/TYPE (espalier/mesa are
-# slice 4).
+# G16 conventions; the text table's TAGS column and `-format espalier` are
+# pinned by list_espalier.bats (slice 4).
 function organize_ns_list_json_carries_tags { # @test
   run_cg list -format json "$CAL"
   assert_success

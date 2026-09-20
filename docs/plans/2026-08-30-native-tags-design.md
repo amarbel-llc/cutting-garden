@@ -117,6 +117,17 @@ writer organize uses (tags leading, atoms, trailer) — so `list --query project
 moves onto `code.linenisgreat.com/purse-first/libs/dewey/pkgs/mesa` (purse-first
 FDR 0015 / RFC 0003).
 
+Delivered 2026-09-20 (slice 4): the espalier line projection (anchor-relative
+id, description trailer, box-atom presenter) moved to
+`internal/command_components/espalier_view.go` — organize delegates, `list`
+consumes the same helpers plus `trellis.WriteLiteral`, so the isometry holds
+by construction and is pinned by derivation in `zz-tests_bats/
+list_espalier.bats` (port 43112). Ids are anchor-relative against the listed
+URI, lines sort by box id, and `!type` inlines only for a multi-type set
+(organize's spelling rule). The text table renders via mesa (TAB-separated on
+a pipe, styled on a TTY) with a TAGS column exactly when the plugin declares
+a tag dimension; `--facets` output is untouched (its replacement is #251).
+
 ### G9 — Bare is always a tag; fields MUST use an operator
 
 - Box interior: first token is the id, `!x` the type, `k OP v` a field atom

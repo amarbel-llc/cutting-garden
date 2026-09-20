@@ -247,16 +247,78 @@ func driveList(t *testing.T, out io.Writer, args ...string) int {
 	return u.Run(append([]string{"cg-test", "list"}, args...))
 }
 
+// TestRun_TextTable pins the mesa plain form (native tags slice 4, design
+// G8): a non-terminal writer renders the TAB-separated table (purse-first
+// RFC 0003 §7.1), three columns for a plugin with no tag dimension.
 func TestRun_TextTable(t *testing.T) {
 	var buf bytes.Buffer
 	if code := driveList(t, &buf, "listtest://h/dav/"); code != 0 {
 		t.Fatalf("exit = %d, want 0; output:\n%s", code, buf.String())
 	}
-	out := buf.String()
-	for _, want := range []string{"URI", "NAME", "TYPE", "Work", "Personal", "test-container-v1", "listtest://h/work"} {
-		if !strings.Contains(out, want) {
-			t.Errorf("text output missing %q:\n%s", want, out)
-		}
+	want := "URI\tNAME\tTYPE\n" +
+		"listtest://h/work\tWork\ttest-container-v1\n" +
+		"listtest://h/personal\tPersonal\ttest-container-v1\n"
+	if buf.String() != want {
+		t.Errorf("text output = %q, want %q", buf.String(), want)
+	}
+}
+
+// TestRun_EspalierBoxes pins `-format espalier` (native tags slice 4, design
+// G8/G13): one organize object line per node through the shared trellis
+// literal writer — anchor-relative id, leading SortKey-ordered tag atoms,
+// the description trailer — sorted by box id like organize's sections. A
+// node with no tags keeps the bare `- [<id>] <name>` shape.
+func TestRun_EspalierBoxes(t *testing.T) {
+	var buf bytes.Buffer
+	if code := driveList(t, &buf, "-format", "espalier", "taggedlist://h/"); code != 0 {
+		t.Fatalf("exit = %d, want 0; output:\n%s", code, buf.String())
+	}
+	want := "- [plain] plain\n" +
+		"- [tagged errand work] tagged\n"
+	if buf.String() != want {
+		t.Errorf("espalier output = %q, want %q", buf.String(), want)
+	}
+
+	// --query composes: the evaluator's matched nodes render the same boxes.
+	buf.Reset()
+	if code := driveList(
+		t, &buf,
+		"-format", "espalier", "-query", "!test-object-v1", "taggedlist://h/",
+	); code != 0 {
+		t.Fatalf("query exit = %d, want 0; output:\n%s", code, buf.String())
+	}
+	if buf.String() != want {
+		t.Errorf("queried espalier output = %q, want %q", buf.String(), want)
+	}
+}
+
+// TestRun_EspalierNoTagPlugin pins the no-UnifiedDescriber fallback (design
+// G8): a plugin with neither tag nor atom capabilities renders id + trailer
+// only. The listed URI is not a prefix of the child URIs here, so the box
+// ids stay the full URIs — which the one quoting rule keeps bare (':' and
+// '/' are identifier runes mid-token).
+func TestRun_EspalierNoTagPlugin(t *testing.T) {
+	var buf bytes.Buffer
+	if code := driveList(t, &buf, "-format", "espalier", "listtest://h/dav/"); code != 0 {
+		t.Fatalf("exit = %d, want 0; output:\n%s", code, buf.String())
+	}
+	want := "- [listtest://h/personal] Personal\n" +
+		"- [listtest://h/work] Work\n"
+	if buf.String() != want {
+		t.Errorf("espalier output = %q, want %q", buf.String(), want)
+	}
+}
+
+// TestRunFacets_EspalierRejects pins the facets/espalier exclusion: a facet
+// summary has no object lines, so `-format espalier` with --facets is a
+// usage error (exit 64), not a silent text fallback.
+func TestRunFacets_EspalierRejects(t *testing.T) {
+	var buf bytes.Buffer
+	code := driveList(
+		t, &buf, "-format", "espalier", "-facets", "facettest://h/dav/",
+	)
+	if code != 64 {
+		t.Fatalf("exit = %d, want 64 (EX_USAGE); output:\n%s", code, buf.String())
 	}
 }
 
@@ -288,8 +350,8 @@ func TestRun_JSONRoundTrip(t *testing.T) {
 // TestRun_JSONCarriesTags pins the G12 CLI half (native tags slice 2): the
 // JSON node view of a tag-declaring plugin carries a top-level `tags` array —
 // the designated FieldTag field's values in the resolved interpreter's
-// SortKey order — while an untagged node omits the key, and the text table
-// stays tag-free (espalier/mesa are slice 4).
+// SortKey order — while an untagged node omits the key. Since slice 4 the
+// text table carries the same presentation as a TAGS column (design G8).
 func TestRun_JSONCarriesTags(t *testing.T) {
 	var buf bytes.Buffer
 	if code := driveList(t, &buf, "-format", "json", "taggedlist://h/"); code != 0 {
@@ -313,13 +375,17 @@ func TestRun_JSONCarriesTags(t *testing.T) {
 		t.Errorf("untagged node tags = %v, want omitted", got)
 	}
 
-	// The text table is untouched by the tag enrichment.
+	// The text table gains a TAGS column for a tag-declaring plugin
+	// (slice 4): space-joined SortKey order, empty for an untagged node.
 	buf.Reset()
 	if code := driveList(t, &buf, "taggedlist://h/"); code != 0 {
 		t.Fatalf("text exit = %d, want 0; output:\n%s", code, buf.String())
 	}
-	if strings.Contains(buf.String(), "errand") {
-		t.Errorf("text table leaked tags:\n%s", buf.String())
+	wantTable := "URI\tNAME\tTYPE\tTAGS\n" +
+		"taggedlist://h/tagged\ttagged\ttest-object-v1\terrand work\n" +
+		"taggedlist://h/plain\tplain\ttest-object-v1\t\n"
+	if buf.String() != wantTable {
+		t.Errorf("text table = %q, want %q", buf.String(), wantTable)
 	}
 
 	// --query composes with -format json: the evaluator's matched nodes

@@ -459,6 +459,28 @@ record, RFC 0015/0019, and the vector index were reconciled to the landed
 dialect. RFC 0015 §Tag atoms is the normative spec; the bats lane is
 `organize_tagatoms.bats`.
 
+### Native tags slice 4 — `list -format espalier` + mesa tables (delivered 2026-09-20)
+
+The last slice (design G8/G13): `list -format espalier` renders one organize
+object line per node — `- [<id> <tag>… <k>=<v>…] <desc>` — through the SAME
+shared projection organize's document builder uses: the espalier-view
+helpers (`RelativeID`, `NodeDescription`, `BoxAtomPresenter`,
+`CollapseToSingleLine`) moved from `internal/organize` to
+`internal/command_components/espalier_view.go` (organize delegates), and the
+interior is spelled by `trellis.WriteLiteral` — so `list --query project
+-format espalier` shows exactly the boxes organize would (RFC 0014's
+isometry, pinned by derivation in `zz-tests_bats/list_espalier.bats`, port
+43112). Ids are anchor-relative against the listed URI, tag atoms lead in
+SortKey order, lines sort by box id, `!type` inlines only for a multi-type
+set, and a plugin without the tag/atom capabilities renders `- [<id>]
+<name>`. `list -format text` moved off tabwriter onto
+`code.linenisgreat.com/purse-first/libs/dewey/pkgs/mesa` (purse-first
+FDR 0015 / RFC 0003): styled on a TTY, TAB-separated on a pipe, columns
+URI (Flex) / NAME / TYPE plus a TAGS column (space-joined presented set)
+exactly when the plugin declares a tag dimension — omitted otherwise — and
+a zero-row listing renders nothing. `--facets` rendering is untouched (its
+`--query`-based replacement is #251).
+
 ## More information
 
 - cutting-garden#229 (heading/atom redundancy — subsumed)
