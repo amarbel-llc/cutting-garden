@@ -132,7 +132,10 @@ EOF
   # zero-row listing renders nothing.
   run_cg list -query 'date_due=2026-09' "$CAL"
   assert_success
-  assert_output "$(printf 'URI\tNAME\tTYPE\tTAGS\ncaldav:http://127.0.0.1:43104/dav/sched/sched1.ics\tsched1.ics\tcaldav-object-vtodo-v1\t\ncaldav:http://127.0.0.1:43104/dav/sched/sched2.ics\tsched2.ics\tcaldav-object-vtodo-v1\t')"
+  assert_tab_table \
+    "$(tab_row URI NAME TYPE TAGS)" \
+    "$(tab_row caldav:http://127.0.0.1:43104/dav/sched/sched1.ics sched1.ics caldav-object-vtodo-v1 '')" \
+    "$(tab_row caldav:http://127.0.0.1:43104/dav/sched/sched2.ics sched2.ics caldav-object-vtodo-v1 '')"
 
   run_cg list -query 'date_due=2026-08' "$CAL"
   assert_success

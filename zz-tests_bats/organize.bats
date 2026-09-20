@@ -206,13 +206,17 @@ EOF
   # trailing TAB) for these untagged fixtures.
   run_cg list -query 'status=completed' "$CAL"
   assert_success
-  assert_output "$(printf 'URI\tNAME\tTYPE\tTAGS\ncaldav:http://127.0.0.1:43101/dav/cal/task1.ics\ttask1.ics\tcaldav-object-vtodo-v1\t')"
+  assert_tab_table \
+    "$(tab_row URI NAME TYPE TAGS)" \
+    "$(tab_row caldav:http://127.0.0.1:43101/dav/cal/task1.ics task1.ics caldav-object-vtodo-v1 '')"
 
   # The old uppercase spelling still matches — the FoldCase dimension folds
   # BOTH sides of the predicate (FDR 0025 case-fold matching rule).
   run_cg list -query 'status=COMPLETED' "$CAL"
   assert_success
-  assert_output "$(printf 'URI\tNAME\tTYPE\tTAGS\ncaldav:http://127.0.0.1:43101/dav/cal/task1.ics\ttask1.ics\tcaldav-object-vtodo-v1\t')"
+  assert_tab_table \
+    "$(tab_row URI NAME TYPE TAGS)" \
+    "$(tab_row caldav:http://127.0.0.1:43101/dav/cal/task1.ics task1.ics caldav-object-vtodo-v1 '')"
 
   assert_task1_completed
 }
@@ -265,7 +269,9 @@ EOF
 
   run_cg list -query 'status=completed' "$CAL"
   assert_success
-  assert_output "$(printf 'URI\tNAME\tTYPE\tTAGS\ncaldav:http://127.0.0.1:43101/dav/cal/task1.ics\ttask1.ics\tcaldav-object-vtodo-v1\t')"
+  assert_tab_table \
+    "$(tab_row URI NAME TYPE TAGS)" \
+    "$(tab_row caldav:http://127.0.0.1:43101/dav/cal/task1.ics task1.ics caldav-object-vtodo-v1 '')"
 
   assert_task1_completed
 }
@@ -298,7 +304,9 @@ function organize_apply_conflict_rejects { # @test
 
   run_cg list -query 'status=completed' "$CAL"
   assert_success
-  assert_output "$(printf 'URI\tNAME\tTYPE\tTAGS\ncaldav:http://127.0.0.1:43101/dav/cal/task1.ics\ttask1.ics\tcaldav-object-vtodo-v1\t')"
+  assert_tab_table \
+    "$(tab_row URI NAME TYPE TAGS)" \
+    "$(tab_row caldav:http://127.0.0.1:43101/dav/cal/task1.ics task1.ics caldav-object-vtodo-v1 '')"
 
   run_cg list -query 'status=cancelled' "$CAL"
   assert_success

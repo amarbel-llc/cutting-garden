@@ -215,19 +215,12 @@ func collapseToSingleLine(s string) string {
 	return command_components.CollapseToSingleLine(s)
 }
 
-// distinctTypes returns the sorted set of node types present — one type selects
-// the flatter envelope-`_type` spelling, several select per-type headings.
+// distinctTypes is command_components.DistinctTypes — the espalier spelling
+// selector (one type → the flatter envelope-`_type` spelling, several →
+// per-type headings), moved there in native tags slice 4 so `list -format
+// espalier` inlines `!type` by the same rule.
 func distinctTypes(nodes []cgp.Node) []string {
-	seen := map[string]bool{}
-	var out []string
-	for _, n := range nodes {
-		if n.Type != "" && !seen[n.Type] {
-			seen[n.Type] = true
-			out = append(out, n.Type)
-		}
-	}
-	sort.Strings(out)
-	return out
+	return command_components.DistinctTypes(nodes)
 }
 
 // nodesOfType filters nodes to those of the given type.

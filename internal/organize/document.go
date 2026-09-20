@@ -407,29 +407,16 @@ func writeBody(b *strings.Builder, doc document) {
 	}
 }
 
-// writeObjectLine renders one espalier box literal and its description trailer:
-// `- [<id> !<type> <tag>… <name>=<value>…] <desc>`. The interior is spelled by
-// trellis.WriteLiteral (design G13): the id, the type, the tag terms, then the
-// detail atoms, each a ground `name=value` espalier field (cutting-garden#47).
-// trailingTags (the document's `_tag-atoms = trailing` lever, design G1) moves
-// the tag terms after the atoms via trellis.WriteLiteralTrailingTags —
-// presentation-only, since the parser collects tags wherever they sit.
+// writeObjectLine projects one objectLine onto a trellis.Literal and hands
+// the rendering to command_components.WriteObjectLine — THE espalier line
+// frame (`- [<interior>] <desc>`, design G13), shared with `list -format
+// espalier` since native tags slice 4 so the two surfaces cannot drift.
 func writeObjectLine(b *strings.Builder, ln objectLine, trailingTags bool) {
 	lit := trellis.Literal{ID: ln.ID, Type: ln.Type, Tags: ln.Tags}
 	for _, f := range ln.Fields {
 		lit.Atoms = append(lit.Atoms, trellis.Atom{Name: f.Name, Value: f.Value})
 	}
-	b.WriteString("- [")
-	if trailingTags {
-		trellis.WriteLiteralTrailingTags(b, lit)
-	} else {
-		trellis.WriteLiteral(b, lit)
-	}
-	b.WriteByte(']')
-	if ln.Desc != "" {
-		fmt.Fprintf(b, " %s", ln.Desc)
-	}
-	b.WriteByte('\n')
+	command_components.WriteObjectLine(b, lit, ln.Desc, trailingTags)
 }
 
 // --- parse -------------------------------------------------------------------

@@ -479,7 +479,10 @@ FDR 0015 / RFC 0003): styled on a TTY, TAB-separated on a pipe, columns
 URI (Flex) / NAME / TYPE plus a TAGS column (space-joined presented set)
 exactly when the plugin declares a tag dimension — omitted otherwise — and
 a zero-row listing renders nothing. `--facets` rendering is untouched (its
-`--query`-based replacement is #251).
+`--query`-based replacement is #251). The isometry holds at the DEFAULT
+`_tag-atoms`/`_tag-strip` levers — `list` carries no document to hold a
+lever, so a non-default organize document diverges from the listing by
+design.
 
 ## More information
 

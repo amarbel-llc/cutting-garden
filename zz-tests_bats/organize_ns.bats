@@ -45,16 +45,10 @@ setup() {
   load "$(dirname "$BATS_TEST_FILE")/lib/caldav.bash"
   export output
   export CG_TEST_CALDAV_NS=1
-  # Pin the config dir under the sandboxed $HOME so os.UserConfigDir resolves the
-  # lane's own config.toml (and an ambient host value can't leak in), then select
-  # the dodder-hyphen interpreter the namespace grouping needs. The naive-rejects
-  # lane overwrites this with naive to pin the clear error.
-  export XDG_CONFIG_HOME="$HOME/.config"
-  mkdir -p "$XDG_CONFIG_HOME/cutting-garden"
-  cat >"$XDG_CONFIG_HOME/cutting-garden/config.toml" <<-'EOF'
-	[tags]
-	interpreter = "dodder-hyphen"
-	EOF
+  # The dodder-hyphen interpreter the namespace grouping needs, in the lane's
+  # own sandboxed config dir. The naive-rejects lane overwrites this with
+  # naive to pin the clear error.
+  write_dodder_hyphen_config
   start_caldav_server 43103
   init_store
   CAL="${CALDAV_SOURCE%/dav/}/dav/ns/"

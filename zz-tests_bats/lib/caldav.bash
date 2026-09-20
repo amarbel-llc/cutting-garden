@@ -53,6 +53,21 @@ assert_categories() {
   fi
 }
 
+# write_dodder_hyphen_config pins the config dir under the sandboxed $HOME
+# (so os.UserConfigDir resolves the lane's own config.toml and an ambient
+# host value can't leak in) and selects the dodder-hyphen [tags] interpreter
+# — the shared setup of the namespace/rollup lanes (organize_ns.bats,
+# list_espalier.bats). A lane that needs a different config afterwards
+# overwrites "$XDG_CONFIG_HOME/cutting-garden/config.toml".
+write_dodder_hyphen_config() {
+  export XDG_CONFIG_HOME="$HOME/.config"
+  mkdir -p "$XDG_CONFIG_HOME/cutting-garden"
+  cat >"$XDG_CONFIG_HOME/cutting-garden/config.toml" <<-'EOF'
+	[tags]
+	interpreter = "dodder-hyphen"
+	EOF
+}
+
 start_caldav_server() {
   require_bin CG_TEST_CALDAV cutting-garden-caldav-testserver
   local bin="${CG_TEST_CALDAV:-cutting-garden-caldav-testserver}"

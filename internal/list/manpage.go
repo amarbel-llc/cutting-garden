@@ -57,5 +57,6 @@ func (*List) GetSeeAlso() []string {
 		"cutting-garden(1)",
 		"cutting-garden-capture(1)",
 		"cutting-garden-health(1)",
+		"cutting-garden-organize(1)",
 	}
 }

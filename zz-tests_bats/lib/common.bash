@@ -192,3 +192,29 @@ write_blob_id() {
 file_mode() {
   stat -c '%a' "$1"
 }
+
+# tab_row joins its arguments with literal TABs — one mesa plain-form table
+# row (purse-first RFC 0003 §7.1) — so a vector never embeds invisible TAB
+# characters in the source. An empty trailing cell (an untagged row's TAGS
+# column) is an explicit trailing '' argument, which yields the trailing TAB
+# the wire form carries.
+tab_row() {
+  local IFS=$'\t'
+  printf '%s' "$*"
+}
+
+# assert_tab_table asserts $output is exactly the given rows — one argument
+# per row, each typically built with tab_row — joined by newlines: the whole
+# mesa plain TAB-separated table a piped `list -format text` emits.
+assert_tab_table() {
+  local expected="" row first=1
+  for row in "$@"; do
+    if ((first)); then
+      expected="$row"
+      first=0
+    else
+      expected+=$'\n'"$row"
+    fi
+  done
+  assert_output "$expected"
+}

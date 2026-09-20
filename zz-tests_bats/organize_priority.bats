@@ -154,7 +154,10 @@ EOF
   # the untagged field1.
   run_cg list -query 'priority=0_must' "$CAL"
   assert_success
-  assert_output "$(printf 'URI\tNAME\tTYPE\tTAGS\ncaldav:http://127.0.0.1:43105/dav/fields/field1.ics\tfield1.ics\tcaldav-object-vtodo-v1\t\ncaldav:http://127.0.0.1:43105/dav/fields/field2.ics\tfield2.ics\tcaldav-object-vtodo-v1\terrand work')"
+  assert_tab_table \
+    "$(tab_row URI NAME TYPE TAGS)" \
+    "$(tab_row caldav:http://127.0.0.1:43105/dav/fields/field1.ics field1.ics caldav-object-vtodo-v1 '')" \
+    "$(tab_row caldav:http://127.0.0.1:43105/dav/fields/field2.ics field2.ics caldav-object-vtodo-v1 'errand work')"
 
   run_cg organize -group-by priority= "$CAL"
   assert_success

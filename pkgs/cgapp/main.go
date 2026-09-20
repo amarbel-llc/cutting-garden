@@ -6,9 +6,9 @@ import internal "code.linenisgreat.com/cutting-garden/internal/cgapp"
 
 // Build returns a fully-configured cutting-garden Utility with the
 // canonical name "cutting-garden", the "cg" alias, the hidden
-// `complete` subcommand registered, and the nine user-facing
+// `complete` subcommand registered, and the eleven user-facing
 // subcommands (capture, restore, diff, serve, failures, health, list,
-// mcp, version) attached.
+// mcp, organize, fmt-organize, version) attached.
 //
 // Every cutting-garden binary main.go calls this and dispatches
 // utility.Run(os.Args).

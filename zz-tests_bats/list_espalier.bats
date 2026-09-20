@@ -31,17 +31,10 @@ setup() {
   load "$(dirname "$BATS_TEST_FILE")/lib/caldav.bash"
   export output
   export CG_TEST_CALDAV_NS=1
-  # Pin the config dir under the sandboxed $HOME so os.UserConfigDir resolves
-  # the lane's own config.toml (and an ambient host value can't leak in),
-  # then select the dodder-hyphen interpreter — the `--query project`
-  # bare-tag term matches the project-* hierarchy transitively through it,
-  # and every rendered tag set orders by its SortKey.
-  export XDG_CONFIG_HOME="$HOME/.config"
-  mkdir -p "$XDG_CONFIG_HOME/cutting-garden"
-  cat >"$XDG_CONFIG_HOME/cutting-garden/config.toml" <<-'EOF'
-	[tags]
-	interpreter = "dodder-hyphen"
-	EOF
+  # The dodder-hyphen interpreter: the `--query project` bare-tag term
+  # matches the project-* hierarchy transitively through it, and every
+  # rendered tag set orders by its SortKey.
+  write_dodder_hyphen_config
   start_caldav_server 43112
   init_store
   CAL="${CALDAV_SOURCE%/dav/}/dav/ns/"
@@ -122,5 +115,26 @@ function list_text_no_tag_plugin_keeps_three_columns { # @test
 
   run_cg list "file://$tree/"
   assert_success
-  assert_output "$(printf 'URI\tNAME\tTYPE\nfile://%s/a.txt\ta.txt\tcutting_garden-file-object-v1\nfile://%s/sub\tsub\tcutting_garden-file-directory-v1' "$tree" "$tree")"
+  assert_tab_table \
+    "$(tab_row URI NAME TYPE)" \
+    "$(tab_row "file://$tree/a.txt" a.txt cutting_garden-file-object-v1)" \
+    "$(tab_row "file://$tree/sub" sub cutting_garden-file-directory-v1)"
+}
+
+# A MULTI-type listing inlines each box's `!type` — organize's spelling-1
+# rule, shared via DistinctTypes (a single-type set keeps boxes bare, the
+# spelling-2 shape every caldav vector above shows). The file plugin's
+# file + directory entries are the in-repo two-type set; ids shorten
+# against the listed URI, so the vector is path-independent.
+function list_espalier_multi_type_inlines_type { # @test
+  local tree="$BATS_TEST_TMPDIR/tree"
+  mkdir -p "$tree/sub"
+  echo hi >"$tree/a.txt"
+
+  run_cg list -format espalier "file://$tree/"
+  assert_success
+  assert_output - <<-'EOM'
+	- [a.txt !cutting_garden-file-object-v1] a.txt
+	- [sub !cutting_garden-file-directory-v1] sub
+	EOM
 }

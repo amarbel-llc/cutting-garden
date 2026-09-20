@@ -215,6 +215,9 @@ func (cmd *List) runRoots(ctx errors.Context) error {
 		return writeJSON(cmd.output, nodes, nil)
 	case formatEspalier:
 		// No anchor: a root's box id is its full URI, the trailer its label.
+		// Deliberately un-vectored: the "" anchor → full-URI id derivation is
+		// the same non-prefix RelativeID path TestRun_EspalierNoTagPlugin
+		// exercises, and the roots aggregation itself is pinned elsewhere.
 		return writeEspalier(cmd.output, nodes, "", nil, nil)
 	}
 	return writeText(cmd.output, nodes, nil)
@@ -324,10 +327,13 @@ func writeText(
 	nodes []cutting_garden_plugins.Node,
 	presentTags func(cutting_garden_plugins.Node) []string,
 ) error {
-	table := mesa.New().
-		Col("URI", mesa.Flex).
-		Col("NAME", mesa.Pin).
-		Col("TYPE", mesa.Pin)
+	// No .Empty(...) deliberately: RFC 0003 §7.4 renders the empty-state
+	// text on pipes too, and the zero-record pipe output staying PURE (no
+	// header, no prose) is what keeps `list | wc -l` and friends honest.
+	table := mesa.New()
+	table.Col("URI", mesa.Flex)
+	table.Col("NAME", mesa.Pin)
+	table.Col("TYPE", mesa.Pin)
 	if presentTags != nil {
 		table.Col("TAGS", mesa.Pin)
 	}
@@ -349,11 +355,12 @@ func writeText(
 }
 
 // writeEspalier renders one organize object line per node — `- [<id>
-// <tag>… <k>=<v>…] <desc>` — through the SAME projection organize's
-// document builder uses (native tags design G8/G13): the box id is
-// anchor-relative against the listed URI (command_components.RelativeID),
-// the interior is spelled by trellis.WriteLiteral (tags leading, SortKey
-// order, QuoteIfNeeded), and the trailer is the node's description field
+// <tag>… <k>=<v>…] <desc>` — through the SAME projection AND frame
+// organize's document builder uses (native tags design G8/G13): the box id
+// is anchor-relative against the listed URI (command_components.RelativeID),
+// the whole line is written by command_components.WriteObjectLine (the
+// shared frame over trellis.WriteLiteral — tags leading, SortKey order,
+// QuoteIfNeeded), and the trailer is the node's description field
 // (command_components.NodeDescription). Lines sort by box id, mirroring
 // organize's in-section ordering, so `list -format espalier <uri>` prints
 // exactly the object lines `organize` would emit for the same node set —
@@ -371,7 +378,7 @@ func writeEspalier(
 	presentAtoms func(cutting_garden_plugins.Node) []cutting_garden_plugins.BoxAtom,
 ) error {
 	type line struct{ id, rendered string }
-	inlineType := multipleDistinctTypes(nodes)
+	inlineType := len(command_components.DistinctTypes(nodes)) > 1
 	lines := make([]line, 0, len(nodes))
 	for _, n := range nodes {
 		lit := trellis.Literal{
@@ -390,13 +397,9 @@ func writeEspalier(
 		}
 
 		var b strings.Builder
-		b.WriteString("- [")
-		trellis.WriteLiteral(&b, lit)
-		b.WriteByte(']')
-		if desc := command_components.NodeDescription(n); desc != "" {
-			b.WriteByte(' ')
-			b.WriteString(desc)
-		}
+		command_components.WriteObjectLine(
+			&b, lit, command_components.NodeDescription(n), false,
+		)
 		lines = append(lines, line{id: lit.ID, rendered: b.String()})
 	}
 	sort.SliceStable(lines, func(i, j int) bool { return lines[i].id < lines[j].id })
@@ -404,32 +407,11 @@ func writeEspalier(
 	var buf strings.Builder
 	for _, ln := range lines {
 		buf.WriteString(ln.rendered)
-		buf.WriteByte('\n')
 	}
 	if _, err := io.WriteString(w, buf.String()); err != nil {
 		return errors.Wrap(err)
 	}
 	return nil
-}
-
-// multipleDistinctTypes reports whether nodes span more than one node type —
-// organize's spelling selector (buildDocument's distinctTypes rule): one type
-// keeps boxes bare, several inline each box's `!type`.
-func multipleDistinctTypes(nodes []cutting_garden_plugins.Node) bool {
-	first := ""
-	for _, n := range nodes {
-		if n.Type == "" {
-			continue
-		}
-		if first == "" {
-			first = n.Type
-			continue
-		}
-		if n.Type != first {
-			return true
-		}
-	}
-	return false
 }
 
 // nodeView is the json projection of a Node: the URI is rendered as its

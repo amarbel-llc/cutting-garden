@@ -127,6 +127,9 @@ URI, lines sort by box id, and `!type` inlines only for a multi-type set
 (organize's spelling rule). The text table renders via mesa (TAB-separated on
 a pipe, styled on a TTY) with a TAGS column exactly when the plugin declares
 a tag dimension; `--facets` output is untouched (its replacement is #251).
+The list↔organize isometry holds at the DEFAULT `_tag-atoms`/`_tag-strip`
+levers: `list` has no document to carry a lever, so an organize document
+generated with non-default levers diverges from the listing by design.
 
 ### G9 — Bare is always a tag; fields MUST use an operator
 

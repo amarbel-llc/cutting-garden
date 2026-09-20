@@ -3,9 +3,11 @@ package command_components
 import (
 	"net/url"
 	"slices"
+	"sort"
 	"strings"
 
 	"code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
+	"code.linenisgreat.com/cutting-garden/internal/trellis"
 )
 
 // This file is the ONE home of the framework-side espalier LINE projection
@@ -18,6 +20,50 @@ import (
 // query's own syntax") holds by construction, not by parallel maintenance.
 // Moved here from internal/organize (which now delegates) exactly as the
 // tag-view helpers were in native tags slice 2 T4.
+
+// WriteObjectLine renders one full espalier object line, newline included:
+// `- [<id> !<type> <tag>… <name>=<value>…] <desc>`. The interior is spelled
+// by trellis.WriteLiteral (design G13): the id, the type, the tag terms,
+// then the detail atoms, each a ground `name=value` espalier field
+// (cutting-garden#47). trailingTags (organize's `_tag-atoms = trailing`
+// document lever, design G1) moves the tag terms after the atoms via
+// trellis.WriteLiteralTrailingTags — presentation-only, since the parser
+// collects tags wherever they sit; `list -format espalier` has no document
+// carrying the lever and always passes false (the leading default).
+func WriteObjectLine(
+	b *strings.Builder, lit trellis.Literal, desc string, trailingTags bool,
+) {
+	b.WriteString("- [")
+	if trailingTags {
+		trellis.WriteLiteralTrailingTags(b, lit)
+	} else {
+		trellis.WriteLiteral(b, lit)
+	}
+	b.WriteByte(']')
+	if desc != "" {
+		b.WriteByte(' ')
+		b.WriteString(desc)
+	}
+	b.WriteByte('\n')
+}
+
+// DistinctTypes returns the sorted set of node types present — THE espalier
+// spelling selector (organize's buildDocument rule, shared with `list
+// -format espalier`): one type keeps object boxes bare (organize distributes
+// it via the envelope `_type`; list simply omits it), several inline each
+// box's `!type`.
+func DistinctTypes(nodes []cutting_garden_plugins.Node) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, n := range nodes {
+		if n.Type != "" && !seen[n.Type] {
+			seen[n.Type] = true
+			out = append(out, n.Type)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
 
 // RelativeID renders a node URI relative to the anchor when it sits under it
 // (the short `task1.ics` form), else the full URI. Comparison is
