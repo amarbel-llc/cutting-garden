@@ -32,10 +32,14 @@ type mailboxTree struct {
 	pathByID map[string][]string
 	// tagIndex is the reverse of tagOf: tag → the id of the mailbox that
 	// joins to it. Two mailboxes may legally join to one name in Fastmail;
-	// the FIRST in listing order wins (a known v1 limitation).
+	// the FIRST in listing order wins (a known v1 limitation). Both indexes
+	// are filled by the root-anchored listing walk, so an orphan mailbox
+	// (unknown parent) is unreachable and absent from them — intentional;
+	// consumers must not assume completeness.
 	tagIndex map[string]string
-	// roleIDByRole maps an in-scope role (inbox, trash, …) to its mailbox
-	// id; first in listing order when a role is (illegally) duplicated.
+	// roleIDByRole maps EVERY role seen (not only allowedRoles) to its
+	// mailbox id; first in listing order when a role is (illegally)
+	// duplicated. Same orphan caveat as tagIndex.
 	roleIDByRole map[string]string
 }
 
@@ -63,7 +67,7 @@ func newMailboxTree(mailboxes []Mailbox) *mailboxTree {
 	for _, m := range mailboxes {
 		t.pathByID[m.ID] = t.computePath(m)
 	}
-	t.walkListingOrder("", func(m Mailbox) {
+	t.walkListingOrder("", map[string]bool{}, func(m Mailbox) {
 		if m.Role != "" {
 			if _, dup := t.roleIDByRole[m.Role]; !dup {
 				t.roleIDByRole[m.Role] = m.ID
@@ -82,11 +86,18 @@ func newMailboxTree(mailboxes []Mailbox) *mailboxTree {
 }
 
 // walkListingOrder visits every mailbox under parentID depth-first in the
-// stable listing order (children sorted by name then id).
-func (t *mailboxTree) walkListingOrder(parentID string, visit func(Mailbox)) {
+// stable listing order (children sorted by name then id). seen guards
+// against a cyclic parentId chain from the server, mirroring computePath.
+func (t *mailboxTree) walkListingOrder(
+	parentID string, seen map[string]bool, visit func(Mailbox),
+) {
 	for _, m := range t.children[parentID] {
+		if seen[m.ID] {
+			continue
+		}
+		seen[m.ID] = true
 		visit(m)
-		t.walkListingOrder(m.ID, visit)
+		t.walkListingOrder(m.ID, seen, visit)
 	}
 }
 
@@ -107,25 +118,30 @@ func isContinuationSegment(seg string) bool {
 // iff it does not start with `-`. Bare ancestors above that point are tags
 // on the tag, not part of its name. The ergonomic root `_` yields no tag
 // itself and is skipped when it is the nearest bare ancestor. Role
-// mailboxes and unknown ids yield no tag.
+// mailboxes, unknown ids, and a chain with no bare segment at all (a
+// top-level `-foo`, or `_/-foo`) yield no tag — the latter would be a
+// hyphen-leading, malformed dodder-hyphen literal.
 func (t *mailboxTree) tagOf(id string) (string, bool) {
 	m, ok := t.byID[id]
 	if !ok || m.Role != "" {
 		return "", false
 	}
 	path := t.path(id)
-	start := 0
+	start := -1
 	for i := len(path) - 1; i >= 0; i-- {
 		if !isContinuationSegment(path[i]) {
 			start = i
 			break
 		}
 	}
+	if start < 0 {
+		return "", false
+	}
 	if path[start] == ergonomicRootName {
 		start++
-	}
-	if start >= len(path) {
-		return "", false
+		if start >= len(path) || isContinuationSegment(path[start]) {
+			return "", false
+		}
 	}
 	return strings.Join(path[start:], ""), true
 }

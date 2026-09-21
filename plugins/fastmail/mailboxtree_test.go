@@ -1,6 +1,9 @@
 package fastmail
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 // syntheticLabelTree builds the D1 vectors as a flat Mailbox list: every
 // path segment is its own mailbox, ids are the segment path joined with
@@ -24,6 +27,8 @@ func syntheticLabelTree() []Mailbox {
 	add("payee", "-a-b")
 	add("_", "req-others")
 	add("zz-archive", "proj", "-24-12-t", "-10x")
+	add("-foo")
+	add("_", "-foo")
 	out = append(out,
 		Mailbox{ID: "mb-inbox", Name: "Inbox", Role: "inbox"},
 		Mailbox{ID: "mb-trash", Name: "Trash", Role: "trash"},
@@ -57,6 +62,10 @@ func TestTagOf(t *testing.T) {
 		{"_/req-others", "req-others", true},
 		{"_", "", false},
 		{"zz-archive/proj/-24-12-t/-10x", "proj-24-12-t-10x", true},
+		// No bare segment anywhere in the chain: a hyphen-leading tag would
+		// be a malformed dodder-hyphen literal, so there is no tag.
+		{"-foo", "", false},
+		{"_/-foo", "", false},
 		{"mb-inbox", "", false},
 		{"mb-trash", "", false},
 		{"no-such-id", "", false},
@@ -82,7 +91,7 @@ func TestTagIndex_ReverseLookup(t *testing.T) {
 			t.Errorf("tagIndex[%q] = %q, want %q", tag, got, wantID)
 		}
 	}
-	for _, absent := range []string{"_", "inbox", "Inbox", ""} {
+	for _, absent := range []string{"_", "inbox", "Inbox", "", "-foo"} {
 		if got, ok := tree.tagIndex[absent]; ok {
 			t.Errorf("tagIndex[%q] = %q, want absent", absent, got)
 		}
@@ -103,6 +112,34 @@ func TestTagIndex_DuplicateTagKeepsFirstInListingOrder(t *testing.T) {
 	tree := newMailboxTree(mailboxes)
 	if got := tree.tagIndex["proj-x"]; got != "a-early/proj-x" {
 		t.Errorf("tagIndex[proj-x] = %q, want a-early/proj-x (first in listing order)", got)
+	}
+}
+
+// A cyclic parentId chain from the server must not hang newMailboxTree's
+// listing walk (computePath already guards its own walk). Duplicate ids
+// are the way a cycle becomes reachable from the root: the same id both
+// at the top level and as its own child.
+func TestNewMailboxTree_CyclicParentChainTerminates(t *testing.T) {
+	mailboxes := []Mailbox{
+		{ID: "ok", Name: "ok", ParentID: ""},
+		{ID: "cyc", Name: "cyc", ParentID: ""},
+		{ID: "cyc", Name: "cyc", ParentID: "cyc"},
+		{ID: "a", Name: "a", ParentID: "b"},
+		{ID: "b", Name: "b", ParentID: "a"},
+	}
+	done := make(chan *mailboxTree, 1)
+	go func() { done <- newMailboxTree(mailboxes) }()
+	var tree *mailboxTree
+	select {
+	case tree = <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("newMailboxTree did not terminate on a cyclic parent chain")
+	}
+	if got := tree.tagIndex["ok"]; got != "ok" {
+		t.Errorf("tagIndex[ok] = %q, want ok (reachable tags survive a cycle elsewhere)", got)
+	}
+	if got := tree.tagIndex["cyc"]; got != "cyc" {
+		t.Errorf("tagIndex[cyc] = %q, want cyc", got)
 	}
 }
 
