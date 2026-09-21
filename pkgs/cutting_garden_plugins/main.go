@@ -967,6 +967,18 @@ var ResolveScheme = internal.ResolveScheme
 // rely on its pre-call order or capacity afterward.
 var SortAndLimitContainerBreakdown = internal.SortAndLimitContainerBreakdown
 
+// StringsOf reads a string-list stored field (a tag set) from a node's field
+// map, tolerating both the native []string an in-process listing builds and
+// the []any it becomes after a JSON enrichment round-trip (the wire/MCP
+// path) — the list sibling of valueToString's float64 tolerance. A
+// non-string element is skipped rather than guessed at; an absent key, or a
+// value of any other type, is nil. The []string arm is CLONED: a Codec.Format
+// result must never alias mutable plugin/node state — callers own what
+// Format hands back and may reorder or filter it freely, so returning the
+// stored slice by reference would let any such use corrupt the node's own
+// fields. Shared by every FieldTag codec (caldav categories, fastmail tags).
+var StringsOf = internal.StringsOf
+
 // TruncateDateKey coarsens a date bucket key to the granularity by prefix
 // truncation. A key already at or coarser than the granularity is unchanged.
 var TruncateDateKey = internal.TruncateDateKey

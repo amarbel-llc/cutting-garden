@@ -1,7 +1,6 @@
 package caldav
 
 import (
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -331,13 +330,13 @@ func (categoriesCodec) Fields() []cutting_garden_plugins.UnifiedField {
 // render-time job, not the codec's. The stored shape is the []string the ical
 // parser builds (listingFieldsOf reports view.*.Categories raw), or the []any
 // it becomes after a JSON enrichment round-trip on the wire/MCP path — the
-// list sibling of intOf's float64 tolerance. An absent or empty list
+// SDK's StringsOf tolerates both. An absent or empty list
 // contributes nothing (absent key), matching the other codecs' absent-value
 // behavior. The facet COUNTING path (facetsFromView) keeps computing the same
 // per-tag values for summaries; the agreement is pinned by
 // TestCategoriesCodec_FormatAgreesWithFacetValues.
 func (categoriesCodec) Format(stored map[string]any) (map[string][]string, error) {
-	tags := stringsOf(stored, listingFieldCategories)
+	tags := cutting_garden_plugins.StringsOf(stored, listingFieldCategories)
 	if len(tags) == 0 {
 		return map[string][]string{}, nil
 	}
@@ -554,30 +553,6 @@ func (caldavPriorityCodec) Parse(
 func stringOf(m map[string]any, key string) string {
 	s, _ := m[key].(string)
 	return s
-}
-
-// stringsOf reads a string-list field, tolerating both the native []string the
-// in-process listing builds (listingFieldsOf) and the []any it becomes after a
-// JSON enrichment round-trip (the wire/MCP path) — the list sibling of intOf's
-// float64 tolerance. A non-string element is skipped rather than guessed at;
-// absence is nil. The []string arm is CLONED: a Codec.Format result must
-// never alias mutable plugin/node state — callers own what Format hands back
-// and may reorder or filter it freely, so returning the stored slice by
-// reference would let any such use corrupt the node's own fields.
-func stringsOf(m map[string]any, key string) []string {
-	switch t := m[key].(type) {
-	case []string:
-		return slices.Clone(t)
-	case []any:
-		out := make([]string, 0, len(t))
-		for _, v := range t {
-			if s, ok := v.(string); ok {
-				out = append(out, s)
-			}
-		}
-		return out
-	}
-	return nil
 }
 
 // intOf reads an integer field, tolerating the float64 an int becomes after a JSON

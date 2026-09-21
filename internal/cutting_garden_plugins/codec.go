@@ -1,6 +1,7 @@
 package cutting_garden_plugins
 
 import (
+	"slices"
 	"strconv"
 
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
@@ -123,4 +124,30 @@ func valueToString(v any) (string, error) {
 	default:
 		return "", errors.BadRequestf("cannot present value of type %T as a field string", v)
 	}
+}
+
+// StringsOf reads a string-list stored field (a tag set) from a node's field
+// map, tolerating both the native []string an in-process listing builds and
+// the []any it becomes after a JSON enrichment round-trip (the wire/MCP
+// path) — the list sibling of valueToString's float64 tolerance. A
+// non-string element is skipped rather than guessed at; an absent key, or a
+// value of any other type, is nil. The []string arm is CLONED: a Codec.Format
+// result must never alias mutable plugin/node state — callers own what
+// Format hands back and may reorder or filter it freely, so returning the
+// stored slice by reference would let any such use corrupt the node's own
+// fields. Shared by every FieldTag codec (caldav categories, fastmail tags).
+func StringsOf(stored map[string]any, key string) []string {
+	switch t := stored[key].(type) {
+	case []string:
+		return slices.Clone(t)
+	case []any:
+		out := make([]string, 0, len(t))
+		for _, v := range t {
+			if s, ok := v.(string); ok {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	return nil
 }

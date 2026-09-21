@@ -144,3 +144,41 @@ func TestValueToString(t *testing.T) {
 		t.Errorf("valueToString of an unsupported type: want error, got nil")
 	}
 }
+
+// StringsOf tolerates the native []string and the post-JSON []any shapes
+// (skipping non-string elements), reports absence and foreign types as nil,
+// and never aliases the stored slice.
+func TestStringsOf(t *testing.T) {
+	want := []string{"work", "errand"}
+	cases := map[string]map[string]any{
+		"native":     {"tags": []string{"work", "errand"}},
+		"json-round": {"tags": []any{"work", "errand"}},
+		"mixed":      {"tags": []any{"work", 7, "errand", nil}},
+	}
+	for name, stored := range cases {
+		if got := StringsOf(stored, "tags"); !reflect.DeepEqual(got, want) {
+			t.Errorf("StringsOf(%s) = %v, want %v", name, got, want)
+		}
+	}
+	for name, stored := range map[string]map[string]any{
+		"absent":        {},
+		"scalar":        {"tags": "work"},
+		"nil-value":     {"tags": nil},
+		"other-slice":   {"tags": []int{1}},
+		"wrong-key-hit": {"other": []string{"x"}},
+	} {
+		if got := StringsOf(stored, "tags"); got != nil {
+			t.Errorf("StringsOf(%s) = %v, want nil", name, got)
+		}
+	}
+	if got := StringsOf(map[string]any{"tags": []string{}}, "tags"); got == nil || len(got) != 0 {
+		t.Errorf("StringsOf(empty) = %#v, want an empty non-nil slice", got)
+	}
+
+	stored := map[string]any{"tags": []string{"b", "a"}}
+	got := StringsOf(stored, "tags")
+	got[0] = "mutated"
+	if stored["tags"].([]string)[0] != "b" {
+		t.Error("StringsOf aliased the stored []string; want a clone")
+	}
+}

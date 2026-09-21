@@ -1,7 +1,6 @@
 package fastmail
 
 import (
-	"slices"
 	"sync"
 
 	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
@@ -141,10 +140,11 @@ func (tagsCodec) Fields() []cutting_garden_plugins.UnifiedField {
 // Format presents the stored tag set verbatim, in STORED order —
 // interpreter-normalized (SortKey) ordering is the framework's render-time
 // job. The stored shape is the []string threadFields builds, or the []any it
-// becomes after a JSON enrichment round-trip (the wire/MCP path). An absent
-// or empty set contributes nothing (absent key).
+// becomes after a JSON enrichment round-trip (the wire/MCP path) — the SDK's
+// StringsOf tolerates both. An absent or empty set contributes nothing
+// (absent key).
 func (tagsCodec) Format(stored map[string]any) (map[string][]string, error) {
-	tags := stringsOf(stored, listingFieldTags)
+	tags := cutting_garden_plugins.StringsOf(stored, listingFieldTags)
 	if len(tags) == 0 {
 		return map[string][]string{}, nil
 	}
@@ -215,26 +215,4 @@ func (facetOnlyCodec) Format(map[string]any) (map[string][]string, error) {
 
 func (c facetOnlyCodec) Parse(map[string][]string, map[string]any) (map[string]any, error) {
 	return nil, errors.BadRequestf("fastmail plugin: %s is not writable", c.field.Key)
-}
-
-// stringsOf reads a string-list field, tolerating both the native []string the
-// in-process listing builds and the []any it becomes after a JSON enrichment
-// round-trip (the wire/MCP path). A non-string element is skipped rather than
-// guessed at; absence is nil. The []string arm is CLONED so a Format result
-// never aliases the node's own field — callers may reorder or filter what
-// Format hands back.
-func stringsOf(m map[string]any, key string) []string {
-	switch t := m[key].(type) {
-	case []string:
-		return slices.Clone(t)
-	case []any:
-		out := make([]string, 0, len(t))
-		for _, v := range t {
-			if s, ok := v.(string); ok {
-				out = append(out, s)
-			}
-		}
-		return out
-	}
-	return nil
 }
