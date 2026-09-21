@@ -10,6 +10,7 @@ const (
 	modulePath     = "code.linenisgreat.com/cutting-garden"
 	pkgsPrefix     = modulePath + "/pkgs/"
 	internalPrefix = modulePath + "/internal/"
+	pluginsPrefix  = modulePath + "/plugins/"
 	// pluginAggregator legitimately blank-imports not-yet-migrated
 	// in-tree plugins during the RFC 0009 §5 migration, so it is exempt
 	// from the "no internal/ imports" rule below.
@@ -22,15 +23,31 @@ const (
 // why this guard lives in a Go test, not a justfile recipe.
 func importEdges(t *testing.T, pattern string) [][2]string {
 	t.Helper()
-	// A per-package godyn test run has no go toolchain or module tree;
-	// `just test-go` (the devshell) is where this guard runs.
-	if _, err := exec.LookPath("go"); err != nil {
-		t.Skip("no go toolchain on PATH")
-	}
 	const tmpl = `{{$p := .ImportPath}}` +
 		`{{range .Imports}}{{$p}} {{.}}` + "\n" + `{{end}}` +
 		`{{range .TestImports}}{{$p}} {{.}}` + "\n" + `{{end}}` +
 		`{{range .XTestImports}}{{$p}} {{.}}` + "\n" + `{{end}}`
+	return goListEdges(t, tmpl, pattern)
+}
+
+// productionImportEdges is importEdges restricted to each package's
+// non-test imports — the edges that decide a package's build (and, under
+// godyn, its invalidation cone).
+func productionImportEdges(t *testing.T, pattern string) [][2]string {
+	t.Helper()
+	const tmpl = `{{$p := .ImportPath}}` +
+		`{{range .Imports}}{{$p}} {{.}}` + "\n" + `{{end}}`
+	return goListEdges(t, tmpl, pattern)
+}
+
+func goListEdges(t *testing.T, tmpl, pattern string) [][2]string {
+	t.Helper()
+	// A per-package godyn test run has no go toolchain or module tree;
+	// `just debug-test-layering` (go test through the godyn-go escape
+	// hatch) is where this guard runs.
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skip("no go toolchain on PATH")
+	}
 
 	out, err := exec.Command("go", "list", "-f", tmpl, pattern).Output()
 	if err != nil {
@@ -82,6 +99,26 @@ func TestMigratedPluginsConsumeTheFacade(t *testing.T) {
 		if strings.HasPrefix(imported, internalPrefix) {
 			t.Errorf("layering violation (RFC 0009 §4): migrated plugin %s imports %s\n"+
 				"a plugin under plugins/ must consume the pkgs/ facade, not internal/",
+				importer, imported)
+		}
+	}
+}
+
+// TestInternalDoesNotImportPlugins is the invalidation-cone guard
+// (docs/plans/2026-09-21-invalidation-cone-moves.md D7): no package under
+// internal/ imports plugins/ in PRODUCTION code, so a plugin edit
+// re-derives only plugins/<scheme>, plugins/all and the cmd/ mains under
+// godyn. Plugins reach the framework through the SDK registries
+// (cutting_garden_plugins.MustRegisterScheme / MustRegisterConfigSection),
+// never the other way round. Test-only imports are a separate clause
+// (Unit C of the same plan).
+func TestInternalDoesNotImportPlugins(t *testing.T) {
+	for _, e := range productionImportEdges(t, internalPrefix+"...") {
+		importer, imported := e[0], e[1]
+		if strings.HasPrefix(imported, pluginsPrefix) {
+			t.Errorf("invalidation-cone violation: %s imports %s\n"+
+				"internal/ must not import plugins/ in production code; register the "+
+				"plugin's contribution through an SDK registry instead",
 				importer, imported)
 		}
 	}
