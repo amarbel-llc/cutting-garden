@@ -540,6 +540,72 @@ debug-jmap-verify:
       exit 5
     fi
 
+# Probe whether the fastmail-jmap.env token can reach Sieve over JMAP
+# (RFC 9661, urn:ietf:params:jmap:sieve — Cyrus implements it; the question is
+# whether Fastmail grants it to API-token sessions). Prints the session's
+# top-level and per-account capability keys, then attempts a READ-ONLY
+# SieveScript/get and prints the result or the server's refusal. Never prints
+# the token. Serves the fastmail label-migration executor dev-loop (Sieve
+# backup + post-migration fileinto rewrite).
+#
+# probe JMAP Sieve capability + SieveScript/get with the stored token
+[group('debug')]
+debug-jmap-sieve-probe:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    set +x
+    set -a
+    . <(piggy pass show fastmail-jmap.env)
+    set +a
+    : "${JMAP_TOKEN:?fastmail-jmap.env did not define JMAP_TOKEN}"
+
+    session="$(curl -sS --fail -H "Authorization: Bearer ${JMAP_TOKEN}" \
+      https://api.fastmail.com/jmap/session)"
+    acct="$(jq -er '.primaryAccounts["urn:ietf:params:jmap:mail"]' <<<"$session")"
+    apiurl="$(jq -er '.apiUrl' <<<"$session")"
+
+    echo '--- session capabilities (top-level) ---'
+    jq -r '.capabilities | keys[]' <<<"$session"
+    echo '--- accountCapabilities ---'
+    jq -r --arg a "$acct" '.accounts[$a].accountCapabilities | keys[]' <<<"$session"
+    echo '--- primaryAccounts ---'
+    jq -r '.primaryAccounts' <<<"$session"
+
+    for cap in 'urn:ietf:params:jmap:sieve' 'https://www.fastmail.com/dev/sieve'; do
+      echo "--- SieveScript/get attempt ($cap) ---"
+      curl -sS -X POST "$apiurl" \
+        -H "Authorization: Bearer ${JMAP_TOKEN}" \
+        -H 'Content-Type: application/json' \
+        --data-binary '{"using":["urn:ietf:params:jmap:core","'"$cap"'"],
+          "methodCalls":[["SieveScript/get",{"accountId":"'"$acct"'","ids":null},"0"]]}' \
+        | jq .
+    done
+
+# POST one JMAP request body (a JSON file with using+methodCalls) to the
+# Fastmail API and pretty-print the response. The executor primitive for the
+# fastmail label migration: whether a call is read-only or MUTATING is decided
+# entirely by FILE's contents, so review the request file before running.
+# Request/response bodies stay in files (point FILE at the session scratchpad);
+# credentials come from piggy (fastmail-jmap.env) and are never echoed.
+#
+# POST a JMAP request-body file to the Fastmail API
+[group('debug')]
+debug-jmap-request FILE:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    set +x
+    set -a
+    . <(piggy pass show fastmail-jmap.env)
+    set +a
+    : "${JMAP_TOKEN:?fastmail-jmap.env did not define JMAP_TOKEN}"
+
+    apiurl="$(curl -sS --fail -H "Authorization: Bearer ${JMAP_TOKEN}" \
+      https://api.fastmail.com/jmap/session | jq -er .apiUrl)"
+    curl -sS --fail-with-body -X POST "$apiurl" \
+      -H "Authorization: Bearer ${JMAP_TOKEN}" \
+      -H 'Content-Type: application/json' \
+      --data-binary @"{{ FILE }}" | jq .
+
 # Back up the Fastmail account's mail STATE over JMAP into DIR: the complete
 # Mailbox/get result (mailboxes.json) and a full per-message membership map
 # (emails.ndjson — one line per message: id, mailboxIds, keywords, receivedAt,
