@@ -35,24 +35,27 @@ func TestFacetCounts_Derivation(t *testing.T) {
 	}
 	s := res.Summary
 
-	// read: T1 read, T2 unread (any member unseen).
-	if got := count(s, facetRead, readValueRead); got != 1 {
-		t.Errorf("read=read = %d, want 1", got)
+	// tags: both threads carry the leaf label tag (membership counts); the
+	// state tags derive from the members — T1 is in the inbox and fully
+	// read, T2 has an unseen member and a flagged one, and neither is in
+	// the trash. archive contributes nothing (D2).
+	if got := count(s, facetTags, "receipts"); got != 2 {
+		t.Errorf("tags[receipts] = %d, want 2", got)
 	}
-	if got := count(s, facetRead, readValueUnread); got != 1 {
-		t.Errorf("read=unread = %d, want 1", got)
+	if got := count(s, facetTags, stateTagInbox); got != 1 {
+		t.Errorf("tags[_inbox] = %d, want 1", got)
 	}
-	// flagged: T2 has a flagged member, T1 none.
-	if got := count(s, facetFlagged, flaggedValueYes); got != 1 {
-		t.Errorf("flagged = %d, want 1", got)
+	if got := count(s, facetTags, stateTagUnread); got != 1 {
+		t.Errorf("tags[_unread] = %d, want 1", got)
 	}
-	// folder: T1 in inbox, T2 in archive (role-mailbox union).
-	if count(s, facetFolder, "inbox") != 1 || count(s, facetFolder, "archive") != 1 {
-		t.Errorf("folder = %v, want inbox=1 archive=1", s[facetFolder])
+	if got := count(s, facetTags, stateTagFlagged); got != 1 {
+		t.Errorf("tags[_flagged] = %d, want 1", got)
 	}
-	// tag: both threads carry the user-tag path (membership counts).
-	if got := count(s, facetTag, "area/finance/receipts"); got != 2 {
-		t.Errorf("tag[area/finance/receipts] = %d, want 2", got)
+	if got := count(s, facetTags, stateTagTrash); got != 0 {
+		t.Errorf("tags[_trash] = %d, want 0", got)
+	}
+	if _, present := s[facetTags]["area/finance/receipts"]; present {
+		t.Error("tags still carries the legacy slash path; want the dodder-hyphen join")
 	}
 	// from: acme in both, bob in T2 only.
 	if got := count(s, facetFrom, "billing@acme.example"); got != 2 {
@@ -61,9 +64,14 @@ func TestFacetCounts_Derivation(t *testing.T) {
 	if got := count(s, facetFrom, "bob@example.test"); got != 1 {
 		t.Errorf("from[bob] = %d, want 1", got)
 	}
-	// year: both 2026.
-	if got := count(s, facetYear, "2026"); got != 2 {
-		t.Errorf("year[2026] = %d, want 2", got)
+	// date: each thread's newest receivedAt as an ISO day bucket.
+	if count(s, facetDate, "2026-07-14") != 1 || count(s, facetDate, "2026-06-03") != 1 {
+		t.Errorf("date = %v, want 2026-07-14=1 2026-06-03=1", s[facetDate])
+	}
+	for _, retired := range []string{"read", "flagged", "folder", "year", "tag"} {
+		if _, present := s[retired]; present {
+			t.Errorf("retired dimension %q still counted: %v", retired, s[retired])
+		}
 	}
 	// has_attachment: T1 yes, T2 no.
 	if count(s, facetHasAttachment, attachmentYes) != 1 || count(s, facetHasAttachment, attachmentNo) != 1 {
@@ -73,14 +81,17 @@ func TestFacetCounts_Derivation(t *testing.T) {
 
 func TestFacetCounts_Filter(t *testing.T) {
 	account := newFixture(t)
-	// Only the unread thread (T2) should survive.
+	// Only the thread with an unseen member (T2) should survive.
 	res, ok := facetCounts(t, receiptsURI(account).String(),
-		cutting_garden_plugins.FacetFilter{{Dimension: facetRead, Value: readValueUnread}})
+		cutting_garden_plugins.FacetFilter{{Dimension: facetTags, Value: stateTagUnread}})
 	if !ok {
 		t.Fatal("ok=false")
 	}
-	if got := count(res.Summary, facetYear, "2026"); got != 1 {
-		t.Errorf("filtered year[2026] = %d, want 1 (T2 only)", got)
+	if got := count(res.Summary, facetDate, "2026-06-03"); got != 1 {
+		t.Errorf("filtered date[2026-06-03] = %d, want 1 (T2 only)", got)
+	}
+	if got := count(res.Summary, facetTags, stateTagInbox); got != 0 {
+		t.Errorf("filtered tags[_inbox] = %d, want 0 (T1 excluded)", got)
 	}
 	if got := count(res.Summary, facetFrom, "bob@example.test"); got != 1 {
 		t.Errorf("filtered from[bob] = %d, want 1", got)

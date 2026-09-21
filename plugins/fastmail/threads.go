@@ -163,25 +163,6 @@ func orderByIDs(emails []Email, ids []string) []Email {
 	return out
 }
 
-// yearOf extracts the four-digit year prefixing an ISO-8601 receivedAt
-// (e.g. "2026-07-14T09:12:03Z" → "2026"). Empty when there is no leading
-// year.
-func yearOf(receivedAt string) string {
-	var year strings.Builder
-	for _, r := range receivedAt {
-		switch {
-		case r >= '0' && r <= '9':
-			year.WriteRune(r)
-			if year.Len() == 4 {
-				return year.String()
-			}
-		default:
-			return ""
-		}
-	}
-	return ""
-}
-
 // firstFrom returns the first sender's email address (lowercased), or "".
 func firstFrom(e Email) string {
 	for _, a := range e.From {

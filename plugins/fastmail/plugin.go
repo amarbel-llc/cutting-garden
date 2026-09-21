@@ -81,9 +81,12 @@ func (Plugin) Validate(u *url.URL, raw string) error {
 	return nil
 }
 
-// Interface conformance: the read-only capability set (FDR 0024). Writes
-// (FacetWrite*, FieldWriteApplier) and capture/restore/diff are Slice 2/3
-// and are deliberately absent.
+// Interface conformance: the read capability set (FDR 0024) plus the
+// unified declaration and the surfaces derived from it (FDR 0025:
+// UnifiedDescriber, FacetWriteDescriber, FieldPresenter — see unified.go,
+// facet_write.go, present.go). The write APPLY side (NodeMutator,
+// MembershipWriteApplier) and capture/restore/diff are later tasks and are
+// deliberately absent.
 var (
 	_ cutting_garden_plugins.RootLister             = (*Plugin)(nil)
 	_ cutting_garden_plugins.RootProvider           = (*Plugin)(nil)
@@ -94,4 +97,7 @@ var (
 	_ cutting_garden_plugins.FacetVersioner         = (*Plugin)(nil)
 	_ cutting_garden_plugins.EnrichedLister         = (*Plugin)(nil)
 	_ cutting_garden_plugins.ListingFieldsDescriber = (*Plugin)(nil)
+	_ cutting_garden_plugins.UnifiedDescriber       = (*Plugin)(nil)
+	_ cutting_garden_plugins.FacetWriteDescriber    = (*Plugin)(nil)
+	_ cutting_garden_plugins.FieldPresenter         = (*Plugin)(nil)
 )

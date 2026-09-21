@@ -36,6 +36,31 @@ func isReservedTag(tag string) bool {
 	return strings.HasPrefix(tag, stateTagPrefix) && !isStateTag(tag)
 }
 
+// threadTags derives a thread's presented tag set (D1/D2): the union over
+// its members of every user-label mailbox's tag (tree.tagOf — role
+// mailboxes and untaggable chains contribute nothing) plus the state tags.
+// Lexically sorted for a deterministic Format; the framework re-sorts by the
+// interpreter's SortKey at render time. Never nil.
+func threadTags(members []Email, tree *mailboxTree) []string {
+	present := map[string]bool{}
+	for _, m := range members {
+		for mid := range m.MailboxIDs {
+			if tag, ok := tree.tagOf(mid); ok {
+				present[tag] = true
+			}
+		}
+	}
+	for _, tag := range stateTags(members, tree) {
+		present[tag] = true
+	}
+	out := make([]string, 0, len(present))
+	for tag := range present {
+		out = append(out, tag)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // stateTags derives a thread's state tags from its members: each tag is
 // present iff ANY member satisfies its predicate. The result is
 // lexically sorted and never nil.

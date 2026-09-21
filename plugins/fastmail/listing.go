@@ -10,11 +10,16 @@ import (
 
 // Listing-field keys for the thread and email nodes — the human-readable
 // "what is this" projection (cutting-garden#160), distinct from the bucketed
-// facet membership. All read-only in Slice 1 (no Writable fields).
+// facet membership. They are the stored keys the unified codecs (unified.go)
+// read; the derived facet keys alias them.
 const (
 	listingFieldSubject = "subject"
 	listingFieldFrom    = "from"
 	listingFieldDate    = "date"
+	// listingFieldTags is the thread's designated tag set (D6): label tags ∪
+	// state tags, a []string in Node.Fields — the stored field tagsCodec
+	// presents and, once the write side lands, writes back as a full set.
+	listingFieldTags = "tags"
 	// Mailbox direct-membership counts (progressive disclosure: each label
 	// container advertises how much it holds). Direct membership only, not a
 	// recursive subtree rollup.
@@ -22,16 +27,21 @@ const (
 	listingFieldEmails  = "emails"
 )
 
-// DescribeListingFields declares the thread and email display fields:
-// subject, from, and date (receivedAt). Symmetric with DescribeFacets — a
+// DescribeListingFields declares each type's display fields — the
+// discoverability half of enrichment, symmetric with DescribeFacets: a
 // consumer learns via describe_node_types which Node.Fields keys a node may
-// carry.
+// carry. Hand-written (the SDK has no listing-field derivation helper yet)
+// but a strict projection of the unified declaration —
+// TestDescribeListingFields_ConsistentWithUnified pins key/label/trailer
+// agreement. Nothing is Writable: the plugin implements no
+// FieldWriteApplier, and the tag set writes through the facet membership
+// path (a full-set replacement), not an inline field edit — exactly caldav's
+// categories rule. subject is the box trailer (D6). has_attachment is a
+// grouping dimension with no stored counterpart, so it is not listed.
 func (Plugin) DescribeListingFields() []cutting_garden_plugins.NodeTypeListingFields {
-	fields := []cutting_garden_plugins.ListingField{
-		{Key: listingFieldSubject, Label: "Subject"},
-		{Key: listingFieldFrom, Label: "From"},
-		{Key: listingFieldDate, Label: "Date"},
-	}
+	subject := cutting_garden_plugins.ListingField{Key: listingFieldSubject, Label: "Subject", Trailer: true}
+	from := cutting_garden_plugins.ListingField{Key: listingFieldFrom, Label: "From"}
+	date := cutting_garden_plugins.ListingField{Key: listingFieldDate, Label: "Date"}
 	return []cutting_garden_plugins.NodeTypeListingFields{
 		{
 			Tag: typeMailbox,
@@ -40,8 +50,14 @@ func (Plugin) DescribeListingFields() []cutting_garden_plugins.NodeTypeListingFi
 				{Key: listingFieldEmails, Label: "Emails"},
 			},
 		},
-		{Tag: typeThread, Fields: fields},
-		{Tag: typeEmail, Fields: fields},
+		{
+			Tag: typeThread,
+			Fields: []cutting_garden_plugins.ListingField{
+				{Key: listingFieldTags, Label: "Tags"},
+				from, date, subject,
+			},
+		},
+		{Tag: typeEmail, Fields: []cutting_garden_plugins.ListingField{from, date, subject}},
 	}
 }
 
@@ -62,7 +78,7 @@ func mailboxFields(m Mailbox) map[string]any {
 // every other level (account root, thread, email, raw) reports ok=false so
 // the framework falls back to ListRoots plus host-side handling.
 //
-// The filter narrows the THREAD nodes (a from=/year= drill); child mailbox
+// The filter narrows the THREAD nodes (a from=/date= drill); child mailbox
 // nodes are always retained as navigation, since the filter dimensions are
 // thread facets a mailbox container does not itself carry.
 func (Plugin) ListEnriched(
@@ -108,7 +124,7 @@ func (Plugin) ListEnriched(
 			Name:   v.name,
 			Type:   typeThread,
 			Facets: facets,
-			Fields: threadFields(v),
+			Fields: threadFields(v, tree),
 		})
 	}
 	return nodes, true, nil
@@ -130,8 +146,11 @@ func emailFields(e Email) map[string]any {
 }
 
 // threadFields projects one thread onto its listing fields: the display
-// name (subject), the representative sender, and the newest date.
-func threadFields(v threadView) map[string]any {
+// name (subject), the representative sender, the newest date, and the tag
+// set (threadTags — the same set threadFacets counts under `tags`). An
+// empty tag set omits the key, matching the present-but-empty-omitted
+// convention of the other fields.
+func threadFields(v threadView, tree *mailboxTree) map[string]any {
 	fields := map[string]any{}
 	if v.name != "" {
 		fields[listingFieldSubject] = v.name
@@ -143,6 +162,9 @@ func threadFields(v threadView) map[string]any {
 	}
 	if v.receivedAt != "" {
 		fields[listingFieldDate] = v.receivedAt
+	}
+	if tags := threadTags(v.members, tree); len(tags) > 0 {
+		fields[listingFieldTags] = tags
 	}
 	return fields
 }
