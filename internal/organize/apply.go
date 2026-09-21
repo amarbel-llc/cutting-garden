@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"code.linenisgreat.com/cutting-garden/internal/cgconfig"
 	"code.linenisgreat.com/cutting-garden/internal/command_components"
 	cgp "code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
 	"code.linenisgreat.com/madder/go/pkgs/blob_stores"
@@ -31,14 +32,16 @@ type move struct {
 // confirming before writing; piped or redirected it stays dry-run unless -commit,
 // so a headless invocation never writes silently (cutting-garden#213). -dry-run
 // forces preview everywhere.
-func (cmd *Organize) runApply(ctx errors.Context, applyPath string) error {
+func (cmd *Organize) runApply(
+	ctx errors.Context, cfg *cgconfig.ConfigV0, applyPath string,
+) error {
 	editedText, err := readApplyInput(applyPath)
 	if err != nil {
 		return err
 	}
 	tty := stdoutIsTerminal()
 	commit, interactive := applyMode(cmd.DryRun, cmd.Commit, tty)
-	_, err = cmd.applyDocument(ctx, editedText, commit, interactive, tty)
+	_, err = cmd.applyDocument(ctx, cfg, editedText, commit, interactive, tty)
 	return err
 }
 
@@ -63,12 +66,16 @@ func applyMode(dryRun, commitFlag, tty bool) (commit, interactive bool) {
 // runCommitDirectly reads an edited document from stdin and applies it,
 // committing the writes — the scripted re-apply-a-saved-dry-run path (dodder's
 // commit-directly mode). The mode itself is the commit assertion.
-func (cmd *Organize) runCommitDirectly(ctx errors.Context) error {
+func (cmd *Organize) runCommitDirectly(
+	ctx errors.Context, cfg *cgconfig.ConfigV0,
+) error {
 	editedText, err := readApplyInput("-")
 	if err != nil {
 		return err
 	}
-	_, err = cmd.applyDocument(ctx, editedText, true, false, stdoutIsTerminal())
+	_, err = cmd.applyDocument(
+		ctx, cfg, editedText, true, false, stdoutIsTerminal(),
+	)
 	return err
 }
 
@@ -78,8 +85,16 @@ func (cmd *Organize) runCommitDirectly(ctx errors.Context) error {
 // enables the large-batch confirmation gate. It returns whether writes were
 // actually performed (the effective commit state after any declined gate), which
 // the interactive caller uses to decide the edited buffer's fate.
+//
+// cfg is Run's already-loaded config (never nil), threaded down rather than
+// re-read here: it feeds the tag-interpreter resolution — the tag-atom deltas
+// and the membership path both need the global [tags] override — and carries
+// the `[organize] tag_atoms` / `tag_strip` defaults the document's own
+// `_tag-atoms` / `_tag-strip` fields win over (effectiveTagAtoms /
+// effectiveTagStrip, design G3).
 func (cmd *Organize) applyDocument(
-	ctx errors.Context, editedText string, commit, interactive, color bool,
+	ctx errors.Context, cfg *cgconfig.ConfigV0, editedText string,
+	commit, interactive, color bool,
 ) (committed bool, err error) {
 	edited, err := parseDocument(editedText)
 	if err != nil {
@@ -125,17 +140,6 @@ func (cmd *Organize) applyDocument(
 		return false, err
 	}
 	dim := spec.Dim
-
-	// Config feeds the tag-interpreter resolution — the tag-atom deltas below
-	// and the membership path both need the global [tags] override — and
-	// carries the `[organize] tag_atoms` / `tag_strip` defaults the document's
-	// own `_tag-atoms` / `_tag-strip` fields win over (effectiveTagAtoms /
-	// effectiveTagStrip, design G3; the parse above already validated the
-	// doc's fields loudly).
-	cfg, err := command_components.LoadDefaultConfig(nil)
-	if err != nil {
-		return false, err
-	}
 
 	// Box tag atoms are membership edits (design G7, native tags slice 2 T3):
 	// diff the edited boxes' tag atoms against the pinned base per the

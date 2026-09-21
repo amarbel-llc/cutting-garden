@@ -5,6 +5,7 @@ import (
 	"io"
 	"strings"
 
+	"code.linenisgreat.com/cutting-garden/internal/cgconfig"
 	"code.linenisgreat.com/cutting-garden/internal/command_components"
 	cgp "code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
 	"code.linenisgreat.com/cutting-garden/internal/plugin_blob_io"
@@ -53,14 +54,16 @@ type generateParams struct {
 // the exact pre-edit state. Shared by the stdout (runGenerate) and interactive
 // (runInteractive) paths; fmt-organize takes the buildAndStoreFrom core
 // directly with the document's own envelope as the params.
-func (cmd *Organize) buildAndStore(ctx errors.Context, uriStr string) (string, error) {
+func (cmd *Organize) buildAndStore(
+	ctx errors.Context, cfg *cgconfig.ConfigV0, uriStr string,
+) (string, error) {
 	if cmd.GroupBy == "" {
 		return "", errors.BadRequestf(
 			"organize <uri> requires --group-by: `(tags)`, a tag namespace (`project`), " +
 				"a field (`status=`), or a date field at a granularity (`date_due=(month)`)",
 		)
 	}
-	rendered, _, err := buildAndStoreFrom(ctx, uriStr, generateParams{
+	rendered, _, err := buildAndStoreFrom(ctx, cfg, uriStr, generateParams{
 		groupBy:         cmd.GroupBy,
 		query:           cmd.Query,
 		includeTerminal: cmd.IncludeTerminal,
@@ -74,7 +77,7 @@ func (cmd *Organize) buildAndStore(ctx errors.Context, uriStr string) (string, e
 // whether config defaults participate (flag path) or the document is
 // authoritative (fmt-organize, design G4).
 func buildAndStoreFrom(
-	ctx errors.Context, uriStr string, p generateParams,
+	ctx errors.Context, cfg *cgconfig.ConfigV0, uriStr string, p generateParams,
 ) (rendered, digest string, err error) {
 	u, lister, err := command_components.ResolveRootListerPlugin(uriStr)
 	if err != nil {
@@ -85,14 +88,10 @@ func buildAndStoreFrom(
 	// a bare `<dim>=` on a date dimension takes the `[organize] date_granularity`
 	// config default, then day, and the resolved spelling is persisted in the
 	// document's dimension heading (`# date_due=(month)`) — so a later --apply
-	// never consults config (which may change in between). The config was
-	// already loaded and warned about by Run's LoadAndInjectConfig; this re-read
-	// just fetches the value. The document path drops the `[organize]` defaults
-	// (a document's persisted spelling already carries any granularity).
-	cfg, err := command_components.LoadDefaultConfig(nil)
-	if err != nil {
-		return "", "", err
-	}
+	// never consults config (which may change in between). cfg is the value
+	// Run already loaded (and warned about), threaded down. The document path
+	// drops the `[organize]` defaults (a document's persisted spelling already
+	// carries any granularity).
 	dateDefault := cfg.Organize.DateGranularity
 	configTagAtoms, configTagStrip := cfg.Organize.TagAtoms, cfg.Organize.TagStrip
 	if p.fromDocument {
@@ -207,8 +206,10 @@ func buildAndStoreFrom(
 
 // runGenerate builds the document and prints the emitted form to stdout — the
 // non-interactive path (a pipe/redirect, or an MCP/scripting consumer).
-func (cmd *Organize) runGenerate(ctx errors.Context, uriStr string) error {
-	rendered, err := cmd.buildAndStore(ctx, uriStr)
+func (cmd *Organize) runGenerate(
+	ctx errors.Context, cfg *cgconfig.ConfigV0, uriStr string,
+) error {
+	rendered, err := cmd.buildAndStore(ctx, cfg, uriStr)
 	if err != nil {
 		return err
 	}

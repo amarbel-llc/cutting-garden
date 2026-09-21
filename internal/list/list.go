@@ -34,6 +34,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"code.linenisgreat.com/cutting-garden/internal/cgconfig"
 	"code.linenisgreat.com/cutting-garden/internal/command"
 	"code.linenisgreat.com/cutting-garden/internal/command_components"
 	"code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
@@ -142,7 +143,14 @@ func (cmd *List) Run(req command.Request) {
 	// this, `list fj://…` in a fresh process failed with "unknown
 	// scheme" while the no-arg listing worked — found by fj-cg's live
 	// conformance run (#140).
-	if _, err := command_components.LoadAndInjectConfig(os.Stderr); err != nil {
+	//
+	// The loaded value is threaded into runList (which needs the `[tags]`
+	// override) rather than re-read there: the load INJECTS every plugin's
+	// section as it decodes (RFC 0007 — the loader dispatches each
+	// registered config-section decoder), so a second read would re-parse
+	// the file and reassign every plugin's package state for nothing.
+	cfg, err := command_components.LoadAndInjectConfig(os.Stderr)
+	if err != nil {
 		errors.ContextCancelWithError(ctx, err)
 		return
 	}
@@ -177,11 +185,16 @@ func (cmd *List) Run(req command.Request) {
 			"too many positional arguments; list takes at most one (<uri>), "+
 				"trailing: %v", args[1:])
 	default:
-		run := cmd.runList
+		// Only the listing path consults config (for the `[tags]` override);
+		// a facet summary is computed purely from the plugin's declared
+		// schema, so runFacets takes no cfg.
+		var err error
 		if cmd.Facets {
-			run = cmd.runFacets
+			err = cmd.runFacets(ctx, args[0])
+		} else {
+			err = cmd.runList(ctx, cfg, args[0])
 		}
-		if err := run(ctx, args[0]); err != nil {
+		if err != nil {
 			errors.ContextCancelWithError(ctx, err)
 		}
 	}
@@ -251,7 +264,11 @@ func rootDisplayLabel(u *url.URL, labels map[string]string) string {
 // runList resolves the RootLister for uriStr, enumerates the node's
 // immediate children, and renders them. errors.Context satisfies
 // context.Context, so it threads straight into ListRoots for cancelation.
-func (cmd *List) runList(ctx errors.Context, uriStr string) error {
+// cfg is Run's already-loaded config (never nil; a missing file is an
+// empty config).
+func (cmd *List) runList(
+	ctx errors.Context, cfg *cgconfig.ConfigV0, uriStr string,
+) error {
 	u, lister, err := command_components.ResolveRootListerPlugin(uriStr)
 	if err != nil {
 		return err
@@ -260,12 +277,8 @@ func (cmd *List) runList(ctx errors.Context, uriStr string) error {
 	// The [tags] interpreter override serves every path since native tags
 	// slice 4 — a --query's bare-tag term resolution (RFC 0019 §4, #231
 	// slice 3) AND each format's tag presentation (the JSON `tags` array,
-	// the text table's TAGS column, the espalier boxes' tag atoms) — so the
-	// config VALUE is re-read unconditionally. A missing config yields "".
-	cfg, cerr := command_components.LoadDefaultConfig(nil)
-	if cerr != nil {
-		return errors.Wrapf(cerr, "list %s", uriStr)
-	}
+	// the text table's TAGS column, the espalier boxes' tag atoms). An
+	// absent config yields "".
 	tagsOverride := cfg.Tags.Interpreter
 
 	// The presented tag set (design G12/G8): the designated FieldTag field's

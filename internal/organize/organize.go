@@ -41,6 +41,7 @@ import (
 	"io"
 	"os"
 
+	"code.linenisgreat.com/cutting-garden/internal/cgconfig"
 	"code.linenisgreat.com/cutting-garden/internal/command"
 	"code.linenisgreat.com/cutting-garden/internal/command_components"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
@@ -179,7 +180,14 @@ func (cmd *Organize) Run(req command.Request) {
 	// Config load precedes both paths: the plugin (and any wire plugin) is
 	// resolvable through the scheme registry only after registration, exactly
 	// as in `list` (RFC 0013 §Host integration).
-	if _, err := command_components.LoadAndInjectConfig(os.Stderr); err != nil {
+	//
+	// The loaded value threads down to every path that reads a config lever
+	// (the `[tags]` override, the `[organize]` defaults) instead of being
+	// re-read there: the load INJECTS each plugin's section as it decodes
+	// (RFC 0007), so a second read would re-parse the file and reassign every
+	// plugin's package state for nothing.
+	cfg, err := command_components.LoadAndInjectConfig(os.Stderr)
+	if err != nil {
 		errors.ContextCancelWithError(ctx, err)
 		return
 	}
@@ -192,13 +200,13 @@ func (cmd *Organize) Run(req command.Request) {
 		return
 	}
 	if cmd.CommitDirectly {
-		if err := cmd.runCommitDirectly(ctx); err != nil {
+		if err := cmd.runCommitDirectly(ctx, cfg); err != nil {
 			errors.ContextCancelWithError(ctx, err)
 		}
 		return
 	}
 	if cmd.Apply != "" {
-		if err := cmd.runApply(ctx, cmd.Apply); err != nil {
+		if err := cmd.runApply(ctx, cfg, cmd.Apply); err != nil {
 			errors.ContextCancelWithError(ctx, err)
 		}
 		return
@@ -232,7 +240,7 @@ func (cmd *Organize) Run(req command.Request) {
 		cmd.GroupBy = args[1]
 	}
 
-	if err := cmd.runGenerateOrInteractive(ctx, args[0]); err != nil {
+	if err := cmd.runGenerateOrInteractive(ctx, cfg, args[0]); err != nil {
 		errors.ContextCancelWithError(ctx, err)
 	}
 }
@@ -241,19 +249,23 @@ func (cmd *Organize) Run(req command.Request) {
 // <uri>` invocation: launch the interactive $EDITOR round-trip when stdout is a
 // terminal, else print the document to stdout (the pipe/redirect and
 // MCP/scripting path).
-func (cmd *Organize) runGenerateOrInteractive(ctx errors.Context, uriStr string) error {
+func (cmd *Organize) runGenerateOrInteractive(
+	ctx errors.Context, cfg *cgconfig.ConfigV0, uriStr string,
+) error {
 	if stdoutIsTerminal() {
-		return cmd.runInteractive(ctx, uriStr)
+		return cmd.runInteractive(ctx, cfg, uriStr)
 	}
-	return cmd.runGenerate(ctx, uriStr)
+	return cmd.runGenerate(ctx, cfg, uriStr)
 }
 
 // runInteractive generates the document into a temp file, opens it in the user's
 // editor, and applies the result on save. An unchanged buffer is a no-op; a
 // dry-run keeps the buffer and prints its path so it can be re-applied with
 // -commit-directly; a committed apply removes it.
-func (cmd *Organize) runInteractive(ctx errors.Context, uriStr string) error {
-	rendered, err := cmd.buildAndStore(ctx, uriStr)
+func (cmd *Organize) runInteractive(
+	ctx errors.Context, cfg *cgconfig.ConfigV0, uriStr string,
+) error {
+	rendered, err := cmd.buildAndStore(ctx, cfg, uriStr)
 	if err != nil {
 		return err
 	}
@@ -290,7 +302,7 @@ func (cmd *Organize) runInteractive(ctx errors.Context, uriStr string) error {
 	// so it is wet-run by default (writes after the confirm gate) unless -dry-run
 	// forces preview (cutting-garden#213), and the diff renders in color.
 	commit, _ := applyMode(cmd.DryRun, cmd.Commit, true)
-	committed, err := cmd.applyDocument(ctx, string(editedBytes), commit, true, true)
+	committed, err := cmd.applyDocument(ctx, cfg, string(editedBytes), commit, true, true)
 	if err != nil {
 		// Keep the edited buffer so the user can resolve conflicts and re-apply.
 		fmt.Fprintf(cmd.output, "organize: edited document left at %s\n", tmpPath)

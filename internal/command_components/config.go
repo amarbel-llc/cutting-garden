@@ -42,12 +42,18 @@ func DefaultConfigPath() (string, error) {
 // consumed by no field are reported to warnw (typically os.Stderr) and do
 // not fail the load.
 //
-// Decoding covers the framework sections (ConfigV0) AND every plugin
-// section registered with the SDK (cutting_garden_plugins.
-// MustRegisterConfigSection): a registered decoder runs here, so loading
-// also injects each linked plugin's section into that plugin — the
-// injection LoadAndInjectConfig's name promises is this same dispatch. A
-// top-level table no linked plugin registered is an unknown key (warned,
+// LOADING INJECTS. Decoding covers the framework sections (ConfigV0) AND
+// every plugin section registered with the SDK (cutting_garden_plugins.
+// MustRegisterConfigSection), and a registered decoder ends by injecting
+// its section into the plugin's package state — the injection
+// LoadAndInjectConfig's name promises is this same dispatch. So this is
+// NOT a cheap read: each call re-parses the file and reassigns every
+// linked plugin's accounts. Call it ONCE per command invocation and thread
+// the returned value to whatever needs a config lever, rather than
+// re-reading (internal/list and internal/organize do exactly that; there
+// is deliberately no cache here).
+//
+// A top-level table no linked plugin registered is an unknown key (warned,
 // not an error), so a config naming a plugin this binary does not link
 // loads fine.
 func LoadConfig(path string, warnw io.Writer) (*cgconfig.ConfigV0, error) {
@@ -133,9 +139,12 @@ func withoutStanzaClaimedKeys(
 	return kept
 }
 
-// LoadDefaultConfig loads the config from DefaultConfigPath, the common
-// entry point for the composition root. A missing file yields an empty
-// config (see LoadConfig).
+// LoadDefaultConfig loads the config from DefaultConfigPath. A missing
+// file yields an empty config, and — like LoadConfig, which this wraps —
+// loading INJECTS every registered plugin section, so it is once-per-
+// invocation work, not a cheap re-read. A command that has already called
+// LoadAndInjectConfig holds the value and must thread it rather than
+// calling this again.
 func LoadDefaultConfig(warnw io.Writer) (*cgconfig.ConfigV0, error) {
 	path, err := DefaultConfigPath()
 	if err != nil {

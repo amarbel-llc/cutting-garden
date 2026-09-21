@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"code.linenisgreat.com/cutting-garden/internal/cgconfig"
 	"code.linenisgreat.com/cutting-garden/internal/command"
 	"code.linenisgreat.com/cutting-garden/internal/command_components"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
@@ -108,7 +109,11 @@ func (cmd *FmtOrganize) Run(req command.Request) {
 	// Config load precedes the regenerate: the plugin (and any wire plugin) is
 	// resolvable through the scheme registry only after registration, exactly
 	// as in organize's Run (RFC 0013 §Host integration).
-	if _, err := command_components.LoadAndInjectConfig(os.Stderr); err != nil {
+	// The loaded value threads down to the regenerate rather than being
+	// re-read there: the load INJECTS each plugin's section as it decodes
+	// (RFC 0007), so a second read would redo that work for nothing.
+	cfg, err := command_components.LoadAndInjectConfig(os.Stderr)
+	if err != nil {
 		errors.ContextCancelWithError(ctx, err)
 		return
 	}
@@ -121,12 +126,14 @@ func (cmd *FmtOrganize) Run(req command.Request) {
 		return
 	}
 
-	if err := cmd.run(ctx, args[0]); err != nil {
+	if err := cmd.run(ctx, cfg, args[0]); err != nil {
 		errors.ContextCancelWithError(ctx, err)
 	}
 }
 
-func (cmd *FmtOrganize) run(ctx errors.Context, path string) error {
+func (cmd *FmtOrganize) run(
+	ctx errors.Context, cfg *cgconfig.ConfigV0, path string,
+) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return errors.Wrapf(err, "fmt-organize: read %s", path)
@@ -182,7 +189,7 @@ func (cmd *FmtOrganize) run(ctx errors.Context, path string) error {
 	// Clean: regenerate from the envelope. The document is authoritative
 	// (fromDocument): its `_query` is the composed effective query, verbatim;
 	// its levers and provenance carry forward; config defaults stay out.
-	rendered, digest, err := buildAndStoreFrom(ctx, doc.Anchor, generateParams{
+	rendered, digest, err := buildAndStoreFrom(ctx, cfg, doc.Anchor, generateParams{
 		groupBy:      spec.String(),
 		query:        doc.Query,
 		tagAtoms:     doc.TagAtoms,
