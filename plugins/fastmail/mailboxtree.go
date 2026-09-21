@@ -1,6 +1,9 @@
 package fastmail
 
-import "sort"
+import (
+	"sort"
+	"strings"
+)
 
 // allowedRoles is the in-scope role-mailbox set (FDR 0024): inbox, archive,
 // sent, junk, trash. Role mailboxes outside this set (drafts, scheduled,
@@ -27,13 +30,22 @@ type mailboxTree struct {
 	byID     map[string]Mailbox
 	children map[string][]Mailbox
 	pathByID map[string][]string
+	// tagIndex is the reverse of tagOf: tag → the id of the mailbox that
+	// joins to it. Two mailboxes may legally join to one name in Fastmail;
+	// the FIRST in listing order wins (a known v1 limitation).
+	tagIndex map[string]string
+	// roleIDByRole maps an in-scope role (inbox, trash, …) to its mailbox
+	// id; first in listing order when a role is (illegally) duplicated.
+	roleIDByRole map[string]string
 }
 
 func newMailboxTree(mailboxes []Mailbox) *mailboxTree {
 	t := &mailboxTree{
-		byID:     make(map[string]Mailbox, len(mailboxes)),
-		children: map[string][]Mailbox{},
-		pathByID: make(map[string][]string, len(mailboxes)),
+		byID:         make(map[string]Mailbox, len(mailboxes)),
+		children:     map[string][]Mailbox{},
+		pathByID:     make(map[string][]string, len(mailboxes)),
+		tagIndex:     map[string]string{},
+		roleIDByRole: map[string]string{},
 	}
 	for _, m := range mailboxes {
 		t.byID[m.ID] = m
@@ -51,7 +63,77 @@ func newMailboxTree(mailboxes []Mailbox) *mailboxTree {
 	for _, m := range mailboxes {
 		t.pathByID[m.ID] = t.computePath(m)
 	}
+	t.walkListingOrder("", func(m Mailbox) {
+		if m.Role != "" {
+			if _, dup := t.roleIDByRole[m.Role]; !dup {
+				t.roleIDByRole[m.Role] = m.ID
+			}
+			return
+		}
+		tag, ok := t.tagOf(m.ID)
+		if !ok {
+			return
+		}
+		if _, dup := t.tagIndex[tag]; !dup {
+			t.tagIndex[tag] = m.ID
+		}
+	})
 	return t
+}
+
+// walkListingOrder visits every mailbox under parentID depth-first in the
+// stable listing order (children sorted by name then id).
+func (t *mailboxTree) walkListingOrder(parentID string, visit func(Mailbox)) {
+	for _, m := range t.children[parentID] {
+		visit(m)
+		t.walkListingOrder(m.ID, visit)
+	}
+}
+
+// ergonomicRootName is the label-tree root that exists only to group tags
+// in Fastmail's UI (fastmail tags slice 1, D1): it never renders as a tag
+// and its children are plain tags.
+const ergonomicRootName = "_"
+
+// isContinuationSegment reports whether a label segment continues its
+// parent's tag name rather than starting a new one (dodder-hyphen join):
+// `proj-x` + `-msft` → `proj-x-msft`.
+func isContinuationSegment(seg string) bool {
+	return strings.HasPrefix(seg, "-")
+}
+
+// tagOf returns the tag a user-label mailbox contributes (D1): the join of
+// its path from the NEAREST BARE ancestor onward, where a segment is bare
+// iff it does not start with `-`. Bare ancestors above that point are tags
+// on the tag, not part of its name. The ergonomic root `_` yields no tag
+// itself and is skipped when it is the nearest bare ancestor. Role
+// mailboxes and unknown ids yield no tag.
+func (t *mailboxTree) tagOf(id string) (string, bool) {
+	m, ok := t.byID[id]
+	if !ok || m.Role != "" {
+		return "", false
+	}
+	path := t.path(id)
+	start := 0
+	for i := len(path) - 1; i >= 0; i-- {
+		if !isContinuationSegment(path[i]) {
+			start = i
+			break
+		}
+	}
+	if path[start] == ergonomicRootName {
+		start++
+	}
+	if start >= len(path) {
+		return "", false
+	}
+	return strings.Join(path[start:], ""), true
+}
+
+// roleID returns the id of the mailbox holding role (inbox, trash, …).
+func (t *mailboxTree) roleID(role string) (string, bool) {
+	id, ok := t.roleIDByRole[role]
+	return id, ok
 }
 
 // computePath walks parentId up to the root, producing the mailbox's full

@@ -1,0 +1,66 @@
+package fastmail
+
+import (
+	"sort"
+	"strings"
+)
+
+// State tags (fastmail tags slice 1, D2): `_`-prefixed tags a thread's
+// tag set carries alongside its label tags, derived from the members'
+// role-mailbox membership and JMAP keywords. All four are writable.
+const (
+	stateTagInbox   = "_inbox"   // any member in the inbox role mailbox
+	stateTagUnread  = "_unread"  // any member lacking $seen
+	stateTagFlagged = "_flagged" // any member with $flagged
+	stateTagTrash   = "_trash"   // any member in the trash role mailbox
+)
+
+// stateTagPrefix marks the reserved tag namespace: every tag starting with
+// it is either one of the writable state tags or refused outright (`_sent`,
+// `_junk`, `_archive`, …) — sent and junk are never emitted as tags.
+const stateTagPrefix = "_"
+
+var writableStateTags = map[string]bool{
+	stateTagInbox:   true,
+	stateTagUnread:  true,
+	stateTagFlagged: true,
+	stateTagTrash:   true,
+}
+
+// isStateTag reports whether tag is one of the four writable state tags.
+func isStateTag(tag string) bool { return writableStateTags[tag] }
+
+// isReservedTag reports whether tag sits in the `_` namespace without being
+// a writable state tag: typing one into a box is a bad request.
+func isReservedTag(tag string) bool {
+	return strings.HasPrefix(tag, stateTagPrefix) && !isStateTag(tag)
+}
+
+// stateTags derives a thread's state tags from its members: each tag is
+// present iff ANY member satisfies its predicate. The result is
+// lexically sorted and never nil.
+func stateTags(members []Email, tree *mailboxTree) []string {
+	inboxID, _ := tree.roleID("inbox")
+	trashID, _ := tree.roleID("trash")
+	present := map[string]bool{}
+	for _, m := range members {
+		if !m.Keywords["$seen"] {
+			present[stateTagUnread] = true
+		}
+		if m.Keywords["$flagged"] {
+			present[stateTagFlagged] = true
+		}
+		if inboxID != "" && m.MailboxIDs[inboxID] {
+			present[stateTagInbox] = true
+		}
+		if trashID != "" && m.MailboxIDs[trashID] {
+			present[stateTagTrash] = true
+		}
+	}
+	out := make([]string, 0, len(present))
+	for tag := range present {
+		out = append(out, tag)
+	}
+	sort.Strings(out)
+	return out
+}
