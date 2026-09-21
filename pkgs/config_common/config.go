@@ -42,6 +42,26 @@ type Account struct {
 	PasswordEnv string `toml:"password_env,omitempty"`
 }
 
+// AccountsSection is the TOML shape of an account-bearing plugin's
+// top-level config table (RFC 0007 § Plugin-Owned Sections): the
+// `[[<scheme>.accounts]]` array every such plugin (caldav, fastmail, jira)
+// decodes. It is the ONE tommy schema the plugins share — a plugin's
+// registered config-section decoder (cutting_garden_plugins.
+// MustRegisterConfigSection) runs DecodeAccountsSectionInto over its table,
+// then applies its own scheme-specific validation and injects the accounts.
+//
+// The schema lives here rather than in each plugin because tommy
+// type-checks a package with its own generated output blanked (its codegen
+// bootstrap, tommy#93): hand-written code in the plugin package can never
+// call a Decode<X>Into generated in that same package, so the generated
+// entrypoint a plugin consumes must be defined in a leaf it imports. This
+// package is that leaf.
+//
+//go:generate tommy generate
+type AccountsSection struct {
+	Accounts []Account `toml:"accounts"`
+}
+
 // Password resolves the account's password from the environment variable
 // named by PasswordEnv, or "" when PasswordEnv is empty or the variable
 // is unset.

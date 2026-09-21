@@ -281,3 +281,214 @@ func EncodeAccountFrom(data *Account, doc *document.Document, container *cst.Nod
 	}
 	return nil
 }
+
+type accountsSectionAccountsHandle struct {
+	node *cst.Node
+}
+type AccountsSectionDocument struct {
+	data     AccountsSection
+	cstDoc   *document.Document
+	model    *cst.Value
+	accounts []accountsSectionAccountsHandle
+}
+
+func DecodeAccountsSection(input []byte) (*AccountsSectionDocument, error) {
+	doc, err := document.Parse(input)
+	if err != nil {
+		return nil, err
+	}
+	model, err := cst.Decompose(doc.Root())
+	if err != nil {
+		return nil, err
+	}
+
+	d := &AccountsSectionDocument{
+		cstDoc: doc,
+		model:  model,
+	}
+
+	if _vAccounts, _ok := model.Get("accounts"); _ok && _vAccounts.Kind == cst.VArray {
+		_vAccounts.MarkSeen()
+		d.data.Accounts = make([]Account, len(_vAccounts.Items))
+		d.accounts = make([]accountsSectionAccountsHandle, len(_vAccounts.Items))
+		for i := range _vAccounts.Items {
+			_eAccounts := &_vAccounts.Items[i]
+			_eAccounts.MarkSeen()
+			d.accounts[i] = accountsSectionAccountsHandle{node: _eAccounts.Node}
+			if _vAccountsName, _ok := _eAccounts.Get("name"); _ok && _vAccountsName.Kind == cst.VLeaf {
+				if _x, _xok := cst.ExtractString(_vAccountsName.Leaf); _xok {
+					d.data.Accounts[i].Name = _x
+					_vAccountsName.MarkConsumed()
+				}
+			}
+			if _vAccountsUrl, _ok := _eAccounts.Get("url"); _ok && _vAccountsUrl.Kind == cst.VLeaf {
+				if _x, _xok := cst.ExtractString(_vAccountsUrl.Leaf); _xok {
+					d.data.Accounts[i].URL = _x
+					_vAccountsUrl.MarkConsumed()
+				}
+			}
+			if _vAccountsUsername, _ok := _eAccounts.Get("username"); _ok && _vAccountsUsername.Kind == cst.VLeaf {
+				if _x, _xok := cst.ExtractString(_vAccountsUsername.Leaf); _xok {
+					d.data.Accounts[i].Username = _x
+					_vAccountsUsername.MarkConsumed()
+				}
+			}
+			if _vAccountsPasswordEnv, _ok := _eAccounts.Get("password_env"); _ok && _vAccountsPasswordEnv.Kind == cst.VLeaf {
+				if _x, _xok := cst.ExtractString(_vAccountsPasswordEnv.Leaf); _xok {
+					d.data.Accounts[i].PasswordEnv = _x
+					_vAccountsPasswordEnv.MarkConsumed()
+				}
+			}
+		}
+	}
+	if _eaAccounts, _eaok := model.Get("accounts"); _eaok && _eaAccounts.IsEmptyArray() {
+		_eaAccounts.MarkConsumed()
+		d.data.Accounts = []Account{}
+	}
+	return d, nil
+}
+
+func (d *AccountsSectionDocument) Data() *AccountsSection {
+	return &d.data
+}
+
+func (d *AccountsSectionDocument) Encode() ([]byte, error) {
+	{
+		for i := range d.data.Accounts {
+			var container *cst.Node
+			if i < len(d.accounts) {
+				container = d.accounts[i].node
+			} else {
+				container = cst.AppendArrayTableEntryAfter(d.cstDoc.Root(), "accounts")
+			}
+			if d.data.Accounts[i].Name != "" || cst.HasValue(container, "name") {
+				if err := cst.SetAny(container, "name", d.data.Accounts[i].Name); err != nil {
+					return nil, fmt.Errorf("%w", err)
+				}
+			}
+			if d.data.Accounts[i].URL != "" || cst.HasValue(container, "url") {
+				if err := cst.SetAny(container, "url", d.data.Accounts[i].URL); err != nil {
+					return nil, fmt.Errorf("%w", err)
+				}
+			}
+			if d.data.Accounts[i].Username != "" {
+				if err := cst.SetAny(container, "username", d.data.Accounts[i].Username); err != nil {
+					return nil, fmt.Errorf("%w", err)
+				}
+			} else {
+				cst.DeleteValue(container, "username")
+			}
+			if d.data.Accounts[i].PasswordEnv != "" {
+				if err := cst.SetAny(container, "password_env", d.data.Accounts[i].PasswordEnv); err != nil {
+					return nil, fmt.Errorf("%w", err)
+				}
+			} else {
+				cst.DeleteValue(container, "password_env")
+			}
+		}
+	}
+	return d.cstDoc.Bytes(), nil
+}
+
+func (d *AccountsSectionDocument) Undecoded() []string {
+	if d.model == nil {
+		return nil
+	}
+	return d.model.Undecoded()
+}
+
+func (d *AccountsSectionDocument) Comment(key string) string {
+	return d.cstDoc.GetComment(key)
+}
+
+func (d *AccountsSectionDocument) SetComment(key, comment string) {
+	d.cstDoc.SetComment(key, comment)
+}
+
+func (d *AccountsSectionDocument) InlineComment(key string) string {
+	return d.cstDoc.GetInlineComment(key)
+}
+
+func (d *AccountsSectionDocument) SetInlineComment(key, comment string) {
+	d.cstDoc.SetInlineComment(key, comment)
+}
+
+func DecodeAccountsSectionInto(data *AccountsSection, sub *cst.Value) error {
+	if _vAccounts, _ok := sub.Get("accounts"); _ok && _vAccounts.Kind == cst.VArray {
+		_vAccounts.MarkSeen()
+		data.Accounts = make([]Account, len(_vAccounts.Items))
+		for i := range _vAccounts.Items {
+			_eAccounts := &_vAccounts.Items[i]
+			_eAccounts.MarkSeen()
+			if _vAccountsName, _ok := _eAccounts.Get("name"); _ok && _vAccountsName.Kind == cst.VLeaf {
+				if _x, _xok := cst.ExtractString(_vAccountsName.Leaf); _xok {
+					data.Accounts[i].Name = _x
+					_vAccountsName.MarkConsumed()
+				}
+			}
+			if _vAccountsUrl, _ok := _eAccounts.Get("url"); _ok && _vAccountsUrl.Kind == cst.VLeaf {
+				if _x, _xok := cst.ExtractString(_vAccountsUrl.Leaf); _xok {
+					data.Accounts[i].URL = _x
+					_vAccountsUrl.MarkConsumed()
+				}
+			}
+			if _vAccountsUsername, _ok := _eAccounts.Get("username"); _ok && _vAccountsUsername.Kind == cst.VLeaf {
+				if _x, _xok := cst.ExtractString(_vAccountsUsername.Leaf); _xok {
+					data.Accounts[i].Username = _x
+					_vAccountsUsername.MarkConsumed()
+				}
+			}
+			if _vAccountsPasswordEnv, _ok := _eAccounts.Get("password_env"); _ok && _vAccountsPasswordEnv.Kind == cst.VLeaf {
+				if _x, _xok := cst.ExtractString(_vAccountsPasswordEnv.Leaf); _xok {
+					data.Accounts[i].PasswordEnv = _x
+					_vAccountsPasswordEnv.MarkConsumed()
+				}
+			}
+		}
+	}
+	if _eaAccounts, _eaok := sub.Get("accounts"); _eaok && _eaAccounts.IsEmptyArray() {
+		_eaAccounts.MarkConsumed()
+		data.Accounts = []Account{}
+	}
+	return nil
+}
+
+func EncodeAccountsSectionFrom(data *AccountsSection, doc *document.Document, container *cst.Node) error {
+	{
+		_apAccounts := container
+		_existAccounts := cst.FindChildArrayTableNodes(doc.Root(), _apAccounts, "accounts")
+		for i := range data.Accounts {
+			var container *cst.Node
+			if i < len(_existAccounts) {
+				container = _existAccounts[i]
+			} else {
+				container = cst.AppendChildArrayTableEntry(doc.Root(), _apAccounts, "accounts")
+			}
+			if data.Accounts[i].Name != "" || cst.HasValue(container, "name") {
+				if err := cst.SetAny(container, "name", data.Accounts[i].Name); err != nil {
+					return fmt.Errorf("%w", err)
+				}
+			}
+			if data.Accounts[i].URL != "" || cst.HasValue(container, "url") {
+				if err := cst.SetAny(container, "url", data.Accounts[i].URL); err != nil {
+					return fmt.Errorf("%w", err)
+				}
+			}
+			if data.Accounts[i].Username != "" {
+				if err := cst.SetAny(container, "username", data.Accounts[i].Username); err != nil {
+					return fmt.Errorf("%w", err)
+				}
+			} else {
+				cst.DeleteValue(container, "username")
+			}
+			if data.Accounts[i].PasswordEnv != "" {
+				if err := cst.SetAny(container, "password_env", data.Accounts[i].PasswordEnv); err != nil {
+					return fmt.Errorf("%w", err)
+				}
+			} else {
+				cst.DeleteValue(container, "password_env")
+			}
+		}
+	}
+	return nil
+}

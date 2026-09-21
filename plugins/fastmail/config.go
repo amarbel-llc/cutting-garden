@@ -5,8 +5,36 @@ import (
 	"net/url"
 
 	"code.linenisgreat.com/cutting-garden/pkgs/config_common"
+	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
+	"code.linenisgreat.com/tommy/pkg/cst"
 )
+
+// init registers the `[fastmail]` config table with the SDK's config-section
+// registry (RFC 0007 § Plugin-Owned Sections): the framework's loader
+// dispatches the table here by name, so cgconfig names no fastmail type.
+func init() {
+	cutting_garden_plugins.MustRegisterConfigSection(schemeFastmail, decodeConfigSection)
+}
+
+// decodeConfigSection is the registered ConfigSectionDecoder: the shared
+// tommy-generated config_common.DecodeAccountsSectionInto (which marks
+// consumption on the shared model), this plugin's Validate, then the
+// inject step. The generated decoder is consumed from config_common rather
+// than from this package because tommy blanks a package's own generated
+// output while type-checking it (see config_common.AccountsSection).
+func decodeConfigSection(sub *cst.Value) error {
+	var section config_common.AccountsSection
+	if err := config_common.DecodeAccountsSectionInto(&section, sub); err != nil {
+		return err
+	}
+	c := AccountsConfig{Accounts: section.Accounts}
+	if err := c.Validate(); err != nil {
+		return err
+	}
+	SetConfiguredAccounts(c.Accounts)
+	return nil
+}
 
 // AccountsConfig is the fastmail plugin's section of the cutting-garden
 // config (RFC 0007): a list of bearer-token accounts. Each account's URL is
@@ -14,8 +42,8 @@ import (
 // (the JMAP API host is fixed), so the URL's host MUST equal the account
 // name. The bearer token is resolved from the account's PasswordEnv (e.g.
 // `FASTMAIL_API_TOKEN`); the secret itself never lives in the config file.
-// Delegated into cgconfig.ConfigV0 as the `[fastmail]` table, so accounts
-// arrive as `[[fastmail.accounts]]`.
+// Registered with the SDK's config-section registry as the `[fastmail]`
+// table (init below), so accounts arrive as `[[fastmail.accounts]]`.
 //
 //go:generate tommy generate
 type AccountsConfig struct {
@@ -75,8 +103,9 @@ func (c AccountsConfig) Validate() error {
 var configuredAccounts []config_common.Account
 
 // SetConfiguredAccounts injects the fastmail accounts parsed from the
-// cutting-garden config. The composition root (cgconfig.Inject) calls it
-// once at startup, before any command resolves roots.
+// cutting-garden config. The registered section decoder
+// (decodeConfigSection) calls it once at startup, before any command
+// resolves roots.
 func SetConfiguredAccounts(accounts []config_common.Account) {
 	configuredAccounts = accounts
 }

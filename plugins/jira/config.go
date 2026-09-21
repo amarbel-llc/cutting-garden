@@ -8,15 +8,42 @@ import (
 	"code.linenisgreat.com/cutting-garden/pkgs/config_common"
 	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
+	"code.linenisgreat.com/tommy/pkg/cst"
 )
+
+// init registers the `[jira]` config table with the SDK's config-section
+// registry (RFC 0007 § Plugin-Owned Sections): the framework's loader
+// dispatches the table here by name, so cgconfig names no jira type.
+func init() {
+	cutting_garden_plugins.MustRegisterConfigSection(schemeJira, decodeConfigSection)
+}
+
+// decodeConfigSection is the registered ConfigSectionDecoder: the shared
+// tommy-generated config_common.DecodeAccountsSectionInto (which marks
+// consumption on the shared model), this plugin's Validate, then the
+// inject step. The generated decoder is consumed from config_common rather
+// than from this package because tommy blanks a package's own generated
+// output while type-checking it (see config_common.AccountsSection).
+func decodeConfigSection(sub *cst.Value) error {
+	var section config_common.AccountsSection
+	if err := config_common.DecodeAccountsSectionInto(&section, sub); err != nil {
+		return err
+	}
+	c := AccountsConfig{Accounts: section.Accounts}
+	if err := c.Validate(); err != nil {
+		return err
+	}
+	SetConfiguredAccounts(c.Accounts)
+	return nil
+}
 
 // AccountsConfig is the jira plugin's section of the cutting-garden config
 // (RFC 0007): a list of credentialed accounts. Each account's URL is a
 // traversal root the mcp/list commands surface (Roots), and the plugin
 // authenticates a node against the matching account's credentials
-// (matchAccount, consulted by connectionFromArg). It is delegated into
-// cgconfig.ConfigV0 as the `[jira]` table, so accounts arrive as
-// `[[jira.accounts]]`. An account's `username` is the Atlassian account
+// (matchAccount, consulted by connectionFromArg). It is registered with
+// the SDK's config-section registry as the `[jira]` table (init below), so
+// accounts arrive as `[[jira.accounts]]`. An account's `username` is the Atlassian account
 // email and its `password_env` names the env var holding the API token.
 //
 //go:generate tommy generate
@@ -104,8 +131,9 @@ func accountHostPath(u *url.URL) (host, path string, err error) {
 var configuredAccounts []config_common.Account
 
 // SetConfiguredAccounts injects the jira accounts parsed from the
-// cutting-garden config. The composition root (cgapp) calls it once at
-// startup, before any command resolves roots.
+// cutting-garden config. The registered section decoder
+// (decodeConfigSection) calls it once at startup, before any command
+// resolves roots.
 func SetConfiguredAccounts(accounts []config_common.Account) {
 	configuredAccounts = accounts
 }
