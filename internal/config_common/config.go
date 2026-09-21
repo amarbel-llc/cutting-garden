@@ -3,10 +3,10 @@
 // plugin entry point with no credentials) and an Account (a credentialed
 // root). Plugin packages embed these in their own config sections.
 //
-// This package imports neither internal/cgconfig nor any plugin package,
-// so it is the leaf that keeps the config aggregator (cgconfig, which
-// imports the plugins for their delegated sections) and the plugins
-// themselves free of an import cycle (RFC 0007 § Package Layering).
+// This package imports neither internal/cgconfig nor any plugin package:
+// it is the leaf every account-bearing plugin's config-section decoder
+// builds on (AccountsSection), while cgconfig holds only the framework
+// sections and imports no plugin (RFC 0007 § Package Layering).
 package config_common
 
 import "os"

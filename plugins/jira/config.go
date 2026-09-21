@@ -45,8 +45,8 @@ func decodeConfigSection(sub *cst.Value) error {
 // the SDK's config-section registry as the `[jira]` table (init below), so
 // accounts arrive as `[[jira.accounts]]`. An account's `username` is the Atlassian account
 // email and its `password_env` names the env var holding the API token.
-//
-//go:generate tommy generate
+// The TOML codec is config_common.AccountsSection's (see
+// decodeConfigSection); this type carries the jira-specific validation.
 type AccountsConfig struct {
 	Accounts []config_common.Account `toml:"accounts"`
 }
@@ -56,7 +56,8 @@ type AccountsConfig struct {
 // scheme this plugin claims, and the (host, project-path) pairs are
 // distinct so credential resolution (matchAccount, step 2) never sees an
 // ambiguous exact match. Differing project prefixes on one host are
-// permitted — longest-prefix wins at resolution.
+// permitted — longest-prefix wins at resolution. decodeConfigSection
+// invokes it after decoding.
 func (c AccountsConfig) Validate() error {
 	seenName := make(map[string]struct{}, len(c.Accounts))
 	seenHostPath := make(map[string]struct{}, len(c.Accounts))

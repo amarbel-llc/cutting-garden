@@ -43,9 +43,9 @@ func decodeConfigSection(sub *cst.Value) error {
 // name. The bearer token is resolved from the account's PasswordEnv (e.g.
 // `FASTMAIL_API_TOKEN`); the secret itself never lives in the config file.
 // Registered with the SDK's config-section registry as the `[fastmail]`
-// table (init below), so accounts arrive as `[[fastmail.accounts]]`.
-//
-//go:generate tommy generate
+// table (init below), so accounts arrive as `[[fastmail.accounts]]`. The
+// TOML codec is config_common.AccountsSection's (see decodeConfigSection);
+// this type carries the fastmail-specific validation.
 type AccountsConfig struct {
 	Accounts []config_common.Account `toml:"accounts"`
 }
@@ -54,7 +54,7 @@ type AccountsConfig struct {
 // non-empty unique name and a `fastmail://<name>/` URL that parses, whose
 // scheme this plugin claims, and whose host equals the account name — so
 // `fastmail://<name>/` classifies to that account (classifyURI keys on the
-// host slot). tommy's generated decoder invokes this after decoding.
+// host slot). decodeConfigSection invokes it after decoding.
 func (c AccountsConfig) Validate() error {
 	seenName := make(map[string]struct{}, len(c.Accounts))
 	for i, acct := range c.Accounts {

@@ -44,9 +44,9 @@ func decodeConfigSection(sub *cst.Value) error {
 // the plugin authenticates a node against the matching account's
 // credentials (matchAccount, consulted by connectionFromArg). It is
 // registered with the SDK's config-section registry as the `[caldav]`
-// table (init below), so accounts arrive as `[[caldav.accounts]]`.
-//
-//go:generate tommy generate
+// table (init below), so accounts arrive as `[[caldav.accounts]]`. The
+// TOML codec is config_common.AccountsSection's (see decodeConfigSection);
+// this type carries the caldav-specific validation.
 type AccountsConfig struct {
 	Accounts []config_common.Account `toml:"accounts"`
 }
@@ -56,7 +56,8 @@ type AccountsConfig struct {
 // scheme this plugin claims, and the (host, path) pairs are distinct so
 // credential resolution (matchAccount, step 2) never sees an ambiguous
 // exact match. Differing path prefixes on one host are permitted —
-// longest-prefix wins at resolution.
+// longest-prefix wins at resolution. decodeConfigSection invokes it after
+// decoding.
 func (c AccountsConfig) Validate() error {
 	seenName := make(map[string]struct{}, len(c.Accounts))
 	seenHostPath := make(map[string]struct{}, len(c.Accounts))

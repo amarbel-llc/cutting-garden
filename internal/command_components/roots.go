@@ -15,8 +15,9 @@ import (
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
-// LoadAndInjectConfig loads the default config (a missing file is empty)
-// and injects each plugin's section into its package state, so
+// LoadAndInjectConfig loads the default config (a missing file is empty),
+// which injects each linked plugin's section into its package state
+// through the plugin's registered section decoder (see LoadConfig), so
 // RootProvider.Roots and credential resolution reflect the user's config
 // (RFC 0007). Idempotent — the step every root-consuming command runs
 // before aggregating. A malformed config returns a bad-request error
@@ -41,7 +42,6 @@ func LoadAndInjectConfig(warnw io.Writer) (*cgconfig.ConfigV0, error) {
 	if err != nil {
 		return nil, err
 	}
-	cgconfig.Inject(cfg)
 
 	pluginRegisterOnce.Do(func() {
 		pluginRegisterErr = registerPlugins(cfg, raw)

@@ -1,39 +1,36 @@
 // Package cgconfig loads cutting-garden's user configuration (RFC 0007):
-// $XDG_CONFIG_HOME/cutting-garden/config.toml. ConfigV0 aggregates each
-// plugin's delegated config section; the loader decodes the file (or
-// yields an empty config when absent), and the composition root injects
-// each section into its plugin before any command resolves roots.
+// $XDG_CONFIG_HOME/cutting-garden/config.toml. ConfigV0 holds the
+// FRAMEWORK sections only; a plugin's own top-level table (`[caldav]`,
+// `[fastmail]`, …) is decoded by the decoder that plugin registered with
+// the SDK's config-section registry
+// (cutting_garden_plugins.MustRegisterConfigSection), which the loader
+// dispatches over the same parsed model right after DecodeConfigV0.
 //
-// cgconfig imports the plugin packages to embed their sections (and the
-// plugin SDK for validation helpers); nothing here is imported by a
-// plugin, so the delegated-section layering stays acyclic (RFC 0007
-// § Package Layering).
+// cgconfig therefore imports no plugin package: a plugin edit no longer
+// invalidates the framework's build cone (RFC 0007 § Package Layering,
+// docs/plans/2026-09-21-godyn-invalidation-cone-research.md §1.5).
 package cgconfig
 
 import (
 	cgp "code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
 	"code.linenisgreat.com/cutting-garden/internal/traversal_serve"
-	"code.linenisgreat.com/cutting-garden/plugins/caldav"
-	"code.linenisgreat.com/cutting-garden/plugins/fastmail"
-	"code.linenisgreat.com/cutting-garden/plugins/jira"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
-// ConfigV0 is the top-level, horizontally-versioned config. Each plugin
-// section is an OPTIONAL delegated field keyed by the plugin's scheme; a
-// new format version adds a ConfigV1 beside this rather than mutating it
-// (RFC 0007 § Top-Level Structure). Plugins and TraversalPlugins are the
-// two non-section fields: the top-level `[[plugins]]` / `[[traversal_
-// plugins]]` stanzas declaring out-of-process wire plugins (RFC 0013
-// §Host integration, generalized by cutting-garden#146 slice 2) — the
-// sections THOSE name are consumed raw by SectionTOML, not decoded here.
+// ConfigV0 is the top-level, horizontally-versioned config; a new format
+// version adds a ConfigV1 beside this rather than mutating it (RFC 0007
+// § Top-Level Structure). Plugin sections are NOT fields here: each is
+// owned by the plugin that registered its name with the SDK registry and
+// is dispatched to it by the loader, so a table with no registered
+// decoder falls out as an unknown key (a warning, not an error). Plugins
+// and TraversalPlugins are the top-level `[[plugins]]` /
+// `[[traversal_plugins]]` stanzas declaring out-of-process wire plugins
+// (RFC 0013 §Host integration, generalized by cutting-garden#146 slice
+// 2) — the sections THOSE name are consumed raw by SectionTOML, not
+// decoded here.
 //
 //go:generate tommy generate
 type ConfigV0 struct {
-	Caldav   caldav.AccountsConfig   `toml:"caldav,omitempty"`
-	Fastmail fastmail.AccountsConfig `toml:"fastmail,omitempty"`
-	Jira     jira.AccountsConfig     `toml:"jira,omitempty"`
-
 	// Organize configures the framework-side organize command (FDR 0023).
 	Organize OrganizeConfig `toml:"organize,omitempty"`
 
@@ -58,19 +55,11 @@ type ConfigV0 struct {
 	TraversalPlugins []traversal_serve.PluginStanza `toml:"traversal_plugins,omitempty"`
 }
 
-// Validate runs each plugin section's validation. tommy's generated
-// DecodeConfigV0 invokes it after decoding, so a malformed account aborts
-// the load (surfaced as EX_USAGE by the loader).
+// Validate runs each framework section's validation. tommy's generated
+// DecodeConfigV0 invokes it after decoding, so a malformed value aborts
+// the load (surfaced as EX_USAGE by the loader). Plugin sections validate
+// inside their own registered decoders.
 func (c ConfigV0) Validate() error {
-	if err := c.Caldav.Validate(); err != nil {
-		return err
-	}
-	if err := c.Fastmail.Validate(); err != nil {
-		return err
-	}
-	if err := c.Jira.Validate(); err != nil {
-		return err
-	}
 	if err := c.Organize.Validate(); err != nil {
 		return err
 	}

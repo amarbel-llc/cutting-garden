@@ -7,9 +7,6 @@ import (
 	"strings"
 
 	"code.linenisgreat.com/cutting-garden/internal/traversal_serve"
-	"code.linenisgreat.com/cutting-garden/plugins/caldav"
-	"code.linenisgreat.com/cutting-garden/plugins/fastmail"
-	"code.linenisgreat.com/cutting-garden/plugins/jira"
 	"code.linenisgreat.com/tommy/pkg/cst"
 	"code.linenisgreat.com/tommy/pkg/document"
 )
@@ -41,24 +38,6 @@ func DecodeConfigV0(input []byte) (*ConfigV0Document, error) {
 		model:  model,
 	}
 
-	if _vCaldav, _ok := model.Get("caldav"); _ok && _vCaldav.Kind == cst.VTable {
-		_vCaldav.MarkSeen()
-		if err := caldav.DecodeAccountsConfigInto(&d.data.Caldav, _vCaldav); err != nil {
-			return nil, fmt.Errorf("caldav: %w", err)
-		}
-	}
-	if _vFastmail, _ok := model.Get("fastmail"); _ok && _vFastmail.Kind == cst.VTable {
-		_vFastmail.MarkSeen()
-		if err := fastmail.DecodeAccountsConfigInto(&d.data.Fastmail, _vFastmail); err != nil {
-			return nil, fmt.Errorf("fastmail: %w", err)
-		}
-	}
-	if _vJira, _ok := model.Get("jira"); _ok && _vJira.Kind == cst.VTable {
-		_vJira.MarkSeen()
-		if err := jira.DecodeAccountsConfigInto(&d.data.Jira, _vJira); err != nil {
-			return nil, fmt.Errorf("jira: %w", err)
-		}
-	}
 	if _vOrganize, _ok := model.Get("organize"); _ok && _vOrganize.Kind == cst.VTable {
 		_vOrganize.MarkSeen()
 		if _vOrganizeDateGranularity, _ok := _vOrganize.Get("date_granularity"); _ok && _vOrganizeDateGranularity.Kind == cst.VLeaf {
@@ -160,24 +139,6 @@ func (d *ConfigV0Document) Encode() ([]byte, error) {
 		return nil, fmt.Errorf("validation failed: %w", err)
 	}
 	{
-		tableNode := cst.EnsureChildTable(d.cstDoc.Root(), d.cstDoc.Root(), "caldav")
-		if err := caldav.EncodeAccountsConfigFrom(&d.data.Caldav, d.cstDoc, tableNode); err != nil {
-			return nil, fmt.Errorf("caldav: %w", err)
-		}
-	}
-	{
-		tableNode := cst.EnsureChildTable(d.cstDoc.Root(), d.cstDoc.Root(), "fastmail")
-		if err := fastmail.EncodeAccountsConfigFrom(&d.data.Fastmail, d.cstDoc, tableNode); err != nil {
-			return nil, fmt.Errorf("fastmail: %w", err)
-		}
-	}
-	{
-		tableNode := cst.EnsureChildTable(d.cstDoc.Root(), d.cstDoc.Root(), "jira")
-		if err := jira.EncodeAccountsConfigFrom(&d.data.Jira, d.cstDoc, tableNode); err != nil {
-			return nil, fmt.Errorf("jira: %w", err)
-		}
-	}
-	{
 		tableNode := cst.EnsureChildTable(d.cstDoc.Root(), d.cstDoc.Root(), "organize")
 		if d.data.Organize.DateGranularity != "" {
 			if err := cst.SetAny(tableNode, "date_granularity", d.data.Organize.DateGranularity); err != nil {
@@ -266,24 +227,6 @@ func (d *ConfigV0Document) SetInlineComment(key, comment string) {
 }
 
 func DecodeConfigV0Into(data *ConfigV0, sub *cst.Value) error {
-	if _vCaldav, _ok := sub.Get("caldav"); _ok && _vCaldav.Kind == cst.VTable {
-		_vCaldav.MarkSeen()
-		if err := caldav.DecodeAccountsConfigInto(&data.Caldav, _vCaldav); err != nil {
-			return fmt.Errorf("caldav: %w", err)
-		}
-	}
-	if _vFastmail, _ok := sub.Get("fastmail"); _ok && _vFastmail.Kind == cst.VTable {
-		_vFastmail.MarkSeen()
-		if err := fastmail.DecodeAccountsConfigInto(&data.Fastmail, _vFastmail); err != nil {
-			return fmt.Errorf("fastmail: %w", err)
-		}
-	}
-	if _vJira, _ok := sub.Get("jira"); _ok && _vJira.Kind == cst.VTable {
-		_vJira.MarkSeen()
-		if err := jira.DecodeAccountsConfigInto(&data.Jira, _vJira); err != nil {
-			return fmt.Errorf("jira: %w", err)
-		}
-	}
 	if _vOrganize, _ok := sub.Get("organize"); _ok && _vOrganize.Kind == cst.VTable {
 		_vOrganize.MarkSeen()
 		if _vOrganizeDateGranularity, _ok := _vOrganize.Get("date_granularity"); _ok && _vOrganizeDateGranularity.Kind == cst.VLeaf {
@@ -379,24 +322,6 @@ func DecodeConfigV0Into(data *ConfigV0, sub *cst.Value) error {
 func EncodeConfigV0From(data *ConfigV0, doc *document.Document, container *cst.Node) error {
 	if err := data.Validate(); err != nil {
 		return fmt.Errorf("validation failed: %w", err)
-	}
-	{
-		tableNode := cst.EnsureChildTable(doc.Root(), container, "caldav")
-		if err := caldav.EncodeAccountsConfigFrom(&data.Caldav, doc, tableNode); err != nil {
-			return fmt.Errorf("caldav: %w", err)
-		}
-	}
-	{
-		tableNode := cst.EnsureChildTable(doc.Root(), container, "fastmail")
-		if err := fastmail.EncodeAccountsConfigFrom(&data.Fastmail, doc, tableNode); err != nil {
-			return fmt.Errorf("fastmail: %w", err)
-		}
-	}
-	{
-		tableNode := cst.EnsureChildTable(doc.Root(), container, "jira")
-		if err := jira.EncodeAccountsConfigFrom(&data.Jira, doc, tableNode); err != nil {
-			return fmt.Errorf("jira: %w", err)
-		}
 	}
 	{
 		tableNode := cst.EnsureChildTable(doc.Root(), container, "organize")

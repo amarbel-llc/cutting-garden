@@ -9,8 +9,10 @@ import (
 	"strings"
 
 	"code.linenisgreat.com/cutting-garden/internal/cgconfig"
+	"code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
 	"code.linenisgreat.com/cutting-garden/internal/traversal_serve"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
+	"code.linenisgreat.com/tommy/pkg/cst"
 )
 
 // ConfigFileName is the config leaf under $XDG_CONFIG_HOME/cutting-garden/.
@@ -39,6 +41,15 @@ func DefaultConfigPath() (string, error) {
 // returned as bad-request errors (EX_USAGE). Keys present in the file but
 // consumed by no field are reported to warnw (typically os.Stderr) and do
 // not fail the load.
+//
+// Decoding covers the framework sections (ConfigV0) AND every plugin
+// section registered with the SDK (cutting_garden_plugins.
+// MustRegisterConfigSection): a registered decoder runs here, so loading
+// also injects each linked plugin's section into that plugin — the
+// injection LoadAndInjectConfig's name promises is this same dispatch. A
+// top-level table no linked plugin registered is an unknown key (warned,
+// not an error), so a config naming a plugin this binary does not link
+// loads fine.
 func LoadConfig(path string, warnw io.Writer) (*cgconfig.ConfigV0, error) {
 	_, cfg, err := loadConfigWithRaw(path, warnw)
 	return cfg, err
@@ -59,15 +70,32 @@ func loadConfigWithRaw(
 		return nil, nil, errors.Wrapf(err, "read config %s", path)
 	}
 
-	doc, err := cgconfig.DecodeConfigV0(raw)
+	// One parse, one CST value model: the framework sections decode through
+	// cgconfig's generated delegation entrypoint and every registered plugin
+	// section through its own decoder over the SAME model, so both sets of
+	// consumption marks feed the single unknown-key report below. (The
+	// generated document type's model is unexported and cgconfig cannot
+	// hand-write an accessor beside its codec — tommy blanks its own output
+	// while type-checking — so the loader decomposes the bytes itself.)
+	model, err := cst.DecomposeBytes(raw)
 	if err != nil {
 		return nil, nil, errors.BadRequestf("%s: %s", path, err)
 	}
-	cfg := doc.Data()
+	cfg := &cgconfig.ConfigV0{}
+	if err := cgconfig.DecodeConfigV0Into(cfg, model); err != nil {
+		return nil, nil, errors.BadRequestf("%s: %s", path, err)
+	}
+
+	// The dispatch error already names the section and the entry; prefixing
+	// the path yields "<path>: <section>: <entry>" — EX_USAGE naming all
+	// three (RFC 0007 § Loading and Validation).
+	if err := cutting_garden_plugins.DecodeRegisteredConfigSections(model); err != nil {
+		return nil, nil, errors.BadRequestf("%s: %s", path, err)
+	}
 
 	if warnw != nil {
 		unused := withoutStanzaClaimedKeys(
-			doc.Undecoded(), cfg.TraversalPlugins,
+			model.Undecoded(), cfg.TraversalPlugins,
 		)
 		if len(unused) > 0 {
 			fmt.Fprintf(warnw,
