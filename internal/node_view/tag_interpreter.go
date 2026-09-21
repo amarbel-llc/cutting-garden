@@ -1,4 +1,4 @@
-package command_components
+package node_view
 
 import (
 	"code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
@@ -14,7 +14,7 @@ import (
 // request naming the value, never a silent default (the no-fallback rule of
 // LookupTagInterpreter).
 //
-// This lives in command_components rather than cutting_garden_plugins so the
+// This lives in node_view rather than cutting_garden_plugins so the
 // framework callers wiring resolved interpreters into apply/list/trellis
 // (tags slice 3 Tasks A3/A4) reach it without a pkgs/ facade regen — this
 // package is internal-only and already imports cutting_garden_plugins.

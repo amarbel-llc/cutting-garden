@@ -12,6 +12,7 @@ import (
 	"code.linenisgreat.com/cutting-garden/internal/command_components"
 	"code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
 	"code.linenisgreat.com/cutting-garden/internal/mcp_tool_perms"
+	"code.linenisgreat.com/cutting-garden/internal/node_view"
 	"code.linenisgreat.com/cutting-garden/internal/trellis"
 	"code.linenisgreat.com/cutting-garden/internal/trellis_eval"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
@@ -1341,7 +1342,7 @@ type typeSchema struct {
 	// will address), plus the interpreter NAME resolved for it (field
 	// default + the `[tags]` config override). Absent when the type
 	// declares no tag dimension.
-	TagSet *command_components.TagSet `json:"tag_set,omitempty"`
+	TagSet *node_view.TagSet `json:"tag_set,omitempty"`
 }
 
 // bodySchema is the create/update payload description for a writable type: the
@@ -1512,7 +1513,7 @@ func collectSchema(
 		}
 		// Each type's designated tag set (design G12): the FieldTag key and
 		// its resolved interpreter, from the unified declaration.
-		tagSets := command_components.TypeTagSets(rl, tagsOverride)
+		tagSets := node_view.TypeTagSets(rl, tagsOverride)
 		nts := rl.Types()
 		types := make([]typeSchema, 0, len(nts))
 		for _, nt := range nts {

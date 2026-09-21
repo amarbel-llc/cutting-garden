@@ -10,9 +10,9 @@ import (
 )
 
 // tagPresenterFor builds a tagRender presenter from a fixed id → tag-set map,
-// standing in for command_components.UnifiedTagPresenter's codec path in the
+// standing in for node_view.UnifiedTagPresenter's codec path in the
 // fill tests (its own SortKey/no-mutation behavior is pinned by
-// command_components' TestNodeTagsPresenter).
+// node_view's TestNodeTagsPresenter).
 func tagPresenterFor(t *testing.T, anchor string, byID map[string][]string) func(cgp.Node) []string {
 	t.Helper()
 	return func(n cgp.Node) []string {

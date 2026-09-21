@@ -12,6 +12,7 @@ import (
 	"code.linenisgreat.com/cutting-garden/internal/cgconfig"
 	"code.linenisgreat.com/cutting-garden/internal/command_components"
 	cgp "code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
+	"code.linenisgreat.com/cutting-garden/internal/node_view"
 	"code.linenisgreat.com/madder/go/pkgs/blob_stores"
 	"code.linenisgreat.com/piggy/go/pkgs/markl"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
@@ -148,9 +149,9 @@ func (cmd *Organize) applyDocument(
 	// dimension whenever one is declared — the same resolution the membership
 	// path performs for a tag-grouped dim.
 	var tagInterp cgp.TagInterpreter
-	tagDim := command_components.FirstTagDim(lister)
+	tagDim := node_view.FirstTagDim(lister)
 	if tagDim != "" {
-		if tagInterp, _, err = command_components.InterpreterForDimension(
+		if tagInterp, _, err = node_view.InterpreterForDimension(
 			lister, tagDim, cfg.Tags.Interpreter,
 		); err != nil {
 			return false, err
@@ -339,14 +340,14 @@ func (cmd *Organize) applyDocument(
 
 // resolveTagDimension fills a TAG grouping's Dim from the plugin's designated
 // tag dimension (the first FieldTag field it declares,
-// command_components.FirstTagDim) — the
+// node_view.FirstTagDim) — the
 // `_group-by` spelling (`(tags)`, `project`) never names it (design G10). A
 // field grouping passes through untouched; a tag grouping against a plugin
 // declaring no tag dimension is a loud bad request. The returned spec always
 // has a non-empty Dim when grouped — no caller ever reads Facets[""].
 func resolveTagDimension(spec groupSpec, lister cgp.RootLister) (groupSpec, error) {
 	if spec.Kind != groupKindField {
-		tagDim := command_components.FirstTagDim(lister)
+		tagDim := node_view.FirstTagDim(lister)
 		if tagDim == "" {
 			return groupSpec{}, errors.BadRequestf(
 				"organize --apply: `- %s = %s` is a tag grouping, but the plugin declares "+
@@ -619,7 +620,7 @@ func (cmd *Organize) applyMemberships(
 	// dodder-hyphen) — and the segment prefix (`project`) for a namespace rollup, in
 	// which planMemberships reconstructs the add tag and enumerates the remove
 	// subtree (RFC 0019 §6.2, #231 slice 3 B4).
-	interp, _, err := command_components.InterpreterForDimension(lister, dim, tagsOverride)
+	interp, _, err := node_view.InterpreterForDimension(lister, dim, tagsOverride)
 	if err != nil {
 		return false, err
 	}

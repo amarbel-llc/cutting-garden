@@ -4,8 +4,8 @@ import (
 	"slices"
 	"sort"
 
-	"code.linenisgreat.com/cutting-garden/internal/command_components"
 	cgp "code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
+	"code.linenisgreat.com/cutting-garden/internal/node_view"
 )
 
 // bucket is one grouped value and the object lines carrying it — the grouping
@@ -199,28 +199,28 @@ func withoutAtom(atoms []cgp.BoxAtom, name string) []cgp.BoxAtom {
 	return out
 }
 
-// nodeDescription is command_components.NodeDescription — the box's
+// nodeDescription is node_view.NodeDescription — the box's
 // description-trailer projection, moved there in native tags slice 4 so
 // `list -format espalier` renders the same trailer (design G8/G13).
 func nodeDescription(n cgp.Node) string {
-	return command_components.NodeDescription(n)
+	return node_view.NodeDescription(n)
 }
 
-// collapseToSingleLine is command_components.CollapseToSingleLine — THE
+// collapseToSingleLine is node_view.CollapseToSingleLine — THE
 // espalier-facing newline decision (native tags slice 1.5 F), moved there in
 // slice 4. nodeDescription, descriptionOf, and boxAtomPresenter all collapse
 // identically, so base/edited/live compare equal for an untouched multiline
 // value and NOTHING is written back.
 func collapseToSingleLine(s string) string {
-	return command_components.CollapseToSingleLine(s)
+	return node_view.CollapseToSingleLine(s)
 }
 
-// distinctTypes is command_components.DistinctTypes — the espalier spelling
+// distinctTypes is node_view.DistinctTypes — the espalier spelling
 // selector (one type → the flatter envelope-`_type` spelling, several →
 // per-type headings), moved there in native tags slice 4 so `list -format
 // espalier` inlines `!type` by the same rule.
 func distinctTypes(nodes []cgp.Node) []string {
-	return command_components.DistinctTypes(nodes)
+	return node_view.DistinctTypes(nodes)
 }
 
 // nodesOfType filters nodes to those of the given type.

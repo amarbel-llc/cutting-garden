@@ -11,6 +11,11 @@ const (
 	pkgsPrefix     = modulePath + "/pkgs/"
 	internalPrefix = modulePath + "/internal/"
 	pluginsPrefix  = modulePath + "/plugins/"
+	// commandComponents is the stable composition layer (config, roots,
+	// store resolution, receipts) and nodeView the presentation layer
+	// split out of it; the edge between them runs one way only.
+	commandComponents = internalPrefix + "command_components"
+	nodeView          = internalPrefix + "node_view"
 	// pluginAggregator legitimately blank-imports not-yet-migrated
 	// in-tree plugins during the RFC 0009 §5 migration, so it is exempt
 	// from the "no internal/ imports" rule below.
@@ -120,6 +125,29 @@ func TestInternalDoesNotImportPlugins(t *testing.T) {
 				"internal/ must not import plugins/ in production code; register the "+
 				"plugin's contribution through an SDK registry instead",
 				importer, imported)
+		}
+	}
+}
+
+// TestCommandComponentsDoesNotImportNodeView pins the direction of the
+// command_components/node_view split
+// (docs/plans/2026-09-21-invalidation-cone-moves.md D5): the presentation
+// helpers moved OUT of the 9-importer composition hub so that organize/list
+// rendering churn stops re-deriving capture, restore, diff, serve, failures
+// and blob_writer under godyn. A command_components -> node_view edge would
+// hand every one of those the presentation cone (and internal/trellis with
+// it) straight back, silently — Go's own cycle check cannot catch it,
+// because node_view deliberately imports nothing from command_components.
+// A helper both layers need stays in command_components and node_view
+// imports it, never the reverse.
+func TestCommandComponentsDoesNotImportNodeView(t *testing.T) {
+	for _, e := range productionImportEdges(t, commandComponents) {
+		if e[1] == nodeView {
+			t.Errorf("invalidation-cone violation: %s imports %s\n"+
+				"command_components is the STABLE composition layer; the "+
+				"presentation helpers live in node_view and depend on it, not "+
+				"the other way round (move the shared helper down, not the edge up)",
+				e[0], e[1])
 		}
 	}
 }

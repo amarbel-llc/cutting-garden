@@ -10,6 +10,14 @@
 // restore's runRestore, diff's compareEntries) lives in each
 // command's own package; command_components is the seam they share.
 //
+// Presentation — the organize/list tag views, espalier line projection
+// and enriched-listing preference — deliberately does NOT live here: it
+// is internal/node_view, imported by list, mcp and organize alone, so
+// that rendering churn does not re-derive capture, restore, diff, serve,
+// failures and blob_writer under godyn. node_view may import this
+// package; this package must never import node_view
+// (internal/sdklayering pins the direction).
+//
 // Two XDG scopes apply throughout:
 //
 //   - "madder"  — where cutting-garden reads/writes blob_store config

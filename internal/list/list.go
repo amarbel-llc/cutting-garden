@@ -38,6 +38,7 @@ import (
 	"code.linenisgreat.com/cutting-garden/internal/command"
 	"code.linenisgreat.com/cutting-garden/internal/command_components"
 	"code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
+	"code.linenisgreat.com/cutting-garden/internal/node_view"
 	"code.linenisgreat.com/cutting-garden/internal/trellis"
 	"code.linenisgreat.com/cutting-garden/internal/trellis_eval"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
@@ -287,7 +288,7 @@ func (cmd *List) runList(
 	// omits the key, the text table its TAGS column, and the espalier box its
 	// tag atoms, and the non-espalier fetch below stays the cheap
 	// metadata-only ListRoots.
-	presentTags, err := command_components.NodeTagsPresenter(lister, tagsOverride)
+	presentTags, err := node_view.NodeTagsPresenter(lister, tagsOverride)
 	if err != nil {
 		return errors.Wrapf(err, "list %s", uriStr)
 	}
@@ -309,7 +310,7 @@ func (cmd *List) runList(
 		// leaves empty (cutting-garden#212) — prefer the plugin's enriched
 		// listing exactly as organize's selection does. Espalier opts in even
 		// without a tag dimension: its trailer/atoms want the enriched fields.
-		if nodes, err = command_components.ListEnrichedChildren(ctx, lister, u); err != nil {
+		if nodes, err = node_view.ListEnrichedChildren(ctx, lister, u); err != nil {
 			return errors.Wrapf(err, "list %s", uriStr)
 		}
 	} else if nodes, err = lister.ListRoots(ctx, u); err != nil {
@@ -322,7 +323,7 @@ func (cmd *List) runList(
 	case formatEspalier:
 		return writeEspalier(
 			cmd.output, nodes, uriStr, presentTags,
-			command_components.BoxAtomPresenter(lister),
+			node_view.BoxAtomPresenter(lister),
 		)
 	}
 	return writeText(cmd.output, nodes, presentTags)
@@ -370,11 +371,11 @@ func writeText(
 // writeEspalier renders one organize object line per node — `- [<id>
 // <tag>… <k>=<v>…] <desc>` — through the SAME projection AND frame
 // organize's document builder uses (native tags design G8/G13): the box id
-// is anchor-relative against the listed URI (command_components.RelativeID),
-// the whole line is written by command_components.WriteObjectLine (the
+// is anchor-relative against the listed URI (node_view.RelativeID),
+// the whole line is written by node_view.WriteObjectLine (the
 // shared frame over trellis.WriteLiteral — tags leading, SortKey order,
 // QuoteIfNeeded), and the trailer is the node's description field
-// (command_components.NodeDescription). Lines sort by box id, mirroring
+// (node_view.NodeDescription). Lines sort by box id, mirroring
 // organize's in-section ordering, so `list -format espalier <uri>` prints
 // exactly the object lines `organize` would emit for the same node set —
 // RFC 0014's isometry, pinned end to end by the list_espalier bats lane.
@@ -391,11 +392,11 @@ func writeEspalier(
 	presentAtoms func(cutting_garden_plugins.Node) []cutting_garden_plugins.BoxAtom,
 ) error {
 	type line struct{ id, rendered string }
-	inlineType := len(command_components.DistinctTypes(nodes)) > 1
+	inlineType := len(node_view.DistinctTypes(nodes)) > 1
 	lines := make([]line, 0, len(nodes))
 	for _, n := range nodes {
 		lit := trellis.Literal{
-			ID: command_components.RelativeID(n.URIString(), anchor),
+			ID: node_view.RelativeID(n.URIString(), anchor),
 		}
 		if inlineType {
 			lit.Type = n.Type
@@ -410,8 +411,8 @@ func writeEspalier(
 		}
 
 		var b strings.Builder
-		command_components.WriteObjectLine(
-			&b, lit, command_components.NodeDescription(n), false,
+		node_view.WriteObjectLine(
+			&b, lit, node_view.NodeDescription(n), false,
 		)
 		lines = append(lines, line{id: lit.ID, rendered: b.String()})
 	}
@@ -440,7 +441,7 @@ type nodeView struct {
 }
 
 // writeJSON re-emits the nodes as NDJSON — one object per node — for
-// piping into jq. presentTags (command_components.NodeTagsPresenter) fills
+// piping into jq. presentTags (node_view.NodeTagsPresenter) fills
 // each view's tag set; nil renders no tags (the roots listing, a plugin
 // with no tag dimension).
 func writeJSON(

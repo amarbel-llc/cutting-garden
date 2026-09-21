@@ -1,4 +1,18 @@
-package command_components
+// Package node_view is the framework-side PRESENTATION layer over a
+// plugin's nodes: the tag-view wiring (designated dimension, interpreter
+// resolution, SortKey-ordered tag sets), the espalier line projection
+// (box id, description trailer, box atoms), and the enriched-listing
+// fetch preference. Its consumers are the read/render commands —
+// internal/list, internal/mcp and internal/organize — and nothing else.
+//
+// Split out of internal/command_components (the stable composition
+// layer: config, roots, store resolution, receipts) so that presentation
+// churn, the repo's busiest edit stream, stops invalidating capture,
+// restore, diff, serve, failures and blob_writer under godyn's
+// per-package derivations. The dependency runs ONE way: node_view may
+// import command_components, never the reverse
+// (docs/plans/2026-09-21-invalidation-cone-moves.md D5).
+package node_view
 
 import (
 	"slices"

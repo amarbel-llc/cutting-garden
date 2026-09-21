@@ -1,4 +1,4 @@
-package command_components
+package node_view
 
 import (
 	"context"

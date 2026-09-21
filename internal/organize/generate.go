@@ -8,6 +8,7 @@ import (
 	"code.linenisgreat.com/cutting-garden/internal/cgconfig"
 	"code.linenisgreat.com/cutting-garden/internal/command_components"
 	cgp "code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
+	"code.linenisgreat.com/cutting-garden/internal/node_view"
 	"code.linenisgreat.com/cutting-garden/internal/plugin_blob_io"
 	"code.linenisgreat.com/cutting-garden/internal/trellis"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
@@ -106,7 +107,7 @@ func buildAndStoreFrom(
 		return "", "", err
 	}
 	dims := describedFacets(lister)
-	tagDims := command_components.DescribedTagDims(lister)
+	tagDims := node_view.DescribedTagDims(lister)
 	spec, err := parseGroupSpec(p.groupBy, dims, tagDims, dateDefault)
 	if err != nil {
 		return "", "", err
@@ -121,7 +122,7 @@ func buildAndStoreFrom(
 	var interp cgp.TagInterpreter
 	if len(tagDims) > 0 {
 		var interpName string
-		interp, interpName, err = command_components.InterpreterForDimension(
+		interp, interpName, err = node_view.InterpreterForDimension(
 			lister, tagDims[0], cfg.Tags.Interpreter,
 		)
 		if err != nil {
@@ -142,7 +143,7 @@ func buildAndStoreFrom(
 	tagStrip := effectiveTagStrip(p.tagStrip, configTagStrip)
 	tags := tagRender{strip: tagStrip == tagStripPlacement}
 	if tagAtoms != tagAtomsNone {
-		tags.present = command_components.UnifiedTagPresenter(lister, interp)
+		tags.present = node_view.UnifiedTagPresenter(lister, interp)
 	}
 
 	// The effective query is the user's query with organize's default
@@ -342,16 +343,16 @@ func requireNamespaceInterpreter(
 
 // The tag-dimension/interpreter resolution helpers (describedTagDims,
 // firstTagDim, interpreterForDimension, unifiedTagPresenter) moved to
-// command_components (tag_view.go) in native tags slice 2 T4, so the
+// node_view (tag_view.go) in native tags slice 2 T4, so the
 // `list -format json` and mcp node views share them with organize.
 
-// boxAtomPresenter is command_components.BoxAtomPresenter — the FieldPresenter
+// boxAtomPresenter is node_view.BoxAtomPresenter — the FieldPresenter
 // → box-atom projection (cutting-garden#47), moved there in native tags
 // slice 4 so `list -format espalier` renders the same detail atoms
 // (design G8/G13). nil for a plugin without the capability, and every atom
 // value passes through CollapseToSingleLine (slice 1.5 F).
 func boxAtomPresenter(lister cgp.RootLister) func(cgp.Node) []cgp.BoxAtom {
-	return command_components.BoxAtomPresenter(lister)
+	return node_view.BoxAtomPresenter(lister)
 }
 
 // tagRender is generate's tag-atom view (native tags design G1/G2, slice 2):

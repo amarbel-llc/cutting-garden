@@ -11,6 +11,7 @@ import (
 	"code.linenisgreat.com/cutting-garden/internal/capture_plugin"
 	"code.linenisgreat.com/cutting-garden/internal/command_components"
 	"code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
+	"code.linenisgreat.com/cutting-garden/internal/node_view"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 	"code.linenisgreat.com/purse-first/libs/go-mcp/protocol"
 	"code.linenisgreat.com/purse-first/libs/go-mcp/server"
@@ -677,7 +678,7 @@ func bareNodeViews(
 }
 
 // enrichedNodeViews resolves the per-listing tag presenter ONCE
-// (command_components.NodeTagsPresenter) and projects every node onto the
+// (node_view.NodeTagsPresenter) and projects every node onto the
 // enriched view shape — the shared body of the container read
 // (renderNodeViews, which also serves list_nodes' default path) and the
 // list_nodes filtered/query paths. The only error is an unknown [tags]
@@ -687,7 +688,7 @@ func enrichedNodeViews(
 	nodes []cutting_garden_plugins.Node,
 	tagsOverride string,
 ) ([]nodeView, error) {
-	presentTags, err := command_components.NodeTagsPresenter(lister, tagsOverride)
+	presentTags, err := node_view.NodeTagsPresenter(lister, tagsOverride)
 	if err != nil {
 		return nil, err
 	}
@@ -701,7 +702,7 @@ func enrichedNodeViews(
 // enrichedNodeView projects n onto the enriched (default) shape: bareNodeView
 // plus whatever Facets/Fields the node carries, plus its presented tag set.
 // presentTags is the per-listing tag presenter
-// (command_components.NodeTagsPresenter, resolved ONCE per render, not per
+// (node_view.NodeTagsPresenter, resolved ONCE per render, not per
 // node); nil means the plugin declares no tag dimension and the view omits
 // the key.
 func enrichedNodeView(

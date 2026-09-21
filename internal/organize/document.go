@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"code.linenisgreat.com/cutting-garden/internal/cgconfig"
-	"code.linenisgreat.com/cutting-garden/internal/command_components"
 	cgp "code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
+	"code.linenisgreat.com/cutting-garden/internal/node_view"
 	"code.linenisgreat.com/cutting-garden/internal/trellis"
 	"code.linenisgreat.com/hyphence/go/hyphence"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
@@ -408,7 +408,7 @@ func writeBody(b *strings.Builder, doc document) {
 }
 
 // writeObjectLine projects one objectLine onto a trellis.Literal and hands
-// the rendering to command_components.WriteObjectLine — THE espalier line
+// the rendering to node_view.WriteObjectLine — THE espalier line
 // frame (`- [<interior>] <desc>`, design G13), shared with `list -format
 // espalier` since native tags slice 4 so the two surfaces cannot drift.
 func writeObjectLine(b *strings.Builder, ln objectLine, trailingTags bool) {
@@ -416,7 +416,7 @@ func writeObjectLine(b *strings.Builder, ln objectLine, trailingTags bool) {
 	for _, f := range ln.Fields {
 		lit.Atoms = append(lit.Atoms, trellis.Atom{Name: f.Name, Value: f.Value})
 	}
-	command_components.WriteObjectLine(b, lit, ln.Desc, trailingTags)
+	node_view.WriteObjectLine(b, lit, ln.Desc, trailingTags)
 }
 
 // --- parse -------------------------------------------------------------------
@@ -831,11 +831,11 @@ func (doc document) memberships(multi bool) (map[string][]string, error) {
 
 // --- id resolution -----------------------------------------------------------
 
-// relativeID is command_components.RelativeID — THE anchor-relative box-id
+// relativeID is node_view.RelativeID — THE anchor-relative box-id
 // derivation, moved there in native tags slice 4 so `list -format espalier`
 // shortens ids against its listed URI exactly as organize does against its
 // `_anchor` (design G8/G13). The apply engine re-derives a stored box id
 // from a live node URI through the same function, so the two stay matched.
 func relativeID(uriStr, anchorStr string) string {
-	return command_components.RelativeID(uriStr, anchorStr)
+	return node_view.RelativeID(uriStr, anchorStr)
 }

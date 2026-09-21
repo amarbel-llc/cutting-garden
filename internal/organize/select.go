@@ -4,8 +4,8 @@ import (
 	"context"
 	"net/url"
 
-	"code.linenisgreat.com/cutting-garden/internal/command_components"
 	cgp "code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
+	"code.linenisgreat.com/cutting-garden/internal/node_view"
 	"code.linenisgreat.com/cutting-garden/internal/trellis"
 	"code.linenisgreat.com/cutting-garden/internal/trellis_eval"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
@@ -33,9 +33,9 @@ func selectNodes(
 		// plugin declaring no terminal values.
 		return trellis_eval.Evaluate(ctx, q, anchor, withTerminal(lister))
 	}
-	// The enriched-preferring fetch lives in command_components (shared with
+	// The enriched-preferring fetch lives in node_view (shared with
 	// `list -format json`, native tags slice 2 T4); the evaluator's own
 	// listEnriched mirrors it so the no-query path enriches identically to
 	// the query path.
-	return command_components.ListEnrichedChildren(ctx, lister, anchor)
+	return node_view.ListEnrichedChildren(ctx, lister, anchor)
 }

@@ -628,7 +628,7 @@ func tagKeys(values []cgp.FacetValue) []string {
 // precedence: the global [tags] override when set, else the field's declared
 // default, else "naive". The resolved name MUST name a registered interpreter —
 // an unknown name is a loud bad request, never a silent default (RFC 0019 §3).
-// It matches command_components.ResolveTagInterpreter's precedence (tags slice 3
+// It matches node_view.ResolveTagInterpreter's precedence (tags slice 3
 // Task A2) PLUS an empty->"naive" fallback A2 lacks: A2's callers pre-default the
 // field to "naive" before calling, whereas matchTag passes the field's possibly-
 // empty UnifiedField.Interpreter straight through (a FieldTag field may declare no
