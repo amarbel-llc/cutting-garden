@@ -119,6 +119,17 @@ type CaptureRootResult = internal.CaptureRootResult
 // field, value unchanged) is IdentityCodec below.
 type Codec = internal.Codec
 
+// ConfigSectionDecoder decodes one top-level table of the cutting-garden
+// config (RFC 0007 § Plugin-Owned Sections). sub is the table's tommy CST
+// value — the same model the framework's own DecodeConfigV0 walks — so the
+// decoder MUST mark what it consumes (a tommy-generated Decode<X>Into does)
+// for the loader's unknown-key report to stay accurate, and MUST validate
+// (the generated decoder invokes the section type's Validate). It runs once
+// per process from the composition step, after every plugin init() has
+// registered, and typically ends by injecting the decoded section into the
+// plugin's package state (SetConfiguredAccounts or the like).
+type ConfigSectionDecoder = internal.ConfigSectionDecoder
+
 // ContainerCreator is the OPTIONAL capability for sources that assign a
 // created node's identity server-side (a feed subscription's server-chosen
 // feed id, a forge's issue number, a zettel pool's next id): create a child
@@ -688,6 +699,15 @@ var BulkBestEffortSweep = internal.BulkBestEffortSweep
 // a non-shape bucket value means exact semantics, not containment.
 var DateBucketMatches = internal.DateBucketMatches
 
+// DecodeRegisteredConfigSections runs each registered section decoder over
+// the top-level table of the same name in model — the parsed config
+// document's CST value model (the one DecodeConfigV0 walked, so consumption
+// marks land on one model and Undecoded stays accurate). The composition
+// step calls it once, right after decoding the framework sections and
+// before any plugin's roots are aggregated. Exported because the loader
+// lives in the framework (command_components), outside this package.
+var DecodeRegisteredConfigSections = internal.DecodeRegisteredConfigSections
+
 // DeriveFacetDimensions reproduces FacetDescriber's per-type dimension list from a
 // node type's codecs: every GROUPABLE presentation field becomes a FacetDimension,
 // in codec-then-field declaration order (the order describe_node_types renders).
@@ -751,6 +771,14 @@ var LookupTagInterpreter = internal.LookupTagInterpreter
 // registration; intended for plugin init() functions where a clash
 // is a programming error.
 var MustRegisterCapture = internal.MustRegisterCapture
+
+// MustRegisterConfigSection installs d as the decoder of the top-level
+// config table `[name]` (RFC 0007 § Plugin-Owned Sections). Panics on
+// duplicate registration; intended for plugin init() functions where a clash
+// is a programming error, exactly like MustRegisterScheme. An account-bearing
+// plugin registers its scheme name and wraps its tommy-generated
+// Decode<X>Into followed by its inject step.
+var MustRegisterConfigSection = internal.MustRegisterConfigSection
 
 // MustRegisterDiff is the diff-direction analogue of
 // MustRegisterCapture.
@@ -899,6 +927,9 @@ var RegisterProtocolDiff = internal.RegisterProtocolDiff
 // before the colliding one remain registered; callers treat the error as
 // fatal to startup, so the partial registration is never served.
 var RegisterScheme = internal.RegisterScheme
+
+// RegisteredConfigSections returns every registered section name, sorted.
+var RegisteredConfigSections = internal.RegisteredConfigSections
 
 // RegisteredPlugins returns every plugin registered in the scheme,
 // capture, restore, or diff registry, deduplicated and sorted by scheme
