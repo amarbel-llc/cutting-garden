@@ -494,6 +494,122 @@ debug-caldav-expand-probe CAL='93fe8ff4-b027-4c5e-a961-96ec236624d8' START='2026
       grep -oE '(SUMMARY|DTSTART|RECURRENCE-ID|RRULE)[^[:space:]<]{0,60}' "$tmp/$n.out" || true
     done
 
+# Verify the fastmail-jmap.env piggy entry decrypts and authenticates against
+# the Fastmail JMAP session endpoint. READ-ONLY: GET /jmap/session only; prints
+# the username, primary account ids, and capability keys — NEVER the token.
+# Credentials come from piggy (fastmail-jmap.env, same store convention as
+# fastmail-caldav.env); the secret is never echoed or written to disk. Serves
+# the fastmail label-migration executor dev-loop (executor itself is
+# scratchpad-only).
+#
+# verify the fastmail-jmap.env token against the JMAP session endpoint
+[group('debug')]
+debug-jmap-verify:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    set +x
+    set -a
+    . <(piggy pass show fastmail-jmap.env)
+    set +a
+    : "${JMAP_TOKEN:?fastmail-jmap.env did not define JMAP_TOKEN}"
+
+    body="$(mktemp)"
+    trap 'rm -f "$body"' EXIT
+    status="$(curl -sS -o "$body" -w '%{http_code}' \
+      -H "Authorization: Bearer ${JMAP_TOKEN}" \
+      https://api.fastmail.com/jmap/session)"
+
+    if [ "$status" = 200 ]; then
+      jq '{username, primaryAccounts, capabilities: (.capabilities | keys)}' <"$body"
+    else
+      # Diagnose without ever printing the token: length, known prefix, and
+      # whether a paste artifact (CR / space / quote) rode along.
+      echo "HTTP $status from /jmap/session; token diagnostics:"
+      printf 'length=%s prefix=%s\n' "${#JMAP_TOKEN}" "${JMAP_TOKEN:0:5}"
+      case "$JMAP_TOKEN" in
+        *$'\r'*) echo 'WARNING: token contains a carriage return' ;;
+      esac
+      case "$JMAP_TOKEN" in
+        *' '*) echo 'WARNING: token contains a space' ;;
+      esac
+      case "$JMAP_TOKEN" in
+        *\"* | *\'*) echo 'WARNING: token contains a quote character' ;;
+      esac
+      echo '--- response body ---'
+      cat "$body"; echo
+      exit 5
+    fi
+
+# Back up the Fastmail account's mail STATE over JMAP into DIR: the complete
+# Mailbox/get result (mailboxes.json) and a full per-message membership map
+# (emails.ndjson — one line per message: id, mailboxIds, keywords, receivedAt,
+# messageId, threadId), paginated Email/query+Email/get with back-references.
+# READ-ONLY: no /set calls. Message BODIES are not fetched (use Fastmail's
+# account export for content). Credentials come from piggy (fastmail-jmap.env);
+# the token is never echoed or written to disk. Serves the fastmail
+# label-migration executor dev-loop (executor itself is scratchpad-only) —
+# outputs contain personal mailbox names, so point DIR at the session
+# scratchpad, never at a tracked path.
+#
+# back up Fastmail mailboxes + per-message membership map over JMAP into DIR
+[group('debug')]
+debug-jmap-backup DIR PAGE='1000':
+    #!/usr/bin/env bash
+    set -euo pipefail
+    set +x
+    set -a
+    . <(piggy pass show fastmail-jmap.env)
+    set +a
+    : "${JMAP_TOKEN:?fastmail-jmap.env did not define JMAP_TOKEN}"
+
+    dir="{{ DIR }}"
+    page="{{ PAGE }}"
+    mkdir -p "$dir"
+
+    session="$(curl -sS --fail -H "Authorization: Bearer ${JMAP_TOKEN}" \
+      https://api.fastmail.com/jmap/session)"
+    acct="$(jq -er '.primaryAccounts["urn:ietf:params:jmap:mail"]' <<<"$session")"
+    apiurl="$(jq -er '.apiUrl' <<<"$session")"
+    maxget="$(jq -er '.capabilities["urn:ietf:params:jmap:core"].maxObjectsInGet' <<<"$session")"
+    if [ "$page" -gt "$maxget" ]; then page="$maxget"; fi
+
+    call() {
+      curl -sS --fail -X POST "$apiurl" \
+        -H "Authorization: Bearer ${JMAP_TOKEN}" \
+        -H 'Content-Type: application/json' \
+        --data-binary "$1"
+    }
+
+    call '{"using":["urn:ietf:params:jmap:core","urn:ietf:params:jmap:mail"],
+           "methodCalls":[["Mailbox/get",{"accountId":"'"$acct"'","ids":null},"0"]]}' \
+      | jq '.methodResponses[0][1]' >"$dir/mailboxes.json"
+    echo "mailboxes.json: $(jq '.list | length' "$dir/mailboxes.json") mailboxes (state $(jq -r .state "$dir/mailboxes.json"))" >&2
+
+    : >"$dir/emails.ndjson"
+    pos=0
+    total=-1
+    while :; do
+      req='{"using":["urn:ietf:params:jmap:core","urn:ietf:params:jmap:mail"],
+            "methodCalls":[
+              ["Email/query",{"accountId":"'"$acct"'",
+                "sort":[{"property":"receivedAt","isAscending":false}],
+                "position":'"$pos"',"limit":'"$page"',"calculateTotal":true},"q"],
+              ["Email/get",{"accountId":"'"$acct"'",
+                "#ids":{"resultOf":"q","name":"Email/query","path":"/ids"},
+                "properties":["id","mailboxIds","keywords","receivedAt","messageId","threadId"]},"g"]]}'
+      resp="$(call "$req")"
+      if [ "$total" -lt 0 ]; then
+        total="$(jq -er '.methodResponses[0][1].total' <<<"$resp")"
+      fi
+      n="$(jq -er '.methodResponses[0][1].ids | length' <<<"$resp")"
+      jq -c '.methodResponses[1][1].list[]' <<<"$resp" >>"$dir/emails.ndjson"
+      pos=$((pos + n))
+      echo "emails: $pos / $total" >&2
+      if [ "$n" -lt "$page" ]; then break; fi
+    done
+
+    echo "backup complete: $dir (mailboxes.json + emails.ndjson, $(wc -l <"$dir/emails.ndjson" | tr -d ' ') messages)" >&2
+
 # Render the organize document the CLI emits for the caldav testserver's
 # Personal calendar, grouped by GROUP_BY — the eyeball loop for the RFC 0015
 # espalier dialect (FDR 0023). Builds the binary + testserver, isolates state in
