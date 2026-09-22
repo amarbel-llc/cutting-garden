@@ -20,6 +20,14 @@ const (
 // `_junk`, `_archive`, …) — sent and junk are never emitted as tags.
 const stateTagPrefix = "_"
 
+// The JMAP keywords (RFC 8621 §4.1) the `_unread` / `_flagged` state tags
+// read and write. Note the inversion on $seen: `_unread` is present when a
+// member LACKS it.
+const (
+	keywordSeen    = "$seen"
+	keywordFlagged = "$flagged"
+)
+
 var writableStateTags = map[string]bool{
 	stateTagInbox:   true,
 	stateTagUnread:  true,
@@ -65,14 +73,14 @@ func threadTags(members []Email, tree *mailboxTree) []string {
 // present iff ANY member satisfies its predicate. The result is
 // lexically sorted and never nil.
 func stateTags(members []Email, tree *mailboxTree) []string {
-	inboxID, _ := tree.roleID("inbox")
-	trashID, _ := tree.roleID("trash")
+	inboxID, _ := tree.roleID(roleInbox)
+	trashID, _ := tree.roleID(roleTrash)
 	present := map[string]bool{}
 	for _, m := range members {
-		if !m.Keywords["$seen"] {
+		if !m.Keywords[keywordSeen] {
 			present[stateTagUnread] = true
 		}
-		if m.Keywords["$flagged"] {
+		if m.Keywords[keywordFlagged] {
 			present[stateTagFlagged] = true
 		}
 		if inboxID != "" && m.MailboxIDs[inboxID] {

@@ -155,6 +155,17 @@ func (c *client) mailboxGetAll(ctx context.Context) ([]Mailbox, error) {
 	return out.List, nil
 }
 
+// loadMailboxTree fetches every mailbox and indexes it — the one-line
+// "read the whole label tree" every traversal, facet and write entry point
+// starts from.
+func (c *client) loadMailboxTree(ctx context.Context) (*mailboxTree, error) {
+	mailboxes, err := c.mailboxGetAll(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return newMailboxTree(mailboxes), nil
+}
+
 type emailFilter struct {
 	InMailbox string `json:"inMailbox,omitempty"`
 }

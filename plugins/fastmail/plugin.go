@@ -1,26 +1,29 @@
-// Package fastmail is cutting-garden's READ-ONLY Fastmail (JMAP) traversal
-// and facet plugin. Registered for the `fastmail` URI scheme, it makes a
-// Fastmail account a first-class `list` / `mcp` substrate over JMAP
-// (RFC 8620 core + RFC 8621 mail): the account's mailbox/tag tree, its
+// Package fastmail is cutting-garden's Fastmail (JMAP) traversal, facet and
+// tag-write plugin. Registered for the `fastmail` URI scheme, it makes a
+// Fastmail account a first-class `list` / `mcp` / `organize` substrate over
+// JMAP (RFC 8620 core + RFC 8621 mail): the account's mailbox/tag tree, its
 // threads, and their messages are traversable and faceted, with the raw
 // RFC 5322 bytes fetched lazily on an explicit read.
 //
-// It is the FIRST in-tree scheme-only (read-only) plugin: it implements
-// none of capture/restore/diff and so registers via MustRegisterScheme
-// (init.go) rather than the capability registries. The tree walk
-// (RootLister/RootProvider), leaf read (LeafReader), and read-only facets
-// (FacetDescriber/FacetCounter/FacetVersioner) are all probed by type
-// assertion after registration.
+// It is the FIRST in-tree scheme-only plugin: it implements none of
+// capture/restore/diff and so registers via MustRegisterScheme (init.go)
+// rather than the capability registries. The tree walk
+// (RootLister/RootProvider), leaf read (LeafReader), facets
+// (FacetDescriber/FacetCounter/FacetVersioner) and the write path
+// (NodeMutator/MembershipWriteApplier) are all probed by type assertion
+// after registration.
 //
-// Slice 1 is read-only. Tag writes over `organize` (Slice 2) are gated on
-// the organize framework growing `write:many` apply; archival
-// capture/restore/diff (Slice 3) is a separate follow-on. See FDR 0024.
+// A thread's designated tag set — its label tags joined through the mailbox
+// tree, plus the `_inbox` / `_unread` / `_flagged` / `_trash` state tags — is
+// the plugin's ONE writable dimension: an `organize` edit replaces it as a
+// whole and the change fans out over every member message in one JMAP request
+// (mutate.go). Archival capture/restore/diff (FDR 0024 slice 3) is a separate
+// follow-on.
 //
 // The plugin mirrors plugins/caldav for the network + RFC 0007
-// account-config + traversal + facet pattern. It carries no MCP write
-// surface and no mail parser: a message is an opaque message/rfc822 blob
-// alongside its structured JMAP Email JSON, exactly the shape the read
-// surface wants.
+// account-config + traversal + facet pattern. It carries no mail parser: a
+// message is an opaque message/rfc822 blob alongside its structured JMAP
+// Email JSON, exactly the shape the read surface wants.
 package fastmail
 
 import (
@@ -81,12 +84,14 @@ func (Plugin) Validate(u *url.URL, raw string) error {
 	return nil
 }
 
-// Interface conformance: the read capability set (FDR 0024) plus the
-// unified declaration and the surfaces derived from it (FDR 0025:
-// UnifiedDescriber, FacetWriteDescriber, FieldPresenter — see unified.go,
-// facet_write.go, present.go). The write APPLY side (NodeMutator,
-// MembershipWriteApplier) and capture/restore/diff are later tasks and are
-// deliberately absent.
+// Interface conformance: the read capability set (FDR 0024), the unified
+// declaration and the surfaces derived from it (FDR 0025: UnifiedDescriber,
+// FacetWriteDescriber, FieldPresenter — see unified.go, facet_write.go,
+// present.go), and the tag-set write path (NodeMutator +
+// MembershipWriteApplier — see mutate.go, facet_apply.go). capture / restore
+// / diff remain deliberately absent (FDR 0024 slice 3), as does
+// FacetWriteApplier: `tags` is the only writable dimension and it is
+// multi-valued, so there is no single-bucket move to apply.
 var (
 	_ cutting_garden_plugins.RootLister             = (*Plugin)(nil)
 	_ cutting_garden_plugins.RootProvider           = (*Plugin)(nil)
@@ -100,4 +105,6 @@ var (
 	_ cutting_garden_plugins.UnifiedDescriber       = (*Plugin)(nil)
 	_ cutting_garden_plugins.FacetWriteDescriber    = (*Plugin)(nil)
 	_ cutting_garden_plugins.FieldPresenter         = (*Plugin)(nil)
+	_ cutting_garden_plugins.NodeMutator            = (*Plugin)(nil)
+	_ cutting_garden_plugins.MembershipWriteApplier = (*Plugin)(nil)
 )

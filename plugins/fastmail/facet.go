@@ -193,11 +193,10 @@ func (Plugin) FacetVersion(
 func (c *client) resolveMailbox(
 	ctx context.Context, ref nodeRef,
 ) (*mailboxTree, Mailbox, error) {
-	mailboxes, err := c.mailboxGetAll(ctx)
+	tree, err := c.loadMailboxTree(ctx)
 	if err != nil {
 		return nil, Mailbox{}, err
 	}
-	tree := newMailboxTree(mailboxes)
 	mbox, ok := tree.resolvePath(ref.mailboxPath)
 	if !ok {
 		return nil, Mailbox{}, errors.BadRequestf(

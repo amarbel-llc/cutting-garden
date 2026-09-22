@@ -5,16 +5,28 @@ import (
 	"strings"
 )
 
+// The JMAP mailbox roles (RFC 8621 §2) this plugin names. inbox, trash and
+// archive are the three the write path resolves by role (D2/D3); sent and
+// junk are in scope for traversal only — they never yield a tag and are
+// never written.
+const (
+	roleInbox   = "inbox"
+	roleArchive = "archive"
+	roleSent    = "sent"
+	roleJunk    = "junk"
+	roleTrash   = "trash"
+)
+
 // allowedRoles is the in-scope role-mailbox set (FDR 0024): inbox, archive,
 // sent, junk, trash. Role mailboxes outside this set (drafts, scheduled,
 // snoozed) and the memos data type are excluded from the v1 tree entirely.
 // A user tag mailbox has role "" (null) and is always in scope.
 var allowedRoles = map[string]bool{
-	"inbox":   true,
-	"archive": true,
-	"sent":    true,
-	"junk":    true,
-	"trash":   true,
+	roleInbox:   true,
+	roleArchive: true,
+	roleSent:    true,
+	roleJunk:    true,
+	roleTrash:   true,
 }
 
 // inScope reports whether a mailbox belongs in the v1 tree: a user tag
@@ -150,6 +162,90 @@ func (t *mailboxTree) tagOf(id string) (string, bool) {
 func (t *mailboxTree) roleID(role string) (string, bool) {
 	id, ok := t.roleIDByRole[role]
 	return id, ok
+}
+
+// sortedTags returns every tag the tree realizes, lexically sorted — the
+// deterministic iteration order placeNewTag's "longest match" searches need
+// (tagIndex is a map, so ranging it directly would make placement depend on
+// Go's randomized map order).
+func (t *mailboxTree) sortedTags() []string {
+	tags := make([]string, 0, len(t.tagIndex))
+	for tag := range t.tagIndex {
+		tags = append(tags, tag)
+	}
+	sort.Strings(tags)
+	return tags
+}
+
+// placeNewTag decides WHERE the mailbox realizing a not-yet-existing tag is
+// created (fastmail tags slice 1, D4), returning its parent's id ("" for a
+// top-level mailbox) and its name. The three rules, in order:
+//
+//	(a) some existing mailbox's tag is a PROPER PREFIX of the new tag at a
+//	    `-` boundary → a `-`-continuation child of the LONGEST such mailbox
+//	    (`payee-charles_tyrwhitt` → `-charles_tyrwhitt` under `payee`);
+//	(b) else some existing mailbox's tag SHARES a `-`-boundary prefix with the
+//	    new tag → a BARE sibling under that mailbox's parent, carrying the
+//	    whole tag as its name (`proj-trips-26-09-yoga_retreat` → a bare child
+//	    of `area/-travel`, beside `proj-trips-26-09-kyle_yoga`); the longest
+//	    shared prefix wins, ties broken by the tag's lexical order;
+//	(c) else a bare top-level mailbox named for the whole tag.
+//
+// Either way tagOf of the created mailbox re-derives the requested tag: (a)
+// extends the prefix mailbox's join, (b) and (c) are bare, so the join starts
+// at the new mailbox itself.
+//
+// The tree is the one read BEFORE the apply, so two new tags created in the
+// same patch do not see each other — creating `payee` and `payee-acme`
+// together places the latter by (b)/(c) rather than under the former. It
+// still realizes the right tag, just flatter; a second apply would nest it.
+func (t *mailboxTree) placeNewTag(tag string) (parentID, name string) {
+	tags := t.sortedTags()
+
+	longestPrefix := ""
+	for _, candidate := range tags {
+		if !strings.HasPrefix(tag, candidate+"-") {
+			continue
+		}
+		if len(candidate) > len(longestPrefix) {
+			longestPrefix = candidate
+		}
+	}
+	if longestPrefix != "" {
+		return t.tagIndex[longestPrefix], tag[len(longestPrefix):]
+	}
+
+	bestSegments, bestID := 0, ""
+	for _, candidate := range tags {
+		if shared := sharedTagSegments(candidate, tag); shared > bestSegments {
+			bestSegments, bestID = shared, t.tagIndex[candidate]
+		}
+	}
+	if bestSegments > 0 {
+		return t.byID[bestID].ParentID, tag
+	}
+
+	return "", tag
+}
+
+// sharedTagSegments counts the leading `-`-separated segments two tags share
+// — the D4(b) "common prefix at a `-` boundary" measure. `proj-trips-26-09-a`
+// and `proj-trips-26-09-b` share 4; `misc-thing` and `payee-acme` share 0.
+func sharedTagSegments(a, b string) int {
+	as, bs := strings.Split(a, "-"), strings.Split(b, "-")
+	shared := 0
+	for shared < len(as) && shared < len(bs) && as[shared] == bs[shared] {
+		shared++
+	}
+	return shared
+}
+
+// pathUnder renders the full name-path a mailbox named name would have under
+// parentID — the `mailbox:<full/path>` PatchNode reports for a creation,
+// computed before the server assigns the new mailbox an id.
+func (t *mailboxTree) pathUnder(parentID, name string) string {
+	segs := append(append([]string{}, t.path(parentID)...), name)
+	return strings.Join(segs, "/")
 }
 
 // computePath walks parentId up to the root, producing the mailbox's full

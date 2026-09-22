@@ -91,11 +91,10 @@ func (Plugin) ListRoots(
 func (c *client) accountRootNodes(
 	ctx context.Context, account string,
 ) ([]cutting_garden_plugins.Node, error) {
-	mailboxes, err := c.mailboxGetAll(ctx)
+	tree, err := c.loadMailboxTree(ctx)
 	if err != nil {
 		return nil, err
 	}
-	tree := newMailboxTree(mailboxes)
 	return mailboxNodes(account, tree, tree.topLevelInScope()), nil
 }
 
@@ -105,11 +104,10 @@ func (c *client) accountRootNodes(
 func (c *client) mailboxChildNodes(
 	ctx context.Context, ref nodeRef,
 ) ([]cutting_garden_plugins.Node, error) {
-	mailboxes, err := c.mailboxGetAll(ctx)
+	tree, err := c.loadMailboxTree(ctx)
 	if err != nil {
 		return nil, err
 	}
-	tree := newMailboxTree(mailboxes)
 	mbox, ok := tree.resolvePath(ref.mailboxPath)
 	if !ok {
 		return nil, errors.BadRequestf(

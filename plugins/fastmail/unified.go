@@ -120,8 +120,8 @@ func codecsForType(tag string) []cutting_garden_plugins.Codec {
 // plus the state tags (D2). Format presents that set; Parse persists a
 // FULL-SET replacement: the interpreter's Complete has already resolved the
 // thread's final membership, so the delta targets the `tags` stored field
-// verbatim — the write engine (Task 4's PatchNode) diffs it against the live
-// set and fans the change out over the members. Because MultiValued makes
+// verbatim — the write engine (mutate.go's PatchNode) diffs it against the
+// live set and fans the change out over the members. Because MultiValued makes
 // the derived FacetWrite Mode `many`, the write target is the field's own key
 // (Source stays empty).
 type tagsCodec struct{}

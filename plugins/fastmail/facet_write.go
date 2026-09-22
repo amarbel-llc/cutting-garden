@@ -10,9 +10,9 @@ var _ cutting_garden_plugins.FacetWriteDescriber = (*Plugin)(nil)
 // write:many dimension (a full-set membership replacement onto its own
 // stored field), and the read-only grouping dimensions (from, date,
 // has_attachment) are explicit write:none so an edit to one fails loudly.
-// This only DESCRIBES the writes; the apply side (NodeMutator +
-// MembershipWriteApplier) is the following task, so until it lands an
-// `organize -apply` naming tags is refused by the engine's NodeMutator gate.
+// This only DESCRIBES the writes; the apply side lives in facet_apply.go
+// (MembershipWriteApplier, which builds the patch body) and mutate.go
+// (NodeMutator.PatchNode, which fans it out over the thread's members).
 func (Plugin) DescribeFacetWrites() []cutting_garden_plugins.NodeTypeFacetWrites {
 	return cutting_garden_plugins.DeriveNodeTypeFacetWrites(unifiedFieldSets())
 }
