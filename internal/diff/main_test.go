@@ -18,10 +18,13 @@ import (
 // internal/sdklayering); the real file plugin's diff behavior is covered
 // end-to-end by zz-tests_bats/diff.bats.
 //
-// It is registered rather than dropped so the exit-2 assertions keep their
-// discriminating power: with an EMPTY diff registry, ResolveDiffPlugin would
-// itself fail with exit 2, and the tests could no longer tell "reached
-// dispatch and failed at the receipt id" from "never resolved a plugin".
+// No test below actually reaches plugin resolution: runDiff parses the
+// receipt id first (main.go:158) and returns before ResolveDiffPlugin
+// (main.go:182), and no test supplies a valid markl id. The registration is
+// kept anyway because it costs nothing and keeps this file's picture of the
+// shipped binary honest — a reader (or a later test that does reach
+// dispatch) sees the "" + "file" diff claim the real binary has. Deleting it
+// would be equally correct today.
 type fakeSchemelessDiff struct{}
 
 func (fakeSchemelessDiff) Schemes() []string { return []string{"", "file"} }

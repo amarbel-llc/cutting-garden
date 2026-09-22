@@ -18,13 +18,26 @@ import (
 // In-package fake plugins
 //
 // These tests probe the capability-detection logic, not any particular
-// backend, so they register fakes covering each branch of probe() rather
-// than blank-importing plugins/ — an internal/ test importing plugins/
-// hands every framework package the plugin invalidation cone under godyn
+// backend, so they register fakes rather than blank-importing plugins/ — an
+// internal/ test importing plugins/ hands every framework package the plugin
+// invalidation cone under godyn
 // (docs/plans/2026-09-21-invalidation-cone-moves.md D6/D7, pinned by
 // internal/sdklayering). That the REAL plugins are linked into the shipped
 // binary and report the capabilities they claim is asserted end-to-end in
 // zz-tests_bats/health.bats.
+//
+// The fakes cover every capability COLUMN probe() emits — capture, all three
+// restore verdicts, diff, protocol kind, traversal types — and both scheme
+// labels a row can carry. Two branches are deliberately NOT covered, neither
+// of them a regression (the real-plugin test they replaced reached neither):
+//
+//   - health.go:157, protocol kind read from ProtocolDiffPlugin. It is the
+//     else-arm of the ProtocolRestorePlugin check at :155, and fakeProtocol
+//     satisfies ProtocolRestorePlugin, so it takes :155. Reaching :157 needs
+//     a protocol-diff-only plugin; none exists in-tree either.
+//   - health.go:184, displayName's "(schemeless)" fallback, which needs a
+//     plugin whose every scheme is "". fakeFull claims "" alongside a named
+//     scheme, so it takes the named-scheme path at :181.
 // ---------------------------------------------------------------------
 
 // fakeFull claims the schemeless default plus a named scheme, and

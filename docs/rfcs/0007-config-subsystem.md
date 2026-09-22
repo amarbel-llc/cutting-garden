@@ -71,7 +71,7 @@ This document specifies:
 - The host-keyed credential-resolution precedence a credentialed plugin MUST
   follow.
 - Loading, validation, unknown-key behavior, and the package layering that
-  keeps the aggregator and plugins free of an import cycle.
+  keeps the framework aggregator free of any dependency on a plugin.
 
 ### Out of Scope
 
@@ -321,7 +321,7 @@ func DecodeRegisteredConfigSections(model *cst.Value) error
   or a nil decoder — a clash is a programming error, exactly as with
   `MustRegisterScheme`.
 - `sub` is the table's tommy CST value from the **same** parsed model the
-  framework's `DecodeConfigV0` walked. A decoder MUST mark what it consumes
+  framework's `DecodeConfigV0Into` walked. A decoder MUST mark what it consumes
   (a tommy-generated `Decode<X>Into` does) so the loader's unknown-key report
   stays accurate, and MUST validate what it decoded.
 - A decoder runs at most once per process, after every plugin `init()`, and
@@ -433,8 +433,10 @@ preferred-root plugins (sources 1, 2) that need no credentials are unaffected.
 
 1. The loader MUST decompose the file once into a CST value model, then
    decode the FRAMEWORK sections from that model with the generated
-   `DecodeConfigV0`, invoking `ConfigV0.Validate` (the generated decoder
-   calls `Validate` automatically when present).
+   `DecodeConfigV0Into` (the model-taking entry point; the generated
+   `DecodeConfigV0` takes bytes and parses its own document), invoking
+   `ConfigV0.Validate` (the generated decoder calls `Validate` automatically
+   when present).
 2. The loader MUST then dispatch the PLUGIN sections over that same model
    with `DecodeRegisteredConfigSections`, before any plugin's roots are
    aggregated. Sharing one model is what keeps consumption marks — and hence

@@ -73,8 +73,9 @@ account-bearing plugin claims its own top-level table by name at `init()`
 through the SDK's config-section registry
 (`cutting_garden_plugins.MustRegisterConfigSection`), and
 `command_components.LoadConfig` decomposes the file once, runs
-`DecodeConfigV0`, then `DecodeRegisteredConfigSections` over the same
-model. Consequences: a table no registered decoder claims is an ordinary
+`DecodeConfigV0Into` (the model-taking entry point — plain
+`DecodeConfigV0` takes bytes), then `DecodeRegisteredConfigSections` over
+the same model. Consequences: a table no registered decoder claims is an ordinary
 unknown-key **warning**, not an error (a `[caldav]` table in a binary that
 never linked caldav is inert); a failing section decoder is EX_USAGE naming
 file, section and entry; and **decoding a section injects it**, so a command

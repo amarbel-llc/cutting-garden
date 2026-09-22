@@ -113,7 +113,9 @@ task's vectors are whole-document heredocs (G16); `_base` digests verbatim.
   mcp.bats `describe_node_types` shows `tag_set`; mcp `list_nodes` enriched
   entry carries `tags`.
 - **T4 decisions (as landed):** the shared enrichment lives in
-  `internal/command_components/tag_view.go` — organize's `describedTagDims`/
+  `internal/node_view/tag_view.go` (it landed in
+  `internal/command_components` and moved with the 2026-09-22
+  invalidation-cone split) — organize's `describedTagDims`/
   `firstTagDim`/`interpreterForDimension`/`unifiedTagPresenter` MOVED there
   (exported), composed as `NodeTagsPresenter` (the per-listing presenter both
   node views call) and `TypeTagSets` (describe_node_types' per-type

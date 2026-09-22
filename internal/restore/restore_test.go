@@ -17,10 +17,13 @@ import (
 // internal/sdklayering); the real file plugin's restore behavior is covered
 // end-to-end by zz-tests_bats/restore.bats.
 //
-// It is registered rather than dropped so the exit-2 assertions keep their
-// discriminating power: with an EMPTY restore registry, ResolveRestorePlugin
-// would itself fail with exit 2, and the tests could no longer tell "reached
-// dispatch and failed at the receipt id" from "never resolved a plugin".
+// No test below actually reaches plugin resolution: runRestore parses the
+// receipt id first (restore.go:109) and returns before ResolveRestorePlugin
+// (restore.go:134), and no test supplies a valid markl id. The registration
+// is kept anyway because it costs nothing and keeps this file's picture of
+// the shipped binary honest — a reader (or a later test that does reach
+// dispatch) sees the "" + "file" restore claim the real binary has. Deleting
+// it would be equally correct today.
 type fakeSchemelessRestore struct{}
 
 func (fakeSchemelessRestore) Schemes() []string { return []string{"", "file"} }

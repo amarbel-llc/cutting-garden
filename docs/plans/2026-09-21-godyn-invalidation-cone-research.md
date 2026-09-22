@@ -551,7 +551,7 @@ package it imports.
 Everything else in §1.5/§1.6 landed as described: the `*cst.Value` decoder
 signature (Proposal A1, not A1'), `MustRegisterConfigSection` panicking on a
 duplicate/empty name/nil decoder, `RegisteredConfigSections()`, dispatch in
-`command_components.loadConfigWithRaw` right after `DecodeConfigV0` over the
+`command_components.loadConfigWithRaw` right after `DecodeConfigV0Into` over the
 same decomposed model, `cgconfig.Inject` and `inject.go` deleted, and the
 unknown-table-is-a-warning semantics of §1.5's last bullet. The dispatch
 entry point is EXPORTED as `DecodeRegisteredConfigSections` (§1.5 sketched it
