@@ -64,11 +64,15 @@ func (c *client) authorize(req *http.Request) {
 // (RFC 8620 §5.3), which is how applyThreadPatch puts a Mailbox/set create
 // and the Email/set that names it in one atomic-enough request.
 //
-// A server MAY answer one call with several responses, or with an "error"
-// response carrying the same call id, so the responses are returned verbatim
-// rather than positionally zipped to the calls. ctx is honored so a cancel
-// unwinds the in-flight request promptly; the session resolves first (a
-// cheap memoized GET after the first call).
+// A method-level failure comes back as an "error" response carrying the
+// call's id in place of the method's name (RFC 8620 §3.6.1), so the
+// responses are returned verbatim and matched by call id rather than
+// positionally zipped to the calls. None of the six methods this plugin
+// calls answers one call with more than one response, and decodeResponseFor
+// accordingly takes the FIRST response matching a call id and drops any
+// later one. ctx is honored so a cancel unwinds the in-flight request
+// promptly; the session resolves first (a cheap memoized GET after the
+// first call).
 func (c *client) callMany(
 	ctx context.Context,
 	calls []jmapMethodCall,
@@ -160,10 +164,12 @@ func decodeMethodResult(
 	return nil
 }
 
-// decodeResponseFor picks the response carrying callID out of a multi-call
-// request's responses and decodes it into out. method names the call for
-// diagnostics only. A missing response is a protocol error: the server
-// answered a request without answering one of its calls.
+// decodeResponseFor picks the FIRST response carrying callID out of a
+// multi-call request's responses and decodes it into out; a second response
+// under the same call id is dropped. That is sufficient for the methods this
+// plugin calls, none of which answers a call more than once. method names
+// the call for diagnostics only. A missing response is a protocol error: the
+// server answered a request without answering one of its calls.
 func decodeResponseFor(
 	responses []jmapMethodResponse, method, callID string, out any,
 ) error {

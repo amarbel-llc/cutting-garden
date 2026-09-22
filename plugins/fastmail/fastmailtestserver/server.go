@@ -589,8 +589,13 @@ func (s *Server) applyEmailPatch(
 				}
 			}
 			if property == "mailboxIds" {
+				// Resolved exactly as in the one-level branch below, so a
+				// whole-object replacement may name a mailbox created
+				// earlier in the same request as "#<creationId>" too.
+				resolved := make(map[string]bool, len(replacement))
 				for candidate := range replacement {
-					if !s.mailboxExists(candidate) {
+					id, resolvable := s.resolveMailboxRef(candidate, creations)
+					if !resolvable || id == "" {
 						return email, &setErr{
 							Type:       "invalidProperties",
 							Properties: []string{key},
@@ -599,8 +604,9 @@ func (s *Server) applyEmailPatch(
 							),
 						}
 					}
+					resolved[id] = true
 				}
-				mailboxIDs = replacement
+				mailboxIDs = resolved
 			} else {
 				keywords = replacement
 			}

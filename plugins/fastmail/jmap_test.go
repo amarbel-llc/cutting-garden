@@ -221,6 +221,33 @@ func TestClient_ApplyThreadPatch_ReferencesACreationFromTheSameRequest(t *testin
 	}
 }
 
+// TestClient_ApplyThreadPatch_ResolvesACreationInAWholeObjectPatch pins that
+// a `#<creationId>` back-reference resolves in the whole-object mailboxIds
+// form as well as the one-level form — the two branches must not disagree,
+// or a whole-set replacement would be refused as an unknown mailbox.
+func TestClient_ApplyThreadPatch_ResolvesACreationInAWholeObjectPatch(t *testing.T) {
+	c, _ := newWriteFixture(t)
+
+	res, err := c.applyThreadPatch(context.Background(), threadPatchRequest{
+		Creates: map[string]MailboxCreate{
+			"c1": {Name: "-tyrwhitt", ParentID: "mb-payee"},
+		},
+		Updates: map[string]emailPatch{
+			"e1": {"mailboxIds": map[string]any{"#c1": true, "mb-inbox": true}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("applyThreadPatch: %v", err)
+	}
+	created := res.CreatedIDs["c1"]
+	if created == "" {
+		t.Fatalf("applyThreadPatch CreatedIDs = %#v, want an id for c1", res.CreatedIDs)
+	}
+
+	assertStrings(t, "e1 mailboxIds",
+		mailboxIDsOf(t, c, "e1"), sortedStrings("mb-inbox", created))
+}
+
 // TestClient_ApplyThreadPatch_NoopIssuesNothing pins that an empty patch
 // request short-circuits: Task 4's empty-diff path must not POST.
 func TestClient_ApplyThreadPatch_NoopIssuesNothing(t *testing.T) {
