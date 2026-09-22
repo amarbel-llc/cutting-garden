@@ -575,10 +575,27 @@ failure, so its fake is a minimal tree walker rather than a stub, and
 `internal/health`'s real-capabilities assertion moved to
 `zz-tests_bats/health.bats` as planned.
 
-**Measurement: PENDING.** §0's "~14 framework packages / ~250 derivations /
-92-minute gate" is the BEFORE figure. The AFTER figure is the next
-fastmail-only merge's gate log, which must show `godyn-compile-…` lines for
-`plugins-fastmail`, `plugins-all` and the `cmd-*` mains only, with no
-`internal-*` compile derivations. No such merge has run yet; record the
-derivation count and wall time here when one does. Do not infer them from the
-structural change alone.
+**Measurement (2026-09-22).** §0's "~14 framework packages / ~250 derivations /
+92-minute gate" is the BEFORE figure. The first fastmail-only merge after
+Units A–C (fastmail slice Tasks 3+4, `plugins/fastmail` only) took two gate
+runs, so the AFTER figure comes from both logs:
+
+- **Invalidation set: confirmed confined.** The first run
+  (`merge-43210475`) logged `godyn-compile-…` builds for exactly
+  `plugins-fastmail`, `plugins-all`, `cmd-cg`, `cmd-cutting-garden` and
+  `cmd-cutting-garden-gen` — no `internal-*` compile derivations. Its
+  vet/lint/test builds covered the same five packages plus
+  `plugins-fastmail-fastmailtestserver`: about 45 godyn-lane derivations
+  logged, against ~250 before.
+- **Wall time: not cleanly measured.** That first run's producer died inside
+  the `cutting-garden-godyn-tests` step (ringmaster: liveness `gone`, no
+  further spool output, then `interrupted: producer died before honoring
+  cancel`) after ~34 minutes of logged progress. The re-run
+  (`merge-024cdcaf`) passed in 55m17s but found every godyn derivation
+  already built — its only logged build was the `bats-all` lane — so its
+  time is almost entirely flake evaluation plus bats, not a cold
+  fastmail-only gate. Neither log carries per-step timestamps, so the split
+  between evaluation and building is unknown. The re-run's 55 minutes with
+  near-zero Go building suggests flake evaluation, not the invalidation cone,
+  is now the dominant gate cost; that is an inference from one run, not a
+  measurement.
