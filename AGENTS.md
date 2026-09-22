@@ -66,8 +66,26 @@ dagnabit **copy mode** (`export -copy`, a real source copy, not an alias)
 so the relocated `plugins/caldav` consumes a non-`internal/` definition —
 tommy resolves a config field's type to its *defining* package, so an
 alias facade would make caldav's generated codec import `internal/`
-(RFC 0009 §5). The delegated aggregator is `internal/cgconfig`
-(`ConfigV0`); the loader is `command_components.LoadConfig`. `*_tommy.go`
+(RFC 0009 §5). The framework aggregator is `internal/cgconfig`
+(`ConfigV0`), which holds ONLY the framework sections (`organize`, `tags`,
+`plugins`, `traversal_plugins`) and imports **no plugin**: each
+account-bearing plugin claims its own top-level table by name at `init()`
+through the SDK's config-section registry
+(`cutting_garden_plugins.MustRegisterConfigSection`), and
+`command_components.LoadConfig` decomposes the file once, runs
+`DecodeConfigV0`, then `DecodeRegisteredConfigSections` over the same
+model. Consequences: a table no registered decoder claims is an ordinary
+unknown-key **warning**, not an error (a `[caldav]` table in a binary that
+never linked caldav is inert); a failing section decoder is EX_USAGE naming
+file, section and entry; and **decoding a section injects it**, so a command
+must load the config once and thread the value rather than re-calling
+`LoadConfig`. Every plugin's section decoder shares ONE tommy schema,
+`config_common.AccountsSection` (`{Accounts []Account}`) — tommy blanks a
+package's own generated output while type-checking it, so a plugin cannot
+call a `Decode…Into` generated in its own package; a plugin needing extra
+section fields must put its schema in an imported leaf. `internal/sdklayering`
+pins that no `internal/` package imports `plugins/`, in production code or in
+tests. `*_tommy.go`
 files are generated — run `just codemod-generate` (`go generate -run
 tommy` through godyn-go) after editing a `//go:generate tommy generate`
 struct; `just`'s `validate-generate` gate (`checks.tommy-codegen`) fails on
@@ -109,9 +127,14 @@ strips each appearance's placement Via tag by default), and box tag
 edits apply as MEMBERSHIP writes through the tag interpreter's exact
 `Complete` (RFC 0019 §6.2); `list -format json` and the mcp enriched
 listing carry a top-level `tags` array, and `describe_node_types`
-reports each tag-declaring type's `tag_set`. `list -format espalier`
+reports each tag-declaring type's `tag_set`. The tag/espalier/enriched-listing
+presentation helpers live in `internal/node_view`, imported only by `list`,
+`mcp` and `organize` — `command_components` stays the composition layer
+(config, roots, store resolution, receipts) and MUST NOT import `node_view`,
+so organize/list rendering churn no longer re-derives
+capture/restore/diff/serve/failures/blob_writer. `list -format espalier`
 (slice 4, G8) renders one organize object line per node through the
-shared writer + the `command_components` espalier-view helpers, and
+shared writer + the `node_view` espalier-view helpers, and
 `list -format text` is a dewey mesa table (TAB-separated on a pipe)
 with a TAGS column when the plugin declares a tag dimension. The organize bats lanes are
 whole-document vectors

@@ -119,7 +119,9 @@ FDR 0015 / RFC 0003).
 
 Delivered 2026-09-20 (slice 4): the espalier line projection (anchor-relative
 id, description trailer, box-atom presenter) moved to
-`internal/command_components/espalier_view.go` — organize delegates, `list`
+`internal/node_view/espalier_view.go` (it landed in
+`internal/command_components` and moved with the 2026-09-22
+invalidation-cone split) — organize delegates, `list`
 consumes the same helpers plus `trellis.WriteLiteral`, so the isometry holds
 by construction and is pinned by derivation in `zz-tests_bats/
 list_espalier.bats` (port 43112). Ids are anchor-relative against the listed

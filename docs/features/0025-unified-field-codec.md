@@ -294,8 +294,10 @@ carry a top-level `tags` array (the same `PresentUnifiedTags` values,
 SortKey-ordered by the interpreter resolved from the field default + the
 `[tags]` override), and `describe_node_types` reports each tag-declaring
 type's `tag_set: {field, interpreter}`. The shared resolution/presenter
-helpers live in `internal/command_components/tag_view.go` (moved out of
-organize so all three consumers share one copy); `facets.categories` stays on
+helpers live in `internal/node_view/tag_view.go` (moved out of
+organize so all three consumers share one copy; the file itself moved from
+`internal/command_components` to `internal/node_view` in the
+invalidation-cone split); `facets.categories` stays on
 the enriched entries until `--filter` grows bare-tag terms (#251).
 
 Priority's Present column changed 2026-09-01 (native tags slice 1.5 D):
@@ -466,7 +468,7 @@ object line per node — `- [<id> <tag>… <k>=<v>…] <desc>` — through the S
 shared projection organize's document builder uses: the espalier-view
 helpers (`RelativeID`, `NodeDescription`, `BoxAtomPresenter`,
 `CollapseToSingleLine`) moved from `internal/organize` to
-`internal/command_components/espalier_view.go` (organize delegates), and the
+`internal/node_view/espalier_view.go` (organize delegates), and the
 interior is spelled by `trellis.WriteLiteral` — so `list --query project
 -format espalier` shows exactly the boxes organize would (RFC 0014's
 isometry, pinned by derivation in `zz-tests_bats/list_espalier.bats`, port

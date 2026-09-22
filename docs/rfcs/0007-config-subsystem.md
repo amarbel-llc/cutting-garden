@@ -66,8 +66,8 @@ This document specifies:
   preferred roots, configured accounts).
 - The config file's location, encoding, and top-level structure.
 - Shared base types (`Root`, `Account`) and their field semantics.
-- The plugin-owned, delegated per-plugin config section shape, with caldav as
-  the reference implementer.
+- The plugin-owned per-plugin config section shape and the registry a plugin
+  claims its section name through, with caldav as the reference implementer.
 - The host-keyed credential-resolution precedence a credentialed plugin MUST
   follow.
 - Loading, validation, unknown-key behavior, and the package layering that
@@ -228,19 +228,21 @@ the plugin's choice and is invisible to the aggregating command:
 
 ### Top-Level Structure
 
-The top-level config is a horizontally-versioned struct (`ConfigV0`)
-aggregating per-plugin sections as **delegated** fields owned by the plugin
-packages:
+The top-level config is a horizontally-versioned struct (`ConfigV0`) holding
+the **framework** sections only. It MUST NOT name any plugin's section type:
+a plugin section is **registry-owned**, claimed by name at plugin `init()`
+and dispatched to that plugin by the loader (§ Plugin-Owned Sections).
 
 ```go
 // internal/cgconfig
 //go:generate tommy generate
 type ConfigV0 struct {
-    Caldav caldav.AccountsConfig `toml:"caldav,omitempty"`
-    // Future plugins add one delegated field each, e.g.:
-    // Sftp   sftp.AccountsConfig   `toml:"sftp,omitempty"`   // accounts (creds)
-    // Webdav webdav.AccountsConfig `toml:"webdav,omitempty"` // accounts (creds)
-    // Ytdlp  ytdlp.RootsConfig     `toml:"ytdlp,omitempty"`  // preferred roots (no creds)
+    Organize         OrganizeConfig                  `toml:"organize,omitempty"`
+    Tags             TagsConfig                      `toml:"tags,omitempty"`
+    Plugins          []traversal_serve.PluginStanza  `toml:"plugins,omitempty"`
+    TraversalPlugins []traversal_serve.PluginStanza  `toml:"traversal_plugins,omitempty"`
+    // No plugin fields: `[caldav]`, `[fastmail]`, `[jira]`, … are decoded
+    // by the decoders those plugins registered with the SDK.
 }
 ```
 
@@ -249,12 +251,20 @@ type ConfigV0 struct {
   horizontal versioning (cutting-garden#79).
 - Each plugin section is keyed by the plugin's primary scheme and is OPTIONAL.
 - The file plugin (intrinsic roots) has **no** section in this revision.
+- The `[[plugins]]` / `[[traversal_plugins]]` stanzas' own `config_section`
+  tables are NOT registry sections: they are consumed raw and handed to the
+  spawned wire plugin (RFC 0013 § Host integration).
+
+> **Revision note.** Earlier revisions of this RFC specified `ConfigV0` as an
+> aggregator of **delegated** fields (`Caldav caldav.AccountsConfig`, one per
+> plugin). That made the framework's config package import every
+> account-bearing plugin, so a plugin edit re-derived the framework's whole
+> build cone. The registry replaces it; nothing in `config.toml` changed.
 
 ### Shared Base Types
 
-Plugins share two base types, defined in a neutral `config_common` package
-that both `cgconfig` and plugin packages MAY import (the import-cycle break of
-§ Package Layering):
+Plugins share two base types, defined in a neutral `config_common` leaf
+package that plugin packages MAY import (§ Package Layering):
 
 ```go
 // internal/config_common
@@ -295,20 +305,66 @@ A plugin whose credential model needs more than `Account` provides MUST embed
 
 ### Plugin-Owned Sections
 
-Each account- or root-bearing plugin owns its section struct (delegated into
-`ConfigV0`). caldav is the reference implementer; its roots are credentialed
-accounts:
+Each account- or root-bearing plugin owns its top-level table and MUST claim
+it by name, in `init()`, through the SDK's config-section registry:
 
 ```go
-// internal/cutting_garden_plugin_caldav
-//go:generate tommy generate
+// pkgs/cutting_garden_plugins
+type ConfigSectionDecoder func(sub *cst.Value) error
+
+func MustRegisterConfigSection(name string, d ConfigSectionDecoder)
+func RegisteredConfigSections() []string
+func DecodeRegisteredConfigSections(model *cst.Value) error
+```
+
+- `MustRegisterConfigSection` MUST panic on a duplicate name, an empty name,
+  or a nil decoder — a clash is a programming error, exactly as with
+  `MustRegisterScheme`.
+- `sub` is the table's tommy CST value from the **same** parsed model the
+  framework's `DecodeConfigV0` walked. A decoder MUST mark what it consumes
+  (a tommy-generated `Decode<X>Into` does) so the loader's unknown-key report
+  stays accurate, and MUST validate what it decoded.
+- A decoder runs at most once per process, after every plugin `init()`, and
+  typically ends by injecting the decoded section into the plugin's package
+  state (§ Package Layering).
+
+caldav is the reference implementer; its roots are credentialed accounts:
+
+```go
+// plugins/caldav
+func init() {
+    cutting_garden_plugins.MustRegisterConfigSection("caldav", decodeConfigSection)
+}
+
+func decodeConfigSection(sub *cst.Value) error {
+    var section config_common.AccountsSection
+    if err := config_common.DecodeAccountsSectionInto(&section, sub); err != nil {
+        return err
+    }
+    c := AccountsConfig{Accounts: section.Accounts}
+    if err := c.Validate(); err != nil {
+        return err
+    }
+    SetConfiguredAccounts(c.Accounts)
+    return nil
+}
+
 type AccountsConfig struct {
     Accounts []config_common.Account `toml:"accounts"`
 }
 func (AccountsConfig) Validate() error
 ```
 
-producing the array-of-tables form:
+The generated decoder comes from the shared `config_common.AccountsSection`
+schema rather than from a per-plugin `//go:generate tommy generate`, because
+tommy type-checks a package with its own generated output blanked (its
+codegen bootstrap, tommy#93): hand-written code in a package can never call a
+`Decode<X>Into` generated in that same package. The generated entrypoint a
+plugin consumes therefore MUST be defined in a leaf package it imports. A
+plugin needing section fields BEYOND `{Accounts []Account}` cannot reuse
+`AccountsSection` and MUST put its own schema in such a leaf.
+
+The section produces the array-of-tables form:
 
 ```toml
 [[caldav.accounts]]
@@ -375,32 +431,50 @@ preferred-root plugins (sources 1, 2) that need no credentials are unaffected.
 
 ### Loading and Validation
 
-1. The loader MUST decode the file with the generated `DecodeConfigV0`,
-   invoking each delegated section's `Validate` (the generated decoder calls
-   `Validate` automatically when present).
-2. The loader SHOULD report keys present in the file but consumed by no field
-   (via the generated `Undecoded()`) as a stderr warning, so a misspelled key
-   is visible. Unknown keys MUST NOT abort loading.
-3. A decode or `Validate` error MUST abort the command with a usage-class
-   error (EX_USAGE), naming the file and the offending entry.
+1. The loader MUST decompose the file once into a CST value model, then
+   decode the FRAMEWORK sections from that model with the generated
+   `DecodeConfigV0`, invoking `ConfigV0.Validate` (the generated decoder
+   calls `Validate` automatically when present).
+2. The loader MUST then dispatch the PLUGIN sections over that same model
+   with `DecodeRegisteredConfigSections`, before any plugin's roots are
+   aggregated. Sharing one model is what keeps consumption marks — and hence
+   the unknown-key report of step 3 — accurate across both passes.
+3. The loader SHOULD report keys present in the file but consumed by no field
+   and claimed by no registered decoder (via the generated `Undecoded()`) as
+   a stderr warning, so a misspelled key is visible. Unknown keys MUST NOT
+   abort loading. A top-level table whose name no registered decoder claims
+   is such an unknown key: it MUST NOT be decoded or validated. A `[caldav]`
+   table in a binary that does not link the caldav plugin is therefore inert
+   — a warning, not an error.
+4. A decode or `Validate` error, from either pass, MUST abort the command
+   with a usage-class error (EX_USAGE), naming the file, the section, and the
+   offending entry.
 
 ### Package Layering
 
-To keep the aggregator and plugins free of an import cycle:
+The dependency edge runs from plugins to the framework and never back:
 
-- `config_common` (`Root`, `Account`) imports neither `cgconfig` nor any
-  plugin; it is a leaf.
-- Each plugin package owns its section struct, MAY import `config_common`, and
-  MUST NOT import `cgconfig`.
-- `cgconfig` imports the plugin packages to embed their sections as delegated
-  fields; this is the only direction.
-- The composition root (the binary's command builder) imports `cgconfig` and
-  the plugin packages, loads the config once, and injects each plugin's
-  section into that plugin **before** any command resolves roots. The
-  injection mechanism is implementation-defined but MUST be a process-global
-  set-once, consistent with the init-time plugin registry; `Plugin` values
-  remain zero-size (a plugin reads injected configuration; it does not carry it
-  as instance state).
+- `config_common` (`Root`, `Account`, `AccountsSection`) imports neither
+  `cgconfig` nor any plugin; it is a leaf, and the home of the shared
+  tommy-generated section decoder plugins call.
+- Each plugin package owns its section struct and its registered decoder, MAY
+  import `config_common` and the plugin SDK, and MUST NOT import `cgconfig`.
+- `cgconfig` MUST NOT import any plugin package. It holds the framework
+  sections; plugin sections reach their owners through the registry.
+- The composition root (the binary's command builder) blank-imports the
+  plugins it links — that is all it takes for their `init()` registrations to
+  fire — loads the config once, and the loader dispatches each registered
+  section, which injects itself into its plugin **before** any command
+  resolves roots. The injection mechanism is implementation-defined but MUST
+  be a process-global set-once, consistent with the init-time plugin
+  registry; `Plugin` values remain zero-size (a plugin reads injected
+  configuration; it does not carry it as instance state).
+- Because decoding a section injects it, the loader's result MUST be loaded
+  once per invocation and threaded to whatever needs it. A command that calls
+  the loader a second time re-decodes and re-injects for no benefit.
+
+This layering is mechanically enforced: `internal/sdklayering` fails the build
+if any `internal/` package imports `plugins/`, in production code or in tests.
 
 ## Security Considerations
 
@@ -449,9 +523,12 @@ Tests use binary injection via `bats-emo`:
 | § Loading and Validation | `config.bats` | an unknown key warns but does not abort; a duplicate `name`/empty `url` aborts with EX_USAGE naming the entry |
 
 Struct-level rules (`Validate` rejections, `Roots` projection,
-credential-precedence unit behavior, import-cycle-free layering) are covered by
-Go unit tests in `internal/cgconfig`, `internal/config_common`, and
-`internal/cutting_garden_plugin_caldav`.
+credential-precedence unit behavior, section registration and dispatch) are
+covered by Go unit tests in `internal/cgconfig`,
+`internal/cutting_garden_plugins` (the config-section registry),
+`internal/command_components` (the two-pass loader) and `plugins/caldav`.
+The layering rules of § Package Layering are enforced by
+`internal/sdklayering`.
 
 ## Compatibility
 

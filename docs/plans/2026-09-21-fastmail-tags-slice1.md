@@ -16,7 +16,7 @@
 - `internal/cutting_garden_plugins/field_unified.go` (`UnifiedField`, `Codec`, `UnifiedDescriber`), `field_derive.go` (`PresentUnifiedTags`, `ValidateUnifiedFieldSets`), `facet_derive.go` (`DeriveNodeTypeFacets`, `DeriveNodeTypeFacetWrites`, `ParseUnifiedMembershipWrite`), `facet_apply.go` (`MembershipWriteApplier`), `mutate.go` (`NodeMutator.PatchNode`, the `applied` contract).
 - `plugins/caldav/unified.go` (`categoriesCodec` — the FieldTag codec to mirror; `codecsForType`; `TestCategoriesCodec_FormatAgreesWithFacetValues`), `plugins/caldav/facet_apply.go` (`BuildMembershipWritePatch`), caldav's `PatchNode`.
 - `internal/organize/membership_apply.go` (how `planMemberships` folds the G10a root bucket: leaving `# _inbox` removes exactly the bare tag), `internal/organize/apply.go` (`resolveMembershipWrites`: the three interfaces a plugin must satisfy).
-- `internal/command_components/tag_view.go` (`FirstTagDim`, `InterpreterForDimension`, `TypeTagSets` — what `list -format json` and `describe_node_types` read).
+- `internal/node_view/tag_view.go` (`FirstTagDim`, `InterpreterForDimension`, `TypeTagSets` — what `list -format json` and `describe_node_types` read). It lived in `internal/command_components` until the 2026-09-22 invalidation-cone split moved it.
 - `plugins/fastmail/{jmap.go,client.go,threads.go,mailboxtree.go,facet.go,listing.go,traversal.go}` and `fastmailtestserver/server.go`.
 - `zz-tests_bats/lib/caldav.bash` (port table, coproc handshake), `zz-tests_bats/organize_ns.bats` (the namespace-grouping vectors this lane's `# _inbox` document mirrors), `cmd/cutting-garden-caldav-testserver/main.go`, `flake.nix` (`cuttingGardenCaldavTestServer`, the `CG_TEST_CALDAV` bats input).
 

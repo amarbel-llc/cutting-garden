@@ -36,8 +36,14 @@ This page documents ONE part of that file: the *[[traversal_plugins]]* and
 the traversal transport - and RFC 0008 - the capture transport). It does
 NOT document the sections owned by cutting-garden's own LINKED (in-process)
 plugins, such as *[caldav]*/*[[caldav.accounts]]* or *[jira]*/*[[jira.accounts]]*.
-Those are a different, in-tree contract, decoded directly by cutting-garden
-itself rather than handed to a spawned plugin.
+Those are a different, in-tree contract: each linked plugin REGISTERS its
+own top-level section name with the SDK at startup and decodes that table
+itself, rather than the table being handed to a spawned plugin.
+
+A consequence worth knowing: a top-level table no linked plugin claims - and
+no stanza names as its *config_section* - is an unknown key. It is reported
+as a warning and otherwise ignored, NOT decoded or validated. A *[caldav]*
+table in a binary that does not link the caldav plugin is therefore inert.
 
 A malformed *[[traversal_plugins]]*/*[[plugins]]* entry aborts config loading
 with an EX_USAGE (64) exit, naming the stanza and the problem.

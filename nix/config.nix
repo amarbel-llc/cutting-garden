@@ -1,9 +1,12 @@
 # Shared config schema (RFC 0007) + config.toml renderer, imported by BOTH the
 # NixOS and home-manager modules so the option surface and the rendered
 # config.toml cannot drift. Mirrors the Go schema in internal/config_common
-# (Root/Account), plugins/caldav (AccountsConfig), and internal/traversal_serve
-# (PluginStanza) — keep the TOML key names (snake_case) in lockstep with those
-# struct tags.
+# (Root/Account, plus AccountsSection — the one shared `[[<scheme>.accounts]]`
+# shape every account-bearing plugin's registered config-section decoder runs)
+# and internal/traversal_serve (PluginStanza) — keep the TOML key names
+# (snake_case) in lockstep with those struct tags. The per-plugin section NAMES
+# come from each plugin's MustRegisterConfigSection call, not from a field on
+# the framework's ConfigV0.
 { lib, pkgs }:
 let
   inherit (lib) mkOption types;

@@ -192,8 +192,26 @@ unchanged.
 - Registration: `MustRegisterScheme` (the scheme-registry entry point
   from RFC 0005) and the existing `MustRegisterCapture` /
   `MustRegisterRestore` / `MustRegisterDiff`.
+- Config sections (RFC 0007 § Plugin-Owned Sections): the type
+  `ConfigSectionDecoder` and `MustRegisterConfigSection`, by which a plugin
+  claims its own top-level `config.toml` table by name at `init()`; plus
+  `RegisteredConfigSections` and `DecodeRegisteredConfigSections`, the
+  host-side listing and dispatch. This is what lets the framework's config
+  package name no plugin type: an account-bearing plugin outside `internal/`
+  configures itself through the same path an in-tree one does. Facading it
+  gives `pkgs/cutting_garden_plugins` a dependency on
+  `code.linenisgreat.com/tommy/pkg/cst` — accepted, since every
+  account-bearing plugin already imports tommy through its section decoder.
 - Resolution and introspection: `ResolveScheme`, `RegisteredPlugins`.
 - Sentinel errors: `ErrUnknownScheme`, `ErrAlreadyRegistered`.
+
+**`pkgs/config_common` — the shared section base types.** `Root`, `Account`,
+and `AccountsSection` with its generated `DecodeAccountsSectionInto` — the
+`{Accounts []Account}` schema an account-bearing plugin's registered decoder
+runs (RFC 0007 § Plugin-Owned Sections). Exported in dagnabit **copy** mode,
+not alias mode: tommy resolves a config field's type to its *defining*
+package, so an alias facade would make a plugin's generated codec import
+`internal/`.
 
 **A public binary builder.** The SDK MUST expose a way for a `main`
 outside `internal/` to obtain a fully-wired `command.Utility` carrying the
@@ -269,9 +287,17 @@ Both rules MUST be enforced mechanically, not by convention. A build-time
 guard (a lint check, a `go vet`-style analyzer, or a codegen-drift step,
 run in the existing `validate-generate` / conformist lane) MUST fail when:
 
-- any package under `internal/` imports a `pkgs/` package; or
+- any package under `internal/` imports a `pkgs/` package;
 - any package outside `internal/` that registers a plugin imports
-  `internal/cutting_garden_plugins` directly instead of the facade.
+  `internal/cutting_garden_plugins` directly instead of the facade; or
+- any package under `internal/` imports a `plugins/` package — in production
+  code OR in its tests. The framework never names a plugin: a plugin's
+  contribution arrives through an SDK registry (`MustRegisterScheme`,
+  `MustRegisterConfigSection`, …). A framework test that needs a plugin
+  registers an in-package fake; an assertion that genuinely needs the shipped
+  plugin set linked belongs in the binary-level bats suite. Without this
+  clause an edit to one plugin re-derives — and re-tests — the framework
+  packages that merely named it.
 
 During the migration (§5) the guard's first clause MAY be scoped to the
 packages already converted, tightening to all of `internal/` once the last
@@ -331,6 +357,19 @@ A plugin outside `internal/` (in-repo `plugins/` or its own repo) MUST:
    capture/restore/diff capability it provides.
 3. Be linked by a `main` (outside `internal/`) that blank-imports the
    plugin package and runs the SDK's binary builder.
+
+A plugin that reads configuration additionally MUST claim its top-level
+`config.toml` table in that same `init()` via
+`MustRegisterConfigSection(<name>, decoder)` (RFC 0007 § Plugin-Owned
+Sections). The decoder receives its table's CST value, MUST mark what it
+consumes and validate it, and typically ends by injecting the result into
+package state. An account-bearing plugin's decoder runs
+`config_common.DecodeAccountsSectionInto` (from `pkgs/config_common`) over
+the table, then its own `Validate` and inject; a plugin whose section needs
+fields beyond `{accounts}` defines its own tommy schema in a leaf package it
+imports, since tommy blanks a package's own generated output while
+type-checking it. A plugin that registers no section gets no config, and a
+table nothing claims is reported as an unknown key.
 
 Illustrative skeleton (the out-of-repo nix_store plugin):
 

@@ -4,7 +4,7 @@
 # slice 4). `list -format espalier <uri>` renders one organize object line
 # per node — `- [<id> <tag>… <k>=<v>…] <desc>` — through the SAME shared
 # projection organize's document builder uses (trellis.WriteLiteral, the
-# command_components espalier-view helpers), anchor-relative against the
+# node_view espalier-view helpers), anchor-relative against the
 # listed URI and sorted by box id, so the listing IS the organize document's
 # object lines for the same set (RFC 0014's isometry). The G8 vector below
 # pins that isometry by DERIVATION: it greps the object lines out of a live
