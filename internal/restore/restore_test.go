@@ -1,18 +1,45 @@
 package restore_test
 
 import (
+	"net/url"
 	"strings"
 	"testing"
 
 	"code.linenisgreat.com/cutting-garden/internal/command"
-	// Blank-import the file plugin so its init() registers under the
-	// "" and "file" restore schemes. Tests past the arg-parse stage
-	// (TestRestore_TwoArgs_*) walk the resolve-plugin path; without
-	// this the registry is empty and resolve fails before we exercise
-	// what the test actually targets.
+	"code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
 	"code.linenisgreat.com/cutting-garden/internal/restore"
-	_ "code.linenisgreat.com/cutting-garden/plugins/file"
 )
+
+// fakeSchemelessRestore stands in for the file plugin's "", "file" restore
+// registration. These tests exercise arg parsing and exit-code mapping, not
+// any backend, so a fake keeps the framework test lane off plugins/ sources
+// (docs/plans/2026-09-21-invalidation-cone-moves.md D6/D7, pinned by
+// internal/sdklayering); the real file plugin's restore behavior is covered
+// end-to-end by zz-tests_bats/restore.bats.
+//
+// It is registered rather than dropped so the exit-2 assertions keep their
+// discriminating power: with an EMPTY restore registry, ResolveRestorePlugin
+// would itself fail with exit 2, and the tests could no longer tell "reached
+// dispatch and failed at the receipt id" from "never resolved a plugin".
+type fakeSchemelessRestore struct{}
+
+func (fakeSchemelessRestore) Schemes() []string { return []string{"", "file"} }
+
+func (fakeSchemelessRestore) TypeTag() string {
+	return "cutting_garden-capture_receipt-fake-v1"
+}
+
+func (fakeSchemelessRestore) ValidateDest(*url.URL, string) error { return nil }
+
+func (fakeSchemelessRestore) Restore(
+	cutting_garden_plugins.RestoreRequest,
+) error {
+	return nil
+}
+
+func init() {
+	cutting_garden_plugins.MustRegisterRestore(fakeSchemelessRestore{})
+}
 
 // makeUtility wires a fresh Utility with the restore cmd registered.
 // Mirrors what cmd/cutting-garden/main.go does, minus capture (which
@@ -52,12 +79,11 @@ func TestRestore_ThreeArgs_TooManyArgs(t *testing.T) {
 }
 
 func TestRestore_TwoArgs_BogusReceiptIdRejected(t *testing.T) {
-	// Step 3 dispatches: dest "out" → file plugin resolved →
-	// ValidateDest accepts a non-existent path → receiptID.Set fails
-	// because "blake2b256-deadbeef" is not a valid markl id (the
-	// short string fails the blech32 checksum). The dispatch path is
-	// exercised; only the inner receipt-id parse rejects. Exit code
-	// is 2 (trouble), distinct from 64 (EX_USAGE) and 1 (mismatch).
+	// Two positional args clear the arg-count guard and dispatch into
+	// runRestore, which rejects at receiptID.Set — "blake2b256-deadbeef"
+	// is not a valid markl id (the short string fails the blech32
+	// checksum) — before it reaches ResolveRestorePlugin. Exit code is 2
+	// (trouble), distinct from 64 (EX_USAGE) and 1 (mismatch).
 	u := makeUtility()
 	code := u.Run([]string{
 		"cutting-garden", "restore",

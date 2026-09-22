@@ -1,14 +1,126 @@
 package capture
 
 import (
+	"io/fs"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
-	_ "code.linenisgreat.com/cutting-garden/plugins/file"
+	"code.linenisgreat.com/cutting-garden/internal/capture_failures"
+	"code.linenisgreat.com/cutting-garden/internal/capture_receipt"
+	"code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
+	"code.linenisgreat.com/cutting-garden/internal/plugin_blob_io"
 	"code.linenisgreat.com/madder/go/pkgs/scoped_id"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
+
+// fakeSchemelessCapture stands in for the file plugin's "", "file" capture
+// registration so this package's tests exercise the ORCHESTRATOR — arg
+// classification, grouping, receipt and failure-receipt writing, the
+// captures.log entry — without an internal/ test depending on plugins/
+// sources (docs/plans/2026-09-21-invalidation-cone-moves.md D6/D7, pinned by
+// internal/sdklayering). The real file plugin's walking semantics (symlinks,
+// permissions, .gitignore, cancellation) are its own package's tests plus
+// zz-tests_bats/capture.bats.
+//
+// It is a deliberately minimal tree walker rather than a no-op: the
+// end-to-end Run tests below need a plugin that actually stores blobs and
+// reports a per-entry blob-write failure, and a stub returning no entries
+// would make them pass vacuously ("no entries captured; receipt skipped").
+type fakeSchemelessCapture struct{}
+
+func (fakeSchemelessCapture) Schemes() []string { return []string{"", "file"} }
+
+func (fakeSchemelessCapture) TypeTag() string {
+	return capture_receipt.TypeTagV1
+}
+
+func (fakeSchemelessCapture) ValidateSource(u *url.URL, raw string) error {
+	if info, err := os.Lstat(fakeWalkPath(u)); err != nil {
+		return errors.Wrap(err)
+	} else if !info.IsDir() {
+		return errors.ErrorWithStackf("%q is not a directory", raw)
+	}
+	return nil
+}
+
+// fakeWalkPath is the plugin-side URL → filesystem path mapping: a
+// schemeless arg lands in Path, `file:dir` in Opaque.
+func fakeWalkPath(u *url.URL) string {
+	if u.Path != "" {
+		return u.Path
+	}
+	return u.Opaque
+}
+
+func (fakeSchemelessCapture) CaptureRoot(
+	req cutting_garden_plugins.CaptureRootRequest,
+) cutting_garden_plugins.CaptureRootResult {
+	stream := cutting_garden_plugins.ReporterOrNop(req.Reporter)
+	dir := fakeWalkPath(req.Source)
+	var res cutting_garden_plugins.CaptureRootResult
+
+	fail := func(path, op string, err error) {
+		stream.Failure(path, err)
+		res.Failures = append(res.Failures, capture_failures.FailureV1{
+			Root:  req.RawArg,
+			Path:  path,
+			Op:    op,
+			Error: err.Error(),
+		})
+	}
+
+	_ = filepath.WalkDir(dir, func(
+		path string, entry fs.DirEntry, walkErr error,
+	) error {
+		if walkErr != nil {
+			fail(path, capture_failures.OpStat, walkErr)
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			fail(path, capture_failures.OpStat, err)
+			return nil
+		}
+		rel, err := filepath.Rel(dir, path)
+		if err != nil {
+			fail(path, capture_failures.OpStat, err)
+			return nil
+		}
+
+		record := capture_receipt.EntryV1{
+			Path: filepath.ToSlash(rel),
+			Root: req.RawArg,
+			Mode: info.Mode(),
+			Type: capture_receipt.TypeDir,
+		}
+		if info.Mode().IsRegular() {
+			id, size, err := plugin_blob_io.WriteFileBlob(
+				req.Context, req.BlobStore, path,
+			)
+			if err != nil {
+				fail(path, capture_failures.OpBlobWrite, err)
+				return nil
+			}
+			record.Type = capture_receipt.TypeFile
+			record.Size = size
+			record.BlobId = id.String()
+		}
+
+		stream.Entry(record)
+		res.Entries = append(res.Entries, record)
+		return nil
+	})
+
+	res.FailCount = len(res.Failures)
+	return res
+}
+
+func init() {
+	cutting_garden_plugins.MustRegisterCapture(fakeSchemelessCapture{})
+}
 
 // setupFS chdirs into a fresh temp directory and creates a fixed set of
 // children. classifyArg's Lstat-first heuristic is sensitive to the

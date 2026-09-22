@@ -2,23 +2,144 @@ package health
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
+	"net/url"
 	"strings"
 	"testing"
 
+	"code.linenisgreat.com/cutting-garden/internal/capture_receipt"
 	"code.linenisgreat.com/cutting-garden/internal/command"
-
-	// Blank-import the plugins so their init() populates the registries
-	// RegisteredPlugins() enumerates. The production binaries get these
-	// via cgapp's blank-imports.
-	_ "code.linenisgreat.com/cutting-garden/plugins/caldav"
-	_ "code.linenisgreat.com/cutting-garden/plugins/file"
-	_ "code.linenisgreat.com/cutting-garden/plugins/git"
-	_ "code.linenisgreat.com/cutting-garden/plugins/googlephotos"
-	_ "code.linenisgreat.com/cutting-garden/plugins/optical"
-	_ "code.linenisgreat.com/cutting-garden/plugins/ytdlp"
+	"code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
 )
+
+// ---------------------------------------------------------------------
+// In-package fake plugins
+//
+// These tests probe the capability-detection logic, not any particular
+// backend, so they register fakes covering each branch of probe() rather
+// than blank-importing plugins/ — an internal/ test importing plugins/
+// hands every framework package the plugin invalidation cone under godyn
+// (docs/plans/2026-09-21-invalidation-cone-moves.md D6/D7, pinned by
+// internal/sdklayering). That the REAL plugins are linked into the shipped
+// binary and report the capabilities they claim is asserted end-to-end in
+// zz-tests_bats/health.bats.
+// ---------------------------------------------------------------------
+
+// fakeFull claims the schemeless default plus a named scheme, and
+// implements capture + direct restore + diff + RootLister: the "yes"
+// branch of every column, the "(default)" scheme label, and a non-empty
+// traversal type list.
+type fakeFull struct{}
+
+func (fakeFull) Schemes() []string { return []string{"", "fakefull"} }
+func (fakeFull) TypeTag() string   { return "cutting_garden-capture_receipt-fakefull-v1" }
+
+func (fakeFull) ValidateSource(*url.URL, string) error { return nil }
+
+func (fakeFull) CaptureRoot(
+	cutting_garden_plugins.CaptureRootRequest,
+) cutting_garden_plugins.CaptureRootResult {
+	return cutting_garden_plugins.CaptureRootResult{}
+}
+
+func (fakeFull) ValidateDest(*url.URL, string) error { return nil }
+
+func (fakeFull) Restore(cutting_garden_plugins.RestoreRequest) error { return nil }
+
+func (fakeFull) ValidateDiffDir(*url.URL, string) error { return nil }
+
+func (fakeFull) ScanForDiff(
+	cutting_garden_plugins.DiffScanRequest,
+) ([]capture_receipt.EntryV1, error) {
+	return nil, nil
+}
+
+func (fakeFull) Types() []cutting_garden_plugins.NodeType {
+	return []cutting_garden_plugins.NodeType{
+		{Tag: "fakefull-container-v1", Container: true},
+		{Tag: "fakefull-object-v1"},
+	}
+}
+
+func (fakeFull) ListRoots(
+	context.Context, *url.URL,
+) ([]cutting_garden_plugins.Node, error) {
+	return nil, nil
+}
+
+// fakeProtocol implements capture + diff and restores through the RFC 0002
+// capture protocol rather than directly: the "protocol" restore branch and
+// the protocol-kind column.
+type fakeProtocol struct{}
+
+func (fakeProtocol) Schemes() []string { return []string{"fakeproto"} }
+func (fakeProtocol) TypeTag() string   { return "cutting_garden-capture_receipt-fakeproto-v1" }
+
+func (fakeProtocol) ValidateSource(*url.URL, string) error { return nil }
+
+func (fakeProtocol) CaptureRoot(
+	cutting_garden_plugins.CaptureRootRequest,
+) cutting_garden_plugins.CaptureRootResult {
+	return cutting_garden_plugins.CaptureRootResult{}
+}
+
+func (fakeProtocol) ValidateDiffDir(*url.URL, string) error { return nil }
+
+func (fakeProtocol) ScanForDiff(
+	cutting_garden_plugins.DiffScanRequest,
+) ([]capture_receipt.EntryV1, error) {
+	return nil, nil
+}
+
+func (fakeProtocol) ProtocolKind() string { return "fakeproto" }
+
+func (fakeProtocol) RestoreProtocol(
+	cutting_garden_plugins.ProtocolRestoreRequest,
+) error {
+	return nil
+}
+
+// fakeCaptureOnly implements capture and nothing else: the "no" restore
+// branch, no diff, no protocol, no traversal.
+type fakeCaptureOnly struct{}
+
+func (fakeCaptureOnly) Schemes() []string { return []string{"fakecaptureonly"} }
+func (fakeCaptureOnly) TypeTag() string {
+	return "cutting_garden-capture_receipt-fakecaptureonly-v1"
+}
+
+func (fakeCaptureOnly) ValidateSource(*url.URL, string) error { return nil }
+
+func (fakeCaptureOnly) CaptureRoot(
+	cutting_garden_plugins.CaptureRootRequest,
+) cutting_garden_plugins.CaptureRootResult {
+	return cutting_garden_plugins.CaptureRootResult{}
+}
+
+// fakeSchemeOnly is registered via MustRegisterScheme alone — the
+// traversal-only out-of-tree shape (RFC 0009 §3) health must still
+// enumerate even though it implements no capture/restore/diff direction.
+type fakeSchemeOnly struct{}
+
+func (fakeSchemeOnly) Schemes() []string { return []string{"fakeschemeonly"} }
+func (fakeSchemeOnly) TypeTag() string {
+	return "cutting_garden-capture_receipt-fakeschemeonly-v1"
+}
+
+func init() {
+	cutting_garden_plugins.MustRegisterCapture(fakeFull{})
+	cutting_garden_plugins.MustRegisterRestore(fakeFull{})
+	cutting_garden_plugins.MustRegisterDiff(fakeFull{})
+
+	cutting_garden_plugins.MustRegisterCapture(fakeProtocol{})
+	cutting_garden_plugins.MustRegisterDiff(fakeProtocol{})
+
+	cutting_garden_plugins.MustRegisterCapture(fakeCaptureOnly{})
+
+	cutting_garden_plugins.MustRegisterScheme(fakeSchemeOnly{})
+}
 
 // driveHealth dispatches the health subcommand through a fresh Utility
 // (flag parsing included) with output routed to out, returning the exit
@@ -41,48 +162,42 @@ func rowsByName(rows []pluginRow) map[string]pluginRow {
 func TestProbe_CapabilitiesPerPlugin(t *testing.T) {
 	rows := rowsByName(collectRows())
 
-	for _, name := range []string{"file", "git", "ytdlp", "caldav", "optical", "gphotos"} {
+	for _, name := range []string{
+		"fakefull", "fakeproto", "fakecaptureonly", "fakeschemeonly",
+	} {
 		if _, ok := rows[name]; !ok {
 			t.Fatalf("plugin %q not enumerated; got %v", name, keys(rows))
 		}
 	}
 
-	// file: full capture/restore/diff, no protocol, and now RootLister
-	// traversal — intrinsic-PWD roots (RFC 0007) declaring directory +
-	// file node types.
-	if r := rows["file"]; !r.Capture || r.Restore != "yes" || !r.Diff ||
+	// fakefull: full capture/restore/diff, no protocol, RootLister
+	// traversal reporting its declared node types in order.
+	if r := rows["fakefull"]; !r.Capture || r.Restore != "yes" || !r.Diff ||
 		r.Protocol != "" ||
-		strings.Join(r.Traversal, ",") != "cutting_garden-file-directory-v1,cutting_garden-file-object-v1" {
-		t.Errorf("file row = %+v", r)
+		strings.Join(r.Traversal, ",") != "fakefull-container-v1,fakefull-object-v1" {
+		t.Errorf("fakefull row = %+v", r)
 	}
-	// git: capture/diff, restore via protocol, protocol kind "git".
-	if r := rows["git"]; !r.Capture || r.Restore != "protocol" || !r.Diff ||
-		r.Protocol != "git" {
-		t.Errorf("git row = %+v", r)
+	// displayName skips the empty schemeless claim and names the plugin
+	// after its first non-empty scheme.
+	if r := rows["fakefull"]; len(r.Schemes) != 2 || r.Schemes[0] != "" {
+		t.Errorf("fakefull schemes = %v, want the schemeless claim first", r.Schemes)
 	}
-	// ytdlp: capture/diff, no restore, no protocol.
-	if r := rows["ytdlp"]; !r.Capture || r.Restore != "no" || !r.Diff ||
-		r.Protocol != "" {
-		t.Errorf("ytdlp row = %+v", r)
+	// fakeproto: capture/diff, restore via the capture protocol, and the
+	// protocol kind surfaced.
+	if r := rows["fakeproto"]; !r.Capture || r.Restore != "protocol" || !r.Diff ||
+		r.Protocol != "fakeproto" || len(r.Traversal) != 0 {
+		t.Errorf("fakeproto row = %+v", r)
 	}
-	// optical: capture only — no restore, no diff, no protocol.
-	if r := rows["optical"]; !r.Capture || r.Restore != "no" || r.Diff ||
+	// fakecaptureonly: capture only — no restore, no diff, no protocol.
+	if r := rows["fakecaptureonly"]; !r.Capture || r.Restore != "no" || r.Diff ||
 		r.Protocol != "" || len(r.Traversal) != 0 {
-		t.Errorf("optical row = %+v", r)
+		t.Errorf("fakecaptureonly row = %+v", r)
 	}
-	// gphotos: capture/diff, no restore, no protocol, no traversal.
-	if r := rows["gphotos"]; !r.Capture || r.Restore != "no" || !r.Diff ||
+	// fakeschemeonly: reachable only through the scheme registry, so every
+	// capability column is negative but the plugin is still enumerated.
+	if r := rows["fakeschemeonly"]; r.Capture || r.Restore != "no" || r.Diff ||
 		r.Protocol != "" || len(r.Traversal) != 0 {
-		t.Errorf("gphotos row = %+v", r)
-	}
-	// caldav: full capture/restore/diff + RootLister traversal types.
-	r := rows["caldav"]
-	if !r.Capture || r.Restore != "yes" || !r.Diff {
-		t.Errorf("caldav caps = %+v", r)
-	}
-	if strings.Join(r.Traversal, ",") !=
-		"caldav-calendar-v1,caldav-object-vtodo-v1,caldav-object-vevent-v1,caldav-object-vjournal-v1" {
-		t.Errorf("caldav traversal = %v, want the calendar container + three per-component leaf types", r.Traversal)
+		t.Errorf("fakeschemeonly row = %+v", r)
 	}
 }
 
@@ -92,9 +207,12 @@ func TestRun_TextTable(t *testing.T) {
 		t.Fatalf("exit = %d, want 0; output:\n%s", code, buf.String())
 	}
 	out := buf.String()
-	// "(default)" is the file plugin's empty schemeless claim, rendered
-	// readably instead of a bare leading comma.
-	for _, want := range []string{"PLUGIN", "SCHEMES", "TRAVERSAL", "caldav", "ytdlp", "(default)"} {
+	// "(default)" is fakefull's empty schemeless claim, rendered readably
+	// instead of a bare leading comma.
+	for _, want := range []string{
+		"PLUGIN", "SCHEMES", "TRAVERSAL",
+		"fakefull", "fakeproto", "(default)",
+	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("text output missing %q:\n%s", want, out)
 		}
@@ -117,11 +235,17 @@ func TestRun_JSONRoundTrip(t *testing.T) {
 		got = append(got, r)
 	}
 	rows := rowsByName(got)
-	if r, ok := rows["caldav"]; !ok || len(r.Traversal) != 4 {
-		t.Errorf("caldav json row = %+v (ok=%v)", r, ok)
+	if r, ok := rows["fakefull"]; !ok || len(r.Traversal) != 2 {
+		t.Errorf("fakefull json row = %+v (ok=%v)", r, ok)
 	}
-	if r, ok := rows["ytdlp"]; !ok || r.Restore != "no" {
-		t.Errorf("ytdlp json row = %+v (ok=%v)", r, ok)
+	if r, ok := rows["fakecaptureonly"]; !ok || r.Restore != "no" {
+		t.Errorf("fakecaptureonly json row = %+v (ok=%v)", r, ok)
+	}
+	// omitempty keeps a capability-less plugin's optional columns absent
+	// rather than emitting null arrays.
+	if r, ok := rows["fakeschemeonly"]; !ok || r.Protocol != "" ||
+		len(r.Traversal) != 0 {
+		t.Errorf("fakeschemeonly json row = %+v (ok=%v)", r, ok)
 	}
 }
 

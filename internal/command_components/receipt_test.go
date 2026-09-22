@@ -8,12 +8,6 @@ import (
 
 	"code.linenisgreat.com/cutting-garden/internal/capture_receipt"
 	"code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
-
-	// Blank-import the file plugin so its init() registers under
-	// "", "file" restore schemes. Without it,
-	// cutting_garden_plugins.ResolveRestore returns an empty-registry
-	// error before ResolveRestorePlugin can dispatch.
-	_ "code.linenisgreat.com/cutting-garden/plugins/file"
 	"code.linenisgreat.com/madder/go/pkgs/ids"
 	"code.linenisgreat.com/piggy/go/pkgs/markl"
 )
@@ -22,11 +16,35 @@ import (
 // ResolveRestorePlugin
 // ---------------------------------------------------------------------
 
-// TestResolveRestorePlugin_SchemelessDispatchesToFile asserts a
-// schemeless dest (e.g. "out", "./tmp/dest") routes to the file
-// plugin's "" registration. The single happy-path positional surface
-// for the file backend.
-func TestResolveRestorePlugin_SchemelessDispatchesToFile(t *testing.T) {
+// schemelessRestore stands in for the shape the file plugin registers —
+// one restore plugin claiming both the schemeless default ("") and a named
+// scheme — so these tests exercise ResolveRestorePlugin's scheme parsing
+// and registry dispatch without an internal/ test depending on plugins/
+// sources (docs/plans/2026-09-21-invalidation-cone-moves.md D6/D7, pinned
+// by internal/sdklayering).
+type schemelessRestore struct{}
+
+func (schemelessRestore) Schemes() []string { return []string{"", "file"} }
+
+func (schemelessRestore) TypeTag() string {
+	return "cutting_garden-capture_receipt-schemelesstest-v1"
+}
+
+func (schemelessRestore) ValidateDest(*url.URL, string) error { return nil }
+
+func (schemelessRestore) Restore(cutting_garden_plugins.RestoreRequest) error {
+	return nil
+}
+
+func init() {
+	cutting_garden_plugins.MustRegisterRestore(schemelessRestore{})
+}
+
+// TestResolveRestorePlugin_SchemelessDispatchesToDefault asserts a
+// schemeless dest (e.g. "out", "./tmp/dest") routes to the plugin holding
+// the "" registration — the single happy-path positional surface, which in
+// the shipped binary is the file backend.
+func TestResolveRestorePlugin_SchemelessDispatchesToDefault(t *testing.T) {
 	cases := []string{"out", "./tmp/dest", "/abs/path"}
 	for _, dest := range cases {
 		t.Run(dest, func(t *testing.T) {
@@ -40,16 +58,16 @@ func TestResolveRestorePlugin_SchemelessDispatchesToFile(t *testing.T) {
 			if plugin == nil {
 				t.Fatal("nil plugin")
 			}
-			if got := plugin.TypeTag(); !strings.HasSuffix(got, "-fs-v1") {
-				t.Errorf("expected file plugin (TypeTag ending -fs-v1), got %q", got)
+			if got, want := plugin.TypeTag(), (schemelessRestore{}).TypeTag(); got != want {
+				t.Errorf("TypeTag = %q, want the schemeless default's %q", got, want)
 			}
 		})
 	}
 }
 
-// TestResolveRestorePlugin_FileScheme asserts an explicit "file:"
-// scheme also routes to the file plugin.
-func TestResolveRestorePlugin_FileScheme(t *testing.T) {
+// TestResolveRestorePlugin_NamedScheme asserts an explicit scheme routes
+// through the named registration rather than the schemeless default.
+func TestResolveRestorePlugin_NamedScheme(t *testing.T) {
 	u, plugin, err := ResolveRestorePlugin("file:/tmp/dest")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

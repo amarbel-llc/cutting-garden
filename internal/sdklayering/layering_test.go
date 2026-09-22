@@ -46,6 +46,18 @@ func productionImportEdges(t *testing.T, pattern string) [][2]string {
 	return goListEdges(t, tmpl, pattern)
 }
 
+// testImportEdges is importEdges restricted to each package's TEST imports
+// — the in-package (_test.go) and external-test (package foo_test) edges
+// that decide what a test lane builds, and nothing the production build
+// sees. Complements productionImportEdges.
+func testImportEdges(t *testing.T, pattern string) [][2]string {
+	t.Helper()
+	const tmpl = `{{$p := .ImportPath}}` +
+		`{{range .TestImports}}{{$p}} {{.}}` + "\n" + `{{end}}` +
+		`{{range .XTestImports}}{{$p}} {{.}}` + "\n" + `{{end}}`
+	return goListEdges(t, tmpl, pattern)
+}
+
 // productionDeps returns pkg's full TRANSITIVE production dependency
 // closure — go list's .Deps, which is imports-of-imports with test files
 // excluded. This is the set that decides what a godyn edit re-derives,
@@ -177,6 +189,41 @@ func TestInternalDoesNotImportPlugins(t *testing.T) {
 				"plugin's contribution through an SDK registry instead",
 				importer, imported)
 		}
+	}
+}
+
+// testPluginImportAllowList names the internal/ packages whose TESTS may
+// still import plugins/. Empty since the framework test lanes switched to
+// in-package fakes (invalidation-cone B3); an entry here is a deliberate,
+// justified exception, not a parking spot — a test that needs a REAL plugin
+// linked belongs in zz-tests_bats against the built binary, the way
+// health's capability report does.
+var testPluginImportAllowList = map[string]bool{}
+
+// TestInternalTestsDoNotImportPlugins is the test-lane half of the
+// invalidation-cone guard (docs/plans/2026-09-21-invalidation-cone-moves.md
+// D7). TestInternalDoesNotImportPlugins above covers production imports;
+// this one covers _test.go imports, which godyn's per-package test lane
+// derives from just the same — a framework package blank-importing
+// plugins/file to populate a registry puts every plugin source in that
+// lane's invalidation cone, so a plugin edit re-runs framework tests that
+// have nothing to do with it. Register an in-package fake instead (see
+// internal/command_components/traversal_registration_test.go for the
+// pattern).
+func TestInternalTestsDoNotImportPlugins(t *testing.T) {
+	for _, e := range testImportEdges(t, internalPrefix+"...") {
+		importer, imported := e[0], e[1]
+		if !strings.HasPrefix(imported, pluginsPrefix) {
+			continue
+		}
+		if testPluginImportAllowList[importer] {
+			continue
+		}
+		t.Errorf("invalidation-cone violation: %s's tests import %s\n"+
+			"an internal/ test must not import plugins/; register an in-package "+
+			"fake plugin with the SDK registries instead, or move an assertion "+
+			"that genuinely needs the real plugins linked to zz-tests_bats",
+			importer, imported)
 	}
 }
 

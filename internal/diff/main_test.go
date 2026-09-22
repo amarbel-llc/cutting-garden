@@ -1,18 +1,46 @@
 package diff_test
 
 import (
+	"net/url"
 	"strings"
 	"testing"
 
+	"code.linenisgreat.com/cutting-garden/internal/capture_receipt"
 	"code.linenisgreat.com/cutting-garden/internal/command"
+	"code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
 	"code.linenisgreat.com/cutting-garden/internal/diff"
-
-	// Blank-import the file plugin so its init() registers under the
-	// "", "file" diff schemes. Step 3 will exercise the resolve-plugin
-	// path; the step-2 skeleton does not reach it, but the import is
-	// harmless and matches how cmd/cutting-garden/main.go wires it.
-	_ "code.linenisgreat.com/cutting-garden/plugins/file"
 )
+
+// fakeSchemelessDiff stands in for the file plugin's "", "file" diff
+// registration. These tests exercise arg parsing and exit-code mapping, not
+// any backend, so a fake keeps the framework test lane off plugins/ sources
+// (docs/plans/2026-09-21-invalidation-cone-moves.md D6/D7, pinned by
+// internal/sdklayering); the real file plugin's diff behavior is covered
+// end-to-end by zz-tests_bats/diff.bats.
+//
+// It is registered rather than dropped so the exit-2 assertions keep their
+// discriminating power: with an EMPTY diff registry, ResolveDiffPlugin would
+// itself fail with exit 2, and the tests could no longer tell "reached
+// dispatch and failed at the receipt id" from "never resolved a plugin".
+type fakeSchemelessDiff struct{}
+
+func (fakeSchemelessDiff) Schemes() []string { return []string{"", "file"} }
+
+func (fakeSchemelessDiff) TypeTag() string {
+	return "cutting_garden-capture_receipt-fake-v1"
+}
+
+func (fakeSchemelessDiff) ValidateDiffDir(*url.URL, string) error { return nil }
+
+func (fakeSchemelessDiff) ScanForDiff(
+	cutting_garden_plugins.DiffScanRequest,
+) ([]capture_receipt.EntryV1, error) {
+	return nil, nil
+}
+
+func init() {
+	cutting_garden_plugins.MustRegisterDiff(fakeSchemelessDiff{})
+}
 
 func makeUtility() command.Utility {
 	u := command.MakeUtility("cutting-garden", nil)
