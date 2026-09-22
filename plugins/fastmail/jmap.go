@@ -373,33 +373,6 @@ func mailboxSetCall(
 	}
 }
 
-// emailSet applies one PatchObject per message in a single Email/set. Any
-// refusal (notUpdated) is a bad request naming the message and the server's
-// reason; JMAP applies /set records independently, so some updates may have
-// landed before the refusal — the caller re-reads rather than assuming.
-func (c *client) emailSet(ctx context.Context, updates map[string]emailPatch) error {
-	if len(updates) == 0 {
-		return nil
-	}
-	_, err := c.applyThreadPatch(ctx, threadPatchRequest{Updates: updates})
-	return err
-}
-
-// mailboxSet creates mailboxes in a single Mailbox/set, returning each
-// creation id's server-assigned mailbox id. A refusal (notCreated) is a bad
-// request naming the creation id and the server's reason; the returned map
-// still carries whatever DID get created, since JMAP applies /set records
-// independently and the caller must be able to report them.
-func (c *client) mailboxSet(
-	ctx context.Context, creates map[string]MailboxCreate,
-) (map[string]string, error) {
-	if len(creates) == 0 {
-		return map[string]string{}, nil
-	}
-	res, err := c.applyThreadPatch(ctx, threadPatchRequest{Creates: creates})
-	return res.CreatedIDs, err
-}
-
 // threadPatchRequest is ONE apply: the mailboxes to create plus the per-message
 // patches that may reference them. Creates land first in the same JMAP
 // request, so an Updates patch key may be `mailboxIds/#<creationId>`.

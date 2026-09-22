@@ -256,6 +256,35 @@ func TestPatchNode_RefusesAReservedStateTag(t *testing.T) {
 		[]string{"_inbox", "_unread", "payee-one_medical"})
 }
 
+// TestPatchNode_RefusesAnInvalidTagSetBeforeFetching pins the ORDERING:
+// whether a tag can be written is a pure string question, so it is settled
+// before any JMAP round-trip. The account here points at a port nothing is
+// listening on, so an error that names the refused tag — rather than a
+// transport failure — is proof no request was issued.
+func TestPatchNode_RefusesAnInvalidTagSetBeforeFetching(t *testing.T) {
+	prev := resolveSessionURL
+	resolveSessionURL = func(string) string { return "http://127.0.0.1:1/.well-known/jmap" }
+	t.Cleanup(func() { resolveSessionURL = prev })
+	t.Setenv(testTokenEnv, "secret-token")
+	setAccounts(t, acct(testAccount, testTokenEnv))
+
+	for _, tag := range []string{"_sent", "_archive", "-leading"} {
+		_, err := patchThread(t, testAccount, []string{"payee", "-one_medical"}, "T1",
+			`{"tags":["`+tag+`","payee-one_medical"]}`)
+		if err == nil {
+			t.Errorf("PatchNode with %q = nil error, want a bad request", tag)
+			continue
+		}
+		if !errors.Is400BadRequest(err) {
+			t.Errorf("%q: error must classify as a CALLER fault: %v", tag, err)
+		}
+		if !strings.Contains(err.Error(), tag) {
+			t.Errorf("error %q does not name %q — the refusal came AFTER a"+
+				" network read rather than before it", err, tag)
+		}
+	}
+}
+
 // TestPatchNode_RefusesAnUnknownThread pins that addressing a thread that
 // does not exist is a caller fault naming it, not a silent success.
 func TestPatchNode_RefusesAnUnknownThread(t *testing.T) {

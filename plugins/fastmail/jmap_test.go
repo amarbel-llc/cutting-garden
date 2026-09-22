@@ -49,6 +49,41 @@ func newWriteFixture(t *testing.T) (*client, *fastmailtestserver.Server) {
 	return newClient(srv.SessionURL(), "secret-token"), srv
 }
 
+// emailSet and mailboxSet drive ONE half of applyThreadPatch each, so the
+// update and create surfaces can be exercised in isolation. They live here,
+// not beside applyThreadPatch, deliberately: production code has exactly one
+// write path and it composes both halves into a SINGLE request, because a
+// creation-id back-reference resolves only within one (RFC 8620 §5.3). A
+// production-shaped single-half wrapper would invite a later per-message
+// write to call it directly and quietly lose that guarantee.
+
+// emailSet applies one PatchObject per message in a single Email/set. Any
+// refusal (notUpdated) is a bad request naming the message and the server's
+// reason; JMAP applies /set records independently, so some updates may have
+// landed before the refusal — the caller re-reads rather than assuming.
+func (c *client) emailSet(ctx context.Context, updates map[string]emailPatch) error {
+	if len(updates) == 0 {
+		return nil
+	}
+	_, err := c.applyThreadPatch(ctx, threadPatchRequest{Updates: updates})
+	return err
+}
+
+// mailboxSet creates mailboxes in a single Mailbox/set, returning each
+// creation id's server-assigned mailbox id. A refusal (notCreated) is a bad
+// request naming the creation id and the server's reason; the returned map
+// still carries whatever DID get created, since JMAP applies /set records
+// independently and the caller must be able to report them.
+func (c *client) mailboxSet(
+	ctx context.Context, creates map[string]MailboxCreate,
+) (map[string]string, error) {
+	if len(creates) == 0 {
+		return map[string]string{}, nil
+	}
+	res, err := c.applyThreadPatch(ctx, threadPatchRequest{Creates: creates})
+	return res.CreatedIDs, err
+}
+
 // mailboxIDsOf reads one email back through the wire and returns its
 // mailbox ids, sorted.
 func mailboxIDsOf(t *testing.T, c *client, id string) []string {

@@ -40,7 +40,9 @@ var threadPatchFields = []string{listingFieldTags}
 // no mailbox realizes yet, a `Mailbox/set` create referenced from the same
 // request by its creation id (D4). A `_`-prefixed tag that is not one of the
 // four writable state tags (`_inbox`, `_unread`, `_flagged`, `_trash`) is
-// refused by name (D2) — nothing is written.
+// refused by name (D2) BEFORE any of that — like the body shape, whether a
+// tag can be written is a pure question, so a typo costs no round-trip and
+// nothing is written.
 //
 // applied is `["tags"]` plus one `mailbox:<full/path>` entry per created
 // mailbox. A body naming no recognized key, and a body whose requested set
@@ -95,6 +97,14 @@ func (Plugin) PatchNode(
 			"fastmail plugin: patch field %q must be an array of strings: %s",
 			listingFieldTags, err,
 		)
+	}
+	// Whether a tag CAN be written is a pure string question — it needs
+	// neither the mailbox tree nor the members — so it is settled here, on
+	// the same principle as the body shape above: a typo'd `_sent` costs no
+	// round-trip. planThreadPatch re-checks so it stays self-contained for
+	// its table tests; this is the refusal the user actually hits.
+	if _, err := validateRequestedTags(newTags); err != nil {
+		return nil, err
 	}
 
 	c, err := resolveClient(ref)
@@ -231,7 +241,9 @@ func (p threadPatchPlan) empty() bool {
 // invariant does not fire for it.
 //
 // Loud refusals, all bad requests: a reserved `_` tag (D2), a malformed tag
-// (empty, or hyphen-leading — not a dodder-hyphen literal), a state tag whose
+// (empty, or hyphen-leading — not a dodder-hyphen literal) — PatchNode has
+// already settled both before fetching anything, and the check repeats here
+// only so the planner stands alone for its table tests — a state tag whose
 // role mailbox the account does not have, an archive-invariant member with no
 // archive role mailbox to land in, and a thread with no members (nothing to
 // fan out to, and creating mailboxes for it would strand them).
