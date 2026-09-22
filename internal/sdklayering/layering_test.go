@@ -2,6 +2,7 @@ package sdklayering
 
 import (
 	"os/exec"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -45,7 +46,29 @@ func productionImportEdges(t *testing.T, pattern string) [][2]string {
 	return goListEdges(t, tmpl, pattern)
 }
 
+// productionDeps returns pkg's full TRANSITIVE production dependency
+// closure — go list's .Deps, which is imports-of-imports with test files
+// excluded. This is the set that decides what a godyn edit re-derives,
+// and the only honest basis for a reachability guard: .Imports sees one
+// hop and would miss a chain through an intermediate package.
+func productionDeps(t *testing.T, pkg string) []string {
+	t.Helper()
+	const tmpl = `{{range .Deps}}{{.}}` + "\n" + `{{end}}`
+	return goListLines(t, tmpl, pkg)
+}
+
 func goListEdges(t *testing.T, tmpl, pattern string) [][2]string {
+	t.Helper()
+	var edges [][2]string
+	for _, line := range goListLines(t, tmpl, pattern) {
+		if f := strings.Fields(line); len(f) == 2 {
+			edges = append(edges, [2]string{f[0], f[1]})
+		}
+	}
+	return edges
+}
+
+func goListLines(t *testing.T, tmpl, pattern string) []string {
 	t.Helper()
 	// A per-package godyn test run has no go toolchain or module tree;
 	// `just debug-test-layering` (go test through the godyn-go escape
@@ -58,14 +81,42 @@ func goListEdges(t *testing.T, tmpl, pattern string) [][2]string {
 	if err != nil {
 		t.Fatalf("go list %s: %v", pattern, err)
 	}
+	return strings.Split(strings.TrimSpace(string(out)), "\n")
+}
 
-	var edges [][2]string
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		if f := strings.Fields(line); len(f) == 2 {
-			edges = append(edges, [2]string{f[0], f[1]})
+// productionPath reconstructs a production-import chain from -> ... -> to
+// so a reachability failure can NAME the intermediate that reintroduced
+// the edge. Best effort, for the error message only — the assertion
+// itself is productionDeps. It walks the internal/ package graph, which
+// is where such a chain must live: a hop out to pkgs/ or plugins/ and
+// back is already forbidden by the two clauses above. Returns nil when no
+// path is found over that graph.
+func productionPath(t *testing.T, from, to string) []string {
+	t.Helper()
+	imports := map[string][]string{}
+	for _, e := range productionImportEdges(t, internalPrefix+"...") {
+		imports[e[0]] = append(imports[e[0]], e[1])
+	}
+
+	cameFrom := map[string]string{from: ""}
+	for queue := []string{from}; len(queue) > 0; queue = queue[1:] {
+		for _, next := range imports[queue[0]] {
+			if _, seen := cameFrom[next]; seen {
+				continue
+			}
+			cameFrom[next] = queue[0]
+			if next != to {
+				queue = append(queue, next)
+				continue
+			}
+			var path []string
+			for at := next; at != ""; at = cameFrom[at] {
+				path = append([]string{at}, path...)
+			}
+			return path
 		}
 	}
-	return edges
+	return nil
 }
 
 // TestNoInversion_InternalDoesNotImportPkgs enforces the RFC 0009 §4
@@ -140,14 +191,27 @@ func TestInternalDoesNotImportPlugins(t *testing.T) {
 // because node_view deliberately imports nothing from command_components.
 // A helper both layers need stays in command_components and node_view
 // imports it, never the reverse.
+//
+// The check is TRANSITIVE (the whole .Deps closure), not direct: godyn
+// invalidates on the closure, so command_components -> Y -> node_view
+// re-derives those six packages exactly as a direct edge would, and a
+// future Y is the likelier way the regression arrives. Note this does NOT
+// mirror the "direct suffices" reasoning of
+// TestNoInversion_InternalDoesNotImportPkgs above — that holds only
+// because it sweeps every internal/ package, so an offending intermediate
+// trips on its own direct edge. This clause names ONE package, so it has
+// no such property and must walk the closure itself.
 func TestCommandComponentsDoesNotImportNodeView(t *testing.T) {
-	for _, e := range productionImportEdges(t, commandComponents) {
-		if e[1] == nodeView {
-			t.Errorf("invalidation-cone violation: %s imports %s\n"+
-				"command_components is the STABLE composition layer; the "+
-				"presentation helpers live in node_view and depend on it, not "+
-				"the other way round (move the shared helper down, not the edge up)",
-				e[0], e[1])
-		}
+	if !slices.Contains(productionDeps(t, commandComponents), nodeView) {
+		return
 	}
+	chain := commandComponents + " -> ... -> " + nodeView
+	if path := productionPath(t, commandComponents, nodeView); path != nil {
+		chain = strings.Join(path, " -> ")
+	}
+	t.Errorf("invalidation-cone violation: %s reaches %s\n  %s\n"+
+		"command_components is the STABLE composition layer; the "+
+		"presentation helpers live in node_view and depend on it, not "+
+		"the other way round (move the shared helper down, not the edge up)",
+		commandComponents, nodeView, chain)
 }
