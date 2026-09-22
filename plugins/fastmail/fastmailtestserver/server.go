@@ -2,8 +2,11 @@
 // fastmail plugin's tests (and any future bats lane). It answers the JMAP
 // Session object, the Mailbox/get, Email/query (honoring inMailbox +
 // collapseThreads), Email/get, and Thread/get method calls, and blob
-// download — enough of RFC 8620/8621 for the plugin's read-only traversal
-// and facet round-trip.
+// download — enough of RFC 8620/8621 for the plugin's traversal and facet
+// round-trip. It also serves the WRITE subset the plugin emits: Mailbox/set
+// create (with creation ids resolvable by a later call of the same request)
+// and Email/set update with RFC 8620 §5.3 patch objects, refusing an update
+// that would leave a message in no mailbox.
 //
 // It is a pure net/http listener (TCP, no socketpair) so it runs inside the
 // nix test sandbox, mirroring caldavtestserver's shape (Start/URL/Close +
@@ -61,6 +64,9 @@ type Server struct {
 	mailboxes []Mailbox
 	emails    []Email
 	stateSeq  int
+	// createSeq numbers Mailbox/set creations so a created mailbox's id is
+	// deterministic (mb-new-1, mb-new-2, …) across a run.
+	createSeq int
 }
 
 // Start launches a server for one mail account and returns it. Close it
@@ -141,6 +147,11 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// creations accumulates the creation id → assigned id map for THIS
+	// request, so a later call can resolve a "#<creationId>" back-reference
+	// to a record an earlier call created (RFC 8620 §5.3).
+	creations := map[string]string{}
+
 	responses := make([]any, 0, len(req.MethodCalls))
 	for _, call := range req.MethodCalls {
 		if len(call) < 3 {
@@ -149,8 +160,8 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 		var name, callID string
 		_ = json.Unmarshal(call[0], &name)
 		_ = json.Unmarshal(call[2], &callID)
-		result := s.dispatch(name, call[1])
-		responses = append(responses, []any{name, result, callID})
+		responseName, result := s.dispatch(name, call[1], creations)
+		responses = append(responses, []any{responseName, result, callID})
 	}
 
 	writeJSON(w, map[string]any{
@@ -159,18 +170,29 @@ func (s *Server) api(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) dispatch(method string, args json.RawMessage) any {
+// dispatch runs one method call, returning the RESPONSE name and its result.
+// The response name is the method name on success and "error" for a
+// method-level failure (RFC 8620 §3.6.1) — a method this fixture does not
+// implement is an explicit error response, never a result object the client
+// would silently decode into a zero value.
+func (s *Server) dispatch(
+	method string, args json.RawMessage, creations map[string]string,
+) (string, any) {
 	switch method {
 	case "Mailbox/get":
-		return s.mailboxGet()
+		return method, s.mailboxGet()
 	case "Email/query":
-		return s.emailQuery(args)
+		return method, s.emailQuery(args)
 	case "Email/get":
-		return s.emailGet(args)
+		return method, s.emailGet(args)
 	case "Thread/get":
-		return s.threadGet(args)
+		return method, s.threadGet(args)
+	case "Mailbox/set":
+		return s.mailboxSet(args, creations)
+	case "Email/set":
+		return s.emailSet(args, creations)
 	default:
-		return map[string]any{"type": "unknownMethod"}
+		return "error", map[string]any{"type": "unknownMethod"}
 	}
 }
 
@@ -339,6 +361,371 @@ func (s *Server) threadGet(raw json.RawMessage) any {
 		"list":      list,
 		"notFound":  notFound,
 	}
+}
+
+// --- write surface: Mailbox/set create, Email/set update ---
+
+// setErr is a JMAP SetError (RFC 8620 §5.3): why ONE record was refused.
+type setErr struct {
+	Type        string   `json:"type"`
+	Description string   `json:"description,omitempty"`
+	Properties  []string `json:"properties,omitempty"`
+}
+
+type mailboxSetArgs struct {
+	Create  map[string]json.RawMessage `json:"create"`
+	Update  map[string]json.RawMessage `json:"update"`
+	Destroy []string                   `json:"destroy"`
+}
+
+type mailboxCreateArgs struct {
+	Name     string  `json:"name"`
+	ParentID *string `json:"parentId"`
+}
+
+// mailboxSet serves Mailbox/set CREATE only. Each creation gets a
+// deterministic id (mb-new-N in creation-id order) recorded in the
+// request-scoped creations map, so a later call in the same request can
+// name it as "#<creationId>". update and destroy are refused outright —
+// the fixture is honest about what it implements.
+func (s *Server) mailboxSet(
+	raw json.RawMessage, creations map[string]string,
+) (string, any) {
+	var args mailboxSetArgs
+	if err := json.Unmarshal(raw, &args); err != nil {
+		return "error", map[string]any{
+			"type": "invalidArguments", "description": err.Error(),
+		}
+	}
+	if len(args.Update) > 0 || len(args.Destroy) > 0 {
+		return "error", map[string]any{
+			"type":        "invalidArguments",
+			"description": "fastmailtestserver: Mailbox/set serves create only",
+		}
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	created := map[string]any{}
+	notCreated := map[string]setErr{}
+	// Sorted so a creation naming another creation of the SAME call
+	// resolves deterministically.
+	for _, creationID := range sortedKeys(args.Create) {
+		var create mailboxCreateArgs
+		if err := json.Unmarshal(args.Create[creationID], &create); err != nil {
+			notCreated[creationID] = setErr{
+				Type: "invalidProperties", Description: err.Error(),
+			}
+			continue
+		}
+		if create.Name == "" {
+			notCreated[creationID] = setErr{
+				Type:       "invalidProperties",
+				Properties: []string{"name"}, Description: "name is required",
+			}
+			continue
+		}
+		parentID := ""
+		if create.ParentID != nil {
+			parentID = *create.ParentID
+		}
+		resolved, ok := s.resolveMailboxRef(parentID, creations)
+		if !ok {
+			notCreated[creationID] = setErr{
+				Type:       "invalidProperties",
+				Properties: []string{"parentId"},
+				Description: fmt.Sprintf(
+					"unknown parentId %q", parentID,
+				),
+			}
+			continue
+		}
+
+		s.createSeq++
+		id := fmt.Sprintf("mb-new-%d", s.createSeq)
+		s.mailboxes = append(s.mailboxes, Mailbox{
+			ID: id, Name: create.Name, ParentID: resolved,
+		})
+		s.stateSeq++
+		creations[creationID] = id
+		created[creationID] = map[string]any{
+			"id":           id,
+			"name":         create.Name,
+			"parentId":     nullable(resolved),
+			"role":         nil,
+			"totalEmails":  0,
+			"totalThreads": 0,
+		}
+	}
+
+	return "Mailbox/set", map[string]any{
+		"accountId":  s.accountID,
+		"newState":   s.state(),
+		"created":    created,
+		"notCreated": notCreated,
+	}
+}
+
+type emailSetArgs struct {
+	Create  map[string]json.RawMessage            `json:"create"`
+	Update  map[string]map[string]json.RawMessage `json:"update"`
+	Destroy []string                              `json:"destroy"`
+}
+
+// emailSet serves Email/set UPDATE only, applying RFC 8620 §5.3 patch
+// objects restricted to the pointers this plugin emits: whole-property
+// `mailboxIds` / `keywords` replacement and one-level `mailboxIds/<id>` /
+// `keywords/<keyword>` membership patches (value true to set, null to
+// clear). Anything else is an invalidPatch SetError rather than a silent
+// no-op. Records apply independently, as in real JMAP: a refusal leaves
+// that message untouched and does not roll back the others.
+func (s *Server) emailSet(
+	raw json.RawMessage, creations map[string]string,
+) (string, any) {
+	var args emailSetArgs
+	if err := json.Unmarshal(raw, &args); err != nil {
+		return "error", map[string]any{
+			"type": "invalidArguments", "description": err.Error(),
+		}
+	}
+	if len(args.Create) > 0 || len(args.Destroy) > 0 {
+		return "error", map[string]any{
+			"type":        "invalidArguments",
+			"description": "fastmailtestserver: Email/set serves update only",
+		}
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	updated := map[string]any{}
+	notUpdated := map[string]setErr{}
+	for _, id := range sortedKeys(args.Update) {
+		index := -1
+		for i := range s.emails {
+			if s.emails[i].ID == id {
+				index = i
+				break
+			}
+		}
+		if index < 0 {
+			notUpdated[id] = setErr{
+				Type: "notFound", Description: "no such email",
+			}
+			continue
+		}
+		patched, refusal := s.applyEmailPatch(
+			s.emails[index], args.Update[id], creations,
+		)
+		if refusal != nil {
+			notUpdated[id] = *refusal
+			continue
+		}
+		s.emails[index] = patched
+		s.stateSeq++
+		updated[id] = nil
+	}
+
+	return "Email/set", map[string]any{
+		"accountId":  s.accountID,
+		"newState":   s.state(),
+		"updated":    updated,
+		"notUpdated": notUpdated,
+	}
+}
+
+// applyEmailPatch folds one PatchObject onto a message, returning either the
+// patched message or the SetError refusing it. Caller holds s.mu.
+func (s *Server) applyEmailPatch(
+	email Email, patch map[string]json.RawMessage, creations map[string]string,
+) (Email, *setErr) {
+	mailboxIDs := setOf(email.MailboxIDs)
+	keywords := setOf(email.Keywords)
+
+	// RFC 8620 §5.3: no patch pointer may be a prefix of another.
+	for _, property := range []string{"mailboxIds", "keywords"} {
+		if _, whole := patch[property]; !whole {
+			continue
+		}
+		for key := range patch {
+			if strings.HasPrefix(key, property+"/") {
+				return email, &setErr{
+					Type:       "invalidPatch",
+					Properties: []string{property},
+					Description: fmt.Sprintf(
+						"patch key %q is a prefix of %q", property, key,
+					),
+				}
+			}
+		}
+	}
+
+	for _, key := range sortedKeys(patch) {
+		property, pointer, nested := strings.Cut(key, "/")
+		var target map[string]bool
+		switch property {
+		case "mailboxIds":
+			target = mailboxIDs
+		case "keywords":
+			target = keywords
+		default:
+			return email, &setErr{
+				Type:        "invalidPatch",
+				Properties:  []string{key},
+				Description: fmt.Sprintf("unsupported patch key %q", key),
+			}
+		}
+
+		if !nested {
+			replacement, ok := decodeMembershipSet(patch[key])
+			if !ok {
+				return email, &setErr{
+					Type:       "invalidPatch",
+					Properties: []string{key},
+					Description: fmt.Sprintf(
+						"%s must be an object whose every value is true", key,
+					),
+				}
+			}
+			if property == "mailboxIds" {
+				for candidate := range replacement {
+					if !s.mailboxExists(candidate) {
+						return email, &setErr{
+							Type:       "invalidProperties",
+							Properties: []string{key},
+							Description: fmt.Sprintf(
+								"unknown mailbox %q", candidate,
+							),
+						}
+					}
+				}
+				mailboxIDs = replacement
+			} else {
+				keywords = replacement
+			}
+			continue
+		}
+
+		on, ok := decodePatchFlag(patch[key])
+		if !ok {
+			return email, &setErr{
+				Type:       "invalidPatch",
+				Properties: []string{key},
+				Description: fmt.Sprintf(
+					"patch key %q must be true or null", key,
+				),
+			}
+		}
+		if property == "mailboxIds" {
+			resolved, resolvable := s.resolveMailboxRef(pointer, creations)
+			if !resolvable || resolved == "" {
+				return email, &setErr{
+					Type:        "invalidProperties",
+					Properties:  []string{key},
+					Description: fmt.Sprintf("unknown mailbox %q", pointer),
+				}
+			}
+			pointer = resolved
+		}
+		if on {
+			target[pointer] = true
+		} else {
+			delete(target, pointer)
+		}
+	}
+
+	if len(mailboxIDs) == 0 {
+		return email, &setErr{
+			Type:        "invalidProperties",
+			Properties:  []string{"mailboxIds"},
+			Description: "a message must be in at least one mailbox",
+		}
+	}
+
+	email.MailboxIDs = sortedKeys(mailboxIDs)
+	email.Keywords = sortedKeys(keywords)
+	return email, nil
+}
+
+// resolveMailboxRef resolves a mailbox reference: "" is the null parent (a
+// top-level mailbox), "#<creationId>" a mailbox created earlier in the same
+// request, anything else an existing mailbox id. Caller holds s.mu.
+func (s *Server) resolveMailboxRef(
+	ref string, creations map[string]string,
+) (string, bool) {
+	switch {
+	case ref == "":
+		return "", true
+	case strings.HasPrefix(ref, "#"):
+		id, ok := creations[strings.TrimPrefix(ref, "#")]
+		return id, ok
+	default:
+		return ref, s.mailboxExists(ref)
+	}
+}
+
+// mailboxExists reports whether a mailbox id is seeded or created. Caller
+// holds s.mu.
+func (s *Server) mailboxExists(id string) bool {
+	for _, m := range s.mailboxes {
+		if m.ID == id {
+			return true
+		}
+	}
+	return false
+}
+
+// decodePatchFlag reads a one-level patch value: JSON true sets the
+// membership, JSON null clears it. Anything else (notably false, which
+// RFC 8621 forbids in a mailboxIds/keywords object) is not a valid patch.
+func decodePatchFlag(raw json.RawMessage) (on, ok bool) {
+	var value *bool
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return false, false
+	}
+	if value == nil {
+		return false, true
+	}
+	if !*value {
+		return false, false
+	}
+	return true, true
+}
+
+// decodeMembershipSet reads a whole-property replacement value: an object
+// whose every value is true (RFC 8621 §4.1).
+func decodeMembershipSet(raw json.RawMessage) (map[string]bool, bool) {
+	var value map[string]bool
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return nil, false
+	}
+	for _, on := range value {
+		if !on {
+			return nil, false
+		}
+	}
+	if value == nil {
+		value = map[string]bool{}
+	}
+	return value, true
+}
+
+func setOf(values []string) map[string]bool {
+	out := make(map[string]bool, len(values))
+	for _, v := range values {
+		out[v] = true
+	}
+	return out
+}
+
+func sortedKeys[V any](m map[string]V) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func (s *Server) downloadBlob(w http.ResponseWriter, r *http.Request) {

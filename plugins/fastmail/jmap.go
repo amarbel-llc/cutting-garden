@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"net/url"
+	"sort"
+	"strings"
 
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
@@ -39,19 +41,28 @@ type jmapResponse struct {
 // value by the caller.
 type jmapMethodResponse []json.RawMessage
 
-// parse splits a method-response tuple into its method name and its result
-// object. A well-formed response is [name, result, callId]; a shorter tuple
-// is a protocol error.
-func (r jmapMethodResponse) parse() (name string, result json.RawMessage, err error) {
-	if len(r) < 2 {
-		return "", nil, errors.ErrorWithStackf(
+// parse splits a method-response tuple into its method name, its result
+// object, and the call id it answers. A well-formed response is
+// [name, result, callId]; a shorter tuple is a protocol error. The call id
+// is what lets a multi-call request's responses be matched to their calls
+// (a server may answer out of order, or emit an "error" response under the
+// same call id), so it is decoded here with the rest of the tuple rather
+// than re-derived by callers.
+func (r jmapMethodResponse) parse() (
+	name string, result json.RawMessage, callID string, err error,
+) {
+	if len(r) < 3 {
+		return "", nil, "", errors.ErrorWithStackf(
 			"fastmail plugin: malformed method response (len %d)", len(r),
 		)
 	}
 	if err := json.Unmarshal(r[0], &name); err != nil {
-		return "", nil, errors.Wrapf(err, "fastmail plugin: parse method-response name")
+		return "", nil, "", errors.Wrapf(err, "fastmail plugin: parse method-response name")
 	}
-	return name, r[1], nil
+	if err := json.Unmarshal(r[2], &callID); err != nil {
+		return "", nil, "", errors.Wrapf(err, "fastmail plugin: parse method-response call id")
+	}
+	return name, r[1], callID, nil
 }
 
 // --- JMAP data types (the subset this plugin reads) ---
@@ -268,6 +279,232 @@ func (c *client) threadGet(ctx context.Context, ids []string) ([]Thread, error) 
 		return nil, err
 	}
 	return out.List, nil
+}
+
+// --- write methods (Email/set, Mailbox/set) ---
+
+// setError is a JMAP SetError (RFC 8620 §5.3): why the server refused ONE
+// record of a /set call. The plugin surfaces type and description verbatim
+// so the user learns which record refused and why.
+type setError struct {
+	Type        string   `json:"type"`
+	Description string   `json:"description"`
+	Properties  []string `json:"properties"`
+}
+
+// emailPatch is one message's PatchObject: patch-pointer keys
+// (`mailboxIds/<id>`, `keywords/<keyword>`) or whole-property keys
+// (`mailboxIds`, `keywords`). A `mailboxIds/#<creationId>` key names a
+// mailbox created earlier in the SAME request.
+type emailPatch = map[string]any
+
+type emailSetArgs struct {
+	AccountID string                `json:"accountId"`
+	Update    map[string]emailPatch `json:"update,omitempty"`
+}
+
+type emailSetResult struct {
+	NewState   string                     `json:"newState"`
+	Updated    map[string]json.RawMessage `json:"updated"`
+	NotUpdated map[string]setError        `json:"notUpdated"`
+}
+
+// MailboxCreate is the subset of a new JMAP Mailbox the plugin creates: a
+// name under a parent. ParentID is "" for a top-level mailbox (marshaled as
+// JSON null) and may be a "#<creationId>" reference to a mailbox created
+// earlier in the same request.
+type MailboxCreate struct {
+	Name     string
+	ParentID string
+}
+
+type mailboxCreateWire struct {
+	Name     string `json:"name"`
+	ParentID any    `json:"parentId"`
+}
+
+type mailboxSetArgs struct {
+	AccountID string                       `json:"accountId"`
+	Create    map[string]mailboxCreateWire `json:"create,omitempty"`
+}
+
+type mailboxSetResult struct {
+	NewState   string              `json:"newState"`
+	Created    map[string]Mailbox  `json:"created"`
+	NotCreated map[string]setError `json:"notCreated"`
+}
+
+// emailSetCall builds the Email/set method call applying updates.
+func emailSetCall(accountID string, updates map[string]emailPatch, callID string) jmapMethodCall {
+	return jmapMethodCall{
+		"Email/set",
+		emailSetArgs{AccountID: accountID, Update: updates},
+		callID,
+	}
+}
+
+// mailboxSetCall builds the Mailbox/set method call creating creates.
+func mailboxSetCall(
+	accountID string, creates map[string]MailboxCreate, callID string,
+) jmapMethodCall {
+	wire := make(map[string]mailboxCreateWire, len(creates))
+	for creationID, create := range creates {
+		var parent any
+		if create.ParentID != "" {
+			parent = create.ParentID
+		}
+		wire[creationID] = mailboxCreateWire{Name: create.Name, ParentID: parent}
+	}
+	return jmapMethodCall{
+		"Mailbox/set",
+		mailboxSetArgs{AccountID: accountID, Create: wire},
+		callID,
+	}
+}
+
+// emailSet applies one PatchObject per message in a single Email/set. Any
+// refusal (notUpdated) is a bad request naming the message and the server's
+// reason; JMAP applies /set records independently, so some updates may have
+// landed before the refusal — the caller re-reads rather than assuming.
+func (c *client) emailSet(ctx context.Context, updates map[string]emailPatch) error {
+	if len(updates) == 0 {
+		return nil
+	}
+	_, err := c.applyThreadPatch(ctx, threadPatchRequest{Updates: updates})
+	return err
+}
+
+// mailboxSet creates mailboxes in a single Mailbox/set, returning each
+// creation id's server-assigned mailbox id. A refusal (notCreated) is a bad
+// request naming the creation id and the server's reason; the returned map
+// still carries whatever DID get created, since JMAP applies /set records
+// independently and the caller must be able to report them.
+func (c *client) mailboxSet(
+	ctx context.Context, creates map[string]MailboxCreate,
+) (map[string]string, error) {
+	if len(creates) == 0 {
+		return map[string]string{}, nil
+	}
+	res, err := c.applyThreadPatch(ctx, threadPatchRequest{Creates: creates})
+	return res.CreatedIDs, err
+}
+
+// threadPatchRequest is ONE apply: the mailboxes to create plus the per-message
+// patches that may reference them. Creates land first in the same JMAP
+// request, so an Updates patch key may be `mailboxIds/#<creationId>`.
+type threadPatchRequest struct {
+	Creates map[string]MailboxCreate
+	Updates map[string]emailPatch
+}
+
+// threadPatchResult reports what the apply created: creation id →
+// server-assigned mailbox id. Never nil.
+type threadPatchResult struct {
+	CreatedIDs map[string]string
+}
+
+// applyThreadPatch issues one JMAP request carrying (at most) a Mailbox/set
+// create followed by an Email/set update, so a patch that both creates a
+// label and applies it travels as a single request — the creation-id
+// back-reference (`#<creationId>`) is only resolvable within one request
+// (RFC 8620 §5.3). An empty request issues nothing.
+//
+// Note this is not a transaction: JMAP /set methods apply per record, and a
+// refused Email/set update does not roll back a created mailbox. The
+// refusal names every refused record so the caller can re-read and retry.
+func (c *client) applyThreadPatch(
+	ctx context.Context, req threadPatchRequest,
+) (threadPatchResult, error) {
+	out := threadPatchResult{CreatedIDs: map[string]string{}}
+	if len(req.Creates) == 0 && len(req.Updates) == 0 {
+		return out, nil
+	}
+
+	sess, err := c.ensureSession(ctx)
+	if err != nil {
+		return out, err
+	}
+	accountID := sess.AccountID()
+
+	const (
+		createCallID = "create"
+		updateCallID = "update"
+	)
+	calls := make([]jmapMethodCall, 0, 2)
+	if len(req.Creates) > 0 {
+		calls = append(calls, mailboxSetCall(accountID, req.Creates, createCallID))
+	}
+	if len(req.Updates) > 0 {
+		calls = append(calls, emailSetCall(accountID, req.Updates, updateCallID))
+	}
+
+	responses, err := c.callMany(ctx, calls)
+	if err != nil {
+		return out, err
+	}
+
+	if len(req.Creates) > 0 {
+		var created mailboxSetResult
+		if err := decodeResponseFor(
+			responses, "Mailbox/set", createCallID, &created,
+		); err != nil {
+			return out, err
+		}
+		for creationID, mailbox := range created.Created {
+			out.CreatedIDs[creationID] = mailbox.ID
+		}
+		if err := refusedRecords("Mailbox/set", created.NotCreated); err != nil {
+			return out, err
+		}
+	}
+
+	if len(req.Updates) > 0 {
+		var updated emailSetResult
+		if err := decodeResponseFor(
+			responses, "Email/set", updateCallID, &updated,
+		); err != nil {
+			return out, err
+		}
+		if err := refusedRecords("Email/set", updated.NotUpdated); err != nil {
+			return out, err
+		}
+	}
+	return out, nil
+}
+
+// refusedRecords turns a /set method's SetError map into ONE bad request
+// naming every refused record with the server's type and description — the
+// user must learn WHICH message or mailbox refused and why. Ids are sorted
+// so the message is deterministic.
+func refusedRecords(method string, errs map[string]setError) error {
+	if len(errs) == 0 {
+		return nil
+	}
+	ids := make([]string, 0, len(errs))
+	for id := range errs {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+
+	parts := make([]string, 0, len(ids))
+	for _, id := range ids {
+		refusal := errs[id]
+		kind := refusal.Type
+		if kind == "" {
+			kind = "(no type)"
+		}
+		part := id + ": " + kind
+		if refusal.Description != "" {
+			part += ": " + refusal.Description
+		}
+		if len(refusal.Properties) > 0 {
+			part += " (" + strings.Join(refusal.Properties, ", ") + ")"
+		}
+		parts = append(parts, part)
+	}
+	return errors.BadRequestf(
+		"fastmail plugin: %s refused %s", method, strings.Join(parts, "; "),
+	)
 }
 
 // pathEscape percent-escapes a URL path segment for the download URL

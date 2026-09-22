@@ -55,70 +55,97 @@ func (c *client) authorize(req *http.Request) {
 	}
 }
 
-// call issues ONE JMAP method call (method + args) at the session's apiUrl
-// and unmarshals the method's result object into out. ctx is honored so a
-// cancel unwinds the in-flight request promptly. It resolves the session
-// first (a cheap memoized GET after the first call).
-func (c *client) call(
+// callMany issues a whole JMAP request — one or more method calls, in the
+// given order — at the session's apiUrl, and returns the raw method
+// responses. It is the ONE place that knows the request/response wire shape;
+// everything typed sits above it (call for a single method, decodeResponseFor
+// to pick one response out of a multi-call request). Ordering matters: a
+// later call may reference an earlier one's creation ids as "#<creationId>"
+// (RFC 8620 §5.3), which is how applyThreadPatch puts a Mailbox/set create
+// and the Email/set that names it in one atomic-enough request.
+//
+// A server MAY answer one call with several responses, or with an "error"
+// response carrying the same call id, so the responses are returned verbatim
+// rather than positionally zipped to the calls. ctx is honored so a cancel
+// unwinds the in-flight request promptly; the session resolves first (a
+// cheap memoized GET after the first call).
+func (c *client) callMany(
 	ctx context.Context,
-	method string,
-	args any,
-	out any,
-) error {
+	calls []jmapMethodCall,
+) (responses []jmapMethodResponse, err error) {
 	sess, err := c.ensureSession(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
+	label := methodLabel(calls)
 
-	reqEnvelope := jmapRequest{
-		Using: jmapUsing,
-		// One method call, call id "0" — Slice 1 issues single-method
-		// requests (no result back-references), so the response's sole
-		// method response is always at index 0.
-		MethodCalls: []jmapMethodCall{{method, args, "0"}},
-	}
-	body, err := json.Marshal(reqEnvelope)
+	body, err := json.Marshal(jmapRequest{Using: jmapUsing, MethodCalls: calls})
 	if err != nil {
-		return errors.Wrapf(err, "fastmail plugin: marshal %s request", method)
+		return nil, errors.Wrapf(err, "fastmail plugin: marshal %s request", label)
 	}
 
 	req, err := http.NewRequestWithContext(
 		ctx, http.MethodPost, sess.APIURL, bytes.NewReader(body),
 	)
 	if err != nil {
-		return errors.Wrap(err)
+		return nil, errors.Wrap(err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	c.authorize(req)
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return errors.Wrapf(err, "fastmail plugin: POST %s (%s)", sess.APIURL, method)
+		return nil, errors.Wrapf(err, "fastmail plugin: POST %s (%s)", sess.APIURL, label)
 	}
 	defer errors.DeferredCloser(&err, resp.Body)
 
 	data, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return errors.Wrap(err)
+		return nil, errors.Wrap(err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return errors.ErrorWithStackf(
+		return nil, errors.ErrorWithStackf(
 			"fastmail plugin: POST %s (%s): status %d: %s",
-			sess.APIURL, method, resp.StatusCode, snippet(data),
+			sess.APIURL, label, resp.StatusCode, snippet(data),
 		)
 	}
 
 	var envelope jmapResponse
 	if err := json.Unmarshal(data, &envelope); err != nil {
-		return errors.Wrapf(err, "fastmail plugin: parse %s response", method)
+		return nil, errors.Wrapf(err, "fastmail plugin: parse %s response", label)
 	}
-	if len(envelope.MethodResponses) == 0 {
+	return envelope.MethodResponses, nil
+}
+
+// call issues ONE JMAP method call (method + args) at the session's apiUrl
+// and unmarshals the method's result object into out — the single-call
+// wrapper over callMany that every read path uses. The call id is "0" and
+// the sole method response is always at index 0.
+func (c *client) call(
+	ctx context.Context,
+	method string,
+	args any,
+	out any,
+) error {
+	responses, err := c.callMany(ctx, []jmapMethodCall{{method, args, "0"}})
+	if err != nil {
+		return err
+	}
+	if len(responses) == 0 {
 		return errors.ErrorWithStackf(
 			"fastmail plugin: %s: empty methodResponses", method,
 		)
 	}
+	return decodeMethodResult(responses[0], method, out)
+}
 
-	name, result, err := envelope.MethodResponses[0].parse()
+// decodeMethodResult unmarshals one method response's result object into
+// out, surfacing an "error" response (RFC 8620 §3.6.1) as a plugin error
+// rather than letting it unmarshal into a zero value.
+func decodeMethodResult(
+	response jmapMethodResponse, method string, out any,
+) error {
+	name, result, _, err := response.parse()
 	if err != nil {
 		return err
 	}
@@ -131,6 +158,38 @@ func (c *client) call(
 		return errors.Wrapf(err, "fastmail plugin: parse %s result", method)
 	}
 	return nil
+}
+
+// decodeResponseFor picks the response carrying callID out of a multi-call
+// request's responses and decodes it into out. method names the call for
+// diagnostics only. A missing response is a protocol error: the server
+// answered a request without answering one of its calls.
+func decodeResponseFor(
+	responses []jmapMethodResponse, method, callID string, out any,
+) error {
+	for _, response := range responses {
+		_, _, id, err := response.parse()
+		if err != nil {
+			return err
+		}
+		if id != callID {
+			continue
+		}
+		return decodeMethodResult(response, method, out)
+	}
+	return errors.ErrorWithStackf(
+		"fastmail plugin: %s: no method response for call id %q", method, callID,
+	)
+}
+
+// methodLabel names a request's method calls for a diagnostic (e.g.
+// "Mailbox/set+Email/set").
+func methodLabel(calls []jmapMethodCall) string {
+	names := make([]string, len(calls))
+	for i, call := range calls {
+		names[i] = call.Name
+	}
+	return strings.Join(names, "+")
 }
 
 // download GETs a blob at the session's resolved download URL and returns
