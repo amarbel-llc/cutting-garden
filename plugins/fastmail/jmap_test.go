@@ -316,11 +316,53 @@ func TestClient_EmailSet_RejectsAPrefixConflictingPatch(t *testing.T) {
 	if err == nil {
 		t.Fatal("emailSet with a prefix-conflicting patch = nil error, want a bad request")
 	}
+	if !errors.Is400BadRequest(err) {
+		t.Errorf("error must classify as a CALLER fault: %v", err)
+	}
 	if !strings.Contains(err.Error(), "invalidPatch") {
 		t.Errorf("error %q does not name invalidPatch", err)
 	}
 	assertStrings(t, "e1 mailboxIds after refusal",
 		mailboxIDsOf(t, c, "e1"), []string{"mb-acme", "mb-inbox"})
+}
+
+// TestClient_EmailSet_RejectsAFalseMembershipValue pins RFC 8621 §4.1: every
+// value in a mailboxIds / keywords object MUST be true, so a removal is
+// spelled `null`, never `false`. The plugin emits null for every removal, so
+// this fixture strictness is what would catch an accidental false regressing
+// into a removal that silently records a membership instead.
+func TestClient_EmailSet_RejectsAFalseMembershipValue(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		patch map[string]any
+	}{
+		{"one-level", map[string]any{"mailboxIds/mb-acme": false}},
+		{"whole-object", map[string]any{
+			"mailboxIds": map[string]any{"mb-acme": false},
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, _ := newWriteFixture(t)
+
+			err := c.emailSet(context.Background(), map[string]map[string]any{
+				"e1": tc.patch,
+			})
+			if err == nil {
+				t.Fatal("emailSet with a false membership value = nil error," +
+					" want a bad request")
+			}
+			if !errors.Is400BadRequest(err) {
+				t.Errorf("error must classify as a CALLER fault: %v", err)
+			}
+			for _, want := range []string{"e1", "invalidPatch"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("error %q does not name %q", err, want)
+				}
+			}
+			assertStrings(t, "e1 mailboxIds after refusal",
+				mailboxIDsOf(t, c, "e1"), []string{"mb-acme", "mb-inbox"})
+		})
+	}
 }
 
 // TestClient_EmailSet_RejectsAnUnknownMailboxID pins that a membership patch
@@ -334,7 +376,10 @@ func TestClient_EmailSet_RejectsAnUnknownMailboxID(t *testing.T) {
 	if err == nil {
 		t.Fatal("emailSet naming an unknown mailbox = nil error, want a bad request")
 	}
-	for _, want := range []string{"e1", "mb-ghost"} {
+	if !errors.Is400BadRequest(err) {
+		t.Errorf("error must classify as a CALLER fault: %v", err)
+	}
+	for _, want := range []string{"e1", "invalidProperties", "mb-ghost"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not name %q", err, want)
 		}

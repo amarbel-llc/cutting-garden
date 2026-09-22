@@ -409,6 +409,13 @@ type threadPatchResult struct {
 // back-reference (`#<creationId>`) is only resolvable within one request
 // (RFC 8620 §5.3). An empty request issues nothing.
 //
+// The back-reference rides as a patch-object KEY (`mailboxIds/#c1`) rather
+// than as an id value, which RFC 8620 §5.3 does not spell out. That form is
+// verified against the live Fastmail API (2026-09-22): one request creating
+// a mailbox as `c1` and patching a message with `{"mailboxIds/#c1": true}`
+// answered `created: {c1: {id: …}}` and `updated: {<id>: null}`, and the
+// readback carried the new mailbox. No two-request fallback is needed.
+//
 // Note this is not a transaction: JMAP /set methods apply per record, and a
 // refused Email/set update does not roll back a created mailbox. The
 // refusal names every refused record so the caller can re-read and retry.
