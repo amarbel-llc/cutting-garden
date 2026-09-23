@@ -237,6 +237,9 @@ func buildDocument(
 	interp cgp.TagInterpreter, tags tagRender,
 ) (document, error) {
 	idOf := boxIDsFor(lister, anchor)
+	if err := rejectAmbiguousBoxIDs(nodes, idOf); err != nil {
+		return document{}, err
+	}
 	doc := document{
 		Anchor:     anchor,
 		Query:      query,
@@ -275,6 +278,30 @@ func buildDocument(
 		}
 	}
 	return doc, nil
+}
+
+// rejectAmbiguousBoxIDs refuses a node set in which two DISTINCT node URIs
+// resolve to the same box id (fastmail tags slice 1, Task 5b). A box id is
+// the document's only handle on an object, and apply re-derives it from the
+// live nodes, so a shared id would silently conflate two objects — a
+// default-RelativeID plugin whose identity rides outside the URI path
+// (fastmail's `?thread=` before it declared NodeIDer) is exactly how that
+// happens. The same URI appearing twice is not ambiguity.
+func rejectAmbiguousBoxIDs(nodes []cgp.Node, idOf boxIDer) error {
+	uriByID := make(map[string]string, len(nodes))
+	for _, n := range nodes {
+		uri := n.URIString()
+		id := idOf(uri)
+		if prior, seen := uriByID[id]; seen && prior != uri {
+			return errors.BadRequestf(
+				"organize: box id %q is ambiguous — it names both %s and %s; the "+
+					"plugin's object ids are not unique under this anchor",
+				id, prior, uri,
+			)
+		}
+		uriByID[id] = uri
+	}
+	return nil
 }
 
 // groupForSpec buckets nodes for the grouping dialect the spec selects: a

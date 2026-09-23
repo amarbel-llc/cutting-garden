@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	cgp "code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
 // spelling2Doc is a representative single-type (envelope `_type`) document.
@@ -307,12 +308,17 @@ func TestMemberships_DuplicateUngroupedRejects(t *testing.T) {
 }
 
 // threadIDLister is a fakeLister that ALSO implements NodeIDer, keying each
-// node by its `?thread=` query value.
+// node by its `?thread=` query value — or by a FIXED id when collide is set,
+// the misbehaving plugin the uniqueness guard exists for.
 type threadIDLister struct {
 	fakeLister
+	collide string
 }
 
 func (l *threadIDLister) RelativeNodeID(nodeURI, _ string) (string, bool) {
+	if l.collide != "" {
+		return l.collide, true
+	}
 	u, err := url.Parse(nodeURI)
 	if err != nil || u.Query().Get("thread") == "" {
 		return "", false
@@ -347,5 +353,44 @@ func TestBuildDocument_BoxIDsResolveThroughNodeIDer(t *testing.T) {
 	}
 	if want := []string{"T1", "T2"}; !reflect.DeepEqual(ids, want) {
 		t.Errorf("box ids = %v, want %v", ids, want)
+	}
+}
+
+// TestBuildDocument_RejectsAmbiguousBoxIDs pins the uniqueness guard: two
+// DISTINCT node URIs resolving to one box id is a loud bad request naming the
+// id and both URIs — for a NodeIDer that collides AND for the host+path
+// default a query-identity plugin collapses to — while the same URI listed
+// twice is not ambiguity.
+func TestBuildDocument_RejectsAmbiguousBoxIDs(t *testing.T) {
+	nodes := []cgp.Node{threadNode(t, "T1"), threadNode(t, "T2")}
+	for name, lister := range map[string]cgp.RootLister{
+		"colliding NodeIDer":     &threadIDLister{collide: "same"},
+		"host+path default only": &fakeLister{},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := buildDocument(
+				nodes, "fake://acct/Inbox/", "", groupSpec{Dim: "status"},
+				lister, nil, tagRender{},
+			)
+			if err == nil {
+				t.Fatal("buildDocument over colliding box ids = nil error, want rejection")
+			}
+			if !errors.Is400BadRequest(err) {
+				t.Errorf("not a bad request: %v", err)
+			}
+			for _, want := range []string{"?thread=T1", "?thread=T2", "ambiguous"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("error %q does not mention %q", err, want)
+				}
+			}
+		})
+	}
+
+	dup := []cgp.Node{threadNode(t, "T1"), threadNode(t, "T1")}
+	if _, err := buildDocument(
+		dup, "fake://acct/Inbox/", "", groupSpec{Dim: "status"},
+		&threadIDLister{}, nil, tagRender{},
+	); err != nil {
+		t.Errorf("the same URI twice must not trip the guard: %v", err)
 	}
 }
