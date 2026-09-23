@@ -151,13 +151,16 @@ type fieldDelta struct {
 // Line is the edited document's line for the object (type, shown tags, inline
 // atoms, trailer); Tags is the tag sequence the preview renders, each with its
 // diff kind (segSame / segRemoved / segAdded); Atoms are the changed
-// single-valued atoms; DescOld/DescNew carry the trailer word-diff when the
+// single-valued box atoms (field edits); Moves are the bucket transitions of
+// the grouped dimension, Field carrying the grouping's heading spelling
+// (moveLabel); DescOld/DescNew carry the trailer word-diff when the
 // description changed.
 type objectChange struct {
 	ID          string
 	Line        objectLine
 	Tags        []wordSeg
 	Atoms       []fieldDelta
+	Moves       []fieldDelta
 	DescChanged bool
 	DescOld     string
 	DescNew     string
@@ -166,8 +169,9 @@ type objectChange struct {
 // buildChanges folds every apply path's deltas into ONE preview line per
 // object, keyed by anchor-relative id, so the facet, field, membership and
 // tag-atom paths render through the same renderer and an object carrying
-// several kinds of edit shows them together. A bucket move contributes the
-// grouped dimension (dim) as an atom (from→to); a field edit contributes each
+// several kinds of edit shows them together. A bucket move contributes a
+// from→to transition labeled with the grouping's heading spelling (moveLabel,
+// e.g. `status=` or `date_due=(month)=`); a field edit contributes each
 // atom (old read from the pinned base) or, for the trailer field, the
 // description word-diff; a membership edit (a full tag-set replacement on
 // tagDim) contributes a per-tag SET diff of the live set against the new one
@@ -177,7 +181,7 @@ func buildChanges(
 	moves []move,
 	fieldEdits []objectFieldEdit,
 	memberships []membershipEdit,
-	dim, tagDim string,
+	moveLabel, tagDim string,
 	trailer map[string]string,
 	interp cgp.TagInterpreter,
 	idOf boxIDer,
@@ -198,7 +202,7 @@ func buildChanges(
 
 	for _, mv := range moves {
 		id := idOf(mv.URI)
-		get(id).Atoms = append(get(id).Atoms, fieldDelta{Field: dim, Old: mv.From, New: mv.To})
+		get(id).Moves = append(get(id).Moves, fieldDelta{Field: moveLabel, Old: mv.From, New: mv.To})
 	}
 	for _, oe := range fieldEdits {
 		id := idOf(oe.URI)
@@ -228,7 +232,7 @@ func buildChanges(
 	out := make([]objectChange, 0, len(ids))
 	for _, id := range ids {
 		c := changes[id]
-		sort.Slice(c.Atoms, func(i, j int) bool { return c.Atoms[i].Field < c.Atoms[j].Field })
+		sort.SliceStable(c.Atoms, func(i, j int) bool { return c.Atoms[i].Field < c.Atoms[j].Field })
 		out = append(out, *c)
 	}
 	return out
@@ -293,30 +297,48 @@ func diffTagSets(old, new, shown []string, interp cgp.TagInterpreter) []wordSeg 
 // re-spelled as a word-diff: a tag `[-t-]` / `{+t+}`, a single-valued atom
 // `name=[-old-]{+new+}` in its own position, the trailer word-diffed. Every
 // value is spelled through the ONE quoting rule (trellis.QuoteIfNeeded, #248).
-// A changed atom the line does not carry inline (the grouped dimension of a
-// facet move) follows the line's atoms. The line is indented two spaces under
-// the preview header.
+// A changed atom the line does not carry inline follows the line's atoms.
+//
+// A bucket move renders AFTER the atoms as its own slot labeled with the
+// grouping's heading spelling (`status=[-a-]{+b+}`,
+// `date_due=(month)=[-2026-08-]{+2026-09+}`), never in an inline atom's slot:
+// under a coarser grouping the box still carries the day-precise atom, whose
+// literal value stays as the document shows it — the preview does not know the
+// day the write will compute, so it shows the bucket transition it does know,
+// spelled so it cannot be mistaken for the atom's value.
+//
+// Deltas are grouped per atom name as SLICES, not a map of single values, so
+// renderChange is structurally unable to drop one: the preview's job is to
+// show everything that will be written. Two edits of one property on one
+// object are refused at plan time (rejectMoveFieldCollisions); should any
+// ever reach here, both render.
 func renderChange(c objectChange, trailingTags, color bool) string {
 	s := trellis.SpelledLiteral{ID: trellis.QuoteIfNeeded(c.ID), Type: c.Line.Type}
 	for _, t := range c.Tags {
 		s.Tags = append(s.Tags, paintSeg(t.kind, trellis.QuoteIfNeeded(t.word), color))
 	}
-	pending := make(map[string]fieldDelta, len(c.Atoms))
+	pending := make(map[string][]fieldDelta, len(c.Atoms))
 	for _, d := range c.Atoms {
-		pending[d.Field] = d
+		pending[d.Field] = append(pending[d.Field], d)
+	}
+	renderPending := func(name string) {
+		for _, d := range pending[name] {
+			s.Atoms = append(s.Atoms, trellis.QuoteIfNeeded(d.Field)+"="+renderValueDelta(d, color))
+		}
+		delete(pending, name)
 	}
 	for _, f := range c.Line.Fields {
-		if d, ok := pending[f.Name]; ok {
-			s.Atoms = append(s.Atoms, renderAtomDelta(d, color))
-			delete(pending, f.Name)
+		if _, ok := pending[f.Name]; ok {
+			renderPending(f.Name)
 			continue
 		}
 		s.Atoms = append(s.Atoms, trellis.SpellAtom(trellis.Atom{Name: f.Name, Value: f.Value}))
 	}
 	for _, d := range c.Atoms {
-		if _, ok := pending[d.Field]; ok {
-			s.Atoms = append(s.Atoms, renderAtomDelta(d, color))
-		}
+		renderPending(d.Field) // no-op once a name's deltas are rendered
+	}
+	for _, mv := range c.Moves {
+		s.Atoms = append(s.Atoms, mv.Field+renderValueDelta(mv, color))
 	}
 
 	desc := c.Line.Desc
@@ -329,12 +351,22 @@ func renderChange(c objectChange, trailingTags, color bool) string {
 	return strings.TrimSuffix(b.String(), "\n")
 }
 
-// renderAtomDelta spells one single-valued atom change `name=[-old-]{+new+}`,
-// each value quoted as the document would spell it; an empty side (an atom or
+// renderValueDelta spells one single-valued change's `[-old-]{+new+}`, each
+// value quoted as the document would spell it; an empty side (an atom or
 // bucket appearing from / vanishing to nothing) renders no marker.
-func renderAtomDelta(d fieldDelta, color bool) string {
-	return trellis.QuoteIfNeeded(d.Field) + "=" +
-		renderWholeValue(quoteNonEmpty(d.Old), quoteNonEmpty(d.New), color)
+func renderValueDelta(d fieldDelta, color bool) string {
+	return renderWholeValue(quoteNonEmpty(d.Old), quoteNonEmpty(d.New), color)
+}
+
+// moveLabel is a bucket move's preview label: the grouping's heading spelling
+// (groupSpec.String — `status=`, `date_due=(month)`), with a trailing `=` so
+// the bucket transition reads as its value (`date_due=(month)=[-a-]{+b+}`).
+func moveLabel(spec groupSpec) string {
+	label := spec.String()
+	if !strings.HasSuffix(label, "=") {
+		label += "="
+	}
+	return label
 }
 
 func quoteNonEmpty(s string) string {

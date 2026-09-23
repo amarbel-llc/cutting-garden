@@ -305,9 +305,12 @@ document — the exact bytes presented to and edited by the end-user:
   each removed tag `[-t-]` and added tag `{+t+}` in SortKey order among the
   unchanged ones (a tag the document hides — a stripped placement tag, or
   every tag under `_tag-atoms = none` — shows only when it changed), a
-  single-valued atom or bucket move as `name=[-old-]{+new+}`, the trailer as a
-  word diff; every value is spelled through the one quoting rule
-  (#247/#248/#260/#270).
+  single-valued atom edit as `name=[-old-]{+new+}` in its slot, a bucket move
+  after the atoms as the grouping's heading term plus the bucket transition
+  (`status=[-a-]{+b+}`, `date_due=(month)=[-2026-08-]{+2026-09+}` — an inline
+  atom stays literal), the trailer as a word diff; every value is spelled
+  through the one quoting rule (#247/#248/#260/#270). A bucket move and a box
+  atom edit writing the same property of one object are refused as a conflict.
 - **The trailing `! <type>` type-anchor of the earlier draft is removed** (it was a
   mistake): the object type is the leading heading or the envelope field, never a
   trailing line, which is distinct from the envelope's own `! organize-base-v1`.

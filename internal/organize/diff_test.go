@@ -80,7 +80,7 @@ func previewLines(
 ) string {
 	t.Helper()
 	changes := buildChanges(
-		edited, base, moves, fieldEdits, memberships, "status", "tags",
+		edited, base, moves, fieldEdits, memberships, "status=", "tags",
 		map[string]string{"thread": "summary"}, interp, boxIDsFor(nil, previewAnchor),
 	)
 	var lines []string
@@ -225,6 +225,47 @@ func TestPreview_FieldEditKeepsDocumentTags(t *testing.T) {
 	fieldEdits := []objectFieldEdit{{URI: node.URIString(), Node: node, Edits: []cgp.FieldEdit{{Name: "priority", Value: "1"}}}}
 	got := previewLines(t, edited, base, nil, fieldEdits, nil, naiveInterp(t), false)
 	assertPreview(t, got, `  - [u.ics work priority=[-3-]{+1+}] Buy milk`)
+}
+
+// A move under a COARSER grouping (`date_due=(month)`) over a day-precise
+// inline atom leaves the atom literal — the preview does not know the day the
+// write will compute — and appends the bucket transition spelled with the
+// grouping's heading term, so it cannot be mistaken for the atom's value.
+func TestPreview_CoarseMoveBesideLiteralAtom(t *testing.T) {
+	doc := document{Ungrouped: []objectLine{{
+		ID: "sched1.ics",
+		Fields: []cgp.BoxAtom{
+			{Name: "date_due", Value: "2026-08-15"}, {Name: "time_due", Value: "14-30"},
+		},
+		Desc: "Book flights",
+	}}}
+	node := previewNode("sched1.ics")
+	moves := []move{{URI: node.URIString(), From: "2026-08", To: "2026-09", Node: node}}
+	changes := buildChanges(
+		doc, doc, moves, nil, nil, moveLabel(groupSpec{Dim: "date_due", Granularity: "month"}),
+		"tags", nil, naiveInterp(t), boxIDsFor(nil, previewAnchor),
+	)
+	if len(changes) != 1 {
+		t.Fatalf("changes = %+v", changes)
+	}
+	assertPreview(t, renderChange(changes[0], false, false),
+		`  - [sched1.ics date_due=2026-08-15 time_due=14-30 date_due=(month)=[-2026-08-]{+2026-09+}] Book flights`)
+}
+
+// renderChange never drops a delta: two changes to the same atom name (which
+// apply's plan-time guard normally refuses) both render in the atom's slot
+// rather than the later silently replacing the earlier.
+func TestPreview_NeverDropsADelta(t *testing.T) {
+	c := objectChange{
+		ID:   "t.ics",
+		Line: objectLine{ID: "t.ics", Fields: []cgp.BoxAtom{{Name: "location", Value: "B"}}},
+		Atoms: []fieldDelta{
+			{Field: "location", Old: "HQ", New: "A"},
+			{Field: "location", Old: "A", New: "B"},
+		},
+	}
+	assertPreview(t, renderChange(c, false, false),
+		`  - [t.ics location=[-HQ-]{+A+} location=[-A-]{+B+}]`)
 }
 
 // With color on, each changed atom's marker is wrapped in its own ANSI span;

@@ -2,6 +2,7 @@ package organize
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	cgp "code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
@@ -183,5 +184,42 @@ func TestMultilineValuesCollapseInPresentationOnly(t *testing.T) {
 	}
 	if len(edits) != 0 || len(notices) != 0 {
 		t.Errorf("edits = %+v notices = %v, want none (untouched multiline trailer)", edits, notices)
+	}
+}
+
+// TestRejectMoveFieldCollisions pins the plan-time refusal of an object that is
+// both moved between buckets of the grouped dimension AND has the same stored
+// property edited through a box atom: the move and the field write each patch
+// that property, the field patch is built from the pre-move node, so the last
+// write silently wins. A collision is by atom name (the grouped `date_due`
+// atom) or by the atom's source field (`time_due` splices into the same DUE);
+// an edit of an unrelated property alongside a move is fine.
+func TestRejectMoveFieldCollisions(t *testing.T) {
+	const anchor = "caldav:https://host/dav/cal/"
+	node := cgp.Node{URI: mustURL(t, anchor+"s.ics"), Type: "task"}
+	present := func(cgp.Node) []cgp.BoxAtom {
+		return []cgp.BoxAtom{
+			{Name: "date_due", Value: "2026-08-15", Field: "due"},
+			{Name: "time_due", Value: "14-30", Field: "due"},
+			{Name: "location", Value: "HQ"},
+		}
+	}
+	moves := []move{{URI: node.URIString(), From: "2026-08", To: "2026-09", Node: node}}
+	idOf := boxIDsFor(nil, anchor)
+	edit := func(name, value string) []objectFieldEdit {
+		return []objectFieldEdit{{URI: node.URIString(), Node: node, Edits: []cgp.FieldEdit{{Name: name, Value: value}}}}
+	}
+
+	for _, tc := range []struct{ name, value, want string }{
+		{"date_due", "2026-09-20", `s.ics: moved to bucket 2026-09 and date_due edited to 2026-09-20 in the same document; make one edit`},
+		{"time_due", "10-00", `s.ics: moved to bucket 2026-09 and time_due edited to 10-00 in the same document; make one edit`},
+	} {
+		err := rejectMoveFieldCollisions(moves, edit(tc.name, tc.value), "date_due", present, idOf)
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: err = %v, want it to name %q", tc.name, err, tc.want)
+		}
+	}
+	if err := rejectMoveFieldCollisions(moves, edit("location", "Annex"), "date_due", present, idOf); err != nil {
+		t.Errorf("unrelated property: err = %v, want nil", err)
 	}
 }

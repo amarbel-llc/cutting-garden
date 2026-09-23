@@ -118,7 +118,7 @@ function organize_date_month_reschedule_preserves_datetime { # @test
   assert_output - <<'EOF'
 organize: 1 change(s):
 
-  - [sched1.ics date_due=[-2026-08-]{+2026-09+} time_due=14-30] Book flights
+  - [sched1.ics date_due=2026-08-15 time_due=14-30 date_due=(month)=[-2026-08-]{+2026-09+}] Book flights
 
 organize: wrote 1 change(s)
 EOF
@@ -170,6 +170,49 @@ EOF
 	- [sched1.ics date_due=2026-09-15 time_due=14-30] Book flights
 	- [sched2.ics date_due=2026-09-10 time_due=16-30] Renew passport
 	EOM
+}
+
+# A move between month buckets AND an edit of the day-precise date_due atom on
+# the same object both write its DUE; execution would apply the move, then
+# overwrite it with the field patch built from the pre-move object — so apply
+# refuses the document up front (EX_USAGE, before any preview or write), naming
+# the object, the bucket and the edit. Nothing is written: the DUE is unchanged
+# and the re-render is byte-identical.
+function organize_date_move_and_atom_edit_conflict { # @test
+  generate_month
+  local edited="$BATS_TEST_TMPDIR/edited.txt"
+  cat >"$edited" <<-'EOM'
+	---
+	% generated: `cg organize -group-by date_due=(month) -query "_terminal=no" caldav:http://127.0.0.1:43104/dav/sched/`
+	- _base = @blake2b256-kuaxfueta7yl0n5ceqfacpnvt9zpkcrk0t5uwgz9fhp3vejp09fst9zgap
+	- _anchor = caldav:http://127.0.0.1:43104/dav/sched/
+	- _query = _terminal=no
+	- _type = !caldav-object-vtodo-v1
+	! organize-base-v1
+	---
+
+	# date_due=(month)
+
+	## =2026-08
+
+	## =2026-09
+
+	- [sched1.ics date_due=2026-09-20 time_due=14-30] Book flights
+	- [sched2.ics date_due=2026-09-10 time_due=16-30] Renew passport
+	EOM
+
+  run_cg organize -apply "$edited" -commit
+  assert_failure 64
+  assert_output - <<'EOF'
+cutting-garden: organize --apply: 1 conflicting edit(s) — a bucket move and a field edit both write the same property:
+  sched1.ics: moved to bucket 2026-09 and date_due edited to 2026-09-20 in the same document; make one edit
+EOF
+
+  run curl -fsS "${CALDAV_SOURCE#caldav:}sched/sched1.ics"
+  assert_success
+  assert_line --regexp $'^DUE;TZID=America/Los_Angeles:20260815T143000\r?$'
+
+  generate_month
 }
 
 # A bare `--group-by date_due=` with no config resolves the built-in DAY default

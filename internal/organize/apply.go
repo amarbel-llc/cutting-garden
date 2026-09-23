@@ -13,6 +13,7 @@ import (
 	"code.linenisgreat.com/cutting-garden/internal/command_components"
 	cgp "code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
 	"code.linenisgreat.com/cutting-garden/internal/node_view"
+	"code.linenisgreat.com/cutting-garden/internal/trellis"
 	"code.linenisgreat.com/madder/go/pkgs/blob_stores"
 	"code.linenisgreat.com/piggy/go/pkgs/markl"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
@@ -264,6 +265,11 @@ func (cmd *Organize) applyDocument(
 	if err != nil {
 		return false, err
 	}
+	if err := rejectMoveFieldCollisions(
+		moves, fieldEdits, dim, boxAtomPresenter(lister), idOf,
+	); err != nil {
+		return false, err
+	}
 	if len(notices) > 0 {
 		fmt.Fprintf(cmd.output,
 			"organize: note — some field edits were not applied on %d line(s): %s "+
@@ -301,7 +307,7 @@ func (cmd *Organize) applyDocument(
 	// dry-run notes it wrote nothing; a scripted commit asserts intent by its
 	// mode and skips the prompt.
 	changes := buildChanges(
-		edited, base, moves, fieldEdits, atomEdits, dim, tagDim, trailer, tagInterp, idOf,
+		edited, base, moves, fieldEdits, atomEdits, moveLabel(spec), tagDim, trailer, tagInterp, idOf,
 	)
 	total := len(changes)
 	if total == 0 {
@@ -434,6 +440,67 @@ func planMoves(
 
 	sort.Slice(moves, func(i, j int) bool { return moves[i].URI < moves[j].URI })
 	return moves, nil
+}
+
+// rejectMoveFieldCollisions refuses, before any preview or write, an object
+// that is BOTH moved between buckets of the grouped dimension AND has the same
+// stored property edited through a box atom. Execution cannot compose the two:
+// the move patches the property first (executePlan), then the field patch —
+// built from the PRE-move node (caldav splices a date_/time_ edit into the
+// node's current value) — rewrites the whole property, so the last write
+// silently wins and the move is undone or contradicted. A collision is by atom
+// name (the `date_due` atom a `date_due=(month)` grouping keeps inline) or by
+// the atom's source field (a `time_due` edit splices into the same DUE the
+// move rewrites), read from the live presentation (present) exactly as
+// planFieldEdits reads writability. Loud, like the other plan-time conflicts
+// (planMoves drift, field drift, tag-atom disagreement).
+func rejectMoveFieldCollisions(
+	moves []move, fieldEdits []objectFieldEdit, dim string,
+	present func(cgp.Node) []cgp.BoxAtom, idOf boxIDer,
+) error {
+	moved := make(map[string]move, len(moves))
+	for _, mv := range moves {
+		moved[mv.URI] = mv
+	}
+	var conflicts []string
+	for _, oe := range fieldEdits {
+		mv, ok := moved[oe.URI]
+		if !ok {
+			continue
+		}
+		sourceOf := map[string]string{}
+		if present != nil {
+			for _, a := range present(oe.Node) {
+				if a.Field != "" {
+					sourceOf[a.Name] = a.Field
+				}
+			}
+		}
+		source := func(name string) string {
+			if f, ok := sourceOf[name]; ok {
+				return f
+			}
+			return name
+		}
+		for _, e := range oe.Edits {
+			if e.Name != dim && source(e.Name) != source(dim) {
+				continue
+			}
+			conflicts = append(conflicts, fmt.Sprintf(
+				"%s: moved to bucket %s and %s edited to %s in the same document; make one edit",
+				idOf(oe.URI), trellis.QuoteIfNeeded(mv.To), e.Name, trellis.QuoteIfNeeded(e.Value),
+			))
+		}
+	}
+	if len(conflicts) == 0 {
+		return nil
+	}
+	sort.Strings(conflicts)
+	return errors.BadRequestf(
+		"organize --apply: %d conflicting edit(s) — a bucket move and a field edit "+
+			"both write the same property:\n  %s",
+		len(conflicts), strings.Join(conflicts, "\n  "),
+	)
 }
 
 // resolveWrites resolves the plugin's write surface for the grouped dimension:
@@ -675,7 +742,7 @@ func (cmd *Organize) applyMemberships(
 
 	// One preview line per object, membership and field edits folded together
 	// (#260/#270) — the same renderer the single-valued path uses.
-	changes := buildChanges(edited, base, nil, fieldEdits, memberships, dim, dim, trailer, interp, idOf)
+	changes := buildChanges(edited, base, nil, fieldEdits, memberships, "", dim, trailer, interp, idOf)
 	total := len(changes)
 	if total == 0 {
 		fmt.Fprintln(cmd.output, "organize: no changes to apply")
