@@ -283,6 +283,7 @@ type Account struct {
     Root
     Username    string `toml:"username,omitempty"`
     PasswordEnv string `toml:"password_env,omitempty"`
+    SessionURL  string `toml:"session_url,omitempty"`
 }
 ```
 
@@ -298,6 +299,13 @@ Field semantics:
   is the account password. The password value MUST NOT appear in the config
   file directly (§ Security Considerations). An unset named variable resolves
   to an empty password.
+- `SessionURL` — OPTIONAL. An absolute `http(s)` URL overriding the endpoint
+  a plugin with a FIXED API host would otherwise hard-code — today only the
+  fastmail plugin's JMAP Session URL, which is how a test lane points a
+  `fastmail://<name>/` account at a test server. Plugins whose `URL` already
+  names the server (caldav, jira) ignore it. It sits on the shared base,
+  not on a fastmail type embedding it, because every plugin's section decoder
+  shares the one tommy schema `config_common.AccountsSection`.
 
 A plugin whose credential model needs more than `Account` provides MUST embed
 `Account` (or `Root`) and add fields, rather than widening the shared base.

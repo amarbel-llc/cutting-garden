@@ -415,6 +415,16 @@ interpreter.**
   in tension with tag content; the question the draft left open is closed by
   removing the mechanism.
 
+**Plugin state tags.** A plugin MAY emit `_`-prefixed STATE tags in a node's
+tag set — tags derived from substrate state rather than from a user label
+(the fastmail plugin's `_inbox`, `_unread`, `_flagged` and `_trash`, FDR 0024).
+They are literal tags to every interpreter under the rule above: no
+interpreter recognizes, lifts or groups them specially, and under plain ASCII
+order they sort ahead of every lowercase-initial tag. Which `_` tags are
+writable is the plugin's decision, made in its write path: it MUST refuse, as a
+bad request naming the tag, a `_` tag it does not accept (fastmail refuses
+`_sent`, `_junk`, `_archive` and every other `_` tag outside its four).
+
 An explicit lift/alias convention MAY be reconsidered in a future revision if a
 concrete need appears, but it is OUT OF CONTRACT now. `naive` and
 `dodder-hyphen` both treat `_` as literal.

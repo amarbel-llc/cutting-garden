@@ -295,7 +295,7 @@ func buildDocument(
 // distinct nodes sharing their master href (only `?recurrence-id=` differs),
 // so they collapse to one host+path id — a pre-existing ambiguity that must
 // not become a new hard failure for any calendar holding a recurring event.
-// Occurrence ids for caldav are tracked separately.
+// Occurrence ids for caldav are cutting-garden#268.
 func rejectAmbiguousBoxIDs(nodes []cgp.Node, idOf boxIDer) error {
 	uriByID := make(map[string]string, len(nodes))
 	for _, n := range nodes {

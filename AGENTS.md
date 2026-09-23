@@ -26,8 +26,9 @@ manpage/completion generator `cutting-garden-gen`. Hidden subcommands
 implement `command.CommandHidden` so they stay dispatchable but are
 filtered out of usage, manpages, and completion. Capture/restore/diff
 backends are URI-scheme-keyed plugins (file, git, yt-dlp, caldav,
-optical, gphotos, jira; plus fastmail, the first read-only, traversal-only
-plugin — JMAP mail traversal + facets, no capture/restore/diff, FDR 0024),
+optical, gphotos, jira; plus fastmail, a traversal-only plugin — JMAP mail
+traversal + facets, and writable thread tag sets for `organize` inbox
+triage, but no capture/restore/diff, FDR 0024),
 each living in `plugins/<scheme>/` and consuming the
 public plugin SDK (`pkgs/`, RFC 0009) exactly as an out-of-tree plugin
 would — none import `internal/` (the no-inversion guard,
@@ -128,7 +129,12 @@ strips each appearance's placement Via tag by default), and box tag
 edits apply as MEMBERSHIP writes through the tag interpreter's exact
 `Complete` (RFC 0019 §6.2); `list -format json` and the mcp enriched
 listing carry a top-level `tags` array, and `describe_node_types`
-reports each tag-declaring type's `tag_set`. The tag/espalier/enriched-listing
+reports each tag-declaring type's `tag_set`. A box's object id is the node's
+host+path relative to the anchor (`node_view.RelativeID`) unless the plugin
+implements the optional `NodeIDer` capability (fastmail: thread ids, which
+ride in the URI query); organize and `list -format espalier` resolve every id
+through `node_view.RelativeIDFor`, and a `NodeIDer` plugin whose ids collide
+under one anchor is refused at generate. The tag/espalier/enriched-listing
 presentation helpers live in `internal/node_view`, imported only by `list`,
 `mcp` and `organize` — `command_components` stays the composition layer
 (config, roots, store resolution, receipts) and MUST NOT import `node_view`,

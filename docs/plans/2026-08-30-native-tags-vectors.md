@@ -86,7 +86,7 @@ keyword read-backs go through `cg mcp` `read_node` on the member email nodes
 | D3 removing `_inbox` from a labelled thread keeps it out of Archive | `organize_fastmail_archive_by_move` |
 | D3 archive invariant: a member left with no mailbox lands in Archive | `organize_fastmail_archive_unlabeled_lands_in_archive` |
 | D4a new tag with an existing proper prefix → `-`-continuation child | `organize_fastmail_create_continuation_tag` (`payee-acme` → `payee/-acme`) (+ Go `TestPlaceNewTag`) |
-| D4b new tag sharing a prefix → bare sibling | `organize_fastmail_create_sibling_tag` — **SKIPPED**: the plugin places `proj-trips-26-10-hike` under the bare interior `zz-archive/proj` (rule (a) on the tag `proj`) instead of beside `proj-trips-26-09-yoga`; open design question, see the in-file comment |
+| D4b new tag sharing a prefix → bare sibling; candidates ranked by shared `-` segments, so a one-segment prefix (`zz-archive/proj`'s `proj`) loses to a three-segment sibling | `organize_fastmail_create_sibling_tag` (`proj-trips-26-10-hike` → a bare child of `area/-travel`, beside `proj-trips-26-09-yoga`) (+ Go `TestPlaceNewTag`) |
 | D4c new tag with no shared prefix → root mailbox | `organize_fastmail_create_root_tag` (`misc-thing`) |
 | D5 `--group-by _inbox` = G10a root heading; `_inbox` placement-stripped; moving a line above the heading removes exactly `_inbox` | `organize_fastmail_inbox_grouped_render`, `organize_fastmail_archive_by_move` |
 | D6 box shape `[<threadId> <tags…> from=…] <subject>`; `tags` is the designated field (`describe_node_types` `tag_set` `{tags, dodder-hyphen}`) | `organize_fastmail_inbox_grouped_render`, `organize_fastmail_list_json_carries_tags` (via `cg mcp`, the `mcp.bats` precedent) |
