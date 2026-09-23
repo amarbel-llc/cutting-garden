@@ -60,6 +60,7 @@
 (object_line "-" @punctuation.special)
 (object_line "%" @comment)
 (object_line description: (description) @string)
+(object_line continuation: (description_continuation) @string)
 
 ; --- espalier box interior ---
 (box ["[" "]"] @punctuation.bracket)

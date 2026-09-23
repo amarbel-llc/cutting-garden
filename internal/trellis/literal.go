@@ -59,16 +59,19 @@ func ParseLiteral(interior string) (Literal, error) {
 // a caller — projects it to a Literal, and returns the unparsed remainder
 // (an organize box's description trailer, untrimmed). The projection is
 // ParseLiteral's; a src that does not open with a group is a bad request
-// wrapping the *SyntaxError.
+// wrapping the *SyntaxError. That SyntaxError is Incomplete when src opens a
+// group but ends before closing it (an unclosed `[` or String): the caller
+// may append more input — organize's wrapped boxes, cutting-garden#261.
 func ParseLiteralPrefix(src string) (Literal, string, error) {
 	p := &parser{src: []rune(src)}
 	p.skipSPOpt()
 	start := p.pos
 	group, ok := p.parseGroup()
 	if !ok {
-		return Literal{}, "", errors.BadRequestf(
-			"box literal: %w", p.syntaxError("expected a `[…]` group"),
-		)
+		se := p.syntaxError("expected a `[…]` group").(*SyntaxError)
+		opensGroup := start < len(p.src) && p.src[start] == '['
+		se.Incomplete = opensGroup && (p.farthest >= len(p.src) || p.ranOutInString)
+		return Literal{}, "", errors.BadRequestf("box literal: %w", se)
 	}
 	interior := string(p.src[start+1 : p.pos-1])
 	lit, err := projectLiteral(group, interior)

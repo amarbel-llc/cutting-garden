@@ -230,6 +230,11 @@
     "fields": {}
   },
   {
+    "type": "description_continuation",
+    "named": true,
+    "fields": {}
+  },
+  {
     "type": "description_line",
     "named": true,
     "fields": {
@@ -586,6 +591,16 @@
     "type": "object_line",
     "named": true,
     "fields": {
+      "continuation": {
+        "multiple": true,
+        "required": false,
+        "types": [
+          {
+            "type": "description_continuation",
+            "named": true
+          }
+        ]
+      },
       "description": {
         "multiple": false,
         "required": false,

@@ -11,6 +11,12 @@ type SyntaxError struct {
 	// it).
 	Offset int
 	Msg    string
+	// Incomplete reports that the parse failed only because the input ENDED
+	// inside an open construct — an unclosed `[…]` group or an unterminated
+	// String — so appending more input could complete it. Set by
+	// ParseLiteralPrefix (organize reads it to join a wrapped box's
+	// continuation lines, cutting-garden#261); always false from Parse.
+	Incomplete bool
 }
 
 func (e *SyntaxError) Error() string {
@@ -56,6 +62,10 @@ type parser struct {
 
 	farthest    int
 	farthestMsg string
+
+	// ranOutInString records that some String scan hit the end of input
+	// before its closing quote (SyntaxError.Incomplete).
+	ranOutInString bool
 }
 
 func (p *parser) fail(msg string) {
@@ -189,6 +199,7 @@ func (p *parser) parseString() (string, bool) {
 	for {
 		if i >= len(p.src) {
 			p.pos = start
+			p.ranOutInString = true
 			p.fail("unterminated string")
 			return "", false
 		}
@@ -200,6 +211,7 @@ func (p *parser) parseString() (string, bool) {
 		if r == '\\' {
 			if i+1 >= len(p.src) {
 				p.pos = start
+				p.ranOutInString = true
 				p.fail("unterminated string escape")
 				return "", false
 			}

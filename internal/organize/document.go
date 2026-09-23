@@ -516,20 +516,46 @@ func splitEnvelope(text string) (
 // `# !type` / `## status=` / `### =A` lands lines under the type alone (its
 // ungrouped set), and `#` pops past the type heading to the document's
 // ungrouped set.
+//
+// A box may WRAP across physical lines (cutting-garden#261, RFC 0015 §Object
+// lines): parseWrappedBox joins interior continuation lines while the `[`
+// group is unbalanced, and after the closing `]` the box's DESCRIPTION span
+// stays open — a line starting with neither `-` nor `#` continues it, as does
+// a `\-` / `\#` escaped line (backslash stripped). A line-leading `-` always
+// opens a new box; a blank line or heading closes the span. An escaped line
+// with no open span is a bad request. Error line numbers are physical body
+// lines.
 func parseBody(doc *document, body string) error {
 	lines := strings.Split(body, "\n")
 	root := rootHeadingDepth(lines)
 	// open is the stack of open heading sections (indices into doc.Sections),
 	// shallowest first; the top is where object lines attach.
 	var open []int
-	for i, raw := range lines {
-		line := strings.TrimSpace(raw)
-		if line == "" {
-			continue
+	// described is the box whose description span is open, nil when none; it
+	// attaches (to the top of open, unchanged since the box began — a heading
+	// closes the span first) once the span closes.
+	var described *objectLine
+	closeDescription := func() {
+		if described == nil {
+			return
 		}
+		if len(open) > 0 {
+			cur := open[len(open)-1]
+			doc.Sections[cur].Lines = append(doc.Sections[cur].Lines, *described)
+		} else {
+			doc.Ungrouped = append(doc.Ungrouped, *described)
+		}
+		described = nil
+	}
 
+	for i := 0; i < len(lines); i++ {
+		line := strings.TrimSpace(lines[i])
 		switch {
+		case line == "":
+			closeDescription()
+
 		case strings.HasPrefix(line, "#"):
+			closeDescription()
 			rawDepth, term := splitHeading(line)
 			depth := rawDepth - root + 1
 			open = popTo(open, doc.Sections, depth)
@@ -540,22 +566,99 @@ func parseBody(doc *document, body string) error {
 			open = append(open, len(doc.Sections)-1)
 
 		case strings.HasPrefix(line, "-"):
-			ln, err := parseObjectLine(strings.TrimSpace(line[1:]))
+			closeDescription()
+			ln, last, err := parseWrappedBox(lines, i)
 			if err != nil {
-				return errors.BadRequestf("organize: body line %d: %s", i+1, err)
+				return err
 			}
-			if len(open) > 0 {
-				cur := open[len(open)-1]
-				doc.Sections[cur].Lines = append(doc.Sections[cur].Lines, ln)
-			} else {
-				doc.Ungrouped = append(doc.Ungrouped, ln)
-			}
+			i = last
+			described = &ln
+
+		case described != nil:
+			described.Desc = joinDescription(described.Desc, unescapeContinuation(line))
+
+		case isEscapedContinuation(line):
+			return errors.BadRequestf(
+				"organize: body line %d: %q continues a description, but no box description is open "+
+					"(a `\\-` / `\\#` continuation must follow a box line, not a blank line, a heading, "+
+					"or the start of the body)",
+				i+1, line,
+			)
 
 		default:
 			return errors.BadRequestf("organize: body line %d: unrecognized %q", i+1, line)
 		}
 	}
+	closeDescription()
 	return nil
+}
+
+// parseWrappedBox parses the box opening on lines[start] (a trimmed line
+// starting with `-`), joining the following lines — unconditionally, each
+// trimmed and single-space joined — while the box's `[` group is still open
+// (trellis reports the parse Incomplete). A blank line, heading, or the end of
+// the body reached with the group still open is a bad request naming the
+// box's starting line. It returns the box and the index of its last line.
+func parseWrappedBox(lines []string, start int) (objectLine, int, error) {
+	src := strings.TrimSpace(strings.TrimSpace(lines[start])[1:])
+	for last := start; ; {
+		ln, err := parseObjectLine(src)
+		if err == nil {
+			return ln, last, nil
+		}
+		if !isIncompleteBox(err) {
+			return objectLine{}, 0, errors.BadRequestf("organize: body line %d: %s", start+1, err)
+		}
+		last++
+		var reached string
+		switch {
+		case last >= len(lines):
+			reached = "end of document"
+		case strings.TrimSpace(lines[last]) == "":
+			reached = fmt.Sprintf("blank line at body line %d", last+1)
+		case strings.HasPrefix(strings.TrimSpace(lines[last]), "#"):
+			reached = fmt.Sprintf("heading at body line %d", last+1)
+		}
+		if reached != "" {
+			return objectLine{}, 0, errors.BadRequestf(
+				"organize: body line %d: unterminated box (%s before its closing `]`): %s",
+				start+1, reached, err,
+			)
+		}
+		src += " " + strings.TrimSpace(lines[last])
+	}
+}
+
+// isIncompleteBox reports whether a box parse failed only because its `[`
+// group (or a String inside it) was still open at the end of the text.
+func isIncompleteBox(err error) bool {
+	var se *trellis.SyntaxError
+	return errors.As(err, &se) && se.Incomplete
+}
+
+// isEscapedContinuation reports a `\-` / `\#` description-continuation line.
+func isEscapedContinuation(line string) bool {
+	return strings.HasPrefix(line, `\-`) || strings.HasPrefix(line, `\#`)
+}
+
+// unescapeContinuation strips the backslash of a `\-` / `\#` continuation;
+// any other line continues the description verbatim.
+func unescapeContinuation(line string) string {
+	if isEscapedContinuation(line) {
+		return line[1:]
+	}
+	return line
+}
+
+// joinDescription appends one continuation line to a box's description with a
+// single space — the same single-line form CollapseToSingleLine gives a
+// multiline stored value, so a wrapped description compares equal to its
+// unwrapped twin.
+func joinDescription(desc, continuation string) string {
+	if desc == "" {
+		return continuation
+	}
+	return desc + " " + continuation
 }
 
 // splitHeading splits a heading line into its `#` count and its (trimmed) text —

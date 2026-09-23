@@ -404,6 +404,17 @@
         {
           "type": "STRING",
           "value": "\n"
+        },
+        {
+          "type": "REPEAT",
+          "content": {
+            "type": "FIELD",
+            "name": "continuation",
+            "content": {
+              "type": "SYMBOL",
+              "name": "description_continuation"
+            }
+          }
         }
       ]
     },
@@ -413,6 +424,22 @@
         "type": "PATTERN",
         "value": "[^\\n]+"
       }
+    },
+    "description_continuation": {
+      "type": "SEQ",
+      "members": [
+        {
+          "type": "TOKEN",
+          "content": {
+            "type": "PATTERN",
+            "value": "[ \\t]*([^-#%\\s\\\\]|\\\\[^\\n])[^\\n]*"
+          }
+        },
+        {
+          "type": "STRING",
+          "value": "\n"
+        }
+      ]
     },
     "metadata": {
       "type": "SEQ",
@@ -835,7 +862,7 @@
       "type": "TOKEN",
       "content": {
         "type": "PATTERN",
-        "value": "[ \\t]+"
+        "value": "[ \\t]+|[ \\t]*\\n[ \\t]*"
       }
     },
     "box_object_id": {

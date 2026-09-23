@@ -131,7 +131,10 @@ module.exports = grammar({
     _group_by_spec: $ => choice($.qualifier, $.tag_name),
 
     // An espalier object line: `- [box] description` (or `%` for a
-    // virtual/inferred-type object, preserved from dodder).
+    // virtual/inferred-type object, preserved from dodder). A box may WRAP
+    // (cutting-garden#261, RFC 0015 §Object lines): its interior spans lines
+    // through `_box_space` (overridden below), and its description continues
+    // on each following `description_continuation` line.
     object_line: $ =>
       seq(
         field('prefix', choice('-', '%')),
@@ -139,12 +142,26 @@ module.exports = grammar({
         $.box,
         optional(seq(' ', field('description', $.description))),
         '\n',
+        repeat(field('continuation', $.description_continuation)),
       ),
     description: $ => token(/[^\n]+/),
+    // A description continuation line: one starting (after optional blanks)
+    // with neither `-` (always a new box), `#` (a heading), nor `%` — or an
+    // escaped `\-` / `\#` line that continues the description literally. A
+    // blank line ends the span.
+    description_continuation: $ =>
+      seq(token(/[ \t]*([^-#%\s\\]|\\[^\n])[^\n]*/), '\n'),
 
     ...metadata,
     ...box,
     ...markl,
+
+    // Overrides the shared box's `_box_space` (spread above, so this wins): an
+    // organize box interior may wrap, so the separator between box atoms is a
+    // run of blanks OR one line break with its surrounding blanks
+    // (cutting-garden#261). A blank line inside the interior stays an error,
+    // as it is for the organize reader.
+    _box_space: $ => token(/[ \t]+|[ \t]*\n[ \t]*/),
 
     // Overrides the shared envelope's line set (spread above, so this wins) to
     // admit the organize-specific `_group-by` directive ahead of the generic

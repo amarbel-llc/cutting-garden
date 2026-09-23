@@ -39,6 +39,7 @@
 #   43112  list_espalier.bats
 #   43113  organize_fastmail.bats  (lib/fastmail.bash's JMAP testserver)
 #   43114  (spare, reserved for the fastmail lanes)
+#   43115  organize_wrap.bats
 
 # assert_categories URL EXPECTED curl-reads the live iCalendar object at URL (the
 # plain-HTTP form, `${CALDAV_SOURCE#caldav:}<cal>/<id>.ics`) and asserts its
