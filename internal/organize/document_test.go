@@ -356,34 +356,39 @@ func TestBuildDocument_BoxIDsResolveThroughNodeIDer(t *testing.T) {
 	}
 }
 
-// TestBuildDocument_RejectsAmbiguousBoxIDs pins the uniqueness guard: two
-// DISTINCT node URIs resolving to one box id is a loud bad request naming the
-// id and both URIs — for a NodeIDer that collides AND for the host+path
-// default a query-identity plugin collapses to — while the same URI listed
-// twice is not ambiguity.
+// TestBuildDocument_RejectsAmbiguousBoxIDs pins the uniqueness guard's scope:
+// for a NodeIDer plugin, two DISTINCT node URIs resolving to one box id is a
+// loud bad request naming the id and both URIs; a default-RelativeID plugin
+// whose ids collapse (caldav's recurring occurrences) is exempt and still
+// renders; and the same URI listed twice is never ambiguity.
 func TestBuildDocument_RejectsAmbiguousBoxIDs(t *testing.T) {
 	nodes := []cgp.Node{threadNode(t, "T1"), threadNode(t, "T2")}
-	for name, lister := range map[string]cgp.RootLister{
-		"colliding NodeIDer":     &threadIDLister{collide: "same"},
-		"host+path default only": &fakeLister{},
-	} {
-		t.Run(name, func(t *testing.T) {
-			_, err := buildDocument(
-				nodes, "fake://acct/Inbox/", "", groupSpec{Dim: "status"},
-				lister, nil, tagRender{},
-			)
-			if err == nil {
-				t.Fatal("buildDocument over colliding box ids = nil error, want rejection")
-			}
-			if !errors.Is400BadRequest(err) {
-				t.Errorf("not a bad request: %v", err)
-			}
-			for _, want := range []string{"?thread=T1", "?thread=T2", "ambiguous"} {
-				if !strings.Contains(err.Error(), want) {
-					t.Errorf("error %q does not mention %q", err, want)
-				}
-			}
-		})
+
+	_, err := buildDocument(
+		nodes, "fake://acct/Inbox/", "", groupSpec{Dim: "status"},
+		&threadIDLister{collide: "same"}, nil, tagRender{},
+	)
+	if err == nil {
+		t.Fatal("colliding NodeIDer: buildDocument = nil error, want rejection")
+	}
+	if !errors.Is400BadRequest(err) {
+		t.Errorf("colliding NodeIDer: not a bad request: %v", err)
+	}
+	for _, want := range []string{"?thread=T1", "?thread=T2", "ambiguous"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not mention %q", err, want)
+		}
+	}
+
+	doc, err := buildDocument(
+		nodes, "fake://acct/Inbox/", "", groupSpec{Dim: "status"},
+		&fakeLister{}, nil, tagRender{},
+	)
+	if err != nil {
+		t.Fatalf("default-RelativeID plugin with collapsed ids must still render: %v", err)
+	}
+	if got := len(doc.objectLines()); got != 2 {
+		t.Errorf("collapsed-id render has %d object lines, want 2", got)
 	}
 
 	dup := []cgp.Node{threadNode(t, "T1"), threadNode(t, "T1")}

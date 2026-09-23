@@ -237,8 +237,10 @@ func buildDocument(
 	interp cgp.TagInterpreter, tags tagRender,
 ) (document, error) {
 	idOf := boxIDsFor(lister, anchor)
-	if err := rejectAmbiguousBoxIDs(nodes, idOf); err != nil {
-		return document{}, err
+	if _, pluginIDs := lister.(cgp.NodeIDer); pluginIDs {
+		if err := rejectAmbiguousBoxIDs(nodes, idOf); err != nil {
+			return document{}, err
+		}
 	}
 	doc := document{
 		Anchor:     anchor,
@@ -283,10 +285,17 @@ func buildDocument(
 // rejectAmbiguousBoxIDs refuses a node set in which two DISTINCT node URIs
 // resolve to the same box id (fastmail tags slice 1, Task 5b). A box id is
 // the document's only handle on an object, and apply re-derives it from the
-// live nodes, so a shared id would silently conflate two objects — a
-// default-RelativeID plugin whose identity rides outside the URI path
-// (fastmail's `?thread=` before it declared NodeIDer) is exactly how that
-// happens. The same URI appearing twice is not ambiguity.
+// live nodes, so a shared id would silently conflate two objects. The same
+// URI appearing twice is not ambiguity.
+//
+// SCOPE: buildDocument applies it ONLY when the lister implements NodeIDer.
+// There the plugin chose its ids, so a collision is a plugin bug worth
+// failing loudly on. A default-RelativeID plugin is exempt and keeps its
+// prior behavior: caldav's server-expanded recurring-event occurrences are
+// distinct nodes sharing their master href (only `?recurrence-id=` differs),
+// so they collapse to one host+path id — a pre-existing ambiguity that must
+// not become a new hard failure for any calendar holding a recurring event.
+// Occurrence ids for caldav are tracked separately.
 func rejectAmbiguousBoxIDs(nodes []cgp.Node, idOf boxIDer) error {
 	uriByID := make(map[string]string, len(nodes))
 	for _, n := range nodes {

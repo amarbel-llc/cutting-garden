@@ -127,8 +127,9 @@ type FieldPresenter interface {
 // stored id by string, so generate and apply agree only because the
 // derivation is stable. It MUST NOT fetch, consult ambient state, or depend
 // on the other nodes in the set. Distinct nodes under one anchor SHOULD get
-// distinct ids; organize refuses to generate a document in which two
-// distinct node URIs share an id rather than render an ambiguous one. Any
+// distinct ids: because the plugin chose them, organize refuses to generate
+// a document in which two distinct node URIs share a NodeIDer id rather than
+// render an ambiguous one (the host+path default is exempt). Any
 // string is a valid id — the box writer quotes it as needed
 // (trellis.QuoteIfNeeded) — but a short, readable one is the point.
 // ok=false defers to the default for that node.
