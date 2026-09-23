@@ -752,6 +752,40 @@ debug-list-fastmail-json: debug-build-go
     XDG_CONFIG_HOME="$work/config" .tmp/cutting-garden list -format json fastmail://test/Inbox/
     exec {SRV[1]}>&- || true
 
+# The write twin of debug-organize-fastmail-fixture — the source loop for
+# organize_fastmail.bats's apply vectors: against a FRESH testserver on the
+# lane's port 43113, generate the GROUP_BY document (printed; its `_base` blob
+# lands in a throwaway store), apply EDITED (a hand-edited copy of that
+# document) with -commit, re-render, then print `list -format json` for each
+# READBACK URI. A failing apply is printed with its exit code, not aborted on.
+# WRITES to the throwaway in-memory server only.
+#
+# apply an edited fastmail Inbox organize document + read back (tags dev-loop)
+[group('debug')]
+debug-organize-fastmail-apply EDITED GROUP_BY='_inbox' *READBACK='': debug-build-go
+    #!/usr/bin/env bash
+    set -euo pipefail
+    root="{{ justfile_directory() }}"
+    cd "$root"
+    edited="$(realpath '{{ EDITED }}')"
+    nix build '.#cutting-garden-fastmail-testserver' --out-link .tmp/cutting-garden-fastmail-testserver-result
+    work="$(mktemp -d)"
+    trap 'rm -rf "$work"' EXIT
+    (cd "$work" && nix develop "$root" --command madder init -encryption none .default >/dev/null)
+    coproc SRV { CG_TEST_FASTMAIL_PORT=43113 .tmp/cutting-garden-fastmail-testserver-result/bin/cutting-garden-fastmail-testserver; }
+    read -r -u "${SRV[0]}" session_url _account_id
+    mkdir -p "$work/config/cutting-garden"
+    printf '[[fastmail.accounts]]\nname = "test"\nurl = "fastmail://test/"\nsession_url = "%s"\n' \
+      "$session_url" >"$work/config/cutting-garden/config.toml"
+    cg() { (cd "$work" && XDG_CONFIG_HOME="$work/config" "$root/.tmp/cutting-garden" "$@"); }
+    echo '### generate' && cg organize -group-by '{{ GROUP_BY }}' fastmail://test/Inbox/
+    echo '### apply -commit' && { cg organize -apply "$edited" -commit 2>&1 || echo "### exit $?"; }
+    echo '### re-render' && cg organize -group-by '{{ GROUP_BY }}' fastmail://test/Inbox/
+    for uri in {{ READBACK }}; do
+      echo "### list -format json $uri" && { cg list -format json "$uri" 2>&1 || echo "### exit $?"; }
+    done
+    exec {SRV[1]}>&- || true
+
 # Eyeball loop for the G12 JSON node view (native tags slice 2 T4): start the
 # testserver with the /dav/ns/ namespace fixture and print `list -format json`'s
 # NDJSON for it — each line should carry the presented `tags` array. READ-ONLY.
