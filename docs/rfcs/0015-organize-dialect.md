@@ -300,9 +300,14 @@ document — the exact bytes presented to and edited by the end-user:
   siblings' names the tag and the appearances); and, under `placement`
   strip, a tag removed from a matched box while the object still sits under
   that tag's bucket is "placement says X, box says not-X". The apply summary
-  renders a membership edit as the object's sorted old→new tag sets, each
-  value spelled through the one quoting rule, with the summary trailer
-  (#247/#248).
+  renders each changed object as the box line the edited document shows for
+  it, with every changed atom marked: a membership edit diffs old→new as SETS,
+  each removed tag `[-t-]` and added tag `{+t+}` in SortKey order among the
+  unchanged ones (a tag the document hides — a stripped placement tag, or
+  every tag under `_tag-atoms = none` — shows only when it changed), a
+  single-valued atom or bucket move as `name=[-old-]{+new+}`, the trailer as a
+  word diff; every value is spelled through the one quoting rule
+  (#247/#248/#260/#270).
 - **The trailing `! <type>` type-anchor of the earlier draft is removed** (it was a
   mistake): the object type is the leading heading or the envelope field, never a
   trailing line, which is distinct from the envelope's own `! organize-base-v1`.

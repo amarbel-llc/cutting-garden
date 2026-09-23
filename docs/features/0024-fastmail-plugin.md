@@ -386,10 +386,10 @@ declines live-mutation tools.
   (§The tree), but nothing lets a query or grouping follow them —
   `zz-archive` does not select the threads under its subtree transitively.
   Needs an RFC 0019 extension.
-- **The apply summary shows the full-set diff.** A box edit's summary line is
-  `tags=[-…-]{+…+}` over the whole set rather than the atoms the user touched,
-  and created mailboxes appear only in `PatchNode`'s `applied`, not the
-  summary (cutting-garden#260).
+- **Created mailboxes are not in the apply summary.** The summary line is the
+  thread's box line with each added/removed tag marked (`[T1 [-_inbox-]
+  _unread …]`, cutting-garden#260/#270), but a mailbox the apply creates
+  appears only in `PatchNode`'s `applied`, not the summary.
 - **No sending, no drafts, no content edits, no restore.** Snapshot/organize,
   not composition; those stay with the interactive Fastmail MCP.
 - **Membership counts, not distinct counts.** Multi-tag threads inflate subtree

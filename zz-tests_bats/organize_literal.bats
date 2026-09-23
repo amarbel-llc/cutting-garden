@@ -159,7 +159,7 @@ function organize_literal_bare_token_is_tag { # @test
   assert_output - <<'EOF'
 organize: 1 change(s):
 
-  - [lit2.ics  categories={+status,work-x+}]  Read book
+  - [lit2.ics {+status+} {+work-x+} location=Bank] Read book
 
 organize: dry-run — nothing written
 EOF
@@ -180,7 +180,7 @@ function organize_literal_quoted_box_token_parses { # @test
   assert_output - <<'EOF'
 organize: 1 change(s):
 
-  - [lit2.ics  categories={+"_ inbox"+}]  Read book
+  - [lit2.ics {+"_ inbox"+} location=Bank] Read book
 
 organize: dry-run — nothing written
 EOF
@@ -228,7 +228,7 @@ function organize_literal_quoted_tag_heading_round_trips { # @test
   assert_output - <<'EOF'
 organize: 1 change(s):
 
-  - [lit2.ics  categories={+"_ inbox"+}]  Read book
+  - [lit2.ics {+"_ inbox"+} location=Bank] Read book
 
 organize: wrote 1 change(s)
 EOF
@@ -281,7 +281,7 @@ function organize_literal_text_escaping_round_trips { # @test
   assert_output - <<'EOF'
 organize: 1 change(s):
 
-  - [lit3.ics]  Plan, then do {+now+}
+  - [lit3.ics] Plan, then do {+now+}
 
 organize: wrote 1 change(s)
 EOF

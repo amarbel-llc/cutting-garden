@@ -144,7 +144,7 @@ function organize_tagatoms_unchanged_tags_pass_through { # @test
   assert_output - <<'EOF'
 organize: 1 change(s):
 
-  - [lit1.ics  status={+needs-action+}]  Triage inbox
+  - [lit1.ics "_ inbox" status={+needs-action+}] Triage inbox
 
 organize: wrote 1 change(s)
 EOF
@@ -222,7 +222,7 @@ function organize_tagatoms_add_writes_membership { # @test
   assert_output - <<'EOF'
 organize: 1 change(s):
 
-  - [lit2.ics  categories={+urgent+}]  Read book
+  - [lit2.ics {+urgent+} location=Bank] Read book
 
 organize: wrote 1 change(s)
 EOF
@@ -297,7 +297,7 @@ function organize_tagatoms_remove_writes_membership { # @test
   assert_output - <<'EOF'
 organize: 1 change(s):
 
-  - [lit1.ics  categories=[-"_ inbox"-]]  Triage inbox
+  - [lit1.ics [-"_ inbox"-]] Triage inbox
 
 organize: wrote 1 change(s)
 EOF
@@ -437,7 +437,7 @@ function organize_tagatoms_doc_wins { # @test
   assert_output - <<'EOF'
 organize: 1 change(s):
 
-  - [lit1.ics  status={+needs-action+}]  Triage inbox
+  - [lit1.ics "_ inbox" status={+needs-action+}] Triage inbox
 
 organize: wrote 1 change(s)
 EOF
@@ -584,7 +584,7 @@ function organize_tagatoms_whole_dim_move_applies { # @test
   assert_output - <<'EOF'
 organize: 1 change(s):
 
-  - [lit3.ics  categories=[-"planning, misc"-]{+urgent+}]  Plan, then do
+  - [lit3.ics [-"planning, misc"-] {+urgent+}] Plan, then do
 
 organize: wrote 1 change(s)
 EOF
@@ -877,7 +877,7 @@ function organize_tagatoms_strip_none_move_is_not_an_edit { # @test
   assert_output - <<'EOF'
 organize: 1 change(s):
 
-  - [nsA.ics  categories=[-project-client-acme-]{+project-client-acme,project-cutting_garden+}]  Acme retainer
+  - [nsA.ics project-client-acme {+project-cutting_garden+}] Acme retainer
 
 organize: wrote 1 change(s)
 EOF

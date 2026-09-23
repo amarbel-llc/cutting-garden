@@ -189,7 +189,7 @@ function organize_fastmail_archive_by_move { # @test
   assert_output - <<'EOF'
 organize: 1 change(s):
 
-  - [T1  tags=[-_inbox,_unread,payee-one_medical-]{+_unread,payee-one_medical+}]  Your statement is ready
+  - [T1 [-_inbox-] _unread payee-one_medical from="billing@example.com"] Your statement is ready
 
 organize: wrote 1 change(s)
 EOF
@@ -256,7 +256,7 @@ function organize_fastmail_archive_unlabeled_lands_in_archive { # @test
   assert_output - <<'EOF'
 organize: 1 change(s):
 
-  - [T3  tags=[-_flagged,_inbox-]{+_flagged+}]  Lunch next week?
+  - [T3 _flagged [-_inbox-] from="friend@example.com"] Lunch next week?
 
 organize: wrote 1 change(s)
 EOF
@@ -312,8 +312,8 @@ function organize_fastmail_state_atoms { # @test
   assert_output - <<'EOF'
 organize: 2 change(s):
 
-  - [T1  tags=[-_inbox,_unread,payee-one_medical-]{+_flagged,_inbox,payee-one_medical+}]  Your statement is ready
-  - [T2  tags=[-_inbox,proj-x-msft,req-others-]{+_flagged,_inbox,proj-x-msft,req-others+}]  Interview loop
+  - [T1 {+_flagged+} [-_unread-] payee-one_medical from="billing@example.com"] Your statement is ready
+  - [T2 {+_flagged+} proj-x-msft req-others from="recruiter@example.com"] Interview loop
 
 organize: wrote 2 change(s)
 EOF
@@ -382,7 +382,7 @@ function organize_fastmail_trash_atom { # @test
   assert_output - <<'EOF'
 organize: 1 change(s):
 
-  - [T4  tags=[-_inbox,proj-24-t-10x-]{+_inbox,_trash,proj-24-t-10x+}]  Project wrap-up
+  - [T4 {+_trash+} proj-24-t-10x from="team@example.com"] Project wrap-up
 
 organize: wrote 1 change(s)
 EOF
@@ -442,7 +442,7 @@ function organize_fastmail_create_continuation_tag { # @test
   assert_output - <<'EOF'
 organize: 1 change(s):
 
-  - [T3  tags=[-_flagged,_inbox-]{+_flagged,_inbox,payee-acme+}]  Lunch next week?
+  - [T3 _flagged {+payee-acme+} from="friend@example.com"] Lunch next week?
 
 organize: wrote 1 change(s)
 EOF
@@ -506,7 +506,7 @@ function organize_fastmail_create_sibling_tag { # @test
   assert_output - <<'EOF'
 organize: 1 change(s):
 
-  - [T3  tags=[-_flagged,_inbox-]{+_flagged,_inbox,proj-trips-26-10-hike+}]  Lunch next week?
+  - [T3 _flagged {+proj-trips-26-10-hike+} from="friend@example.com"] Lunch next week?
 
 organize: wrote 1 change(s)
 EOF
@@ -545,7 +545,7 @@ function organize_fastmail_create_root_tag { # @test
   assert_output - <<'EOF'
 organize: 1 change(s):
 
-  - [T3  tags=[-_flagged,_inbox-]{+_flagged,_inbox,misc-thing+}]  Lunch next week?
+  - [T3 _flagged {+misc-thing+} from="friend@example.com"] Lunch next week?
 
 organize: wrote 1 change(s)
 EOF
@@ -613,7 +613,7 @@ function organize_fastmail_reserved_state_tag_rejected { # @test
   assert_output - <<'EOF'
 organize: 1 change(s):
 
-  - [T3  tags=[-_flagged,_inbox-]{+_flagged,_inbox,_sent+}]  Lunch next week?
+  - [T3 _flagged {+_sent+} from="friend@example.com"] Lunch next week?
 
 cutting-garden: fastmail plugin: "_sent" is reserved and cannot be written; the writable state tags are _flagged, _inbox, _trash and _unread
 EOF

@@ -197,28 +197,65 @@ func WriteLiteralTrailingTags(b *strings.Builder, lit Literal) {
 }
 
 func writeLiteral(b *strings.Builder, lit Literal, trailingTags bool) {
-	writeTags := func() {
-		for _, tag := range lit.Tags {
-			b.WriteByte(' ')
-			b.WriteString(QuoteIfNeeded(tag))
-		}
-	}
-	b.WriteString(QuoteIfNeeded(lit.ID))
-	if lit.Type != "" {
-		b.WriteString(" !")
-		b.WriteString(lit.Type)
-	}
-	if !trailingTags {
-		writeTags()
+	WriteSpelledLiteral(b, SpellLiteral(lit), trailingTags)
+}
+
+// A SpelledLiteral is a Literal whose slots are already spelled as the text
+// that lands in the box: the id and each tag through QuoteIfNeeded, each atom
+// as `name=value` (SpellAtom). Splitting spelling from layout lets a caller
+// re-spell individual slots — organize's apply preview paints a changed tag
+// `[-tag-]` / `{+tag+}` — while the slot ORDER and separators stay
+// WriteSpelledLiteral's alone. Type is the bare type name (the writer adds
+// the `!`).
+type SpelledLiteral struct {
+	ID    string
+	Type  string
+	Tags  []string
+	Atoms []string
+}
+
+// SpellLiteral spells every slot of lit through the ONE quoting rule
+// (QuoteIfNeeded, design G9).
+func SpellLiteral(lit Literal) SpelledLiteral {
+	s := SpelledLiteral{ID: QuoteIfNeeded(lit.ID), Type: lit.Type}
+	for _, tag := range lit.Tags {
+		s.Tags = append(s.Tags, QuoteIfNeeded(tag))
 	}
 	for _, atom := range lit.Atoms {
-		b.WriteByte(' ')
-		b.WriteString(QuoteIfNeeded(atom.Name))
-		b.WriteByte('=')
-		b.WriteString(QuoteIfNeeded(atom.Value))
+		s.Atoms = append(s.Atoms, SpellAtom(atom))
 	}
+	return s
+}
+
+// SpellAtom spells one ground atom as `name=value`, each side through
+// QuoteIfNeeded.
+func SpellAtom(atom Atom) string {
+	return QuoteIfNeeded(atom.Name) + "=" + QuoteIfNeeded(atom.Value)
+}
+
+// WriteSpelledLiteral lays out an already-spelled box interior WITHOUT the
+// enclosing brackets: the id, `!type`, the tags, then the atoms, single-space
+// separated — or, with trailingTags (`_tag-atoms = trailing`), the tags after
+// the atoms. It is the one layout WriteLiteral and WriteLiteralTrailingTags
+// render through.
+func WriteSpelledLiteral(b *strings.Builder, s SpelledLiteral, trailingTags bool) {
+	writeSlots := func(slots []string) {
+		for _, slot := range slots {
+			b.WriteByte(' ')
+			b.WriteString(slot)
+		}
+	}
+	b.WriteString(s.ID)
+	if s.Type != "" {
+		b.WriteString(" !")
+		b.WriteString(s.Type)
+	}
+	if !trailingTags {
+		writeSlots(s.Tags)
+	}
+	writeSlots(s.Atoms)
 	if trailingTags {
-		writeTags()
+		writeSlots(s.Tags)
 	}
 }
 

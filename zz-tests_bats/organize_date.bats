@@ -118,7 +118,7 @@ function organize_date_month_reschedule_preserves_datetime { # @test
   assert_output - <<'EOF'
 organize: 1 change(s):
 
-  - [sched1.ics  date_due=[-2026-08-]{+2026-09+}]  Book flights
+  - [sched1.ics date_due=[-2026-08-]{+2026-09+} time_due=14-30] Book flights
 
 organize: wrote 1 change(s)
 EOF

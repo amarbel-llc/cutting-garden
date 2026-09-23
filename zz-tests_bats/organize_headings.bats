@@ -142,7 +142,7 @@ function organize_headings_double_hash_document_applies_identically { # @test
   assert_output - <<'EOF'
 organize: 1 change(s):
 
-  - [field3.ics  categories=[-work-]{+errand+}]  Water plants
+  - [field3.ics {+errand+} [-work-] priority=2_nice] Water plants
 
 organize: wrote 1 change(s)
 EOF
@@ -220,9 +220,9 @@ function organize_headings_reset_pops_to_parent_and_ungrouped { # @test
   assert_output - <<'EOF'
 organize: 3 change(s):
 
-  - [field1.ics  categories={+work+}]  Pay rent
-  - [field2.ics  categories=[-errand,work-]]  Read book
-  - [field4.ics  categories={+errand+}]  Someday idea
+  - [field1.ics {+work+} location=Bank status=needs-action priority=0_must] Pay rent
+  - [field2.ics [-errand-] [-work-] priority=1_should] Read book
+  - [field4.ics {+errand+}] Someday idea
 
 organize: wrote 3 change(s)
 EOF
@@ -282,7 +282,7 @@ function organize_headings_reset_deeper_than_current_is_noop { # @test
   assert_output - <<'EOF'
 organize: 1 change(s):
 
-  - [field4.ics  categories={+work+}]  Someday idea
+  - [field4.ics {+work+}] Someday idea
 
 organize: wrote 1 change(s)
 EOF

@@ -136,7 +136,7 @@ function organize_priority_band_move_rewrites { # @test
   assert_output - <<'EOF'
 organize: 1 change(s):
 
-  - [field2.ics  priority=[-1_should-]{+0_must+}]  Read book
+  - [field2.ics errand work priority=[-1_should-]{+0_must+}] Read book
 
 organize: wrote 1 change(s)
 EOF
@@ -232,7 +232,7 @@ function organize_priority_unspecified_clears { # @test
   assert_output - <<'EOF'
 organize: 1 change(s):
 
-  - [field1.ics  priority=[-0_must-]{+3_unspecified+}]  Pay rent
+  - [field1.ics location=Bank status=needs-action priority=[-0_must-]{+3_unspecified+}] Pay rent
 
 organize: wrote 1 change(s)
 EOF
@@ -355,7 +355,7 @@ function organize_priority_field_edit_band_completes { # @test
   assert_output - <<'EOF'
 organize: 1 change(s):
 
-  - [field3.ics  priority=[-2_nice-]{+0_must+}]  Water plants
+  - [field3.ics work priority=[-2_nice-]{+0_must+}] Water plants
 
 organize: wrote 1 change(s)
 EOF
@@ -438,7 +438,7 @@ function organize_priority_field_edit_raw_int_writes_verbatim { # @test
   assert_output - <<'EOF'
 organize: 1 change(s):
 
-  - [field2.ics  priority=[-1_should-]{+7+}]  Read book
+  - [field2.ics errand work priority=[-1_should-]{+7+}] Read book
 
 organize: wrote 1 change(s)
 EOF

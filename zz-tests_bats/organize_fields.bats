@@ -173,7 +173,7 @@ function organize_fields_location_edit_writes { # @test
   assert_output - <<'EOF'
 organize: 1 change(s):
 
-  - [field1.ics  location=[-Bank-]{+Office+}]  Pay rent
+  - [field1.ics location=[-Bank-]{+Office+} status=needs-action] Pay rent
 
 organize: wrote 1 change(s)
 EOF
@@ -200,7 +200,7 @@ function organize_fields_summary_trailer_edit_writes { # @test
   assert_output - <<'EOF'
 organize: 1 change(s):
 
-  - [field1.ics]  Pay rent {+now+}
+  - [field1.ics location=Bank status=needs-action] Pay rent {+now+}
 
 organize: wrote 1 change(s)
 EOF
@@ -352,7 +352,7 @@ function organize_fields_missing_status_move_in_writes { # @test
   assert_output - <<'EOF'
 organize: 1 change(s):
 
-  - [field5.ics  status={+needs-action+}]  Waiting idea
+  - [field5.ics status={+needs-action+}] Waiting idea
 
 organize: wrote 1 change(s)
 EOF
@@ -436,7 +436,7 @@ function organize_fields_missing_status_absence_is_noop { # @test
   assert_output - <<'EOF'
 organize: 1 change(s):
 
-  - [field1.ics  status=[-needs-action-]{+in-process+}]  Pay rent
+  - [field1.ics location=Bank priority=0_must status=[-needs-action-]{+in-process+}] Pay rent
 
 organize: wrote 1 change(s)
 EOF

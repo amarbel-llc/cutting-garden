@@ -93,5 +93,6 @@ keyword read-backs go through `cg mcp` `read_node` on the member email nodes
 | D6 `year` retired → `date` FieldDate, `--group-by date=(month)` | `organize_fastmail_group_by_date_month` |
 | Task 5b plugin-declared box ids (NodeIDer) + trailing-slash mailbox URIs | every whole-document vector above (`[T1 …]` ids, `_anchor = fastmail://test/Inbox/`) (+ Go `plugins/fastmail` `TestRelativeNodeID`, `TestURIMinting_TrailingSlash`; `internal/node_view` `TestRelativeIDFor`, `TestBoxIDs_BindsListerAndAnchor`; `internal/organize` `TestBuildDocument_BoxIDsResolveThroughNodeIDer`, `TestBuildDocument_RejectsAmbiguousBoxIDs`) |
 
-Apply summaries are the engine's full-set `tags=[-old-]{+new+}` word diff
-(the plan's `tags=[-_inbox-]` shorthand is the box-form summary, #260).
+Apply summaries are the object's document box line with per-atom word-diff
+markers — each removed tag `[-t-]`, each added `{+t+}` (#260/#270; the plan's
+`tags=[-_inbox-]` shorthand predates that form).

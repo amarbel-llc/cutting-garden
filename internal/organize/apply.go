@@ -294,20 +294,23 @@ func (cmd *Organize) applyDocument(
 		}
 	}
 
-	// The diff (cutting-garden#224): fold the moves and field edits into one box
-	// per object and show it BEFORE any write, so the user reviews exactly what
-	// lands. An interactive commit then confirms; a dry-run notes it wrote
-	// nothing; a scripted commit asserts intent by its mode and skips the prompt.
-	changes := buildChanges(edited, base, moves, fieldEdits, dim, trailer, idOf)
-	total := len(changes) + len(atomEdits)
+	// The diff (cutting-garden#224): fold the moves, field edits and tag-atom
+	// membership edits into one preview line per object (#260/#270) and show it
+	// BEFORE any write, so the user reviews exactly what lands. The change count
+	// is the number of objects previewed. An interactive commit then confirms; a
+	// dry-run notes it wrote nothing; a scripted commit asserts intent by its
+	// mode and skips the prompt.
+	changes := buildChanges(
+		edited, base, moves, fieldEdits, atomEdits, dim, tagDim, trailer, tagInterp, idOf,
+	)
+	total := len(changes)
 	if total == 0 {
 		fmt.Fprintln(cmd.output, "organize: no changes to apply")
 		return commit, nil
 	}
 
 	fmt.Fprintf(cmd.output, "organize: %d change(s):\n\n", total)
-	renderMembershipChanges(cmd.output, atomEdits, tagDim, idOf, descByID(edited), color)
-	renderDiff(cmd.output, changes, color)
+	renderChanges(cmd.output, changes, edited.TagAtoms == tagAtomsTrailing, color)
 	fmt.Fprintln(cmd.output)
 
 	write, err := cmd.reviewGate(total, commit, interactive)
@@ -670,17 +673,17 @@ func (cmd *Organize) applyMemberships(
 			len(notices), strings.Join(notices, ", "))
 	}
 
-	total := len(memberships) + len(fieldEdits)
+	// One preview line per object, membership and field edits folded together
+	// (#260/#270) — the same renderer the single-valued path uses.
+	changes := buildChanges(edited, base, nil, fieldEdits, memberships, dim, dim, trailer, interp, idOf)
+	total := len(changes)
 	if total == 0 {
 		fmt.Fprintln(cmd.output, "organize: no changes to apply")
 		return commit, nil
 	}
 
 	fmt.Fprintf(cmd.output, "organize: %d change(s):\n\n", total)
-	renderMembershipChanges(cmd.output, memberships, dim, idOf, descByID(edited), color)
-	if len(fieldEdits) > 0 {
-		renderDiff(cmd.output, buildChanges(edited, base, nil, fieldEdits, dim, trailer, idOf), color)
-	}
+	renderChanges(cmd.output, changes, edited.TagAtoms == tagAtomsTrailing, color)
 	fmt.Fprintln(cmd.output)
 
 	write, err := cmd.reviewGate(total, commit, interactive)

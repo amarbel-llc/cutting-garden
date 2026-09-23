@@ -33,12 +33,19 @@ import (
 func WriteObjectLine(
 	b *strings.Builder, lit trellis.Literal, desc string, trailingTags bool,
 ) {
+	WriteSpelledObjectLine(b, trellis.SpellLiteral(lit), desc, trailingTags)
+}
+
+// WriteSpelledObjectLine is WriteObjectLine over an already-spelled interior
+// (trellis.SpelledLiteral) and a desc written verbatim — the SAME frame and
+// slot layout, for a caller that re-spells individual slots: organize's apply
+// preview (cutting-garden#260/#270) paints each changed tag or atom with a
+// word-diff marker inside the very line the document renders for the object.
+func WriteSpelledObjectLine(
+	b *strings.Builder, s trellis.SpelledLiteral, desc string, trailingTags bool,
+) {
 	b.WriteString("- [")
-	if trailingTags {
-		trellis.WriteLiteralTrailingTags(b, lit)
-	} else {
-		trellis.WriteLiteral(b, lit)
-	}
+	trellis.WriteSpelledLiteral(b, s, trailingTags)
 	b.WriteByte(']')
 	if desc != "" {
 		b.WriteByte(' ')

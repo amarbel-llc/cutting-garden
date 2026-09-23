@@ -186,7 +186,7 @@ function organize_apply_status_move_commits { # @test
   assert_output - <<'EOF'
 organize: 1 change(s):
 
-  - [task1.ics  status={+completed+}]  Buy milk
+  - [task1.ics status={+completed+}] Buy milk
 
 organize: wrote 1 change(s)
 EOF
@@ -234,7 +234,7 @@ function organize_apply_dry_run_does_not_write { # @test
   assert_output - <<'EOF'
 organize: 1 change(s):
 
-  - [task1.ics  status={+completed+}]  Buy milk
+  - [task1.ics status={+completed+}] Buy milk
 
 organize: dry-run — nothing written
 EOF
@@ -262,7 +262,7 @@ function organize_commit_directly_from_stdin_writes { # @test
   assert_output - <<'EOF'
 organize: 1 change(s):
 
-  - [task1.ics  status={+completed+}]  Buy milk
+  - [task1.ics status={+completed+}] Buy milk
 
 organize: wrote 1 change(s)
 EOF
