@@ -65,7 +65,7 @@ type membershipEdit struct {
 func planMemberships(
 	edited, base document,
 	live []cgp.Node,
-	anchor string,
+	idOf boxIDer,
 	interp cgp.TagInterpreter,
 	dim string,
 	namespace string,
@@ -91,7 +91,7 @@ func planMemberships(
 
 	liveByID := make(map[string]cgp.Node, len(live))
 	for _, n := range live {
-		liveByID[relativeID(n.URIString(), anchor)] = n
+		liveByID[idOf(n.URIString())] = n
 	}
 
 	ids := make([]string, 0, len(baseM))

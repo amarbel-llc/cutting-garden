@@ -37,7 +37,7 @@ func TestPlanFieldEdits(t *testing.T) {
 			{ID: "t.ics", Fields: []cgp.BoxAtom{{Name: "location", Value: "Annex"}}, Desc: "New title"},
 		}}
 		edits, notices, err := planFieldEdits(
-			edited, base, []cgp.Node{live("Old title", "HQ")}, anchor, writable, trailer, present,
+			edited, base, []cgp.Node{live("Old title", "HQ")}, boxIDsFor(nil, anchor), writable, trailer, present,
 		)
 		if err != nil {
 			t.Fatalf("planFieldEdits: %v", err)
@@ -62,7 +62,7 @@ func TestPlanFieldEdits(t *testing.T) {
 			{ID: "t.ics", Fields: []cgp.BoxAtom{{Name: "date_start", Value: "2026-09-01"}}, Desc: "Old title"},
 		}}
 		edits, notices, err := planFieldEdits(
-			edited, roBase, []cgp.Node{live("Old title", "HQ")}, anchor, writable, trailer, present,
+			edited, roBase, []cgp.Node{live("Old title", "HQ")}, boxIDsFor(nil, anchor), writable, trailer, present,
 		)
 		if err != nil {
 			t.Fatalf("planFieldEdits: %v", err)
@@ -80,7 +80,7 @@ func TestPlanFieldEdits(t *testing.T) {
 			{ID: "t.ics", Fields: []cgp.BoxAtom{{Name: "location", Value: "Annex"}}, Desc: "Old title"},
 		}}
 		if _, _, err := planFieldEdits(
-			edited, base, []cgp.Node{live("Old title", "Elsewhere")}, anchor, writable, trailer, present,
+			edited, base, []cgp.Node{live("Old title", "Elsewhere")}, boxIDsFor(nil, anchor), writable, trailer, present,
 		); err == nil {
 			t.Error("expected a conflict when the live value drifted from base")
 		}
@@ -91,7 +91,7 @@ func TestPlanFieldEdits(t *testing.T) {
 			{ID: "t.ics", Fields: []cgp.BoxAtom{{Name: "location", Value: "Annex"}}, Desc: "Old title"},
 		}}
 		edits, _, err := planFieldEdits(
-			edited, base, []cgp.Node{live("Old title", "Annex")}, anchor, writable, trailer, present,
+			edited, base, []cgp.Node{live("Old title", "Annex")}, boxIDsFor(nil, anchor), writable, trailer, present,
 		)
 		if err != nil {
 			t.Fatalf("planFieldEdits: %v", err)
@@ -120,7 +120,7 @@ func TestPlanFieldEdits(t *testing.T) {
 		e := document{Ungrouped: []objectLine{
 			{ID: "t.ics", Fields: []cgp.BoxAtom{{Name: "date_start", Value: "2026-09-01"}}},
 		}}
-		edits, notices, err := planFieldEdits(e, b, []cgp.Node{liveDS}, anchor, wr, nil, pr)
+		edits, notices, err := planFieldEdits(e, b, []cgp.Node{liveDS}, boxIDsFor(nil, anchor), wr, nil, pr)
 		if err != nil {
 			t.Fatalf("planFieldEdits: %v", err)
 		}
@@ -174,7 +174,7 @@ func TestMultilineValuesCollapseInPresentationOnly(t *testing.T) {
 	}
 	doc := document{Ungrouped: []objectLine{{ID: "ml.ics", Desc: "Plan the trip then pack"}}}
 	edits, notices, err := planFieldEdits(
-		doc, doc, []cgp.Node{live}, "caldav:https://host/dav/cal/",
+		doc, doc, []cgp.Node{live}, boxIDsFor(nil, "caldav:https://host/dav/cal/"),
 		map[string]map[string]bool{typ: {"summary": true}},
 		map[string]string{typ: "summary"}, nil,
 	)

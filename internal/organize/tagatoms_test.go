@@ -16,7 +16,7 @@ import (
 func tagPresenterFor(t *testing.T, anchor string, byID map[string][]string) func(cgp.Node) []string {
 	t.Helper()
 	return func(n cgp.Node) []string {
-		return byID[relativeID(n.URIString(), anchor)]
+		return byID[boxIDsFor(nil, anchor)(n.URIString())]
 	}
 }
 

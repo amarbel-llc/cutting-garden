@@ -28,12 +28,12 @@ type bucket struct {
 // when non-nil, populates each box's detail atoms (date/time/location;
 // cutting-garden#47) from the plugin's FieldPresenter.
 func groupNodes(
-	nodes []cgp.Node, spec groupSpec, anchor string, declaredValues []string, inlineType bool,
+	nodes []cgp.Node, spec groupSpec, idOf boxIDer, declaredValues []string, inlineType bool,
 	present func(cgp.Node) []cgp.BoxAtom,
 ) (ungrouped []objectLine, buckets []bucket) {
 	byValue := map[string][]objectLine{}
 	for _, n := range nodes {
-		ln := objectLine{ID: relativeID(n.URIString(), anchor), Desc: nodeDescription(n)}
+		ln := objectLine{ID: idOf(n.URIString()), Desc: nodeDescription(n)}
 		if inlineType {
 			ln.Type = n.Type
 		}
@@ -118,13 +118,13 @@ func groupNodes(
 // namespace returns no buckets at all — no lone root heading — preserving the
 // all-ungrouped shape rejectEmptyNamespace keys off.
 func groupNodesByNamespace(
-	nodes []cgp.Node, spec groupSpec, anchor string, interp cgp.TagInterpreter,
+	nodes []cgp.Node, spec groupSpec, idOf boxIDer, interp cgp.TagInterpreter,
 	inlineType bool, present func(cgp.Node) []cgp.BoxAtom,
 ) (ungrouped []objectLine, buckets []bucket, err error) {
 	byBucket := map[string][]objectLine{}
 	var rootLines []objectLine
 	for _, n := range nodes {
-		ln := objectLine{ID: relativeID(n.URIString(), anchor), Desc: nodeDescription(n)}
+		ln := objectLine{ID: idOf(n.URIString()), Desc: nodeDescription(n)}
 		if inlineType {
 			ln.Type = n.Type
 		}

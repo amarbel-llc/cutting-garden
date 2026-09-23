@@ -699,7 +699,7 @@ func (doc document) hasBuckets() bool {
 // object's value for the grouped dimension, read from the deepest `=<value>`
 // heading in its path (empty when the object sits only under the type/ungrouped).
 // Keys are the box ids as written; the apply engine re-derives the same key from
-// each live node's URI via relativeID. An object under two positions is a
+// each live node's URI via the document's boxIDer. An object under two positions is a
 // malformed edit and rejects loudly.
 func (doc document) assignments() (map[string]string, error) {
 	out := make(map[string]string)
@@ -831,11 +831,18 @@ func (doc document) memberships(multi bool) (map[string][]string, error) {
 
 // --- id resolution -----------------------------------------------------------
 
-// relativeID is node_view.RelativeID — THE anchor-relative box-id
-// derivation, moved there in native tags slice 4 so `list -format espalier`
-// shortens ids against its listed URI exactly as organize does against its
-// `_anchor` (design G8/G13). The apply engine re-derives a stored box id
-// from a live node URI through the same function, so the two stay matched.
-func relativeID(uriStr, anchorStr string) string {
-	return node_view.RelativeID(uriStr, anchorStr)
+// boxIDer maps a node URI to its box id against ONE document's anchor —
+// node_view.BoxIDs(lister, anchor), i.e. the plugin's NodeIDer id when it
+// declares one, else the host+path RelativeID default (fastmail tags slice 1,
+// Task 5b). generate builds every object line through it and the apply
+// engine re-derives each live node's id through it (bound to the lister
+// re-resolved from `_anchor`), so a stored box id and a live node key alike
+// — ids are never reversed to URIs. `list -format espalier` shares the same
+// resolver (design G8/G13).
+type boxIDer func(uriStr string) string
+
+// boxIDsFor binds the id resolver to the lister that served the nodes and
+// the document's anchor.
+func boxIDsFor(lister cgp.RootLister, anchor string) boxIDer {
+	return node_view.BoxIDs(lister, anchor)
 }

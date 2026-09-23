@@ -236,6 +236,7 @@ func buildDocument(
 	nodes []cgp.Node, anchor, query string, spec groupSpec, lister cgp.RootLister,
 	interp cgp.TagInterpreter, tags tagRender,
 ) (document, error) {
+	idOf := boxIDsFor(lister, anchor)
 	doc := document{
 		Anchor:     anchor,
 		Query:      query,
@@ -251,11 +252,11 @@ func buildDocument(
 		// (a field dimension heading at depth 1 with buckets at depth 2).
 		doc.Type = types[0]
 		declared := writableBuckets(lister, types[0], spec.Dim)
-		ungrouped, buckets, err := groupForSpec(nodes, spec, anchor, declared, false, present, interp)
+		ungrouped, buckets, err := groupForSpec(nodes, spec, idOf, declared, false, present, interp)
 		if err != nil {
 			return document{}, err
 		}
-		tags.fill(nodes, anchor, spec, interp, ungrouped, buckets)
+		tags.fill(nodes, idOf, spec, interp, ungrouped, buckets)
 		doc.Ungrouped = ungrouped
 		doc.Sections = sectionsForSpec(spec, buckets, 1)
 	default:
@@ -264,11 +265,11 @@ func buildDocument(
 		for _, typ := range types {
 			typeNodes := nodesOfType(nodes, typ)
 			declared := writableBuckets(lister, typ, spec.Dim)
-			ungrouped, buckets, err := groupForSpec(typeNodes, spec, anchor, declared, true, present, interp)
+			ungrouped, buckets, err := groupForSpec(typeNodes, spec, idOf, declared, true, present, interp)
 			if err != nil {
 				return document{}, err
 			}
-			tags.fill(typeNodes, anchor, spec, interp, ungrouped, buckets)
+			tags.fill(typeNodes, idOf, spec, interp, ungrouped, buckets)
 			doc.Sections = append(doc.Sections, section{Depth: 1, Term: "!" + typ, Lines: ungrouped})
 			doc.Sections = append(doc.Sections, sectionsForSpec(spec, buckets, 2)...)
 		}
@@ -282,13 +283,13 @@ func buildDocument(
 // grouping both bucket by raw facet value (groupNodes) — the difference is only
 // in how the buckets RENDER (sectionsForSpec), not how nodes bucket.
 func groupForSpec(
-	nodes []cgp.Node, spec groupSpec, anchor string, declared []string,
+	nodes []cgp.Node, spec groupSpec, idOf boxIDer, declared []string,
 	inlineType bool, present func(cgp.Node) []cgp.BoxAtom, interp cgp.TagInterpreter,
 ) (ungrouped []objectLine, buckets []bucket, err error) {
 	if spec.Kind == groupKindTagNamespace {
-		return groupNodesByNamespace(nodes, spec, anchor, interp, inlineType, present)
+		return groupNodesByNamespace(nodes, spec, idOf, interp, inlineType, present)
 	}
-	ungrouped, buckets = groupNodes(nodes, spec, anchor, declared, inlineType, present)
+	ungrouped, buckets = groupNodes(nodes, spec, idOf, declared, inlineType, present)
 	return ungrouped, buckets, nil
 }
 
@@ -365,7 +366,7 @@ type tagRender struct {
 }
 
 // fill populates each object line's Tags from the presented tag sets, keyed by
-// the same relativeID the lines were built with. Under a TAG grouping with
+// the same box id (idOf) the lines were built with. Under a TAG grouping with
 // strip on, each bucket appearance drops exactly the placement tag(s) that
 // filed it there (bucketOfTag — the membership's Via reconstruction); every
 // other tag stays, and ungrouped lines always keep their full set. A FIELD
@@ -375,7 +376,7 @@ type tagRender struct {
 // (appearances that strip nothing all receive byID's slice), so Tags must
 // never be element-mutated after fill; every consumer only reads.
 func (tr tagRender) fill(
-	nodes []cgp.Node, anchor string, spec groupSpec, interp cgp.TagInterpreter,
+	nodes []cgp.Node, idOf boxIDer, spec groupSpec, interp cgp.TagInterpreter,
 	ungrouped []objectLine, buckets []bucket,
 ) {
 	if tr.present == nil {
@@ -384,7 +385,7 @@ func (tr tagRender) fill(
 	byID := make(map[string][]string, len(nodes))
 	for _, n := range nodes {
 		if ts := tr.present(n); len(ts) > 0 {
-			byID[relativeID(n.URIString(), anchor)] = ts
+			byID[idOf(n.URIString())] = ts
 		}
 	}
 	for i := range ungrouped {

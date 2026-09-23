@@ -319,7 +319,7 @@ func TestPlanTagAtomDeltas_StaleAtomReAsserts(t *testing.T) {
 	// net no-op against live, so NOTHING is written (never a silent removal,
 	// never a spurious write).
 	live := []cgp.Node{categoriesNode(t, anchor+"t1.ics", "errand", "work")}
-	edits, err := planMemberships(edited, base, live, anchor, mustInterp(t), "categories", "", deltas, true)
+	edits, err := planMemberships(edited, base, live, boxIDsFor(nil, anchor), mustInterp(t), "categories", "", deltas, true)
 	if err != nil {
 		t.Fatalf("planMemberships: %v", err)
 	}
@@ -385,7 +385,7 @@ func TestPlanAtomMembershipEdits_FoldsExact(t *testing.T) {
 		"t2.ics":   {adds: []string{"urgent"}}, // live already has it — no write
 		"gone.ics": {adds: []string{"x"}},      // not live — skipped
 	}
-	edits, err := planAtomMembershipEdits(deltas, live, "caldav://h/c/", interp, "categories")
+	edits, err := planAtomMembershipEdits(deltas, live, boxIDsFor(nil, "caldav://h/c/"), interp, "categories")
 	if err != nil {
 		t.Fatalf("planAtomMembershipEdits: %v", err)
 	}
@@ -516,7 +516,7 @@ func TestApply_MultiValuedModeNoneRejectsMove(t *testing.T) {
 	base.Anchor, edited.Anchor = "caldav://h/c/", "caldav://h/c/"
 	live := []cgp.Node{categoriesNode(t, "caldav://h/c/t1.ics", "work", "urgent")}
 
-	moves, err := planMoves(edited, base, groupSpec{Dim: "categories"}, live)
+	moves, err := planMoves(edited, base, groupSpec{Dim: "categories"}, live, boxIDsFor(nil, edited.Anchor))
 	if err != nil {
 		t.Fatalf("planMoves: %v", err)
 	}
@@ -558,7 +558,7 @@ func TestApply_MultiValuedUnmovedRoundTrips(t *testing.T) {
 	// bucket; the unmoved short-circuit must still produce no moves, no conflicts.
 	live := []cgp.Node{categoriesNode(t, "caldav://h/c/t1.ics", "work", "urgent")}
 
-	moves, err := planMoves(edited, base, groupSpec{Dim: "categories"}, live)
+	moves, err := planMoves(edited, base, groupSpec{Dim: "categories"}, live, boxIDsFor(nil, edited.Anchor))
 	if err != nil {
 		t.Fatalf("planMoves: %v", err)
 	}
@@ -773,7 +773,7 @@ func TestPlanFieldEdits_DedupKeepsDocumentFirst(t *testing.T) {
 		return []cgp.BoxAtom{{Name: "summary", Value: "orig", Field: "summary"}}
 	}
 
-	edits, _, err := planFieldEdits(edited, base, live, anchor, writable, nil, present)
+	edits, _, err := planFieldEdits(edited, base, live, boxIDsFor(nil, anchor), writable, nil, present)
 	if err != nil {
 		t.Fatalf("planFieldEdits: %v", err)
 	}
@@ -832,7 +832,7 @@ func TestPlanMoves_CleanMove(t *testing.T) {
 	live := []cgp.Node{taskNode(t, "caldav://h/c/t1.ics", "NEEDS-ACTION")}
 	base.Anchor, edited.Anchor = "caldav://h/c/", "caldav://h/c/"
 
-	moves, err := planMoves(edited, base, groupSpec{Dim: "status"}, live)
+	moves, err := planMoves(edited, base, groupSpec{Dim: "status"}, live, boxIDsFor(nil, edited.Anchor))
 	if err != nil {
 		t.Fatalf("planMoves: %v", err)
 	}
@@ -852,7 +852,7 @@ func TestPlanMoves_NullToValue(t *testing.T) {
 	live := []cgp.Node{taskNode(t, "caldav://h/c/t1.ics", "")}
 	base.Anchor, edited.Anchor = "caldav://h/c/", "caldav://h/c/"
 
-	moves, err := planMoves(edited, base, groupSpec{Dim: "status"}, live)
+	moves, err := planMoves(edited, base, groupSpec{Dim: "status"}, live, boxIDsFor(nil, edited.Anchor))
 	if err != nil {
 		t.Fatalf("planMoves: %v", err)
 	}
@@ -868,7 +868,7 @@ func TestPlanMoves_Unmoved(t *testing.T) {
 	live := []cgp.Node{taskNode(t, "caldav://h/c/t1.ics", "NEEDS-ACTION")}
 	base.Anchor, edited.Anchor = "caldav://h/c/", "caldav://h/c/"
 
-	moves, err := planMoves(edited, base, groupSpec{Dim: "status"}, live)
+	moves, err := planMoves(edited, base, groupSpec{Dim: "status"}, live, boxIDsFor(nil, edited.Anchor))
 	if err != nil {
 		t.Fatalf("planMoves: %v", err)
 	}
@@ -885,7 +885,7 @@ func TestPlanMoves_Conflict(t *testing.T) {
 	live := []cgp.Node{taskNode(t, "caldav://h/c/t1.ics", "CANCELLED")} // drifted
 	base.Anchor, edited.Anchor = "caldav://h/c/", "caldav://h/c/"
 
-	if _, err := planMoves(edited, base, groupSpec{Dim: "status"}, live); err == nil {
+	if _, err := planMoves(edited, base, groupSpec{Dim: "status"}, live, boxIDsFor(nil, edited.Anchor)); err == nil {
 		t.Fatal("expected a conflict error when live drifted from base")
 	}
 }
@@ -916,7 +916,7 @@ func TestPlanMoves_DateGranularityUnmoved(t *testing.T) {
 		t.Fatalf("recovered spec = %+v, want date_due=(month)", spec)
 	}
 
-	moves, err := planMoves(edited, base, spec, live)
+	moves, err := planMoves(edited, base, spec, live, boxIDsFor(nil, edited.Anchor))
 	if err != nil {
 		t.Fatalf("planMoves: %v", err)
 	}
@@ -936,7 +936,7 @@ func TestPlanMoves_DateGranularityMove(t *testing.T) {
 	if err != nil {
 		t.Fatalf("groupedSpec: %v", err)
 	}
-	moves, err := planMoves(edited, base, spec, live)
+	moves, err := planMoves(edited, base, spec, live, boxIDsFor(nil, edited.Anchor))
 	if err != nil {
 		t.Fatalf("planMoves: %v", err)
 	}

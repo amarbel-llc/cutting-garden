@@ -65,7 +65,36 @@ func DistinctTypes(nodes []cutting_garden_plugins.Node) []string {
 	return out
 }
 
-// RelativeID renders a node URI relative to the anchor when it sits under it
+// RelativeIDFor is THE box-id resolver (fastmail tags slice 1, Task 5b):
+// the plugin's own anchor-relative id when lister implements
+// cutting_garden_plugins.NodeIDer and accepts the node, else the host+path
+// default (RelativeID). Every id organize and `list -format espalier`
+// render or re-derive goes through here, bound to the one lister that
+// served the nodes, so generate and apply always agree. A nil lister takes
+// the default.
+func RelativeIDFor(
+	lister cutting_garden_plugins.RootLister, uriStr, anchorStr string,
+) string {
+	if ider, ok := lister.(cutting_garden_plugins.NodeIDer); ok {
+		if id, ok := ider.RelativeNodeID(uriStr, anchorStr); ok {
+			return id
+		}
+	}
+	return RelativeID(uriStr, anchorStr)
+}
+
+// BoxIDs binds RelativeIDFor to one lister and anchor — the per-document
+// id function organize's generate and apply paths thread down.
+func BoxIDs(
+	lister cutting_garden_plugins.RootLister, anchorStr string,
+) func(uriStr string) string {
+	return func(uriStr string) string {
+		return RelativeIDFor(lister, uriStr, anchorStr)
+	}
+}
+
+// RelativeID is the DEFAULT box id (RelativeIDFor's fallback for a plugin
+// without NodeIDer): a node URI relative to the anchor when it sits under it
 // (the short `task1.ics` form), else the full URI. Comparison is
 // form-independent: it matches on host+path so an anchor spelled
 // `caldav:https://host/cal/` shortens a node URI spelled

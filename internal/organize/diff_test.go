@@ -60,7 +60,7 @@ func TestBuildChanges(t *testing.T) {
 	}}
 	trailer := map[string]string{"task": "summary"}
 
-	changes := buildChanges(edited, base, moves, fieldEdits, "status", trailer, anchor)
+	changes := buildChanges(edited, base, moves, fieldEdits, "status", trailer, boxIDsFor(nil, anchor))
 	if len(changes) != 1 {
 		t.Fatalf("changes = %+v, want 1", changes)
 	}

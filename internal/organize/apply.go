@@ -141,6 +141,9 @@ func (cmd *Organize) applyDocument(
 		return false, err
 	}
 	dim := spec.Dim
+	// Live nodes are keyed by the SAME id resolver generate built the box ids
+	// with, bound to the lister `_anchor` re-resolves to (Task 5b).
+	idOf := boxIDsFor(lister, edited.Anchor)
 
 	// Box tag atoms are membership edits (design G7, native tags slice 2 T3):
 	// diff the edited boxes' tag atoms against the pinned base per the
@@ -224,7 +227,7 @@ func (cmd *Organize) applyDocument(
 		atomWrites  map[string]cgp.FacetWrite
 	)
 	if len(atomDeltas) > 0 {
-		atomEdits, err = planAtomMembershipEdits(atomDeltas, liveNodes, edited.Anchor, tagInterp, tagDim)
+		atomEdits, err = planAtomMembershipEdits(atomDeltas, liveNodes, idOf, tagInterp, tagDim)
 		if err != nil {
 			return false, err
 		}
@@ -250,13 +253,13 @@ func (cmd *Organize) applyDocument(
 	// field/trailer edits (a box-atom or description change, applied via
 	// FieldWriteApplier, cutting-garden#218). A read-only or cleared field edit
 	// is surfaced as a non-blocking notice rather than silently dropped.
-	moves, err := planMoves(edited, base, spec, liveNodes)
+	moves, err := planMoves(edited, base, spec, liveNodes, idOf)
 	if err != nil {
 		return false, err
 	}
 	writable, trailer := fieldWriteSchema(lister)
 	fieldEdits, notices, err := planFieldEdits(
-		edited, base, liveNodes, edited.Anchor, writable, trailer, boxAtomPresenter(lister),
+		edited, base, liveNodes, idOf, writable, trailer, boxAtomPresenter(lister),
 	)
 	if err != nil {
 		return false, err
@@ -295,7 +298,7 @@ func (cmd *Organize) applyDocument(
 	// per object and show it BEFORE any write, so the user reviews exactly what
 	// lands. An interactive commit then confirms; a dry-run notes it wrote
 	// nothing; a scripted commit asserts intent by its mode and skips the prompt.
-	changes := buildChanges(edited, base, moves, fieldEdits, dim, trailer, edited.Anchor)
+	changes := buildChanges(edited, base, moves, fieldEdits, dim, trailer, idOf)
 	total := len(changes) + len(atomEdits)
 	if total == 0 {
 		fmt.Fprintln(cmd.output, "organize: no changes to apply")
@@ -303,7 +306,7 @@ func (cmd *Organize) applyDocument(
 	}
 
 	fmt.Fprintf(cmd.output, "organize: %d change(s):\n\n", total)
-	renderMembershipChanges(cmd.output, atomEdits, tagDim, edited.Anchor, descByID(edited), color)
+	renderMembershipChanges(cmd.output, atomEdits, tagDim, idOf, descByID(edited), color)
 	renderDiff(cmd.output, changes, color)
 	fmt.Fprintln(cmd.output)
 
@@ -365,9 +368,9 @@ func resolveTagDimension(spec groupSpec, lister cgp.RootLister) (groupSpec, erro
 }
 
 // planMoves computes the three-way merge, keyed by box id. The stored box ids
-// (base and edited) and the live nodes' re-derived relativeID(node.URI, anchor)
-// key alike because both run relativeID over the plugin's canonical node URIs, so
-// the URI spelling never has to match by string. A node whose edited bucket
+// (base and edited) and the live nodes' re-derived idOf(node.URI) key alike
+// because both run the same resolver (boxIDsFor) over the plugin's canonical
+// node URIs, so the URI spelling never has to match by string. A node whose edited bucket
 // differs from its base bucket is a move, UNLESS the live state has already
 // drifted from the base — a conflict, reported as a structured rejection rather
 // than silently overwritten (RFC 0015). Additions/deletions vs the base are out
@@ -377,9 +380,9 @@ func resolveTagDimension(spec groupSpec, lister cgp.RootLister) (groupSpec, erro
 // headings, which a date grouping already rendered coarse — so only the LIVE
 // day-precise value needs coarsening to the spec's granularity for the three
 // sides to compare like for like (cutting-garden#230).
-func planMoves(edited, base document, spec groupSpec, liveNodes []cgp.Node) ([]move, error) {
-	anchor := edited.Anchor
-
+func planMoves(
+	edited, base document, spec groupSpec, liveNodes []cgp.Node, idOf boxIDer,
+) ([]move, error) {
 	editedAsg, err := edited.assignments()
 	if err != nil {
 		return nil, err
@@ -392,7 +395,7 @@ func planMoves(edited, base document, spec groupSpec, liveNodes []cgp.Node) ([]m
 	liveByKey := make(map[string]cgp.Node, len(liveNodes))
 	liveAsg := make(map[string]string, len(liveNodes))
 	for _, n := range liveNodes {
-		key := relativeID(n.URIString(), anchor)
+		key := idOf(n.URIString())
 		liveByKey[key] = n
 		// Mode-one: "" or the value, coarsened to the document's granularity.
 		liveAsg[key] = coarsenBucket(firstFacetKey(n.Facets[spec.Dim]), spec.Granularity)
@@ -625,8 +628,9 @@ func (cmd *Organize) applyMemberships(
 		return false, err
 	}
 
+	idOf := boxIDsFor(lister, edited.Anchor)
 	memberships, err := planMemberships(
-		edited, base, liveNodes, edited.Anchor, interp, dim, namespace,
+		edited, base, liveNodes, idOf, interp, dim, namespace,
 		atomDeltas, placementFolds,
 	)
 	if err != nil {
@@ -649,7 +653,7 @@ func (cmd *Organize) applyMemberships(
 
 	writable, trailer := fieldWriteSchema(lister)
 	fieldEdits, notices, err := planFieldEdits(
-		edited, base, liveNodes, edited.Anchor, writable, trailer, boxAtomPresenter(lister),
+		edited, base, liveNodes, idOf, writable, trailer, boxAtomPresenter(lister),
 	)
 	if err != nil {
 		return false, err
@@ -673,9 +677,9 @@ func (cmd *Organize) applyMemberships(
 	}
 
 	fmt.Fprintf(cmd.output, "organize: %d change(s):\n\n", total)
-	renderMembershipChanges(cmd.output, memberships, dim, edited.Anchor, descByID(edited), color)
+	renderMembershipChanges(cmd.output, memberships, dim, idOf, descByID(edited), color)
 	if len(fieldEdits) > 0 {
-		renderDiff(cmd.output, buildChanges(edited, base, nil, fieldEdits, dim, trailer, edited.Anchor), color)
+		renderDiff(cmd.output, buildChanges(edited, base, nil, fieldEdits, dim, trailer, idOf), color)
 	}
 	fmt.Fprintln(cmd.output)
 

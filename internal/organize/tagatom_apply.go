@@ -207,12 +207,12 @@ func disagreementConflicts(
 // GROUPED dimension is not the tag dimension and no placement folds exist. One
 // full-set membershipEdit per object whose folded set differs from live.
 func planAtomMembershipEdits(
-	deltas map[string]tagDelta, live []cgp.Node, anchor string,
+	deltas map[string]tagDelta, live []cgp.Node, idOf boxIDer,
 	interp cgp.TagInterpreter, dim string,
 ) ([]membershipEdit, error) {
 	liveByID := make(map[string]cgp.Node, len(live))
 	for _, n := range live {
-		liveByID[relativeID(n.URIString(), anchor)] = n
+		liveByID[idOf(n.URIString())] = n
 	}
 
 	ids := make([]string, 0, len(deltas))

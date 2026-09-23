@@ -232,7 +232,7 @@ func (cmd *List) runRoots(ctx errors.Context) error {
 		// Deliberately un-vectored: the "" anchor → full-URI id derivation is
 		// the same non-prefix RelativeID path TestRun_EspalierNoTagPlugin
 		// exercises, and the roots aggregation itself is pinned elsewhere.
-		return writeEspalier(cmd.output, nodes, "", nil, nil)
+		return writeEspalier(cmd.output, nodes, node_view.BoxIDs(nil, ""), nil, nil)
 	}
 	return writeText(cmd.output, nodes, nil)
 }
@@ -322,7 +322,7 @@ func (cmd *List) runList(
 		return writeJSON(cmd.output, nodes, presentTags)
 	case formatEspalier:
 		return writeEspalier(
-			cmd.output, nodes, uriStr, presentTags,
+			cmd.output, nodes, node_view.BoxIDs(lister, uriStr), presentTags,
 			node_view.BoxAtomPresenter(lister),
 		)
 	}
@@ -371,7 +371,9 @@ func writeText(
 // writeEspalier renders one organize object line per node — `- [<id>
 // <tag>… <k>=<v>…] <desc>` — through the SAME projection AND frame
 // organize's document builder uses (native tags design G8/G13): the box id
-// is anchor-relative against the listed URI (node_view.RelativeID),
+// is anchor-relative against the listed URI (boxID — node_view.BoxIDs
+// bound to the listing's plugin, the same NodeIDer-aware resolver organize
+// uses),
 // the whole line is written by node_view.WriteObjectLine (the
 // shared frame over trellis.WriteLiteral — tags leading, SortKey order,
 // QuoteIfNeeded), and the trailer is the node's description field
@@ -387,7 +389,7 @@ func writeText(
 func writeEspalier(
 	w io.Writer,
 	nodes []cutting_garden_plugins.Node,
-	anchor string,
+	boxID func(uriStr string) string,
 	presentTags func(cutting_garden_plugins.Node) []string,
 	presentAtoms func(cutting_garden_plugins.Node) []cutting_garden_plugins.BoxAtom,
 ) error {
@@ -396,7 +398,7 @@ func writeEspalier(
 	lines := make([]line, 0, len(nodes))
 	for _, n := range nodes {
 		lit := trellis.Literal{
-			ID: node_view.RelativeID(n.URIString(), anchor),
+			ID: boxID(n.URIString()),
 		}
 		if inlineType {
 			lit.Type = n.Type

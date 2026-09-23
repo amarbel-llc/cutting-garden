@@ -90,7 +90,7 @@ func atomMap(atoms []cgp.BoxAtom) map[string]string {
 func planFieldEdits(
 	edited, base document,
 	liveNodes []cgp.Node,
-	anchor string,
+	idOf boxIDer,
 	writable map[string]map[string]bool,
 	trailer map[string]string,
 	present func(cgp.Node) []cgp.BoxAtom,
@@ -101,7 +101,7 @@ func planFieldEdits(
 	}
 	liveByKey := make(map[string]cgp.Node, len(liveNodes))
 	for _, n := range liveNodes {
-		liveByKey[relativeID(n.URIString(), anchor)] = n
+		liveByKey[idOf(n.URIString())] = n
 	}
 
 	var conflicts []string

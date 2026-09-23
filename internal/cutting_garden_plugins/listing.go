@@ -110,6 +110,33 @@ type FieldPresenter interface {
 	PresentBoxAtoms(node Node) []BoxAtom
 }
 
+// NodeIDer is the OPTIONAL capability a plugin implements to give a node its
+// short, anchor-relative object id — the box id an organize document and
+// `list -format espalier` render (`- [<id> …]`). A plugin that does NOT
+// implement it (or declines a node with ok=false) gets the framework
+// default, node_view.RelativeID: the node URI's host+path with the anchor's
+// host+path prefix trimmed. That default is right for a plugin whose node
+// identity lives in the URI path (caldav's `…/cal/task1.ics` → `task1.ics`);
+// a plugin whose identity rides elsewhere — fastmail's thread id in the
+// QUERY (`fastmail://acct/Inbox/?thread=T1`) — would otherwise collapse every
+// node under one mailbox to the same id.
+//
+// RelativeNodeID MUST be a pure, deterministic function of (nodeURI,
+// anchor): organize never REVERSES a box id to a URI — its apply engine
+// re-derives each live node's id through this same call and matches the
+// stored id by string, so generate and apply agree only because the
+// derivation is stable. It MUST NOT fetch, consult ambient state, or depend
+// on the other nodes in the set. Distinct nodes under one anchor SHOULD get
+// distinct ids. Any
+// string is a valid id — the box writer quotes it as needed
+// (trellis.QuoteIfNeeded) — but a short, readable one is the point.
+// ok=false defers to the default for that node.
+type NodeIDer interface {
+	Plugin
+
+	RelativeNodeID(nodeURI, anchor string) (id string, ok bool)
+}
+
 // EnrichedLister is the OPTIONAL capability a plugin implements to serve a
 // container's children ENRICHED — Facets and Fields populated — and
 // optionally narrowed by filter, in ONE data-bearing fetch

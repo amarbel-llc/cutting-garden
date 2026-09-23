@@ -156,7 +156,7 @@ func buildChanges(
 	fieldEdits []objectFieldEdit,
 	dim string,
 	trailer map[string]string,
-	anchor string,
+	idOf boxIDer,
 ) []objectChange {
 	baseLines := objectLinesByID(base)
 	editedLines := objectLinesByID(edited)
@@ -172,11 +172,11 @@ func buildChanges(
 	}
 
 	for _, mv := range moves {
-		id := relativeID(mv.URI, anchor)
+		id := idOf(mv.URI)
 		get(id).Atoms = append(get(id).Atoms, fieldDelta{Field: dim, Old: mv.From, New: mv.To})
 	}
 	for _, oe := range fieldEdits {
-		id := relativeID(oe.URI, anchor)
+		id := idOf(oe.URI)
 		c := get(id)
 		baseAtoms := atomMap(baseLines[id].Fields)
 		tf := trailer[oe.Node.Type]
@@ -245,11 +245,11 @@ func renderDiff(w io.Writer, changes []objectChange, color bool) {
 // membership edit re-files a whole SET, not one atom. The caller writes the
 // header and the confirm/dry-run footer around it.
 func renderMembershipChanges(
-	w io.Writer, edits []membershipEdit, dim, anchor string,
+	w io.Writer, edits []membershipEdit, dim string, idOf boxIDer,
 	descs map[string]string, color bool,
 ) {
 	for _, e := range edits {
-		id := relativeID(e.URI, anchor)
+		id := idOf(e.URI)
 		old := spelledSortedTags(facetKeys(e.Node.Facets[dim]))
 		set := spelledSortedTags(e.NewTags)
 		fmt.Fprintf(w, "  - [%s  %s=%s]", id, dim, renderWholeValue(old, set, color))

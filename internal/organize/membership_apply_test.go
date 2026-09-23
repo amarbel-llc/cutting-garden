@@ -85,7 +85,7 @@ func TestPlanMemberships_AddOnly(t *testing.T) {
 	edited := categoriesDoc(t, map[string][]string{"t1.ics": {"work", "urgent"}})
 	live := []cgp.Node{liveNode(t, "t1.ics", "work")}
 
-	edits, err := planMemberships(edited, base, live, membershipAnchor, mustInterp(t), membershipDim, "", nil, true)
+	edits, err := planMemberships(edited, base, live, boxIDsFor(nil, membershipAnchor), mustInterp(t), membershipDim, "", nil, true)
 	if err != nil {
 		t.Fatalf("planMemberships: %v", err)
 	}
@@ -107,7 +107,7 @@ func TestPlanMemberships_RemoveWithSurvivor(t *testing.T) {
 	edited := categoriesDoc(t, map[string][]string{"t1.ics": {"work"}})
 	live := []cgp.Node{liveNode(t, "t1.ics", "work", "urgent")}
 
-	edits, err := planMemberships(edited, base, live, membershipAnchor, mustInterp(t), membershipDim, "", nil, true)
+	edits, err := planMemberships(edited, base, live, boxIDsFor(nil, membershipAnchor), mustInterp(t), membershipDim, "", nil, true)
 	if err != nil {
 		t.Fatalf("planMemberships: %v", err)
 	}
@@ -126,7 +126,7 @@ func TestPlanMemberships_NoOp(t *testing.T) {
 	edited := categoriesDoc(t, map[string][]string{"t1.ics": {"work", "urgent"}})
 	live := []cgp.Node{liveNode(t, "t1.ics", "work", "urgent")}
 
-	edits, err := planMemberships(edited, base, live, membershipAnchor, mustInterp(t), membershipDim, "", nil, true)
+	edits, err := planMemberships(edited, base, live, boxIDsFor(nil, membershipAnchor), mustInterp(t), membershipDim, "", nil, true)
 	if err != nil {
 		t.Fatalf("planMemberships: %v", err)
 	}
@@ -144,7 +144,7 @@ func TestPlanMemberships_IdempotentAgainstLive(t *testing.T) {
 	// Live already carries both tags (someone else added urgent concurrently).
 	live := []cgp.Node{liveNode(t, "t1.ics", "work", "urgent")}
 
-	edits, err := planMemberships(edited, base, live, membershipAnchor, mustInterp(t), membershipDim, "", nil, true)
+	edits, err := planMemberships(edited, base, live, boxIDsFor(nil, membershipAnchor), mustInterp(t), membershipDim, "", nil, true)
 	if err != nil {
 		t.Fatalf("planMemberships: %v", err)
 	}
@@ -165,7 +165,7 @@ func TestPlanMemberships_LastLineVanish(t *testing.T) {
 	}
 	live := []cgp.Node{liveNode(t, "t1.ics", "work")}
 
-	_, err := planMemberships(edited, base, live, membershipAnchor, mustInterp(t), membershipDim, "", nil, true)
+	_, err := planMemberships(edited, base, live, boxIDsFor(nil, membershipAnchor), mustInterp(t), membershipDim, "", nil, true)
 	if err == nil {
 		t.Fatal("deleting an object's last line must reject")
 	}
@@ -183,7 +183,7 @@ func TestPlanMemberships_LastLineVanishBatched(t *testing.T) {
 	}
 	live := []cgp.Node{liveNode(t, "id1.ics", "work"), liveNode(t, "id2.ics", "urgent")}
 
-	_, err := planMemberships(edited, base, live, membershipAnchor, mustInterp(t), membershipDim, "", nil, true)
+	_, err := planMemberships(edited, base, live, boxIDsFor(nil, membershipAnchor), mustInterp(t), membershipDim, "", nil, true)
 	if err == nil {
 		t.Fatal("two deleted last lines must reject")
 	}
@@ -201,7 +201,7 @@ func TestPlanMemberships_RemoveAllLegal(t *testing.T) {
 	edited := categoriesDoc(t, map[string][]string{"t1.ics": {}})
 	live := []cgp.Node{liveNode(t, "t1.ics", "work")}
 
-	edits, err := planMemberships(edited, base, live, membershipAnchor, mustInterp(t), membershipDim, "", nil, true)
+	edits, err := planMemberships(edited, base, live, boxIDsFor(nil, membershipAnchor), mustInterp(t), membershipDim, "", nil, true)
 	if err != nil {
 		t.Fatalf("remove-all must be legal: %v", err)
 	}
@@ -222,7 +222,7 @@ func TestPlanMemberships_NamespaceAdd(t *testing.T) {
 	edited := categoriesDoc(t, map[string][]string{"t1.ics": {"-client"}})
 	live := []cgp.Node{liveNode(t, "t1.ics")} // no categories tags yet
 
-	edits, err := planMemberships(edited, base, live, membershipAnchor, mustDodderHyphen(t), membershipDim, "project", nil, true)
+	edits, err := planMemberships(edited, base, live, boxIDsFor(nil, membershipAnchor), mustDodderHyphen(t), membershipDim, "project", nil, true)
 	if err != nil {
 		t.Fatalf("planMemberships: %v", err)
 	}
@@ -246,7 +246,7 @@ func TestPlanMemberships_NamespaceRemoveSubtree(t *testing.T) {
 	edited := categoriesDoc(t, map[string][]string{"t1.ics": {}})
 	live := []cgp.Node{liveNode(t, "t1.ics", "project-client-acme", "project-client-baxter", "other")}
 
-	edits, err := planMemberships(edited, base, live, membershipAnchor, mustDodderHyphen(t), membershipDim, "project", nil, true)
+	edits, err := planMemberships(edited, base, live, boxIDsFor(nil, membershipAnchor), mustDodderHyphen(t), membershipDim, "project", nil, true)
 	if err != nil {
 		t.Fatalf("planMemberships: %v", err)
 	}
@@ -268,7 +268,7 @@ func TestPlanMemberships_RootBucketAdd(t *testing.T) {
 	edited := categoriesDoc(t, map[string][]string{"t1.ics": {"project"}})
 	live := []cgp.Node{liveNode(t, "t1.ics", "other")}
 
-	edits, err := planMemberships(edited, base, live, membershipAnchor, mustDodderHyphen(t), membershipDim, "project", nil, true)
+	edits, err := planMemberships(edited, base, live, boxIDsFor(nil, membershipAnchor), mustDodderHyphen(t), membershipDim, "project", nil, true)
 	if err != nil {
 		t.Fatalf("planMemberships: %v", err)
 	}
@@ -291,7 +291,7 @@ func TestPlanMemberships_RootBucketRemoveBareOnly(t *testing.T) {
 	edited := categoriesDoc(t, map[string][]string{"t1.ics": {"-client"}})
 	live := []cgp.Node{liveNode(t, "t1.ics", "project", "project-client-acme", "other")}
 
-	edits, err := planMemberships(edited, base, live, membershipAnchor, mustDodderHyphen(t), membershipDim, "project", nil, true)
+	edits, err := planMemberships(edited, base, live, boxIDsFor(nil, membershipAnchor), mustDodderHyphen(t), membershipDim, "project", nil, true)
 	if err != nil {
 		t.Fatalf("planMemberships: %v", err)
 	}
@@ -314,7 +314,7 @@ func TestPlanMemberships_RootBucketRemoveConcurrentNoOp(t *testing.T) {
 	// Live already lost the bare tag; only the unrelated tag remains.
 	live := []cgp.Node{liveNode(t, "t1.ics", "other")}
 
-	edits, err := planMemberships(edited, base, live, membershipAnchor, mustDodderHyphen(t), membershipDim, "project", nil, true)
+	edits, err := planMemberships(edited, base, live, boxIDsFor(nil, membershipAnchor), mustDodderHyphen(t), membershipDim, "project", nil, true)
 	if err != nil {
 		t.Fatalf("planMemberships: %v", err)
 	}
@@ -331,7 +331,7 @@ func TestPlanMemberships_RootToContinuationMove(t *testing.T) {
 	edited := categoriesDoc(t, map[string][]string{"t1.ics": {"-client"}})
 	live := []cgp.Node{liveNode(t, "t1.ics", "project")}
 
-	edits, err := planMemberships(edited, base, live, membershipAnchor, mustDodderHyphen(t), membershipDim, "project", nil, true)
+	edits, err := planMemberships(edited, base, live, boxIDsFor(nil, membershipAnchor), mustDodderHyphen(t), membershipDim, "project", nil, true)
 	if err != nil {
 		t.Fatalf("planMemberships: %v", err)
 	}
@@ -352,7 +352,7 @@ func TestPlanMemberships_AtomDeltasFoldAfterBuckets(t *testing.T) {
 	live := []cgp.Node{liveNode(t, "t1.ics", "work")}
 	deltas := map[string]tagDelta{"t1.ics": {adds: []string{"someday"}}}
 
-	edits, err := planMemberships(edited, base, live, membershipAnchor, mustInterp(t), membershipDim, "", deltas, true)
+	edits, err := planMemberships(edited, base, live, boxIDsFor(nil, membershipAnchor), mustInterp(t), membershipDim, "", deltas, true)
 	if err != nil {
 		t.Fatalf("planMemberships: %v", err)
 	}
@@ -371,7 +371,7 @@ func TestPlanMemberships_PlacementFoldsOffUsesDeltasOnly(t *testing.T) {
 	live := []cgp.Node{liveNode(t, "t1.ics", "work")}
 
 	// No deltas: the placement move alone writes nothing.
-	edits, err := planMemberships(edited, base, live, membershipAnchor, mustInterp(t), membershipDim, "", nil, false)
+	edits, err := planMemberships(edited, base, live, boxIDsFor(nil, membershipAnchor), mustInterp(t), membershipDim, "", nil, false)
 	if err != nil {
 		t.Fatalf("planMemberships: %v", err)
 	}
@@ -381,7 +381,7 @@ func TestPlanMemberships_PlacementFoldsOffUsesDeltasOnly(t *testing.T) {
 
 	// The effective-set delta (add urgent, keep work) is the whole diff.
 	deltas := map[string]tagDelta{"t1.ics": {adds: []string{"urgent"}}}
-	edits, err = planMemberships(edited, base, live, membershipAnchor, mustInterp(t), membershipDim, "", deltas, false)
+	edits, err = planMemberships(edited, base, live, boxIDsFor(nil, membershipAnchor), mustInterp(t), membershipDim, "", deltas, false)
 	if err != nil {
 		t.Fatalf("planMemberships: %v", err)
 	}
@@ -399,7 +399,7 @@ func TestPlanMemberships_NamespaceAddKeepsSiblings(t *testing.T) {
 	edited := categoriesDoc(t, map[string][]string{"t1.ics": {"-sales", "-client"}})
 	live := []cgp.Node{liveNode(t, "t1.ics", "project-sales")}
 
-	edits, err := planMemberships(edited, base, live, membershipAnchor, mustDodderHyphen(t), membershipDim, "project", nil, true)
+	edits, err := planMemberships(edited, base, live, boxIDsFor(nil, membershipAnchor), mustDodderHyphen(t), membershipDim, "project", nil, true)
 	if err != nil {
 		t.Fatalf("planMemberships: %v", err)
 	}

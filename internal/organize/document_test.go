@@ -1,9 +1,13 @@
 package organize
 
 import (
+	"net/url"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
+
+	cgp "code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
 )
 
 // spelling2Doc is a representative single-type (envelope `_type`) document.
@@ -302,19 +306,46 @@ func TestMemberships_DuplicateUngroupedRejects(t *testing.T) {
 	}
 }
 
-// TestRelativeID pins form-independent id shortening: same-spelling prefix,
-// cross-spelling (caldav:https:// anchor vs caldav:// node URI), and unrelated.
-func TestRelativeID(t *testing.T) {
-	if got := relativeID("caldav:http://h/dav/cal/task1.ics", "caldav:http://h/dav/cal/"); got != "task1.ics" {
-		t.Errorf("relativeID same-form = %q, want task1.ics", got)
+// threadIDLister is a fakeLister that ALSO implements NodeIDer, keying each
+// node by its `?thread=` query value.
+type threadIDLister struct {
+	fakeLister
+}
+
+func (l *threadIDLister) RelativeNodeID(nodeURI, _ string) (string, bool) {
+	u, err := url.Parse(nodeURI)
+	if err != nil || u.Query().Get("thread") == "" {
+		return "", false
 	}
-	if got := relativeID(
-		"caldav://caldav.fastmail.com/dav/cal/x.ics",
-		"caldav:https://caldav.fastmail.com/dav/cal/",
-	); got != "x.ics" {
-		t.Errorf("relativeID cross-form = %q, want x.ics", got)
+	return u.Query().Get("thread"), true
+}
+
+func threadNode(t *testing.T, thread string) cgp.Node {
+	return cgp.Node{
+		URI:    mustURL(t, "fake://acct/Inbox/?thread="+thread),
+		Type:   "thread",
+		Facets: map[string][]cgp.FacetValue{"status": {{Key: "open"}}},
 	}
-	if got := relativeID("caldav://other/y.ics", "caldav://host/cal/"); got != "caldav://other/y.ics" {
-		t.Errorf("relativeID unrelated = %q, want full URI", got)
+}
+
+// TestBuildDocument_BoxIDsResolveThroughNodeIDer pins that generate builds
+// every object line's id through the plugin's NodeIDer (Task 5b): two threads
+// in one mailbox render as their thread ids, not as the collapsed host+path
+// default (which would be "" for both).
+func TestBuildDocument_BoxIDsResolveThroughNodeIDer(t *testing.T) {
+	nodes := []cgp.Node{threadNode(t, "T1"), threadNode(t, "T2")}
+	doc, err := buildDocument(
+		nodes, "fake://acct/Inbox/", "", groupSpec{Dim: "status"},
+		&threadIDLister{}, nil, tagRender{},
+	)
+	if err != nil {
+		t.Fatalf("buildDocument: %v", err)
+	}
+	var ids []string
+	for _, ln := range doc.objectLines() {
+		ids = append(ids, ln.ID)
+	}
+	if want := []string{"T1", "T2"}; !reflect.DeepEqual(ids, want) {
+		t.Errorf("box ids = %v, want %v", ids, want)
 	}
 }
