@@ -165,7 +165,7 @@ func (t *mailboxTree) roleID(role string) (string, bool) {
 }
 
 // sortedTags returns every tag the tree realizes, lexically sorted — the
-// deterministic iteration order placeNewTag's "longest match" searches need
+// deterministic iteration order placeNewTag's ranking tie-break needs
 // (tagIndex is a map, so ranging it directly would make placement depend on
 // Go's randomized map order).
 func (t *mailboxTree) sortedTags() []string {
@@ -179,17 +179,22 @@ func (t *mailboxTree) sortedTags() []string {
 
 // placeNewTag decides WHERE the mailbox realizing a not-yet-existing tag is
 // created (fastmail tags slice 1, D4), returning its parent's id ("" for a
-// top-level mailbox) and its name. The three rules, in order:
+// top-level mailbox) and its name. Every existing tag sharing at least one
+// leading `-` segment with the new tag is a candidate of one of two kinds:
 //
-//	(a) some existing mailbox's tag is a PROPER PREFIX of the new tag at a
-//	    `-` boundary → a `-`-continuation child of the LONGEST such mailbox
+//	(a) its tag is a PROPER PREFIX of the new tag at a `-` boundary → the new
+//	    mailbox would be a `-`-continuation child of it
 //	    (`payee-charles_tyrwhitt` → `-charles_tyrwhitt` under `payee`);
-//	(b) else some existing mailbox's tag SHARES a `-`-boundary prefix with the
-//	    new tag → a BARE sibling under that mailbox's parent, carrying the
-//	    whole tag as its name (`proj-trips-26-09-yoga_retreat` → a bare child
-//	    of `area/-travel`, beside `proj-trips-26-09-kyle_yoga`); the longest
-//	    shared prefix wins, ties broken by the tag's lexical order;
-//	(c) else a bare top-level mailbox named for the whole tag.
+//	(b) otherwise → the new mailbox would be a BARE sibling under its parent,
+//	    carrying the whole tag as its name (`proj-trips-26-09-yoga_retreat` →
+//	    a bare child of `area/-travel`, beside `proj-trips-26-09-kyle_yoga`).
+//
+// Candidates of both kinds are ranked TOGETHER by shared segment count; the
+// most shared wins, (a) beats (b) on a tie, and a remaining tie (two (b)s)
+// goes to the lexically first tag. With no candidate, (c): a bare top-level
+// mailbox named for the whole tag. Ranking (a) strictly first would let a
+// bare interior mailbox like `zz-archive/proj` (tag `proj`, one segment)
+// capture every `proj-…` tag into the archive subtree.
 //
 // Either way tagOf of the created mailbox re-derives the requested tag: (a)
 // extends the prefix mailbox's join, (b) and (c) are bare, so the join starts
@@ -200,36 +205,31 @@ func (t *mailboxTree) sortedTags() []string {
 // together places the latter by (b)/(c) rather than under the former. It
 // still realizes the right tag, just flatter; a second apply would nest it.
 func (t *mailboxTree) placeNewTag(tag string) (parentID, name string) {
-	tags := t.sortedTags()
-
-	longestPrefix := ""
-	for _, candidate := range tags {
-		if !strings.HasPrefix(tag, candidate+"-") {
+	bestSegments, bestTag, bestIsContinuation := 0, "", false
+	for _, candidate := range t.sortedTags() {
+		shared := sharedTagSegments(candidate, tag)
+		if shared == 0 {
 			continue
 		}
-		if len(candidate) > len(longestPrefix) {
-			longestPrefix = candidate
+		isContinuation := strings.HasPrefix(tag, candidate+"-")
+		if shared > bestSegments ||
+			(shared == bestSegments && isContinuation && !bestIsContinuation) {
+			bestSegments, bestTag, bestIsContinuation = shared, candidate, isContinuation
 		}
 	}
-	if longestPrefix != "" {
-		return t.tagIndex[longestPrefix], tag[len(longestPrefix):]
-	}
 
-	bestSegments, bestID := 0, ""
-	for _, candidate := range tags {
-		if shared := sharedTagSegments(candidate, tag); shared > bestSegments {
-			bestSegments, bestID = shared, t.tagIndex[candidate]
-		}
+	switch {
+	case bestSegments == 0:
+		return "", tag
+	case bestIsContinuation:
+		return t.tagIndex[bestTag], tag[len(bestTag):]
+	default:
+		return t.byID[t.tagIndex[bestTag]].ParentID, tag
 	}
-	if bestSegments > 0 {
-		return t.byID[bestID].ParentID, tag
-	}
-
-	return "", tag
 }
 
 // sharedTagSegments counts the leading `-`-separated segments two tags share
-// — the D4(b) "common prefix at a `-` boundary" measure. `proj-trips-26-09-a`
+// — D4's placement rank. `proj-trips-26-09-a`
 // and `proj-trips-26-09-b` share 4; `misc-thing` and `payee-acme` share 0.
 func sharedTagSegments(a, b string) int {
 	as, bs := strings.Split(a, "-"), strings.Split(b, "-")

@@ -483,21 +483,11 @@ EOF
 # Vector 8 (D4b): `proj-trips-26-10-hike` shares the `proj-trips-26` prefix
 # with the existing `proj-trips-26-09-yoga` (under `area/-travel`), so per the
 # plan's D4 worked example (`proj-trips-26-09-yoga_retreat` → a bare child of
-# `area/-travel`) it is created as a BARE sibling there.
-#
-# SKIPPED — the plugin disagrees with the spec: placeNewTag ranks rule (a)
-# strictly before (b), and the bare interior mailbox `zz-archive/proj` joins
-# to the tag `proj`, a proper prefix of the new tag, so the new mailbox is
-# created as `-trips-26-10-hike` under `zz-archive/proj` (inside the archive
-# subtree). The D1 example shows the real account HAS `zz-archive/proj`, so
-# D4's own `yoga_retreat` example would misplace the same way (TestPlaceNewTag
-# passes only because its synthetic tree has no bare `proj` mailbox).
-# Resolving it is a placement-rule decision, not a test edit: e.g. rank (a)
-# and (b) by shared `-` segments (payee-acme: (a) `payee` 1 ≥ (b) 1 → (a);
-# hike: (b) 3 > (a) `proj` 1 → (b)); merely excluding bare interior
-# mailboxes would break D4a's own `payee` example.
+# `area/-travel`) it is created as a BARE sibling there. The bare interior
+# `zz-archive/proj` (tag `proj`) is a proper prefix too, but D4 ranks
+# candidates by shared `-` segments: (b) `proj-trips-26-09-yoga` shares 3,
+# (a) `proj` only 1, so the new tag does NOT land inside the archive.
 function organize_fastmail_create_sibling_tag { # @test
-  skip "D4b placement: rule (a) matches the bare interior zz-archive/proj (see the comment above)"
   generate_inbox
   local edited
   edited="$(

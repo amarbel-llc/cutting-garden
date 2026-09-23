@@ -187,8 +187,8 @@ func TestPlanThreadPatch(t *testing.T) {
 			},
 		},
 		{
-			// D4(a): `payee` is the longest existing tag that is a proper
-			// prefix at a `-` boundary, so the new mailbox continues it.
+			// D4(a): `payee` (a proper prefix, 1 shared segment) ties
+			// `payee-one_medical` (1), and a tie goes to the continuation.
 			name:    "a new continuation tag is created under its prefix",
 			thread:  labeledThread(),
 			newTags: []string{stateTagInbox, stateTagUnread, "payee-charles_tyrwhitt", "payee-one_medical"},
@@ -449,23 +449,47 @@ func TestPlanThreadPatch_RemovingATagClearsEveryMailboxJoiningToIt(t *testing.T)
 	}
 }
 
-// TestPlaceNewTag covers D4's three placement rules directly, including the
-// "longest prefix wins" tie-break rule 1 needs.
-func TestPlaceNewTag(t *testing.T) {
-	tree := newMailboxTree(append(syntheticWriteTree(),
+// placementTree is syntheticWriteTree grown with the shapes D4's ranking
+// must survive: a bare interior `zz-archive/proj` (tag `proj`, a one-segment
+// prefix of every `proj-…` tag, as on the real account) with an archived
+// project family under it, plus `area/-career/proj-26`.
+func placementTree(extra ...Mailbox) []Mailbox {
+	return append(append(syntheticWriteTree(),
 		Mailbox{ID: "area/-career/proj-26", Name: "proj-26", ParentID: "area/-career"},
-	))
+		Mailbox{ID: "zz-archive", Name: "zz-archive"},
+		Mailbox{ID: "zz-archive/proj", Name: "proj", ParentID: "zz-archive"},
+		Mailbox{ID: "zz-archive/proj/-24-t", Name: "-24-t", ParentID: "zz-archive/proj"},
+		Mailbox{
+			ID: "zz-archive/proj/-24-t/-10x", Name: "-10x",
+			ParentID: "zz-archive/proj/-24-t",
+		},
+	), extra...)
+}
+
+// TestPlaceNewTag covers D4's placement rules directly: (a) and (b)
+// candidates ranked together by shared `-` segments, (a) winning ties.
+func TestPlaceNewTag(t *testing.T) {
+	tree := newMailboxTree(placementTree())
 	cases := []struct {
 		tag        string
 		wantParent string
 		wantName   string
 	}{
+		// (a) `payee` and (b) `payee-one_medical` both share 1 segment: the
+		// tie goes to the continuation.
 		{"payee-charles_tyrwhitt", "payee", "-charles_tyrwhitt"},
 		// The LONGEST prefix wins: `area` and `area-career` are both prefixes
 		// of `area-career-notes`, and the deeper mailbox is the parent.
 		{"area-career-notes", "area/-career", "-notes"},
 		{"proj-26-review", "area/-career/proj-26", "-review"},
+		// (b) `proj-trips-26-09-kyle_yoga` shares 4 segments, beating (a)
+		// `proj` (the bare interior zz-archive/proj) at 1: a bare sibling
+		// beside the trip, NOT a continuation inside the archive.
 		{"proj-trips-26-09-yoga_retreat", "area/-travel", "proj-trips-26-09-yoga_retreat"},
+		{"proj-trips-26-10-hike", "area/-travel", "proj-trips-26-10-hike"},
+		// (a) `proj-24-t` and (b) `proj-24-t-10x` both share 3 segments: the
+		// tie keeps an archived project's family together.
+		{"proj-24-t-foo", "zz-archive/proj/-24-t", "-foo"},
 		{"req-self", "_", "req-self"},
 		{"misc-thing", "", "misc-thing"},
 		{"solo", "", "solo"},
@@ -479,10 +503,7 @@ func TestPlaceNewTag(t *testing.T) {
 		// Whatever the rule, the created mailbox must join back to the tag
 		// that asked for it — the placement is only correct if tagOf agrees.
 		created := Mailbox{ID: "new", Name: name, ParentID: parent}
-		grown := newMailboxTree(append(syntheticWriteTree(),
-			Mailbox{ID: "area/-career/proj-26", Name: "proj-26", ParentID: "area/-career"},
-			created,
-		))
+		grown := newMailboxTree(placementTree(created))
 		if got, ok := grown.tagOf("new"); !ok || got != c.tag {
 			t.Errorf("tagOf(the mailbox placed for %q) = (%q, %v), want (%q, true)",
 				c.tag, got, ok, c.tag)
