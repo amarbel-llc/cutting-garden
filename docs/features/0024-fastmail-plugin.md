@@ -14,8 +14,10 @@ promotion-criteria: |
   the whole-document round-trip vectors of `zz-tests_bats/organize_fastmail.bats`
   against the fastmail testserver; the one wire form the testserver could not
   vouch for — a creation id used as a patch-object KEY — was verified against
-  the real Fastmail API on 2026-09-22 (§Writes). The live-inbox triage run is
-  the user-driven UAT gate after merge. Promote to `accepted` once the plugin
+  the real Fastmail API on 2026-09-22 (§Writes). The user-driven UAT gate
+  PASSED 2026-09-23: a live-inbox dry-run render matched the synthetic
+  document, and a real `-commit` triage run on a handful of threads held up.
+  Promote to `accepted` once the plugin
   ships in the default binary and the tag-membership write contract has gone
   two weeks without a correctness lever moving.
 ---
