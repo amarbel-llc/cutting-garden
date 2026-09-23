@@ -11,10 +11,16 @@ func account(name, rawURL string) config_common.Account {
 	return config_common.Account{Root: config_common.Root{Name: name, URL: rawURL}}
 }
 
+func withSessionURL(a config_common.Account, sessionURL string) config_common.Account {
+	a.SessionURL = sessionURL
+	return a
+}
+
 func TestValidate_Accepts(t *testing.T) {
 	cfg := AccountsConfig{Accounts: []config_common.Account{
 		account("personal", "fastmail://personal/"),
 		account("work", "fastmail://work/"),
+		withSessionURL(account("test", "fastmail://test/"), "http://127.0.0.1:43113/jmap/session"),
 	}}
 	if err := cfg.Validate(); err != nil {
 		t.Errorf("Validate: %v", err)
@@ -30,6 +36,12 @@ func TestValidate_Rejects(t *testing.T) {
 		"empty url":    {Accounts: []config_common.Account{account("x", "")}},
 		"wrong scheme": {Accounts: []config_common.Account{account("x", "caldav://x/")}},
 		"host != name": {Accounts: []config_common.Account{account("x", "fastmail://y/")}},
+		"relative session_url": {Accounts: []config_common.Account{
+			withSessionURL(account("x", "fastmail://x/"), "/jmap/session"),
+		}},
+		"non-http session_url": {Accounts: []config_common.Account{
+			withSessionURL(account("x", "fastmail://x/"), "ftp://host/jmap/session"),
+		}},
 	}
 	for name, cfg := range cases {
 		if err := cfg.Validate(); err == nil {

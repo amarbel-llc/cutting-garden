@@ -42,6 +42,8 @@ func decodeConfigSection(sub *cst.Value) error {
 // (the JMAP API host is fixed), so the URL's host MUST equal the account
 // name. The bearer token is resolved from the account's PasswordEnv (e.g.
 // `FASTMAIL_API_TOKEN`); the secret itself never lives in the config file.
+// An optional `session_url` replaces the fixed JMAP Session endpoint (the
+// bats lane's in-memory testserver; see sessionURLFor).
 // Registered with the SDK's config-section registry as the `[fastmail]`
 // table (init below), so accounts arrive as `[[fastmail.accounts]]`. The
 // TOML codec is config_common.AccountsSection's (see decodeConfigSection);
@@ -92,6 +94,16 @@ func (c AccountsConfig) Validate() error {
 					"(the host slot names the account, not a server)",
 				acct.Name, u.Host, acct.Name,
 			)
+		}
+
+		if acct.SessionURL != "" {
+			s, err := url.Parse(acct.SessionURL)
+			if err != nil || (s.Scheme != "http" && s.Scheme != "https") || s.Host == "" {
+				return errors.BadRequestf(
+					"fastmail.accounts[%q]: session_url %q is not an absolute http(s) URL",
+					acct.Name, acct.SessionURL,
+				)
+			}
 		}
 	}
 	return nil
@@ -156,5 +168,15 @@ func resolveClient(ref nodeRef) (*client, error) {
 			"fastmail plugin: unknown account %q", ref.account,
 		)
 	}
-	return newClient(resolveSessionURL(acct.Name), acct.Password()), nil
+	return newClient(sessionURLFor(acct), acct.Password()), nil
+}
+
+// sessionURLFor is the account's JMAP Session endpoint: its configured
+// `session_url` override when set (the bats lane's in-memory testserver),
+// else the fixed Fastmail endpoint via the resolveSessionURL test seam.
+func sessionURLFor(acct config_common.Account) string {
+	if acct.SessionURL != "" {
+		return acct.SessionURL
+	}
+	return resolveSessionURL(acct.Name)
 }

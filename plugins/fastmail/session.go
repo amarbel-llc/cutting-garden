@@ -21,10 +21,10 @@ const capabilityMail = "urn:ietf:params:jmap:mail"
 const defaultSessionURL = "https://api.fastmail.com/jmap/session"
 
 // resolveSessionURL maps a configured account name to its JMAP Session
-// endpoint. Production always uses the fixed Fastmail host; it is a package
-// var solely so tests can point the plugin at an in-memory JMAP server
-// (fastmailtestserver) without a real network. Overriding it is the only
-// test seam — every other code path is exercised unchanged.
+// endpoint when the account sets no `session_url` (see sessionURLFor).
+// Production uses the fixed Fastmail host; it is a package var solely so Go
+// tests can point the plugin at an in-memory JMAP server
+// (fastmailtestserver) without a real network or a config file.
 var resolveSessionURL = func(account string) string {
 	return defaultSessionURL
 }

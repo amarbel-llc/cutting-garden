@@ -19,6 +19,7 @@ package fastmailtestserver
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"sort"
@@ -72,19 +73,44 @@ type Server struct {
 // Start launches a server for one mail account and returns it. Close it
 // when done. Seed mailboxes and emails with AddMailbox / AddEmail.
 func Start(accountID string) *Server {
+	return StartAt(accountID, "")
+}
+
+// StartAt is Start bound to a FIXED listen address (e.g. "127.0.0.1:43113")
+// instead of an ephemeral port — caldavtestserver.StartAt's twin. The bats
+// organize lane needs it: the session URL is written into the lane's
+// config.toml and the account's node URIs land in the organize document's
+// `_base` digest, so whole-document vectors only reproduce against a stable
+// port. An empty addr keeps the ephemeral default; a bind failure is a panic
+// (test-only code — a colliding port is a harness bug to surface loudly).
+func StartAt(accountID, addr string) *Server {
 	if accountID == "" {
 		accountID = "acct-test"
 	}
 	s := &Server{accountID: accountID}
-	s.httptest = httptest.NewServer(http.HandlerFunc(s.handle))
+	if addr == "" {
+		s.httptest = httptest.NewServer(http.HandlerFunc(s.handle))
+		return s
+	}
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		panic(fmt.Sprintf("fastmailtestserver: listen %s: %v", addr, err))
+	}
+	s.httptest = httptest.NewUnstartedServer(http.HandlerFunc(s.handle))
+	// NewUnstartedServer already opened its own ephemeral listener; close it
+	// before swapping in the pinned one so it does not leak.
+	_ = s.httptest.Listener.Close()
+	s.httptest.Listener = listener
+	s.httptest.Start()
 	return s
 }
 
 // URL is the server's base http URL.
 func (s *Server) URL() string { return s.httptest.URL }
 
-// SessionURL is the JMAP Session endpoint the plugin GETs — the value a
-// test wires into the plugin via its resolveSessionURL seam.
+// SessionURL is the JMAP Session endpoint the plugin GETs — the value a Go
+// test wires in via the plugin's resolveSessionURL seam, and the bats lane
+// via an account's `session_url`.
 func (s *Server) SessionURL() string { return s.httptest.URL + "/jmap/session" }
 
 // AccountID is the mail account id.

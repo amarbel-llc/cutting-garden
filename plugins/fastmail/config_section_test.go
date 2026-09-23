@@ -51,6 +51,35 @@ password_env = "FASTMAIL_API_TOKEN"
 	}
 }
 
+func TestConfigSection_SessionURLOverridesTheFixedEndpoint(t *testing.T) {
+	setAccounts(t)
+	model := sectionModel(t, `
+[[accounts]]
+name = "test"
+url = "fastmail://test/"
+session_url = "http://127.0.0.1:43113/jmap/session"
+`)
+	if err := decodeConfigSection(model); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if unused := model.Undecoded(); len(unused) != 0 {
+		t.Errorf("Undecoded() = %v, want none", unused)
+	}
+	acct, ok := accountByName("test")
+	if !ok {
+		t.Fatal("account test not injected")
+	}
+	if got, want := sessionURLFor(acct), "http://127.0.0.1:43113/jmap/session"; got != want {
+		t.Errorf("sessionURLFor = %q, want %q", got, want)
+	}
+}
+
+func TestSessionURLFor_DefaultsToFastmail(t *testing.T) {
+	if got := sessionURLFor(account("personal", "fastmail://personal/")); got != defaultSessionURL {
+		t.Errorf("sessionURLFor = %q, want %q", got, defaultSessionURL)
+	}
+}
+
 func TestConfigSection_ValidateFailureSurfaces(t *testing.T) {
 	setAccounts(t)
 	err := decodeConfigSection(sectionModel(t, `

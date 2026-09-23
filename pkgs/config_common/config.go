@@ -35,11 +35,18 @@ type Root struct {
 // the password; the secret itself is never stored in the config file
 // (RFC 0007 § Security Considerations).
 //
+// SessionURL overrides the endpoint a plugin with a FIXED API host would
+// otherwise hard-code — today only the fastmail plugin's JMAP Session URL
+// (default https://api.fastmail.com/jmap/session), which is how the bats
+// lane points a `fastmail://<name>/` account at its in-memory test server.
+// Plugins whose URL already names the server (caldav, jira) ignore it.
+//
 //go:generate tommy generate
 type Account struct {
 	Root
 	Username    string `toml:"username,omitempty"`
 	PasswordEnv string `toml:"password_env,omitempty"`
+	SessionURL  string `toml:"session_url,omitempty"`
 }
 
 // AccountsSection is the TOML shape of an account-bearing plugin's

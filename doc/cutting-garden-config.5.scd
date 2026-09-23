@@ -48,6 +48,9 @@ table in a binary that does not link the caldav plugin is therefore inert.
 A malformed *[[traversal_plugins]]*/*[[plugins]]* entry aborts config loading
 with an EX_USAGE (64) exit, naming the stanza and the problem.
 
+One linked-plugin account field is documented here because nothing else in
+the file hints at it; see *THE FASTMAIL SESSION_URL OVERRIDE* below.
+
 # THE STANZA FIELDS
 
 Each *[[traversal_plugins]]* or *[[plugins]]* entry is a TOML table with these
@@ -183,6 +186,28 @@ The first stanza registers *fj-cg* on the *fj* scheme via the traversal
 protocol, with its own root list handed through in *[[fj.roots]]*. The
 second registers *chrest* on the *web* scheme via the capture protocol,
 letting cutting-garden choose *capture-serve*/*capture-batch* itself.
+
+# THE FASTMAIL SESSION_URL OVERRIDE
+
+A *[[fastmail.accounts]]* entry's *url* is *fastmail://<name>/*: its host slot
+names the ACCOUNT, not a server, because the Fastmail JMAP host is fixed. The
+plugin therefore fetches the JMAP Session object from
+*https://api.fastmail.com/jmap/session* unless the entry sets:
+
+*session_url*
+	String. OPTIONAL. An absolute http(s) URL replacing that fixed JMAP
+	Session endpoint for this one account; every later JMAP call follows the
+	*apiUrl* the session it returns advertises. It exists so a test harness
+	(the bats *organize_fastmail* lane's in-memory JMAP server) can stand in
+	for Fastmail. Other account-bearing plugins (*[caldav]*, *[jira]*), whose
+	*url* already names the server, ignore it.
+
+```
+[[fastmail.accounts]]
+name = "test"
+url = "fastmail://test/"
+session_url = "http://127.0.0.1:43113/jmap/session"
+```
 
 # SEE ALSO
 

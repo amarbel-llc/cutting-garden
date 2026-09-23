@@ -541,6 +541,19 @@
           meta.mainProgram = "cutting-garden-caldav-testserver";
         };
 
+        # cutting-garden-fastmail-testserver is a test-only in-memory JMAP
+        # server (plugins/fastmail/fastmailtestserver as a standalone binary,
+        # seeded with its deterministic inbox-triage fixture) that backs the
+        # bats fastmail organize lane (zz-tests_bats/organize_fastmail.bats via
+        # lib/fastmail.bash). Built as its own derivation and NOT shipped;
+        # exposed as a package so `nix build .#cutting-garden-fastmail-testserver`
+        # checks it alone.
+        cuttingGardenFastmailTestServer = buildCuttingGardenGo {
+          pname = "cutting-garden-fastmail-testserver";
+          subPackages = [ "cmd/cutting-garden-fastmail-testserver" ];
+          meta.mainProgram = "cutting-garden-fastmail-testserver";
+        };
+
         # cutting-garden-test-capture-serve is the RFC 0008 test plugin
         # (internal/capture_serve_testpeer as a standalone binary): a
         # deterministic capture-serve peer backing the bats bring-up
@@ -757,6 +770,10 @@
           # path the bats launch-contract lane cannot reach.
           conformance-traversal = cuttingGardenConformanceTraversal;
 
+          # The test-only fastmail JMAP server (bats CG_TEST_FASTMAIL), exposed
+          # so the debug-organize-fastmail-fixture dev-loop recipe can build it.
+          cutting-garden-fastmail-testserver = cuttingGardenFastmailTestServer;
+
           # The store-pinned `conformist --staged --exit-zero-on-fix` hook from
           # the CODEGEN eval (formatters + tommy + dagnabit-facade lanes, no
           # presets.eng). On the devShell PATH as `conformist-pre-commit`; the
@@ -888,6 +905,11 @@
               CG_TEST_CALDAV = {
                 base = cuttingGardenCaldavTestServer;
                 name = "cutting-garden-caldav-testserver";
+              };
+              # The test JMAP server backing zz-tests_bats/organize_fastmail.bats.
+              CG_TEST_FASTMAIL = {
+                base = cuttingGardenFastmailTestServer;
+                name = "cutting-garden-fastmail-testserver";
               };
               # The RFC 0008 test peer backing zz-tests_bats/capture_serve.bats.
               CG_TEST_CAPTURE_SERVE = {

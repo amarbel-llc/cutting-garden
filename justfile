@@ -700,6 +700,58 @@ debug-organize-fixture GROUP_BY='status=': debug-build-go
     .tmp/cutting-garden organize -group-by '{{ GROUP_BY }}' "$cal"
     exec {SRV[1]}>&- || true
 
+# Render the organize document for the fastmail testserver's Inbox (fastmail
+# tags slice 1) — the eyeball loop for zz-tests_bats/organize_fastmail.bats.
+# Builds the binary + cutting-garden-fastmail-testserver, starts the server on
+# the lane's pinned port 43113 (so the document, `_base` included, matches the
+# bats vectors byte for byte), and runs organize from a throwaway dir holding
+# its own madder store and a config.toml pointing the `test` account's
+# session_url at the server. READ-ONLY on the in-memory server.
+#
+# render the fastmail testserver Inbox organize document (tags dev-loop)
+[group('debug')]
+debug-organize-fastmail-fixture GROUP_BY='_inbox': debug-build-go
+    #!/usr/bin/env bash
+    set -euo pipefail
+    root="{{ justfile_directory() }}"
+    cd "$root"
+    nix build '.#cutting-garden-fastmail-testserver' --out-link .tmp/cutting-garden-fastmail-testserver-result
+    work="$(mktemp -d)"
+    trap 'rm -rf "$work"' EXIT
+    (cd "$work" && nix develop "$root" --command madder init -encryption none .default >/dev/null)
+    coproc SRV { CG_TEST_FASTMAIL_PORT=43113 .tmp/cutting-garden-fastmail-testserver-result/bin/cutting-garden-fastmail-testserver; }
+    read -r -u "${SRV[0]}" session_url _account_id
+    mkdir -p "$work/config/cutting-garden"
+    printf '[[fastmail.accounts]]\nname = "test"\nurl = "fastmail://test/"\nsession_url = "%s"\n' \
+      "$session_url" >"$work/config/cutting-garden/config.toml"
+    echo "# cg organize -group-by '{{ GROUP_BY }}' fastmail://test/Inbox/" >&2
+    echo '# ---------------------------------------------------------------' >&2
+    (cd "$work" && XDG_CONFIG_HOME="$work/config" "$root/.tmp/cutting-garden" \
+      organize -group-by '{{ GROUP_BY }}' fastmail://test/Inbox/)
+    exec {SRV[1]}>&- || true
+
+# The `list -format json` twin of debug-organize-fastmail-fixture: prints the
+# fastmail testserver Inbox's NDJSON (each thread's `tags` array) — the source
+# of organize_fastmail.bats's smoke expectation. READ-ONLY.
+#
+# print the fastmail testserver Inbox `list -format json` NDJSON
+[group('debug')]
+debug-list-fastmail-json: debug-build-go
+    #!/usr/bin/env bash
+    set -euo pipefail
+    root="{{ justfile_directory() }}"
+    cd "$root"
+    nix build '.#cutting-garden-fastmail-testserver' --out-link .tmp/cutting-garden-fastmail-testserver-result
+    work="$(mktemp -d)"
+    trap 'rm -rf "$work"' EXIT
+    coproc SRV { CG_TEST_FASTMAIL_PORT=43113 .tmp/cutting-garden-fastmail-testserver-result/bin/cutting-garden-fastmail-testserver; }
+    read -r -u "${SRV[0]}" session_url _account_id
+    mkdir -p "$work/config/cutting-garden"
+    printf '[[fastmail.accounts]]\nname = "test"\nurl = "fastmail://test/"\nsession_url = "%s"\n' \
+      "$session_url" >"$work/config/cutting-garden/config.toml"
+    XDG_CONFIG_HOME="$work/config" .tmp/cutting-garden list -format json fastmail://test/Inbox/
+    exec {SRV[1]}>&- || true
+
 # Eyeball loop for the G12 JSON node view (native tags slice 2 T4): start the
 # testserver with the /dav/ns/ namespace fixture and print `list -format json`'s
 # NDJSON for it — each line should carry the presented `tags` array. READ-ONLY.
@@ -1498,6 +1550,32 @@ debug-organize-live CAL='' GROUP_BY='status=': debug-build-go
       echo '# ---------------------------------------------------------------' >&2
       .tmp/cutting-garden organize -group-by '{{ GROUP_BY }}' "$cal"
     fi
+
+# Render (dry-run, READ-ONLY on the server) the `--group-by GROUP_BY` organize
+# document for a LIVE Fastmail account's Inbox (fastmail tags slice 1, Task 8
+# UAT). ACCOUNT names a `[[fastmail.accounts]]` entry in the user's own
+# config.toml whose `password_env = "JMAP_TOKEN"`; the token is loaded from
+# piggy (fastmail-jmap.env) into the environment only, never echoed or written
+# to disk. Generate issues only JMAP /get and /query calls and writes only a
+# base blob into the local madder store — no Email/set, no -commit.
+#
+# render the organize document for a live Fastmail Inbox (dry-run)
+[group('debug')]
+debug-organize-fastmail-live ACCOUNT='personal' GROUP_BY='_inbox': debug-build-go
+    #!/usr/bin/env bash
+    set -euo pipefail
+    set +x
+    set -a
+    . <(piggy pass show fastmail-jmap.env)
+    set +a
+    : "${JMAP_TOKEN:?fastmail-jmap.env did not define JMAP_TOKEN}"
+    root="{{ justfile_directory() }}"
+    cd "$root"
+    nix develop --command madder init -encryption none .default 2>/dev/null || true
+    anchor="fastmail://{{ ACCOUNT }}/Inbox/"
+    echo "# cg organize -group-by '{{ GROUP_BY }}' $anchor" >&2
+    echo '# ---------------------------------------------------------------' >&2
+    .tmp/cutting-garden organize -group-by '{{ GROUP_BY }}' "$anchor"
 
 # DRY-RUN --apply against a LIVE Fastmail calendar: generate the organize
 # document for CAL, move its first object under a `## =VALUE` bucket, and run

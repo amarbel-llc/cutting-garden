@@ -168,6 +168,12 @@ func DecodeAccount(input []byte) (*AccountDocument, error) {
 			_vPasswordEnv.MarkConsumed()
 		}
 	}
+	if _vSessionUrl, _ok := model.Get("session_url"); _ok && _vSessionUrl.Kind == cst.VLeaf {
+		if _x, _xok := cst.ExtractString(_vSessionUrl.Leaf); _xok {
+			d.data.SessionURL = _x
+			_vSessionUrl.MarkConsumed()
+		}
+	}
 	return d, nil
 }
 
@@ -199,6 +205,13 @@ func (d *AccountDocument) Encode() ([]byte, error) {
 		}
 	} else {
 		cst.DeleteValue(d.cstDoc.Root(), "password_env")
+	}
+	if d.data.SessionURL != "" {
+		if err := cst.SetAny(d.cstDoc.Root(), "session_url", d.data.SessionURL); err != nil {
+			return nil, fmt.Errorf("%w", err)
+		}
+	} else {
+		cst.DeleteValue(d.cstDoc.Root(), "session_url")
 	}
 	return d.cstDoc.Bytes(), nil
 }
@@ -251,6 +264,12 @@ func DecodeAccountInto(data *Account, sub *cst.Value) error {
 			_vPasswordEnv.MarkConsumed()
 		}
 	}
+	if _vSessionUrl, _ok := sub.Get("session_url"); _ok && _vSessionUrl.Kind == cst.VLeaf {
+		if _x, _xok := cst.ExtractString(_vSessionUrl.Leaf); _xok {
+			data.SessionURL = _x
+			_vSessionUrl.MarkConsumed()
+		}
+	}
 	return nil
 }
 
@@ -278,6 +297,13 @@ func EncodeAccountFrom(data *Account, doc *document.Document, container *cst.Nod
 		}
 	} else {
 		cst.DeleteValue(container, "password_env")
+	}
+	if data.SessionURL != "" {
+		if err := cst.SetAny(container, "session_url", data.SessionURL); err != nil {
+			return fmt.Errorf("%w", err)
+		}
+	} else {
+		cst.DeleteValue(container, "session_url")
 	}
 	return nil
 }
@@ -339,6 +365,12 @@ func DecodeAccountsSection(input []byte) (*AccountsSectionDocument, error) {
 					_vAccountsPasswordEnv.MarkConsumed()
 				}
 			}
+			if _vAccountsSessionUrl, _ok := _eAccounts.Get("session_url"); _ok && _vAccountsSessionUrl.Kind == cst.VLeaf {
+				if _x, _xok := cst.ExtractString(_vAccountsSessionUrl.Leaf); _xok {
+					d.data.Accounts[i].SessionURL = _x
+					_vAccountsSessionUrl.MarkConsumed()
+				}
+			}
 		}
 	}
 	if _eaAccounts, _eaok := model.Get("accounts"); _eaok && _eaAccounts.IsEmptyArray() {
@@ -384,6 +416,13 @@ func (d *AccountsSectionDocument) Encode() ([]byte, error) {
 				}
 			} else {
 				cst.DeleteValue(container, "password_env")
+			}
+			if d.data.Accounts[i].SessionURL != "" {
+				if err := cst.SetAny(container, "session_url", d.data.Accounts[i].SessionURL); err != nil {
+					return nil, fmt.Errorf("%w", err)
+				}
+			} else {
+				cst.DeleteValue(container, "session_url")
 			}
 		}
 	}
@@ -444,6 +483,12 @@ func DecodeAccountsSectionInto(data *AccountsSection, sub *cst.Value) error {
 					_vAccountsPasswordEnv.MarkConsumed()
 				}
 			}
+			if _vAccountsSessionUrl, _ok := _eAccounts.Get("session_url"); _ok && _vAccountsSessionUrl.Kind == cst.VLeaf {
+				if _x, _xok := cst.ExtractString(_vAccountsSessionUrl.Leaf); _xok {
+					data.Accounts[i].SessionURL = _x
+					_vAccountsSessionUrl.MarkConsumed()
+				}
+			}
 		}
 	}
 	if _eaAccounts, _eaok := sub.Get("accounts"); _eaok && _eaAccounts.IsEmptyArray() {
@@ -487,6 +532,13 @@ func EncodeAccountsSectionFrom(data *AccountsSection, doc *document.Document, co
 				}
 			} else {
 				cst.DeleteValue(container, "password_env")
+			}
+			if data.Accounts[i].SessionURL != "" {
+				if err := cst.SetAny(container, "session_url", data.Accounts[i].SessionURL); err != nil {
+					return fmt.Errorf("%w", err)
+				}
+			} else {
+				cst.DeleteValue(container, "session_url")
 			}
 		}
 	}
