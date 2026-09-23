@@ -90,6 +90,27 @@ func TestURIMinting_RoundTrips(t *testing.T) {
 	}
 }
 
+// Minted mailbox-scoped URIs carry the trailing slash the nodeKind comments
+// document, so a mailbox's children share the `…/Inbox/` path boundary that
+// organize's commonURIPrefix anchors at (fastmail tags slice 1, Task 5b).
+func TestURIMinting_TrailingSlash(t *testing.T) {
+	path := []string{"area", "finance"}
+	cases := []struct{ got, want string }{
+		{accountRootURI("personal").String(), "fastmail://personal/"},
+		{mailboxURI("personal", path).String(), "fastmail://personal/area/finance/"},
+		{threadURI("personal", path, "T5").String(), "fastmail://personal/area/finance/?thread=T5"},
+		{emailURI("personal", path, "T5", "E9").String(), "fastmail://personal/area/finance/?email=E9&thread=T5"},
+		{rawURI("personal", path, "T5", "E9").String(), "fastmail://personal/area/finance/?email=E9&raw=1&thread=T5"},
+		{threadURI("personal", nil, "T5").String(), "fastmail://personal/?thread=T5"},
+		{mailboxURI("personal", []string{"big money"}).String(), "fastmail://personal/big%20money/"},
+	}
+	for _, tc := range cases {
+		if tc.got != tc.want {
+			t.Errorf("minted %q, want %q", tc.got, tc.want)
+		}
+	}
+}
+
 func TestURIMinting_EscapesSegments(t *testing.T) {
 	// A mailbox name with a space must round-trip as a single segment.
 	mailbox := []string{"area", "big money"}

@@ -39,9 +39,9 @@ function organize_fastmail_list_json_smoke { # @test
   run_cg list -format json "${FASTMAIL_ROOT}Inbox/"
   assert_success
   assert_output - <<-'EOM'
-	{"uri":"fastmail://test/Inbox?thread=T1","name":"Your statement is ready","type":"cutting_garden-fastmail-thread-v1","tags":["_inbox","_unread","payee-one_medical"]}
-	{"uri":"fastmail://test/Inbox?thread=T2","name":"Interview loop","type":"cutting_garden-fastmail-thread-v1","tags":["_inbox","proj-x-msft","req-others"]}
-	{"uri":"fastmail://test/Inbox?thread=T3","name":"Lunch next week?","type":"cutting_garden-fastmail-thread-v1","tags":["_flagged","_inbox"]}
-	{"uri":"fastmail://test/Inbox?thread=T4","name":"Project wrap-up","type":"cutting_garden-fastmail-thread-v1","tags":["_inbox","proj-24-t-10x"]}
+	{"uri":"fastmail://test/Inbox/?thread=T1","name":"Your statement is ready","type":"cutting_garden-fastmail-thread-v1","tags":["_inbox","_unread","payee-one_medical"]}
+	{"uri":"fastmail://test/Inbox/?thread=T2","name":"Interview loop","type":"cutting_garden-fastmail-thread-v1","tags":["_inbox","proj-x-msft","req-others"]}
+	{"uri":"fastmail://test/Inbox/?thread=T3","name":"Lunch next week?","type":"cutting_garden-fastmail-thread-v1","tags":["_flagged","_inbox"]}
+	{"uri":"fastmail://test/Inbox/?thread=T4","name":"Project wrap-up","type":"cutting_garden-fastmail-thread-v1","tags":["_inbox","proj-24-t-10x"]}
 	EOM
 }

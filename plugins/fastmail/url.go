@@ -167,13 +167,17 @@ func rawURI(account string, mailboxPath []string, threadID, emailID string) *url
 
 // setPathSegments installs path (percent-escaping each segment so a name
 // with a reserved rune stays one segment) as u's path, keeping Path and
-// RawPath consistent so url.String() round-trips.
+// RawPath consistent so url.String() round-trips. The path always ends in
+// `/` (`/area/finance/`, the root `/`) — the mailbox-as-directory spelling
+// the nodeKind comments document, which gives a mailbox's thread URIs the
+// shared `…/finance/` boundary organize anchors at. classifyURI trims
+// slashes, so the slash-less spelling is still accepted as input.
 func setPathSegments(u *url.URL, segs []string) {
 	escaped := make([]string, len(segs))
 	for i, s := range segs {
-		escaped[i] = url.PathEscape(s)
+		escaped[i] = url.PathEscape(s) + "/"
 	}
-	raw := "/" + strings.Join(escaped, "/")
+	raw := "/" + strings.Join(escaped, "")
 	parsed, err := url.Parse(raw)
 	if err != nil {
 		// Escaped input always parses; fall back to the decoded form.
