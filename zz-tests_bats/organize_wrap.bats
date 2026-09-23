@@ -2,17 +2,20 @@
 
 # The organize wrapped-box lane (cutting-garden#261, RFC 0015 §Object lines): a
 # box may span several physical lines. While its `[` group is unbalanced every
-# following line continues the INTERIOR; after the closing `]` the DESCRIPTION
-# span continues on a line starting with neither `-` nor `#`, or on a `\-` /
-# `\#` escaped line (backslash stripped, single-space joined). A line-leading
-# `-` always opens a new box; a blank line or heading closes the span; an
-# escape with no open span is a loud bad request. Pinned here against the lit
-# fixture calendar (see organize_literal.bats):
+# following line continues the INTERIOR — except a `- [` line, which can only
+# be a new box and is refused; after the closing `]` the DESCRIPTION span
+# continues on a line starting with none of `-`, `#`, `%`, or on a `\X` escaped
+# line (backslash stripped, single-space joined). A line-leading `-` always
+# opens a new box; a blank line or heading closes the span; an escape with no
+# open span is a loud bad request. Pinned here against the lit fixture
+# calendar (see organize_literal.bats):
 #
 #   - a hand-WRAPPED edited document (interior wrap + `\-` / `\#` description
 #     continuations) previews and commits exactly like its single-line twin,
 #     and the re-rendered document reads back single-line;
-#   - a `\-` line after a blank line is refused naming the line, nothing written.
+#   - a `\-` line after a blank line is refused naming the line, nothing written;
+#   - a box left open by an unterminated quote does not swallow the next `- [`
+#     box line: refused naming both lines, nothing written.
 #
 # Whole-document vectors (G16): pinned port + serialized tests, see lib/caldav.bash.
 
@@ -220,7 +223,32 @@ function organize_wrap_escape_outside_span_rejects { # @test
   run_cg organize -apply "$edited" -commit
   assert_failure 64
   # shellcheck disable=SC2016  # the backticks are the message's own quoting, not expansion
-  assert_output 'cutting-garden: organize: body line 3: "\\- orphan" continues a description, but no box description is open (a `\-` / `\#` continuation must follow a box line, not a blank line, a heading, or the start of the body)'
+  assert_output 'cutting-garden: organize: body line 3: "\\- orphan" continues a description, but no box description is open (a `\` continuation must follow a box line, not a blank line, a heading, or the start of the body)'
+
+  assert_nothing_written
+}
+
+# A box left open by an unterminated quote must not swallow the next `- [` box
+# line. Joined, the second line's inch-mark `"` would close lit2's string and
+# its `]` the box — ONE lit2 box, lit1 silently dropped from the document (a
+# membership write). Refused naming both lines; nothing is written.
+function organize_wrap_open_box_refuses_new_box_line { # @test
+  generate_grouped
+  local edited="$BATS_TEST_TMPDIR/edited.txt"
+  wrap_doc "$BASE_GENERATED" >"$edited" <<-'EOM'
+
+	- [lit2.ics location="Bank] Read book
+	- [lit1.ics size=12" tag] Triage inbox
+
+	# "planning, misc"
+
+	- [lit3.ics] Plan, then do
+	EOM
+
+  run_cg organize -apply "$edited" -commit
+  assert_failure 64
+  # shellcheck disable=SC2016  # the backticks are the message's own quoting, not expansion
+  assert_output 'cutting-garden: organize: body line 1: box is still open (unclosed `]` or quote) at body line 2, which starts a new box'
 
   assert_nothing_written
 }

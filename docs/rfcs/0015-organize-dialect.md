@@ -487,30 +487,39 @@ several physical lines, in two spans with different continuation rules:
 
 - **Interior span.** While the box's `[` group is unbalanced (an unclosed
   `[` or quoted String), every following line MUST be read as a
-  continuation of the interior, unconditionally — whatever its leading
-  rune. Continuation lines join the interior with a single space (each
-  line's surrounding whitespace dropped), so a wrap between terms is
-  whitespace to the trellis lexer and a wrap inside a quoted String reads
-  as one space. A blank line, a heading line, or the end of the body
-  reached while the group is still open MUST be rejected as a bad request
-  naming the box's starting line.
+  continuation of the interior, whatever its leading rune — with one
+  exception: a line whose trimmed text begins `- [` can only start a new
+  object line (interior terms never begin with `-`), so reaching one while
+  the group is open MUST be rejected as a bad request naming both the box's
+  starting line and that line, never joined (joining would let its quote
+  or `]` close the open box and silently swallow the new object).
+  Continuation lines join the interior with a single space (each line's
+  surrounding whitespace dropped), so a wrap between terms is whitespace
+  to the trellis lexer and a wrap inside a quoted String reads as one
+  space. A blank line, a heading line, or the end of the body reached
+  while the group is still open MUST be rejected as a bad request naming
+  the box's starting line.
 - **Description span.** After the closing `]`, the description span stays
   open until a blank line, a heading line, or a new object line closes it.
   A line whose first non-blank rune is `-` ALWAYS starts a new object line;
-  one whose first non-blank rune is `#` is a heading. Any other non-blank
-  line continues the description. A line beginning `\-` or `\#` is an
-  escaped continuation: the backslash is stripped and the rest continues
-  the description literally, so a continued description can begin with `-`
-  or `#`. Continuation lines join the description with a single space
-  (each line trimmed), the same single-line form a multiline stored value
-  presents as, so a wrapped document applies exactly like its unwrapped
-  twin. A continuation line — escaped or plain — with no open description
-  span (the start of the body, after a blank line, after a heading) MUST be
-  rejected as a bad request naming the line.
+  one whose first non-blank rune is `#` is a heading; one whose first
+  non-blank rune is `%` is NEVER a continuation (`%` is reserved as an
+  object-line prefix) and MUST be rejected. Any other non-blank line
+  continues the description. A line beginning `\` followed by a non-blank
+  rune X is an escaped continuation: the backslash is stripped and the
+  rest (X onward) continues the description literally — so `\-`, `\#`,
+  `\%` let a continued description begin with `-`, `#`, `%`, and `\\`
+  with `\`. A `\` followed by nothing or by a blank escapes nothing and
+  MUST be rejected. Continuation lines join the description with a single
+  space (each line trimmed), the same single-line form a multiline stored
+  value presents as, so a wrapped document applies exactly like its
+  unwrapped twin. A continuation line — escaped or plain — with no open
+  description span (the start of the body, after a blank line, after a
+  heading) MUST be rejected as a bad request naming the line.
 
 Diagnostics MUST name physical body lines. A writer that wraps (none does
 yet) MUST escape a description continuation line that would begin with
-`-` or `#`.
+`-`, `#`, `%`, or `\`.
 
 ### Bindings
 

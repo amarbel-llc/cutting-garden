@@ -519,12 +519,14 @@ func splitEnvelope(text string) (
 //
 // A box may WRAP across physical lines (cutting-garden#261, RFC 0015 §Object
 // lines): parseWrappedBox joins interior continuation lines while the `[`
-// group is unbalanced, and after the closing `]` the box's DESCRIPTION span
-// stays open — a line starting with neither `-` nor `#` continues it, as does
-// a `\-` / `\#` escaped line (backslash stripped). A line-leading `-` always
-// opens a new box; a blank line or heading closes the span. An escaped line
-// with no open span is a bad request. Error line numbers are physical body
-// lines.
+// group is unbalanced (refusing a `- [` line, which can only be a new box),
+// and after the closing `]` the box's DESCRIPTION span stays open — a line
+// starting with none of `-`, `#`, `%` continues it, as does a `\X` escaped
+// line (any non-blank X; backslash stripped, so `\-`, `\#`, `\%`, `\\`). A
+// line-leading `-` always opens a new box; a blank line or heading closes the
+// span; a `%` line is never a continuation (the grammar reserves it as an
+// object-line prefix). An escaped line with no open span is a bad request.
+// Error line numbers are physical body lines.
 func parseBody(doc *document, body string) error {
 	lines := strings.Split(body, "\n")
 	root := rootHeadingDepth(lines)
@@ -574,16 +576,32 @@ func parseBody(doc *document, body string) error {
 			i = last
 			described = &ln
 
-		case described != nil:
-			described.Desc = joinDescription(described.Desc, unescapeContinuation(line))
-
-		case isEscapedContinuation(line):
+		case strings.HasPrefix(line, "%"):
 			return errors.BadRequestf(
-				"organize: body line %d: %q continues a description, but no box description is open "+
-					"(a `\\-` / `\\#` continuation must follow a box line, not a blank line, a heading, "+
-					"or the start of the body)",
+				"organize: body line %d: unrecognized %q: a `%%` line is not a description continuation "+
+					"(`%%` is reserved as an object-line prefix; escape a continuation as `\\%%`)",
 				i+1, line,
 			)
+
+		case strings.HasPrefix(line, `\`):
+			if described == nil {
+				return errors.BadRequestf(
+					"organize: body line %d: %q continues a description, but no box description is open "+
+						"(a `\\` continuation must follow a box line, not a blank line, a heading, "+
+						"or the start of the body)",
+					i+1, line,
+				)
+			}
+			if len(line) < 2 || line[1] == ' ' || line[1] == '\t' {
+				return errors.BadRequestf(
+					"organize: body line %d: %q escapes nothing (a `\\` must be followed by the character it escapes)",
+					i+1, line,
+				)
+			}
+			described.Desc = joinDescription(described.Desc, line[1:])
+
+		case described != nil:
+			described.Desc = joinDescription(described.Desc, line)
 
 		default:
 			return errors.BadRequestf("organize: body line %d: unrecognized %q", i+1, line)
@@ -594,10 +612,10 @@ func parseBody(doc *document, body string) error {
 }
 
 // parseWrappedBox parses the box opening on lines[start] (a trimmed line
-// starting with `-`), joining the following lines — unconditionally, each
-// trimmed and single-space joined — while the box's `[` group is still open
-// (trellis reports the parse Incomplete). A blank line, heading, or the end of
-// the body reached with the group still open is a bad request naming the
+// starting with `-`), joining the following lines — each trimmed and
+// single-space joined — while the box's `[` group is still open (trellis
+// reports the parse Incomplete). A blank line, heading, `- [` line, or the end
+// of the body reached with the group still open is a bad request naming the
 // box's starting line. It returns the box and the index of its last line.
 func parseWrappedBox(lines []string, start int) (objectLine, int, error) {
 	src := strings.TrimSpace(strings.TrimSpace(lines[start])[1:])
@@ -625,7 +643,18 @@ func parseWrappedBox(lines []string, start int) (objectLine, int, error) {
 				start+1, reached, err,
 			)
 		}
-		src += " " + strings.TrimSpace(lines[last])
+		next := strings.TrimSpace(lines[last])
+		// Interior terms never begin with `-`, so a `- [` line can only be a
+		// new box: joining it would let its own quote or `]` close this box
+		// and silently swallow the object it names.
+		if strings.HasPrefix(next, "- [") {
+			return objectLine{}, 0, errors.BadRequestf(
+				"organize: body line %d: box is still open (unclosed `]` or quote) at body line %d, "+
+					"which starts a new box",
+				start+1, last+1,
+			)
+		}
+		src += " " + next
 	}
 }
 
@@ -634,20 +663,6 @@ func parseWrappedBox(lines []string, start int) (objectLine, int, error) {
 func isIncompleteBox(err error) bool {
 	var se *trellis.SyntaxError
 	return errors.As(err, &se) && se.Incomplete
-}
-
-// isEscapedContinuation reports a `\-` / `\#` description-continuation line.
-func isEscapedContinuation(line string) bool {
-	return strings.HasPrefix(line, `\-`) || strings.HasPrefix(line, `\#`)
-}
-
-// unescapeContinuation strips the backslash of a `\-` / `\#` continuation;
-// any other line continues the description verbatim.
-func unescapeContinuation(line string) string {
-	if isEscapedContinuation(line) {
-		return line[1:]
-	}
-	return line
 }
 
 // joinDescription appends one continuation line to a box's description with a

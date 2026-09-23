@@ -146,11 +146,12 @@ module.exports = grammar({
       ),
     description: $ => token(/[^\n]+/),
     // A description continuation line: one starting (after optional blanks)
-    // with neither `-` (always a new box), `#` (a heading), nor `%` — or an
-    // escaped `\-` / `\#` line that continues the description literally. A
-    // blank line ends the span.
+    // with none of `-` (always a new box), `#` (a heading), `%` (reserved as
+    // an object-line prefix) — or an escaped `\X` line (any non-blank X:
+    // `\-`, `\#`, `\%`, `\\`) that continues the description with the
+    // backslash stripped. A blank line ends the span.
     description_continuation: $ =>
-      seq(token(/[ \t]*([^-#%\s\\]|\\[^\n])[^\n]*/), '\n'),
+      seq(token(/[ \t]*([^-#%\s\\]|\\[^\s])[^\n]*/), '\n'),
 
     ...metadata,
     ...box,
@@ -162,6 +163,30 @@ module.exports = grammar({
     // (cutting-garden#261). A blank line inside the interior stays an error,
     // as it is for the organize reader.
     _box_space: $ => token(/[ \t]+|[ \t]*\n[ \t]*/),
+
+    // Overrides the shared box's `box_quoted`: a quoted value may wrap too,
+    // but a wrapped line inside it must not begin with `- [` — that can only
+    // be a new box, which would otherwise be swallowed into this one's
+    // string (cutting-garden#261). tree-sitter has no lookahead, so a line
+    // break either carries the next line's leading content (which must not
+    // spell `- [`) or stands alone right before an escape or the closing
+    // quote. Consequence: a wrapped line that begins with a bare `-`
+    // immediately followed by `"`, `\`, or the end of the line does not
+    // parse here, though the organize reader accepts it.
+    box_quoted: $ =>
+      seq(
+        '"',
+        repeat(
+          choice(
+            $.box_escape,
+            token.immediate(/[^"\\\n]+/),
+            token.immediate(/\n[ \t]*([^-\s"\\]|-[^ "\\\n]|- [^\["\\\n])[^"\\\n]*/),
+            seq(token.immediate(/\n[ \t]*/), $.box_escape),
+          ),
+        ),
+        optional(token.immediate(/\n[ \t]*/)),
+        '"',
+      ),
 
     // Overrides the shared envelope's line set (spread above, so this wins) to
     // admit the organize-specific `_group-by` directive ahead of the generic

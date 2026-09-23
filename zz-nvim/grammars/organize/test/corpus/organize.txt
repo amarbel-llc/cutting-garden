@@ -721,6 +721,63 @@ wrapped boxes: a multi-line interior, plain and `\-` / `\#` description continua
     (description)))
 
 ========================================
+wrapped quoted value and any-`\X` escapes: a quoted atom across lines (`- two` is not `- [`), `\%` and `\\` continuations (cutting-garden#261)
+========================================
+- [a.ics x="one
+  - two"] Grew
+\% 5 percent
+\\server
+
+----------------------------------------
+
+(source_file
+  (object_line
+    (box
+      (box_object_id)
+      (box_field
+        (box_ident)
+        (box_quoted)))
+    (description)
+    (description_continuation)
+    (description_continuation)))
+
+========================================
+an open quoted value never swallows a `- [` new-box line (cutting-garden#261)
+:error
+========================================
+- [id1 note="oops] A
+- [b2 size=12" tag] B
+
+----------------------------------------
+
+========================================
+an open box interior never swallows a `- [` new-box line (cutting-garden#261)
+:error
+========================================
+- [a.ics
+- [b.ics] B
+
+----------------------------------------
+
+========================================
+a `%` line is not a description continuation (cutting-garden#261)
+:error
+========================================
+- [a.ics] Grew
+% 5 percent
+
+----------------------------------------
+
+========================================
+a `\` escaping nothing is not a description continuation (cutting-garden#261)
+:error
+========================================
+- [a.ics] Path
+\ x
+
+----------------------------------------
+
+========================================
 type heading (spelling 1) and a typed, blob-bearing box (legacy ladder, kept parsing)
 ========================================
 # !caldav-object-vevent-v1

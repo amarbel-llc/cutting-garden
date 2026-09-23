@@ -432,7 +432,7 @@
           "type": "TOKEN",
           "content": {
             "type": "PATTERN",
-            "value": "[ \\t]*([^-#%\\s\\\\]|\\\\[^\\n])[^\\n]*"
+            "value": "[ \\t]*([^-#%\\s\\\\]|\\\\[^\\s])[^\\n]*"
           }
         },
         {
@@ -1038,11 +1038,49 @@
                 "type": "IMMEDIATE_TOKEN",
                 "content": {
                   "type": "PATTERN",
-                  "value": "[^\"\\\\]+"
+                  "value": "[^\"\\\\\\n]+"
                 }
+              },
+              {
+                "type": "IMMEDIATE_TOKEN",
+                "content": {
+                  "type": "PATTERN",
+                  "value": "\\n[ \\t]*([^-\\s\"\\\\]|-[^ \"\\\\\\n]|- [^\\[\"\\\\\\n])[^\"\\\\\\n]*"
+                }
+              },
+              {
+                "type": "SEQ",
+                "members": [
+                  {
+                    "type": "IMMEDIATE_TOKEN",
+                    "content": {
+                      "type": "PATTERN",
+                      "value": "\\n[ \\t]*"
+                    }
+                  },
+                  {
+                    "type": "SYMBOL",
+                    "name": "box_escape"
+                  }
+                ]
               }
             ]
           }
+        },
+        {
+          "type": "CHOICE",
+          "members": [
+            {
+              "type": "IMMEDIATE_TOKEN",
+              "content": {
+                "type": "PATTERN",
+                "value": "\\n[ \\t]*"
+              }
+            },
+            {
+              "type": "BLANK"
+            }
+          ]
         },
         {
           "type": "STRING",

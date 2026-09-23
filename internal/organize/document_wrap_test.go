@@ -8,9 +8,9 @@ import (
 
 // The wrapped-box lane (cutting-garden#261, RFC 0015 §Object lines): a box may
 // span several physical lines. While its `[` group is unbalanced every
-// following line continues the INTERIOR; after the closing `]` the
-// DESCRIPTION span continues on any line that starts with neither `-` nor `#`,
-// and on a `\-` / `\#` escaped line (backslash stripped). A bare `-` always
+// following line but a `- [` one continues the INTERIOR; after the closing `]`
+// the DESCRIPTION span continues on any line that starts with none of `-`,
+// `#`, `%`, and on a `\X` escaped line (backslash stripped). A bare `-` always
 // opens a new box; a blank line or heading ends the span. Every vector pins a
 // wrapped body against its unwrapped twin, so a wrapped document applies
 // exactly like the single-line one.
@@ -169,6 +169,63 @@ func TestParseWrap_UnbalancedInteriorRejected(t *testing.T) {
 			assertBodyRejected(t, tc.body, tc.want...)
 		})
 	}
+}
+
+// TestParseWrap_OpenBoxRefusesNewBoxLine pins the swallow guard: a box left
+// open by an unterminated quote must not absorb a following `- [` line —
+// whose own quote could otherwise close the string and merge the two boxes
+// into one successful parse, the second object silently vanishing. Interior
+// terms never begin with `-`, so `- [` at a line start is always a new box.
+func TestParseWrap_OpenBoxRefusesNewBoxLine(t *testing.T) {
+	for name, body := range map[string]string{
+		// Joined, this parsed successfully before the guard — ONE box id1
+		// (note=`oops] A - [b2 size=12`, tag `tag`, desc B), b2 gone: the
+		// second line's inch-mark `"` closed the first line's string and its
+		// `]` the box.
+		"quote closed by the next box": "\n- [id1 note=\"oops] A\n- [b2 size=12\" tag] B\n",
+		"quoted id on the next box":    "\n- [id1 note=\"oops\n- [\"b two\" tag] B\n",
+		"unclosed bracket":             "\n- [a.ics\n- [b.ics] B\n",
+		"indented new box":             "\n- [a.ics work\n    - [b.ics] B\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			assertBodyRejected(t, body,
+				"body line 1: box is still open (unclosed `]` or quote) at body line 2, which starts a new box")
+		})
+	}
+}
+
+// TestParseWrap_MultiLineQuotedValueStillJoins pins that the guard leaves a
+// legitimately wrapped quoted value (next line not a `- [`) alone.
+func TestParseWrap_MultiLineQuotedValueStillJoins(t *testing.T) {
+	assertSameDocument(t,
+		"\n- [a.ics x=\"one\n  - two\"] A\n",
+		"\n- [a.ics x=\"one - two\"] A\n",
+	)
+}
+
+// TestParseWrap_PercentLineNeverContinues pins that a `%`-led line is never
+// a description continuation (the grammar keeps `%` as a virtual-object
+// prefix); `\%` is its escaped continuation.
+func TestParseWrap_PercentLineNeverContinues(t *testing.T) {
+	assertBodyRejected(t, "\n- [a.ics] Grew\n% 5 percent\n", "body line 2", "a `%` line is not a description continuation")
+	assertSameDocument(t,
+		"\n- [a.ics] Grew\n\\% 5 percent\n",
+		"\n- [a.ics] Grew % 5 percent\n",
+	)
+}
+
+// TestParseWrap_AnyBackslashEscape pins the uniform escape rule the grammar
+// shares: a line-leading `\` followed by a non-blank character continues the
+// description with the backslash stripped (`\\x` → `\x`); a `\` with nothing
+// (or only blanks) after it escapes nothing and is rejected.
+func TestParseWrap_AnyBackslashEscape(t *testing.T) {
+	assertSameDocument(t,
+		"\n- [a.ics] Path\n\\\\server\n\\x\n",
+		"\n- [a.ics] Path \\server x\n",
+	)
+	assertBodyRejected(t, "\n- [a.ics] Path\n\\\n", "body line 2", "escapes nothing")
+	assertBodyRejected(t, "\n- [a.ics] Path\n\\ x\n", "body line 2", "escapes nothing")
+	assertBodyRejected(t, "\n\\x orphan\n", "body line 1", "no box description is open")
 }
 
 // TestParseWrap_ErrorsNamePhysicalLine pins that line numbers stay physical
