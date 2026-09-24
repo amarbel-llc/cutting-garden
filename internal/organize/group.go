@@ -22,14 +22,19 @@ type bucket struct {
 // folds every day of a month under one `=YYYY-MM` heading. declaredValues are
 // the plugin's write-side target buckets (FacetWrite.Values), pre-rendered in
 // order even when empty (RFC 0015 "make it easy to swap states");
-// observed-but-undeclared values follow, sorted ascending. inlineType controls
-// the object box's `!type` tag: true for the type-as-heading spelling (each box
-// self-describes), false when the envelope's `- _type` distributes it. present,
+// observed-but-undeclared values follow, sorted ascending. emptyValues are the
+// container's zero-count values (forge organize F3, zeroCountValues): they join
+// that sorted tail — rendered even when empty, interleaved with the observed
+// values in one ascending order (so `=v0.1` with issues and an issue-less
+// `=v0.3` read in milestone order), never ahead of the declared ones.
+// inlineType controls the object box's `!type` tag: true for the
+// type-as-heading spelling (each box self-describes), false when the
+// envelope's `- _type` distributes it. present,
 // when non-nil, populates each box's detail atoms (date/time/location;
 // cutting-garden#47) from the plugin's FieldPresenter.
 func groupNodes(
-	nodes []cgp.Node, spec groupSpec, idOf boxIDer, declaredValues []string, inlineType bool,
-	present func(cgp.Node) []cgp.BoxAtom,
+	nodes []cgp.Node, spec groupSpec, idOf boxIDer, declaredValues, emptyValues []string,
+	inlineType bool, present func(cgp.Node) []cgp.BoxAtom,
 ) (ungrouped []objectLine, buckets []bucket) {
 	byValue := map[string][]objectLine{}
 	for _, n := range nodes {
@@ -73,10 +78,17 @@ func groupNodes(
 			order = append(order, v)
 		}
 	}
-	extra := make([]string, 0, len(byValue))
+	extra := make([]string, 0, len(byValue)+len(emptyValues))
 	for k := range byValue {
 		if !seen[k] {
+			seen[k] = true
 			extra = append(extra, k)
+		}
+	}
+	for _, v := range emptyValues {
+		if !seen[v] {
+			seen[v] = true
+			extra = append(extra, v)
 		}
 	}
 	sort.Strings(extra)

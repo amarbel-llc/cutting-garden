@@ -428,6 +428,17 @@ bool? }`.
 `ok: false` means "I do not summarize this node; fall back to the
 framework fold over `nodes.list`" (RFC 0012 §4–§5). Every dimension key
 in `summary` MUST be declared in the `initialize` `facets` block.
+A `summary` count MAY be `0` on any dimension, open or closed — RFC 0012
+§3's known-empty value: the value exists in the node's domain but no
+(filter-matching) child holds it, e.g.
+`"summary": {"milestone": {"v0.1": 4, "v0.3": 0}}` for an open
+milestone with no issues. The host passes zeros through unchanged (the
+histogram is not normalized the way `by_container` is), and organize
+pre-renders a zero-count value of a single-valued writable grouped
+dimension as an empty target bucket (forge organize F3). This is how a
+plugin whose `initialize`-time `facet_writes` `values` cannot name a
+per-container domain (roots at owner level, milestones per repository)
+still offers those values as move targets.
 An absent `complete` means `false` (partial, RFC 0012 §5): a plugin
 reporting a summary that covers the whole subtree MUST send
 `"complete": true` explicitly. (Absent-means-partial matches the

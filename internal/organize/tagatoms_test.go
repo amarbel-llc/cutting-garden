@@ -45,7 +45,7 @@ func TestTagRenderFill_WholeDimensionStripsVia(t *testing.T) {
 		strip: true,
 	}
 
-	doc, err := buildDocument(nodes, anchor, "", spec, &fakeLister{}, nil, tr)
+	doc, err := buildDocument(nodes, anchor, "", spec, &fakeLister{}, nil, tr, nil)
 	if err != nil {
 		t.Fatalf("buildDocument: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestTagRenderFill_StripNoneKeepsVia(t *testing.T) {
 		strip:   false,
 	}
 
-	doc, err := buildDocument(nodes, anchor, "", spec, &fakeLister{}, nil, tr)
+	doc, err := buildDocument(nodes, anchor, "", spec, &fakeLister{}, nil, tr, nil)
 	if err != nil {
 		t.Fatalf("buildDocument: %v", err)
 	}
@@ -118,7 +118,7 @@ func TestTagRenderFill_NamespaceRootAndContinuation(t *testing.T) {
 		strip: true,
 	}
 
-	doc, err := buildDocument(nodes, anchor, "", spec, &fakeLister{}, interp, tr)
+	doc, err := buildDocument(nodes, anchor, "", spec, &fakeLister{}, interp, tr, nil)
 	if err != nil {
 		t.Fatalf("buildDocument: %v", err)
 	}
@@ -148,7 +148,7 @@ func TestTagRenderFill_FieldGroupingKeepsAll(t *testing.T) {
 		strip:   true,
 	}
 
-	doc, err := buildDocument(nodes, anchor, "", spec, &fakeLister{}, nil, tr)
+	doc, err := buildDocument(nodes, anchor, "", spec, &fakeLister{}, nil, tr, nil)
 	if err != nil {
 		t.Fatalf("buildDocument: %v", err)
 	}

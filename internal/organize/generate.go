@@ -1,8 +1,12 @@
 package organize
 
 import (
+	"context"
 	"fmt"
 	"io"
+	"net/url"
+	"slices"
+	"sort"
 	"strings"
 
 	"code.linenisgreat.com/cutting-garden/internal/cgconfig"
@@ -170,7 +174,8 @@ func buildAndStoreFrom(
 		anchor = uriStr
 	}
 
-	doc, err := buildDocument(nodes, anchor, effective, spec, lister, interp, tags)
+	zeroCounts := zeroCountValues(ctx, lister, u, spec)
+	doc, err := buildDocument(nodes, anchor, effective, spec, lister, interp, tags, zeroCounts)
 	if err != nil {
 		return "", "", err
 	}
@@ -231,10 +236,13 @@ func (cmd *Organize) runGenerate(
 // minimal depth.
 // interp is the resolved tag interpreter — required for a namespace grouping
 // (groupKindTagNamespace), nil otherwise. tags is the tag-atom render view
-// (design G1/G2, slice 2); the zero value renders no tag atoms.
+// (design G1/G2, slice 2); the zero value renders no tag atoms. zeroCounts are
+// the grouped dimension's zero-count values from the container's facet counts
+// (zeroCountValues, forge organize F3), pre-rendered as empty buckets for each
+// type that writes the dimension single-valued.
 func buildDocument(
 	nodes []cgp.Node, anchor, query string, spec groupSpec, lister cgp.RootLister,
-	interp cgp.TagInterpreter, tags tagRender,
+	interp cgp.TagInterpreter, tags tagRender, zeroCounts []string,
 ) (document, error) {
 	idOf := boxIDsFor(lister, anchor)
 	if _, pluginIDs := lister.(cgp.NodeIDer); pluginIDs {
@@ -257,7 +265,8 @@ func buildDocument(
 		// (a field dimension heading at depth 1 with buckets at depth 2).
 		doc.Type = types[0]
 		declared := writableBuckets(lister, types[0], spec.Dim)
-		ungrouped, buckets, err := groupForSpec(nodes, spec, idOf, declared, false, present, interp)
+		empty := zeroCountTargets(lister, types[0], spec, zeroCounts)
+		ungrouped, buckets, err := groupForSpec(nodes, spec, idOf, declared, empty, false, present, interp)
 		if err != nil {
 			return document{}, err
 		}
@@ -270,7 +279,8 @@ func buildDocument(
 		for _, typ := range types {
 			typeNodes := nodesOfType(nodes, typ)
 			declared := writableBuckets(lister, typ, spec.Dim)
-			ungrouped, buckets, err := groupForSpec(typeNodes, spec, idOf, declared, true, present, interp)
+			empty := zeroCountTargets(lister, typ, spec, zeroCounts)
+			ungrouped, buckets, err := groupForSpec(typeNodes, spec, idOf, declared, empty, true, present, interp)
 			if err != nil {
 				return document{}, err
 			}
@@ -319,13 +329,13 @@ func rejectAmbiguousBoxIDs(nodes []cgp.Node, idOf boxIDer) error {
 // grouping both bucket by raw facet value (groupNodes) — the difference is only
 // in how the buckets RENDER (sectionsForSpec), not how nodes bucket.
 func groupForSpec(
-	nodes []cgp.Node, spec groupSpec, idOf boxIDer, declared []string,
+	nodes []cgp.Node, spec groupSpec, idOf boxIDer, declared, empty []string,
 	inlineType bool, present func(cgp.Node) []cgp.BoxAtom, interp cgp.TagInterpreter,
 ) (ungrouped []objectLine, buckets []bucket, err error) {
 	if spec.Kind == groupKindTagNamespace {
 		return groupNodesByNamespace(nodes, spec, idOf, interp, inlineType, present)
 	}
-	ungrouped, buckets = groupNodes(nodes, spec, idOf, declared, inlineType, present)
+	ungrouped, buckets = groupNodes(nodes, spec, idOf, declared, empty, inlineType, present)
 	return ungrouped, buckets, nil
 }
 
@@ -576,9 +586,16 @@ func namespaceSections(buckets []bucket, baseDepth int) []section {
 // pre-renders as empty buckets. nil for a plugin without the write capability or
 // one declaring no values for the dimension.
 func writableBuckets(lister cgp.RootLister, tag, dim string) []string {
+	w, _ := facetWriteFor(lister, tag, dim)
+	return w.Values
+}
+
+// facetWriteFor returns node type tag's declared write for dimension dim, ok
+// false for a plugin without the write capability or no declaration for it.
+func facetWriteFor(lister cgp.RootLister, tag, dim string) (cgp.FacetWrite, bool) {
 	describer, ok := lister.(cgp.FacetWriteDescriber)
 	if !ok {
-		return nil
+		return cgp.FacetWrite{}, false
 	}
 	for _, nt := range describer.DescribeFacetWrites() {
 		if nt.Tag != tag {
@@ -586,11 +603,80 @@ func writableBuckets(lister cgp.RootLister, tag, dim string) []string {
 		}
 		for _, w := range nt.Writes {
 			if w.DimensionKey == dim {
-				return w.Values
+				return w, true
 			}
 		}
 	}
-	return nil
+	return cgp.FacetWrite{}, false
+}
+
+// zeroCountTargets narrows the container's zero-count values to node type tag:
+// they pre-render as empty buckets only where the type writes the grouped
+// dimension single-valued (FacetWriteOne) — a bucket nothing can be moved into
+// is noise, and a many-valued dimension has no field grouping to fill.
+func zeroCountTargets(
+	lister cgp.RootLister, tag string, spec groupSpec, zeroCounts []string,
+) []string {
+	if len(zeroCounts) == 0 {
+		return nil
+	}
+	if w, ok := facetWriteFor(lister, tag, spec.Dim); !ok || w.Mode != cgp.FacetWriteOne {
+		return nil
+	}
+	return zeroCounts
+}
+
+// zeroCountValues fetches the grouped dimension's zero-count values from the
+// anchor container's facet counts (RFC 0012 §3 known-empty values, forge
+// organize F3): values the plugin reports as existing in the container that no
+// child currently holds — a forge's open milestone with no issues yet. Only
+// entries with count 0 are taken: a value some child holds is either observed
+// on a selected node (and bucketed from it) or held only by nodes the query
+// hides (a closed ticket under the default `_terminal=no`), and such a value
+// is not a target unless the plugin declares it in FacetWrite.Values. The
+// fetch runs only for a field grouping some type writes single-valued, on a
+// FacetCounter; any other case, a decline, or a counts error yields nil — the
+// counts are an implicit surface here (RFC 0012 §9), never failing generate.
+func zeroCountValues(
+	ctx context.Context, lister cgp.RootLister, anchor *url.URL, spec groupSpec,
+) []string {
+	if spec.Kind != groupKindField || !writesOneAnyType(lister, spec.Dim) {
+		return nil
+	}
+	counter, ok := lister.(cgp.FacetCounter)
+	if !ok {
+		return nil
+	}
+	result, ok, err := counter.FacetCounts(ctx, anchor, nil)
+	if err != nil || !ok {
+		return nil
+	}
+	var zeros []string
+	for value, count := range result.Summary[spec.Dim] {
+		if count == 0 {
+			zeros = append(zeros, coarsenBucket(value, spec.Granularity))
+		}
+	}
+	sort.Strings(zeros)
+	return slices.Compact(zeros)
+}
+
+// writesOneAnyType reports whether any node type declares a single-valued
+// (FacetWriteOne) write for dimension dim — zeroCountValues' gate, so a
+// read-only or many-valued grouping never pays for a counts fetch.
+func writesOneAnyType(lister cgp.RootLister, dim string) bool {
+	describer, ok := lister.(cgp.FacetWriteDescriber)
+	if !ok {
+		return false
+	}
+	for _, nt := range describer.DescribeFacetWrites() {
+		for _, w := range nt.Writes {
+			if w.DimensionKey == dim && w.Mode == cgp.FacetWriteOne {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // commonURIPrefix returns the longest common prefix of the nodes' URIs, trimmed

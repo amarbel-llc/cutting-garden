@@ -316,7 +316,7 @@ func TestBuildDocument_TagWhole(t *testing.T) {
 	}
 	spec := groupSpec{Dim: "categories", Kind: groupKindTagWhole}
 
-	doc, err := buildDocument(nodes, anchor, "", spec, &fakeLister{}, nil, tagRender{})
+	doc, err := buildDocument(nodes, anchor, "", spec, &fakeLister{}, nil, tagRender{}, nil)
 	if err != nil {
 		t.Fatalf("buildDocument: %v", err)
 	}
@@ -359,7 +359,7 @@ func TestBuildDocument_TagNamespace(t *testing.T) {
 	}
 	spec := groupSpec{Dim: "categories", Namespace: "project", Kind: groupKindTagNamespace}
 
-	doc, err := buildDocument(nodes, anchor, "", spec, &fakeLister{}, interp, tagRender{})
+	doc, err := buildDocument(nodes, anchor, "", spec, &fakeLister{}, interp, tagRender{}, nil)
 	if err != nil {
 		t.Fatalf("buildDocument: %v", err)
 	}

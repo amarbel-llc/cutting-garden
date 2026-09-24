@@ -459,7 +459,7 @@ function test_testpeer_tracker_clearable_move_clears_milestone { # @test
   assert_output - <<-'EOM'
 	---
 	% generated: `cg organize -group-by milestone= -query "!cgtest-ticket-v1 _terminal=no" cgtest://fixture/tracker`
-	- _base = @blake2b256-ryuuaal6l9h5f6sqfcnemudwp7y5zk796wjgwxn20vypr7kch58slpwyjr
+	- _base = @blake2b256-h9648ghhw52dl394umam7puynajvan7s3k3qdx3g87c054e4ysxsqj5wzd
 	- _anchor = cgtest://fixture/tracker/
 	- _query = !cgtest-ticket-v1 _terminal=no
 	- _type = !cgtest-ticket-v1
@@ -475,13 +475,15 @@ function test_testpeer_tracker_clearable_move_clears_milestone { # @test
 	- [1 area-organize bug] Fix the parser
 
 	## =v0.2
+
+	## =v0.3
 	EOM
 
   local edited="$BATS_TEST_TMPDIR/edited.txt"
   cat >"$edited" <<-'EOM'
 	---
 	% generated: `cg organize -group-by milestone= -query "!cgtest-ticket-v1 _terminal=no" cgtest://fixture/tracker`
-	- _base = @blake2b256-ryuuaal6l9h5f6sqfcnemudwp7y5zk796wjgwxn20vypr7kch58slpwyjr
+	- _base = @blake2b256-h9648ghhw52dl394umam7puynajvan7s3k3qdx3g87c054e4ysxsqj5wzd
 	- _anchor = cgtest://fixture/tracker/
 	- _query = !cgtest-ticket-v1 _terminal=no
 	- _type = !cgtest-ticket-v1
@@ -496,6 +498,8 @@ function test_testpeer_tracker_clearable_move_clears_milestone { # @test
 	## =v0.1
 
 	## =v0.2
+
+	## =v0.3
 	EOM
 
   run_cg_stdout organize -apply "$edited" -commit
@@ -518,7 +522,7 @@ EOF
   assert_output - <<-'EOM'
 	---
 	% generated: `cg organize -group-by milestone= -query "!cgtest-ticket-v1 _terminal=no" cgtest://fixture/tracker`
-	- _base = @blake2b256-35e82xquj2suzhxz0v67jmw3qkhxtxz9u5m3r546a5987wqffe2saceuj6
+	- _base = @blake2b256-4237z7z72gtfpqz76ke8l2qxw46w9fwvl3v9685y5xxzchw8j3tqq6w7f6
 	- _anchor = cgtest://fixture/tracker/
 	- _query = !cgtest-ticket-v1 _terminal=no
 	- _type = !cgtest-ticket-v1
@@ -533,6 +537,91 @@ EOF
 	## =v0.1
 
 	## =v0.2
+
+	## =v0.3
+	EOM
+}
+
+# Zero-count facet buckets (forge organize F3): the tracker's facets.counts
+# reports open milestone v0.3 — held by no ticket — as an explicit
+# "v0.3": 0 (RFC 0012 §3 known-empty values), so organize pre-renders an
+# empty `## =v0.3` target after the declared =v0.1/=v0.2. Moving ticket 1
+# into it is an ordinary write:one ({"milestone":"v0.3"}) and round-trips.
+# bats test_tags=testpeer
+function test_testpeer_tracker_zero_count_milestone_is_a_target { # @test
+  configure_testpeer_wire_plugin
+
+  run_cg_stdout list -facets -format json cgtest://fixture/tracker
+  assert_success
+  output="$(jq -c '.facets.milestone' <<<"$output")"
+  assert_output '{"v0.1":1,"v0.2":1,"v0.3":0}'
+
+  run_cg_stdout organize -group-by milestone= -query '!cgtest-ticket-v1' \
+    cgtest://fixture/tracker
+  assert_success
+
+  local edited="$BATS_TEST_TMPDIR/edited.txt"
+  cat >"$edited" <<-'EOM'
+	---
+	% generated: `cg organize -group-by milestone= -query "!cgtest-ticket-v1 _terminal=no" cgtest://fixture/tracker`
+	- _base = @blake2b256-h9648ghhw52dl394umam7puynajvan7s3k3qdx3g87c054e4ysxsqj5wzd
+	- _anchor = cgtest://fixture/tracker/
+	- _query = !cgtest-ticket-v1 _terminal=no
+	- _type = !cgtest-ticket-v1
+	! organize-base-v1
+	---
+
+	- [2 "good first issue"] Write the docs
+
+	# milestone=
+
+	## =v0.1
+
+	## =v0.2
+
+	## =v0.3
+
+	- [1 area-organize bug] Fix the parser
+	EOM
+
+  run_cg_stdout organize -apply "$edited" -commit
+  assert_success
+  assert_output - <<'EOF'
+organize: 1 change(s):
+
+  - [1 area-organize bug milestone=[-v0.1-]{+v0.3+}] Fix the parser
+
+organize: wrote 1 change(s)
+EOF
+
+  run_cg_stdout list -format json -query 'milestone=v0.3' cgtest://fixture/tracker
+  assert_success
+  assert_output '{"uri":"cgtest://fixture/tracker/1","name":"Fix the parser","type":"cgtest-ticket-v1","tags":["area-organize","bug"]}'
+
+  run_cg_stdout organize -group-by milestone= -query '!cgtest-ticket-v1' \
+    cgtest://fixture/tracker
+  assert_success
+  assert_output - <<-'EOM'
+	---
+	% generated: `cg organize -group-by milestone= -query "!cgtest-ticket-v1 _terminal=no" cgtest://fixture/tracker`
+	- _base = @blake2b256-atgtecaxg96xyn4qa9lqjj8kpujj7auc30rpel2pyysucc8xmjgqepy847
+	- _anchor = cgtest://fixture/tracker/
+	- _query = !cgtest-ticket-v1 _terminal=no
+	- _type = !cgtest-ticket-v1
+	! organize-base-v1
+	---
+
+	- [2 "good first issue"] Write the docs
+
+	# milestone=
+
+	## =v0.1
+
+	## =v0.2
+
+	## =v0.3
+
+	- [1 area-organize bug] Fix the parser
 	EOM
 }
 
@@ -669,7 +758,7 @@ EOF
   cat >"$edited" <<-'EOM'
 	---
 	% generated: `cg organize -group-by milestone= -query "!cgtest-ticket-v1 _terminal=no" cgtest://fixture/tracker`
-	- _base = @blake2b256-ryuuaal6l9h5f6sqfcnemudwp7y5zk796wjgwxn20vypr7kch58slpwyjr
+	- _base = @blake2b256-h9648ghhw52dl394umam7puynajvan7s3k3qdx3g87c054e4ysxsqj5wzd
 	- _anchor = cgtest://fixture/tracker/
 	- _query = !cgtest-ticket-v1 _terminal=no
 	- _type = !cgtest-ticket-v1
@@ -685,6 +774,8 @@ EOF
 	- [1 area-organize "needs review"] Fix the parser
 
 	## =v0.2
+
+	## =v0.3
 	EOM
 
   run_cg_stdout organize -apply "$edited" -commit
@@ -707,7 +798,7 @@ EOF
   assert_output - <<-'EOM'
 	---
 	% generated: `cg organize -group-by milestone= -query "!cgtest-ticket-v1 _terminal=no" cgtest://fixture/tracker`
-	- _base = @blake2b256-5wrzpx909u86rukm3fuyqhpmcqmxx0umlcj27aqcnj5zk2u92rpq9dzxsh
+	- _base = @blake2b256-7nagwc7nn4gr9e3033nhtdqwz2yxc62wgz42jfnktdc9qmvvk93svt8xk3
 	- _anchor = cgtest://fixture/tracker/
 	- _query = !cgtest-ticket-v1 _terminal=no
 	- _type = !cgtest-ticket-v1
@@ -723,6 +814,8 @@ EOF
 	- [1 area-organize "needs review"] Fix the parser
 
 	## =v0.2
+
+	## =v0.3
 	EOM
 }
 

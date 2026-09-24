@@ -255,6 +255,25 @@ keys with count 0; a consumer MUST render every declared `Values` entry,
 showing 0 for any absent key. (Open dimensions cannot show unobserved values
 and MUST NOT invent them.)
 
+**Known-empty values (forge organize F3, 2026-09-24).** A histogram entry MAY
+carry `count == 0` for an OPEN dimension too, meaning *this value exists in
+the summarized node's domain, but no (filter-matching) node currently holds
+it* — a forge repository's open milestone with no issues yet. This is not
+invention: the plugin asserts from its own backend that the value exists, and
+MUST NOT emit a zero for a value it merely guesses at. It is the per-container
+analogue of a closed dimension's declared `Values`, for domains a plugin can
+only know per node (a milestone set is per repository, so an owner-level
+`initialize` declaration cannot carry it). Zero entries are additive under
+merge (`0 + n = n`; a key present only as zeros stays present as 0). Consumers
+that display counts (`list --facets`, the mcp `read_facets` tool and a
+container read's `facets` block) render a zero entry as a `0` row exactly like
+a closed dimension's informative zero — no suppression, so a plugin that emits
+none sees byte-identical output. A zero entry is not a value for §8's
+degenerate-suppression test (which counts values held by nodes). organize
+consumes them as empty target buckets (RFC 0015 §Implemented dialect). Back-compatible:
+a consumer predating this paragraph already renders a 0 row, and every in-tree
+plugin that emits zeros today does so only for closed dimensions.
+
 ### 4. Summaries: one-shot, with framework fold as fallback
 
 The framework computes the **hoisted summary** of a node — leaf or container —

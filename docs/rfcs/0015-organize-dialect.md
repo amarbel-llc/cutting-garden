@@ -123,7 +123,19 @@ document — the exact bytes presented to and edited by the end-user:
   spelling heading — `<dim>=`, or `<dim>=(<granularity>)` for a date field (there
   is NO `_group-by` field); each `=<value>` sub-heading is a bucket; the plugin's
   declared `FacetWrite.Values` are pre-rendered as empty buckets so a caller moves
-  an object under an existing state heading. A blank line follows every heading.
+  an object under an existing state heading. When a type writes the grouped
+  dimension single-valued (`FacetWrite.Mode == one`) and the plugin is a
+  `FacetCounter`, generate also asks the anchor for its facet counts and
+  pre-renders every **zero-count** value of that dimension (RFC 0012 §3
+  known-empty values — a forge's issue-less open milestone) as an empty
+  bucket. Order: the declared `Values` first in declared order, then the
+  observed and zero-count values together, sorted ascending (so an issue-less
+  `=v0.3` sits between `=v0.2` and `=v0.4`). Only count-0 entries are taken: a
+  value some node holds renders only when a SELECTED node holds it, so a value
+  held solely by nodes the query hides (a closed ticket under the default
+  `_terminal=no`) gets no bucket unless the plugin declares it in `Values`. A
+  counts decline or error just omits the zero-count buckets (an implicit
+  surface, RFC 0012 §9). A blank line follows every heading.
 - **One group-by grammar (native tags design G9/G10).** The `--group-by` flag,
   the `_group-by` envelope directive, and the dimension heading share ONE
   spelling, read by the trellis term parser (RFC 0014): a bare identifier is
@@ -725,7 +737,12 @@ state on other plugins.
 - **Rendering.** Terminal value *headings* (`## =completed`) still render
   as empty drop-targets (sourced from the write descriptor's
   `FacetWrite.Values`), so an object can still be moved INTO done; only
-  terminal *objects* are filtered from selection.
+  terminal *objects* are filtered from selection. A bucket is otherwise
+  derived only from SELECTED objects plus zero-count facet values
+  (§Implemented dialect), so a value held solely by hidden terminal objects
+  (a milestone whose only ticket is closed) gets no heading unless the
+  plugin declares it in `FacetWrite.Values` — the declared write targets are
+  the one source of headings independent of selection.
 - **Future.** Once trellis grows its deferred `?` (dormant/hidden) sigil
   (cutting-garden#211), `?` becomes the native "include the dormant/done"
   spelling, defined over the same `TerminalValues`; `_terminal` is the

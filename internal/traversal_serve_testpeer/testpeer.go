@@ -624,6 +624,10 @@ func (p *TreePlugin) FacetCounts(
 		}
 	}
 
+	if readKey(node) == TrackerBox {
+		addKnownEmptyMilestones(summary)
+	}
+
 	limited, truncated := cutting_garden_plugins.SortAndLimitContainerBreakdown(breakdown)
 
 	// A summarizable container returns ok=true with a possibly-EMPTY
@@ -638,6 +642,29 @@ func (p *TreePlugin) FacetCounts(
 		ByContainer:          limited,
 		ByContainerTruncated: truncated,
 	}, true, nil
+}
+
+// TrackerOpenMilestones are the tracker's OPEN milestones — what a forge
+// knows exists in the repository independently of which tickets hold them
+// (forge organize F3). v0.3 has no ticket, so the tracker's counts carry it
+// as a zero-count entry (RFC 0012 §3 known-empty values) and organize
+// pre-renders an empty `## =v0.3` target bucket.
+var TrackerOpenMilestones = []string{"v0.1", "v0.2", "v0.3"}
+
+// addKnownEmptyMilestones records every open milestone no counted ticket
+// holds as an explicit zero in summary's milestone histogram.
+func addKnownEmptyMilestones(summary cutting_garden_plugins.FacetSummary) {
+	histogram := summary["milestone"]
+	if histogram == nil {
+		histogram = cutting_garden_plugins.FacetHistogram{}
+		summary["milestone"] = histogram
+	}
+
+	for _, milestone := range TrackerOpenMilestones {
+		if _, held := histogram[milestone]; !held {
+			histogram[milestone] = 0
+		}
+	}
 }
 
 // foldNode counts one node's facet membership into summary when it

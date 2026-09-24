@@ -37,7 +37,7 @@ func TestGroupNodes(t *testing.T) {
 		{URI: mustURL(t, "caldav://h/c/e.ics"), Type: "caldav-object-v1"}, // ungrouped
 	}
 
-	ungrouped, buckets := groupNodes(nodes, groupSpec{Dim: "status"}, boxIDsFor(nil, anchor), nil, false, nil)
+	ungrouped, buckets := groupNodes(nodes, groupSpec{Dim: "status"}, boxIDsFor(nil, anchor), nil, nil, false, nil)
 
 	if len(ungrouped) != 1 || ungrouped[0].ID != "e.ics" {
 		t.Fatalf("ungrouped = %+v, want just e.ics", ungrouped)
@@ -77,7 +77,7 @@ func TestGroupNodes_DeclaredBuckets(t *testing.T) {
 	}
 	declared := []string{"NEEDS-ACTION", "IN-PROCESS", "COMPLETED", "CANCELLED"}
 
-	_, buckets := groupNodes(nodes, groupSpec{Dim: "status"}, boxIDsFor(nil, anchor), declared, true, nil)
+	_, buckets := groupNodes(nodes, groupSpec{Dim: "status"}, boxIDsFor(nil, anchor), declared, nil, true, nil)
 
 	wantOrder := []string{"NEEDS-ACTION", "IN-PROCESS", "COMPLETED", "CANCELLED", "TENTATIVE"}
 	if len(buckets) != len(wantOrder) {
@@ -112,7 +112,7 @@ func TestGroupNodes_MultiMembership(t *testing.T) {
 		{URI: mustURL(t, "caldav://h/c/t2.ics"), Type: "caldav-object-v1"}, // no value → ungrouped
 	}
 
-	ungrouped, buckets := groupNodes(nodes, groupSpec{Dim: "categories"}, boxIDsFor(nil, anchor), nil, false, nil)
+	ungrouped, buckets := groupNodes(nodes, groupSpec{Dim: "categories"}, boxIDsFor(nil, anchor), nil, nil, false, nil)
 
 	if len(ungrouped) != 1 || ungrouped[0].ID != "t2.ics" {
 		t.Fatalf("ungrouped = %+v, want just t2.ics once", ungrouped)
@@ -146,9 +146,7 @@ func TestGroupNodes_StripsRedundantGroupedAtom(t *testing.T) {
 		return []cgp.BoxAtom{{Name: "status", Value: "COMPLETED"}, {Name: "location", Value: "Bank"}}
 	}
 
-	_, buckets := groupNodes(
-		[]cgp.Node{node}, groupSpec{Dim: "status"}, boxIDsFor(nil, anchor), nil, false, present,
-	)
+	_, buckets := groupNodes([]cgp.Node{node}, groupSpec{Dim: "status"}, boxIDsFor(nil, anchor), nil, nil, false, present)
 	if len(buckets) != 1 || len(buckets[0].Lines) != 1 {
 		t.Fatalf("status buckets = %+v", buckets)
 	}
@@ -168,9 +166,7 @@ func TestGroupNodes_StripsRedundantGroupedAtom(t *testing.T) {
 	presentDate := func(cgp.Node) []cgp.BoxAtom {
 		return []cgp.BoxAtom{{Name: "date_due", Value: "2026-08-15"}, {Name: "time_due", Value: "14-30"}}
 	}
-	_, db := groupNodes(
-		[]cgp.Node{dateNode}, groupSpec{Dim: "date_due", Granularity: gDay}, boxIDsFor(nil, anchor), nil, false, presentDate,
-	)
+	_, db := groupNodes([]cgp.Node{dateNode}, groupSpec{Dim: "date_due", Granularity: gDay}, boxIDsFor(nil, anchor), nil, nil, false, presentDate)
 	if got := db[0].Lines[0].Fields; len(got) != 1 || got[0].Name != "time_due" {
 		t.Errorf("day-granularity date_due atom must be stripped, time_due kept; got %+v", got)
 	}
@@ -195,9 +191,7 @@ func TestGroupNodes_KeepsAtomUnderCoarserHeading(t *testing.T) {
 	presentDate := func(cgp.Node) []cgp.BoxAtom {
 		return []cgp.BoxAtom{{Name: "date_due", Value: "2026-08-15"}, {Name: "time_due", Value: "14-30"}}
 	}
-	_, mb := groupNodes(
-		[]cgp.Node{dateNode}, groupSpec{Dim: "date_due", Granularity: gMonth}, boxIDsFor(nil, anchor), nil, false, presentDate,
-	)
+	_, mb := groupNodes([]cgp.Node{dateNode}, groupSpec{Dim: "date_due", Granularity: gMonth}, boxIDsFor(nil, anchor), nil, nil, false, presentDate)
 	if len(mb) != 1 || mb[0].Value != "2026-08" {
 		t.Fatalf("month bucket = %+v", mb)
 	}
@@ -212,9 +206,7 @@ func TestGroupNodes_KeepsAtomUnderCoarserHeading(t *testing.T) {
 	presentPri := func(cgp.Node) []cgp.BoxAtom {
 		return []cgp.BoxAtom{{Name: "priority", Value: "1"}}
 	}
-	_, pb := groupNodes(
-		[]cgp.Node{priNode}, groupSpec{Dim: "priority"}, boxIDsFor(nil, anchor), nil, false, presentPri,
-	)
+	_, pb := groupNodes([]cgp.Node{priNode}, groupSpec{Dim: "priority"}, boxIDsFor(nil, anchor), nil, nil, false, presentPri)
 	if got := pb[0].Lines[0].Fields; len(got) != 1 || got[0].Name != "priority" {
 		t.Errorf("an atom rendered finer than its bucket key must be kept; got %+v", got)
 	}

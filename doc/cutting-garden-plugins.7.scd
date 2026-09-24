@@ -156,6 +156,19 @@ natural structure computes the decision deep inside your plugin and then
 throws it away before the transport can see it, leaving a catch-all to
 guess. Carry the classification out to the boundary intact.
 
+# KNOWN-EMPTY VALUES
+
+A *FacetCounter* summary MAY carry a *0* count for a value of ANY dimension,
+open or closed, when your backend knows the value exists in the summarized
+node's domain but no child currently holds it - a forge repository's open
+milestone with no issues. Emit it only for values your backend actually
+reports; never guess. Consumers show it as a *0* row, and organize
+pre-renders a zero-count value of a single-valued writable grouped dimension
+as an empty target bucket, so a user can move an object into it. This is
+the per-container answer for domains an *initialize*-time
+*FacetWrite.Values* cannot name (milestones are per repository; a root may
+be an owner). See RFC 0012 §3 (known-empty values) and RFC 0013 §Facets.
+
 # PER-CHILD-CONTAINER ATTRIBUTION
 
 A *FacetCounter* MAY report which of a summarized node's immediate child

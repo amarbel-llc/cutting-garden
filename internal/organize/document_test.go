@@ -340,10 +340,7 @@ func threadNode(t *testing.T, thread string) cgp.Node {
 // default (which would be "" for both).
 func TestBuildDocument_BoxIDsResolveThroughNodeIDer(t *testing.T) {
 	nodes := []cgp.Node{threadNode(t, "T1"), threadNode(t, "T2")}
-	doc, err := buildDocument(
-		nodes, "fake://acct/Inbox/", "", groupSpec{Dim: "status"},
-		&threadIDLister{}, nil, tagRender{},
-	)
+	doc, err := buildDocument(nodes, "fake://acct/Inbox/", "", groupSpec{Dim: "status"}, &threadIDLister{}, nil, tagRender{}, nil)
 	if err != nil {
 		t.Fatalf("buildDocument: %v", err)
 	}
@@ -364,10 +361,7 @@ func TestBuildDocument_BoxIDsResolveThroughNodeIDer(t *testing.T) {
 func TestBuildDocument_RejectsAmbiguousBoxIDs(t *testing.T) {
 	nodes := []cgp.Node{threadNode(t, "T1"), threadNode(t, "T2")}
 
-	_, err := buildDocument(
-		nodes, "fake://acct/Inbox/", "", groupSpec{Dim: "status"},
-		&threadIDLister{collide: "same"}, nil, tagRender{},
-	)
+	_, err := buildDocument(nodes, "fake://acct/Inbox/", "", groupSpec{Dim: "status"}, &threadIDLister{collide: "same"}, nil, tagRender{}, nil)
 	if err == nil {
 		t.Fatal("colliding NodeIDer: buildDocument = nil error, want rejection")
 	}
@@ -380,10 +374,7 @@ func TestBuildDocument_RejectsAmbiguousBoxIDs(t *testing.T) {
 		}
 	}
 
-	doc, err := buildDocument(
-		nodes, "fake://acct/Inbox/", "", groupSpec{Dim: "status"},
-		&fakeLister{}, nil, tagRender{},
-	)
+	doc, err := buildDocument(nodes, "fake://acct/Inbox/", "", groupSpec{Dim: "status"}, &fakeLister{}, nil, tagRender{}, nil)
 	if err != nil {
 		t.Fatalf("default-RelativeID plugin with collapsed ids must still render: %v", err)
 	}
@@ -392,10 +383,7 @@ func TestBuildDocument_RejectsAmbiguousBoxIDs(t *testing.T) {
 	}
 
 	dup := []cgp.Node{threadNode(t, "T1"), threadNode(t, "T1")}
-	if _, err := buildDocument(
-		dup, "fake://acct/Inbox/", "", groupSpec{Dim: "status"},
-		&threadIDLister{}, nil, tagRender{},
-	); err != nil {
+	if _, err := buildDocument(dup, "fake://acct/Inbox/", "", groupSpec{Dim: "status"}, &threadIDLister{}, nil, tagRender{}, nil); err != nil {
 		t.Errorf("the same URI twice must not trip the guard: %v", err)
 	}
 }

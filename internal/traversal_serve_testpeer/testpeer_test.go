@@ -196,6 +196,24 @@ func TestFacetCountsFoldsSubtree(t *testing.T) {
 	}
 }
 
+// TestTrackerCountsCarryZeroCountMilestone pins the forge organize F3
+// fixture: the tracker's counts report every open milestone, v0.3 — held by
+// no ticket — as an explicit zero (RFC 0012 §3 known-empty values), while
+// v0.2 counts closed ticket 3 (counts ignore organize's terminal view).
+func TestTrackerCountsCarryZeroCountMilestone(t *testing.T) {
+	result, ok, err := NewPlugin().FacetCounts(
+		context.Background(), mustParseURL(t, TrackerBox), nil,
+	)
+	if err != nil || !ok {
+		t.Fatalf("FacetCounts(tracker) = ok %t, err %v", ok, err)
+	}
+
+	want := cutting_garden_plugins.FacetHistogram{"v0.1": 1, "v0.2": 1, "v0.3": 0}
+	if got := result.Summary["milestone"]; !reflect.DeepEqual(got, want) {
+		t.Errorf("milestone histogram = %+v, want %+v", got, want)
+	}
+}
+
 // TestFacetVersionDeterministicAndMutationSensitive pins the token
 // contract: equal across fresh instances, changed by any mutation.
 func TestFacetVersionDeterministicAndMutationSensitive(t *testing.T) {
