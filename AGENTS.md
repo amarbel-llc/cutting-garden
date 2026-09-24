@@ -103,8 +103,13 @@ cookie+announce launch). A `[[traversal_plugins]]` config stanza
 section crosses `initialize` wrapper-stripped (`SectionTOML`), and the
 plugin's capabilities (roots, leaf-read, facets, mutate, and the
 `facet_writes` declaration that makes it organize-writable — the host
-builds the `node.patch` bodies from it, RFC 0013 §Facet writes) are
-advertised in its `initialize` result — consumers cannot distinguish a wire plugin
+builds the `node.patch` bodies from it, `clearable` one writes clearing
+with `null`, RFC 0013 §Facet writes) are advertised in its `initialize`
+result, and its `node_types` entries MAY carry the §Presentation members
+(`tag_set`, `inline_fields`, `trailer_field`) that `WirePlugin` synthesizes
+into the linked tag/atom/trailer surfaces (`traversal_serve.Presentation`:
+`UnifiedDescriber`, `FieldPresenter`, `ListingFieldsDescriber`,
+`FieldWriteApplier`) so organize has one code path — consumers cannot distinguish a wire plugin
 from a linked one (the RFC's conformance bar, pinned by the
 indistinguishability e2e in `internal/traversal_serve_testpeer` and the
 `zz-tests_bats/traversal_serve.bats` lane, whose `portable`-tagged cases

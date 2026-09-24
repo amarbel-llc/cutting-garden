@@ -4,7 +4,10 @@ date: 2026-07-18
 revised: 2026-07-19 (§ Host integration: a wire plugin's bring-up failure
   MUST be isolated to that plugin, never fatal to the host — cutting-garden#165);
   2026-09-24 (§ Facet writes: the OPTIONAL `facet_writes` declaration and the
-  host-built `node.patch` bodies that make a wire plugin organize-writable)
+  host-built `node.patch` bodies that make a wire plugin organize-writable);
+  2026-09-24 (§ Facet writes: `clearable` and the `null` clear body;
+  § Presentation: the OPTIONAL node_types members `tag_set`,
+  `inline_fields`, `trailer_field` — forge organize F11/F12)
 ---
 
 # RFC 0013 — Traversal Plugin Transport: JSON-RPC over stream sockets
@@ -250,7 +253,9 @@ Result:
   new tokens plus new methods, mirroring how the Go SDK grows by new
   narrow interfaces, RFC 0009 §Compatibility).
 - `node_types` — the `RootLister.Types()` declaration (§Wire encodings).
-  MUST be non-empty and stable for the session's lifetime.
+  MUST be non-empty and stable for the session's lifetime. An entry MAY
+  carry the OPTIONAL presentation members `tag_set`, `inline_fields` and
+  `trailer_field` — see §Presentation.
 - `facets` — OPTIONAL; the `FacetDescriber.DescribeFacets()`
   declaration. Its presence is the `FacetDescriber` capability; a
   plugin emitting facet values without declaring dimensions here is
@@ -288,7 +293,9 @@ per FDR 0014 / RFC 0007. Binary bodies are strings in standard base64
 `facets` is OPTIONAL (omitted ≙ the node contributes nothing); each
 value is `{ "key": <non-empty string>, "order": <int64, omit when 0> }`.
 
-**NodeType**: `{ "tag": string, "container": bool, "mime_type": string? }`.
+**NodeType**: `{ "tag": string, "container": bool, "mime_type": string?,
+"uri_template": string?, "tag_set": TagSet?, "inline_fields": [string]?,
+"trailer_field": string? }` (the last three: §Presentation).
 An absent/empty `mime_type` on a leaf means unspecified — the HOST
 applies the `application/octet-stream` default (the plugin SHOULD NOT
 send the default; a host receiving an explicit
@@ -495,7 +502,8 @@ would in process:
   field MUST NOT be silently dropped, and MUST NOT be reported via an
   empty `applied`; it never reaches the reporting question at all. An
   explicit JSON `null` reads as "not supplied" (i.e. absent), not as a
-  type error.
+  type error — EXCEPT on the field of a `clearable` facet write, where
+  `null` is the clear request (§Facet writes).
 
   These three were settled after two independent peer implementations
   diverged on them (cutting-garden#182, #185): one errored on the
@@ -549,8 +557,9 @@ and keyed by the same node type tags:
 
 **FacetWrite**: `{ "dimension": string, "mode": "none"|"one"|"many",
 "field": string?, "identity_affecting": bool?, "creation_required":
-bool?, "completion_hint": string?, "values": [string]? }` — the wire
-form of `cutting_garden_plugins.FacetWrite`:
+bool?, "completion_hint": string?, "values": [string]?,
+"clearable": bool? }` — the wire form of
+`cutting_garden_plugins.FacetWrite`:
 
 - `dimension` — the key of a dimension the same type's `facets` entry
   declares.
@@ -569,6 +578,19 @@ form of `cutting_garden_plugins.FacetWrite`:
 - `identity_affecting`, `creation_required`, `completion_hint` —
   OPTIONAL, descriptive only (surfaced by `describe_node_types`); absent
   ≙ `false` / empty.
+- `clearable` — OPTIONAL (absent ≙ `false`), valid ONLY on a `one`
+  write. `true` declares that a node may be left with NO value in this
+  dimension: organize treats the document's no-value section (the
+  objects above the first bucket heading) — and an emptied inline atom of
+  the same name (§Presentation) — as a legal target, and sends the clear
+  body below. For every other dimension a move into the no-value section
+  is refused by the host before any write, with a diagnostic saying the
+  dimension cannot be cleared. (Added 2026-09-24, forge organize F12.)
+
+  ```json
+  { "dimension": "milestone", "mode": "one", "field": "milestone",
+    "values": ["v0.3", "v0.4"], "clearable": true }
+  ```
 
 An absent `facet_writes` block, a type absent from it, and a dimension
 absent from a type's `writes` all mean the same thing: not writable
@@ -586,7 +608,8 @@ failure (§Host integration, cutting-garden#165):
 3. a `many` write MUST sit on a dimension declared `"multi": true`;
 4. a `(tag, dimension)` pair MUST be mapped at most once;
 5. a `one` or `many` write REQUIRES the `mutate` capability (the writes
-   land through `node.patch`).
+   land through `node.patch`);
+6. `clearable: true` is valid only on a `one` write.
 
 The reference host's diagnostic names the plugin, type, and dimension,
 e.g. `wire plugin "fj": initialize rejected: facet write: type
@@ -596,8 +619,8 @@ e.g. `wire plugin "fj": initialize rejected: facet write: type
 
 The host builds every patch body itself, from the DECLARED mapping for
 the node's type, and sends it through the existing `node.patch`
-(`body_base64` of the UTF-8 JSON object). There are exactly two shapes,
-each writing ONE field:
+(`body_base64` of the UTF-8 JSON object). There are exactly three
+shapes, each writing ONE field:
 
 - `one` — move the node into a bucket:
 
@@ -615,6 +638,22 @@ each writing ONE field:
 
   `{"<field>": [<bucket>, ...]}`, the COMPLETE new set (order is not
   significant); `{"<field>": []}` clears the dimension.
+
+- clear (`one` with `clearable: true` only) — leave the node with no
+  value in the dimension:
+
+  ```json
+  {"milestone": null}
+  ```
+
+  `{"<field>": null}`. Sent ONLY for a clearable write; the general
+  §Mutation rule that `null` reads as "not supplied" does not apply to
+  such a field.
+
+The host MAY merge several of these field entries for ONE node into a
+single `node.patch` body when they come from one box's edits (see
+§Presentation: an inline atom edit is a `one` / clear entry, beside the
+trailer entry); each entry keeps its own meaning.
 
 Buckets are facet value KEYS exactly as the plugin emits them in
 `Node.facets` (never `labels.resolve` labels). One organize apply MAY
@@ -637,7 +676,13 @@ A plugin that declares a `one` or `many` mapping for type T:
 - SHOULD report `field` in `node.patch`'s `applied`;
 - MUST answer a recognized `field` carrying an unusable value (a
   non-string bucket, a non-array set, a bucket outside a domain the
-  backend enforces) with `-32602` (§Errors), never a silent drop.
+  backend enforces) with `-32602` (§Errors), never a silent drop;
+- for a `clearable` write, MUST treat `{"<field>": null}` as the clear:
+  once it succeeds the node MUST carry NO value for the dimension in its
+  `facets` (the key absent, or an empty array) on every subsequent
+  `nodes.list`, and the plugin SHOULD report `field` in `applied`. A
+  plugin that declares `clearable` and silently ignores the `null` is
+  non-conformant (conformance point 18).
 
 The shapes carry the target bucket VERBATIM. A dimension whose write
 needs computation the host cannot do — a date bucket that must splice a
@@ -665,6 +710,136 @@ refused as a bad request before anything is sent. A wire plugin with no
 `facet_writes` therefore still satisfies the Go interfaces but declares
 nothing, and organize refuses it with `plugin declares no writable
 facets; dimension "<d>" cannot be reorganized`.
+
+### Presentation — `tag_set`, `inline_fields`, `trailer_field` (2026-09-24)
+
+An organize document renders each object as a box:
+`- [<id> <tag atoms…> <name>=<value>…] <trailer>` (RFC 0015). A linked
+plugin says how its nodes fill that box through the unified field
+declaration (FDR 0025); a wire plugin says it with three OPTIONAL
+members on its `node_types` entries. They add NO method and NO
+capability token; every member is independent and OPTIONAL, and a type
+without them renders exactly as before (id + name, no atoms). (Added
+2026-09-24, forge organize F11; the full unified field-codec model over
+the wire is reserved for a v2 revision, cutting-garden#275.)
+
+```json
+"node_types": [
+  { "tag": "fj-issue-v1", "container": false,
+    "tag_set": { "dimension": "label", "interpreter": "dodder-hyphen" },
+    "inline_fields": ["milestone"],
+    "trailer_field": "title" }
+]
+```
+
+With the `facet_writes` of §Facet writes (`label` `many` → field
+`labels`; `milestone` `one` → field `milestone`, `clearable`) this issue
+renders as `- [140 area-organize bug milestone=v0.3] Fix the parser`.
+
+#### `tag_set`
+
+**TagSet**: `{ "dimension": string, "interpreter": string }` — the
+type's tag set: the node's values in `dimension` ARE its tags.
+
+- `dimension` — REQUIRED. MUST name a dimension the same type's `facets`
+  entry declares, and that dimension MUST be `"multi": true`.
+- `interpreter` — REQUIRED. The name of the RFC 0019 tag interpreter
+  that governs the tags' matching, namespace rollup, sort order and
+  write-back: `naive` or `dodder-hyphen` in this host. The host's
+  `[tags] interpreter` config override still wins over it (RFC 0019 §4),
+  exactly as for a linked plugin's declared default.
+- A type carries at most one `tag_set`.
+
+Tags are the dimension's facet value KEYS as the node emits them in
+`facets`; no separate field is needed. The host presents them as a
+linked plugin's designated tag field: key-free atoms in the box, ordered
+by the interpreter's sort key (a tag containing whitespace or a reserved
+rune is written as a quoted string atom, e.g. `"good first issue"`); the
+`tags` array of `list -format json` and the `mcp` enriched listing; the
+type's `tag_set` in `describe_node_types`; bare-tag trellis terms; and
+the `(tags)` / namespace groupings. Every tag edit organize makes — a
+tag atom added or removed, a line moved between tag buckets — is a
+membership write through the dimension's `many` facet write: the host
+sends the node's COMPLETE new set, `{"<field>": [<tags>]}`, the §Facet
+writes `many` body. A `tag_set` whose dimension has no `many` write
+still renders, but the host refuses every tag edit on it before writing.
+
+#### `inline_fields`
+
+`[string]` — single-valued facet dimensions of the type rendered, in
+this order, as `name=value` atoms after the tag atoms.
+
+- Each entry MUST name a dimension the type's `facets` entry declares,
+  that is NOT `"multi": true`, and appear at most once.
+- The atom is `<dimension>=<key>`: the node's (single) facet value KEY
+  in that dimension. A node with no value in the dimension shows no
+  atom.
+- When a document is GROUPED by that dimension, the atom is omitted
+  from an object filed under the bucket equal to its value (the heading
+  already shows it), exactly as for a linked plugin.
+- An inline field whose dimension has a `one` facet write is EDITABLE:
+  changing the atom's value sends that write's body,
+  `{"<field>": "<new value>"}`; removing the atom (or emptying its
+  value) sends the clear body `{"<field>": null}` when the write is
+  `clearable`, and is otherwise reported as not applied. An inline field
+  with no `one` write is read-only: an edit is reported as not applied,
+  never written.
+
+#### `trailer_field`
+
+`string` — the `node.patch` key through which the box trailer is
+written.
+
+- The trailer SHOWS the node's `name` (newlines collapsed to spaces).
+  A plugin declaring `trailer_field` MUST therefore emit, as each node's
+  `name`, the current value of that field (e.g. an issue's title), and
+  after a successful `node.patch` of it MUST report the new value as the
+  node's `name` on every subsequent `nodes.list`.
+- Editing the trailer sends `{"<trailer_field>": "<new text>"}` (a JSON
+  string). The plugin MUST accept that body on `node.patch` for every
+  node of the type, SHOULD report `trailer_field` in `applied`, and MUST
+  answer a non-string value with `-32602`.
+- `trailer_field` MUST NOT name a facet dimension of the type, and
+  REQUIRES the `mutate` capability. Absent, the trailer is read-only (an
+  edit is reported as not applied).
+
+One box's edits — inline atoms and the trailer — are sent as ONE
+`node.patch` body per object, e.g.
+`{"milestone": "v0.4", "title": "Fix the lexer"}`; a tag change is a
+separate `node.patch` (the `many` body).
+
+#### Validation
+
+Each rule is a bring-up failure, isolated like any other
+(§Host integration, cutting-garden#165); the diagnostic names the plugin
+and type, e.g. `wire plugin "fj": initialize rejected: tag set: type
+"fj-issue-v1" dimension "labels" is not a declared facet dimension`:
+
+1. `tag_set.dimension` is declared on the type and `multi`;
+   `tag_set.interpreter` is non-empty and known to the host; at most one
+   `tag_set` per type;
+2. every `inline_fields` entry is a declared, non-`multi` dimension of
+   the type, listed once;
+3. `trailer_field` is not a facet dimension of the type, and the plugin
+   advertises `mutate`.
+
+**Go peers.** A Go plugin served through `pkgs/traversal_serve`
+declares these through the OPTIONAL `PresentationDescriber`
+(`DescribePresentation() []NodeTypePresentation`); `Serve` writes them
+onto the matching `node_types` entries (a presentation naming an
+undeclared type refuses to serve). `traversal_serve.NewPresentation`
+builds, from the same declaration plus the plugin's facet writes, the
+linked surfaces the host synthesizes — so a Go peer can present itself
+identically when linked (the test peer does).
+
+**Host side.** The reference adapter does not add a wire path to
+organize: it synthesizes the linked surfaces the framework already
+consults — a `UnifiedDescriber` holding one tag field per `tag_set`
+type, a `FieldPresenter` for the inline atoms, a
+`ListingFieldsDescriber` (inline fields writable iff they have a `one`
+write; the trailer writable), and a `FieldWriteApplier` building the
+bodies above — and projects each listed node's tag keys, inline values
+and name into `Node.Fields` under the dimension / trailer keys.
 
 ### Errors
 
@@ -810,7 +985,9 @@ capability interfaces the plugin advertised — `RootLister` always;
 `RootProvider`, `LeafReader`, `FacetCounter`, `FacetVersioner`,
 `FacetLabeler`, `NodeMutator`, `FacetDescriber`, `BodyDescriber`,
 `FacetWriteDescriber` (with its `FacetWriteApplier` /
-`MembershipWriteApplier`, §Facet writes) per
+`MembershipWriteApplier`, §Facet writes), and the presentation surfaces
+`UnifiedDescriber` / `FieldPresenter` / `ListingFieldsDescriber` /
+`FieldWriteApplier` (§Presentation) per
 `capabilities`/declaration presence — and registers it via the scheme
 registry. Type-assertion probing then works unchanged; consumers
 (`list`, `mcp`, the facet cache, `describe_node_types`) MUST NOT be
@@ -931,6 +1108,11 @@ becomes machine-checkable rather than rediscovered.
 | §Facet writes: `node.patch` treats the `many` array as a full replacement, `[]` clears | conformance driver | point 17; manifest `many_dimension`/`many_set`; restored afterwards |
 | §Facet writes: declaration, host-built bodies, applied report and resulting listing identical wire vs linked | go end-to-end | `TestWireFacetWritesIndistinguishableFromLinked` |
 | §Facet writes: `organize --apply` writes through a wire plugin (write:one move, write:many re-file) and an unusable declaration fails bring-up | `traversal_serve.bats` (`testpeer`) | whole-document vectors over the cgtest tree |
+| §Facet writes: `node.patch` accepts `{"<field>": null}` for a `clearable` write and the node re-lists with no value in the dimension | conformance driver | point 18; manifest `[facet_clear]` `container`/`node`/`dimension`; restored afterwards |
+| §Presentation: `node_types` presentation members pass the host's bring-up rules | conformance driver | point 19; SKIP when the peer declares none |
+| §Presentation: `node.patch` accepts `{"<trailer_field>": "<text>"}` and the node re-lists named `<text>` | conformance driver | point 20; manifest `[trailer]` `container`/`node`/`text`; restored afterwards |
+| §Presentation: unified tag field, box atoms, listing fields, field-write bodies and projected fields identical wire vs linked | go end-to-end | `TestWireTrackerPresentationIndistinguishableFromLinked` |
+| §Facet writes / §Presentation: organize over a wire plugin — a clearing move and the non-clearable refusal; tag atoms rendered and edited; `(tags)` / namespace groupings with a membership move; inline atom, trailer and clearable-atom edits in one apply; `describe_node_types` `tag_set`/listing fields and `mcp` `tags` | `traversal_serve.bats` (`testpeer`) | whole-document TRACKER vectors over `cgtest://fixture/tracker` |
 
 ## Compatibility
 
@@ -966,6 +1148,14 @@ becomes machine-checkable rather than rediscovered.
   that starts declaring it takes on the §Facet writes `node.patch`
   obligations for the mapped fields — a new constraint on its existing
   method, owed only by peers that opt in, so no schema bump.
+- **`clearable` and the §Presentation members (2026-09-24)** are
+  additive the same way: every one is OPTIONAL and absent means the
+  prior behavior (not clearable; no tag set; no inline atoms; a
+  read-only trailer showing the name). A host predating them ignores
+  them; a peer that declares one owes only that member's `node.patch`
+  obligations (the `null` clear; the `many` body for its tag set; the
+  `one` body for an editable inline field; the trailer body and the
+  name-reflects-the-field rule).
 
 ## References
 

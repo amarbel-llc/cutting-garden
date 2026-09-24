@@ -272,6 +272,35 @@ clock time) does not fit the verbatim shapes - declare it *none* for now. See
 RFC 0013 §Facet writes; the conformance driver's *[facet_write]* manifest
 table checks a wire peer against it.
 
+A *one* write may also be *clearable* (*FacetWrite.Clearable*; wire
+*"clearable": true*): the node may be left with no value, so a move into the
+document's no-value section - or an emptied inline atom of that name - is a
+clear, sent over the wire as *{"<field>": null}*, which your *node.patch* MUST
+honor (and re-list the node with no value). Every other dimension refuses such
+a move up front, saying it cannot be cleared. A linked applier receives a
+clear as an empty *toBucket*, and only for a write it declared clearable. The
+driver's *[facet_clear]* table checks it.
+
+# DECLARE HOW A WIRE NODE FILLS ITS BOX
+
+A linked plugin fills an organize box - tag atoms, *name=value* atoms, the
+trailer - through its unified field declaration (FDR 0025). A wire plugin
+declares the same on its *node_types* entries (RFC 0013 §Presentation), all
+OPTIONAL: *tag_set* (*{"dimension", "interpreter"}* - a multi-valued facet
+dimension whose values ARE the tags, under a tag interpreter the host knows),
+*inline_fields* (single-valued facet dimensions shown, in order, as
+*dimension=value* atoms; editable through their *one* write, else read-only)
+and *trailer_field* (the *node.patch* key the trailer writes; the trailer
+shows the node's *name*, so emit the field's current value as the name). The
+host then presents a wire node exactly as a linked one - tag atoms, *tags* in
+*list -format json* and *mcp*, *tag_set* in *describe_node_types*, groupings
+- and builds every write: *{"<field>": [<set>]}* for a tag edit,
+*{"<field>": "<value>"}* (or *null*) for an inline atom, and
+*{"<trailer_field>": "<text>"}* for the trailer, a box's inline and trailer
+edits merged into one *node.patch*. A Go peer declares them through
+*traversal_serve.PresentationDescriber*. The driver's *[trailer]* table checks
+the retitle.
+
 # DECLARE A BOX ID WHEN YOUR IDENTITY IS NOT IN THE PATH
 
 *organize* and *list -format espalier* name each object by a box id: by
