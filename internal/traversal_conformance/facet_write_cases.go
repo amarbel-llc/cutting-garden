@@ -11,6 +11,7 @@ package traversal_conformance
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"slices"
 	"strings"
@@ -25,7 +26,8 @@ const (
 	nameFacetWriteMany  = "node.patch: host-built write:many body replaces the node's set, [] clears"
 	nameFacetWriteClear = "node.patch: host-built clear body (null) empties a clearable write:one dimension"
 
-	namePresentationDecl = "initialize: node_types presentation members are usable by the host"
+	namePresentationDecl    = "initialize: node_types presentation members are usable by the host"
+	namePresentationTrailer = "node.patch: host-built trailer_field body renames the node"
 )
 
 // caseFacetWrites runs the four facet_writes points. A peer declaring no
@@ -87,22 +89,87 @@ func (r *runner) caseFacetWrites(ctx context.Context) {
 	}
 }
 
-// casePresentation runs the RFC 0013 presentation additions' declaration
-// point (forge organize F11): a peer carrying presentation members on its
-// node_types entries must pass the host's bring-up check of them. A peer
-// declaring none SKIPs it (every member is OPTIONAL).
-func (r *runner) casePresentation() {
+// casePresentation runs the RFC 0013 presentation additions' points (forge
+// organize F11): a peer carrying presentation members on its node_types
+// entries must pass the host's bring-up check of them, and — opted in by the
+// manifest's [trailer] table — accept the host-built trailer body and
+// reflect it as the node's name. A peer declaring no members SKIPs both
+// (every member is OPTIONAL).
+func (r *runner) casePresentation(ctx context.Context) {
+	ctx, cancel := context.WithTimeout(ctx, perCaseDeadline)
+	defer cancel()
+
 	if len(traversal_serve.PresentationsOf(r.init)) == 0 {
 		r.tap.Skip(namePresentationDecl, "peer declares no presentation members")
+		r.tap.Skip(namePresentationTrailer, "peer declares no presentation members")
 		return
 	}
 
 	if err := traversal_serve.ValidatePresentationDeclaration(r.init); err != nil {
 		r.tap.NotOk(namePresentationDecl, map[string]string{"node_types": err.Error()})
+	} else {
+		r.tap.Ok(namePresentationDecl)
+	}
+
+	switch spec := r.manifest.Trailer; {
+	case spec == nil:
+		r.tap.Skip(namePresentationTrailer, "manifest declares no trailer")
+	case !r.hasCapability(traversal_serve.CapMutate):
+		r.tap.Skip(namePresentationTrailer, "mutate not advertised")
+	default:
+		r.presentationTrailer(ctx, spec)
+	}
+}
+
+// presentationTrailer sends `{"<trailer_field>": "<text>"}` for the node's
+// declared trailer field, reads back that nodes.list names the node text,
+// then restores the original name.
+func (r *runner) presentationTrailer(ctx context.Context, trailer *TrailerSpec) {
+	spec := &FacetWriteSpec{Container: trailer.Container, Node: trailer.Node}
+
+	node, ok := r.findListedNode(ctx, spec)
+	if !ok {
+		r.tap.NotOk(namePresentationTrailer, map[string]string{
+			"setup": fmt.Sprintf("%s is not among nodes.list %s", spec.Node, spec.Container),
+		})
 		return
 	}
 
-	r.tap.Ok(namePresentationDecl)
+	field := ""
+	for _, p := range traversal_serve.PresentationsOf(r.init) {
+		if p.Tag == node.Type {
+			field = p.TrailerField
+		}
+	}
+	if field == "" {
+		r.tap.NotOk(namePresentationTrailer, map[string]string{
+			"setup": fmt.Sprintf("type %q declares no trailer_field", node.Type),
+		})
+		return
+	}
+
+	problems := map[string]string{}
+	if _, _, err := r.patchRaw(ctx, spec.Node, trailerBody(field, trailer.Text)); err != nil {
+		problems["node.patch"] = err.Error()
+	} else if renamed, ok := r.findListedNode(ctx, spec); !ok {
+		problems["read-back"] = spec.Node + " vanished from its container"
+	} else if renamed.Name != trailer.Text {
+		problems["read-back"] = fmt.Sprintf(
+			"after %s, name = %q, want %q",
+			trailerBody(field, trailer.Text), renamed.Name, trailer.Text,
+		)
+	}
+
+	if _, _, err := r.patchRaw(ctx, spec.Node, trailerBody(field, node.Name)); err != nil {
+		problems["restore"] = err.Error()
+	}
+
+	r.verdict(namePresentationTrailer, problems)
+}
+
+func trailerBody(field, text string) string {
+	body, _ := json.Marshal(map[string]string{field: text})
+	return string(body)
 }
 
 // facetWriteClear sends the host-built clear body `{"<field>": null}` for a

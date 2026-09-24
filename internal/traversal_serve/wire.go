@@ -813,6 +813,12 @@ type NodeTypeView struct {
 	// the view (PresentationsOf), and a Go peer sets it through
 	// PresentationDescriber.
 	TagSet *TagSetView `json:"tag_set,omitempty"`
+	// InlineFields and TrailerField are the OPTIONAL box-shape presentation
+	// members (same additions): the single-valued facet dimensions rendered
+	// as inline `name=value` atoms, in order, and the node.patch key the box
+	// trailer (the node's name) writes through.
+	InlineFields []string `json:"inline_fields,omitempty"`
+	TrailerField string   `json:"trailer_field,omitempty"`
 }
 
 // NodeTypeViewFrom projects a declared NodeType onto the wire. A leaf

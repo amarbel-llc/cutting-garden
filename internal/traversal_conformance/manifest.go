@@ -90,6 +90,19 @@ type Manifest struct {
 	// dimension the driver clears with the host-built `{"<field>": null}`,
 	// reads back empty, and restores. Optional — omitting it SKIPs the point.
 	FacetClear *FacetClearSpec
+	// Trailer, when non-nil, parameterizes the trailer_field point (RFC 0013
+	// presentation additions): an existing node whose type declares a
+	// trailer_field; the driver sends `{"<trailer_field>": Text}`, reads the
+	// node's name back as Text, and restores it. Optional — omitting it SKIPs
+	// the point.
+	Trailer *TrailerSpec
+}
+
+// TrailerSpec names the node the trailer point retitles and the text.
+type TrailerSpec struct {
+	Container string
+	Node      string
+	Text      string
 }
 
 // FacetClearSpec names the node and the clearable write:one dimension the
@@ -327,6 +340,22 @@ func LoadManifest(path string) (*Manifest, error) {
 			}
 		}
 		manifest.FacetClear = spec
+	}
+
+	if sub, ok, err := decodeTable(model, "trailer"); err != nil {
+		return nil, err
+	} else if ok {
+		spec := &TrailerSpec{}
+		for key, into := range map[string]*string{
+			"container": &spec.Container,
+			"node":      &spec.Node,
+			"text":      &spec.Text,
+		} {
+			if err := decodeString(sub, key, into); err != nil {
+				return nil, err
+			}
+		}
+		manifest.Trailer = spec
 	}
 
 	if leftover := model.Undecoded(); len(leftover) > 0 {

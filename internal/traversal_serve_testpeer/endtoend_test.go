@@ -659,6 +659,58 @@ func TestWireTrackerPresentationIndistinguishableFromLinked(t *testing.T) {
 	) {
 		t.Errorf("ticket 2 tags = %v, want [good first issue]", got)
 	}
+
+	// inline_fields / trailer_field: the same atoms, listing fields and
+	// field-write bodies linked and over the wire.
+	if got, want := wire.DescribeListingFields(), linked.DescribeListingFields(); len(want) == 0 ||
+		!reflect.DeepEqual(got, want) {
+		t.Errorf("DescribeListingFields:\nlinked: %+v\nwire:   %+v", want, got)
+	}
+	for i := range linkedNodes {
+		if got, want := wire.PresentBoxAtoms(wireNodes[i]), linked.PresentBoxAtoms(linkedNodes[i]); !reflect.DeepEqual(got, want) {
+			t.Errorf("tracker child[%d] atoms\nlinked: %+v\nwire:   %+v", i, want, got)
+		}
+	}
+	if got, want := wire.PresentBoxAtoms(wireNodes[0]), []cutting_garden_plugins.BoxAtom{
+		{Name: "milestone", Value: "v0.1"},
+	}; !reflect.DeepEqual(got, want) {
+		t.Errorf("ticket 1 atoms = %+v, want %+v", got, want)
+	}
+
+	edits := []cutting_garden_plugins.FieldEdit{
+		{Name: "milestone", Value: "v0.2"}, {Name: "title", Value: "Fix the lexer"},
+	}
+	linkedBody, err := linked.BuildFieldWritePatch(ctx, linkedNodes[0], edits)
+	if err != nil {
+		t.Fatalf("linked BuildFieldWritePatch: %v", err)
+	}
+	wireBody, err := wire.BuildFieldWritePatch(ctx, wireNodes[0], edits)
+	if err != nil {
+		t.Fatalf("wire BuildFieldWritePatch: %v", err)
+	}
+	if got, want := string(wireBody), `{"milestone":"v0.2","title":"Fix the lexer"}`; got != want ||
+		string(linkedBody) != want {
+		t.Fatalf("field bodies linked %s, wire %s, want %s", linkedBody, wireBody, want)
+	}
+	if _, err := linked.PatchNode(ctx, linkedNodes[0].URI, strings.NewReader(string(linkedBody))); err != nil {
+		t.Fatalf("linked PatchNode: %v", err)
+	}
+	if _, err := wire.PatchNode(ctx, wireNodes[0].URI, strings.NewReader(string(wireBody))); err != nil {
+		t.Fatalf("wire PatchNode: %v", err)
+	}
+	linkedNodes, err = linked.ListRoots(ctx, tracker)
+	if err != nil {
+		t.Fatalf("linked ListRoots: %v", err)
+	}
+	wireNodes, err = wire.ListRoots(ctx, tracker)
+	if err != nil {
+		t.Fatalf("wire ListRoots: %v", err)
+	}
+	requireNodesEqual(t, TrackerBox+" (after retitle)", linkedNodes, wireNodes)
+	if wireNodes[0].Name != "Fix the lexer" ||
+		wireNodes[0].Fields[TrailerWriteField] != "Fix the lexer" {
+		t.Errorf("ticket 1 after retitle = %+v, want renamed Fix the lexer", wireNodes[0])
+	}
 }
 
 func mustJSON(t *testing.T, value any) string {

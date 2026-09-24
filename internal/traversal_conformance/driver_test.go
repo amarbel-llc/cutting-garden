@@ -113,6 +113,13 @@ func testpeerManifest(t *testing.T) *traversal_conformance.Manifest {
 			Node:      testpeer.TicketOne,
 			Dimension: "milestone",
 		},
+		// The ticket type declares trailer_field "title": a retitle renames
+		// the ticket (RFC 0013 presentation additions).
+		Trailer: &traversal_conformance.TrailerSpec{
+			Container: testpeer.TrackerBox,
+			Node:      testpeer.TicketTwo,
+			Text:      "Retitled by conformance",
+		},
 	}
 }
 
@@ -166,7 +173,8 @@ func TestRunPassesConformantTestpeer(t *testing.T) {
 			" write:one dimension",
 		"ok 19 - initialize: node_types presentation members are usable by" +
 			" the host",
-		"1..19",
+		"ok 20 - node.patch: host-built trailer_field body renames the node",
+		"1..20",
 	} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("output missing %q:\n%s", want, out.String())
@@ -334,6 +342,36 @@ func TestRunFailsFacetClearOnNonClearableDimension(t *testing.T) {
 	}
 }
 
+// TestRunFailsTrailerOnTypeWithoutTrailerField is the trailer point's "must
+// be able to fail" check: beta's type declares no trailer_field.
+func TestRunFailsTrailerOnTypeWithoutTrailerField(t *testing.T) {
+	ctx, cancel := context.WithTimeout(
+		context.Background(), 120*time.Second,
+	)
+	defer cancel()
+
+	t.Setenv(mainModeEnv, "1")
+
+	manifest := testpeerManifest(t)
+	manifest.Trailer.Container = testpeer.RootBox
+	manifest.Trailer.Node = testpeer.LeafBeta
+
+	var out bytes.Buffer
+	passed, err := traversal_conformance.Run(ctx, manifest, &out)
+	if err != nil {
+		t.Fatalf("Run: %v\noutput:\n%s", err, out.String())
+	}
+	if passed {
+		t.Fatalf("passed = true retitling a type without a trailer_field:\n%s",
+			out.String())
+	}
+
+	want := "not ok 20 - node.patch: host-built trailer_field body renames the node"
+	if !strings.Contains(out.String(), want) {
+		t.Errorf("output missing %q:\n%s", want, out.String())
+	}
+}
+
 // TestRunBailsOutWhenPeerCannotLaunch pins the driver-trouble path: a
 // Command that is not a launchable peer (here a bare path that produces
 // no announce) fails LaunchWithoutInitialize, so Run emits a well-formed
@@ -420,6 +458,11 @@ many_set = ["x", "y"]
 container = "cgtest://fixture/tracker"
 node = "cgtest://fixture/tracker/1"
 dimension = "milestone"
+
+[trailer]
+container = "cgtest://fixture/tracker"
+node = "cgtest://fixture/tracker/2"
+text = "Retitled"
 `
 	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
 		t.Fatalf("write manifest: %v", err)
@@ -436,6 +479,14 @@ dimension = "milestone"
 		Dimension: "milestone",
 	}); !reflect.DeepEqual(got, want) {
 		t.Errorf("FacetClear = %+v, want %+v", got, want)
+	}
+
+	if got, want := manifest.Trailer, (&traversal_conformance.TrailerSpec{
+		Container: "cgtest://fixture/tracker",
+		Node:      "cgtest://fixture/tracker/2",
+		Text:      "Retitled",
+	}); !reflect.DeepEqual(got, want) {
+		t.Errorf("Trailer = %+v, want %+v", got, want)
 	}
 
 	if got, want := manifest.FacetWrite, (&traversal_conformance.FacetWriteSpec{

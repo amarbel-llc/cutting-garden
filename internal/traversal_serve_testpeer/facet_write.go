@@ -89,10 +89,15 @@ func (p *TreePlugin) DescribeFacetWrites() []cutting_garden_plugins.NodeTypeFace
 // F2.
 const LabelInterpreter = "dodder-hyphen"
 
+// TrailerWriteField is the ticket type's trailer field: the node.patch key
+// that retitles a ticket (its name).
+const TrailerWriteField = "title"
+
 // DescribePresentation is the traversal_serve.PresentationDescriber the
-// served peer advertises on its node_types entries: the ticket type's label
-// dimension is its tag set (RFC 0013 presentation additions, forge organize
-// F11).
+// served peer advertises on its node_types entries (RFC 0013 presentation
+// additions, forge organize F11/F5): the ticket's label dimension is its tag
+// set, its milestone renders as an inline `milestone=` atom, and its trailer
+// (the title) is writable through "title".
 func (p *TreePlugin) DescribePresentation() []traversal_serve.NodeTypePresentation {
 	return []traversal_serve.NodeTypePresentation{{
 		Tag: TicketType,
@@ -100,7 +105,57 @@ func (p *TreePlugin) DescribePresentation() []traversal_serve.NodeTypePresentati
 			Dimension:   "label",
 			Interpreter: LabelInterpreter,
 		},
+		InlineFields: []string{"milestone"},
+		TrailerField: TrailerWriteField,
 	}}
+}
+
+// PresentBoxAtoms is the linked FieldPresenter, from the same synthesis.
+func (p *TreePlugin) PresentBoxAtoms(
+	node cutting_garden_plugins.Node,
+) []cutting_garden_plugins.BoxAtom {
+	return p.presentation().PresentBoxAtoms(node)
+}
+
+// DescribeListingFields is the linked ListingFieldsDescriber, from the same
+// synthesis.
+func (p *TreePlugin) DescribeListingFields() []cutting_garden_plugins.NodeTypeListingFields {
+	return p.presentation().DescribeListingFields()
+}
+
+// BuildFieldWritePatch is the linked FieldWriteApplier: the same host-built
+// body a wire host sends.
+func (p *TreePlugin) BuildFieldWritePatch(
+	_ context.Context,
+	node cutting_garden_plugins.Node,
+	edits []cutting_garden_plugins.FieldEdit,
+) ([]byte, error) {
+	return p.presentation().BuildFieldWritePatch(node, edits)
+}
+
+// trailerRenameFromPatch reads a patch body's trailer field for a node of
+// type typ: the new name, or "" when the body names none. A trailer field
+// carrying anything but a non-empty string is an unusable value (-32602).
+func (p *TreePlugin) trailerRenameFromPatch(
+	key, typ string, fields map[string]any,
+) (string, error) {
+	for _, declared := range p.DescribePresentation() {
+		if declared.Tag != typ || declared.TrailerField == "" {
+			continue
+		}
+		value, present := fields[declared.TrailerField]
+		if !present || value == nil {
+			return "", nil
+		}
+		name, ok := value.(string)
+		if !ok || name == "" {
+			return "", errors.BadRequestf(
+				"patch %s: %q must be a non-empty string", key, declared.TrailerField,
+			)
+		}
+		return name, nil
+	}
+	return "", nil
 }
 
 // presentation is the linked half of the same declaration: the host's

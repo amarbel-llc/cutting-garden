@@ -536,20 +536,20 @@ function test_testpeer_tracker_non_clearable_move_is_refused { # @test
   cat >"$edited" <<-'EOM'
 	---
 	% generated: `cg organize -group-by state= -query "!cgtest-ticket-v1" cgtest://fixture/tracker`
-	- _base = @blake2b256-2h4m064n6078wven96m22a5n3vfywruxuypn09hugc348x6yevmqs4lmpv
+	- _base = @blake2b256-6glrdvkxt352fweyrtsxmc4gqkaqwju4g402g9gcqget3wym8ves573jxm
 	- _anchor = cgtest://fixture/tracker/
 	- _query = !cgtest-ticket-v1
 	- _type = !cgtest-ticket-v1
 	! organize-base-v1
 	---
 
-	- [3 area-organize-apply] Ship it
+	- [3 area-organize-apply milestone=v0.2] Ship it
 
 	# state=
 
 	## =open
 
-	- [1 area-organize bug] Fix the parser
+	- [1 area-organize bug milestone=v0.1] Fix the parser
 	- [2 "good first issue"] Write the docs
 
 	## =closed
@@ -673,7 +673,7 @@ function test_testpeer_tracker_tag_groupings { # @test
   assert_output - <<-'EOM'
 	---
 	% generated: `cg organize -group-by area -query "!cgtest-ticket-v1" cgtest://fixture/tracker`
-	- _base = @blake2b256-dx6ylxadedgatw9dtufqvk30d39804ykdcfh2tpc2m5nlsdzr6hsd09p7r
+	- _base = @blake2b256-p52w36ujekgv2mc88lpreaakhk8g54xsau6kxj4ks0x7tcemmyjsr8rk44
 	- _anchor = cgtest://fixture/tracker/
 	- _query = !cgtest-ticket-v1
 	- _type = !cgtest-ticket-v1
@@ -687,8 +687,8 @@ function test_testpeer_tracker_tag_groupings { # @test
 
 	## -organize
 
-	- [1 bug] Fix the parser
-	- [3] Ship it
+	- [1 bug milestone=v0.1] Fix the parser
+	- [3 milestone=v0.2] Ship it
 	EOM
 
   run_cg_stdout organize -group-by '(tags)' -query '!cgtest-ticket-v1' \
@@ -697,7 +697,7 @@ function test_testpeer_tracker_tag_groupings { # @test
   assert_output - <<-'EOM'
 	---
 	% generated: `cg organize -group-by (tags) -query "!cgtest-ticket-v1" cgtest://fixture/tracker`
-	- _base = @blake2b256-a25kmqtu2wy808awgfrluyzmgh6t0x2y9p2cfwcszmffeu4ef3jqs7ee6a
+	- _base = @blake2b256-k2tr33uet0x38njpxazj4gmkanek9mgjlvcdh2u0mzjp3hzgzgsqdjh8ue
 	- _anchor = cgtest://fixture/tracker/
 	- _query = !cgtest-ticket-v1
 	- _type = !cgtest-ticket-v1
@@ -707,15 +707,15 @@ function test_testpeer_tracker_tag_groupings { # @test
 
 	# area-organize
 
-	- [1 bug] Fix the parser
+	- [1 bug milestone=v0.1] Fix the parser
 
 	# area-organize-apply
 
-	- [3] Ship it
+	- [3 milestone=v0.2] Ship it
 
 	# bug
 
-	- [1 area-organize] Fix the parser
+	- [1 area-organize milestone=v0.1] Fix the parser
 
 	# "good first issue"
 
@@ -726,7 +726,7 @@ function test_testpeer_tracker_tag_groupings { # @test
   cat >"$edited" <<-'EOM'
 	---
 	% generated: `cg organize -group-by (tags) -query "!cgtest-ticket-v1" cgtest://fixture/tracker`
-	- _base = @blake2b256-a25kmqtu2wy808awgfrluyzmgh6t0x2y9p2cfwcszmffeu4ef3jqs7ee6a
+	- _base = @blake2b256-k2tr33uet0x38njpxazj4gmkanek9mgjlvcdh2u0mzjp3hzgzgsqdjh8ue
 	- _anchor = cgtest://fixture/tracker/
 	- _query = !cgtest-ticket-v1
 	- _type = !cgtest-ticket-v1
@@ -736,15 +736,15 @@ function test_testpeer_tracker_tag_groupings { # @test
 
 	# area-organize
 
-	- [1 bug] Fix the parser
+	- [1 bug milestone=v0.1] Fix the parser
 
 	# area-organize-apply
 
-	- [3] Ship it
+	- [3 milestone=v0.2] Ship it
 
 	# bug
 
-	- [1 area-organize] Fix the parser
+	- [1 area-organize milestone=v0.1] Fix the parser
 	- [2] Write the docs
 
 	# "good first issue"
@@ -768,10 +768,113 @@ EOF
 EOF
 }
 
+# inline_fields and trailer_field over the wire (forge organize F11/F5):
+# the ticket box is `[<n> <labels…> milestone=<m>] <title>` — milestone an
+# inline atom (stripped only under its own `=bucket` when grouped by it) and
+# the title the trailer. One apply edits all three kinds in ONE node.patch
+# per object: an inline atom through its write:one ({"milestone":"v0.2"}),
+# the trailer through the trailer field ({"title":"Write the user docs"}),
+# and an emptied atom of the CLEARABLE milestone as a clear
+# ({"milestone":null}).
+# bats test_tags=testpeer
+function test_testpeer_tracker_inline_atom_and_trailer_edits { # @test
+  configure_testpeer_wire_plugin
+
+  run_cg_stdout organize -group-by state= -query '!cgtest-ticket-v1' \
+    cgtest://fixture/tracker
+  assert_success
+  assert_output - <<-'EOM'
+	---
+	% generated: `cg organize -group-by state= -query "!cgtest-ticket-v1" cgtest://fixture/tracker`
+	- _base = @blake2b256-6glrdvkxt352fweyrtsxmc4gqkaqwju4g402g9gcqget3wym8ves573jxm
+	- _anchor = cgtest://fixture/tracker/
+	- _query = !cgtest-ticket-v1
+	- _type = !cgtest-ticket-v1
+	! organize-base-v1
+	---
+
+	# state=
+
+	## =open
+
+	- [1 area-organize bug milestone=v0.1] Fix the parser
+	- [2 "good first issue"] Write the docs
+
+	## =closed
+
+	- [3 area-organize-apply milestone=v0.2] Ship it
+	EOM
+
+  local edited="$BATS_TEST_TMPDIR/edited.txt"
+  cat >"$edited" <<-'EOM'
+	---
+	% generated: `cg organize -group-by state= -query "!cgtest-ticket-v1" cgtest://fixture/tracker`
+	- _base = @blake2b256-6glrdvkxt352fweyrtsxmc4gqkaqwju4g402g9gcqget3wym8ves573jxm
+	- _anchor = cgtest://fixture/tracker/
+	- _query = !cgtest-ticket-v1
+	- _type = !cgtest-ticket-v1
+	! organize-base-v1
+	---
+
+	# state=
+
+	## =open
+
+	- [1 area-organize bug milestone=v0.2] Fix the parser
+	- [2 "good first issue"] Write the user docs
+
+	## =closed
+
+	- [3 area-organize-apply] Ship it
+	EOM
+
+  run_cg_stdout organize -apply "$edited" -commit
+  assert_success
+  assert_output - <<'EOF'
+organize: 3 change(s):
+
+  - [1 area-organize bug milestone=[-v0.1-]{+v0.2+}] Fix the parser
+  - [2 "good first issue"] Write the {+user+} docs
+  - [3 area-organize-apply milestone=[-v0.2-]] Ship it
+
+organize: wrote 3 change(s)
+EOF
+
+  run_cg_stdout list -format json -query 'milestone=v0.2' cgtest://fixture/tracker
+  assert_success
+  assert_output '{"uri":"cgtest://fixture/tracker/1","name":"Fix the parser","type":"cgtest-ticket-v1","tags":["area-organize","bug"]}'
+
+  run_cg_stdout organize -group-by state= -query '!cgtest-ticket-v1' \
+    cgtest://fixture/tracker
+  assert_success
+  assert_output - <<-'EOM'
+	---
+	% generated: `cg organize -group-by state= -query "!cgtest-ticket-v1" cgtest://fixture/tracker`
+	- _base = @blake2b256-2g54qg84vehw95gh8lr9mt4f7dsr67n3ccnafy02k45plnw4vlesh933ty
+	- _anchor = cgtest://fixture/tracker/
+	- _query = !cgtest-ticket-v1
+	- _type = !cgtest-ticket-v1
+	! organize-base-v1
+	---
+
+	# state=
+
+	## =open
+
+	- [1 area-organize bug milestone=v0.2] Fix the parser
+	- [2 "good first issue"] Write the user docs
+
+	## =closed
+
+	- [3 area-organize-apply] Ship it
+	EOM
+}
+
 # describe_node_types reports the wire type's tag_set exactly as a linked
 # plugin's (the field is the tag-set dimension, the interpreter its
-# declared one) and the milestone dimension's clearable one write; the mcp
-# enriched listing carries each ticket's `tags`.
+# declared one), its inline and trailer listing fields, and the milestone
+# dimension's clearable one write; the mcp enriched listing carries each
+# ticket's `tags`.
 # bats test_tags=testpeer
 function test_testpeer_tracker_mcp_describes_tag_set { # @test
   configure_testpeer_wire_plugin
@@ -784,10 +887,10 @@ function test_testpeer_tracker_mcp_describes_tag_set { # @test
 
   output="$(mcp_result_text "$frames" 3 | jq -c '
     .[].types[] | select(.tag == "cgtest-ticket-v1")
-    | {tag_set, milestone: (.facets[] | select(.key == "milestone")
+    | {tag_set, listingFields, milestone: (.facets[] | select(.key == "milestone")
         | {writeMode, field, clearable})}')" ||
     fail "describe_node_types did not parse: $frames"
-  assert_output '{"tag_set":{"field":"label","interpreter":"dodder-hyphen"},"milestone":{"writeMode":"one","field":"milestone","clearable":true}}'
+  assert_output '{"tag_set":{"field":"label","interpreter":"dodder-hyphen"},"listingFields":[{"key":"milestone"},{"key":"title"}],"milestone":{"writeMode":"one","field":"milestone","clearable":true}}'
 
   output="$(mcp_result_text "$frames" 4 | jq -c '.nodes[] | {uri, tags}')" ||
     fail "list_nodes did not parse: $frames"
@@ -865,6 +968,11 @@ many_set = ["x", "y"]
 container = "cgtest://fixture/tracker"
 node = "cgtest://fixture/tracker/1"
 dimension = "milestone"
+
+[trailer]
+container = "cgtest://fixture/tracker"
+node = "cgtest://fixture/tracker/2"
+text = "Retitled by conformance"
 EOF
 
   run --separate-stderr "$CG_CONFORMANCE_TRAVERSAL" --manifest "$manifest"
@@ -873,7 +981,7 @@ EOF
   # whole multi-line output as ONE string (no per-line/multiline flag),
   # so `^not ok` would never match a mid-output failure — a false-safe
   # assertion. --partial 'not ok' catches a failing point anywhere.
-  assert_output --partial '1..19'
+  assert_output --partial '1..20'
   assert_output --partial 'ok 1 - initialize'
   assert_output --partial 'ok 11 - leaf.read: container returns its own body'
   assert_output --partial 'ok 13 - nodes.list: filter pushdown returns a sound subset'
@@ -892,6 +1000,10 @@ EOF
   # The presentation additions (forge organize F11): a peer carrying a
   # tag_set on a node_types entry must pass the host's bring-up check.
   assert_output --partial 'ok 19 - initialize: node_types presentation members are usable by the host'
+  # ...and a peer declaring a trailer_field accepts the host-built
+  # {"<trailer_field>": "<text>"} and names the node by it (a substituted
+  # peer names its own [trailer] node, or SKIPs by omitting the table).
+  assert_output --partial 'ok 20 - node.patch: host-built trailer_field body renames the node'
   refute_output --partial 'not ok'
 }
 

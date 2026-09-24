@@ -155,8 +155,11 @@ var (
 	_ cutting_garden_plugins.FacetWriteApplier      = (*TreePlugin)(nil)
 	_ cutting_garden_plugins.MembershipWriteApplier = (*TreePlugin)(nil)
 
-	_ traversal_serve.PresentationDescriber   = (*TreePlugin)(nil)
-	_ cutting_garden_plugins.UnifiedDescriber = (*TreePlugin)(nil)
+	_ traversal_serve.PresentationDescriber         = (*TreePlugin)(nil)
+	_ cutting_garden_plugins.UnifiedDescriber       = (*TreePlugin)(nil)
+	_ cutting_garden_plugins.FieldPresenter         = (*TreePlugin)(nil)
+	_ cutting_garden_plugins.ListingFieldsDescriber = (*TreePlugin)(nil)
+	_ cutting_garden_plugins.FieldWriteApplier      = (*TreePlugin)(nil)
 )
 
 // Plugin is the shared linked-path instance of the fixed tree — what an
@@ -894,6 +897,15 @@ func (p *TreePlugin) PatchNode(
 	facetUpdates, err := p.facetUpdatesFromPatch(key, node.typ, fields)
 	if err != nil {
 		return nil, err
+	}
+	// The declared trailer field IS the node's name (the RFC 0013
+	// trailer_field contract): a retitle renames the node.
+	rename, err := p.trailerRenameFromPatch(key, node.typ, fields)
+	if err != nil {
+		return nil, err
+	}
+	if rename != "" {
+		node.name = rename
 	}
 
 	if node.structured == nil {

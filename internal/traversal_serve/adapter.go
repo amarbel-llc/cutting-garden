@@ -74,6 +74,11 @@ var (
 	// The presentation additions: the node_types tag_set members are
 	// synthesized into the linked UnifiedDescriber surface (Presentation).
 	_ cutting_garden_plugins.UnifiedDescriber = (*WirePlugin)(nil)
+	// ...and the inline_fields / trailer_field members into the linked
+	// box-atom, listing-field and field-write surfaces.
+	_ cutting_garden_plugins.FieldPresenter         = (*WirePlugin)(nil)
+	_ cutting_garden_plugins.ListingFieldsDescriber = (*WirePlugin)(nil)
+	_ cutting_garden_plugins.FieldWriteApplier      = (*WirePlugin)(nil)
 )
 
 // NewWirePlugin returns the adapter for spec. It does NOT spawn — the
@@ -392,6 +397,53 @@ func (w *WirePlugin) DescribeUnified() []cutting_garden_plugins.NodeTypeUnifiedF
 	}
 
 	return presentationOf(sess).DescribeUnified()
+}
+
+// PresentBoxAtoms is the synthesized FieldPresenter (Presentation): each
+// inline_fields dimension's value as a `name=value` atom. A peer declaring
+// no inline fields presents no atoms — exactly a linked plugin without the
+// capability.
+func (w *WirePlugin) PresentBoxAtoms(
+	node cutting_garden_plugins.Node,
+) []cutting_garden_plugins.BoxAtom {
+	sess, err := w.liveSession()
+	if err != nil {
+		return nil
+	}
+
+	return presentationOf(sess).PresentBoxAtoms(node)
+}
+
+// DescribeListingFields is the synthesized ListingFieldsDescriber: the
+// inline fields (writable through their one write) and the trailer field.
+func (w *WirePlugin) DescribeListingFields() []cutting_garden_plugins.NodeTypeListingFields {
+	sess, err := w.liveSession()
+	if err != nil {
+		return nil
+	}
+
+	return presentationOf(sess).DescribeListingFields()
+}
+
+// BuildFieldWritePatch is the synthesized FieldWriteApplier: the host-built
+// node.patch body for a box edit batch (Presentation.BuildFieldWritePatch).
+// No wire call — the body travels later via node.patch.
+func (w *WirePlugin) BuildFieldWritePatch(
+	_ context.Context,
+	node cutting_garden_plugins.Node,
+	edits []cutting_garden_plugins.FieldEdit,
+) ([]byte, error) {
+	sess, err := w.liveSession()
+	if err != nil {
+		return nil, err
+	}
+
+	body, err := presentationOf(sess).BuildFieldWritePatch(node, edits)
+	if err != nil {
+		return nil, errors.BadRequestf("wire plugin %q: %s", w.spec.Name, err)
+	}
+
+	return body, nil
 }
 
 // declaredWrite resolves the mapping the plugin DECLARED for node's type and

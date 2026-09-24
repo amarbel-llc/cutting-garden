@@ -1933,6 +1933,11 @@ debug-conformance-traversal:
     container = "cgtest://fixture/tracker"
     node = "cgtest://fixture/tracker/1"
     dimension = "milestone"
+
+    [trailer]
+    container = "cgtest://fixture/tracker"
+    node = "cgtest://fixture/tracker/2"
+    text = "Retitled by conformance"
     EOF
     "$driver" --manifest "$tmp/m.toml"
 

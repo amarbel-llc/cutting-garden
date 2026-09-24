@@ -16,7 +16,9 @@ package traversal_serve
 // itself identically when linked (the testpeer does).
 
 import (
+	"encoding/json"
 	"maps"
+	"slices"
 
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 
@@ -39,6 +41,15 @@ type TagSetView struct {
 type NodeTypePresentation struct {
 	Tag    string
 	TagSet *TagSetView
+	// InlineFields are single-valued facet dimensions of the type rendered, in
+	// this order, as inline `name=value` box atoms; the value is the node's
+	// facet value key in that dimension (no value, no atom). An inline field
+	// with a one facet write is editable through it; otherwise read-only.
+	InlineFields []string
+	// TrailerField is the node.patch key the box trailer writes: the trailer
+	// SHOWS the node's name, and an edit to it is sent as
+	// `{"<TrailerField>": "<text>"}`. Empty keeps the trailer read-only.
+	TrailerField string
 }
 
 // PresentationDescriber is the OPTIONAL Go-peer capability Serve advertises
@@ -55,12 +66,17 @@ type PresentationDescriber interface {
 
 // presentation reads a node_types entry's presentation members back.
 func (v NodeTypeView) presentation() NodeTypePresentation {
-	return NodeTypePresentation{Tag: v.Tag, TagSet: v.TagSet}
+	return NodeTypePresentation{
+		Tag:          v.Tag,
+		TagSet:       v.TagSet,
+		InlineFields: v.InlineFields,
+		TrailerField: v.TrailerField,
+	}
 }
 
 // declaresPresentation reports whether any presentation member is set.
 func (p NodeTypePresentation) declaresPresentation() bool {
-	return p.TagSet != nil
+	return p.TagSet != nil || len(p.InlineFields) > 0 || p.TrailerField != ""
 }
 
 // PresentationsOf collects the presentation-declaring node types of an
@@ -88,6 +104,8 @@ func applyPresentations(views []NodeTypeView, declared []NodeTypePresentation) e
 				continue
 			}
 			views[i].TagSet = p.TagSet
+			views[i].InlineFields = p.InlineFields
+			views[i].TrailerField = p.TrailerField
 			found = true
 		}
 		if !found {
@@ -116,8 +134,17 @@ func ValidatePresentationDeclaration(init InitializeResult) error {
 		}
 	}
 
+	mutate := slices.Contains(init.Capabilities, CapMutate)
+
 	tagSets := map[string]int{}
 	for _, view := range init.NodeTypes {
+		if err := validateInlineFields(view, dims[view.Tag]); err != nil {
+			return err
+		}
+		if err := validateTrailerField(view, dims[view.Tag], mutate); err != nil {
+			return err
+		}
+
 		set := view.TagSet
 		if set == nil {
 			continue
@@ -153,6 +180,62 @@ func ValidatePresentationDeclaration(init InitializeResult) error {
 		}
 	}
 
+	return nil
+}
+
+// validateInlineFields: every inline field is a single-valued facet
+// dimension the type declares, listed once.
+func validateInlineFields(view NodeTypeView, dims map[string]FacetDimensionView) error {
+	seen := map[string]bool{}
+	for _, field := range view.InlineFields {
+		dim, declared := dims[field]
+		switch {
+		case seen[field]:
+			return errors.ErrorWithStackf(
+				"inline fields: type %q field %q is listed more than once",
+				view.Tag, field,
+			)
+		case !declared:
+			return errors.ErrorWithStackf(
+				"inline fields: type %q field %q is not a declared facet dimension",
+				view.Tag, field,
+			)
+		case dim.Multi:
+			return errors.ErrorWithStackf(
+				"inline fields: type %q field %q is multi-valued; an inline atom"+
+					" carries one value (a multi-valued dimension is a tag_set)",
+				view.Tag, field,
+			)
+		}
+		seen[field] = true
+	}
+	return nil
+}
+
+// validateTrailerField: the trailer field is a node.patch key, not a facet
+// dimension (the trailer shows the node's name, not a bucket), and — being
+// writable by declaration — requires the mutate capability.
+func validateTrailerField(
+	view NodeTypeView, dims map[string]FacetDimensionView, mutate bool,
+) error {
+	field := view.TrailerField
+	if field == "" {
+		return nil
+	}
+	if _, isDim := dims[field]; isDim {
+		return errors.ErrorWithStackf(
+			"trailer field: type %q field %q is a facet dimension; the trailer"+
+				" writes the node's name, not a bucket",
+			view.Tag, field,
+		)
+	}
+	if !mutate {
+		return errors.ErrorWithStackf(
+			"trailer field: type %q field %q is writable but the plugin does"+
+				" not advertise %q",
+			view.Tag, field, CapMutate,
+		)
+	}
 	return nil
 }
 
@@ -219,31 +302,144 @@ func (p Presentation) DescribeUnified() []cutting_garden_plugins.NodeTypeUnified
 	return sets
 }
 
-// ProjectFields returns node with its presented memberships projected into
-// Node.Fields — a tag-set type's tag keys under the dimension key — the
-// stored values the synthesized codecs Format. A node whose type declares no
-// presentation (or carries no value) is returned unchanged; the Fields map
-// is cloned before writing, never mutated in place.
+// ProjectFields returns node with its presented values projected into
+// Node.Fields — the stored values the synthesized surfaces read: a tag-set
+// type's tag keys under the dimension key (what the tag codec Formats), each
+// inline field's value under its dimension key, and the node's name under the
+// trailer field (what organize's trailer reads). A node whose type declares
+// no presentation, or that carries none of the values, is returned
+// unchanged; the Fields map is cloned before writing, never mutated in place.
 func (p Presentation) ProjectFields(node cutting_garden_plugins.Node) cutting_garden_plugins.Node {
 	t, ok := p.forType(node.Type)
-	if !ok || t.TagSet == nil {
+	if !ok {
 		return node
 	}
-	values := node.Facets[t.TagSet.Dimension]
-	if len(values) == 0 {
+
+	projected := map[string]any{}
+	if t.TagSet != nil {
+		if values := node.Facets[t.TagSet.Dimension]; len(values) > 0 {
+			tags := make([]string, len(values))
+			for i, value := range values {
+				tags[i] = value.Key
+			}
+			projected[t.TagSet.Dimension] = tags
+		}
+	}
+	for _, field := range t.InlineFields {
+		if values := node.Facets[field]; len(values) > 0 {
+			projected[field] = values[0].Key
+		}
+	}
+	if t.TrailerField != "" {
+		projected[t.TrailerField] = node.Name
+	}
+	if len(projected) == 0 {
 		return node
 	}
-	tags := make([]string, len(values))
-	for i, value := range values {
-		tags[i] = value.Key
-	}
+
 	fields := maps.Clone(node.Fields)
 	if fields == nil {
 		fields = map[string]any{}
 	}
-	fields[t.TagSet.Dimension] = tags
+	maps.Copy(fields, projected)
 	node.Fields = fields
 	return node
+}
+
+// PresentBoxAtoms is the synthesized FieldPresenter: each inline field with a
+// value, in declared order, as a `name=value` atom named by its dimension.
+func (p Presentation) PresentBoxAtoms(node cutting_garden_plugins.Node) []cutting_garden_plugins.BoxAtom {
+	t, ok := p.forType(node.Type)
+	if !ok {
+		return nil
+	}
+	var atoms []cutting_garden_plugins.BoxAtom
+	for _, field := range t.InlineFields {
+		if values := node.Facets[field]; len(values) > 0 {
+			atoms = append(atoms, cutting_garden_plugins.BoxAtom{
+				Name: field, Value: values[0].Key,
+			})
+		}
+	}
+	return atoms
+}
+
+// DescribeListingFields is the synthesized ListingFieldsDescriber — the
+// single source of organize's field writability: each inline field
+// (writable iff its dimension has a one write), then the trailer field
+// (writable, the Trailer slot). nil when no type declares either.
+func (p Presentation) DescribeListingFields() []cutting_garden_plugins.NodeTypeListingFields {
+	var sets []cutting_garden_plugins.NodeTypeListingFields
+	for _, t := range p.types {
+		var fields []cutting_garden_plugins.ListingField
+		for _, field := range t.InlineFields {
+			fields = append(fields, cutting_garden_plugins.ListingField{
+				Key:      field,
+				Writable: p.writes[t.Tag][field].Mode == cutting_garden_plugins.FacetWriteOne,
+			})
+		}
+		if t.TrailerField != "" {
+			fields = append(fields, cutting_garden_plugins.ListingField{
+				Key: t.TrailerField, Writable: true, Trailer: true,
+			})
+		}
+		if len(fields) > 0 {
+			sets = append(sets, cutting_garden_plugins.NodeTypeListingFields{
+				Tag: t.Tag, Fields: fields,
+			})
+		}
+	}
+	return sets
+}
+
+// BuildFieldWritePatch is the synthesized FieldWriteApplier: ONE node.patch
+// body for a node's batch of box edits. The trailer edit writes
+// `"<trailer_field>": "<text>"`; an inline atom edit writes through its
+// dimension's one write exactly as a bucket move does (HostFacetWritePatch:
+// `"<field>": "<value>"`, or null for the clear of a clearable write). A
+// read-only or undeclared atom, a non-clearable clear, and an empty batch are
+// bad requests.
+func (p Presentation) BuildFieldWritePatch(
+	node cutting_garden_plugins.Node, edits []cutting_garden_plugins.FieldEdit,
+) ([]byte, error) {
+	if len(edits) == 0 {
+		return nil, errors.BadRequestf("field write: %s: no edits", node.URIString())
+	}
+	t, _ := p.forType(node.Type)
+
+	body := map[string]any{}
+	for _, edit := range edits {
+		if t.TrailerField != "" && edit.Name == t.TrailerField {
+			body[t.TrailerField] = edit.Value
+			continue
+		}
+
+		write, declared := p.writes[t.Tag][edit.Name]
+		if !slices.Contains(t.InlineFields, edit.Name) || !declared ||
+			write.Mode != cutting_garden_plugins.FacetWriteOne {
+			return nil, errors.BadRequestf(
+				"field write: type %q field %q is not writable (no inline field"+
+					" with a one facet write, and not the trailer)",
+				node.Type, edit.Name,
+			)
+		}
+
+		one, err := HostFacetWritePatch(write, edit.Value)
+		if err != nil {
+			return nil, err
+		}
+		var fragment map[string]any
+		if err := json.Unmarshal(one, &fragment); err != nil {
+			return nil, errors.Wrap(err)
+		}
+		maps.Copy(body, fragment)
+	}
+
+	encoded, err := json.Marshal(body)
+	if err != nil {
+		return nil, errors.Wrap(err)
+	}
+	return encoded, nil
 }
 
 // tagSetCodec is the synthesized codec for a tag-set dimension: the stored
