@@ -737,7 +737,37 @@ field-residence collisions — a key authored in BOTH its metadata and
 body homes (the distributed `blocked-by=fred` term vs a `!task` body's
 own `blocked-by`), a loud bidirectional error since every field key has
 one type-declared authored home and the write-through targets that
-residence (dodder#377; FDR 0023 §Dependencies).
+residence (dodder#377; FDR 0023 §Dependencies); a `write:one` object
+moved into the no-value section on a dimension not declared `clearable`
+(forge organize F12, RFC 0013 §Facet writes).
+
+**Separable refusals (2026-09-24).** Every rejection above is raised at
+plan time, BEFORE the diff and the commit confirm. Most abort the whole
+apply. A *separable* refusal — one whose edit can be dropped without
+invalidating the document's other edits — is collected instead as a
+refusal record (object id, dimension/field, reason). Today the only
+separable class is the non-clearable no-value move; unknown non-`+` ids
+(F8c) and a move + same-property atom edit (#271) are candidates to join.
+
+- **Headless** (`-apply … -commit`, `-apply … -dry-run`,
+  `-commit-directly`, any non-terminal run): unchanged — the first refusal aborts with exit 64 and
+  nothing is written. A refused edit is never stripped silently.
+- **At a terminal**, the refusals are listed and a second yes/no gate
+  (the #224 confirm style) asks whether to drop them:
+
+  ```
+  organize: 1 edit can't be applied:
+    task2.ics  status: moved into the no-value section, but "status" can't be cleared
+  Drop it and continue with the remaining 2 change(s)?
+  ```
+
+  *No* aborts exactly as headless (exit 64; the interactive editor's
+  buffer is left at its path). *Yes* strips ONLY the refused edits — the
+  same object's tag atoms, field edits and trailer survive — and the
+  apply continues: the preview of the remaining delta, then the usual
+  commit confirm. If nothing remains, organize says so and writes
+  nothing. The dropped edits are named once more at the end
+  (`organize: skipped: task2.ics status move`).
 
 ## Deferred
 

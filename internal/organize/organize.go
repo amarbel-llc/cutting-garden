@@ -84,6 +84,9 @@ type Organize struct {
 	// the generated query otherwise carries.
 	IncludeTerminal bool
 	output          io.Writer
+	// confirm, when set, replaces the terminal yes/no prompt (the #224 commit
+	// gate and the refusal strip gate) — the test seam; nil uses huh.
+	confirm func(title string) (bool, error)
 }
 
 var (

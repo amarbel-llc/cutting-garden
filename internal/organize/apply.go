@@ -266,10 +266,45 @@ func (cmd *Organize) applyDocument(
 	if err != nil {
 		return false, err
 	}
+
+	// Writability precheck (cutting-garden#221): resolve the move write surface and
+	// validate each move's grouped-dimension mode BEFORE the diff and confirm, so a
+	// move onto a read-only dimension refuses immediately rather than rendering a
+	// diff and prompting "Apply these N change(s)?" only to fail after the user
+	// confirms. The resolved surface is reused by executePlan below. A SEPARABLE
+	// refusal (a non-clearable dimension moved into the no-value section) is
+	// partitioned out first: headless it still aborts, at a terminal the user may
+	// strip it and continue (resolveRefusals).
+	var (
+		moveMutator cgp.NodeMutator
+		moveApplier cgp.FacetWriteApplier
+		moveWrites  map[string]cgp.FacetWrite
+		refused     []refusal
+	)
+	if len(moves) > 0 {
+		var werr error
+		if moveMutator, moveApplier, moveWrites, werr = resolveWrites(lister, dim); werr != nil {
+			return false, werr
+		}
+		moves, refused = partitionRefusedMoves(moves, moveWrites, idOf)
+		for _, mv := range moves {
+			if err := checkMoveWritable(moveWrites, mv); err != nil {
+				return false, err
+			}
+		}
+	}
 	if err := rejectMoveFieldCollisions(
 		moves, fieldEdits, dim, boxAtomPresenter(lister), idOf,
 	); err != nil {
 		return false, err
+	}
+	if len(refused) > 0 {
+		remaining := len(buildChanges(
+			edited, base, moves, fieldEdits, atomEdits, moveLabel(spec), tagDim, trailer, tagInterp, idOf,
+		))
+		if err := cmd.resolveRefusals(refused, remaining, interactive); err != nil {
+			return false, err
+		}
 	}
 	if len(notices) > 0 {
 		fmt.Fprintf(cmd.output,
@@ -277,28 +312,6 @@ func (cmd *Organize) applyDocument(
 				"(read-only fields such as dates are cutting-garden#218 slice 2; "+
 				"clearing a field is #215)\n",
 			len(notices), strings.Join(notices, ", "))
-	}
-
-	// Writability precheck (cutting-garden#221): resolve the move write surface and
-	// validate each move's grouped-dimension mode BEFORE the diff and confirm, so a
-	// move onto a read-only dimension refuses immediately rather than rendering a
-	// diff and prompting "Apply these N change(s)?" only to fail after the user
-	// confirms. The resolved surface is reused by executePlan below.
-	var (
-		moveMutator cgp.NodeMutator
-		moveApplier cgp.FacetWriteApplier
-		moveWrites  map[string]cgp.FacetWrite
-	)
-	if len(moves) > 0 {
-		var werr error
-		if moveMutator, moveApplier, moveWrites, werr = resolveWrites(lister, dim); werr != nil {
-			return false, werr
-		}
-		for _, mv := range moves {
-			if err := checkMoveWritable(moveWrites, mv); err != nil {
-				return false, err
-			}
-		}
 	}
 
 	// The diff (cutting-garden#224): fold the moves, field edits and tag-atom
@@ -312,7 +325,12 @@ func (cmd *Organize) applyDocument(
 	)
 	total := len(changes)
 	if total == 0 {
-		fmt.Fprintln(cmd.output, "organize: no changes to apply")
+		if len(refused) > 0 {
+			fmt.Fprintln(cmd.output, "organize: nothing left to apply after dropping the refused edit(s)")
+		} else {
+			fmt.Fprintln(cmd.output, "organize: no changes to apply")
+		}
+		cmd.reportSkipped(refused)
 		return commit, nil
 	}
 
@@ -325,6 +343,7 @@ func (cmd *Organize) applyDocument(
 		return false, err
 	}
 	if !write {
+		cmd.reportSkipped(refused)
 		return false, nil
 	}
 
@@ -348,6 +367,7 @@ func (cmd *Organize) applyDocument(
 		}
 	}
 	fmt.Fprintf(cmd.output, "organize: wrote %d change(s)\n", total)
+	cmd.reportSkipped(refused)
 	return true, nil
 }
 
@@ -569,12 +589,21 @@ func declaredWritesFor(lister cgp.RootLister, dim string) (map[string]cgp.FacetW
 	return writes, nil
 }
 
-// confirmApply presents the yes/no gate an interactive commit shows after the
-// diff (cutting-garden#224), returning the user's decision.
-func confirmApply(changeCount int) (bool, error) {
+// ask presents a yes/no gate at the terminal — the commit confirm after the
+// diff (cutting-garden#224) and the refusal strip prompt — through the
+// injected confirm when set (tests), else confirmPrompt.
+func (cmd *Organize) ask(title string) (bool, error) {
+	if cmd.confirm != nil {
+		return cmd.confirm(title)
+	}
+	return confirmPrompt(title)
+}
+
+// confirmPrompt is the huh yes/no prompt, returning the user's decision.
+func confirmPrompt(title string) (bool, error) {
 	confirmed := false
 	prompt := huh.NewConfirm().
-		Title(fmt.Sprintf("Apply these %d change(s)?", changeCount)).
+		Title(title).
 		Affirmative("Apply").
 		Negative("Cancel").
 		Value(&confirmed)
@@ -593,7 +622,7 @@ func confirmApply(changeCount int) (bool, error) {
 func (cmd *Organize) reviewGate(changeCount int, commit, interactive bool) (bool, error) {
 	switch {
 	case commit && interactive:
-		ok, cerr := confirmApply(changeCount)
+		ok, cerr := cmd.ask(fmt.Sprintf("Apply these %d change(s)?", changeCount))
 		if cerr != nil {
 			return false, cerr
 		}
