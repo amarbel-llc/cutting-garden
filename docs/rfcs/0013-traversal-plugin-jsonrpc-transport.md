@@ -505,6 +505,21 @@ would in process:
   type error — EXCEPT on the field of a `clearable` facet write, where
   `null` is the clear request (§Facet writes).
 
+  **A `-32602` answer means NOTHING was applied.** A body may name
+  several recognized keys at once (the host sends one `node.patch` per
+  object carrying every field edit for it, e.g.
+  `{"milestone":"v0.2","title":"…"}`). A plugin MUST validate every
+  recognized key before changing anything, and when any of them is
+  unusable it MUST answer `-32602` with the node left exactly as it was —
+  never apply the usable keys and then error on the rest, so a caller
+  can always read a `-32602` from `node.patch` as "nothing was written
+  for this object". (Where
+  the substrate cannot apply several keys atomically — two separate API
+  calls — the plugin still MUST complete validation first; a failure
+  AFTER validation, midway through the substrate calls, is a plugin fault
+  (`-32603`), not `-32602`, and its message SHOULD name what was and was
+  not applied.)
+
   These three were settled after two independent peer implementations
   diverged on them (cutting-garden#182, #185): one errored on the
   unusable value while another dropped it and reported `[]`, and both
