@@ -1,0 +1,50 @@
+# Forge (smith) issues in organize — milestones, labels, state, creation
+
+> **For Claude:** REQUIRED SUB-SKILL: implement stream by stream with a subagent per task and a two-stage review (spec compliance, then code quality). Every rule below is pinned by a whole-document bats vector (G16 style) or a portable conformance point.
+
+**Goal:** make a Forgejo repository's issues (served by smith's out-of-process traversal plugin, `smith serve-cutting_garden`) a first-class `organize` substrate for **release planning** (issues grouped by milestone) and **triage** (labels, open/closed), and add **object creation** to the organize dialect for caldav tasks/events and forge issues.
+
+**Provenance:** grill session 2026-09-24 (this worktree), following the fastmail tags slice (`2026-09-21-fastmail-tags-slice1.md`) and the RFC 0013 §Facet writes amendment (6627da6, which lets a wire plugin declare writable facets; the host builds `node.patch` bodies — `one` → `{"<field>":"<bucket>"}`, `many` → `{"<field>":[full set]}`).
+
+**Facts established (not decisions):**
+- Forgejo (API 15.0.0, smith's vendored `crates/forgejo-api/swagger.v1.json`) has per-repo milestones with full CRUD (`/repos/{o}/{r}/milestones[/{id}]`; `title`, `description`, `due_on`, `state` open|closed; counts), `Issue.milestone`, and `EditIssueOption.milestone` (id). No org-level milestones. Labels: repo and org CRUD (`POST …/labels`, required `name`+`color`; optional `description`, `exclusive`, `is_archived`), issue label add/replace/remove/clear.
+- smith's plugin: issues at `smith://host/owner/repo/issues/<n>` under an `issues` collection; listing uses `type=issues` (PRs excluded); facets `state` (open/closed) and `label` (multi); `node.patch` accepts `title`/`body`/`state`; milestones and assignees are not exposed (`None` throughout `crates/cutting_garden/src/nodes.rs`).
+- organize today never creates objects; a box whose id is not in the pinned base is silently skipped in every apply path (`apply.go`, `tagatom_apply.go`, `membership_apply.go`). caldav's plugin implements `CreateNode` (used by MCP `create_node`).
+- The forge repo's labels are GitHub's ten defaults (`bug`, `enhancement`, `good first issue`, …) — no scopes, no hyphen namespaces yet.
+
+---
+
+## Decisions
+
+- **F1 — Jobs.** Release planning (`-group-by milestone=`) and triage (labels, state) within ONE repo. The cross-repo view waits for multi-root/alias support.
+- **F2 — Labels are the issue's tag set,** name verbatim, interpreter `dodder-hyphen`. Names with spaces render as quoted atoms (`"good first issue"`). Structure comes from hyphen naming (`area-organize`); Forgejo `/` scoped/exclusive labels are NOT modeled. Held in reserve: a translating mapping (`kind/bug` ↔ `kind-bug`). **Open for the RFC 0014/0019 owners:** the meaning of a quoted tag (the trellis PEG calls a bare `String` a `QuotedRef`, "the opaque-reference escape hatch") and how dodder-hyphen treats a quoted tag with spaces for namespace rollup.
+- **F3 — Milestone** is a single-valued writable field (`one`, clearable per F12), shown inline as `milestone=v0.3`; stripped from the box when the document groups by it. Grouping gives `## =v0.x` buckets plus the no-value section. Only OPEN milestones pre-render as empty target buckets; closed milestones are targets only when the dormant/terminal view is active (`_terminal`, #214; #259 dormant sigil).
+- **F4 — State** is a field `state=open|closed` (`one`), `closed` the terminal value: closed issues are excluded by default via organize's `_terminal=no`. The `state=` atom is suppressed from the box unless terminal objects are included.
+- **F5 — Box shape:** `[<n> <labels…> milestone=<m>] <title>` — id is the bare issue number (default host+path `RelativeID` under the `…/issues/` anchor; no `NodeIDer` needed); labels as key-free tag atoms in SortKey order; the title trailer is WRITABLE (retitles via `node.patch {"title":…}`). `assignee=` is a possible future inline field.
+- **F6 — Unknown labels are created** (repo label, color derived deterministically from the hyphen namespace, empty description) in the same apply, then attached. Not transactional with the issue patch; a created-but-unattached label on mid-apply failure is an accepted limitation. Review-time editing of implicit creations: #272.
+- **F7 — Unknown milestones are created** (open, no due date) via a new `## =v0.4` heading or a `milestone=v0.4` atom. The document never closes/renames milestones.
+- **F8 — Object creation (all plugins that opt in; first: caldav VTODO/VEVENT, forge issues).** A box whose id is a temp id creates an object: `+<opaque id>` or `+"<opaque id with reserved characters>"`; a bare `+` is a single-appearance creation. The same temp id under several headings is ONE new object. (`+` is not a trellis-reserved rune; no real id in-tree starts with `+`.) After commit the summary maps `+<id> → <real id>`; regeneration shows real ids.
+- **F8b — Appearance merge:** tags = union of every appearance's placement tag + typed tag atoms; single-valued fields (incl. a grouped `## =bucket`) may appear on any appearance but MUST agree (else loud error naming the temp id and lines); the trailer is required on ≥1 appearance and MUST be identical where given (whitespace-collapsed); unset fields take plugin defaults. Interactive conflict resolution: #273.
+- **F8c — A box id that is neither `+…` nor in the pinned base is a LOUD error** (names the line and id, suggests `+`), replacing today's silent skip. Ids present in the base but gone live stay the existing drift check. LSP/`fmt-organize` diagnostic: #274.
+- **F9 — New-object type:** the envelope `_type` when the document is single-type; otherwise an explicit `!type` in the `+` box is required (loud error without it). **Flag:** multi-root / heterogeneous roots will make explicit typing (and probably a target container) mandatory on `+` boxes.
+- **F10 — Creation contract:** declared by the plugin, request built by the host. Per type: creatable under which container type, the document-field → create-body field mapping, and the REQUIRED fields (caldav VEVENT: a start date; forge issue: title). Organize builds `{"<field>": value, …}` from the F8b-merged object and sends it through the existing create path (`CreateChild` linked; `node.create_child` wire); the plugin assigns and returns identity. Missing required fields are refused at plan time. caldav (linked) uses a Go-side `CreateApplier` for its split date/time + TZID codec; a plugin-side request-building RPC stays reserved for wire plugins, as in §Facet writes.
+- **F11 — Labels as a tag set over the wire (v1):** RFC 0013 per-type declarations `tag_set: {dimension, interpreter}` (the host presents that dimension's values as the object's tag atoms and fills `tags` in `list -format json` / MCP), `inline_fields: [...]` (fields rendered as inline `name=value` atoms) and `trailer_field` (the field the box trailer shows and writes). Writes ride §Facet writes' `many` (`{"labels":[…]}`). The full unified field-codec model over the wire is v2: #275.
+- **F12 — Clearing a single-valued write:** RFC 0013 adds `{"<field>": null}`, opted into per write with `clearable: true`; the no-value section is a legal move target only for clearable dimensions (others refused as today). The linked `FacetWrite` gains the same `Clearable` flag so linked and wire stay identical.
+- **F13 — Order:** stream 2 → stream 3 → stream 1.
+
+## Streams
+
+### Stream 2 — cutting-garden: RFC 0013 additions (this repo)
+1. **Clearable single-valued writes (F12):** `clearable` on the wire declaration and `FacetWrite.Clearable`; host-built `{"<field>":null}` for a move into the no-value section / an emptied inline atom; refused for non-clearable dimensions with a clear message; testpeer dimension that is clearable; conformance point; bats vector.
+2. **Tag set over the wire (F11):** `tag_set` per type in `initialize` (validated: dimension declared, `multi`, interpreter known); the `WirePlugin` presents tag atoms from that dimension (organize boxes, `list -format json` `tags`, MCP `describe_node_types` `tag_set`), so tag-atom edits apply as `many` membership writes; testpeer + conformance + bats (tag atoms render and edit over the wire exactly as a linked plugin's).
+3. **Inline fields and trailer (F11):** `inline_fields` and `trailer_field` per type; box rendering and trailer/atom edits for wire plugins; the trailer write is `{"<trailer_field>": "<text>"}` via `node.patch`; testpeer + conformance + bats.
+4. RFC 0013 text (normative, self-sufficient for a Rust implementer), `cutting-garden-plugins(7)`, AGENTS.md wire paragraph.
+
+### Stream 3 — smith session (smith repo; coordinated via chat, not edited from here)
+Declare `state` (`one`, terminal `closed`), `label` (`many` + `tag_set` dodder-hyphen, field `labels`), `milestone` (`one`, clearable, new facet); `inline_fields: ["milestone"]`, `trailer_field: "title"`; accept `{"labels":[…]}` (full replacement, creating unknown labels per F6), `{"milestone": "<title>"|null}` (resolve title → id, creating per F7), `{"title":…}`, `{"state":…}` on `node.patch`; tolerate `X/` ≡ `X` (RFC 0013 §Traversal note); run conformance points 15–17 and stream 2's new points; later (after stream 1) `node.create_child` per F10.
+
+### Stream 1 — cutting-garden: organize creation (this repo)
+RFC 0015: temp-id box ids (`+id`, `+"id"`, bare `+`), F8b merge, F8c unknown-id error, F9 typing; the SDK create declaration + `CreateApplier` (F10); apply ordering (creations first, then membership/field writes that may reference them); summary `+id → real id`; caldav VTODO/VEVENT creation as the first consumer (required fields per component); then the wire create declaration in RFC 0013 for smith.
+
+## Out of scope / tracked
+Cross-repo documents (multi-root aliases); Forgejo scoped/exclusive labels (F2 option c); milestone lifecycle edits; assignees (future `assignee=`); #259 dormant sigil semantics; #271 move+same-property compose; #272 review-time editing of creations; #273 conflict-resolution UX; #274 LSP/fmt diagnostics; #275 RFC 0013 v2 unified codecs.
