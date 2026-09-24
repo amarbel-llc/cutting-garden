@@ -35,15 +35,23 @@ func (l *countingWriteLister) FacetCounts(
 
 func milestoneLister(mode cgp.FacetWriteMode) *countingWriteLister {
 	return &countingWriteLister{
+		fakeLister: fakeLister{dims: []cgp.NodeTypeFacets{{
+			Tag: "ticket",
+			Dimensions: []cgp.FacetDimension{
+				{Key: "milestone", Kind: cgp.FacetCategorical, KnownEmptyValues: true},
+				{Key: "status", Kind: cgp.FacetCategorical},
+			},
+		}}},
 		writes: []cgp.NodeTypeFacetWrites{{
 			Tag: "ticket",
-			Writes: []cgp.FacetWrite{{
-				DimensionKey: "milestone", Mode: mode, Field: "milestone",
-			}},
+			Writes: []cgp.FacetWrite{
+				{DimensionKey: "milestone", Mode: mode, Field: "milestone"},
+				{DimensionKey: "status", Mode: cgp.FacetWriteOne, Field: "status"},
+			},
 		}},
 		summary: cgp.FacetSummary{
 			"milestone": {"v0.1": 2, "v0.3": 0, "v0.0": 0},
-			"state":     {"open": 2, "done": 0},
+			"status":    {"open": 2, "done": 0},
 		},
 	}
 }
@@ -92,6 +100,16 @@ func TestZeroCountValues(t *testing.T) {
 	if got := zeroCountValues(ctx, many, anchor, field); got != nil || many.counted != 0 {
 		t.Errorf("many-valued: zeroCountValues = %v after %d counts, want nil and no fetch",
 			got, many.counted)
+	}
+
+	// status is write:one but NOT flagged KnownEmptyValues — the caldav
+	// status/priority/date shape — so no counts fetch happens even though its
+	// counts would carry a zero.
+	unflagged := milestoneLister(cgp.FacetWriteOne)
+	if got := zeroCountValues(ctx, unflagged, anchor, groupSpec{Dim: "status", Kind: groupKindField}); got != nil ||
+		unflagged.counted != 0 {
+		t.Errorf("unflagged write:one: zeroCountValues = %v after %d counts, want nil and no fetch",
+			got, unflagged.counted)
 	}
 
 	readOnly := milestoneLister(cgp.FacetWriteOne)

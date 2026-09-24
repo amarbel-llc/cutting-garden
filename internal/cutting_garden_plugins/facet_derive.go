@@ -69,14 +69,15 @@ func DeriveFacetDimensions(codecs []Codec) []FacetDimension {
 				continue
 			}
 			dims = append(dims, FacetDimension{
-				Key:             f.Key,
-				Label:           f.Label,
-				Kind:            facetKindOf(f.Kind),
-				Multi:           f.MultiValued,
-				FoldCase:        f.FoldCase,
-				Values:          facetValuesOf(f.Values),
-				TerminalValues:  f.TerminalValues,
-				RevalidateAfter: f.RevalidateAfter,
+				Key:              f.Key,
+				Label:            f.Label,
+				Kind:             facetKindOf(f.Kind),
+				Multi:            f.MultiValued,
+				FoldCase:         f.FoldCase,
+				Values:           facetValuesOf(f.Values),
+				TerminalValues:   f.TerminalValues,
+				KnownEmptyValues: f.KnownEmptyValues,
+				RevalidateAfter:  f.RevalidateAfter,
 			})
 		}
 	}

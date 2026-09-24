@@ -88,6 +88,15 @@ type FacetDimension struct {
 	// default (a triage-the-active-work surface). nil / empty means the dimension
 	// has no terminal notion.
 	TerminalValues []string
+	// KnownEmptyValues declares that the plugin's FacetCounts MAY report a
+	// value of this dimension with count 0 meaning "exists in the summarized
+	// node's domain, no child holds it" — a forge repository's issue-less open
+	// milestone (RFC 0012 §3 known-empty values, forge organize F3). It is the
+	// opt-in that tells organize to fetch the container's counts and pre-render
+	// those zero-count values as empty target buckets; consumers MAY ignore
+	// zeros on an unflagged dimension (a closed domain's informative zeros
+	// still display as counts either way).
+	KnownEmptyValues bool
 	// RevalidateAfter, when nonzero, marks the dimension VOLATILE: its
 	// bucketing is a function of (data, now) — overdue, upcoming, age
 	// bands — so a memoized summary containing it expires after this

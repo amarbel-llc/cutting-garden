@@ -393,6 +393,45 @@ func TestFacetDimensionViewTerminalValues(t *testing.T) {
 	}
 }
 
+// TestFacetDimensionViewKnownEmptyValues pins the known_empty_values member
+// (forge organize F3): `"known_empty_values": true` exactly when the
+// dimension opts in, round-tripping; absent (false) otherwise.
+func TestFacetDimensionViewKnownEmptyValues(t *testing.T) {
+	declared := cutting_garden_plugins.FacetDimension{
+		Key:              "milestone",
+		Kind:             cutting_garden_plugins.FacetCategorical,
+		KnownEmptyValues: true,
+	}
+
+	raw, err := json.Marshal(FacetDimensionViewFrom(declared))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := `{"key":"milestone","kind":"categorical","known_empty_values":true}`
+	if string(raw) != want {
+		t.Errorf("json = %s, want %s", raw, want)
+	}
+
+	var view FacetDimensionView
+	if err = json.Unmarshal(raw, &view); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := view.ToFacetDimension(); !reflect.DeepEqual(got, declared) {
+		t.Errorf("round trip = %#v, want %#v", got, declared)
+	}
+
+	declared.KnownEmptyValues = false
+	if raw, err = json.Marshal(FacetDimensionViewFrom(declared)); err != nil {
+		t.Fatal(err)
+	}
+
+	if strings.Contains(string(raw), "known_empty_values") {
+		t.Errorf("unflagged dimension emitted known_empty_values: %s", raw)
+	}
+}
+
 // TestValidateTerminalValuesDeclaration pins the host's bring-up rules for
 // terminal_values: non-empty, listed once, and within a CLOSED domain; an
 // OPEN dimension may name any value.

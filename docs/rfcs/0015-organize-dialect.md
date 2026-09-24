@@ -123,8 +123,9 @@ document — the exact bytes presented to and edited by the end-user:
   spelling heading — `<dim>=`, or `<dim>=(<granularity>)` for a date field (there
   is NO `_group-by` field); each `=<value>` sub-heading is a bucket; the plugin's
   declared `FacetWrite.Values` are pre-rendered as empty buckets so a caller moves
-  an object under an existing state heading. When a type writes the grouped
-  dimension single-valued (`FacetWrite.Mode == one`) and the plugin is a
+  an object under an existing state heading. When the grouped dimension is
+  flagged `FacetDimension.KnownEmptyValues` (wire `known_empty_values`), a
+  type writes it single-valued (`FacetWrite.Mode == one`) and the plugin is a
   `FacetCounter`, generate also asks the anchor for its facet counts and
   pre-renders every **zero-count** value of that dimension (RFC 0012 §3
   known-empty values — a forge's issue-less open milestone) as an empty

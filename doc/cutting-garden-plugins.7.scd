@@ -162,9 +162,12 @@ A *FacetCounter* summary MAY carry a *0* count for a value of ANY dimension,
 open or closed, when your backend knows the value exists in the summarized
 node's domain but no child currently holds it - a forge repository's open
 milestone with no issues. Emit it only for values your backend actually
-reports; never guess. Consumers show it as a *0* row, and organize
-pre-renders a zero-count value of a single-valued writable grouped dimension
-as an empty target bucket, so a user can move an object into it. This is
+reports; never guess. Flag the dimension *KnownEmptyValues* (wire
+*"known_empty_values": true*) - without the flag organize never fetches
+counts for its grouping and consumers may ignore the zeros. Consumers show
+it as a *0* row, and organize pre-renders a zero-count value of a flagged,
+single-valued writable grouped dimension as an empty target bucket, so a
+user can move an object into it. This is
 the per-container answer for domains an *initialize*-time
 *FacetWrite.Values* cannot name (milestones are per repository; a root may
 be an owner). See RFC 0012 §3 (known-empty values) and RFC 0013 §Facets.

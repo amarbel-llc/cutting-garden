@@ -187,6 +187,10 @@ type FacetDimension struct {
     // token/digest invalidation fully governs (§11.1). Volatile
     // dimensions MUST declare a CLOSED domain (see §11.3).
     RevalidateAfter time.Duration
+    // KnownEmptyValues declares that FacetCounts MAY report a value of
+    // this dimension with count 0 meaning "exists, no child holds it"
+    // — the opt-in for known-empty values (§3).
+    KnownEmptyValues bool
 }
 
 // NodeTypeFacets binds dimensions to one node type.
@@ -264,7 +268,13 @@ MUST NOT emit a zero for a value it merely guesses at. It is the per-container
 analogue of a closed dimension's declared `Values`, for domains a plugin can
 only know per node (a milestone set is per repository, so an owner-level
 `initialize` declaration cannot carry it). Zero entries are additive under
-merge (`0 + n = n`; a key present only as zeros stays present as 0). Consumers
+merge (`0 + n = n`; a key present only as zeros stays present as 0). A plugin
+that emits known-empty zeros a consumer should treat as existing values (move
+targets) MUST flag the dimension `FacetDimension.KnownEmptyValues` (derived
+from `UnifiedField.KnownEmptyValues`; wire `known_empty_values`, RFC 0013);
+consumers MAY ignore zeros on an unflagged dimension, and organize fetches
+counts for a grouping only when it is flagged — so a plugin that never emits
+them pays no extra counts round trip. Consumers
 that display counts (`list --facets`, the mcp `read_facets` tool and a
 container read's `facets` block) render a zero entry as a `0` row exactly like
 a closed dimension's informative zero — no suppression, so a plugin that emits

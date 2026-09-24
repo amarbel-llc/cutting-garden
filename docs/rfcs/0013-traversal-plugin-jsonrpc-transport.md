@@ -9,7 +9,10 @@ revised: 2026-07-19 (§ Host integration: a wire plugin's bring-up failure
   § Presentation: the OPTIONAL node_types members `tag_set`,
   `inline_fields`, `trailer_field` — forge organize F11/F12);
   2026-09-24 (§ Wire encodings: the OPTIONAL FacetDimension
-  `terminal_values` — forge organize F4)
+  `terminal_values` — forge organize F4);
+  2026-09-24 (§ Wire encodings / § Facets: the OPTIONAL FacetDimension
+  `known_empty_values` and count-0 `facets.counts` entries — forge
+  organize F3)
 ---
 
 # RFC 0013 — Traversal Plugin Transport: JSON-RPC over stream sockets
@@ -307,7 +310,7 @@ identically to absent).
 **FacetDimension**: `{ "key": string, "label": string?, "kind":
 "categorical"|"numeric-bucket"|"labelled", "multi": bool?, "values":
 [FacetValue]?, "revalidate_after_seconds": int?, "terminal_values":
-[string]? }` — `values` present ≙
+[string]?, "known_empty_values": bool? }` — `values` present ≙
 a CLOSED domain (RFC 0012 §2). A closed domain MUST declare at least
 one value; a plugin MUST NOT emit an empty `values` array (on the wire
 it is indistinguishable from an open domain, so a zero-value closed
@@ -333,6 +336,14 @@ with a diagnostic naming plugin, type, dimension and value, e.g.
 "fj-issue-v1" dimension "state" value "done" is not one of the
 dimension's declared values`. Go peers advertise it automatically: `Serve`
 projects each `DescribeFacets` dimension's `TerminalValues`.
+`known_empty_values` (absent ≙ false) carries
+`FacetDimension.KnownEmptyValues`: `true` declares that this
+dimension's `facets.counts` histograms MAY carry count-0 known-empty
+values (§Facets, RFC 0012 §3) that a consumer should treat as existing
+values — organize pre-renders them as empty target buckets. A plugin
+that emits such zeros for targeting MUST set it; a host MAY ignore
+zeros on an unflagged dimension (organize does not even fetch counts
+for one). Go peers advertise it automatically from `DescribeFacets`.
 
 ```json
 { "key": "state", "label": "State", "kind": "categorical",
@@ -433,9 +444,13 @@ A `summary` count MAY be `0` on any dimension, open or closed — RFC 0012
 (filter-matching) child holds it, e.g.
 `"summary": {"milestone": {"v0.1": 4, "v0.3": 0}}` for an open
 milestone with no issues. The host passes zeros through unchanged (the
-histogram is not normalized the way `by_container` is), and organize
-pre-renders a zero-count value of a single-valued writable grouped
-dimension as an empty target bucket (forge organize F3). This is how a
+histogram is not normalized the way `by_container` is). A plugin whose
+zeros should be treated as targets MUST flag the dimension
+`"known_empty_values": true` (§Wire encodings); organize then fetches
+the anchor's counts and pre-renders a zero-count value of that
+single-valued writable grouped dimension as an empty target bucket
+(forge organize F3). Consumers MAY ignore zeros on an unflagged
+dimension; a closed domain's informative zeros still display as counts. This is how a
 plugin whose `initialize`-time `facet_writes` `values` cannot name a
 per-container domain (roots at owner level, milestones per repository)
 still offers those values as move targets.
@@ -1217,6 +1232,10 @@ becomes machine-checkable rather than rediscovered.
   it ignores the member, so organize simply shows that plugin's done
   nodes; a peer that declares it owes nothing on any method, only a
   well-formed declaration.
+- **`known_empty_values` (2026-09-24)** is additive likewise: absent
+  means false (organize never fetches counts for the dimension's
+  grouping); a host predating it ignores the member and shows no
+  zero-count target buckets.
 
 ## References
 

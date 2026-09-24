@@ -55,7 +55,10 @@ type FacetCountsResult = internal.FacetCountsResult
 // terminal_values (absent ≙ none) carries FacetDimension.TerminalValues —
 // the values marking a node DONE, which organize's default `_terminal=no`
 // excludes (forge organize F4); the host validates it at bring-up
-// (ValidateTerminalValuesDeclaration).
+// (ValidateTerminalValuesDeclaration). known_empty_values (absent ≙ false)
+// carries FacetDimension.KnownEmptyValues — the opt-in that facets.counts
+// may report count-0 values of this dimension as existing-but-unheld
+// (RFC 0012 §3, forge organize F3).
 type FacetDimensionView = internal.FacetDimensionView
 
 // FacetValueView is the wire form of cutting_garden_plugins.FacetValue

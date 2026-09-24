@@ -565,6 +565,9 @@ func (p *TreePlugin) DescribeFacets() []cutting_garden_plugins.NodeTypeFacets {
 					Key:   "milestone",
 					Label: "Milestone",
 					Kind:  cutting_garden_plugins.FacetCategorical,
+					// The tracker's counts report issue-less open
+					// milestones as zeros (forge organize F3).
+					KnownEmptyValues: true,
 				},
 				{
 					Key:   "label",

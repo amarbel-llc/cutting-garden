@@ -120,6 +120,10 @@ type UnifiedField struct {
 	// Spelled in the PRESENTED domain (what the codec's Format emits and the facet
 	// counting path computes), like every other framework-side value.
 	TerminalValues []string
+	// KnownEmptyValues declares the field's facet counts MAY carry count-0
+	// known-empty values (mirrors FacetDimension.KnownEmptyValues, which it
+	// derives; RFC 0012 §3, forge organize F3).
+	KnownEmptyValues bool
 	// WriteValues, when non-empty, is the ordered write-side convenience list for a
 	// groupable+writable field: the target buckets organize pre-renders as headings
 	// (mirrors FacetWrite.Values, which it derives). Independent of Values — a field

@@ -634,13 +634,17 @@ func zeroCountTargets(
 // on a selected node (and bucketed from it) or held only by nodes the query
 // hides (a closed ticket under the default `_terminal=no`), and such a value
 // is not a target unless the plugin declares it in FacetWrite.Values. The
-// fetch runs only for a field grouping some type writes single-valued, on a
-// FacetCounter; any other case, a decline, or a counts error yields nil — the
-// counts are an implicit surface here (RFC 0012 §9), never failing generate.
+// fetch runs only for a field grouping whose dimension opts in
+// (FacetDimension.KnownEmptyValues) and some type writes single-valued, on a
+// FacetCounter — so a plugin that never emits known-empty zeros (caldav's
+// status/priority/date groupings) pays no second counts fetch. Any other case,
+// a decline, or a counts error yields nil — the counts are an implicit surface
+// here (RFC 0012 §9), never failing generate.
 func zeroCountValues(
 	ctx context.Context, lister cgp.RootLister, anchor *url.URL, spec groupSpec,
 ) []string {
-	if spec.Kind != groupKindField || !writesOneAnyType(lister, spec.Dim) {
+	if spec.Kind != groupKindField || !declaresKnownEmptyValues(lister, spec.Dim) ||
+		!writesOneAnyType(lister, spec.Dim) {
 		return nil
 	}
 	counter, ok := lister.(cgp.FacetCounter)
@@ -659,6 +663,20 @@ func zeroCountValues(
 	}
 	sort.Strings(zeros)
 	return slices.Compact(zeros)
+}
+
+// declaresKnownEmptyValues reports whether the plugin flags dimension dim's
+// counts as carrying known-empty zeros (FacetDimension.KnownEmptyValues) on
+// any node type.
+func declaresKnownEmptyValues(lister cgp.RootLister, dim string) bool {
+	for _, nt := range describedFacets(lister) {
+		for _, d := range nt.Dimensions {
+			if d.Key == dim && d.KnownEmptyValues {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // writesOneAnyType reports whether any node type declares a single-valued

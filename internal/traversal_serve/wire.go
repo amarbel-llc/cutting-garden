@@ -867,7 +867,10 @@ func (v NodeTypeView) ToNodeType() cutting_garden_plugins.NodeType {
 // terminal_values (absent ≙ none) carries FacetDimension.TerminalValues —
 // the values marking a node DONE, which organize's default `_terminal=no`
 // excludes (forge organize F4); the host validates it at bring-up
-// (ValidateTerminalValuesDeclaration).
+// (ValidateTerminalValuesDeclaration). known_empty_values (absent ≙ false)
+// carries FacetDimension.KnownEmptyValues — the opt-in that facets.counts
+// may report count-0 values of this dimension as existing-but-unheld
+// (RFC 0012 §3, forge organize F3).
 type FacetDimensionView struct {
 	Key                    string           `json:"key"`
 	Label                  string           `json:"label,omitempty"`
@@ -876,6 +879,7 @@ type FacetDimensionView struct {
 	Values                 []FacetValueView `json:"values,omitempty"`
 	RevalidateAfterSeconds int64            `json:"revalidate_after_seconds,omitempty"`
 	TerminalValues         []string         `json:"terminal_values,omitempty"`
+	KnownEmptyValues       bool             `json:"known_empty_values,omitempty"`
 }
 
 // FacetDimensionViewFrom projects a declared dimension onto the wire.
@@ -891,6 +895,7 @@ func FacetDimensionViewFrom(
 		Values:                 facetValueViewsFrom(dimension.Values),
 		RevalidateAfterSeconds: int64(dimension.RevalidateAfter / time.Second),
 		TerminalValues:         nilIfEmpty(slices.Clone(dimension.TerminalValues)),
+		KnownEmptyValues:       dimension.KnownEmptyValues,
 	}
 }
 
@@ -899,13 +904,14 @@ func FacetDimensionViewFrom(
 // a linked dimension declaring none carries.
 func (v FacetDimensionView) ToFacetDimension() cutting_garden_plugins.FacetDimension {
 	return cutting_garden_plugins.FacetDimension{
-		Key:             v.Key,
-		Label:           v.Label,
-		Kind:            cutting_garden_plugins.FacetKind(v.Kind),
-		Multi:           v.Multi,
-		Values:          facetValuesFrom(v.Values),
-		RevalidateAfter: time.Duration(v.RevalidateAfterSeconds) * time.Second,
-		TerminalValues:  nilIfEmpty(slices.Clone(v.TerminalValues)),
+		Key:              v.Key,
+		Label:            v.Label,
+		Kind:             cutting_garden_plugins.FacetKind(v.Kind),
+		Multi:            v.Multi,
+		Values:           facetValuesFrom(v.Values),
+		RevalidateAfter:  time.Duration(v.RevalidateAfterSeconds) * time.Second,
+		TerminalValues:   nilIfEmpty(slices.Clone(v.TerminalValues)),
+		KnownEmptyValues: v.KnownEmptyValues,
 	}
 }
 
