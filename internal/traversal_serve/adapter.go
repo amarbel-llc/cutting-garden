@@ -66,6 +66,11 @@ var (
 	_ cutting_garden_plugins.AtomicBulkMutator = (*WirePlugin)(nil)
 	_ cutting_garden_plugins.BodyDescriber     = (*WirePlugin)(nil)
 	_ cutting_garden_plugins.ContainerCreator  = (*WirePlugin)(nil)
+	// The facet_writes amendment: declarations come from initialize, and
+	// both appliers build the host-defined node.patch shapes.
+	_ cutting_garden_plugins.FacetWriteDescriber    = (*WirePlugin)(nil)
+	_ cutting_garden_plugins.FacetWriteApplier      = (*WirePlugin)(nil)
+	_ cutting_garden_plugins.MembershipWriteApplier = (*WirePlugin)(nil)
 )
 
 // NewWirePlugin returns the adapter for spec. It does NOT spawn — the
@@ -194,6 +199,20 @@ func (w *WirePlugin) liveSession() (*Session, error) {
 		}
 	}
 
+	// facet_writes validation (the RFC 0013 facet_writes amendment): the
+	// host builds node.patch bodies from this declaration, so an unusable
+	// one fails bring-up loudly — persistently, like the schemes echo —
+	// rather than surfacing later as a confusing organize failure.
+	if err := ValidateFacetWriteDeclaration(sess.Init); err != nil {
+		w.fatalErr = errors.ErrorWithStackf(
+			"wire plugin %q: initialize rejected: %s", w.spec.Name, err,
+		)
+
+		_ = sess.Close()
+
+		return nil, w.fatalErr
+	}
+
 	w.session = sess
 
 	return sess, nil
@@ -317,6 +336,96 @@ func (w *WirePlugin) DescribeBodies() []cutting_garden_plugins.NodeTypeBody {
 	}
 
 	return declared
+}
+
+// DescribeFacetWrites answers from the cached initialize facet_writes
+// block, spawning on first need. WirePlugin satisfies FacetWriteDescriber
+// statically, so a plugin that declares no writes (or failed to launch)
+// answers nil — the same "no writable facets" a linked plugin omitting the
+// interface yields; organize then refuses with "no writable facets".
+func (w *WirePlugin) DescribeFacetWrites() []cutting_garden_plugins.NodeTypeFacetWrites {
+	sess, err := w.liveSession()
+	if err != nil || sess.Init.FacetWrites == nil {
+		return nil
+	}
+
+	declared := make(
+		[]cutting_garden_plugins.NodeTypeFacetWrites, len(sess.Init.FacetWrites),
+	)
+	for i, view := range sess.Init.FacetWrites {
+		declared[i] = view.ToNodeTypeFacetWrites()
+	}
+
+	return declared
+}
+
+// declaredWrite resolves the mapping the plugin DECLARED for node's type and
+// write's dimension — the caller's FacetWrite only names the dimension; the
+// body is always built from the declaration. An undeclared or read-only
+// (none) mapping is a bad request, refused before anything reaches the wire.
+func (w *WirePlugin) declaredWrite(
+	node cutting_garden_plugins.Node, dimension string,
+) (cutting_garden_plugins.FacetWrite, error) {
+	for _, declared := range w.DescribeFacetWrites() {
+		if declared.Tag != node.Type {
+			continue
+		}
+
+		for _, write := range declared.Writes {
+			if write.DimensionKey != dimension {
+				continue
+			}
+
+			if write.Mode == cutting_garden_plugins.FacetWriteNone {
+				return write, errors.BadRequestf(
+					"wire plugin %q: type %q dimension %q is read-only (mode %q)",
+					w.spec.Name, node.Type, dimension, write.Mode,
+				)
+			}
+
+			return write, nil
+		}
+	}
+
+	return cutting_garden_plugins.FacetWrite{}, errors.BadRequestf(
+		"wire plugin %q: type %q declares no write mapping for dimension %q",
+		w.spec.Name, node.Type, dimension,
+	)
+}
+
+// BuildFacetWritePatch is the FacetWriteApplier: the host-built
+// `{"<field>": "<bucket>"}` body for a write:one move, from the declared
+// mapping (HostFacetWritePatch). No wire call — the body travels later via
+// node.patch.
+func (w *WirePlugin) BuildFacetWritePatch(
+	_ context.Context,
+	node cutting_garden_plugins.Node,
+	write cutting_garden_plugins.FacetWrite,
+	toBucket string,
+) ([]byte, error) {
+	declared, err := w.declaredWrite(node, write.DimensionKey)
+	if err != nil {
+		return nil, err
+	}
+
+	return HostFacetWritePatch(declared, toBucket)
+}
+
+// BuildMembershipWritePatch is the MembershipWriteApplier: the host-built
+// `{"<field>": [<complete set>]}` full-replacement body for a write:many
+// dimension, from the declared mapping (HostMembershipWritePatch).
+func (w *WirePlugin) BuildMembershipWritePatch(
+	_ context.Context,
+	node cutting_garden_plugins.Node,
+	write cutting_garden_plugins.FacetWrite,
+	newTags []string,
+) ([]byte, error) {
+	declared, err := w.declaredWrite(node, write.DimensionKey)
+	if err != nil {
+		return nil, err
+	}
+
+	return HostMembershipWritePatch(declared, newTags)
 }
 
 // ListRoots enumerates node's immediate children over the wire —

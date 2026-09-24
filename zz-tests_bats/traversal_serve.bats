@@ -1,6 +1,6 @@
 setup() {
   load "$(dirname "$BATS_TEST_FILE")/lib/common.bash"
-  export output
+  export output stderr
   peer_pid=
 }
 
@@ -33,11 +33,18 @@ teardown() {
 #   only runs it and checks the TAP verdict. It drives the same
 #   CG_TEST_TRAVERSAL_SERVE peer.
 #
-#   TESTPEER (would be test_tags=testpeer, names test_testpeer_*):
-#   fixed-tree cases driven from BASH directly. Still deliberately
-#   EMPTY: a raw shell JSON-RPC client adds nothing over the driver
-#   above and the Go indistinguishability end-to-end
-#   (internal/traversal_serve), which own the tree-content rows.
+#   TESTPEER (test_tags=testpeer, names test_testpeer_*): the Go test
+#   peer's fixed cgtest tree driven through the HOST — `cutting-garden`
+#   with the peer configured as a [[traversal_plugins]] wire plugin —
+#   as whole-document organize vectors (the RFC 0013 facet_writes
+#   amendment: organize --apply writes through a wire plugin). They pin
+#   the cgtest tree's content, so a substituted peer does not run them;
+#   its wire-observable facet_writes obligations (declaration usable,
+#   write:one move, write:many full-set replacement) are the portable
+#   conformance-driver points 15-17 below, parameterized by the peer's
+#   own manifest [facet_write] table. There is still no raw shell
+#   JSON-RPC client: the driver and the Go indistinguishability
+#   end-to-end (internal/traversal_serve_testpeer) own the method rows.
 #
 # Protocol facts pinned here (RFC 0013 §Launch and rendezvous):
 # cookie env TRAVERSAL_PLUGIN_COOKIE; one stdout announce line
@@ -175,10 +182,244 @@ function test_portable_rendezvous_dir_0700_and_removed_on_exit { # @test
 }
 
 # ---------------------------------------------------------------------
-# TESTPEER — Go test peer's fixed cgtest tree. Intentionally empty; see
-# the file banner. Tree conformance is pinned by the Go
-# indistinguishability end-to-end (internal/traversal_serve).
+# TESTPEER — organize --apply through the wire (the RFC 0013
+# facet_writes amendment). The peer declares state (write:one, field
+# `state`, write buckets open/closed) and tag (write:many, field `tags`)
+# on cgtest-obj-v1; the HOST builds the node.patch bodies
+# ({"state":"open"}, {"tags":[...]}) from that declaration. Each test
+# persists the peer's tree in its own CG_TESTPEER_STATE_FILE: a wire
+# plugin is spawned per host process, so without it the read-back
+# invocation would see a fresh tree. Peer stderr is kept out of the
+# asserted stdout (--separate-stderr): it may carry diagnostics.
 # ---------------------------------------------------------------------
+
+# configure_testpeer_wire_plugin writes the host config naming the test
+# peer as the cgtest wire plugin, points its state file into the test's
+# tmpdir, and creates the blob store organize pins its bases in.
+configure_testpeer_wire_plugin() {
+  require_bin CG_TEST_TRAVERSAL_SERVE cutting-garden-test-traversal-serve ||
+    skip "cutting-garden-test-traversal-serve not available in this lane"
+
+  mkdir -p "$HOME/.config/cutting-garden"
+  cat >"$HOME/.config/cutting-garden/config.toml" <<EOF
+[[traversal_plugins]]
+name = "cgtest"
+command = ["$CG_TEST_TRAVERSAL_SERVE"]
+schemes = ["cgtest"]
+EOF
+  export CG_TESTPEER_STATE_FILE="$BATS_TEST_TMPDIR/cgtest-state.json"
+  init_store
+}
+
+run_cg_stdout() {
+  run --separate-stderr timeout --preserve-status 10s \
+    "${CG_BIN:-cutting-garden}" "$@"
+}
+
+# bats test_tags=testpeer
+function test_testpeer_organize_write_one_move_round_trips { # @test
+  configure_testpeer_wire_plugin
+
+  run_cg_stdout organize -group-by state= -query '!cgtest-obj-v1' \
+    cgtest://fixture/box
+  assert_success
+  assert_output - <<-'EOM'
+	---
+	% generated: `cg organize -group-by state= -query "!cgtest-obj-v1" cgtest://fixture/box`
+	- _base = @blake2b256-hm97mtg5cv92gyd75hu9xc5f6nszdl9d6hrmc833p5shqyzwm9rs0nweyx
+	- _anchor = cgtest://fixture/box/
+	- _query = !cgtest-obj-v1
+	- _type = !cgtest-obj-v1
+	! organize-base-v1
+	---
+
+	# state=
+
+	## =open
+
+	- [alpha] alpha
+
+	## =closed
+
+	- [beta] beta
+	EOM
+
+  local edited="$BATS_TEST_TMPDIR/edited.txt"
+  cat >"$edited" <<-'EOM'
+	---
+	% generated: `cg organize -group-by state= -query "!cgtest-obj-v1" cgtest://fixture/box`
+	- _base = @blake2b256-hm97mtg5cv92gyd75hu9xc5f6nszdl9d6hrmc833p5shqyzwm9rs0nweyx
+	- _anchor = cgtest://fixture/box/
+	- _query = !cgtest-obj-v1
+	- _type = !cgtest-obj-v1
+	! organize-base-v1
+	---
+
+	# state=
+
+	## =open
+
+	- [alpha] alpha
+	- [beta] beta
+
+	## =closed
+	EOM
+
+  run_cg_stdout organize -apply "$edited" -commit
+  assert_success
+  assert_output - <<'EOF'
+organize: 1 change(s):
+
+  - [beta state=[-closed-]{+open+}] beta
+
+organize: wrote 1 change(s)
+EOF
+
+  # Read back through a second host process (a fresh peer over the
+  # persisted tree): no cgtest-obj-v1 is closed any more, and the
+  # re-rendered document files beta under =open.
+  run_cg_stdout list -format json -query '!cgtest-obj-v1 state=closed' \
+    cgtest://fixture/box
+  assert_success
+  assert_output ''
+
+  run_cg_stdout organize -group-by state= -query '!cgtest-obj-v1' \
+    cgtest://fixture/box
+  assert_success
+  assert_output - <<-'EOM'
+	---
+	% generated: `cg organize -group-by state= -query "!cgtest-obj-v1" cgtest://fixture/box`
+	- _base = @blake2b256-6kt5f85907k0fyk7a75fdw6vpk2vu4quae66hve6j4as38ptnezs7w65h5
+	- _anchor = cgtest://fixture/box/
+	- _query = !cgtest-obj-v1
+	- _type = !cgtest-obj-v1
+	! organize-base-v1
+	---
+
+	# state=
+
+	## =open
+
+	- [alpha] alpha
+	- [beta] beta
+
+	## =closed
+	EOM
+}
+
+# bats test_tags=testpeer
+function test_testpeer_organize_write_many_replaces_membership { # @test
+  configure_testpeer_wire_plugin
+
+  run_cg_stdout organize -group-by tag= -query '!cgtest-obj-v1' \
+    cgtest://fixture/box
+  assert_success
+  assert_output - <<-'EOM'
+	---
+	% generated: `cg organize -group-by tag= -query "!cgtest-obj-v1" cgtest://fixture/box`
+	- _base = @blake2b256-76lu3m9s600nzdat77ydekykh8tsq99k0n2tep0a8fmx9zkcrljqejg34n
+	- _anchor = cgtest://fixture/box/
+	- _query = !cgtest-obj-v1
+	- _type = !cgtest-obj-v1
+	! organize-base-v1
+	---
+
+	# tag=
+
+	## =a
+
+	- [alpha] alpha
+
+	## =b
+
+	- [alpha] alpha
+	- [beta] beta
+	EOM
+
+  # Renaming the =a bucket to =c re-files alpha's `a` membership as `c`:
+  # the host sends alpha's COMPLETE new set, {"tags":["b","c"]}.
+  local edited="$BATS_TEST_TMPDIR/edited.txt"
+  cat >"$edited" <<-'EOM'
+	---
+	% generated: `cg organize -group-by tag= -query "!cgtest-obj-v1" cgtest://fixture/box`
+	- _base = @blake2b256-76lu3m9s600nzdat77ydekykh8tsq99k0n2tep0a8fmx9zkcrljqejg34n
+	- _anchor = cgtest://fixture/box/
+	- _query = !cgtest-obj-v1
+	- _type = !cgtest-obj-v1
+	! organize-base-v1
+	---
+
+	# tag=
+
+	## =c
+
+	- [alpha] alpha
+
+	## =b
+
+	- [alpha] alpha
+	- [beta] beta
+	EOM
+
+  run_cg_stdout organize -apply "$edited" -commit
+  assert_success
+  assert_output - <<'EOF'
+organize: 1 change(s):
+
+  - [alpha [-a-] {+c+}] alpha
+
+organize: wrote 1 change(s)
+EOF
+
+  run_cg_stdout list -format json -query '!cgtest-obj-v1 tag=c' \
+    cgtest://fixture/box
+  assert_success
+  assert_output '{"uri":"cgtest://fixture/box/alpha","name":"alpha","type":"cgtest-obj-v1"}'
+
+  run_cg_stdout list -format json -query '!cgtest-obj-v1 tag=a' \
+    cgtest://fixture/box
+  assert_success
+  assert_output ''
+
+  run_cg_stdout organize -group-by tag= -query '!cgtest-obj-v1' \
+    cgtest://fixture/box
+  assert_success
+  assert_output - <<-'EOM'
+	---
+	% generated: `cg organize -group-by tag= -query "!cgtest-obj-v1" cgtest://fixture/box`
+	- _base = @blake2b256-zjmd63ug8x5r8c2ren3uraayw9c6mx790ujq3c8eh20ndupt078sffu7jj
+	- _anchor = cgtest://fixture/box/
+	- _query = !cgtest-obj-v1
+	- _type = !cgtest-obj-v1
+	! organize-base-v1
+	---
+
+	# tag=
+
+	## =b
+
+	- [alpha] alpha
+	- [beta] beta
+
+	## =c
+
+	- [alpha] alpha
+	EOM
+}
+
+# A facet_writes block naming a dimension the peer's facets block never
+# declares is unusable — the host could not build a patch for it — so
+# bring-up fails loudly, naming the plugin, type and dimension.
+# bats test_tags=testpeer
+function test_testpeer_undeclared_facet_write_fails_initialize { # @test
+  configure_testpeer_wire_plugin
+
+  export CG_TESTPEER_UNDECLARED_FACET_WRITE=1
+  run_cg_stdout list cgtest://fixture/box
+  assert_failure
+  [[ $stderr == *'wire plugin "cgtest": initialize rejected: facet write: type "cgtest-obj-v1" dimension "no-such-dimension" is not a declared facet dimension'* ]] ||
+    fail "stderr does not carry the rejection: $stderr"
+}
 
 # ---------------------------------------------------------------------
 # CONFORMANCE — session-level METHOD SEMANTICS, driven by the driver
@@ -234,6 +475,14 @@ uri = "cgtest://fixture/box/issue-1"
 container = "cgtest://fixture/box"
 create_type = "cgtest-obj-v1"
 create_body = "bulk probe body"
+
+[facet_write]
+container = "cgtest://fixture/box"
+node = "cgtest://fixture/box/beta"
+one_dimension = "state"
+one_bucket = "open"
+many_dimension = "tag"
+many_set = ["x", "y"]
 EOF
 
   run --separate-stderr "$CG_CONFORMANCE_TRAVERSAL" --manifest "$manifest"
@@ -242,11 +491,18 @@ EOF
   # whole multi-line output as ONE string (no per-line/multiline flag),
   # so `^not ok` would never match a mid-output failure — a false-safe
   # assertion. --partial 'not ok' catches a failing point anywhere.
-  assert_output --partial '1..14'
+  assert_output --partial '1..17'
   assert_output --partial 'ok 1 - initialize'
   assert_output --partial 'ok 11 - leaf.read: container returns its own body'
   assert_output --partial 'ok 13 - nodes.list: filter pushdown returns a sound subset'
   assert_output --partial 'ok 14 - node.bulk_mutate: best-effort applies'
+  # The RFC 0013 facet_writes amendment: a peer declaring facet_writes
+  # must accept the host-built node.patch bodies (a substituted peer
+  # supplies its own [facet_write] node and dimensions; one declaring no
+  # facet_writes SKIPs these).
+  assert_output --partial 'ok 15 - initialize: facet_writes declaration is usable by the host'
+  assert_output --partial 'ok 16 - node.patch: host-built write:one body moves the node into the bucket'
+  assert_output --partial "ok 17 - node.patch: host-built write:many body replaces the node's set, [] clears"
   refute_output --partial 'not ok'
 }
 

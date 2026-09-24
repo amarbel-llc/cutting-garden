@@ -91,6 +91,7 @@ func Run(
 	r.caseContainerBody(ctx)
 	r.caseFilteredList(ctx)
 	r.caseBulkMutate(ctx)
+	r.caseFacetWrites(ctx)
 
 	tw.Plan()
 

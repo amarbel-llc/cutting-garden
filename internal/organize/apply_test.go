@@ -824,6 +824,29 @@ func TestGroupedIsMultiValued_Dispatch(t *testing.T) {
 	}
 }
 
+// TestResolveMembershipWrites_EmptyDeclarationIsNoWritableFacets pins the
+// refusal a plugin gets when it satisfies FacetWriteDescriber but declares
+// nothing — the shape of an RFC 0013 wire plugin with no facet_writes block
+// (WirePlugin implements the interface statically). It must read as "no
+// writable facets", not as a per-dimension omission, and must not name the
+// Go interface (a wire plugin cannot "implement" it). A plugin declaring
+// OTHER dimensions still gets the per-dimension message.
+func TestResolveMembershipWrites_EmptyDeclarationIsNoWritableFacets(t *testing.T) {
+	_, _, _, err := resolveMembershipWrites(
+		&membershipFake{writes: []cgp.NodeTypeFacetWrites{}}, "categories",
+	)
+	want := `organize --apply: plugin declares no writable facets; dimension "categories" cannot be reorganized`
+	if err == nil || err.Error() != want {
+		t.Errorf("empty declaration: err = %v, want %q", err, want)
+	}
+
+	_, _, _, err = resolveMembershipWrites(&membershipFake{}, "status")
+	want = `organize --apply: dimension "status" has no write mapping declared`
+	if err == nil || err.Error() != want {
+		t.Errorf("other dimension declared: err = %v, want %q", err, want)
+	}
+}
+
 // TestPlanMoves_CleanMove pins that a node moved in the edit, with the live state
 // still agreeing with the base, yields exactly one move.
 func TestPlanMoves_CleanMove(t *testing.T) {

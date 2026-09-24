@@ -251,6 +251,27 @@ backend cannot transact a request all-or-nothing returns
 best-effort - a half-applied delta the caller asked to be atomic is worse
 than none. See RFC 0017 for the full contract.
 
+# DECLARE WHICH FACETS ARE WRITABLE
+
+*organize --apply* writes only through facet dimensions you DECLARE writable
+(*FacetWriteDescriber*; RFC 0012 §Write mapping): per node type and
+dimension, a mode - *one* (a node sits in one bucket; a move replaces it),
+*many* (a set of buckets; a write replaces the set), or *none* (declared
+read-only, so a move is refused as read-only rather than unmapped) - and the
+patch *field* the write goes through. A linked plugin also implements the
+appliers that build its patch bodies (*FacetWriteApplier*,
+*MembershipWriteApplier*). A wire plugin declares the same mapping in
+*initialize*'s *facet_writes* block and builds NOTHING: the host sends
+*{"<field>": "<bucket>"}* (one) or *{"<field>": [<complete set>]}* (many)
+through *node.patch*, and your *node.patch* MUST accept those shapes, treat a
+*many* array as a full replacement (never a merge), and re-list the node in
+its new bucket(s). A declaration naming an undeclared dimension, a *many* on
+a non-multi dimension, or a writable mapping without *mutate* fails bring-up
+loudly. A dimension whose write needs computation (a date move that keeps the
+clock time) does not fit the verbatim shapes - declare it *none* for now. See
+RFC 0013 §Facet writes; the conformance driver's *[facet_write]* manifest
+table checks a wire peer against it.
+
 # DECLARE A BOX ID WHEN YOUR IDENTITY IS NOT IN THE PATH
 
 *organize* and *list -format espalier* name each object by a box id: by
@@ -273,7 +294,7 @@ wire carries no token for it yet.
 Every optional capability - *RootProvider*, *RootLabeler*, *LeafReader*,
 *FacetDescriber*, *FacetCounter*, *FacetVersioner*, *FacetLabeler*,
 *EnrichedLister*, *ListingFieldsDescriber*, *NodeMutator*, *BulkMutator*,
-*BodyDescriber*, *ContainerCreator*, *NodeIDer*, and whatever this list grows to next -
+*BodyDescriber*, *ContainerCreator*, *FacetWriteDescriber*, *NodeIDer*, and whatever this list grows to next -
 is discovered by
 TYPE ASSERTION against an already-resolved plugin (or, on the wire, by a
 capability TOKEN advertised in *initialize*). There is no separate

@@ -264,6 +264,19 @@ func newServer(cfg ServeConfig) (*server, error) {
 		}
 	}
 
+	// A Go plugin's write mappings ride initialize automatically, so a Go
+	// wire peer is organize-writable exactly like its linked self. Over the
+	// wire only the HOST-built patch shapes exist (HostFacetWritePatch /
+	// HostMembershipWritePatch): the plugin's own FacetWriteApplier is not
+	// consulted, so its node.patch must accept those shapes.
+	if describer, ok := cfg.Plugin.(cutting_garden_plugins.FacetWriteDescriber); ok {
+		for _, declared := range describer.DescribeFacetWrites() {
+			srv.init.FacetWrites = append(
+				srv.init.FacetWrites, NodeTypeFacetWritesViewFrom(declared),
+			)
+		}
+	}
+
 	return srv, nil
 }
 

@@ -2,7 +2,9 @@
 status: accepted
 date: 2026-07-18
 revised: 2026-07-19 (§ Host integration: a wire plugin's bring-up failure
-  MUST be isolated to that plugin, never fatal to the host — cutting-garden#165)
+  MUST be isolated to that plugin, never fatal to the host — cutting-garden#165);
+  2026-09-24 (§ Facet writes: the OPTIONAL `facet_writes` declaration and the
+  host-built `node.patch` bodies that make a wire plugin organize-writable)
 ---
 
 # RFC 0013 — Traversal Plugin Transport: JSON-RPC over stream sockets
@@ -256,8 +258,11 @@ Result:
   `facet-counts` or `facet-version` MUST include `facets`.
 - `bodies` — OPTIONAL; the `BodyDescriber.DescribeBodies()`
   declaration. Meaningful only alongside `mutate`.
+- `facet_writes` — OPTIONAL; the `FacetWriteDescriber.DescribeFacetWrites()`
+  declaration: which facet dimensions are writable and through which
+  patch field. Added by the 2026-09-24 amendment — see §Facet writes.
 
-All three declaration blocks ride in `initialize` because their
+All the declaration blocks ride in `initialize` because their
 in-process contracts are stable for the plugin's lifetime; there are no
 `types.list` / `facets.describe` round trips.
 
@@ -331,6 +336,17 @@ whose scheme it did not advertise (`-32602`, invalid params).
 > and a host predating #193 both behave exactly as before. The filtered set
 > is a SOUND SUBSET — every returned node matches the filter, and every
 > returned URI is in the unfiltered listing (the §Conformance filter case).
+
+> **Trailing-slash container URIs (informative, 2026-09-24).** A host
+> MAY address a container by a spelling ending in `/` that the plugin
+> itself never emitted: `organize` anchors its document at the COMMON
+> PREFIX of the listed node URIs and re-lists that anchor when applying
+> an edit, so children `fj://h/o/r/issues/1` and `…/issues/2` yield the
+> anchor `fj://h/o/r/issues/`. A plugin whose container URIs carry no
+> trailing slash SHOULD therefore treat `X/` exactly like `X` on
+> `nodes.list` (and on the other URI-taking reads); a plugin that
+> answers `X/` with an empty listing makes every organize apply against
+> it report the whole document as drifted.
 
 `roots.list` params `{}` → result `{ "roots": [string] }` — the
 plugin's top-level entry points (`RootProvider.Roots`), possibly empty.
@@ -499,6 +515,157 @@ the bodies block's `server_assigned_identity` field (additive on
 NodeTypeBody); a type is created through exactly one of
 `node.create` / `node.create_child`, per that declaration.
 
+### Facet writes — `facet_writes` (amendment, 2026-09-24)
+
+`organize --apply` (RFC 0015) turns an edited document — a line moved
+under another bucket heading, a bucket renamed, an object copied under a
+second tag bucket — into writes against the plugin. It writes ONLY
+through dimensions the plugin DECLARES writable (RFC 0012 §Write
+mapping; FDR 0023 "writability must be declared"). Before this
+amendment the wire had no vocabulary for that declaration, so every wire
+plugin was read-only to organize even when its `node.patch` could write
+the underlying field. This section adds the declaration and fixes the
+patch bodies the host sends. It adds NO method and NO capability token:
+the presence of the block is the capability, exactly as for `facets`.
+
+#### Declaration
+
+The `initialize` result MAY carry `facet_writes`, parallel to `facets`
+and keyed by the same node type tags:
+
+```json
+"facet_writes": [
+  {
+    "tag": "fj-issue-v1",
+    "writes": [
+      { "dimension": "state", "mode": "one", "field": "state",
+        "values": ["open", "closed"] },
+      { "dimension": "label", "mode": "many", "field": "labels" },
+      { "dimension": "month", "mode": "none" }
+    ]
+  }
+]
+```
+
+**FacetWrite**: `{ "dimension": string, "mode": "none"|"one"|"many",
+"field": string?, "identity_affecting": bool?, "creation_required":
+bool?, "completion_hint": string?, "values": [string]? }` — the wire
+form of `cutting_garden_plugins.FacetWrite`:
+
+- `dimension` — the key of a dimension the same type's `facets` entry
+  declares.
+- `mode` — the write cardinality. `one`: a node is in at most one bucket
+  and a write REPLACES it (a status move). `many`: a node is in a SET of
+  buckets and a write replaces the set (labels, tags). `none`: declared
+  READ-ONLY — distinct from an absent mapping, so organize can refuse a
+  move with "read-only" rather than "no write mapping".
+- `field` — REQUIRED (non-empty) for `one` and `many`; SHOULD be absent
+  for `none`. The key the host writes in the `node.patch` body. It is
+  the plugin's OWN patch vocabulary and need not equal `dimension`.
+- `values` — OPTIONAL write-side bucket list, in order: organize
+  pre-renders these as (possibly empty) headings so a user can move an
+  object under an existing bucket instead of typing it. It does not
+  close the read-side domain and does not reject other values.
+- `identity_affecting`, `creation_required`, `completion_hint` —
+  OPTIONAL, descriptive only (surfaced by `describe_node_types`); absent
+  ≙ `false` / empty.
+
+An absent `facet_writes` block, a type absent from it, and a dimension
+absent from a type's `writes` all mean the same thing: not writable
+through organize. Existing peers are unaffected.
+
+The host validates the block when the session comes up. Each rule below
+is a bring-up failure — the plugin is reported unavailable with the
+failure recorded persistently, isolated exactly like any other bring-up
+failure (§Host integration, cutting-garden#165):
+
+1. every `tag` MUST have an entry in `facets`, and every `dimension`
+   MUST be a dimension that entry declares;
+2. `mode` MUST be `none`, `one`, or `many`, and a `one` / `many` write
+   MUST carry a non-empty `field`;
+3. a `many` write MUST sit on a dimension declared `"multi": true`;
+4. a `(tag, dimension)` pair MUST be mapped at most once;
+5. a `one` or `many` write REQUIRES the `mutate` capability (the writes
+   land through `node.patch`).
+
+The reference host's diagnostic names the plugin, type, and dimension,
+e.g. `wire plugin "fj": initialize rejected: facet write: type
+"fj-issue-v1" dimension "priority" is not a declared facet dimension`.
+
+#### Patch bodies (host-built)
+
+The host builds every patch body itself, from the DECLARED mapping for
+the node's type, and sends it through the existing `node.patch`
+(`body_base64` of the UTF-8 JSON object). There are exactly two shapes,
+each writing ONE field:
+
+- `one` — move the node into a bucket:
+
+  ```json
+  {"state": "closed"}
+  ```
+
+  `{"<field>": "<bucket>"}`; the bucket is a non-empty string.
+
+- `many` — replace the node's membership set:
+
+  ```json
+  {"labels": ["bug", "ui"]}
+  ```
+
+  `{"<field>": [<bucket>, ...]}`, the COMPLETE new set (order is not
+  significant); `{"<field>": []}` clears the dimension.
+
+Buckets are facet value KEYS exactly as the plugin emits them in
+`Node.facets` (never `labels.resolve` labels). One organize apply MAY
+send several patches to the same node (e.g. a membership change and a
+field edit), each a separate `node.patch`.
+
+A plugin that declares a `one` or `many` mapping for type T:
+
+- MUST accept that mapping's shape on `node.patch` for every node of
+  type T;
+- MUST treat a `many` array as a FULL REPLACEMENT of the node's
+  membership in that dimension — never a merge or an append — because
+  the host has already resolved the complete set (the
+  `MembershipWriteApplier` contract; a merging peer silently resurrects
+  every removed tag);
+- MUST, once the patch succeeds, reflect the new bucket(s) in that
+  node's `facets` on every subsequent `nodes.list` (and in
+  `facets.counts`, when advertised): the host verifies an apply by re-reading exactly
+  these, and organize computes its next three-way merge from them;
+- SHOULD report `field` in `node.patch`'s `applied`;
+- MUST answer a recognized `field` carrying an unusable value (a
+  non-string bucket, a non-array set, a bucket outside a domain the
+  backend enforces) with `-32602` (§Errors), never a silent drop.
+
+The shapes carry the target bucket VERBATIM. A dimension whose write
+needs computation the host cannot do — a date bucket that must splice a
+new period into the node's existing timestamp while preserving
+day-of-month, clock time and time zone (caldav's reschedule-by-move) —
+does not fit them; such a dimension SHOULD be declared `none` for now. A
+plugin-side patch-building method for those substrates is reserved for
+a future revision (not defined here).
+
+**Go peers.** A Go plugin served through `pkgs/traversal_serve`
+advertises its `DescribeFacetWrites` in `initialize` automatically, so a
+Go wire peer is organize-writable exactly like its linked self. Over the
+wire only the host-built shapes exist: the plugin's own
+`FacetWriteApplier` / `MembershipWriteApplier` are NOT consulted, so its
+`node.patch` must accept the shapes above. `traversal_serve.
+HostFacetWritePatch` / `HostMembershipWritePatch` build them (a Go
+plugin whose patch format is a flat JSON object can use them as its own
+appliers, as the test peer does).
+
+**Host side.** The reference adapter (`WirePlugin`) answers
+`FacetWriteDescriber` from the cached block and implements
+`FacetWriteApplier` / `MembershipWriteApplier` with the two builders; a
+build request for a dimension the type does not map, or maps `none`, is
+refused as a bad request before anything is sent. A wire plugin with no
+`facet_writes` therefore still satisfies the Go interfaces but declares
+nothing, and organize refuses it with `plugin declares no writable
+facets; dimension "<d>" cannot be reorganized`.
+
 ### Errors
 
 JSON-RPC standard codes apply (`-32700` parse, `-32600` invalid
@@ -641,7 +808,9 @@ config_section = "fj"      # optional; defaults to name
 The host wraps a session in an adapter implementing exactly the
 capability interfaces the plugin advertised — `RootLister` always;
 `RootProvider`, `LeafReader`, `FacetCounter`, `FacetVersioner`,
-`FacetLabeler`, `NodeMutator`, `FacetDescriber`, `BodyDescriber` per
+`FacetLabeler`, `NodeMutator`, `FacetDescriber`, `BodyDescriber`,
+`FacetWriteDescriber` (with its `FacetWriteApplier` /
+`MembershipWriteApplier`, §Facet writes) per
 `capabilities`/declaration presence — and registers it via the scheme
 registry. Type-assertion probing then works unchanged; consumers
 (`list`, `mcp`, the facet cache, `describe_node_types`) MUST NOT be
@@ -757,6 +926,11 @@ becomes machine-checkable rather than rediscovered.
 | §Facets: `by_container` RAW invariants (count>0, sorted, capped) + descend-target reachability (RFC 0012 §13) | conformance driver | pre-normalization; re-issue the filter per entry |
 | Driver self-test: a deliberately-wrong manifest MUST fail | conformance driver | the "a passing driver ratifies nothing" acceptance |
 | Indistinguishability: `list` and `mcp` output over the wire peer equals the same tree served by a linked in-process plugin | go end-to-end | the conformance bar |
+| §Facet writes: the `facet_writes` block passes the host's bring-up rules | conformance driver | point 15; SKIP when the peer declares none |
+| §Facet writes: `node.patch` accepts the host-built `one` body and the node re-lists in the bucket | conformance driver | point 16; manifest `[facet_write]` `node`/`container`/`one_dimension`/`one_bucket`; the node is restored afterwards |
+| §Facet writes: `node.patch` treats the `many` array as a full replacement, `[]` clears | conformance driver | point 17; manifest `many_dimension`/`many_set`; restored afterwards |
+| §Facet writes: declaration, host-built bodies, applied report and resulting listing identical wire vs linked | go end-to-end | `TestWireFacetWritesIndistinguishableFromLinked` |
+| §Facet writes: `organize --apply` writes through a wire plugin (write:one move, write:many re-file) and an unusable declaration fails bring-up | `traversal_serve.bats` (`testpeer`) | whole-document vectors over the cgtest tree |
 
 ## Compatibility
 
@@ -786,6 +960,12 @@ becomes machine-checkable rather than rediscovered.
   degradation contract is RFC 0012 §11.3's). Senders MUST NOT emit
   fields this specification does not define — extension happens here,
   not ad hoc.
+- **`facet_writes` (2026-09-24)** is additive under the rule above: a
+  host predating it ignores the block (the plugin stays read-only to
+  organize), and a peer omitting it behaves exactly as before. A peer
+  that starts declaring it takes on the §Facet writes `node.patch`
+  obligations for the mapped fields — a new constraint on its existing
+  method, owed only by peers that opt in, so no schema bump.
 
 ## References
 
@@ -807,6 +987,9 @@ becomes machine-checkable rather than rediscovered.
   this RFC moves).
 - cutting-garden#140 — the motivating issue; forgejo-cli's `fj-cg`
   (Rust) is the first external consumer.
+- RFC 0015 — the organize dialect; FDR 0023 — organize's write mapping
+  ("writability must be declared"), which §Facet writes carries onto
+  the wire.
 - cutting-garden#85 — `LeafReader`; nebulous#40 — the bespoke-MCP
   anti-pattern; cutting-garden#137 — Darwin SEQPACKET breakage.
 - madder RFC 0001 — the announce/dial launch pattern's origin.

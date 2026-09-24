@@ -17,6 +17,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -94,6 +95,17 @@ func testpeerManifest(t *testing.T) *traversal_conformance.Manifest {
 			CreateType: testpeer.LeafType,
 			CreateBody: "bulk probe body\n",
 		},
+		// The testpeer declares state (write:one, field "state") and tag
+		// (write:many, field "tags") on its leaf type: beta is closed with
+		// tags [b], so both probes are real moves.
+		FacetWrite: &traversal_conformance.FacetWriteSpec{
+			Container:     testpeer.RootBox,
+			Node:          testpeer.LeafBeta,
+			OneDimension:  "state",
+			OneBucket:     "open",
+			ManyDimension: "tag",
+			ManySet:       []string{"x", "y"},
+		},
 	}
 }
 
@@ -138,7 +150,12 @@ func TestRunPassesConformantTestpeer(t *testing.T) {
 		"ok 13 - nodes.list: filter pushdown returns a sound subset",
 		"ok 14 - node.bulk_mutate: best-effort applies and isolates a" +
 			" failure, atomic and malformed refused",
-		"1..14",
+		"ok 15 - initialize: facet_writes declaration is usable by the host",
+		"ok 16 - node.patch: host-built write:one body moves the node into" +
+			" the bucket",
+		"ok 17 - node.patch: host-built write:many body replaces the node's" +
+			" set, [] clears",
+		"1..17",
 	} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("output missing %q:\n%s", want, out.String())
@@ -245,6 +262,37 @@ func TestRunFailsMismatchedExpectApplied(t *testing.T) {
 	}
 }
 
+// TestRunFailsFacetWriteOnUnmappedDimension is the facet_writes points'
+// "must be able to fail" check: a manifest naming a dimension the peer does
+// not declare as write:many (feed is unmapped) fails the many point, and
+// the whole run.
+func TestRunFailsFacetWriteOnUnmappedDimension(t *testing.T) {
+	ctx, cancel := context.WithTimeout(
+		context.Background(), 120*time.Second,
+	)
+	defer cancel()
+
+	t.Setenv(mainModeEnv, "1")
+
+	manifest := testpeerManifest(t)
+	manifest.FacetWrite.ManyDimension = "feed"
+
+	var out bytes.Buffer
+	passed, err := traversal_conformance.Run(ctx, manifest, &out)
+	if err != nil {
+		t.Fatalf("Run: %v\noutput:\n%s", err, out.String())
+	}
+	if passed {
+		t.Fatalf("passed = true with an unmapped facet_write dimension:\n%s",
+			out.String())
+	}
+
+	want := "not ok 17 - node.patch: host-built write:many body replaces"
+	if !strings.Contains(out.String(), want) {
+		t.Errorf("output missing %q:\n%s", want, out.String())
+	}
+}
+
 // TestRunBailsOutWhenPeerCannotLaunch pins the driver-trouble path: a
 // Command that is not a launchable peer (here a bare path that produces
 // no announce) fails LaunchWithoutInitialize, so Run emits a well-formed
@@ -318,6 +366,14 @@ filter = "state=open"
 
 [container_body]
 uri = "cgtest://fixture/box/issue-1"
+
+[facet_write]
+container = "cgtest://fixture/box"
+node = "cgtest://fixture/box/beta"
+one_dimension = "state"
+one_bucket = "open"
+many_dimension = "tag"
+many_set = ["x", "y"]
 `
 	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
 		t.Fatalf("write manifest: %v", err)
@@ -326,6 +382,17 @@ uri = "cgtest://fixture/box/issue-1"
 	manifest, err := traversal_conformance.LoadManifest(path)
 	if err != nil {
 		t.Fatalf("LoadManifest: %v", err)
+	}
+
+	if got, want := manifest.FacetWrite, (&traversal_conformance.FacetWriteSpec{
+		Container:     "cgtest://fixture/box",
+		Node:          "cgtest://fixture/box/beta",
+		OneDimension:  "state",
+		OneBucket:     "open",
+		ManyDimension: "tag",
+		ManySet:       []string{"x", "y"},
+	}); !reflect.DeepEqual(got, want) {
+		t.Errorf("FacetWrite = %+v, want %+v", got, want)
 	}
 
 	if got := manifest.Command; len(got) != 2 ||

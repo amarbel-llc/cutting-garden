@@ -770,6 +770,11 @@
           # path the bats launch-contract lane cannot reach.
           conformance-traversal = cuttingGardenConformanceTraversal;
 
+          # The RFC 0013 test peer (bats CG_TEST_TRAVERSAL_SERVE), exposed so
+          # the debug-conformance-traversal / debug-organize-traversal-vectors
+          # dev-loop recipes can build it (the devShell carries no go).
+          cutting-garden-test-traversal-serve = cuttingGardenTestTraversalServe;
+
           # The test-only fastmail JMAP server (bats CG_TEST_FASTMAIL), exposed
           # so the debug-organize-fastmail-fixture dev-loop recipe can build it.
           cutting-garden-fastmail-testserver = cuttingGardenFastmailTestServer;

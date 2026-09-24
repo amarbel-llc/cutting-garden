@@ -518,12 +518,9 @@ func resolveWrites(
 			"organize --apply: plugin does not support writes (no NodeMutator)",
 		)
 	}
-	describer, ok := lister.(cgp.FacetWriteDescriber)
-	if !ok {
-		return nil, nil, nil, errors.BadRequestf(
-			"organize --apply: plugin declares no writable facets (no "+
-				"FacetWriteDescriber); dimension %q cannot be reorganized", dim,
-		)
+	writes, err := declaredWritesFor(lister, dim)
+	if err != nil {
+		return nil, nil, nil, err
 	}
 	applier, ok := lister.(cgp.FacetWriteApplier)
 	if !ok {
@@ -533,9 +530,30 @@ func resolveWrites(
 				"reorganized", dim,
 		)
 	}
+	return mutator, applier, writes, nil
+}
+
+// declaredWritesFor collects the per-node-type FacetWrite mapping the plugin
+// declares for dim. A plugin declaring no write mappings at all — whether it
+// lacks FacetWriteDescriber (a linked plugin) or satisfies it with an empty
+// declaration (an RFC 0013 wire plugin without a facet_writes block) — is
+// refused as having no writable facets; one that declares other dimensions
+// but not dim is refused per dimension (FDR 0023 "writability must be
+// declared").
+func declaredWritesFor(lister cgp.RootLister, dim string) (map[string]cgp.FacetWrite, error) {
+	var declared []cgp.NodeTypeFacetWrites
+	if describer, ok := lister.(cgp.FacetWriteDescriber); ok {
+		declared = describer.DescribeFacetWrites()
+	}
+	if len(declared) == 0 {
+		return nil, errors.BadRequestf(
+			"organize --apply: plugin declares no writable facets; dimension %q "+
+				"cannot be reorganized", dim,
+		)
+	}
 
 	writes := make(map[string]cgp.FacetWrite)
-	for _, nt := range describer.DescribeFacetWrites() {
+	for _, nt := range declared {
 		for _, w := range nt.Writes {
 			if w.DimensionKey == dim {
 				writes[nt.Tag] = w
@@ -543,11 +561,11 @@ func resolveWrites(
 		}
 	}
 	if len(writes) == 0 {
-		return nil, nil, nil, errors.BadRequestf(
+		return nil, errors.BadRequestf(
 			"organize --apply: dimension %q has no write mapping declared", dim,
 		)
 	}
-	return mutator, applier, writes, nil
+	return writes, nil
 }
 
 // confirmApply presents the yes/no gate an interactive commit shows after the
@@ -794,12 +812,9 @@ func resolveMembershipWrites(
 			"organize --apply: plugin does not support writes (no NodeMutator)",
 		)
 	}
-	describer, ok := lister.(cgp.FacetWriteDescriber)
-	if !ok {
-		return nil, nil, nil, errors.BadRequestf(
-			"organize --apply: plugin declares no writable facets (no "+
-				"FacetWriteDescriber); dimension %q cannot be reorganized", dim,
-		)
+	writes, err := declaredWritesFor(lister, dim)
+	if err != nil {
+		return nil, nil, nil, err
 	}
 	applier, ok := lister.(cgp.MembershipWriteApplier)
 	if !ok {
@@ -807,20 +822,6 @@ func resolveMembershipWrites(
 			"organize --apply: plugin declares a multi-valued dimension but no "+
 				"MembershipWriteApplier to build the patch; dimension %q cannot be "+
 				"reorganized", dim,
-		)
-	}
-
-	writes := make(map[string]cgp.FacetWrite)
-	for _, nt := range describer.DescribeFacetWrites() {
-		for _, w := range nt.Writes {
-			if w.DimensionKey == dim {
-				writes[nt.Tag] = w
-			}
-		}
-	}
-	if len(writes) == 0 {
-		return nil, nil, nil, errors.BadRequestf(
-			"organize --apply: dimension %q has no write mapping declared", dim,
 		)
 	}
 	return mutator, applier, writes, nil

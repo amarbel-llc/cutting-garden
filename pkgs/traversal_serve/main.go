@@ -67,6 +67,12 @@ type FacetVersionParams = internal.FacetVersionParams
 // to its TTL.
 type FacetVersionResult = internal.FacetVersionResult
 
+// FacetWriteView is the wire form of cutting_garden_plugins.FacetWrite: one
+// dimension's write mapping. mode is "none" | "one" | "many"; field is
+// REQUIRED unless mode is "none". The remaining members are OPTIONAL and
+// omitted when zero.
+type FacetWriteView = internal.FacetWriteView
+
 // Handler serves a peer's incoming JSON-RPC requests and notifications,
 // one at a time in arrival order (a plugin MAY process pipelined
 // requests sequentially — RFC 0013 §Framing). result is marshaled as
@@ -161,6 +167,11 @@ type NodePutParams = internal.NodePutParams
 // JSON-marshalable by contract); absent when the plugin offers no
 // structured form.
 type NodeTypeBodyView = internal.NodeTypeBodyView
+
+// NodeTypeFacetWritesView is the wire form of
+// cutting_garden_plugins.NodeTypeFacetWrites, carried in the initialize
+// facet_writes block (parallel to the facets block, keyed by the same tag).
+type NodeTypeFacetWritesView = internal.NodeTypeFacetWritesView
 
 // NodeTypeFacetsView is the wire form of
 // cutting_garden_plugins.NodeTypeFacets: one node type's declared
@@ -327,6 +338,21 @@ var FacetFilterFrom = internal.FacetFilterFrom
 // FacetValueViewFrom projects one facet value onto the wire.
 var FacetValueViewFrom = internal.FacetValueViewFrom
 
+// HostFacetWritePatch builds the node.patch body for a write:one bucket
+// move: `{"<field>": "<bucket>"}` — the one shape a wire plugin declaring a
+// one mapping MUST accept on node.patch. Anything else (a non-one mode, an
+// empty bucket) is a bad request. Exported so a Go plugin whose patch
+// format is a flat JSON object can reuse it as its own FacetWriteApplier
+// (the testpeer does, keeping linked and wire bodies identical).
+var HostFacetWritePatch = internal.HostFacetWritePatch
+
+// HostMembershipWritePatch builds the node.patch body for a write:many
+// membership change: `{"<field>": [<complete new set>]}`. The array is a
+// FULL replacement (the MembershipWriteApplier contract); an empty or nil
+// set encodes as `[]`, clearing the dimension. A non-many mode is a bad
+// request.
+var HostMembershipWritePatch = internal.HostMembershipWritePatch
+
 // Launch spawns argv as a traversal plugin and completes the RFC 0013
 // bring-up: export a fresh cookie, read the announce line from the
 // child's stdout under announceTimeout, validate the version token,
@@ -369,6 +395,11 @@ var NewWirePlugin = internal.NewWirePlugin
 // NodeTypeBodyViewFrom projects one writable type's body description
 // onto the wire.
 var NodeTypeBodyViewFrom = internal.NodeTypeBodyViewFrom
+
+// NodeTypeFacetWritesViewFrom projects one type's write mappings onto the
+// wire. An empty Values list projects to absent (the two mean the same:
+// no pre-rendered write buckets).
+var NodeTypeFacetWritesViewFrom = internal.NodeTypeFacetWritesViewFrom
 
 // NodeTypeFacetsViewFrom projects one type's facet declaration onto
 // the wire.
@@ -416,6 +447,17 @@ var Serve = internal.Serve
 // ToFacetContainerBreakdowns is the inverse of
 // FacetContainerBreakdownViewsFrom.
 var ToFacetContainerBreakdowns = internal.ToFacetContainerBreakdowns
+
+// ValidateFacetWriteDeclaration is the host's bring-up check of an
+// initialize facet_writes block (exported for the conformance driver and
+// for a Go peer's own tests). Beyond ValidateFacetWrites' cross-check
+// against the facets block (declared type, declared dimension, a field for
+// every non-none mode, a known mode), the wire adds what the host itself
+// relies on when it builds patches: a many write MUST sit on a multi
+// dimension (its body is a set), a dimension is mapped at most once per
+// type (the host must know WHICH field to write), and a writable mapping
+// requires the mutate capability (node.patch is how it lands).
+var ValidateFacetWriteDeclaration = internal.ValidateFacetWriteDeclaration
 
 // ValidateStanzas enforces the cross-stanza invariants the aggregated
 // config's Validate delegates here: unique names, unique schemes —

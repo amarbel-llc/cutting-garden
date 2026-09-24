@@ -121,6 +121,10 @@ type TreePlugin struct {
 	// asserting the RFC 0007 §Plugin-Owned Sections passthrough.
 	configTOML    string
 	configApplied bool
+
+	// statePath, when set, is the file the tree is persisted to after every
+	// mutation (see StateFileEnv); empty keeps the tree memory-only.
+	statePath string
 }
 
 var (
@@ -134,6 +138,10 @@ var (
 	_ cutting_garden_plugins.NodeMutator    = (*TreePlugin)(nil)
 	_ cutting_garden_plugins.BulkMutator    = (*TreePlugin)(nil)
 	_ cutting_garden_plugins.BodyDescriber  = (*TreePlugin)(nil)
+
+	_ cutting_garden_plugins.FacetWriteDescriber    = (*TreePlugin)(nil)
+	_ cutting_garden_plugins.FacetWriteApplier      = (*TreePlugin)(nil)
+	_ cutting_garden_plugins.MembershipWriteApplier = (*TreePlugin)(nil)
 )
 
 // Plugin is the shared linked-path instance of the fixed tree — what an
@@ -236,6 +244,45 @@ func Config() traversal_serve.ServeConfig {
 	}
 }
 
+// StateFileEnv, when set in the peer's environment, names a file the tree
+// is loaded from at startup (when it exists) and saved to after every
+// mutation. A wire plugin is spawned per host process, so without it each
+// `cutting-garden` invocation sees a fresh tree; with it, a CLI-level lane
+// (the organize bats vectors) can write in one invocation and read the
+// result back in the next.
+const StateFileEnv = "CG_TESTPEER_STATE_FILE"
+
+// UndeclaredFacetWriteEnv, when set (to any non-empty value), makes the
+// peer's facet_writes declaration name a dimension its facets block does
+// not declare — a deliberately unusable declaration the host must reject at
+// bring-up (the RFC 0013 facet_writes amendment's validation).
+const UndeclaredFacetWriteEnv = "CG_TESTPEER_UNDECLARED_FACET_WRITE"
+
+// UndeclaredFacetWriteDimension is the dimension UndeclaredFacetWriteEnv
+// makes the peer claim to write.
+const UndeclaredFacetWriteDimension = "no-such-dimension"
+
+// configFromEnv is Config plus the environment-driven state file: the tree
+// is restored from $CG_TESTPEER_STATE_FILE when it exists and persisted to
+// it on every mutation.
+func configFromEnv() (traversal_serve.ServeConfig, error) {
+	cfg := Config()
+
+	path := os.Getenv(StateFileEnv)
+	if path == "" {
+		return cfg, nil
+	}
+
+	plugin := cfg.Plugin.(*TreePlugin)
+	plugin.statePath = path
+
+	if err := plugin.loadState(); err != nil {
+		return cfg, err
+	}
+
+	return cfg, nil
+}
+
 // ConfigOutEnv, when set in the peer's environment, names a file
 // ApplyConfigTOML writes the received config_toml to — the passthrough
 // probe for consumers that only see the peer as a subprocess (the
@@ -300,7 +347,7 @@ func (p *TreePlugin) ListRoots(
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	parent, ok := p.nodes[node.String()]
+	parent, ok := p.nodes[readKey(node)]
 	if !ok || !parent.container() {
 		return nil, nil
 	}
@@ -364,7 +411,7 @@ func (p *TreePlugin) ReadLeaf(
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	n, found := p.nodes[node.String()]
+	n, found := p.nodes[readKey(node)]
 	if !found {
 		return content, false, nil
 	}
@@ -431,7 +478,7 @@ func (p *TreePlugin) FacetCounts(
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	root, found := p.nodes[node.String()]
+	root, found := p.nodes[readKey(node)]
 	if !found || !root.container() {
 		return result, false, nil
 	}
@@ -541,7 +588,7 @@ func (p *TreePlugin) FacetVersion(
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if _, found := p.nodes[node.String()]; !found {
+	if _, found := p.nodes[readKey(node)]; !found {
 		return "", false, nil
 	}
 
@@ -633,6 +680,9 @@ func (p *TreePlugin) CreateChild(
 	}
 	parent.children = append(parent.children, key)
 	p.generation++
+	if err := p.persistLocked(); err != nil {
+		return nil, err
+	}
 
 	created, err := url.Parse(key)
 	if err != nil {
@@ -689,7 +739,7 @@ func (p *TreePlugin) CreateNode(
 	parent.children = append(parent.children, key)
 	p.generation++
 
-	return nil
+	return p.persistLocked()
 }
 
 func (p *TreePlugin) PutNode(
@@ -719,7 +769,7 @@ func (p *TreePlugin) PutNode(
 	node.raw = data
 	p.generation++
 
-	return nil
+	return p.persistLocked()
 }
 
 func (p *TreePlugin) PatchNode(
@@ -752,11 +802,27 @@ func (p *TreePlugin) PatchNode(
 		return nil, errors.BadRequestf("patch %s: body is not a JSON object: %s", key, err)
 	}
 
+	// A field a declared facet write maps is ALSO the node's membership in
+	// that dimension: the host-built shapes (RFC 0013 facet_writes) move it.
+	// Validated before anything is mutated, so a recognized key carrying an
+	// unusable value is a clean -32602 with the node untouched.
+	facetUpdates, err := p.facetUpdatesFromPatch(key, node.typ, fields)
+	if err != nil {
+		return nil, err
+	}
+
 	if node.structured == nil {
 		node.structured = map[string]any{}
 	}
 	maps.Copy(node.structured, fields)
+	if len(facetUpdates) > 0 && node.facets == nil {
+		node.facets = map[string][]cutting_garden_plugins.FacetValue{}
+	}
+	maps.Copy(node.facets, facetUpdates)
 	p.generation++
+	if err := p.persistLocked(); err != nil {
+		return nil, err
+	}
 
 	// This peer's structured view accepts any key, so every field named is
 	// a field applied — reported explicitly (never nil) so the wire's
@@ -790,7 +856,7 @@ func (p *TreePlugin) DeleteNode(_ context.Context, uri *url.URL) error {
 
 	p.generation++
 
-	return nil
+	return p.persistLocked()
 }
 
 // deleteSubtree removes node and every descendant. Caller holds p.mu.
@@ -802,6 +868,15 @@ func (p *TreePlugin) deleteSubtree(key string, node *memNode) {
 	}
 
 	delete(p.nodes, key)
+}
+
+// readKey is the tree key a READ addresses: the URI with any trailing `/`
+// trimmed, so a container spelled `cgtest://fixture/box/` resolves like
+// `cgtest://fixture/box`. organize re-queries at its document's `_anchor` —
+// the common prefix of the listed URIs, which ends in `/` for a path-shaped
+// tree (RFC 0013 §Traversal's trailing-slash note).
+func readKey(uri *url.URL) string {
+	return strings.TrimSuffix(uri.String(), "/")
 }
 
 // parentURI derives a node's parent URI by trimming the last path
@@ -859,6 +934,11 @@ func Main() int {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
+	cfg, err := configFromEnv()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
 	ln, sock, cleanup, err := traversal_serve.ListenRendezvous()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -904,7 +984,7 @@ func Main() int {
 		return 1
 	}
 
-	if err := traversal_serve.Serve(ctx, conn, Config()); err != nil {
+	if err := traversal_serve.Serve(ctx, conn, cfg); err != nil {
 		if ctx.Err() != nil {
 			return 0
 		}

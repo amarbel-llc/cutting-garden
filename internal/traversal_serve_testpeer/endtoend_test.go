@@ -24,6 +24,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -162,6 +163,10 @@ func TestWireIndistinguishableFromLinked(t *testing.T) {
 
 	if got, want := wire.DescribeFacets(), linked.DescribeFacets(); !reflect.DeepEqual(got, want) {
 		t.Errorf("DescribeFacets:\nwire:   %+v\nlinked: %+v", got, want)
+	}
+
+	if got, want := wire.DescribeFacetWrites(), linked.DescribeFacetWrites(); !reflect.DeepEqual(got, want) {
+		t.Errorf("DescribeFacetWrites:\nwire:   %+v\nlinked: %+v", got, want)
 	}
 
 	// Bodies compare JSON-normalized: the wire decodes Example into the
@@ -485,6 +490,124 @@ func TestWireIndistinguishableFromLinked(t *testing.T) {
 	closed = true
 	if err := wire.Close(); err != nil {
 		t.Errorf("wire Close = %v, want nil after graceful shutdown", err)
+	}
+}
+
+// TestWireFacetWritesIndistinguishableFromLinked is the RFC 0013
+// facet_writes amendment's conformance bar, over the surface organize
+// --apply consumes: the write declaration, the patch body each applier
+// builds (write:one move, write:many full-set replacement, and the clearing
+// empty set), the applied report, and the resulting listing must all be
+// identical between a fresh linked instance and the spawned wire peer —
+// the wire path sending the HOST-built bodies through node.patch.
+func TestWireFacetWritesIndistinguishableFromLinked(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	t.Setenv(mainModeEnv, "1")
+
+	linked := NewPlugin()
+	wire := traversal_serve.NewWirePlugin(traversal_serve.PluginSpec{
+		Name:    "cgtest-e2e-writes",
+		Command: []string{selfExecutable(t)},
+		Schemes: []string{Scheme},
+	})
+	defer func() { _ = wire.Close() }()
+
+	box := mustParseURL(t, RootBox)
+	alpha := cutting_garden_plugins.Node{
+		URI: mustParseURL(t, LeafAlpha), Name: "alpha", Type: LeafType,
+	}
+
+	writeFor := func(dimension string) cutting_garden_plugins.FacetWrite {
+		t.Helper()
+		for _, declared := range linked.DescribeFacetWrites() {
+			for _, write := range declared.Writes {
+				if declared.Tag == LeafType && write.DimensionKey == dimension {
+					return write
+				}
+			}
+		}
+		t.Fatalf("no declared write for %q", dimension)
+		return cutting_garden_plugins.FacetWrite{}
+	}
+
+	patchBoth := func(label string, linkedBody, wireBody []byte) {
+		t.Helper()
+
+		if string(linkedBody) != string(wireBody) {
+			t.Fatalf("%s: body linked %s, wire %s", label, linkedBody, wireBody)
+		}
+
+		linkedApplied, err := linked.PatchNode(
+			ctx, alpha.URI, strings.NewReader(string(linkedBody)),
+		)
+		if err != nil {
+			t.Fatalf("%s: linked PatchNode: %v", label, err)
+		}
+		wireApplied, err := wire.PatchNode(
+			ctx, alpha.URI, strings.NewReader(string(wireBody)),
+		)
+		if err != nil {
+			t.Fatalf("%s: wire PatchNode: %v", label, err)
+		}
+		if !slices.Equal(linkedApplied, wireApplied) {
+			t.Errorf("%s: applied linked %v, wire %v",
+				label, linkedApplied, wireApplied)
+		}
+
+		linkedNodes, err := linked.ListRoots(ctx, box)
+		if err != nil {
+			t.Fatalf("%s: linked ListRoots: %v", label, err)
+		}
+		wireNodes, err := wire.ListRoots(ctx, box)
+		if err != nil {
+			t.Fatalf("%s: wire ListRoots: %v", label, err)
+		}
+		requireNodesEqual(t, label, linkedNodes, wireNodes)
+	}
+
+	stateWrite := writeFor("state")
+	linkedBody, err := linked.BuildFacetWritePatch(ctx, alpha, stateWrite, "closed")
+	if err != nil {
+		t.Fatalf("linked BuildFacetWritePatch: %v", err)
+	}
+	wireBody, err := wire.BuildFacetWritePatch(ctx, alpha, stateWrite, "closed")
+	if err != nil {
+		t.Fatalf("wire BuildFacetWritePatch: %v", err)
+	}
+	patchBoth("state move", linkedBody, wireBody)
+
+	tagWrite := writeFor("tag")
+	for _, set := range [][]string{{"c", "a"}, {}} {
+		linkedBody, err := linked.BuildMembershipWritePatch(ctx, alpha, tagWrite, set)
+		if err != nil {
+			t.Fatalf("linked BuildMembershipWritePatch(%v): %v", set, err)
+		}
+		wireBody, err := wire.BuildMembershipWritePatch(ctx, alpha, tagWrite, set)
+		if err != nil {
+			t.Fatalf("wire BuildMembershipWritePatch(%v): %v", set, err)
+		}
+		patchBoth(fmt.Sprintf("tag set %v", set), linkedBody, wireBody)
+	}
+
+	// The moves actually landed (not merely identically no-op'd).
+	nodes, err := wire.ListRoots(ctx, box)
+	if err != nil {
+		t.Fatalf("wire ListRoots: %v", err)
+	}
+	got := nodes[0].Facets
+	if !reflect.DeepEqual(got["state"], []cutting_garden_plugins.FacetValue{{Key: "closed"}}) ||
+		len(got["tag"]) != 0 {
+		t.Errorf("alpha facets after writes = %+v, want state=closed, no tags", got)
+	}
+
+	// A read-only (none) dimension is refused before the wire, exactly as the
+	// linked declaration says it cannot be written.
+	if _, err := wire.BuildFacetWritePatch(
+		ctx, alpha, writeFor("month"), "2026-08",
+	); err == nil {
+		t.Error("wire BuildFacetWritePatch on a read-only dimension: no error")
 	}
 }
 

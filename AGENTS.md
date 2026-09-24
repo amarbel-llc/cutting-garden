@@ -101,8 +101,10 @@ cookie+announce launch). A `[[traversal_plugins]]` config stanza
 (name/command/schemes/config_section) registers a lazily-spawned
 `traversal_serve.WirePlugin` beside the linked plugins; the named config
 section crosses `initialize` wrapper-stripped (`SectionTOML`), and the
-plugin's capabilities (roots, leaf-read, facets, mutate) are advertised
-in its `initialize` result — consumers cannot distinguish a wire plugin
+plugin's capabilities (roots, leaf-read, facets, mutate, and the
+`facet_writes` declaration that makes it organize-writable — the host
+builds the `node.patch` bodies from it, RFC 0013 §Facet writes) are
+advertised in its `initialize` result — consumers cannot distinguish a wire plugin
 from a linked one (the RFC's conformance bar, pinned by the
 indistinguishability e2e in `internal/traversal_serve_testpeer` and the
 `zz-tests_bats/traversal_serve.bats` lane, whose `portable`-tagged cases

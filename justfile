@@ -1882,23 +1882,24 @@ debug-viewport-demo:
     nix develop --command go run ./cmd/capture-viewport-demo
 
 # Run the RFC 0013 conformance driver (cutting-garden#186) against the
-# go-built testpeer over a real socket, exactly as the bats
-# CONFORMANCE case does but via `go build` (fast) and with the peer
+# nix-built testpeer over a real socket, exactly as the bats
+# CONFORMANCE case does but outside the whole bats lane, with the peer
 # binary path substituted into the in-tree testpeer manifest. The tight
 # dev-loop for the driver<->real-peer interaction the Go driver_test's
 # re-exec pattern does not cover. Exits 0/1 with the TAP on stdout.
+# (Built through nix: the devShell carries no ambient go.)
 #
-# run the RFC 0013 conformance driver against the go-built testpeer
+# run the RFC 0013 conformance driver against the nix-built testpeer
 [group('debug')]
 debug-conformance-traversal:
     #!/usr/bin/env bash
     set -euo pipefail
     tmp="$(mktemp -d)"
     trap 'rm -rf "$tmp"' EXIT
-    nix develop --command go build -o "$tmp/peer" ./cmd/cutting-garden-test-traversal-serve
-    nix develop --command go build -o "$tmp/driver" ./cmd/cutting-garden-conformance-traversal
+    peer="$(nix build .#cutting-garden-test-traversal-serve --no-link --print-out-paths)/bin/cutting-garden-test-traversal-serve"
+    driver="$(nix build .#conformance-traversal --no-link --print-out-paths)/bin/cutting-garden-conformance-traversal"
     cat >"$tmp/m.toml" <<EOF
-    command = ["$tmp/peer"]
+    command = ["$peer"]
     schemes = ["cgtest"]
     writable_container = "cgtest://fixture/box"
 
@@ -1919,8 +1920,62 @@ debug-conformance-traversal:
     [facet_container]
     uri = "cgtest://fixture/box"
     filter = "state=open"
+
+    [facet_write]
+    container = "cgtest://fixture/box"
+    node = "cgtest://fixture/box/beta"
+    one_dimension = "state"
+    one_bucket = "open"
+    many_dimension = "tag"
+    many_set = ["x", "y"]
     EOF
-    "$tmp/driver" --manifest "$tmp/m.toml"
+    "$driver" --manifest "$tmp/m.toml"
+
+# Render the organize-over-the-wire documents the traversal_serve.bats
+# TESTPEER vectors pin (the RFC 0013 facet_writes amendment): the nix-built
+# CLI against the nix-built RFC 0013 test peer configured as a
+# [[traversal_plugins]] wire plugin, with the peer's tree persisted in a
+# throwaway state file (CG_TESTPEER_STATE_FILE) so an apply in one invocation
+# is visible to the next. Prints each document under a `### <label>` banner so
+# the `_base` digests can be pasted into the bats heredocs; the lane's edits
+# are passed as EDIT (a sed script over the state= document) and TAG_EDIT (over
+# the tag= document). WRITES to the throwaway state file only.
+#
+# render the organize-over-the-wire documents for the traversal_serve.bats vectors
+[group('debug')]
+debug-organize-traversal-vectors EDIT='' TAG_EDIT='':
+    #!/usr/bin/env bash
+    set -euo pipefail
+    root="{{ justfile_directory() }}"
+    cd "$root"
+    cg="$(nix build .#default --no-link --print-out-paths)/bin/cutting-garden"
+    peer="$(nix build .#cutting-garden-test-traversal-serve --no-link --print-out-paths)/bin/cutting-garden-test-traversal-serve"
+    work="$root/.tmp/organize-traversal-vectors"
+    rm -rf "$work"; mkdir -p "$work/config/cutting-garden"
+    export XDG_CONFIG_HOME="$work/config"
+    export CG_TESTPEER_STATE_FILE="$work/state.json"
+    printf '[[traversal_plugins]]\nname = "cgtest"\ncommand = ["%s"]\nschemes = ["cgtest"]\n' "$peer" \
+      >"$XDG_CONFIG_HOME/cutting-garden/config.toml"
+    cd "$work"
+    nix develop "$root" --command madder init -encryption none .default >/dev/null
+    banner() { printf '\n### %s\n' "$*"; }
+    gen() { banner "$1"; "$cg" organize -group-by "$2" -query '!cgtest-obj-v1' cgtest://fixture/box | tee "$work/$1.txt"; }
+    gen state-generate 'state='
+    if [[ -n '{{ EDIT }}' ]]; then
+      sed -e '{{ EDIT }}' "$work/state-generate.txt" >"$work/state-edited.txt"
+      banner state-edited; cat "$work/state-edited.txt"
+      banner state-apply; "$cg" organize -apply "$work/state-edited.txt" -commit || echo "exit=$?"
+      gen state-after 'state='
+    fi
+    gen tag-generate 'tag='
+    if [[ -n '{{ TAG_EDIT }}' ]]; then
+      sed -e '{{ TAG_EDIT }}' "$work/tag-generate.txt" >"$work/tag-edited.txt"
+      banner tag-edited; cat "$work/tag-edited.txt"
+      banner tag-apply; "$cg" organize -apply "$work/tag-edited.txt" -commit || echo "exit=$?"
+      gen tag-after 'tag='
+    fi
+    banner list-state-open; "$cg" list -query 'state=open' cgtest://fixture/box
+    banner list-tag-c; "$cg" list -query 'tag=c' cgtest://fixture/box
 
 # Run one package's go tests (optionally one test via RUN, plus extra
 # test-binary FLAGS such as -test.v) without the full `just test` lane — the

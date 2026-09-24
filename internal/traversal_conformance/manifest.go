@@ -78,6 +78,32 @@ type Manifest struct {
 	// even when the peer advertises bulk-mutate (the manifest author opts
 	// in, as with facet_container / container_body).
 	BulkMutate *BulkMutateSpec
+	// FacetWrite, when non-nil, parameterizes the facet_writes cases (the
+	// RFC 0013 facet_writes amendment): an existing node whose declared
+	// write:one / write:many dimensions the driver moves with the HOST-built
+	// node.patch bodies, reads back through nodes.list of its Container, and
+	// restores. Optional — omitting it SKIPs the two write points (the
+	// declaration point still runs whenever the peer declares facet_writes).
+	FacetWrite *FacetWriteSpec
+}
+
+// FacetWriteSpec names the node the facet_writes cases move and the
+// target values. Either half (one / many) may be omitted; an omitted half
+// SKIPs its point.
+type FacetWriteSpec struct {
+	// Container is the node's parent — listed to read the move back.
+	Container string
+	// Node is the existing node moved (and restored afterwards). A peer
+	// backed by a real service should name a scratch node.
+	Node string
+	// OneDimension / OneBucket: a write:one dimension and the bucket to
+	// move Node into (choose one Node is NOT already in).
+	OneDimension string
+	OneBucket    string
+	// ManyDimension / ManySet: a write:many dimension and the complete set
+	// to replace Node's membership with.
+	ManyDimension string
+	ManySet       []string
 }
 
 // CreateSpec is the node.create parameterization for the probe node:
@@ -250,6 +276,27 @@ func LoadManifest(path string) (*Manifest, error) {
 			return nil, err
 		}
 		manifest.BulkMutate = spec
+	}
+
+	if sub, ok, err := decodeTable(model, "facet_write"); err != nil {
+		return nil, err
+	} else if ok {
+		spec := &FacetWriteSpec{}
+		for key, into := range map[string]*string{
+			"container":      &spec.Container,
+			"node":           &spec.Node,
+			"one_dimension":  &spec.OneDimension,
+			"one_bucket":     &spec.OneBucket,
+			"many_dimension": &spec.ManyDimension,
+		} {
+			if err := decodeString(sub, key, into); err != nil {
+				return nil, err
+			}
+		}
+		if err := decodeStringSlice(sub, "many_set", &spec.ManySet); err != nil {
+			return nil, err
+		}
+		manifest.FacetWrite = spec
 	}
 
 	if leftover := model.Undecoded(); len(leftover) > 0 {

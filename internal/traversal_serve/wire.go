@@ -168,6 +168,11 @@ type InitializeResult struct {
 	// Bodies is OPTIONAL: the BodyDescriber.DescribeBodies()
 	// declaration. Meaningful only alongside CapMutate.
 	Bodies []NodeTypeBodyView `json:"bodies,omitempty"`
+	// FacetWrites is OPTIONAL: the FacetWriteDescriber.DescribeFacetWrites()
+	// declaration (the RFC 0013 facet_writes amendment). Absent means no
+	// dimension is writable through organize; the host validates it against
+	// Facets at bring-up and builds node.patch bodies from it.
+	FacetWrites []NodeTypeFacetWritesView `json:"facet_writes,omitempty"`
 }
 
 // NodesListParams is the nodes.list request payload: the URI whose
