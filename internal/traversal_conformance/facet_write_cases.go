@@ -24,6 +24,8 @@ const (
 	nameFacetWriteOne   = "node.patch: host-built write:one body moves the node into the bucket"
 	nameFacetWriteMany  = "node.patch: host-built write:many body replaces the node's set, [] clears"
 	nameFacetWriteClear = "node.patch: host-built clear body (null) empties a clearable write:one dimension"
+
+	namePresentationDecl = "initialize: node_types presentation members are usable by the host"
 )
 
 // caseFacetWrites runs the four facet_writes points. A peer declaring no
@@ -83,6 +85,24 @@ func (r *runner) caseFacetWrites(ctx context.Context) {
 	default:
 		r.facetWriteClear(ctx, spec)
 	}
+}
+
+// casePresentation runs the RFC 0013 presentation additions' declaration
+// point (forge organize F11): a peer carrying presentation members on its
+// node_types entries must pass the host's bring-up check of them. A peer
+// declaring none SKIPs it (every member is OPTIONAL).
+func (r *runner) casePresentation() {
+	if len(traversal_serve.PresentationsOf(r.init)) == 0 {
+		r.tap.Skip(namePresentationDecl, "peer declares no presentation members")
+		return
+	}
+
+	if err := traversal_serve.ValidatePresentationDeclaration(r.init); err != nil {
+		r.tap.NotOk(namePresentationDecl, map[string]string{"node_types": err.Error()})
+		return
+	}
+
+	r.tap.Ok(namePresentationDecl)
 }
 
 // facetWriteClear sends the host-built clear body `{"<field>": null}` for a

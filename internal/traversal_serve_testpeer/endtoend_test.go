@@ -611,6 +611,56 @@ func TestWireFacetWritesIndistinguishableFromLinked(t *testing.T) {
 	}
 }
 
+// TestWireTrackerPresentationIndistinguishableFromLinked is the RFC 0013
+// presentation additions' conformance bar over the tracker fixture: the
+// linked peer declares its tag set through the same Presentation synthesis
+// the host builds from the wire's node_types members, so the unified
+// declaration and every listed node — facets AND the projected Fields the
+// tag presenter reads — are identical linked and over the wire.
+func TestWireTrackerPresentationIndistinguishableFromLinked(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	t.Setenv(mainModeEnv, "1")
+
+	linked := NewPlugin()
+	wire := traversal_serve.NewWirePlugin(traversal_serve.PluginSpec{
+		Name:    "cgtest-e2e-presentation",
+		Command: []string{selfExecutable(t)},
+		Schemes: []string{Scheme},
+	})
+	defer func() { _ = wire.Close() }()
+
+	linkedSets, wireSets := linked.DescribeUnified(), wire.DescribeUnified()
+	if len(linkedSets) == 0 || !reflect.DeepEqual(linkedSets, wireSets) {
+		t.Errorf("DescribeUnified:\nlinked: %+v\nwire:   %+v", linkedSets, wireSets)
+	}
+
+	tracker := mustParseURL(t, TrackerBox)
+	linkedNodes, err := linked.ListRoots(ctx, tracker)
+	if err != nil {
+		t.Fatalf("linked ListRoots: %v", err)
+	}
+	wireNodes, err := wire.ListRoots(ctx, tracker)
+	if err != nil {
+		t.Fatalf("wire ListRoots: %v", err)
+	}
+	requireNodesEqual(t, TrackerBox, linkedNodes, wireNodes)
+	for i := range linkedNodes {
+		if !reflect.DeepEqual(linkedNodes[i].Fields, wireNodes[i].Fields) {
+			t.Errorf("tracker child[%d] fields\nlinked: %+v\nwire:   %+v",
+				i, linkedNodes[i].Fields, wireNodes[i].Fields)
+		}
+	}
+
+	codecs := wireSets[0].Codecs
+	if got := cutting_garden_plugins.PresentUnifiedTags(codecs, wireNodes[1]); !reflect.DeepEqual(
+		got, []string{"good first issue"},
+	) {
+		t.Errorf("ticket 2 tags = %v, want [good first issue]", got)
+	}
+}
+
 func mustJSON(t *testing.T, value any) string {
 	t.Helper()
 

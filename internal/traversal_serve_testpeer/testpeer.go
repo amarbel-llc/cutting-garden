@@ -154,6 +154,9 @@ var (
 	_ cutting_garden_plugins.FacetWriteDescriber    = (*TreePlugin)(nil)
 	_ cutting_garden_plugins.FacetWriteApplier      = (*TreePlugin)(nil)
 	_ cutting_garden_plugins.MembershipWriteApplier = (*TreePlugin)(nil)
+
+	_ traversal_serve.PresentationDescriber   = (*TreePlugin)(nil)
+	_ cutting_garden_plugins.UnifiedDescriber = (*TreePlugin)(nil)
 )
 
 // Plugin is the shared linked-path instance of the fixed tree — what an
@@ -410,6 +413,7 @@ func (p *TreePlugin) ListRoots(
 	children := make(
 		[]cutting_garden_plugins.Node, 0, len(parent.children),
 	)
+	presentation := p.presentation()
 
 	for _, childURI := range parent.children {
 		child := p.nodes[childURI]
@@ -419,12 +423,14 @@ func (p *TreePlugin) ListRoots(
 			return nil, errors.Wrap(err)
 		}
 
-		children = append(children, cutting_garden_plugins.Node{
+		// The projected Fields are what a wire host derives from the same
+		// presentation declaration — linked and wire stay indistinguishable.
+		children = append(children, presentation.ProjectFields(cutting_garden_plugins.Node{
 			URI:    uri,
 			Name:   child.name,
 			Type:   child.typ,
 			Facets: cloneFacets(child.facets),
-		})
+		}))
 	}
 
 	return children, nil

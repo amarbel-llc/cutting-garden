@@ -84,6 +84,40 @@ func (p *TreePlugin) DescribeFacetWrites() []cutting_garden_plugins.NodeTypeFace
 	}
 }
 
+// LabelInterpreter is the tracker's tag-set interpreter: labels are
+// hyphen-namespaced (area-organize rolls up under area), per forge organize
+// F2.
+const LabelInterpreter = "dodder-hyphen"
+
+// DescribePresentation is the traversal_serve.PresentationDescriber the
+// served peer advertises on its node_types entries: the ticket type's label
+// dimension is its tag set (RFC 0013 presentation additions, forge organize
+// F11).
+func (p *TreePlugin) DescribePresentation() []traversal_serve.NodeTypePresentation {
+	return []traversal_serve.NodeTypePresentation{{
+		Tag: TicketType,
+		TagSet: &traversal_serve.TagSetView{
+			Dimension:   "label",
+			Interpreter: LabelInterpreter,
+		},
+	}}
+}
+
+// presentation is the linked half of the same declaration: the host's
+// synthesis (traversal_serve.Presentation), so the linked peer presents
+// exactly what a wire host presents from DescribePresentation.
+func (p *TreePlugin) presentation() traversal_serve.Presentation {
+	return traversal_serve.NewPresentation(
+		p.DescribePresentation(), p.DescribeFacetWrites(),
+	)
+}
+
+// DescribeUnified is the linked UnifiedDescriber, synthesized from the
+// presentation declaration.
+func (p *TreePlugin) DescribeUnified() []cutting_garden_plugins.NodeTypeUnifiedFields {
+	return p.presentation().DescribeUnified()
+}
+
 // BuildFacetWritePatch is the FacetWriteApplier. It builds exactly the
 // host-defined shape a wire host sends (traversal_serve.HostFacetWritePatch),
 // so the linked and wire paths put the same bytes on node.patch — the

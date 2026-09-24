@@ -164,7 +164,9 @@ func TestRunPassesConformantTestpeer(t *testing.T) {
 			" set, [] clears",
 		"ok 18 - node.patch: host-built clear body (null) empties a clearable" +
 			" write:one dimension",
-		"1..18",
+		"ok 19 - initialize: node_types presentation members are usable by" +
+			" the host",
+		"1..19",
 	} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("output missing %q:\n%s", want, out.String())

@@ -178,6 +178,11 @@ type NodeTypeFacetWritesView = internal.NodeTypeFacetWritesView
 // facet dimensions, carried in the initialize facets block.
 type NodeTypeFacetsView = internal.NodeTypeFacetsView
 
+// NodeTypePresentation is one node type's presentation declaration — what a
+// Go peer returns from PresentationDescriber and what the host reads back off
+// the node_types entry. Every member is OPTIONAL.
+type NodeTypePresentation = internal.NodeTypePresentation
+
 // NodeTypeView is the wire form of cutting_garden_plugins.NodeType
 // (RFC 0013 §Wire encodings). An absent mime_type on a leaf means
 // unspecified — the HOST applies the octet-stream default via
@@ -265,6 +270,18 @@ type PluginStanzaDocument = internal.PluginStanzaDocument
 // facets.counts filter.
 type PredicateView = internal.PredicateView
 
+// Presentation is the linked-surface synthesis over a set of presentation
+// declarations and the same plugin's facet writes.
+type Presentation = internal.Presentation
+
+// PresentationDescriber is the OPTIONAL Go-peer capability Serve advertises
+// on the node_types entries (RFC 0013 presentation additions). It has no
+// linked-plugin meaning of its own: a linked plugin declares the same things
+// through UnifiedDescriber; a Go peer that wants to be indistinguishable
+// linked and over the wire builds its linked surface from the same
+// declaration with NewPresentation.
+type PresentationDescriber = internal.PresentationDescriber
+
 // RPCError is a JSON-RPC error crossing the peer in either direction: a
 // Handler returns *RPCError to pin its error response's wire code and
 // message, and Call surfaces a received error response as *RPCError so
@@ -286,6 +303,13 @@ type ServeConfig = internal.ServeConfig
 // is the sole request initiator in v1, so the peer carries no handler;
 // drive the session with Call.
 type Session = internal.Session
+
+// TagSetView is the wire form of a node type's tag set: the facet dimension
+// whose values ARE the node's tags, and the name of the tag interpreter
+// (RFC 0019) governing them. Both are REQUIRED; the dimension MUST be a
+// multi-valued dimension the type's facets entry declares, and the
+// interpreter MUST be one the host knows (naive, dodder-hyphen).
+type TagSetView = internal.TagSetView
 
 // WirePlugin adapts a launched session into the full capability
 // surface. It implements EVERY optional interface; unadvertised
@@ -390,6 +414,11 @@ var ListenRendezvous = internal.ListenRendezvous
 // loops. Close the peer (or just close rw) to stop both.
 var NewPeer = internal.NewPeer
 
+// NewPresentation builds the synthesis. writes is the plugin's declared
+// facet writes — a tag set is writable exactly when its dimension has a many
+// write.
+var NewPresentation = internal.NewPresentation
+
 // NewWirePlugin returns the adapter for spec. It does NOT spawn — the
 // session is lazy (the first call that needs the wire launches it), so
 // registration stays cheap and offline.
@@ -420,6 +449,11 @@ var NodeViewFrom = internal.NodeViewFrom
 // filter (nil or zero-length) projects to nil, which marshals as an
 // absent filter — both mean matches-everything (RFC 0012 §6).
 var PredicateViewsFrom = internal.PredicateViewsFrom
+
+// PresentationsOf collects the presentation-declaring node types of an
+// initialize result, in node_types order (exported for the conformance
+// driver).
+var PresentationsOf = internal.PresentationsOf
 
 // SectionTOML extracts one named top-level section from the raw config
 // file bytes, WRAPPER-STRIPPED per RFC 0013 §initialize: the returned
@@ -461,6 +495,13 @@ var ToFacetContainerBreakdowns = internal.ToFacetContainerBreakdowns
 // type (the host must know WHICH field to write), and a writable mapping
 // requires the mutate capability (node.patch is how it lands).
 var ValidateFacetWriteDeclaration = internal.ValidateFacetWriteDeclaration
+
+// ValidatePresentationDeclaration is the host's bring-up check of the
+// presentation members of an initialize result's node_types entries
+// (exported for the conformance driver and a Go peer's own tests). A tag_set
+// MUST name a multi-valued dimension the type's facets entry declares and a
+// tag interpreter this host knows; a type carries at most one tag set.
+var ValidatePresentationDeclaration = internal.ValidatePresentationDeclaration
 
 // ValidateStanzas enforces the cross-stanza invariants the aggregated
 // config's Validate delegates here: unique names, unique schemes —

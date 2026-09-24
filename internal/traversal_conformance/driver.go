@@ -92,6 +92,7 @@ func Run(
 	r.caseFilteredList(ctx)
 	r.caseBulkMutate(ctx)
 	r.caseFacetWrites(ctx)
+	r.casePresentation()
 
 	tw.Plan()
 

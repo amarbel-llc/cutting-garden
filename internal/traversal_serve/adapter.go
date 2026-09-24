@@ -71,6 +71,9 @@ var (
 	_ cutting_garden_plugins.FacetWriteDescriber    = (*WirePlugin)(nil)
 	_ cutting_garden_plugins.FacetWriteApplier      = (*WirePlugin)(nil)
 	_ cutting_garden_plugins.MembershipWriteApplier = (*WirePlugin)(nil)
+	// The presentation additions: the node_types tag_set members are
+	// synthesized into the linked UnifiedDescriber surface (Presentation).
+	_ cutting_garden_plugins.UnifiedDescriber = (*WirePlugin)(nil)
 )
 
 // NewWirePlugin returns the adapter for spec. It does NOT spawn — the
@@ -203,14 +206,21 @@ func (w *WirePlugin) liveSession() (*Session, error) {
 	// host builds node.patch bodies from this declaration, so an unusable
 	// one fails bring-up loudly — persistently, like the schemes echo —
 	// rather than surfacing later as a confusing organize failure.
-	if err := ValidateFacetWriteDeclaration(sess.Init); err != nil {
-		w.fatalErr = errors.ErrorWithStackf(
-			"wire plugin %q: initialize rejected: %s", w.spec.Name, err,
-		)
+	// The presentation members (tag_set) are validated the same way: the
+	// host synthesizes its linked tag surface from them.
+	for _, validate := range []func(InitializeResult) error{
+		ValidateFacetWriteDeclaration,
+		ValidatePresentationDeclaration,
+	} {
+		if err := validate(sess.Init); err != nil {
+			w.fatalErr = errors.ErrorWithStackf(
+				"wire plugin %q: initialize rejected: %s", w.spec.Name, err,
+			)
 
-		_ = sess.Close()
+			_ = sess.Close()
 
-		return nil, w.fatalErr
+			return nil, w.fatalErr
+		}
 	}
 
 	w.session = sess
@@ -359,6 +369,31 @@ func (w *WirePlugin) DescribeFacetWrites() []cutting_garden_plugins.NodeTypeFace
 	return declared
 }
 
+// presentationOf builds the linked-surface synthesis from a session's
+// initialize declarations (node_types presentation members + facet_writes).
+func presentationOf(sess *Session) Presentation {
+	writes := make(
+		[]cutting_garden_plugins.NodeTypeFacetWrites, len(sess.Init.FacetWrites),
+	)
+	for i, view := range sess.Init.FacetWrites {
+		writes[i] = view.ToNodeTypeFacetWrites()
+	}
+
+	return NewPresentation(PresentationsOf(sess.Init), writes)
+}
+
+// DescribeUnified is the synthesized UnifiedDescriber (Presentation): one
+// FieldTag field per tag_set type. A peer declaring no tag set, or one that
+// failed to launch, answers nil — the "plugin omits the interface" outcome.
+func (w *WirePlugin) DescribeUnified() []cutting_garden_plugins.NodeTypeUnifiedFields {
+	sess, err := w.liveSession()
+	if err != nil {
+		return nil
+	}
+
+	return presentationOf(sess).DescribeUnified()
+}
+
 // declaredWrite resolves the mapping the plugin DECLARED for node's type and
 // write's dimension — the caller's FacetWrite only names the dimension; the
 // body is always built from the declaration. An undeclared or read-only
@@ -448,16 +483,20 @@ func (w *WirePlugin) ListRoots(
 		return nil, err
 	}
 
-	return w.nodesFrom(result.Nodes)
+	return w.nodesFrom(sess, result.Nodes)
 }
 
 // nodesFrom converts wire node views to domain Nodes and enforces the
 // credential-free URI invariant on plugin output (RFC 0007/0013
 // §Security — the host enforces it rather than trusting the plugin).
-// Shared by ListRoots and ListEnriched (cutting-garden#193).
+// Each node's presented memberships are projected into Node.Fields
+// (Presentation.ProjectFields), the stored values the synthesized
+// UnifiedDescriber's codecs read. Shared by ListRoots and ListEnriched
+// (cutting-garden#193).
 func (w *WirePlugin) nodesFrom(
-	views []NodeView,
+	sess *Session, views []NodeView,
 ) ([]cutting_garden_plugins.Node, error) {
+	presentation := presentationOf(sess)
 	nodes := make([]cutting_garden_plugins.Node, len(views))
 	for i, view := range views {
 		node, err := view.ToNode()
@@ -473,7 +512,7 @@ func (w *WirePlugin) nodesFrom(
 			)
 		}
 
-		nodes[i] = node
+		nodes[i] = presentation.ProjectFields(node)
 	}
 
 	return nodes, nil
@@ -517,7 +556,7 @@ func (w *WirePlugin) ListEnriched(
 		return nil, false, nil
 	}
 
-	nodes, err := w.nodesFrom(result.Nodes)
+	nodes, err := w.nodesFrom(sess, result.Nodes)
 	if err != nil {
 		return nil, false, err
 	}

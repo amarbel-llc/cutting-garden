@@ -189,6 +189,16 @@ func newServer(cfg ServeConfig) (*server, error) {
 		srv.init.NodeTypes[i] = NodeTypeViewFrom(nodeType)
 	}
 
+	// The presentation members (tag_set, RFC 0013 presentation additions)
+	// ride the node_types entries of the types they describe.
+	if describer, ok := cfg.Plugin.(PresentationDescriber); ok {
+		if err := applyPresentations(
+			srv.init.NodeTypes, describer.DescribePresentation(),
+		); err != nil {
+			return nil, err
+		}
+	}
+
 	capabilities := []string{}
 
 	if provider, ok := cfg.Plugin.(cutting_garden_plugins.RootProvider); ok {

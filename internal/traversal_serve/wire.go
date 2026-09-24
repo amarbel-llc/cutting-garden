@@ -807,6 +807,12 @@ type NodeTypeView struct {
 	// type declares none; the additive-field precedent of RFC 0013
 	// §Compatibility applies — a host predating RFC 0018 ignores it.
 	URITemplate string `json:"uri_template,omitempty"`
+	// TagSet is the OPTIONAL presentation member naming the type's tag set
+	// (RFC 0013 presentation additions, forge organize F11) — additive under
+	// §Compatibility. It has no NodeType counterpart: the host reads it off
+	// the view (PresentationsOf), and a Go peer sets it through
+	// PresentationDescriber.
+	TagSet *TagSetView `json:"tag_set,omitempty"`
 }
 
 // NodeTypeViewFrom projects a declared NodeType onto the wire. A leaf
