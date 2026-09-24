@@ -304,8 +304,10 @@ func (cmd *Organize) runInteractive(
 	// The interactive path is always a terminal (runInteractive is gated on it),
 	// so it is wet-run by default (writes after the confirm gate) unless -dry-run
 	// forces preview (cutting-garden#213), and the diff renders in color.
-	commit, _ := applyMode(cmd.DryRun, cmd.Commit, true)
-	committed, err := cmd.applyDocument(ctx, cfg, string(editedBytes), commit, true, true)
+	// interactive is applyMode's, not a hard-coded true: -dry-run must never
+	// prompt, and the separable-refusal gate (resolveRefusals) keys on it alone.
+	commit, interactive := applyMode(cmd.DryRun, cmd.Commit, true)
+	committed, err := cmd.applyDocument(ctx, cfg, string(editedBytes), commit, interactive, true)
 	if err != nil {
 		// Keep the edited buffer so the user can resolve conflicts and re-apply.
 		fmt.Fprintf(cmd.output, "organize: edited document left at %s\n", tmpPath)
