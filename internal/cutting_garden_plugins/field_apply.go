@@ -37,8 +37,10 @@ type FieldWriteApplier interface {
 	// object's changed writable atoms (box-atom names + new values); node carries
 	// the live Facets/Fields the plugin needs to complete a value it does not
 	// carry whole (e.g. splicing a new date into the existing DTSTART to keep its
-	// clock time and zone). An empty batch, or an atom the plugin cannot write, is
-	// a bad-request error.
+	// clock time and zone). An edit with an EMPTY Value is a clear; the apply
+	// engine sends one only for an atom named after a Clearable write:one
+	// facet write (forge organize F12). An empty batch, or an atom the plugin
+	// cannot write, is a bad-request error.
 	BuildFieldWritePatch(
 		ctx context.Context, node Node, edits []FieldEdit,
 	) ([]byte, error)

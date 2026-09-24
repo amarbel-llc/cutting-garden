@@ -340,10 +340,13 @@ var FacetValueViewFrom = internal.FacetValueViewFrom
 
 // HostFacetWritePatch builds the node.patch body for a write:one bucket
 // move: `{"<field>": "<bucket>"}` — the one shape a wire plugin declaring a
-// one mapping MUST accept on node.patch. Anything else (a non-one mode, an
-// empty bucket) is a bad request. Exported so a Go plugin whose patch
-// format is a flat JSON object can reuse it as its own FacetWriteApplier
-// (the testpeer does, keeping linked and wire bodies identical).
+// one mapping MUST accept on node.patch — or, for an EMPTY bucket (a move
+// into the no-value section) on a Clearable write, the clear shape
+// `{"<field>": null}` (forge organize F12). Anything else (a non-one mode,
+// an empty bucket on a non-clearable write) is a bad request. Exported so a
+// Go plugin whose patch format is a flat JSON object can reuse it as its
+// own FacetWriteApplier (the testpeer does, keeping linked and wire bodies
+// identical).
 var HostFacetWritePatch = internal.HostFacetWritePatch
 
 // HostMembershipWritePatch builds the node.patch body for a write:many

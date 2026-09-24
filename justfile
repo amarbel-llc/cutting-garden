@@ -1928,6 +1928,11 @@ debug-conformance-traversal:
     one_bucket = "open"
     many_dimension = "tag"
     many_set = ["x", "y"]
+
+    [facet_clear]
+    container = "cgtest://fixture/tracker"
+    node = "cgtest://fixture/tracker/1"
+    dimension = "milestone"
     EOF
     "$driver" --manifest "$tmp/m.toml"
 
@@ -1976,6 +1981,43 @@ debug-organize-traversal-vectors EDIT='' TAG_EDIT='':
     fi
     banner list-state-open; "$cg" list -query 'state=open' cgtest://fixture/box
     banner list-tag-c; "$cg" list -query 'tag=c' cgtest://fixture/box
+
+# Render the organize-over-the-wire documents the traversal_serve.bats TRACKER
+# vectors pin (the forge organize plan's stream-2 RFC 0013 additions: clearable
+# writes, tag_set, inline_fields, trailer_field): the nix-built CLI against the
+# nix-built test peer's cgtest://fixture/tracker, a fresh throwaway state file
+# per run. Generates the GROUP_BY document; with EDITED (a path to an edited
+# copy of that document — its `_base` is deterministic, so write it once from a
+# prior run's output) it applies it with -commit and regenerates, then prints
+# the tracker's `list -format json`. WRITES to the throwaway state file only.
+#
+# render the organize-over-the-wire tracker documents for the traversal_serve.bats vectors
+[group('debug')]
+debug-organize-tracker-vectors GROUP_BY='milestone=' EDITED='':
+    #!/usr/bin/env bash
+    set -euo pipefail
+    root="{{ justfile_directory() }}"
+    edited="{{ EDITED }}"
+    [[ -z $edited || $edited == /* ]] || edited="$root/$edited"
+    cd "$root"
+    cg="$(nix build .#default --no-link --print-out-paths)/bin/cutting-garden"
+    peer="$(nix build .#cutting-garden-test-traversal-serve --no-link --print-out-paths)/bin/cutting-garden-test-traversal-serve"
+    work="$root/.tmp/organize-tracker-vectors"
+    rm -rf "$work"; mkdir -p "$work/config/cutting-garden"
+    export XDG_CONFIG_HOME="$work/config"
+    export CG_TESTPEER_STATE_FILE="$work/state.json"
+    printf '[[traversal_plugins]]\nname = "cgtest"\ncommand = ["%s"]\nschemes = ["cgtest"]\n' "$peer" \
+      >"$XDG_CONFIG_HOME/cutting-garden/config.toml"
+    cd "$work"
+    nix develop "$root" --command madder init -encryption none .default >/dev/null
+    banner() { printf '\n### %s\n' "$*"; }
+    gen() { banner "$1"; "$cg" organize -group-by '{{ GROUP_BY }}' -query '!cgtest-ticket-v1' cgtest://fixture/tracker | tee "$work/$1.txt"; }
+    gen generate
+    if [[ -n $edited ]]; then
+      banner apply; "$cg" organize -apply "$edited" -commit || echo "exit=$?"
+      gen after
+    fi
+    banner list-json; "$cg" list -format json cgtest://fixture/tracker
 
 # Run one package's go tests (optionally one test via RUN, plus extra
 # test-binary FLAGS such as -test.v) without the full `just test` lane — the

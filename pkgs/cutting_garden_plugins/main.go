@@ -1046,7 +1046,8 @@ var TruncateDateKey = internal.TruncateDateKey
 //   - every NodeTypeFacetWrites.Tag MUST have a matching NodeTypeFacets entry;
 //   - every FacetWrite.DimensionKey MUST name a dimension that tag declares;
 //   - a non-none Mode MUST carry a Field, and Mode MUST be one of the three
-//     declared values.
+//     declared values;
+//   - Clearable is valid only on a FacetWriteOne mapping.
 //
 // reads and writes are the plugin's own DescribeFacets / DescribeFacetWrites
 // outputs. It is the loud-rejection mechanism the apply engine uses before

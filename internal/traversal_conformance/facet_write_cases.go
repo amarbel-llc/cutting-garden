@@ -20,15 +20,17 @@ import (
 )
 
 const (
-	nameFacetWriteDecl = "initialize: facet_writes declaration is usable by the host"
-	nameFacetWriteOne  = "node.patch: host-built write:one body moves the node into the bucket"
-	nameFacetWriteMany = "node.patch: host-built write:many body replaces the node's set, [] clears"
+	nameFacetWriteDecl  = "initialize: facet_writes declaration is usable by the host"
+	nameFacetWriteOne   = "node.patch: host-built write:one body moves the node into the bucket"
+	nameFacetWriteMany  = "node.patch: host-built write:many body replaces the node's set, [] clears"
+	nameFacetWriteClear = "node.patch: host-built clear body (null) empties a clearable write:one dimension"
 )
 
-// caseFacetWrites runs the three facet_writes points. A peer declaring no
-// facet_writes SKIPs all three (the block is OPTIONAL); a declaring peer
-// always gets the declaration point, and the manifest's [facet_write] table
-// opts the two write probes in.
+// caseFacetWrites runs the four facet_writes points. A peer declaring no
+// facet_writes SKIPs all four (the block is OPTIONAL); a declaring peer
+// always gets the declaration point, the manifest's [facet_write] table
+// opts the two write probes in, and its [facet_clear] table the clear probe
+// (forge organize F12).
 func (r *runner) caseFacetWrites(ctx context.Context) {
 	ctx, cancel := context.WithTimeout(ctx, perCaseDeadline)
 	defer cancel()
@@ -36,6 +38,7 @@ func (r *runner) caseFacetWrites(ctx context.Context) {
 	if len(r.init.FacetWrites) == 0 {
 		for _, name := range []string{
 			nameFacetWriteDecl, nameFacetWriteOne, nameFacetWriteMany,
+			nameFacetWriteClear,
 		} {
 			r.tap.Skip(name, "peer declares no facet_writes")
 		}
@@ -49,31 +52,76 @@ func (r *runner) caseFacetWrites(ctx context.Context) {
 		r.tap.Ok(nameFacetWriteDecl)
 	}
 
-	spec := r.manifest.FacetWrite
-	switch {
+	mutate := r.hasCapability(traversal_serve.CapMutate)
+
+	switch spec := r.manifest.FacetWrite; {
 	case spec == nil:
 		r.tap.Skip(nameFacetWriteOne, "manifest declares no facet_write")
 		r.tap.Skip(nameFacetWriteMany, "manifest declares no facet_write")
-
-		return
-	case !r.hasCapability(traversal_serve.CapMutate):
+	case !mutate:
 		r.tap.Skip(nameFacetWriteOne, "mutate not advertised")
 		r.tap.Skip(nameFacetWriteMany, "mutate not advertised")
+	default:
+		if spec.OneDimension == "" {
+			r.tap.Skip(nameFacetWriteOne, "manifest names no one_dimension")
+		} else {
+			r.facetWriteOne(ctx, spec)
+		}
 
+		if spec.ManyDimension == "" {
+			r.tap.Skip(nameFacetWriteMany, "manifest names no many_dimension")
+		} else {
+			r.facetWriteMany(ctx, spec)
+		}
+	}
+
+	switch spec := r.manifest.FacetClear; {
+	case spec == nil:
+		r.tap.Skip(nameFacetWriteClear, "manifest declares no facet_clear")
+	case !mutate:
+		r.tap.Skip(nameFacetWriteClear, "mutate not advertised")
+	default:
+		r.facetWriteClear(ctx, spec)
+	}
+}
+
+// facetWriteClear sends the host-built clear body `{"<field>": null}` for a
+// declared CLEARABLE write:one dimension, reads back that the node carries no
+// value in it, then restores the original bucket.
+func (r *runner) facetWriteClear(ctx context.Context, clear *FacetClearSpec) {
+	spec := &FacetWriteSpec{Container: clear.Container, Node: clear.Node}
+
+	node, write, problem := r.facetWriteSubject(
+		ctx, spec, clear.Dimension, cutting_garden_plugins.FacetWriteOne,
+	)
+	if problem == "" && !write.Clearable {
+		problem = fmt.Sprintf(
+			"type %q declares dimension %q but not clearable", node.Type, clear.Dimension,
+		)
+	}
+	if problem != "" {
+		r.tap.NotOk(nameFacetWriteClear, map[string]string{"setup": problem})
 		return
 	}
 
-	if spec.OneDimension == "" {
-		r.tap.Skip(nameFacetWriteOne, "manifest names no one_dimension")
-	} else {
-		r.facetWriteOne(ctx, spec)
+	original := facetKeys(node.Facets[clear.Dimension])
+
+	body, err := traversal_serve.HostFacetWritePatch(write, "")
+	if err != nil {
+		r.tap.NotOk(nameFacetWriteClear, map[string]string{"build": err.Error()})
+		return
 	}
 
-	if spec.ManyDimension == "" {
-		r.tap.Skip(nameFacetWriteMany, "manifest names no many_dimension")
-	} else {
-		r.facetWriteMany(ctx, spec)
+	problems := r.patchAndReadBack(ctx, spec, body, clear.Dimension, nil)
+
+	if len(original) == 1 {
+		restore, _ := traversal_serve.HostFacetWritePatch(write, original[0])
+		if _, _, err := r.patchRaw(ctx, spec.Node, string(restore)); err != nil {
+			problems["restore"] = err.Error()
+		}
 	}
+
+	r.verdict(nameFacetWriteClear, problems)
 }
 
 // facetWriteOne moves the node into spec.OneBucket with the host-built

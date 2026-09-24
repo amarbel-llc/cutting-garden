@@ -51,6 +51,32 @@ func fieldWriteSchema(
 	return writable, trailer
 }
 
+// clearableFields resolves, per node type, the box-atom field keys an EMPTIED
+// atom may clear (forge organize F12): the dimensions the plugin declares as a
+// clearable write:one facet write. An inline atom of that name clearing its
+// value applies as a clear rather than the "clearing a field is #215" notice.
+// A plugin declaring no clearable write (every linked plugin today) yields an
+// empty map, so its emptied atoms stay notices.
+func clearableFields(lister cgp.RootLister) map[string]map[string]bool {
+	describer, ok := lister.(cgp.FacetWriteDescriber)
+	if !ok {
+		return nil
+	}
+	clearable := map[string]map[string]bool{}
+	for _, nt := range describer.DescribeFacetWrites() {
+		for _, w := range nt.Writes {
+			if w.Mode != cgp.FacetWriteOne || !w.Clearable {
+				continue
+			}
+			if clearable[nt.Tag] == nil {
+				clearable[nt.Tag] = map[string]bool{}
+			}
+			clearable[nt.Tag][w.DimensionKey] = true
+		}
+	}
+	return clearable
+}
+
 // descriptionOf resolves a node's box description trailer: the plugin-declared
 // trailer field's value when a trailer is declared for its type, else the legacy
 // summary->title->name projection (nodeDescription). A declared-but-empty trailer
@@ -85,14 +111,18 @@ func atomMap(atoms []cgp.BoxAtom) map[string]string {
 // from base to a THIRD value (a conflict → hard reject, mirroring planMoves). A
 // changed attribute that is not writable, or an edit that CLEARS a value (empty
 // new value — deletion is deferred to #215; read-only dates are #218 slice 2), is
-// not applied but surfaced as a non-blocking notice id. Only ids present in BOTH
-// base and live are considered; an added or removed line is out of scope here.
+// not applied but surfaced as a non-blocking notice id — EXCEPT a clear of a
+// writable field the plugin declares clearable (clearable, from
+// clearableFields: a clearable write:one facet write, forge organize F12),
+// which applies as an edit with an empty Value. Only ids present in BOTH base
+// and live are considered; an added or removed line is out of scope here.
 func planFieldEdits(
 	edited, base document,
 	liveNodes []cgp.Node,
 	idOf boxIDer,
 	writable map[string]map[string]bool,
 	trailer map[string]string,
+	clearable map[string]map[string]bool,
 	present func(cgp.Node) []cgp.BoxAtom,
 ) (edits []objectFieldEdit, notices []string, err error) {
 	baseLines := make(map[string]objectLine)
@@ -117,6 +147,7 @@ func planFieldEdits(
 			continue
 		}
 		wset := writable[live.Type]
+		cset := clearable[live.Type]
 		trailerField := trailer[live.Type]
 
 		// The live atoms carry each atom's source Field (a caldav date_start's
@@ -147,10 +178,11 @@ func planFieldEdits(
 			if field == "" {
 				field = name
 			}
-			if !wset[field] || editedVal == "" {
+			if !wset[field] || (editedVal == "" && !cset[field]) {
 				// read-only field, an atom with no live source (e.g. adding a
 				// time to an all-day object — the all-day<->timed conversion is
-				// #222), or a clear (deletion, #215) — surfaced, not applied.
+				// #222), or a clear of a field not declared clearable (deletion,
+				// #215) — surfaced, not applied.
 				noticed[eln.ID] = true
 				return
 			}

@@ -480,14 +480,32 @@ func TestCheckMoveWritable(t *testing.T) {
 		"caldav-object-vtodo-v1":  {DimensionKey: "priority", Mode: cgp.FacetWriteOne, Field: "priority"},
 		"caldav-object-vevent-v1": {DimensionKey: "component", Mode: cgp.FacetWriteNone},
 	}
-	if err := checkMoveWritable(writes, move{Node: cgp.Node{Type: "caldav-object-vtodo-v1"}}); err != nil {
+	if err := checkMoveWritable(writes, move{To: "1_should", Node: cgp.Node{Type: "caldav-object-vtodo-v1"}}); err != nil {
 		t.Errorf("writable move rejected: %v", err)
 	}
-	if err := checkMoveWritable(writes, move{Node: cgp.Node{Type: "caldav-object-vevent-v1"}}); err == nil {
+	if err := checkMoveWritable(writes, move{To: "x", Node: cgp.Node{Type: "caldav-object-vevent-v1"}}); err == nil {
 		t.Error("read-only (none) dimension move must be rejected")
 	}
-	if err := checkMoveWritable(writes, move{Node: cgp.Node{Type: "unmapped-v1"}}); err == nil {
+	if err := checkMoveWritable(writes, move{To: "x", Node: cgp.Node{Type: "unmapped-v1"}}); err == nil {
 		t.Error("unmapped type move must be rejected")
+	}
+
+	// A move into the no-value section (To "") is a CLEAR: legal only for a
+	// clearable write:one dimension (forge organize F12), refused up front —
+	// before the diff and confirm — for every other one, naming the cause.
+	err := checkMoveWritable(writes, move{
+		URI: "caldav://h/c/t.ics", From: "1_should",
+		Node: cgp.Node{Type: "caldav-object-vtodo-v1"},
+	})
+	if err == nil || !errors.Is400BadRequest(err) ||
+		!strings.Contains(err.Error(), `dimension "priority" cannot be cleared`) {
+		t.Errorf("clear of a non-clearable dimension: err = %v, want a bad request saying it cannot be cleared", err)
+	}
+	clearable := map[string]cgp.FacetWrite{
+		"issue-v1": {DimensionKey: "milestone", Mode: cgp.FacetWriteOne, Field: "milestone", Clearable: true},
+	}
+	if err := checkMoveWritable(clearable, move{From: "v0.1", Node: cgp.Node{Type: "issue-v1"}}); err != nil {
+		t.Errorf("clear of a clearable dimension rejected: %v", err)
 	}
 }
 
@@ -773,7 +791,7 @@ func TestPlanFieldEdits_DedupKeepsDocumentFirst(t *testing.T) {
 		return []cgp.BoxAtom{{Name: "summary", Value: "orig", Field: "summary"}}
 	}
 
-	edits, _, err := planFieldEdits(edited, base, live, boxIDsFor(nil, anchor), writable, nil, present)
+	edits, _, err := planFieldEdits(edited, base, live, boxIDsFor(nil, anchor), writable, nil, nil, present)
 	if err != nil {
 		t.Fatalf("planFieldEdits: %v", err)
 	}

@@ -422,6 +422,155 @@ function test_testpeer_undeclared_facet_write_fails_initialize { # @test
 }
 
 # ---------------------------------------------------------------------
+# TRACKER — the forge organize plan's stream-2 RFC 0013 additions, over
+# the peer's forge-issue-shaped cgtest://fixture/tracker (not a root, so
+# the box vectors above are untouched): cgtest-ticket-v1 declares state
+# (write:one), milestone (write:one, CLEARABLE) and label (write:many).
+# ---------------------------------------------------------------------
+
+# A clearable write:one dimension (forge organize F12): moving a ticket
+# into the no-value section above the `# milestone=` heading clears its
+# milestone — the host sends {"milestone": null} — and the re-rendered
+# document keeps it there.
+# bats test_tags=testpeer
+function test_testpeer_tracker_clearable_move_clears_milestone { # @test
+  configure_testpeer_wire_plugin
+
+  run_cg_stdout organize -group-by milestone= -query '!cgtest-ticket-v1' \
+    cgtest://fixture/tracker
+  assert_success
+  assert_output - <<-'EOM'
+	---
+	% generated: `cg organize -group-by milestone= -query "!cgtest-ticket-v1" cgtest://fixture/tracker`
+	- _base = @blake2b256-sv8g20lgufun2x7yqm9edce2kchcxjv6ffshcjwj95azv733eedsayhn69
+	- _anchor = cgtest://fixture/tracker/
+	- _query = !cgtest-ticket-v1
+	- _type = !cgtest-ticket-v1
+	! organize-base-v1
+	---
+
+	- [2] Write the docs
+
+	# milestone=
+
+	## =v0.1
+
+	- [1] Fix the parser
+
+	## =v0.2
+
+	- [3] Ship it
+	EOM
+
+  local edited="$BATS_TEST_TMPDIR/edited.txt"
+  cat >"$edited" <<-'EOM'
+	---
+	% generated: `cg organize -group-by milestone= -query "!cgtest-ticket-v1" cgtest://fixture/tracker`
+	- _base = @blake2b256-sv8g20lgufun2x7yqm9edce2kchcxjv6ffshcjwj95azv733eedsayhn69
+	- _anchor = cgtest://fixture/tracker/
+	- _query = !cgtest-ticket-v1
+	- _type = !cgtest-ticket-v1
+	! organize-base-v1
+	---
+
+	- [1] Fix the parser
+	- [2] Write the docs
+
+	# milestone=
+
+	## =v0.1
+
+	## =v0.2
+
+	- [3] Ship it
+	EOM
+
+  run_cg_stdout organize -apply "$edited" -commit
+  assert_success
+  assert_output - <<'EOF'
+organize: 1 change(s):
+
+  - [1 milestone=[-v0.1-]] Fix the parser
+
+organize: wrote 1 change(s)
+EOF
+
+  run_cg_stdout list -format json -query 'milestone=v0.1' cgtest://fixture/tracker
+  assert_success
+  assert_output ''
+
+  run_cg_stdout organize -group-by milestone= -query '!cgtest-ticket-v1' \
+    cgtest://fixture/tracker
+  assert_success
+  assert_output - <<-'EOM'
+	---
+	% generated: `cg organize -group-by milestone= -query "!cgtest-ticket-v1" cgtest://fixture/tracker`
+	- _base = @blake2b256-dhwh38k9rhz0w3z3xh7t4g0q2gwdl0w4u2lcpgys0g2j826vakfs4hlz5c
+	- _anchor = cgtest://fixture/tracker/
+	- _query = !cgtest-ticket-v1
+	- _type = !cgtest-ticket-v1
+	! organize-base-v1
+	---
+
+	- [1] Fix the parser
+	- [2] Write the docs
+
+	# milestone=
+
+	## =v0.1
+
+	## =v0.2
+
+	- [3] Ship it
+	EOM
+}
+
+# A write:one dimension NOT declared clearable refuses a move into the
+# no-value section up front — before the diff — saying it cannot be
+# cleared, and writes nothing.
+# bats test_tags=testpeer
+function test_testpeer_tracker_non_clearable_move_is_refused { # @test
+  configure_testpeer_wire_plugin
+
+  local edited="$BATS_TEST_TMPDIR/edited.txt"
+  cat >"$edited" <<-'EOM'
+	---
+	% generated: `cg organize -group-by state= -query "!cgtest-ticket-v1" cgtest://fixture/tracker`
+	- _base = @blake2b256-tc69gdxa99lgpemhchkra2r0ptkfhzzumm688znmnr3rz4pwycfsas5nyy
+	- _anchor = cgtest://fixture/tracker/
+	- _query = !cgtest-ticket-v1
+	- _type = !cgtest-ticket-v1
+	! organize-base-v1
+	---
+
+	- [3] Ship it
+
+	# state=
+
+	## =open
+
+	- [1] Fix the parser
+	- [2] Write the docs
+
+	## =closed
+	EOM
+
+  # Generate first so the pinned base blob exists in the store.
+  run_cg_stdout organize -group-by state= -query '!cgtest-ticket-v1' \
+    cgtest://fixture/tracker
+  assert_success
+
+  run_cg_stdout organize -apply "$edited" -commit
+  assert_failure
+  [[ $stderr == *'organize: dimension "state" cannot be cleared for type "cgtest-ticket-v1" — cgtest://fixture/tracker/3 was moved out of =closed into the no-value section; file it under a bucket instead'* ]] ||
+    fail "stderr does not carry the refusal: $stderr"
+
+  run_cg_stdout list -format json -query 'state=closed' cgtest://fixture/tracker
+  assert_success
+  assert_output '{"uri":"cgtest://fixture/tracker/3","name":"Ship it","type":"cgtest-ticket-v1"}'
+}
+
+# ---------------------------------------------------------------------
 # CONFORMANCE — session-level METHOD SEMANTICS, driven by the driver
 # BINARY (cutting-garden#186). This is the "shell-honest tree case" the
 # file banner anticipated: rather than a brittle shell JSON-RPC client,
@@ -483,6 +632,11 @@ one_dimension = "state"
 one_bucket = "open"
 many_dimension = "tag"
 many_set = ["x", "y"]
+
+[facet_clear]
+container = "cgtest://fixture/tracker"
+node = "cgtest://fixture/tracker/1"
+dimension = "milestone"
 EOF
 
   run --separate-stderr "$CG_CONFORMANCE_TRAVERSAL" --manifest "$manifest"
@@ -491,7 +645,7 @@ EOF
   # whole multi-line output as ONE string (no per-line/multiline flag),
   # so `^not ok` would never match a mid-output failure — a false-safe
   # assertion. --partial 'not ok' catches a failing point anywhere.
-  assert_output --partial '1..17'
+  assert_output --partial '1..18'
   assert_output --partial 'ok 1 - initialize'
   assert_output --partial 'ok 11 - leaf.read: container returns its own body'
   assert_output --partial 'ok 13 - nodes.list: filter pushdown returns a sound subset'
@@ -503,6 +657,10 @@ EOF
   assert_output --partial 'ok 15 - initialize: facet_writes declaration is usable by the host'
   assert_output --partial 'ok 16 - node.patch: host-built write:one body moves the node into the bucket'
   assert_output --partial "ok 17 - node.patch: host-built write:many body replaces the node's set, [] clears"
+  # A clearable write:one dimension (forge organize F12) accepts the
+  # host-built {"<field>": null}; a substituted peer names its own
+  # [facet_clear] node, or SKIPs by omitting the table.
+  assert_output --partial 'ok 18 - node.patch: host-built clear body (null) empties a clearable write:one dimension'
   refute_output --partial 'not ok'
 }
 

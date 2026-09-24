@@ -24,8 +24,11 @@ type FacetWriteApplier interface {
 	// JSON-marshaled patch) that moves node into toBucket of write's dimension.
 	// write is the FacetWrite mapping the apply engine resolved for node's type
 	// and the grouped dimension; node carries the live Facets/Fields the plugin
-	// needs to compute a completion (e.g. the object's current date). An empty or
-	// unwritable request is a bad-request error.
+	// needs to compute a completion (e.g. the object's current date). An empty
+	// toBucket is a CLEAR — the node moved into the no-value section — and the
+	// apply engine sends one only when write.Clearable (forge organize F12);
+	// an empty toBucket on a non-clearable write, or any unwritable request,
+	// is a bad-request error.
 	BuildFacetWritePatch(
 		ctx context.Context, node Node, write FacetWrite, toBucket string,
 	) ([]byte, error)

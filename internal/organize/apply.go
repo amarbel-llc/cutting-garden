@@ -260,7 +260,8 @@ func (cmd *Organize) applyDocument(
 	}
 	writable, trailer := fieldWriteSchema(lister)
 	fieldEdits, notices, err := planFieldEdits(
-		edited, base, liveNodes, idOf, writable, trailer, boxAtomPresenter(lister),
+		edited, base, liveNodes, idOf, writable, trailer, clearableFields(lister),
+		boxAtomPresenter(lister),
 	)
 	if err != nil {
 		return false, err
@@ -741,7 +742,8 @@ func (cmd *Organize) applyMemberships(
 
 	writable, trailer := fieldWriteSchema(lister)
 	fieldEdits, notices, err := planFieldEdits(
-		edited, base, liveNodes, idOf, writable, trailer, boxAtomPresenter(lister),
+		edited, base, liveNodes, idOf, writable, trailer, clearableFields(lister),
+		boxAtomPresenter(lister),
 	)
 	if err != nil {
 		return false, err
@@ -867,7 +869,8 @@ func (cmd *Organize) executeMemberships(
 // read-only dimension refuses immediately rather than after the user confirms
 // changes that can never be written (cutting-garden#221 exposed this: grouping by
 // a read-only dimension and moving a line reached the confirm prompt, then
-// failed).
+// failed). A move into the no-value section (an empty To) clears the
+// dimension, which only a Clearable write accepts.
 func checkMoveWritable(writes map[string]cgp.FacetWrite, mv move) error {
 	w, ok := writes[mv.Node.Type]
 	if !ok {
@@ -886,6 +889,15 @@ func checkMoveWritable(writes map[string]cgp.FacetWrite, mv move) error {
 		return errors.BadRequestf(
 			"organize: multi-valued (mode many) dimension apply is out of scope in "+
 				"this slice (type %q)", mv.Node.Type,
+		)
+	}
+	// A move into the no-value section is a CLEAR (forge organize F12): legal
+	// only where the plugin declared the write clearable.
+	if mv.To == "" && !w.Clearable {
+		return errors.BadRequestf(
+			"organize: dimension %q cannot be cleared for type %q — %s was moved "+
+				"out of =%s into the no-value section; file it under a bucket instead",
+			w.DimensionKey, mv.Node.Type, mv.URI, trellis.QuoteIfNeeded(mv.From),
 		)
 	}
 	return nil

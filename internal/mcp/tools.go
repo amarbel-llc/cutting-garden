@@ -1403,6 +1403,10 @@ type facetDimSchema struct {
 	// typing the value. A write-side convenience list, independent of the
 	// read-side closed domain above (FacetWrite.Values, FDR 0023).
 	WriteValues []string `json:"writeValues,omitempty"`
+	// Clearable, when true, marks a write:one dimension whose value may be
+	// CLEARED — an organize document's no-value section is a legal target for
+	// it (FacetWrite.Clearable, forge organize F12).
+	Clearable bool `json:"clearable,omitempty"`
 }
 
 // facetDimSchemas projects a plugin's declared FacetDimensions into their
@@ -1440,6 +1444,7 @@ func facetDimSchemas(
 			s.CreationRequired = w.CreationRequired
 			s.CompletionHint = w.CompletionHint
 			s.WriteValues = w.Values
+			s.Clearable = w.Clearable
 		}
 		out = append(out, s)
 	}

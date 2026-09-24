@@ -52,6 +52,33 @@ func TestValidateFacetWrites(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name: "a clearable single-valued write passes",
+			writes: []NodeTypeFacetWrites{{
+				Tag: "obj-v1",
+				Writes: []FacetWrite{
+					{DimensionKey: "status", Mode: FacetWriteOne, Field: "STATUS", Clearable: true},
+				},
+			}},
+		},
+		{
+			name: "a clearable multi-valued write is rejected",
+			writes: []NodeTypeFacetWrites{{
+				Tag: "obj-v1",
+				Writes: []FacetWrite{
+					{DimensionKey: "labels", Mode: FacetWriteMany, Field: "CATEGORIES", Clearable: true},
+				},
+			}},
+			wantErr: true,
+		},
+		{
+			name: "a clearable read-only write is rejected",
+			writes: []NodeTypeFacetWrites{{
+				Tag:    "obj-v1",
+				Writes: []FacetWrite{{DimensionKey: "date", Mode: FacetWriteNone, Clearable: true}},
+			}},
+			wantErr: true,
+		},
+		{
 			name: "a writable dimension without a field is rejected",
 			writes: []NodeTypeFacetWrites{{
 				Tag:    "obj-v1",

@@ -61,6 +61,18 @@ const (
 	LeafGamma  = "cgtest://fixture/box/nested/gamma"
 	IssueBox   = "cgtest://fixture/box/issue-1"
 	IssueChild = "cgtest://fixture/box/issue-1/c1"
+
+	// TicketType is the forge-issue-shaped leaf of the tracker fixture (the
+	// forge organize plan's stream-2 RFC 0013 additions): a state enum, a
+	// CLEARABLE single-valued milestone, and a multi-valued label set. The
+	// tracker is deliberately NOT a root and not under RootBox, so the
+	// fixed box tree — its roots, facet summaries and organize vectors — is
+	// untouched by it; it is addressed directly (cgtest://fixture/tracker).
+	TicketType  = "cgtest-ticket-v1"
+	TrackerBox  = "cgtest://fixture/tracker"
+	TicketOne   = "cgtest://fixture/tracker/1"
+	TicketTwo   = "cgtest://fixture/tracker/2"
+	TicketThree = "cgtest://fixture/tracker/3"
 )
 
 // facetLabels is the fixed labelled-dimension resolution map behind
@@ -178,6 +190,31 @@ func NewPlugin() *TreePlugin {
 		}
 	}
 
+	// ticket builds a tracker leaf: its name IS its title (the trailer), an
+	// empty milestone contributes no milestone membership.
+	ticket := func(title, state, milestone string, labels ...string) *memNode {
+		facets := map[string][]cutting_garden_plugins.FacetValue{
+			"state": {{Key: state}},
+		}
+		if milestone != "" {
+			facets["milestone"] = []cutting_garden_plugins.FacetValue{{Key: milestone}}
+		}
+		if len(labels) > 0 {
+			values := make([]cutting_garden_plugins.FacetValue, len(labels))
+			for i, label := range labels {
+				values[i] = cutting_garden_plugins.FacetValue{Key: label}
+			}
+			facets["label"] = values
+		}
+
+		return &memNode{
+			name:       title,
+			typ:        TicketType,
+			facets:     facets,
+			structured: map[string]any{"title": title, "state": state},
+		}
+	}
+
 	return &TreePlugin{
 		nodes: map[string]*memNode{
 			RootBox: {
@@ -223,6 +260,23 @@ func NewPlugin() *TreePlugin {
 				raw:        []byte("first comment\n"),
 				rawMime:    LeafMimeType,
 			},
+			// The tracker: three tickets, one per milestone state (set, the
+			// no-value section, another value) and label shape (a
+			// hyphen-namespaced pair, a label with spaces, a plain one).
+			TrackerBox: {
+				name:     "tracker",
+				typ:      ContainerType,
+				children: []string{TicketOne, TicketTwo, TicketThree},
+			},
+			TicketOne: ticket(
+				"Fix the parser", "open", "v0.1", "bug", "area-organize",
+			),
+			TicketTwo: ticket(
+				"Write the docs", "open", "", "good first issue",
+			),
+			TicketThree: ticket(
+				"Ship it", "closed", "v0.2", "area-organize-apply",
+			),
 		},
 	}
 }
@@ -329,6 +383,7 @@ func (p *TreePlugin) Types() []cutting_garden_plugins.NodeType {
 		// A container type that ALSO declares a URI template and a body
 		// (cutting-garden#168, RFC 0018).
 		{Tag: IssueType, Container: true, URITemplate: IssueURITemplate},
+		{Tag: TicketType, Container: false},
 	}
 }
 
@@ -465,6 +520,30 @@ func (p *TreePlugin) DescribeFacets() []cutting_garden_plugins.NodeTypeFacets {
 					Key:   "feed",
 					Label: "Feed",
 					Kind:  cutting_garden_plugins.FacetLabelled,
+				},
+			},
+		},
+		{
+			Tag: TicketType,
+			Dimensions: []cutting_garden_plugins.FacetDimension{
+				{
+					Key:   "state",
+					Label: "State",
+					Kind:  cutting_garden_plugins.FacetCategorical,
+					Values: []cutting_garden_plugins.FacetValue{
+						{Key: "open"}, {Key: "closed"},
+					},
+				},
+				{
+					Key:   "milestone",
+					Label: "Milestone",
+					Kind:  cutting_garden_plugins.FacetCategorical,
+				},
+				{
+					Key:   "label",
+					Label: "Labels",
+					Kind:  cutting_garden_plugins.FacetCategorical,
+					Multi: true,
 				},
 			},
 		},
@@ -818,7 +897,15 @@ func (p *TreePlugin) PatchNode(
 	if len(facetUpdates) > 0 && node.facets == nil {
 		node.facets = map[string][]cutting_garden_plugins.FacetValue{}
 	}
-	maps.Copy(node.facets, facetUpdates)
+	for dimension, values := range facetUpdates {
+		// A nil set is a clear (a clearable one write's null): the node no
+		// longer contributes to the dimension at all.
+		if values == nil {
+			delete(node.facets, dimension)
+			continue
+		}
+		node.facets[dimension] = values
+	}
 	p.generation++
 	if err := p.persistLocked(); err != nil {
 		return nil, err

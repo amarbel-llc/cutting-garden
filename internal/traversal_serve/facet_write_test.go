@@ -169,6 +169,18 @@ func TestHostFacetWritePatchShapes(t *testing.T) {
 		t.Errorf("one body = %s, want %s", got, want)
 	}
 
+	// A clearable one write turns the empty bucket (the no-value section)
+	// into the clear shape {"<field>": null} (forge organize F12).
+	clearable := one
+	clearable.Clearable = true
+	body, err = HostFacetWritePatch(clearable, "")
+	if err != nil {
+		t.Fatalf("clearable one: %v", err)
+	}
+	if got, want := string(body), `{"state":null}`; got != want {
+		t.Errorf("clear body = %s, want %s", got, want)
+	}
+
 	for _, tc := range []struct {
 		name string
 		set  []string
@@ -199,8 +211,11 @@ func TestHostFacetWritePatchShapes(t *testing.T) {
 			_, err := HostFacetWritePatch(many, "x")
 			return err
 		}},
-		{"empty bucket", func() error {
+		{"empty bucket on a non-clearable write", func() error {
 			_, err := HostFacetWritePatch(one, "")
+			if err != nil && !strings.Contains(err.Error(), "cannot be cleared") {
+				t.Errorf("non-clearable refusal %q does not say it cannot be cleared", err)
+			}
 			return err
 		}},
 		{"none mode", func() error {
@@ -380,6 +395,15 @@ func TestWirePluginRejectsUnusableFacetWriteDeclaration(t *testing.T) {
 			wants: []string{`dimension "state" mode "many" requires a multi-valued dimension`},
 		},
 		{
+			name: "clearable on a many write",
+			cfg: writablePluginConfig(leafWrites(cutting_garden_plugins.FacetWrite{
+				DimensionKey: "label", Mode: cutting_garden_plugins.FacetWriteMany,
+				Field: "labels", Clearable: true,
+			})),
+			spec:  memSpec(),
+			wants: []string{`dimension "label" is clearable but mode "many"`},
+		},
+		{
 			name: "duplicate mapping",
 			cfg: writablePluginConfig(leafWrites(
 				cutting_garden_plugins.FacetWrite{
@@ -447,6 +471,7 @@ func TestFacetWriteViewRoundTrip(t *testing.T) {
 			CreationRequired:  true,
 			CompletionHint:    "hint",
 			Values:            []string{"a", "b"},
+			Clearable:         true,
 		}},
 	}
 
@@ -456,7 +481,7 @@ func TestFacetWriteViewRoundTrip(t *testing.T) {
 	}
 	want := `{"tag":"t","writes":[{"dimension":"d","mode":"one","field":"f",` +
 		`"identity_affecting":true,"creation_required":true,` +
-		`"completion_hint":"hint","values":["a","b"]}]}`
+		`"completion_hint":"hint","values":["a","b"],"clearable":true}]}`
 	if string(data) != want {
 		t.Errorf("marshal = %s\nwant      %s", data, want)
 	}

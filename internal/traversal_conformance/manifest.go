@@ -85,6 +85,20 @@ type Manifest struct {
 	// restores. Optional — omitting it SKIPs the two write points (the
 	// declaration point still runs whenever the peer declares facet_writes).
 	FacetWrite *FacetWriteSpec
+	// FacetClear, when non-nil, parameterizes the clearable-write point (forge
+	// organize F12): an existing node whose declared CLEARABLE write:one
+	// dimension the driver clears with the host-built `{"<field>": null}`,
+	// reads back empty, and restores. Optional — omitting it SKIPs the point.
+	FacetClear *FacetClearSpec
+}
+
+// FacetClearSpec names the node and the clearable write:one dimension the
+// clear point empties. The node SHOULD currently hold one value in it (the
+// value is restored afterwards).
+type FacetClearSpec struct {
+	Container string
+	Node      string
+	Dimension string
 }
 
 // FacetWriteSpec names the node the facet_writes cases move and the
@@ -297,6 +311,22 @@ func LoadManifest(path string) (*Manifest, error) {
 			return nil, err
 		}
 		manifest.FacetWrite = spec
+	}
+
+	if sub, ok, err := decodeTable(model, "facet_clear"); err != nil {
+		return nil, err
+	} else if ok {
+		spec := &FacetClearSpec{}
+		for key, into := range map[string]*string{
+			"container": &spec.Container,
+			"node":      &spec.Node,
+			"dimension": &spec.Dimension,
+		} {
+			if err := decodeString(sub, key, into); err != nil {
+				return nil, err
+			}
+		}
+		manifest.FacetClear = spec
 	}
 
 	if leftover := model.Undecoded(); len(leftover) > 0 {

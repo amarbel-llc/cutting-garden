@@ -30,6 +30,10 @@ type FacetWriteView struct {
 	CreationRequired  bool     `json:"creation_required,omitempty"`
 	CompletionHint    string   `json:"completion_hint,omitempty"`
 	Values            []string `json:"values,omitempty"`
+	// Clearable (forge organize F12) opts a one write into the clear shape
+	// `{"<field>": null}`; absent ≙ false, so a peer predating it is simply
+	// not clearable.
+	Clearable bool `json:"clearable,omitempty"`
 }
 
 // NodeTypeFacetWritesView is the wire form of
@@ -60,6 +64,7 @@ func NodeTypeFacetWritesViewFrom(
 			CreationRequired:  write.CreationRequired,
 			CompletionHint:    write.CompletionHint,
 			Values:            nilIfEmpty(write.Values),
+			Clearable:         write.Clearable,
 		}
 	}
 
@@ -82,6 +87,7 @@ func (v NodeTypeFacetWritesView) ToNodeTypeFacetWrites() cutting_garden_plugins.
 			CreationRequired:  write.CreationRequired,
 			CompletionHint:    write.CompletionHint,
 			Values:            nilIfEmpty(write.Values),
+			Clearable:         write.Clearable,
 		}
 	}
 
@@ -168,10 +174,13 @@ func ValidateFacetWriteDeclaration(init InitializeResult) error {
 
 // HostFacetWritePatch builds the node.patch body for a write:one bucket
 // move: `{"<field>": "<bucket>"}` — the one shape a wire plugin declaring a
-// one mapping MUST accept on node.patch. Anything else (a non-one mode, an
-// empty bucket) is a bad request. Exported so a Go plugin whose patch
-// format is a flat JSON object can reuse it as its own FacetWriteApplier
-// (the testpeer does, keeping linked and wire bodies identical).
+// one mapping MUST accept on node.patch — or, for an EMPTY bucket (a move
+// into the no-value section) on a Clearable write, the clear shape
+// `{"<field>": null}` (forge organize F12). Anything else (a non-one mode,
+// an empty bucket on a non-clearable write) is a bad request. Exported so a
+// Go plugin whose patch format is a flat JSON object can reuse it as its
+// own FacetWriteApplier (the testpeer does, keeping linked and wire bodies
+// identical).
 func HostFacetWritePatch(
 	write cutting_garden_plugins.FacetWrite, toBucket string,
 ) ([]byte, error) {
@@ -183,9 +192,14 @@ func HostFacetWritePatch(
 	}
 
 	if toBucket == "" {
-		return nil, errors.BadRequestf(
-			"facet write: dimension %q: empty target bucket", write.DimensionKey,
-		)
+		if !write.Clearable {
+			return nil, errors.BadRequestf(
+				"facet write: dimension %q cannot be cleared (its write is not"+
+					" declared clearable)", write.DimensionKey,
+			)
+		}
+
+		return marshalFieldPatch(write.Field, nil)
 	}
 
 	return marshalFieldPatch(write.Field, toBucket)

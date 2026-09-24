@@ -65,6 +65,16 @@ type FacetWrite struct {
 	// for a small enumerable write:one/many dimension (a status enum); a
 	// numeric/open dimension (a date bucket) leaves it empty.
 	Values []string
+	// Clearable declares that a write:one dimension may be CLEARED — the node
+	// left with no value in it (forge organize F12). Organize treats the
+	// document's no-value section (and an emptied inline atom of the same
+	// name) as a legal target ONLY for a clearable dimension; every other one
+	// refuses a clear up front. A clear reaches the plugin's FacetWriteApplier
+	// as an EMPTY toBucket, which it must then build as its substrate's
+	// "no value" write; a plugin declaring no Clearable write never receives
+	// one. Valid only on FacetWriteOne (ValidateFacetWrites enforces this):
+	// a many dimension clears with the empty set, a none one is read-only.
+	Clearable bool
 }
 
 // NodeTypeFacetWrites binds a set of FacetWrites to one node type — the
@@ -99,7 +109,8 @@ type FacetWriteDescriber interface {
 //   - every NodeTypeFacetWrites.Tag MUST have a matching NodeTypeFacets entry;
 //   - every FacetWrite.DimensionKey MUST name a dimension that tag declares;
 //   - a non-none Mode MUST carry a Field, and Mode MUST be one of the three
-//     declared values.
+//     declared values;
+//   - Clearable is valid only on a FacetWriteOne mapping.
 //
 // reads and writes are the plugin's own DescribeFacets / DescribeFacetWrites
 // outputs. It is the loud-rejection mechanism the apply engine uses before
@@ -141,6 +152,12 @@ func ValidateFacetWrites(reads []NodeTypeFacets, writes []NodeTypeFacetWrites) e
 				return fmt.Errorf(
 					"facet write: type %q dimension %q has invalid mode %q",
 					nt.Tag, w.DimensionKey, w.Mode,
+				)
+			}
+			if w.Clearable && w.Mode != FacetWriteOne {
+				return fmt.Errorf(
+					"facet write: type %q dimension %q is clearable but mode %q; only a %q write may be clearable",
+					nt.Tag, w.DimensionKey, w.Mode, FacetWriteOne,
 				)
 			}
 		}

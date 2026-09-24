@@ -87,6 +87,53 @@ func TestPatchRejectsUnusableFacetWriteValues(t *testing.T) {
 	}
 }
 
+// TestPatchClearsClearableMilestone pins the forge-organize F12 clear shape
+// on the tracker fixture: the ticket type's milestone is a CLEARABLE
+// write:one dimension, so {"milestone": null} empties the node's membership
+// (where on the non-clearable state dimension null still reads as "not
+// supplied"), and a later {"milestone": "v0.2"} sets it again.
+func TestPatchClearsClearableMilestone(t *testing.T) {
+	plugin := NewPlugin()
+	ctx := context.Background()
+	ticket := mustParseURL(t, TicketOne)
+
+	facetsOfTicketOne := func() map[string][]cutting_garden_plugins.FacetValue {
+		t.Helper()
+		nodes, err := plugin.ListRoots(ctx, mustParseURL(t, TrackerBox))
+		if err != nil {
+			t.Fatalf("ListRoots: %v", err)
+		}
+		return nodes[0].Facets
+	}
+
+	if got := facetsOfTicketOne()["milestone"]; !reflect.DeepEqual(
+		got, []cutting_garden_plugins.FacetValue{{Key: "v0.1"}},
+	) {
+		t.Fatalf("fixture milestone = %+v, want v0.1", got)
+	}
+
+	for _, tc := range []struct {
+		body string
+		want []cutting_garden_plugins.FacetValue
+	}{
+		{`{"milestone":null,"state":null}`, nil},
+		{`{"milestone":"v0.2"}`, []cutting_garden_plugins.FacetValue{{Key: "v0.2"}}},
+	} {
+		if _, err := plugin.PatchNode(ctx, ticket, strings.NewReader(tc.body)); err != nil {
+			t.Fatalf("PatchNode(%s): %v", tc.body, err)
+		}
+		facets := facetsOfTicketOne()
+		if got := facets["milestone"]; !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("after %s: milestone = %+v, want %+v", tc.body, got, tc.want)
+		}
+		if got := facets["state"]; !reflect.DeepEqual(
+			got, []cutting_garden_plugins.FacetValue{{Key: "open"}},
+		) {
+			t.Errorf("after %s: state = %+v, want untouched open", tc.body, got)
+		}
+	}
+}
+
 // TestTrailingSlashContainerListsLikeBare pins readKey: organize re-queries
 // at its document's anchor, the listed URIs' common prefix — which, for
 // this path-shaped tree, carries a trailing `/`.
