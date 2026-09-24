@@ -7,7 +7,9 @@ revised: 2026-07-19 (§ Host integration: a wire plugin's bring-up failure
   host-built `node.patch` bodies that make a wire plugin organize-writable);
   2026-09-24 (§ Facet writes: `clearable` and the `null` clear body;
   § Presentation: the OPTIONAL node_types members `tag_set`,
-  `inline_fields`, `trailer_field` — forge organize F11/F12)
+  `inline_fields`, `trailer_field` — forge organize F11/F12);
+  2026-09-24 (§ Wire encodings: the OPTIONAL FacetDimension
+  `terminal_values` — forge organize F4)
 ---
 
 # RFC 0013 — Traversal Plugin Transport: JSON-RPC over stream sockets
@@ -304,7 +306,8 @@ identically to absent).
 
 **FacetDimension**: `{ "key": string, "label": string?, "kind":
 "categorical"|"numeric-bucket"|"labelled", "multi": bool?, "values":
-[FacetValue]?, "revalidate_after_seconds": int? }` — `values` present ≙
+[FacetValue]?, "revalidate_after_seconds": int?, "terminal_values":
+[string]? }` — `values` present ≙
 a CLOSED domain (RFC 0012 §2). A closed domain MUST declare at least
 one value; a plugin MUST NOT emit an empty `values` array (on the wire
 it is indistinguishable from an open domain, so a zero-value closed
@@ -313,6 +316,29 @@ domain is unrepresentable and non-conformant).
 `FacetDimension.RevalidateAfter` (RFC 0012 §11.3, volatile dimensions);
 a volatile dimension MUST also declare its closed domain, per that
 section.
+`terminal_values` (absent ≙ none) carries `FacetDimension.TerminalValues`:
+the values, in the presented domain the plugin emits as facet keys, that
+mark a node DONE. A node holding a terminal value in any dimension of its
+type is terminal, and organize excludes terminal nodes by default by
+composing `_terminal=no` into its selection query (echoed in the
+document's `_query`; `-include-terminal` or an explicit `_terminal`
+mention opts out — RFC 0015). Each entry MUST be a non-empty string
+listed once, and when the dimension declares `values` (a closed domain)
+each MUST be one of those value keys; an open dimension MAY name any
+value. A plugin SHOULD omit the member rather than send `[]`. The host
+validates it at bring-up like the §Facet writes / §Presentation
+declarations — a violation fails `initialize`, isolated to the plugin,
+with a diagnostic naming plugin, type, dimension and value, e.g.
+`wire plugin "fj": initialize rejected: terminal values: type
+"fj-issue-v1" dimension "state" value "done" is not one of the
+dimension's declared values`. Go peers advertise it automatically: `Serve`
+projects each `DescribeFacets` dimension's `TerminalValues`.
+
+```json
+{ "key": "state", "label": "State", "kind": "categorical",
+  "values": [ { "key": "open" }, { "key": "closed" } ],
+  "terminal_values": [ "closed" ] }
+```
 
 **FacetSummary**: `{ "<dimension>": { "<value-key>": <int64 count> } }`.
 
@@ -1128,6 +1154,9 @@ becomes machine-checkable rather than rediscovered.
 | §Presentation: `node.patch` accepts `{"<trailer_field>": "<text>"}` and the node re-lists named `<text>` | conformance driver | point 20; manifest `[trailer]` `container`/`node`/`text`; restored afterwards |
 | §Presentation: unified tag field, box atoms, listing fields, field-write bodies and projected fields identical wire vs linked | go end-to-end | `TestWireTrackerPresentationIndistinguishableFromLinked` |
 | §Facet writes / §Presentation: organize over a wire plugin — a clearing move and the non-clearable refusal; tag atoms rendered and edited; `(tags)` / namespace groupings with a membership move; inline atom, trailer and clearable-atom edits in one apply; `describe_node_types` `tag_set`/listing fields and `mcp` `tags` | `traversal_serve.bats` (`testpeer`) | whole-document TRACKER vectors over `cgtest://fixture/tracker` |
+| §Wire encodings: `terminal_values` passes the host's bring-up rules | conformance driver | point 21; SKIP when no dimension declares any |
+| §Wire encodings: `terminal_values` decodes to the same `TerminalValues` a linked plugin declares; empty/absent ≙ nil | go end-to-end + unit | `TestWireIndistinguishableFromLinked` (`DescribeFacets` deep-equal, ticket `state` ≙ `[closed]`); `TestFacetDimensionViewTerminalValues`, `TestValidateTerminalValuesDeclaration` |
+| §Wire encodings: organize hides a wire plugin's terminal nodes by default (`_terminal=no` echoed in `_query`), `-include-terminal` restores them; a value outside the closed domain fails bring-up | `traversal_serve.bats` (`testpeer`) | `test_testpeer_tracker_terminal_values_hide_closed_by_default`, `test_testpeer_undeclared_terminal_value_fails_initialize` |
 
 ## Compatibility
 
@@ -1171,6 +1200,12 @@ becomes machine-checkable rather than rediscovered.
   obligations (the `null` clear; the `many` body for its tag set; the
   `one` body for an editable inline field; the trailer body and the
   name-reflects-the-field rule).
+- **`terminal_values` (2026-09-24)** is additive the same way: absent
+  means the dimension has no terminal notion (the prior behavior — a
+  wire plugin's nodes were never excluded by default). A host predating
+  it ignores the member, so organize simply shows that plugin's done
+  nodes; a peer that declares it owes nothing on any method, only a
+  well-formed declaration.
 
 ## References
 

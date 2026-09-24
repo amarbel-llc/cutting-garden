@@ -28,7 +28,29 @@ const (
 
 	namePresentationDecl    = "initialize: node_types presentation members are usable by the host"
 	namePresentationTrailer = "node.patch: host-built trailer_field body renames the node"
+
+	nameTerminalValuesDecl = "initialize: facet terminal_values are usable by the host"
 )
+
+// caseTerminalValues runs the terminal_values point (forge organize F4): a
+// peer naming terminal values on any facet dimension must pass the host's
+// bring-up check of them. A peer naming none SKIPs (the member is OPTIONAL).
+func (r *runner) caseTerminalValues() {
+	declared := slices.ContainsFunc(r.init.Facets, func(facets traversal_serve.NodeTypeFacetsView) bool {
+		return slices.ContainsFunc(facets.Dimensions, func(dimension traversal_serve.FacetDimensionView) bool {
+			return len(dimension.TerminalValues) > 0
+		})
+	})
+
+	switch err := traversal_serve.ValidateTerminalValuesDeclaration(r.init); {
+	case !declared:
+		r.tap.Skip(nameTerminalValuesDecl, "peer declares no terminal_values")
+	case err != nil:
+		r.tap.NotOk(nameTerminalValuesDecl, map[string]string{"facets": err.Error()})
+	default:
+		r.tap.Ok(nameTerminalValuesDecl)
+	}
+}
 
 // caseFacetWrites runs the four facet_writes points. A peer declaring no
 // facet_writes SKIPs all four (the block is OPTIONAL); a declaring peer

@@ -118,27 +118,38 @@ func (t *terminalLister) ListEnriched(
 	return nodes, true, nil
 }
 
-// DescribeFacets appends the synthetic `_terminal` dimension to every type that
-// has a terminal-bearing dimension, so the evaluator routes `_terminal=…` to the
-// facet path (isFacetField) rather than a leaf fetch.
+// DescribeFacets appends the synthetic `_terminal` dimension to EVERY type — the
+// plugin's facet-declaring types and, for any declared type with no facets, a
+// `_terminal`-only entry — so the evaluator routes `_terminal=…` to the facet
+// path (facetTraits) rather than a leaf fetch. Declaring it only on
+// terminal-bearing types would make the default `_terminal=no` (composed
+// plugin-wide) match NOTHING of a type with no terminal notion — every comment
+// of a forge whose issues alone carry a closed state would vanish.
 func (t *terminalLister) DescribeFacets() []cgp.NodeTypeFacets {
 	var base []cgp.NodeTypeFacets
 	if t.describer != nil {
 		base = t.describer.DescribeFacets()
 	}
+	terminal := cgp.FacetDimension{
+		Key:    terminalDim,
+		Label:  "Terminal",
+		Kind:   cgp.FacetCategorical,
+		Values: []cgp.FacetValue{{Key: terminalNo}, {Key: terminalYes}},
+	}
+	declared := make(map[string]bool, len(base))
 	out := make([]cgp.NodeTypeFacets, 0, len(base))
 	for _, nt := range base {
-		if _, terminal := t.schema[nt.Tag]; terminal {
-			dims := append([]cgp.FacetDimension(nil), nt.Dimensions...)
-			dims = append(dims, cgp.FacetDimension{
-				Key:    terminalDim,
-				Label:  "Terminal",
-				Kind:   cgp.FacetCategorical,
-				Values: []cgp.FacetValue{{Key: terminalNo}, {Key: terminalYes}},
-			})
-			nt.Dimensions = dims
-		}
+		declared[nt.Tag] = true
+		dims := append([]cgp.FacetDimension(nil), nt.Dimensions...)
+		nt.Dimensions = append(dims, terminal)
 		out = append(out, nt)
+	}
+	for _, typ := range t.inner.Types() {
+		if declared[typ.Tag] {
+			continue
+		}
+		declared[typ.Tag] = true
+		out = append(out, cgp.NodeTypeFacets{Tag: typ.Tag, Dimensions: []cgp.FacetDimension{terminal}})
 	}
 	return out
 }
@@ -154,13 +165,11 @@ func (t *terminalLister) ReadLeaf(
 
 // annotate stamps each node's synthetic `_terminal` facet: yes iff the node holds
 // a terminal value in any of its type's terminal-bearing dimensions, else no. A
-// node whose type has no terminal notion is left untouched.
+// node whose type has no terminal notion can never be done, so it is `no` — the
+// default exclusion keeps it.
 func (t *terminalLister) annotate(nodes []cgp.Node) {
 	for i := range nodes {
-		dims, ok := t.schema[nodes[i].Type]
-		if !ok {
-			continue
-		}
+		dims := t.schema[nodes[i].Type]
 		if nodes[i].Facets == nil {
 			nodes[i].Facets = map[string][]cgp.FacetValue{}
 		}

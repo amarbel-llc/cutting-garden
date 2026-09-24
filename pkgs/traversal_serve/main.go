@@ -52,6 +52,10 @@ type FacetCountsResult = internal.FacetCountsResult
 // §Compatibility. FoldCase (RFC 0012 §6, FDR 0025 case-fold) is NOT
 // carried yet, so a wire plugin's case-folded dimension degrades to
 // exact matching host-side; adding it is the same additive-field move.
+// terminal_values (absent ≙ none) carries FacetDimension.TerminalValues —
+// the values marking a node DONE, which organize's default `_terminal=no`
+// excludes (forge organize F4); the host validates it at bring-up
+// (ValidateTerminalValuesDeclaration).
 type FacetDimensionView = internal.FacetDimensionView
 
 // FacetValueView is the wire form of cutting_garden_plugins.FacetValue
@@ -512,6 +516,14 @@ var ValidatePresentationDeclaration = internal.ValidatePresentationDeclaration
 // (Scheme clashes against LINKED plugins surface at registration, which
 // consults the live registry.)
 var ValidateStanzas = internal.ValidateStanzas
+
+// ValidateTerminalValuesDeclaration is the host's bring-up check of every
+// facet dimension's terminal_values in an initialize facets block (exported
+// for the conformance driver and a Go peer's own tests): each entry is a
+// non-empty string listed once, and — when the dimension declares a CLOSED
+// domain — one of its declared values. An OPEN dimension may name any
+// terminal value (caldav keeps status open yet names completed/cancelled).
+var ValidateTerminalValuesDeclaration = internal.ValidateTerminalValuesDeclaration
 
 // WithHandler makes the peer serve incoming requests — the plugin role.
 // Without it the peer is client-only (the host role: the sole request

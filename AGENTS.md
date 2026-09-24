@@ -105,7 +105,9 @@ plugin's capabilities (roots, leaf-read, facets, mutate, and the
 `facet_writes` declaration that makes it organize-writable — the host
 builds the `node.patch` bodies from it, `clearable` one writes clearing
 with `null`, RFC 0013 §Facet writes) are advertised in its `initialize`
-result, and its `node_types` entries MAY carry the §Presentation members
+result — its facet dimensions MAY name `terminal_values` (validated at
+bring-up), which organize's default `_terminal=no` exclusion honors exactly
+as for a linked plugin — and its `node_types` entries MAY carry the §Presentation members
 (`tag_set`, `inline_fields`, `trailer_field`) that `WirePlugin` synthesizes
 into the linked tag/atom/trailer surfaces (`traversal_serve.Presentation`:
 `UnifiedDescriber`, `FieldPresenter`, `ListingFieldsDescriber`,

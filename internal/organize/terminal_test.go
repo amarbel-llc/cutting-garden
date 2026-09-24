@@ -3,6 +3,7 @@ package organize
 import (
 	"context"
 	"net/url"
+	"slices"
 	"testing"
 
 	cgp "code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
@@ -14,12 +15,13 @@ import (
 // declares the given schema.
 type fakeLister struct {
 	dims  []cgp.NodeTypeFacets
+	types []cgp.NodeType
 	nodes []cgp.Node
 }
 
 func (f *fakeLister) Schemes() []string                    { return []string{"fake"} }
 func (f *fakeLister) TypeTag() string                      { return "fake" }
-func (f *fakeLister) Types() []cgp.NodeType                { return nil }
+func (f *fakeLister) Types() []cgp.NodeType                { return f.types }
 func (f *fakeLister) DescribeFacets() []cgp.NodeTypeFacets { return f.dims }
 
 func (f *fakeLister) ListRoots(context.Context, *url.URL) ([]cgp.Node, error) {
@@ -141,5 +143,41 @@ func TestSelectNodes_ExcludesTerminal(t *testing.T) {
 	}
 	if len(only) != 1 || only[0].URIString() != "fake://cal/done" {
 		t.Fatalf("selectNodes(_terminal=yes) = %+v, want just the done task", only)
+	}
+}
+
+// TestSelectNodes_TerminalKeepsTypesWithoutTerminalNotion pins that the default
+// exclusion, composed plugin-wide once ANY type names terminal values, keeps
+// every node of a type with no terminal notion — one declaring facets but no
+// terminal values ("note") and one declaring no facets at all ("link") — rather
+// than dropping them for lacking a `_terminal` value (a forge whose issues alone
+// carry a closed state must not lose its comments).
+func TestSelectNodes_TerminalKeepsTypesWithoutTerminalNotion(t *testing.T) {
+	dims := append(taskDims("COMPLETED"), cgp.NodeTypeFacets{
+		Tag:        "note",
+		Dimensions: []cgp.FacetDimension{{Key: "color", Kind: cgp.FacetCategorical}},
+	})
+	f := &fakeLister{
+		dims:  dims,
+		types: []cgp.NodeType{{Tag: "task"}, {Tag: "note"}, {Tag: "link"}},
+		nodes: []cgp.Node{
+			statusNode(t, "done", "COMPLETED"),
+			statusNode(t, "active", "NEEDS-ACTION"),
+			{URI: mustURL(t, "fake://cal/note"), Type: "note"},
+			{URI: mustURL(t, "fake://cal/link"), Type: "link"},
+		},
+	}
+
+	got, err := selectNodes(context.Background(), f, mustURL(t, "fake://cal"), "_terminal=no")
+	if err != nil {
+		t.Fatalf("selectNodes: %v", err)
+	}
+	var uris []string
+	for _, n := range got {
+		uris = append(uris, n.URIString())
+	}
+	want := []string{"fake://cal/active", "fake://cal/note", "fake://cal/link"}
+	if !slices.Equal(uris, want) {
+		t.Fatalf("selectNodes(_terminal=no) = %v, want %v", uris, want)
 	}
 }

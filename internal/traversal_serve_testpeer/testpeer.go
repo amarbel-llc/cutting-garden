@@ -322,6 +322,15 @@ const UndeclaredFacetWriteEnv = "CG_TESTPEER_UNDECLARED_FACET_WRITE"
 // makes the peer claim to write.
 const UndeclaredFacetWriteDimension = "no-such-dimension"
 
+// UndeclaredTerminalValueEnv, when set (to any non-empty value), makes the
+// ticket type's state dimension name UndeclaredTerminalValue as terminal —
+// a value outside its closed domain, which the host must reject at bring-up
+// (RFC 0013 terminal_values validation).
+const UndeclaredTerminalValueEnv = "CG_TESTPEER_UNDECLARED_TERMINAL_VALUE"
+
+// UndeclaredTerminalValue is the value UndeclaredTerminalValueEnv adds.
+const UndeclaredTerminalValue = "done"
+
 // configFromEnv is Config plus the environment-driven state file: the tree
 // is restored from $CG_TESTPEER_STATE_FILE when it exists and persisted to
 // it on every mutation.
@@ -500,6 +509,11 @@ func (p *TreePlugin) ReadLeaf(
 }
 
 func (p *TreePlugin) DescribeFacets() []cutting_garden_plugins.NodeTypeFacets {
+	ticketTerminal := []string{"closed"}
+	if os.Getenv(UndeclaredTerminalValueEnv) != "" {
+		ticketTerminal = append(ticketTerminal, UndeclaredTerminalValue)
+	}
+
 	return []cutting_garden_plugins.NodeTypeFacets{
 		{
 			Tag: LeafType,
@@ -542,6 +556,10 @@ func (p *TreePlugin) DescribeFacets() []cutting_garden_plugins.NodeTypeFacets {
 					Values: []cutting_garden_plugins.FacetValue{
 						{Key: "open"}, {Key: "closed"},
 					},
+					// A closed ticket is DONE (forge organize F4): organize
+					// hides it by default (`_terminal=no`) over the wire
+					// exactly as linked.
+					TerminalValues: ticketTerminal,
 				},
 				{
 					Key:   "milestone",

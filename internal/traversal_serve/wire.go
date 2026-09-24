@@ -19,7 +19,9 @@ package traversal_serve
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/url"
+	"slices"
 	"time"
 
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
@@ -862,6 +864,10 @@ func (v NodeTypeView) ToNodeType() cutting_garden_plugins.NodeType {
 // §Compatibility. FoldCase (RFC 0012 §6, FDR 0025 case-fold) is NOT
 // carried yet, so a wire plugin's case-folded dimension degrades to
 // exact matching host-side; adding it is the same additive-field move.
+// terminal_values (absent ≙ none) carries FacetDimension.TerminalValues —
+// the values marking a node DONE, which organize's default `_terminal=no`
+// excludes (forge organize F4); the host validates it at bring-up
+// (ValidateTerminalValuesDeclaration).
 type FacetDimensionView struct {
 	Key                    string           `json:"key"`
 	Label                  string           `json:"label,omitempty"`
@@ -869,6 +875,7 @@ type FacetDimensionView struct {
 	Multi                  bool             `json:"multi,omitempty"`
 	Values                 []FacetValueView `json:"values,omitempty"`
 	RevalidateAfterSeconds int64            `json:"revalidate_after_seconds,omitempty"`
+	TerminalValues         []string         `json:"terminal_values,omitempty"`
 }
 
 // FacetDimensionViewFrom projects a declared dimension onto the wire.
@@ -883,10 +890,13 @@ func FacetDimensionViewFrom(
 		Multi:                  dimension.Multi,
 		Values:                 facetValueViewsFrom(dimension.Values),
 		RevalidateAfterSeconds: int64(dimension.RevalidateAfter / time.Second),
+		TerminalValues:         nilIfEmpty(slices.Clone(dimension.TerminalValues)),
 	}
 }
 
-// ToFacetDimension is the inverse of FacetDimensionViewFrom.
+// ToFacetDimension is the inverse of FacetDimensionViewFrom. An absent or
+// empty terminal_values decodes to nil — "no terminal notion", exactly what
+// a linked dimension declaring none carries.
 func (v FacetDimensionView) ToFacetDimension() cutting_garden_plugins.FacetDimension {
 	return cutting_garden_plugins.FacetDimension{
 		Key:             v.Key,
@@ -895,7 +905,56 @@ func (v FacetDimensionView) ToFacetDimension() cutting_garden_plugins.FacetDimen
 		Multi:           v.Multi,
 		Values:          facetValuesFrom(v.Values),
 		RevalidateAfter: time.Duration(v.RevalidateAfterSeconds) * time.Second,
+		TerminalValues:  nilIfEmpty(slices.Clone(v.TerminalValues)),
 	}
+}
+
+// ValidateTerminalValuesDeclaration is the host's bring-up check of every
+// facet dimension's terminal_values in an initialize facets block (exported
+// for the conformance driver and a Go peer's own tests): each entry is a
+// non-empty string listed once, and — when the dimension declares a CLOSED
+// domain — one of its declared values. An OPEN dimension may name any
+// terminal value (caldav keeps status open yet names completed/cancelled).
+func ValidateTerminalValuesDeclaration(init InitializeResult) error {
+	for _, facets := range init.Facets {
+		for _, dimension := range facets.Dimensions {
+			var closed map[string]bool
+			if len(dimension.Values) > 0 {
+				closed = make(map[string]bool, len(dimension.Values))
+				for _, value := range dimension.Values {
+					closed[value.Key] = true
+				}
+			}
+
+			seen := map[string]bool{}
+			for _, terminal := range dimension.TerminalValues {
+				switch {
+				case terminal == "":
+					return fmt.Errorf(
+						"terminal values: type %q dimension %q names an empty value",
+						facets.Tag, dimension.Key,
+					)
+
+				case seen[terminal]:
+					return fmt.Errorf(
+						"terminal values: type %q dimension %q names %q more than once",
+						facets.Tag, dimension.Key, terminal,
+					)
+
+				case closed != nil && !closed[terminal]:
+					return fmt.Errorf(
+						"terminal values: type %q dimension %q value %q is not one"+
+							" of the dimension's declared values",
+						facets.Tag, dimension.Key, terminal,
+					)
+				}
+
+				seen[terminal] = true
+			}
+		}
+	}
+
+	return nil
 }
 
 // NodeTypeFacetsView is the wire form of

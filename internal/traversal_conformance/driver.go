@@ -93,6 +93,7 @@ func Run(
 	r.caseBulkMutate(ctx)
 	r.caseFacetWrites(ctx)
 	r.casePresentation(ctx)
+	r.caseTerminalValues()
 
 	tw.Plan()
 

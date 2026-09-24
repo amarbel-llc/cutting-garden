@@ -93,6 +93,24 @@ func jsonNormalize(t *testing.T, value any) any {
 	return out
 }
 
+// terminalValuesOf returns the TerminalValues declared for one dimension
+// of one node type, nil when either is undeclared.
+func terminalValuesOf(
+	declared []cutting_garden_plugins.NodeTypeFacets, tag, key string,
+) []string {
+	for _, facets := range declared {
+		if facets.Tag != tag {
+			continue
+		}
+		for _, dimension := range facets.Dimensions {
+			if dimension.Key == key {
+				return dimension.TerminalValues
+			}
+		}
+	}
+	return nil
+}
+
 // requireNodesEqual asserts two child listings are indistinguishable:
 // same length, same order, same URI/Name/Type/Facets per node. nil and
 // empty are the same empty listing (the wire always materializes a
@@ -163,6 +181,12 @@ func TestWireIndistinguishableFromLinked(t *testing.T) {
 
 	if got, want := wire.DescribeFacets(), linked.DescribeFacets(); !reflect.DeepEqual(got, want) {
 		t.Errorf("DescribeFacets:\nwire:   %+v\nlinked: %+v", got, want)
+	}
+
+	// The equality above is non-vacuous for terminal values (forge organize
+	// F4): the ticket state dimension names one, and it crossed the wire.
+	if got := terminalValuesOf(wire.DescribeFacets(), TicketType, "state"); !reflect.DeepEqual(got, []string{"closed"}) {
+		t.Errorf("wire %s state TerminalValues = %v, want [closed]", TicketType, got)
 	}
 
 	if got, want := wire.DescribeFacetWrites(), linked.DescribeFacetWrites(); !reflect.DeepEqual(got, want) {

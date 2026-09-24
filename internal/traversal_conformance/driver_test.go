@@ -174,7 +174,8 @@ func TestRunPassesConformantTestpeer(t *testing.T) {
 		"ok 19 - initialize: node_types presentation members are usable by" +
 			" the host",
 		"ok 20 - node.patch: host-built trailer_field body renames the node",
-		"1..20",
+		"ok 21 - initialize: facet terminal_values are usable by the host",
+		"1..21",
 	} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("output missing %q:\n%s", want, out.String())

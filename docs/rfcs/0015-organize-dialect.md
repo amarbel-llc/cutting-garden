@@ -704,7 +704,12 @@ state on other plugins.
   `["completed", "cancelled"]` terminal (the presented domain).
 - **Synthetic `_terminal`.** The framework derives a closed yes/no
   `_terminal` dimension — an object is `_terminal=yes` iff it holds a
-  terminal value in any terminal-bearing dimension. The `_` prefix marks
+  terminal value in any terminal-bearing dimension, else `_terminal=no` —
+  including every object of a type with no terminal-bearing dimension
+  (it can never be done, so the plugin-wide default keeps it; a forge's
+  comments survive although only its issues carry a closed state). A wire
+  plugin names its terminal values through RFC 0013's FacetDimension
+  `terminal_values`. The `_` prefix marks
   it framework-synthesized (cf. the `_body` pseudo-field, the `_query`
   envelope field), keeping the plugin's real-facet namespace clean. It is
   an ordinary matchable facet predicate — no new grammar.

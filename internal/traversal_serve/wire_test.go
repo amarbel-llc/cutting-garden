@@ -339,6 +339,131 @@ func TestFacetDimensionViewRoundTrip(t *testing.T) {
 	}
 }
 
+// TestFacetDimensionViewTerminalValues pins the terminal_values member
+// (forge organize F4): present on the wire exactly when the dimension
+// names terminal values, round-tripping to the same TerminalValues, and
+// absent (decoding to nil) when it names none.
+func TestFacetDimensionViewTerminalValues(t *testing.T) {
+	declared := cutting_garden_plugins.FacetDimension{
+		Key:  "state",
+		Kind: cutting_garden_plugins.FacetCategorical,
+		Values: []cutting_garden_plugins.FacetValue{
+			{Key: "open"}, {Key: "closed"},
+		},
+		TerminalValues: []string{"closed"},
+	}
+
+	raw, err := json.Marshal(FacetDimensionViewFrom(declared))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	want := `{"key":"state","kind":"categorical",` +
+		`"values":[{"key":"open"},{"key":"closed"}],` +
+		`"terminal_values":["closed"]}`
+	if string(raw) != want {
+		t.Errorf("json = %s, want %s", raw, want)
+	}
+
+	var view FacetDimensionView
+	if err = json.Unmarshal(raw, &view); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := view.ToFacetDimension(); !reflect.DeepEqual(got, declared) {
+		t.Errorf("round trip = %#v, want %#v", got, declared)
+	}
+
+	declared.TerminalValues = []string{}
+	if raw, err = json.Marshal(FacetDimensionViewFrom(declared)); err != nil {
+		t.Fatal(err)
+	}
+
+	if strings.Contains(string(raw), "terminal_values") {
+		t.Errorf("empty terminal values emitted: %s", raw)
+	}
+
+	view = FacetDimensionView{}
+	if err = json.Unmarshal(raw, &view); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := view.ToFacetDimension().TerminalValues; got != nil {
+		t.Errorf("absent terminal_values decoded to %#v, want nil", got)
+	}
+}
+
+// TestValidateTerminalValuesDeclaration pins the host's bring-up rules for
+// terminal_values: non-empty, listed once, and within a CLOSED domain; an
+// OPEN dimension may name any value.
+func TestValidateTerminalValuesDeclaration(t *testing.T) {
+	stateValues := []FacetValueView{{Key: "open"}, {Key: "closed"}}
+
+	for _, tc := range []struct {
+		name      string
+		dimension FacetDimensionView
+		wantErr   string
+	}{
+		{
+			name: "closed domain subset",
+			dimension: FacetDimensionView{
+				Key: "state", Kind: "categorical", Values: stateValues,
+				TerminalValues: []string{"closed"},
+			},
+		},
+		{
+			name: "open domain names anything",
+			dimension: FacetDimensionView{
+				Key: "status", Kind: "categorical",
+				TerminalValues: []string{"completed", "cancelled"},
+			},
+		},
+		{
+			name: "outside the closed domain",
+			dimension: FacetDimensionView{
+				Key: "state", Kind: "categorical", Values: stateValues,
+				TerminalValues: []string{"done"},
+			},
+			wantErr: `terminal values: type "fj-issue-v1" dimension "state"` +
+				` value "done" is not one of the dimension's declared values`,
+		},
+		{
+			name: "empty value",
+			dimension: FacetDimensionView{
+				Key: "state", Kind: "categorical",
+				TerminalValues: []string{""},
+			},
+			wantErr: `terminal values: type "fj-issue-v1" dimension "state"` +
+				` names an empty value`,
+		},
+		{
+			name: "duplicate value",
+			dimension: FacetDimensionView{
+				Key: "state", Kind: "categorical", Values: stateValues,
+				TerminalValues: []string{"closed", "closed"},
+			},
+			wantErr: `terminal values: type "fj-issue-v1" dimension "state"` +
+				` names "closed" more than once`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateTerminalValuesDeclaration(InitializeResult{
+				Facets: []NodeTypeFacetsView{{
+					Tag:        "fj-issue-v1",
+					Dimensions: []FacetDimensionView{tc.dimension},
+				}},
+			})
+
+			switch {
+			case tc.wantErr == "" && err != nil:
+				t.Errorf("unexpected error: %v", err)
+			case tc.wantErr != "" && (err == nil || err.Error() != tc.wantErr):
+				t.Errorf("error = %v, want %q", err, tc.wantErr)
+			}
+		})
+	}
+}
+
 func TestNodeTypeFacetsViewRoundTrip(t *testing.T) {
 	declared := cutting_garden_plugins.NodeTypeFacets{
 		Tag: "fj-issue-v1",

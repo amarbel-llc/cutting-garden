@@ -212,10 +212,13 @@ func (w *WirePlugin) liveSession() (*Session, error) {
 	// one fails bring-up loudly — persistently, like the schemes echo —
 	// rather than surfacing later as a confusing organize failure.
 	// The presentation members (tag_set) are validated the same way: the
-	// host synthesizes its linked tag surface from them.
+	// host synthesizes its linked tag surface from them. So are the facet
+	// dimensions' terminal_values: organize's default `_terminal=no`
+	// exclusion keys on them.
 	for _, validate := range []func(InitializeResult) error{
 		ValidateFacetWriteDeclaration,
 		ValidatePresentationDeclaration,
+		ValidateTerminalValuesDeclaration,
 	} {
 		if err := validate(sess.Init); err != nil {
 			w.fatalErr = errors.ErrorWithStackf(

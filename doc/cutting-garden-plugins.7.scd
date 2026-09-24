@@ -281,6 +281,18 @@ a move up front, saying it cannot be cleared. A linked applier receives a
 clear as an empty *toBucket*, and only for a write it declared clearable. The
 driver's *[facet_clear]* table checks it.
 
+# MARK WHICH VALUES MEAN DONE
+
+A facet dimension may name *terminal values* (*FacetDimension.TerminalValues*;
+wire *"terminal_values": [...]* on the dimension, RFC 0013 §Wire encodings):
+the values - in the presented domain you emit as facet keys - that mark a node
+DONE (caldav's *completed*/*cancelled*, a closed issue). *organize* excludes
+terminal nodes by default, composing *\_terminal=no* into its query (echoed in
+the document's *\_query*; *-include-terminal* opts out). On a closed dimension
+every terminal value MUST be one of its declared *values*; a wire peer
+violating that, naming a value twice, or naming an empty one fails bring-up.
+A Go peer advertises it automatically from *DescribeFacets*.
+
 # DECLARE HOW A WIRE NODE FILLS ITS BOX
 
 A linked plugin fills an organize box - tag atoms, *name=value* atoms, the

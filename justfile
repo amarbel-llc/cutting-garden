@@ -1994,11 +1994,13 @@ debug-organize-traversal-vectors EDIT='' TAG_EDIT='':
 # per run. Generates the GROUP_BY document; with EDITED (a path to an edited
 # copy of that document — its `_base` is deterministic, so write it once from a
 # prior run's output) it applies it with -commit and regenerates, then prints
-# the tracker's `list -format json`. WRITES to the throwaway state file only.
+# the tracker's `list -format json`. FLAGS are extra organize generate flags
+# (e.g. -include-terminal, to keep the closed ticket the peer's terminal_values
+# hide by default). WRITES to the throwaway state file only.
 #
 # render the organize-over-the-wire tracker documents for the traversal_serve.bats vectors
 [group('debug')]
-debug-organize-tracker-vectors GROUP_BY='milestone=' EDITED='':
+debug-organize-tracker-vectors GROUP_BY='milestone=' EDITED='' FLAGS='':
     #!/usr/bin/env bash
     set -euo pipefail
     root="{{ justfile_directory() }}"
@@ -2016,7 +2018,7 @@ debug-organize-tracker-vectors GROUP_BY='milestone=' EDITED='':
     cd "$work"
     nix develop "$root" --command madder init -encryption none .default >/dev/null
     banner() { printf '\n### %s\n' "$*"; }
-    gen() { banner "$1"; "$cg" organize -group-by '{{ GROUP_BY }}' -query '!cgtest-ticket-v1' cgtest://fixture/tracker | tee "$work/$1.txt"; }
+    gen() { banner "$1"; "$cg" organize {{ FLAGS }} -group-by '{{ GROUP_BY }}' -query '!cgtest-ticket-v1' cgtest://fixture/tracker | tee "$work/$1.txt"; }
     gen generate
     if [[ -n $edited ]]; then
       banner apply; "$cg" organize -apply "$edited" -commit || echo "exit=$?"
