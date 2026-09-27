@@ -190,7 +190,9 @@ func TestRunPassesConformantTestpeer(t *testing.T) {
 			" the host",
 		"ok 23 - node.create_child: host-built create body creates the node" +
 			" with its fields",
-		"1..23",
+		"ok 24 - node.create_child: a repeated idempotency_key returns the" +
+			" same node, existed",
+		"1..24",
 	} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("output missing %q:\n%s", want, out.String())

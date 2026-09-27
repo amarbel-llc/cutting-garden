@@ -22,6 +22,7 @@ type nodeSnapshot struct {
 	Raw        []byte                                         `json:"raw"`
 	RawMime    string                                         `json:"raw_mime"`
 	Children   []string                                       `json:"children"`
+	CreateKey  string                                         `json:"create_key,omitempty"`
 }
 
 type treeSnapshot struct {
@@ -59,6 +60,7 @@ func (p *TreePlugin) loadState() error {
 			raw:        node.Raw,
 			rawMime:    node.RawMime,
 			children:   node.Children,
+			createKey:  node.CreateKey,
 		}
 	}
 	p.generation = snapshot.Generation
@@ -88,6 +90,7 @@ func (p *TreePlugin) persistLocked() error {
 			Raw:        node.raw,
 			RawMime:    node.rawMime,
 			Children:   node.children,
+			CreateKey:  node.createKey,
 		}
 	}
 

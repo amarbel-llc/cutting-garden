@@ -376,12 +376,19 @@ type NodeCreateChildParams struct {
 	Type      string `json:"type"`
 	// BodyBase64 is the new node's body in standard base64; OPTIONAL.
 	BodyBase64 string `json:"body_base64,omitempty"`
+	// IdempotencyKey is the OPTIONAL creation idempotency key (RFC 0013
+	// §Creation): a repeated create with the same key SHOULD return the same
+	// node (Existed) instead of creating a duplicate. A peer predating it
+	// ignores it as an unknown param.
+	IdempotencyKey string `json:"idempotency_key,omitempty"`
 }
 
 // NodeCreateChildResult reports the URI the source assigned. MUST be
-// non-empty and credential-free.
+// non-empty and credential-free. Existed (OPTIONAL, absent ≙ false) reports
+// that a keyed create had already landed: Created is that earlier node.
 type NodeCreateChildResult struct {
 	Created string `json:"created"`
+	Existed bool   `json:"existed,omitempty"`
 }
 
 // NodePutParams is the node.put request payload: full-replace an

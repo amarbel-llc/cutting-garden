@@ -140,7 +140,8 @@ type LeafReadResult = internal.LeafReadResult
 type NodeCreateChildParams = internal.NodeCreateChildParams
 
 // NodeCreateChildResult reports the URI the source assigned. MUST be
-// non-empty and credential-free.
+// non-empty and credential-free. Existed (OPTIONAL, absent ≙ false) reports
+// that a keyed create had already landed: Created is that earlier node.
 type NodeCreateChildResult = internal.NodeCreateChildResult
 
 // NodeCreateParams is the node.create request payload

@@ -83,6 +83,7 @@ var (
 	// members, and the host-built node.create_child body.
 	_ cutting_garden_plugins.CreationDescriber = (*WirePlugin)(nil)
 	_ cutting_garden_plugins.CreateApplier     = (*WirePlugin)(nil)
+	_ cutting_garden_plugins.IdempotentCreator = (*WirePlugin)(nil)
 )
 
 // NewWirePlugin returns the adapter for spec. It does NOT spawn — the
@@ -968,12 +969,29 @@ func (w *WirePlugin) CreateNode(
 func (w *WirePlugin) CreateChild(
 	ctx context.Context, container *url.URL, body io.Reader, typ string,
 ) (*url.URL, error) {
+	created, _, err := w.createChild(ctx, container, body, typ, "")
+	return created, err
+}
+
+// CreateChildWithKey is the IdempotentCreator: node.create_child carrying
+// the creation's `idempotency_key` (RFC 0013 §Creation), reading the result's
+// `existed`. A peer that ignores the key answers as a plain create
+// (existed false) — the host's receipt is then the only guard.
+func (w *WirePlugin) CreateChildWithKey(
+	ctx context.Context, container *url.URL, body io.Reader, typ, key string,
+) (*url.URL, bool, error) {
+	return w.createChild(ctx, container, body, typ, key)
+}
+
+func (w *WirePlugin) createChild(
+	ctx context.Context, container *url.URL, body io.Reader, typ, key string,
+) (*url.URL, bool, error) {
 	sess, advertised, err := w.liveSessionWithCap(CapContainerCreate)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if !advertised {
-		return nil, errors.ErrorWithStackf(
+		return nil, false, errors.ErrorWithStackf(
 			"wire plugin %q does not advertise the %q capability;"+
 				" refusing the mutation",
 			w.spec.Name, CapContainerCreate,
@@ -982,7 +1000,7 @@ func (w *WirePlugin) CreateChild(
 
 	encoded, err := encodeBody(body)
 	if err != nil {
-		return nil, errors.Wrapf(
+		return nil, false, errors.Wrapf(
 			err, "wire plugin %q: read create_child body", w.spec.Name,
 		)
 	}
@@ -991,31 +1009,32 @@ func (w *WirePlugin) CreateChild(
 	if err := w.call(
 		ctx, sess, MethodNodeCreateChild,
 		NodeCreateChildParams{
-			Container:  container.String(),
-			Type:       typ,
-			BodyBase64: encoded,
+			Container:      container.String(),
+			Type:           typ,
+			BodyBase64:     encoded,
+			IdempotencyKey: key,
 		},
 		&result,
 	); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	created, err := url.Parse(result.Created)
 	if err != nil || result.Created == "" {
-		return nil, errors.ErrorWithStackf(
+		return nil, false, errors.ErrorWithStackf(
 			"wire plugin %q: create_child returned an unusable URI %q",
 			w.spec.Name, result.Created,
 		)
 	}
 	if created.User != nil {
-		return nil, errors.ErrorWithStackf(
+		return nil, false, errors.ErrorWithStackf(
 			"wire plugin %q: created %q carries userinfo — URIs MUST be"+
 				" credential-free",
 			w.spec.Name, created.Redacted(),
 		)
 	}
 
-	return created, nil
+	return created, result.Existed, nil
 }
 
 // PutNode issues node.put — full-replace of an existing leaf's body.

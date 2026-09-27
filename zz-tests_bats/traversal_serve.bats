@@ -1252,7 +1252,7 @@ EOF
   # whole multi-line output as ONE string (no per-line/multiline flag),
   # so `^not ok` would never match a mid-output failure — a false-safe
   # assertion. --partial 'not ok' catches a failing point anywhere.
-  assert_output --partial '1..23'
+  assert_output --partial '1..24'
   assert_output --partial 'ok 1 - initialize'
   assert_output --partial 'ok 11 - leaf.read: container returns its own body'
   assert_output --partial 'ok 13 - nodes.list: filter pushdown returns a sound subset'
@@ -1284,6 +1284,9 @@ EOF
   # substituted peer names its own [creation] container/type, or SKIPs).
   assert_output --partial 'ok 22 - initialize: node_types creatable declarations are usable by the host'
   assert_output --partial 'ok 23 - node.create_child: host-built create body creates the node with its fields'
+  # ...and a repeated `idempotency_key` returns the same node with
+  # `existed` (a peer that ignores the key SKIPs).
+  assert_output --partial 'ok 24 - node.create_child: a repeated idempotency_key returns the same node, existed'
   refute_output --partial 'not ok'
 }
 

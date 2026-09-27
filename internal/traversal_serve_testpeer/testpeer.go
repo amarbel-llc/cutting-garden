@@ -103,6 +103,10 @@ type memNode struct {
 	// children is the ordered child-URI list; non-nil exactly for
 	// containers.
 	children []string
+
+	// createKey is the idempotency key a keyed create_child made this node
+	// with (RFC 0013 §Creation); a repeat with the same key finds it.
+	createKey string
 }
 
 // container reports whether this node has children — the descendability
@@ -794,17 +798,34 @@ func (p *TreePlugin) DescribeBodies() []cutting_garden_plugins.NodeTypeBody {
 // child-N name under the container (or, for a ticket, the next ticket
 // number — RFC 0013 §Creation) — and reports it back.
 func (p *TreePlugin) CreateChild(
-	_ context.Context, container *url.URL, body io.Reader, typ string,
+	ctx context.Context, container *url.URL, body io.Reader, typ string,
 ) (*url.URL, error) {
+	created, _, err := p.createChild(ctx, container, body, typ, "")
+	return created, err
+}
+
+// CreateChildWithKey is the IdempotentCreator (RFC 0013 §Creation): a child
+// the same key already created under the container is returned with
+// existed = true instead of a duplicate; otherwise it creates, remembering
+// the key on the new node.
+func (p *TreePlugin) CreateChildWithKey(
+	ctx context.Context, container *url.URL, body io.Reader, typ, key string,
+) (*url.URL, bool, error) {
+	return p.createChild(ctx, container, body, typ, key)
+}
+
+func (p *TreePlugin) createChild(
+	_ context.Context, container *url.URL, body io.Reader, typ, idempotencyKey string,
+) (*url.URL, bool, error) {
 	if typ != AssignedLeafType && typ != TicketType {
-		return nil, errors.BadRequestf(
+		return nil, false, errors.BadRequestf(
 			"create_child under %s: type %q is not server-assigned",
 			container.String(), typ,
 		)
 	}
 	data, err := readAllBody(body)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	p.mu.Lock()
@@ -815,13 +836,26 @@ func (p *TreePlugin) CreateChild(
 	containerKey := readKey(container)
 	parent, found := p.nodes[containerKey]
 	if !found || !parent.container() {
-		return nil, errors.BadRequestf(
+		return nil, false, errors.BadRequestf(
 			"create_child: %s is not a container", container.String(),
 		)
 	}
 
+	if idempotencyKey != "" {
+		for _, child := range parent.children {
+			if node, ok := p.nodes[child]; ok && node.createKey == idempotencyKey {
+				existing, err := url.Parse(child)
+				if err != nil {
+					return nil, false, errors.Wrap(err)
+				}
+				return existing, true, nil
+			}
+		}
+	}
+
 	if typ == TicketType {
-		return p.createTicketLocked(containerKey, parent, data)
+		created, err := p.createTicketLocked(containerKey, parent, data, idempotencyKey)
+		return created, false, err
 	}
 
 	p.assigned++
@@ -833,18 +867,19 @@ func (p *TreePlugin) CreateChild(
 		structured: map[string]any{"title": string(data)},
 		raw:        data,
 		rawMime:    LeafMimeType,
+		createKey:  idempotencyKey,
 	}
 	parent.children = append(parent.children, key)
 	p.generation++
 	if err := p.persistLocked(); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
 	created, err := url.Parse(key)
 	if err != nil {
-		return nil, errors.Wrap(err)
+		return nil, false, errors.Wrap(err)
 	}
-	return created, nil
+	return created, false, nil
 }
 
 func (p *TreePlugin) CreateNode(

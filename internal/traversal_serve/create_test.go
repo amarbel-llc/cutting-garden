@@ -1,6 +1,11 @@
 package traversal_serve
 
 import (
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"io"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -129,6 +134,74 @@ func TestPresentationBuildCreateBody(t *testing.T) {
 		if err == nil || !errors.Is400BadRequest(err) || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("BuildCreateBody(%v) = %v, want a bad request containing %q", tc.fields, err, tc.want)
 		}
+	}
+}
+
+// A peer whose plugin has no IdempotentCreator still serves a keyed
+// create_child — the key, and any param a newer host sends, is tolerated as
+// unknown (plain JSON decode) — and answers with no `existed`.
+func TestServerCreateChildToleratesKeyAndUnknownParams(t *testing.T) {
+	plugin := &fakeFullPlugin{}
+	client, _ := startServe(t, fullPluginConfig(plugin))
+	ctx := context.Background()
+	if err := client.Call(ctx, MethodInitialize,
+		InitializeParams{ProtocolVersions: []string{SchemaV1}}, nil); err != nil {
+		t.Fatalf("initialize: %v", err)
+	}
+
+	var raw map[string]json.RawMessage
+	if err := client.Call(ctx, MethodNodeCreateChild, map[string]any{
+		"container":       "mem://fixture/root",
+		"type":            "mem-obj-v1",
+		"body_base64":     base64.StdEncoding.EncodeToString([]byte("body")),
+		"idempotency_key": "cgk1-0123",
+		"a_future_param":  map[string]any{"nested": true},
+	}, &raw); err != nil {
+		t.Fatalf("create_child with extra params: %v", err)
+	}
+	if string(raw["created"]) != `"mem://fixture/root/assigned-1"` {
+		t.Fatalf("created = %s", raw["created"])
+	}
+	if _, present := raw["existed"]; present {
+		t.Fatalf("existed present from a non-idempotent peer: %s", raw["existed"])
+	}
+}
+
+// keyedPlugin is fakeFullPlugin plus an IdempotentCreator remembering keys.
+type keyedPlugin struct {
+	*fakeFullPlugin
+	byKey map[string]string
+}
+
+func (p *keyedPlugin) CreateChildWithKey(
+	_ context.Context, container *url.URL, _ io.Reader, _ string, key string,
+) (*url.URL, bool, error) {
+	if uri, ok := p.byKey[key]; ok {
+		u, err := url.Parse(uri)
+		return u, true, err
+	}
+	uri := container.String() + "/" + key
+	p.byKey[key] = uri
+	u, err := url.Parse(uri)
+	return u, false, err
+}
+
+// A keyed create over the wire reaches a Go peer's IdempotentCreator, and a
+// repeat reports `existed` with the same URI — end to end through WirePlugin.
+func TestWirePluginCreateChildWithKey(t *testing.T) {
+	cfg := fullPluginConfig(&fakeFullPlugin{})
+	cfg.Plugin = &keyedPlugin{fakeFullPlugin: cfg.Plugin.(*fakeFullPlugin), byKey: map[string]string{}}
+	adapter, _ := newTestWirePlugin(t, memSpec(), cfg)
+	ctx := context.Background()
+	container := mustParseURL(t, "mem://fixture/root")
+
+	first, existed, err := adapter.CreateChildWithKey(ctx, container, strings.NewReader("b"), "mem-obj-v1", "cgk1-k")
+	if err != nil || existed || first.String() != "mem://fixture/root/cgk1-k" {
+		t.Fatalf("first = %v, %v, %v", first, existed, err)
+	}
+	again, existed, err := adapter.CreateChildWithKey(ctx, container, strings.NewReader("b"), "mem-obj-v1", "cgk1-k")
+	if err != nil || !existed || again.String() != first.String() {
+		t.Fatalf("again = %v, %v, %v", again, existed, err)
 	}
 }
 

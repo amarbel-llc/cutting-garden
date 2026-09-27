@@ -23,6 +23,7 @@ var (
 	_ cutting_garden_plugins.CreationDescriber = (*TreePlugin)(nil)
 	_ cutting_garden_plugins.CreateApplier     = (*TreePlugin)(nil)
 	_ cutting_garden_plugins.ContainerCreator  = (*TreePlugin)(nil)
+	_ cutting_garden_plugins.IdempotentCreator = (*TreePlugin)(nil)
 )
 
 // DescribeCreation is the CreationDescriber the served peer advertises on its
@@ -49,7 +50,7 @@ func (p *TreePlugin) BuildCreateBody(
 // changes: a missing or non-string title, or a recognized facet field with an
 // unusable value, is a bad request (-32602) with the tree untouched.
 func (p *TreePlugin) createTicketLocked(
-	containerKey string, parent *memNode, data []byte,
+	containerKey string, parent *memNode, data []byte, idempotencyKey string,
 ) (*url.URL, error) {
 	var fields map[string]any
 	if err := json.Unmarshal(data, &fields); err != nil {
@@ -84,6 +85,7 @@ func (p *TreePlugin) createTicketLocked(
 		typ:        TicketType,
 		facets:     facets,
 		structured: map[string]any{"title": title, "state": state},
+		createKey:  idempotencyKey,
 	}
 	parent.children = append(parent.children, key)
 	p.generation++

@@ -744,9 +744,25 @@ func (s *server) handleNodeCreateChild(
 		return nil, rpcErr
 	}
 
-	created, err := s.creator.CreateChild(
-		ctx, container, bytes.NewReader(body), createParams.Type,
+	// A keyed create (RFC 0013 §Creation idempotency_key) routes to a Go
+	// peer's IdempotentCreator; a peer without one creates as before and the
+	// key is simply unused (the host's receipt covers it).
+	var (
+		created *url.URL
+		existed bool
+		err     error
 	)
+	if keyed, ok := s.creator.(cutting_garden_plugins.IdempotentCreator); ok &&
+		createParams.IdempotencyKey != "" {
+		created, existed, err = keyed.CreateChildWithKey(
+			ctx, container, bytes.NewReader(body), createParams.Type,
+			createParams.IdempotencyKey,
+		)
+	} else {
+		created, err = s.creator.CreateChild(
+			ctx, container, bytes.NewReader(body), createParams.Type,
+		)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -756,7 +772,7 @@ func (s *server) handleNodeCreateChild(
 		)
 	}
 
-	return NodeCreateChildResult{Created: created.String()}, nil
+	return NodeCreateChildResult{Created: created.String(), Existed: existed}, nil
 }
 
 func (s *server) handleNodePut(

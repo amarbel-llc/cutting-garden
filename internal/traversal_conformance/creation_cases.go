@@ -19,9 +19,14 @@ import (
 )
 
 const (
-	nameCreationDecl  = "initialize: node_types creatable declarations are usable by the host"
-	nameCreationChild = "node.create_child: host-built create body creates the node with its fields"
+	nameCreationDecl        = "initialize: node_types creatable declarations are usable by the host"
+	nameCreationChild       = "node.create_child: host-built create body creates the node with its fields"
+	nameCreationIdempotency = "node.create_child: a repeated idempotency_key returns the same node, existed"
 )
+
+// conformanceIdempotencyKey is the key the idempotency point sends (shaped
+// like the host's `cgk1-` keys).
+const conformanceIdempotencyKey = "cgk1-c0f0c0f0c0f0c0f0c0f0c0f0c0f0c0f0"
 
 // caseCreation runs the two creation points. A peer declaring no creatable
 // type SKIPs both (the member is OPTIONAL); a declaring peer always gets the
@@ -32,8 +37,9 @@ func (r *runner) caseCreation(ctx context.Context) {
 	defer cancel()
 
 	if len(traversal_serve.CreationsOf(r.init)) == 0 {
-		r.tap.Skip(nameCreationDecl, "peer declares no creatable node types")
-		r.tap.Skip(nameCreationChild, "peer declares no creatable node types")
+		for _, name := range []string{nameCreationDecl, nameCreationChild, nameCreationIdempotency} {
+			r.tap.Skip(name, "peer declares no creatable node types")
+		}
 		return
 	}
 
@@ -47,27 +53,122 @@ func (r *runner) caseCreation(ctx context.Context) {
 	switch spec := r.manifest.Creation; {
 	case spec == nil:
 		r.tap.Skip(nameCreationChild, "manifest declares no creation")
+		r.tap.Skip(nameCreationIdempotency, "manifest declares no creation")
 	case declErr != nil:
 		r.tap.Skip(nameCreationChild, "the creatable declaration is unusable")
+		r.tap.Skip(nameCreationIdempotency, "the creatable declaration is unusable")
 	default:
 		r.creationChild(ctx, spec)
+		r.creationIdempotency(ctx, spec)
 	}
 }
 
-// creationChild builds the host body for spec's fields, creates the node,
-// reads it back through nodes.list of the container, and deletes it.
-func (r *runner) creationChild(ctx context.Context, spec *CreationSpec) {
+// creationIdempotency sends the same host-built create twice with one
+// `idempotency_key`: a peer honoring the key MUST answer the repeat with the
+// SAME `created` URI and `"existed": true`, leaving one node. A peer that
+// ignores the key (it MAY — the host's receipt covers it) creates twice; the
+// point SKIPs then. Every created node is deleted afterwards.
+func (r *runner) creationIdempotency(ctx context.Context, spec *CreationSpec) {
+	body, err := r.creationBody(spec)
+	if err != nil {
+		r.tap.NotOk(nameCreationIdempotency, map[string]string{"build": err.Error()})
+		return
+	}
+
+	call := func() (traversal_serve.NodeCreateChildResult, error) {
+		var result traversal_serve.NodeCreateChildResult
+		err := r.session.Call(ctx, traversal_serve.MethodNodeCreateChild,
+			traversal_serve.NodeCreateChildParams{
+				Container:      spec.Container,
+				Type:           spec.Type,
+				BodyBase64:     encodeBody(string(body)),
+				IdempotencyKey: conformanceIdempotencyKey,
+			}, &result)
+		return result, err
+	}
+
+	first, err := call()
+	if err != nil {
+		r.tap.NotOk(nameCreationIdempotency, map[string]string{"first node.create_child": err.Error()})
+		return
+	}
+	second, err := call()
+	cleanup := func(uris ...string) map[string]string {
+		problems := map[string]string{}
+		if !r.hasCapability(traversal_serve.CapMutate) {
+			return problems
+		}
+		seen := map[string]bool{}
+		for _, uri := range uris {
+			if uri == "" || seen[uri] {
+				continue
+			}
+			seen[uri] = true
+			if err := r.session.Call(ctx, traversal_serve.MethodNodeDelete,
+				traversal_serve.NodeDeleteParams{URI: uri}, nil); err != nil {
+				problems["cleanup "+uri] = err.Error()
+			}
+		}
+		return problems
+	}
+	if err != nil {
+		problems := cleanup(first.Created)
+		problems["second node.create_child"] = err.Error()
+		r.tap.NotOk(nameCreationIdempotency, problems)
+		return
+	}
+	if second.Created != first.Created && !second.Existed {
+		problems := cleanup(first.Created, second.Created)
+		if len(problems) > 0 {
+			r.tap.NotOk(nameCreationIdempotency, problems)
+			return
+		}
+		r.tap.Skip(nameCreationIdempotency, "peer does not honor idempotency_key (it MAY ignore it)")
+		return
+	}
+
+	problems := map[string]string{}
+	switch {
+	case first.Existed:
+		problems["first"] = "a first create reported existed"
+	case second.Created != first.Created:
+		problems["second"] = fmt.Sprintf("existed, but created %q != %q", second.Created, first.Created)
+	case !second.Existed:
+		problems["second"] = "the repeat returned the same URI without existed: true"
+	}
+	nodes, ok := r.listNodesDecoded(ctx, spec.Container, nil)
+	if !ok {
+		problems["read-back"] = "nodes.list " + spec.Container + " failed"
+	} else if n := countURI(nodes, first.Created); n != 1 {
+		problems["read-back"] = fmt.Sprintf("%s listed %d times, want 1", first.Created, n)
+	}
+	for k, v := range cleanup(first.Created) {
+		problems[k] = v
+	}
+	r.verdict(nameCreationIdempotency, problems)
+}
+
+func countURI(nodes []cutting_garden_plugins.Node, uri string) int {
+	n := 0
+	for _, node := range nodes {
+		if node.URIString() == uri {
+			n++
+		}
+	}
+	return n
+}
+
+// creationBody builds the host create body for the manifest's fields.
+func (r *runner) creationBody(spec *CreationSpec) ([]byte, error) {
 	presentation := traversal_serve.NewPresentation(
 		traversal_serve.PresentationsOf(r.init), r.declaredFacetWrites(),
 	)
-
 	trailerField := ""
 	for _, p := range traversal_serve.PresentationsOf(r.init) {
 		if p.Tag == spec.Type {
 			trailerField = p.TrailerField
 		}
 	}
-
 	fields := map[string][]string{trailerField: {spec.Trailer}}
 	if spec.OneDimension != "" {
 		fields[spec.OneDimension] = []string{spec.OneValue}
@@ -75,8 +176,13 @@ func (r *runner) creationChild(ctx context.Context, spec *CreationSpec) {
 	if spec.ManyDimension != "" {
 		fields[spec.ManyDimension] = spec.ManySet
 	}
+	return presentation.BuildCreateBody(spec.Type, fields)
+}
 
-	body, err := presentation.BuildCreateBody(spec.Type, fields)
+// creationChild builds the host body for spec's fields, creates the node,
+// reads it back through nodes.list of the container, and deletes it.
+func (r *runner) creationChild(ctx context.Context, spec *CreationSpec) {
+	body, err := r.creationBody(spec)
 	if err != nil {
 		r.tap.NotOk(nameCreationChild, map[string]string{"build": err.Error()})
 		return
