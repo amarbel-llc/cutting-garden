@@ -70,7 +70,10 @@ revised: |
     (superseding the "adoption" row of §Creation and adoption); the new
     object's type comes from its box, its `# !type` heading, or `_type`;
     the plugin declares what is creatable and builds the body. See
-    §Creation (implemented).
+    §Creation (implemented). Same day: re-applying never duplicates — an
+    idempotency key derived from `_base` + temp id rides every create, and a
+    host creation receipt (keyed by `_base`) skips recorded creations; a
+    failure after creations landed names them.
 ---
 
 # The organize document dialect
@@ -398,14 +401,57 @@ yet; apply creates it.
   declared creatable, a missing required field, a field the plugin cannot
   set on create, and an anchor resolvable to a different container type are
   all refused at PLAN time, before the diff and before anything is written.
-  The SDK surface is `CreationDescriber` / `CreateApplier` +
-  `ContainerCreator.CreateChild` (cutting-garden-plugins(7)); the wire form
-  is RFC 0013 §Creation.
+  The SDK surface is `CreationDescriber` / `CreateApplier` (whose
+  `BuildCreateBody` receives the idempotency key) + the optional
+  `IdempotentCreator.CreateChildWithKey`, else `ContainerCreator.CreateChild`
+  (cutting-garden-plugins(7)); the wire form is RFC 0013 §Creation.
 - **Apply order.** Creations execute FIRST, before every membership, move and
   field write, so a later write in the same apply could reference them (in
   this slice a new object's own fields ride its create body, not a follow-up
   patch). A failed create aborts every later write — no further creations,
-  no edits — and the error names the creations that already landed.
+  no edits — and the error names the creations that already landed. A
+  failure in ANY later write names them too: `organize: apply failed after
+  creating objects — already created: +wrap-bug → 4, +call → <id>; no
+  further writes were attempted (re-applying this document skips them — the
+  creation ledger): <cause>`.
+- **Idempotency (re-applying a document never duplicates).** A temp id has no
+  substrate identity, so the document's own identity supplies one:
+  - *Idempotency key.* Every create request carries `cgk1-` + the first 32
+    hex digits of sha256(`cutting-garden/organize-create/v1` NUL `<_base
+    digest>` NUL `<temp key>`) — the temp key being `+<id>` for a named temp
+    id. It is printable (`[a-z0-9-]`, 37 characters), stable across
+    re-applies of one document, and new for a new generation (a new
+    `_base`: reusing `+name` there creates a new object). A plugin that
+    chooses identity derives it from the key and recognizes a repeat (caldav:
+    UID = key at `<calendar>/<key>.ics`; a 412 on it whose stored UID IS the
+    key returns that object as already existing — any other UID stays a
+    strict "already exists" error).
+  - *Creation receipt.* The host records `(_base, temp key) → (idempotency
+    key, created URI, box id)` as each creation lands, before any later
+    write. The madder store is content-addressed and cannot be looked up by
+    base and temp id, so the receipt is a keyed sidecar in cutting-garden's
+    XDG state dir: `organize-creations/<_base digest>.json`, found by the
+    `_base` the document pins. It covers plugins with server-assigned
+    identity (forge issues). An unreadable receipt is an error; a failed
+    receipt write is a loud warning (the object exists; only the guard is
+    lost).
+  - *Re-apply.* A creation the receipt records is not sent: `organize:
+    +wrap-bug already created → 4 (skipped)` (not a change; a fully applied
+    document ends `organize: no changes to apply`). The object's box is not
+    re-applied to it — regenerate to edit it. A receipt miss that the plugin
+    recognizes by key previews as a creation and reports `organize: +wrap-bug
+    already existed → 4 (idempotency key)`, then records the receipt.
+  - *Bare `+`.* Its temp key is `+#<16 hex of sha256(box interior without
+    the id, NUL, collapsed trailer)>#<n>`, n counting identical bare boxes in
+    document order: stable for a verbatim re-apply and when other lines
+    move; a bare box whose content was edited is a new creation.
+  - *Failed applies.* The interactive editor path rewrites, in the buffer it
+    leaves behind, every appearance of each landed temp id (`+x`, `+"x"`,
+    bare `+`) to the created object's real box id; re-applying that buffer
+    finds those ids in the receipt and skips them (`organize: 4 was created
+    by an earlier apply of this document (skipped)`) instead of refusing them
+    under F8c. `-apply <file>` / `-commit-directly` never rewrite their input;
+    they warn that it still names the created objects by temp id.
 - **Preview and summary.** Each creation previews, ahead of the edit lines,
   as its merged box with EVERY slot marked added; the temp id stays plain —
   the `+` is the new-object marker — and the `!type` shows only when it is

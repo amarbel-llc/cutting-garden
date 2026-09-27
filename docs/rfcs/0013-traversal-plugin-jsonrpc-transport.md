@@ -15,7 +15,8 @@ revised: 2026-07-19 (§ Host integration: a wire plugin's bring-up failure
   organize F3);
   2026-09-27 (§ Creation: the OPTIONAL node_types member `creatable` and
   the host-built `node.create_child` body that make a wire plugin
-  organize-creatable — forge organize F10)
+  organize-creatable — forge organize F10; the OPTIONAL
+  `idempotency_key` param and `existed` result)
 ---
 
 # RFC 0013 — Traversal Plugin Transport: JSON-RPC over stream sockets
@@ -991,6 +992,45 @@ The result is the existing `{ "created": string }` — the URI the source
 assigned (non-empty, credential-free); organize reports the new node's box
 id relative to the anchor (`organize: created +wrap-bug → 4`).
 
+#### Idempotency key
+
+Every organize creation carries an idempotency key: `node.create_child`
+params gain the OPTIONAL member `"idempotency_key": string`, and its result
+the OPTIONAL member `"existed": bool` (absent ≙ `false`):
+
+```json
+{"container": "fj://forge.example/o/r/issues", "type": "fj-issue-v1",
+ "body_base64": "…", "idempotency_key": "cgk1-3f0c9a…(32 hex)"}
+→ {"created": "fj://forge.example/o/r/issues/43", "existed": true}
+```
+
+The key is printable ASCII (`[a-z0-9-]`, at most 64 characters; the
+reference host sends `cgk1-` + 32 lowercase hex), derived by the host from
+the organize document's identity (its `_base` digest and the temp id), so
+the SAME object re-applied from the same document carries the SAME key and a
+different object never does. Plugins MUST treat it as opaque.
+
+- A plugin whose substrate lets the client choose identity (a CalDAV UID, a
+  client-named path) SHOULD derive the new node's identity from the key. It
+  MUST then recognize a repeated create with the same key as already
+  existing, MUST answer it with the SAME `created` URI and `"existed":
+  true`, and MUST NOT create a second node. It MUST NOT report `existed` for
+  a node it did not create under that key (a coincidental collision is the
+  ordinary strict "already exists" error).
+- A plugin that cannot recognize a repeat (a forge that numbers issues
+  itself) MAY ignore the key; the host's own creation receipt (keyed by the
+  document's `_base`) then prevents duplicates on re-apply.
+- A peer predating this member ignores it (unknown params are tolerated —
+  §Compatibility), so the host MUST NOT require `existed`.
+
+The reference host sends the key on every organize creation and prints a
+recognized repeat as `organize: +wrap-bug already existed → 43 (idempotency
+key)`. A Go peer implements the key through the SDK's OPTIONAL
+`IdempotentCreator.CreateChildWithKey(ctx, container, body, typ, key)
+(created, existed, err)`, which `Serve` routes keyed calls to (falling back
+to `CreateChild`); `CreateApplier.BuildCreateBody` also receives the key, so
+a linked plugin can put the identity into the body (caldav: UID = key).
+
 A plugin that declares `creatable` for type T:
 
 - MUST advertise `container-create` and SHOULD declare T's `bodies` entry
@@ -1041,7 +1081,7 @@ it and put the same bytes on `node.create_child` (the test peer does).
 members and implements `CreateApplier` with the host body builder; organize
 then creates through `ContainerCreator.CreateChild` exactly as for a linked
 plugin, whose own `CreateApplier` builds a substrate-native body instead
-(caldav: iCalendar with a minted UID).
+(caldav: iCalendar whose UID is the idempotency key).
 
 ### Errors
 
@@ -1321,6 +1361,8 @@ becomes machine-checkable rather than rediscovered.
 | §Creation: `creatable` members pass the host's bring-up rules | conformance driver | point 22; SKIP when the peer declares none |
 | §Creation: `node.create_child` accepts the host-built fields body and the created node lists with the trailer as its name and the supplied facet values | conformance driver | point 23; manifest `[creation]` `container`/`type`/`trailer` (+ optional `one_dimension`/`one_value`, `many_dimension`/`many_set`); the created node is deleted afterwards |
 | §Creation: declaration and host body identical wire vs linked; a created ticket lists with its fields | go end-to-end | `TestWireTrackerCreationIndistinguishableFromLinked` |
+| §Creation: a repeated `idempotency_key` returns the same `created` URI with `"existed": true` and one node | conformance driver | point 24; manifest `[creation]`; SKIP when the peer ignores the key; created nodes deleted afterwards |
+| §Creation: `idempotency_key` and unknown params are tolerated by a peer without keyed creation; a keyed repeat round-trips `existed` through WirePlugin | transport go tests | `TestServerCreateChildToleratesKeyAndUnknownParams`, `TestWirePluginCreateChildWithKey` |
 | §Creation: `organize --apply` creates through a wire plugin from a merged temp id | `traversal_serve.bats` (`testpeer`) | `test_testpeer_tracker_creates_a_ticket` |
 
 ## Compatibility

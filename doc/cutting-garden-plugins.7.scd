@@ -351,6 +351,14 @@ fields and trailer field, in the patch shapes (*{"title": "...",
 "milestone": "v0.3", "labels": ["bug"]}*); list the created node with those
 values. See RFC 0013 §Creation; the driver's *[creation]* table checks it.
 
+Every creation carries an idempotency key (*cgk1-...*, derived from the
+document's *\_base* and the temp id; *BuildCreateBody*'s *key* argument, the
+wire's *idempotency_key*). If your substrate lets you choose identity, derive
+it from the key and implement *IdempotentCreator* (*CreateChildWithKey*, wire:
+answer a repeated key with the same *created* URI and *"existed": true*, never
+a duplicate) - caldav's UID is the key. If it cannot, ignore the key: the
+host's creation receipt still keeps a re-applied document from duplicating.
+
 # DECLARE A BOX ID WHEN YOUR IDENTITY IS NOT IN THE PATH
 
 *organize* and *list -format espalier* name each object by a box id: by
