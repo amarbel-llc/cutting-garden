@@ -111,7 +111,10 @@ as for a linked plugin — and its `node_types` entries MAY carry the §Presenta
 (`tag_set`, `inline_fields`, `trailer_field`) that `WirePlugin` synthesizes
 into the linked tag/atom/trailer surfaces (`traversal_serve.Presentation`:
 `UnifiedDescriber`, `FieldPresenter`, `ListingFieldsDescriber`,
-`FieldWriteApplier`) so organize has one code path — consumers cannot distinguish a wire plugin
+`FieldWriteApplier`), plus the §Creation member `creatable`
+(`{container, required}`; the host builds the `node.create_child` body from
+the facet-write fields + `trailer_field` — `CreationDescriber` /
+`CreateApplier`) so organize has one code path — consumers cannot distinguish a wire plugin
 from a linked one (the RFC's conformance bar, pinned by the
 indistinguishability e2e in `internal/traversal_serve_testpeer` and the
 `zz-tests_bats/traversal_serve.bats` lane, whose `portable`-tagged cases
@@ -138,7 +141,14 @@ strips each appearance's placement Via tag by default), and box tag
 edits apply as MEMBERSHIP writes through the tag interpreter's exact
 `Complete` (RFC 0019 §6.2); `list -format json` and the mcp enriched
 listing carry a top-level `tags` array, and `describe_node_types`
-reports each tag-declaring type's `tag_set`. A box's object id is the node's
+reports each tag-declaring type's `tag_set`. A box whose id is a temp id
+(`+id`, `+"id"`, bare `+`; RFC 0015 §Creation, forge organize F8–F10)
+CREATES an object: `internal/organize/create.go` splits temp-id lines out
+before every other planner, merges each temp id's appearances into one new
+object, types it, and plans it against the plugin's `CreationDescriber` /
+`CreateApplier` (caldav: VTODO/VEVENT) — creations execute first, through
+`ContainerCreator.CreateChild`; any other box id not in the pinned base is a
+separable refusal (F8c). A box's object id is the node's
 host+path relative to the anchor (`node_view.RelativeID`) unless the plugin
 implements the optional `NodeIDer` capability (fastmail: thread ids, which
 ride in the URI query); organize and `list -format espalier` resolve every id

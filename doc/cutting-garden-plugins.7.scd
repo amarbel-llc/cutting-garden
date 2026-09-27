@@ -329,6 +329,28 @@ edits merged into one *node.patch*. A Go peer declares them through
 *traversal_serve.PresentationDescriber*. The driver's *[trailer]* table checks
 the retitle.
 
+# DECLARE WHAT ORGANIZE MAY CREATE
+
+An organize box whose id is a temp id (*+wrap-bug*, *+"wrap bug"*, a bare
+*+*) CREATES an object; every appearance of one temp id merges into one new
+object (RFC 0015 §Creation). *organize* creates only node types you DECLARE
+creatable (*CreationDescriber*: per type, the container type it is created
+under and the REQUIRED document fields - caldav: a VTODO's *summary*, a
+VEVENT's *date_start*); a missing required field is refused before anything
+is written. A linked plugin also implements *CreateApplier*
+(*BuildCreateBody(typ, fields)*, fields keyed by document field - the atoms,
+the grouped bucket, the tag set under your tag dimension, the trailer under
+your trailer field - and returning your substrate-native body; own every
+completion there: caldav recombines date+time, defaults a TZID, completes a
+priority band, mints a UID) and *ContainerCreator* (*CreateChild* under the
+document's anchor, returning the identity you assigned). A wire plugin
+declares *"creatable": {"container", "required"}* on the type's *node_types*
+entry, needs *container-create* and a *trailer_field*, and builds NOTHING:
+the host sends *node.create_child* with the fields under your facet-write
+fields and trailer field, in the patch shapes (*{"title": "...",
+"milestone": "v0.3", "labels": ["bug"]}*); list the created node with those
+values. See RFC 0013 §Creation; the driver's *[creation]* table checks it.
+
 # DECLARE A BOX ID WHEN YOUR IDENTITY IS NOT IN THE PATH
 
 *organize* and *list -format espalier* name each object by a box id: by
@@ -351,7 +373,7 @@ wire carries no token for it yet.
 Every optional capability - *RootProvider*, *RootLabeler*, *LeafReader*,
 *FacetDescriber*, *FacetCounter*, *FacetVersioner*, *FacetLabeler*,
 *EnrichedLister*, *ListingFieldsDescriber*, *NodeMutator*, *BulkMutator*,
-*BodyDescriber*, *ContainerCreator*, *FacetWriteDescriber*, *NodeIDer*, and whatever this list grows to next -
+*BodyDescriber*, *ContainerCreator*, *FacetWriteDescriber*, *CreationDescriber*, *CreateApplier*, *NodeIDer*, and whatever this list grows to next -
 is discovered by
 TYPE ASSERTION against an already-resolved plugin (or, on the wire, by a
 capability TOKEN advertised in *initialize*). There is no separate

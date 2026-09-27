@@ -63,6 +63,14 @@ revised: |
     the box is edited). Two conflict rules (exit 2): appearances must agree on
     the non-placement tags, and (under `placement`) a tag removed from a box
     while its bucket placement stands is "placement says X, box says not-X".
+  2026-09-27 — object CREATION (forge organize F8/F8b/F8c/F9/F10): a box
+    whose id is a temp id (`+<id>`, `+"<id>"`, bare `+`) creates an object;
+    the appearances of one temp id merge into ONE new object; a box id that
+    is neither a temp id nor in the pinned base is a separable refusal
+    (superseding the "adoption" row of §Creation and adoption); the new
+    object's type comes from its box, its `# !type` heading, or `_type`;
+    the plugin declares what is creatable and builds the body. See
+    §Creation (implemented).
 ---
 
 # The organize document dialect
@@ -327,6 +335,96 @@ document — the exact bytes presented to and edited by the end-user:
 - **The trailing `! <type>` type-anchor of the earlier draft is removed** (it was a
   mistake): the object type is the leading heading or the envelope field, never a
   trailing line, which is distinct from the envelope's own `! organize-base-v1`.
+
+### Creation (implemented, 2026-09-27 — forge organize F8–F10)
+
+A box whose FIRST slot is a **temp id** names an object that does not exist
+yet; apply creates it.
+
+- **Temp ids (F8).** `+<opaque>` (`+wrap-bug`), `+"<opaque with reserved
+  runes>"` (`+"wrap bug"`), or a bare `+`. The rest of the box is the
+  ordinary ground interior (type, tags, atoms) and the description trailer.
+  `+` is a trellis sigil rune, not a reserved one: inside a box's id slot a
+  leading `+` is the temp-id production of the box literal grammar (a group
+  body opening with a sigil is a VERSION SUBPATH in the query grammar, which
+  is never ground, so the slot was free); no real id starts with `+`. Every
+  appearance of one temp id — under any headings, including the ungrouped
+  section — is ONE new object. A bare `+` never merges: each bare `+` box is
+  its own single-appearance creation. A temp id is document-local and never
+  persisted; regeneration after a committed apply shows the real ids.
+- **Appearance merge (F8b).** An object's appearances merge into one create
+  request, in the document's own field vocabulary:
+  - **tags** — the union of each appearance's placement tag (under a tag
+    grouping: the bucket tag under `(tags)`, the namespace-reconstructed
+    leaf under a namespace grouping, the bare namespace directly under a
+    G10a root; under a field grouping BY the tag dimension, the bucket
+    itself) and every appearance's typed tag atoms;
+  - **single-valued fields** — each `name=value` atom, and the grouped
+    field's `=bucket` (a field grouping), may be given on ANY appearance, but
+    every appearance giving one MUST agree. A box value and a bucket agree
+    when the value, coarsened to the grouping's granularity, IS the bucket
+    (`date_due=2026-10-15` under `## =2026-10` of `# date_due=(month)`); the
+    merged value is then the box's (the finer). A field no appearance gives
+    takes the plugin's default;
+  - **trailer** — REQUIRED on at least one appearance, and identical
+    (whitespace-collapsed) wherever given.
+  Any disagreement or a missing trailer is a loud bad request naming the
+  temp id and the body lines of every appearance, e.g.
+  `+x (lines 11, 15): appearances disagree on status: needs-action (line
+  11, its heading) vs in-process (line 15, its heading)`. It is a hard
+  error, not a separable refusal: which value the user meant is unknowable,
+  and dropping the whole new object silently would lose the one edit the
+  line exists for (interactive resolution is #273).
+- **Type (F9).** The new object's type is its box `!type` (appearances giving
+  one must agree), else the `# !type` heading on its path (spelling 1), else
+  the envelope `_type` (spelling 2). With none of them it is a loud error.
+  (Multi-root / heterogeneous documents will make explicit typing — and
+  probably a target container — mandatory.)
+- **Unknown ids (F8c).** A box id that is neither a temp id nor in the
+  pinned base is REFUSED, naming its body line and suggesting the temp-id
+  spelling (`give its box a temp id ([+typo.ics …])`). It is a SEPARABLE
+  refusal (§Validation): headless the apply aborts with exit 64 and nothing
+  written; at a terminal the line can be dropped and the rest applied. An id
+  in the base but gone live stays the existing drift check. (The pre-2026-09
+  engine skipped such a line silently.)
+- **The creation contract (F10).** The plugin DECLARES, per creatable type,
+  the container type it is created under and the document fields a new
+  object REQUIRES (caldav: VTODO `summary`, VEVENT `date_start`; a forge
+  issue: `title`). Apply builds the create request from the merged object —
+  each single-valued field under its name, the tag set under the tag
+  dimension, the trailer under the type's trailer field — and hands it to
+  the plugin's create-body builder; the plugin assigns and returns the new
+  object's identity (created under the document's `_anchor`). A type not
+  declared creatable, a missing required field, a field the plugin cannot
+  set on create, and an anchor resolvable to a different container type are
+  all refused at PLAN time, before the diff and before anything is written.
+  The SDK surface is `CreationDescriber` / `CreateApplier` +
+  `ContainerCreator.CreateChild` (cutting-garden-plugins(7)); the wire form
+  is RFC 0013 §Creation.
+- **Apply order.** Creations execute FIRST, before every membership, move and
+  field write, so a later write in the same apply could reference them (in
+  this slice a new object's own fields ride its create body, not a follow-up
+  patch). A failed create aborts every later write — no further creations,
+  no edits — and the error names the creations that already landed.
+- **Preview and summary.** Each creation previews, ahead of the edit lines,
+  as its merged box with EVERY slot marked added; the temp id stays plain —
+  the `+` is the new-object marker — and the `!type` shows only when it is
+  not the envelope's:
+
+  ```
+  organize: 1 change(s):
+
+    - [+wrap-bug {+area-organize+} {+bug+} milestone={+v0.3+}] {+Wrapped boxes lose their description+}
+
+  organize: created +wrap-bug → 4
+  organize: wrote 1 change(s)
+  ```
+
+  Each create prints `organize: created <temp id> → <id>` (the new object's
+  anchor-relative box id) as it lands.
+- **fmt-organize** still refuses a document holding `+` boxes: a temp-id line
+  renders into the canonical body, so the body no longer matches its pinned
+  base ("unapplied edits").
 
 The rest of this RFC (delta semantics, deletion, modes, write descriptors) is
 unchanged and reads against this dialect; the pre-implementation §Document
@@ -657,9 +755,8 @@ alongside base/live conflicts, batch-capable.
 
 | Patch line | Meaning | Action |
 |---|---|---|
-| No id | new object | create (ContainerCreator): type from anchor/inline, fields from heading path + inline atoms (+ optional `@digest` content where the substrate supports it); **identity allocated by the substrate and reported back** |
-| Id in patch, absent from base, known live | adoption | apply the heading path's writes to the existing object |
-| Id unknown to base and substrate | error | loud rejection |
+| Temp id (`+id`, `+"id"`, bare `+`) | new object | create (ContainerCreator): type from box/heading/envelope, fields from the merged appearances (§Creation (implemented)); **identity allocated by the substrate and reported back** |
+| Id in patch, absent from base | error (separable) | refused (F8c); the earlier draft's "adoption" of a live object by typing its id is withdrawn |
 
 Identity-affecting writes (fs `mv`) likewise report the resulting id;
 apply treats them as allocation-like. The three-way merge survives a
@@ -762,15 +859,20 @@ own `blocked-by`), a loud bidirectional error since every field key has
 one type-declared authored home and the write-through targets that
 residence (dodder#377; FDR 0023 §Dependencies); a `write:one` object
 moved into the no-value section on a dimension not declared `clearable`
-(forge organize F12, RFC 0013 §Facet writes).
+(forge organize F12, RFC 0013 §Facet writes); a box id neither a temp id nor
+in the pinned base (F8c); new-object appearances that disagree, a new object
+without a trailer or a type, a type not declared creatable, and a creation
+missing a required field (F8b/F9/F10, §Creation (implemented)).
 
 **Separable refusals (2026-09-24).** Every rejection above is raised at
 plan time, BEFORE the diff and the commit confirm. Most abort the whole
 apply. A *separable* refusal — one whose edit can be dropped without
 invalidating the document's other edits — is collected instead as a
-refusal record (object id, dimension/field, reason). Today the only
-separable class is the non-clearable no-value move; unknown non-`+` ids
-(F8c) and a move + same-property atom edit (#271) are candidates to join.
+refusal record (object id, dimension/field, reason). Two classes are
+separable today: the non-clearable no-value move, and an unknown non-`+` box
+id (F8c — its record names the body line; dropping it removes the line). A
+move + same-property atom edit (#271) is a candidate to join. The F8b/F9/F10
+creation refusals are NOT separable (§Creation (implemented)).
 
 - **Headless** (`-apply … -commit`, `-apply … -dry-run`,
   `-commit-directly`, any non-terminal run): unchanged — the first refusal aborts with exit 64 and

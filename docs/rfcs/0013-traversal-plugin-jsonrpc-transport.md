@@ -12,7 +12,10 @@ revised: 2026-07-19 (§ Host integration: a wire plugin's bring-up failure
   `terminal_values` — forge organize F4);
   2026-09-24 (§ Wire encodings / § Facets: the OPTIONAL FacetDimension
   `known_empty_values` and count-0 `facets.counts` entries — forge
-  organize F3)
+  organize F3);
+  2026-09-27 (§ Creation: the OPTIONAL node_types member `creatable` and
+  the host-built `node.create_child` body that make a wire plugin
+  organize-creatable — forge organize F10)
 ---
 
 # RFC 0013 — Traversal Plugin Transport: JSON-RPC over stream sockets
@@ -260,7 +263,8 @@ Result:
 - `node_types` — the `RootLister.Types()` declaration (§Wire encodings).
   MUST be non-empty and stable for the session's lifetime. An entry MAY
   carry the OPTIONAL presentation members `tag_set`, `inline_fields` and
-  `trailer_field` — see §Presentation.
+  `trailer_field` — see §Presentation — and the OPTIONAL creation member
+  `creatable` — see §Creation.
 - `facets` — OPTIONAL; the `FacetDescriber.DescribeFacets()`
   declaration. Its presence is the `FacetDescriber` capability; a
   plugin emitting facet values without declaring dimensions here is
@@ -300,7 +304,8 @@ value is `{ "key": <non-empty string>, "order": <int64, omit when 0> }`.
 
 **NodeType**: `{ "tag": string, "container": bool, "mime_type": string?,
 "uri_template": string?, "tag_set": TagSet?, "inline_fields": [string]?,
-"trailer_field": string? }` (the last three: §Presentation).
+"trailer_field": string?, "creatable": Creatable? }` (`tag_set`,
+`inline_fields`, `trailer_field`: §Presentation; `creatable`: §Creation).
 An absent/empty `mime_type` on a leaf means unspecified — the HOST
 applies the `application/octet-stream` default (the plugin SHOULD NOT
 send the default; a host receiving an explicit
@@ -908,6 +913,136 @@ write; the trailer writable), and a `FieldWriteApplier` building the
 bodies above — and projects each listed node's tag keys, inline values
 and name into `Node.Fields` under the dimension / trailer keys.
 
+### Creation — `creatable` (2026-09-27)
+
+`organize --apply` (RFC 0015 §Creation) CREATES the objects an edited
+document names with temp-id boxes (`- [+wrap-bug bug milestone=v0.3]
+Wrapped boxes lose their description`). The host merges every appearance
+of a temp id into one new object and asks the plugin to create it under the
+document's anchor. A wire plugin opts a node type in with ONE OPTIONAL
+member on the type's `node_types` entry; it adds NO method (creation rides
+the existing `node.create_child`, gated on the existing `container-create`
+token) and NO new body format (the host builds the body from the field
+mapping §Facet writes and §Presentation already declare). There is no
+plugin-side body-building method: as for patches, one is reserved for a
+future revision (cutting-garden#275). (Added 2026-09-27, forge organize
+F10.)
+
+#### Declaration
+
+```json
+"node_types": [
+  { "tag": "fj-repo-v1", "container": true },
+  { "tag": "fj-issue-v1", "container": false,
+    "tag_set": { "dimension": "label", "interpreter": "dodder-hyphen" },
+    "inline_fields": ["milestone"],
+    "trailer_field": "title",
+    "creatable": { "container": "fj-repo-v1", "required": ["title"] } }
+]
+```
+
+**Creatable**: `{ "container": string, "required": [string]? }`.
+
+- `container` — REQUIRED. The `tag` of the node type a new node of this
+  type is created UNDER. It MUST be a declared `node_types` entry with
+  `"container": true`. The host creates under the organize document's
+  `_anchor`, which the user chose (and refuses at plan time when it can
+  resolve the anchor's type through a `uri_template`, RFC 0018, and it is
+  not this one); the plugin SHOULD refuse (`-32602`) a `node.create_child`
+  whose `container` URI is not a node of this type.
+- `required` — OPTIONAL (absent ≙ `[]`). The DOCUMENT fields every new node
+  MUST be given — each either the type's `trailer_field` or the `dimension`
+  of a `one` / `many` facet write of the type. The host refuses a creation
+  missing one before anything is sent, naming the field.
+
+Document fields are named in the document's vocabulary: facet dimension
+keys (a grouped `=bucket`, an inline `name=value` atom, the tag set under
+its `tag_set` dimension) and the `trailer_field`. A type declaring
+`creatable` MUST also declare a `trailer_field`: organize requires every new
+object's description, and sends it under that field.
+
+#### Create body (host-built)
+
+The host sends `node.create_child` with `container` = the document's
+`_anchor`, `type` = the new node's type tag, and `body_base64` = the UTF-8
+JSON object it builds from the new object's merged fields, one entry per
+field supplied, each under the key and in the shape a patch of that field
+takes:
+
+- the trailer → `"<trailer_field>": "<text>"` (a JSON string);
+- a dimension with a `one` facet write → `"<write.field>": "<value>"`
+  (a JSON string — the value of an inline atom or the grouped bucket);
+- a dimension with a `many` facet write → `"<write.field>": [<value>, ...]`,
+  the COMPLETE set (the tag set: every placement tag and tag atom of every
+  appearance).
+
+```json
+{"labels": ["area-organize", "bug"], "milestone": "v0.3",
+ "title": "Wrapped boxes lose their description"}
+```
+
+A field the document supplies that is neither the trailer nor a `one` /
+`many` dimension (a `none` dimension, an undeclared name) is refused by the
+host before anything is sent. A field the document does NOT supply is
+absent from the body: the plugin applies its own default (a forge opens the
+issue; the reference test peer defaults `state` to `open`).
+
+The result is the existing `{ "created": string }` — the URI the source
+assigned (non-empty, credential-free); organize reports the new node's box
+id relative to the anchor (`organize: created +wrap-bug → 4`).
+
+A plugin that declares `creatable` for type T:
+
+- MUST advertise `container-create` and SHOULD declare T's `bodies` entry
+  with `"server_assigned_identity": true` (a type is created through
+  exactly one of `node.create` / `node.create_child` — §Mutation);
+- MUST accept the body above on `node.create_child` for type T under a
+  container of the declared type, creating ONE node, and MUST answer a
+  missing required field or a recognized key with an unusable value
+  (a non-string where a string is due, a non-array for a `many` field) with
+  `-32602` and nothing created (the §Mutation rules for recognized keys
+  apply unchanged);
+- SHOULD tolerate an unrecognized key (forward compatibility), as
+  `node.patch` does;
+- MUST, once the call succeeds, list the created node under the container
+  on every subsequent `nodes.list`: its `name` the trailer text, its
+  `facets` carrying the supplied values in each dimension (a `many`
+  dimension exactly the supplied set) — the host regenerates the document
+  from exactly these.
+
+The host executes every creation of an apply BEFORE its patches, one
+`node.create_child` per new object; a failure aborts the rest of the apply
+(the host names the creations that already landed).
+
+#### Validation
+
+Each rule is a bring-up failure, isolated like any other (§Host
+integration, cutting-garden#165); the diagnostic names the plugin and type,
+e.g. `wire plugin "fj": initialize rejected: creation: type "fj-issue-v1"
+required field: field "assignee" is neither the trailer_field nor a
+dimension with a facet write`:
+
+1. `creatable.container` is a declared `node_types` tag whose entry is a
+   container; a type is declared creatable once;
+2. the plugin advertises `container-create`;
+3. the type declares a `trailer_field`;
+4. every `required` entry is the type's `trailer_field` or a dimension with
+   a `one` / `many` facet write of the type.
+
+**Go peers.** A Go plugin served through `pkgs/traversal_serve` declares
+creation through the SDK's `CreationDescriber` (`DescribeCreation()
+[]NodeTypeCreation{Tag, ContainerType, Required}`); `Serve` writes it onto
+the matching `node_types` entries (a creation naming an undeclared type
+refuses to serve). `traversal_serve.Presentation.BuildCreateBody` builds
+the host body, so a Go peer can implement its linked `CreateApplier` with
+it and put the same bytes on `node.create_child` (the test peer does).
+
+**Host side.** The reference adapter answers `CreationDescriber` from the
+members and implements `CreateApplier` with the host body builder; organize
+then creates through `ContainerCreator.CreateChild` exactly as for a linked
+plugin, whose own `CreateApplier` builds a substrate-native body instead
+(caldav: iCalendar with a minted UID).
+
 ### Errors
 
 JSON-RPC standard codes apply (`-32700` parse, `-32600` invalid
@@ -1183,6 +1318,10 @@ becomes machine-checkable rather than rediscovered.
 | §Wire encodings: `terminal_values` passes the host's bring-up rules | conformance driver | point 21; SKIP when no dimension declares any |
 | §Wire encodings: `terminal_values` decodes to the same `TerminalValues` a linked plugin declares; empty/absent ≙ nil | go end-to-end + unit | `TestWireIndistinguishableFromLinked` (`DescribeFacets` deep-equal, ticket `state` ≙ `[closed]`); `TestFacetDimensionViewTerminalValues`, `TestValidateTerminalValuesDeclaration` |
 | §Wire encodings: organize hides a wire plugin's terminal nodes by default (`_terminal=no` echoed in `_query`), `-include-terminal` restores them; a value outside the closed domain fails bring-up | `traversal_serve.bats` (`testpeer`) | `test_testpeer_tracker_terminal_values_hide_closed_by_default`, `test_testpeer_undeclared_terminal_value_fails_initialize` |
+| §Creation: `creatable` members pass the host's bring-up rules | conformance driver | point 22; SKIP when the peer declares none |
+| §Creation: `node.create_child` accepts the host-built fields body and the created node lists with the trailer as its name and the supplied facet values | conformance driver | point 23; manifest `[creation]` `container`/`type`/`trailer` (+ optional `one_dimension`/`one_value`, `many_dimension`/`many_set`); the created node is deleted afterwards |
+| §Creation: declaration and host body identical wire vs linked; a created ticket lists with its fields | go end-to-end | `TestWireTrackerCreationIndistinguishableFromLinked` |
+| §Creation: `organize --apply` creates through a wire plugin from a merged temp id | `traversal_serve.bats` (`testpeer`) | `test_testpeer_tracker_creates_a_ticket` |
 
 ## Compatibility
 
