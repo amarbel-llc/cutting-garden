@@ -95,6 +95,12 @@ local function buffer_mode(buf)
   return (s and s.mode) or M.options.mode
 end
 
+-- `:setlocal` semantics (scope = 'local'): only the window's value for the
+-- buffer it shows changes, never the window's global value. A buffer shown
+-- next in the window takes its own saved window options or the window's
+-- global ones, so the conceal settings follow the organize buffer and never
+-- leak into another buffer or a split (pinned by elide_spec.lua). Re-applied
+-- on BufWinEnter/WinEnter for the organize buffer.
 local function set_window_options(win)
   vim.api.nvim_set_option_value('conceallevel', 2, { scope = 'local', win = win })
   vim.api.nvim_set_option_value('concealcursor', 'nvic', { scope = 'local', win = win })

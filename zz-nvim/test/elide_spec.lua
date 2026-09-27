@@ -104,6 +104,41 @@ local ALL_ELIDED = with_header({
   '~',
 })
 
+-- The window-local conceal options the plugin sets must follow the organize
+-- BUFFER: another buffer later shown in the same window, or a split showing
+-- another buffer, keeps the user's own values (PRIOR_*, set below as the
+-- global+local defaults before any organize buffer is opened).
+local PRIOR_CONCEALLEVEL, PRIOR_CONCEALCURSOR = 1, ''
+vim.o.conceallevel = PRIOR_CONCEALLEVEL
+vim.o.concealcursor = PRIOR_CONCEALCURSOR
+
+local organize_buf
+
+local function window_conceal(win)
+  return {
+    vim.api.nvim_get_option_value('conceallevel', { win = win }),
+    vim.api.nvim_get_option_value('concealcursor', { win = win }),
+  }
+end
+
+local function expect_window_conceal(name, win, want)
+  local got = window_conceal(win)
+  report(
+    got[1] == want[1] and got[2] == want[2],
+    name,
+    { ('want conceallevel=%d concealcursor=%q'):format(want[1], want[2]),
+      ('got  conceallevel=%d concealcursor=%q'):format(got[1], got[2]) }
+  )
+end
+
+-- A plain buffer with its own conceal syntax: `secret` shows as `X` only when
+-- the window conceals on the cursor line (the leaked concealcursor=nvic).
+local function show_conceal_probe()
+  vim.cmd.enew()
+  vim.api.nvim_buf_set_lines(0, 0, -1, false, { 'a secret' })
+  vim.cmd([[syntax match CgProbe /secret/ conceal cchar=X]])
+end
+
 local steps = {
   function()
     vim.cmd.edit(vim.fn.fnameescape(fixture))
@@ -111,6 +146,7 @@ local steps = {
     -- entering insert mode would warn (W10) and stall the screen.
     vim.bo.readonly = false
     local buf = vim.api.nvim_get_current_buf()
+    organize_buf = buf
     report(
       vim.bo[buf].filetype == 'cutting-garden-organize',
       'cg-organize-*.txt is detected as the organize filetype',
@@ -254,6 +290,54 @@ local steps = {
     expect_screen(':CgElideToggle turns eliding off in the buffer', VERBATIM)
     vim.cmd('CgElideToggle')
     expect_screen(':CgElideToggle turns it back on with the configured mode', ALL_ELIDED)
+  end,
+
+  -- window options follow the organize buffer, not the window
+  function()
+    local win = vim.api.nvim_get_current_win()
+    expect_window_conceal('organize window: conceallevel=2 concealcursor=nvic', win, { 2, 'nvic' })
+    show_conceal_probe()
+    expect_window_conceal(
+      'same window, other buffer: the prior conceal options are back',
+      win,
+      { PRIOR_CONCEALLEVEL, PRIOR_CONCEALCURSOR }
+    )
+    expect_screen('same window, other buffer: its cursor line is not concealed', { 'a secret', '~' })
+
+    vim.cmd.buffer(organize_buf)
+    expect_window_conceal('back to the organize buffer: re-applied', win, { 2, 'nvic' })
+    expect_screen('back to the organize buffer: boxes elided again', ALL_ELIDED)
+
+    local listed = vim.api.nvim_create_buf(true, false)
+    vim.cmd.buffer(listed)
+    expect_window_conceal(
+      'same window, an existing never-shown buffer: prior options',
+      win,
+      { PRIOR_CONCEALLEVEL, PRIOR_CONCEALCURSOR }
+    )
+    vim.cmd.buffer(organize_buf)
+    expect_window_conceal('and back again: re-applied', win, { 2, 'nvic' })
+
+    vim.cmd('split')
+    vim.cmd.enew()
+    local split = vim.api.nvim_get_current_win()
+    expect_window_conceal(
+      'split from the organize window, other buffer: prior options',
+      split,
+      { PRIOR_CONCEALLEVEL, PRIOR_CONCEALCURSOR }
+    )
+    expect_window_conceal('the organize window beside it keeps its options', win, { 2, 'nvic' })
+    vim.cmd('close')
+
+    vim.cmd('vnew')
+    local beside = vim.api.nvim_get_current_win()
+    expect_window_conceal(
+      ':vnew beside the organize window: prior options',
+      beside,
+      { PRIOR_CONCEALLEVEL, PRIOR_CONCEALCURSOR }
+    )
+    vim.cmd('close')
+    vim.api.nvim_set_current_win(win)
   end,
 
   -- an unbalanced box (mid-edit) is left unconcealed
