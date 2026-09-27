@@ -12,12 +12,16 @@
 # plan time, before anything is written.
 #
 # The fixture is the /dav/fields/ calendar (CG_TEST_CALDAV_FIELDS, see
-# organize_tags.bats / organize_fields.bats). A created object's UID is minted
-# at random (it is also its `<uid>.ics` resource name), so the post-create
-# vectors run through normalize_created — every 32-hex run becomes `<uid>` and
-# the (uid-dependent) `_base` pin `<digest>` — and new objects are always filed
-# under otherwise EMPTY buckets, so their position in the id-sorted document
-# is deterministic.
+# organize_tags.bats / organize_fields.bats). A created object's UID — and so
+# its `<uid>.ics` resource name — is the creation's IDEMPOTENCY KEY
+# (`cgk1-` + 32 hex, derived from the document's `_base` and the temp id): it
+# is deterministic, but the vectors run through normalize_created (every key
+# becomes `<key>`, the key-dependent `_base` pin `<digest>`) so they read as
+# shapes, and new objects are always filed under otherwise EMPTY buckets.
+#
+# Re-applying is guarded twice: the host's creation receipt (keyed by the
+# `_base` digest, in the XDG state dir) skips a recorded creation, and caldav
+# recognizes a repeated key (a 412 on `<key>.ics` whose UID is the key).
 #
 # Whole-document vectors (G16): pinned port + serialized tests, see
 # lib/caldav.bash. Regenerate with `just debug-organize-create-vectors`.
@@ -42,10 +46,11 @@ teardown() {
 
 # bats file_tags=organize
 
-# normalize_created replaces the minted UIDs (32 hex runes) in $output with
-# `<uid>` and the `_base` pin (which content-addresses them) with `<digest>`.
+# normalize_created replaces the creation keys (`cgk1-` + 32 hex) in $output
+# with `<key>` and the `_base` pin (which content-addresses them) with
+# `<digest>`.
 normalize_created() {
-  output="$(sed -E -e 's/[0-9a-f]{32}/<uid>/g' \
+  output="$(sed -E -e 's/cgk1-[0-9a-f]{32}/<key>/g' \
     -e 's/^- _base = @blake2b256-[a-z0-9]+$/- _base = @<digest>/' <<<"$output")"
 }
 
@@ -166,14 +171,14 @@ organize: 1 change(s):
 
   - [+milk {+groceries+} {+shopping+} status={+in-process+}] {+Buy oat milk+}
 
-organize: created +milk → <uid>.ics
+organize: created +milk → <key>.ics
 organize: wrote 1 change(s)
 EOF
 
   run_cg list -format json -query 'categories=groceries' "$CAL"
   assert_success
   normalize_created
-  assert_output '{"uri":"caldav:http://127.0.0.1:43116/dav/fields/<uid>.ics","name":"<uid>.ics","type":"caldav-object-vtodo-v1","tags":["groceries","shopping"]}'
+  assert_output '{"uri":"caldav:http://127.0.0.1:43116/dav/fields/<key>.ics","name":"<key>.ics","type":"caldav-object-vtodo-v1","tags":["groceries","shopping"]}'
 
   run_cg organize -group-by '(tags)' "$CAL"
   assert_success
@@ -199,11 +204,11 @@ EOF
 
 	# groceries
 
-	- [<uid>.ics shopping status=in-process] Buy oat milk
+	- [<key>.ics shopping status=in-process] Buy oat milk
 
 	# shopping
 
-	- [<uid>.ics groceries status=in-process] Buy oat milk
+	- [<key>.ics groceries status=in-process] Buy oat milk
 
 	# work
 
@@ -241,9 +246,22 @@ organize: 1 change(s):
 
   - [+call priority={+0_must+} status={+in-process+}] {+Call the bank+}
 
-organize: created +call → <uid>.ics
+organize: created +call → <key>.ics
 organize: wrote 1 change(s)
 EOF
+
+  # A verbatim re-apply of the committed document creates nothing: the
+  # receipt records +call for this `_base`. The key is deterministic — the
+  # document's `_base` and the temp id derive it.
+  run_cg organize -apply "$edited" -commit
+  assert_success
+  assert_output - <<'EOF'
+organize: +call already created → cgk1-ddd9cfa02d1d9a8b8b51deb5b55f49ed.ics (skipped)
+organize: no changes to apply
+EOF
+  run_cg list -format json -query 'status=in-process' "$CAL"
+  assert_success
+  assert_output '{"uri":"caldav:http://127.0.0.1:43116/dav/fields/cgk1-ddd9cfa02d1d9a8b8b51deb5b55f49ed.ics","name":"cgk1-ddd9cfa02d1d9a8b8b51deb5b55f49ed.ics","type":"caldav-object-vtodo-v1"}'
 
   run_cg organize -group-by status= "$CAL"
   assert_success
@@ -271,7 +289,7 @@ EOF
 
 	## =in-process
 
-	- [<uid>.ics priority=0_must] Call the bank
+	- [<key>.ics priority=0_must] Call the bank
 
 	## =completed
 
@@ -291,7 +309,7 @@ function organize_create_vevent_with_a_date { # @test
   run_cg organize -apply "$edited" -commit
   assert_success
   local uid
-  uid="$(sed -n 's/^organize: created +dentist → \([0-9a-f]\{32\}\)\.ics$/\1/p' <<<"$output")"
+  uid="$(sed -n 's/^organize: created +dentist → \(cgk1-[0-9a-f]\{32\}\)\.ics$/\1/p' <<<"$output")"
   [[ -n $uid ]] || fail "no created line for +dentist in: $output"
   normalize_created
   assert_output - <<'EOF'
@@ -299,7 +317,7 @@ organize: 1 change(s):
 
   - [+dentist !caldav-object-vevent-v1 date_start={+2026-10-01+}] {+Dentist+}
 
-organize: created +dentist → <uid>.ics
+organize: created +dentist → <key>.ics
 organize: wrote 1 change(s)
 EOF
 
@@ -363,4 +381,62 @@ cutting-garden: organize --apply: 1 problem(s) with new object(s) (`+` boxes); r
   +x (lines 11, 15): appearances disagree on status: needs-action (line 11, its heading) vs in-process (line 15, its heading)
 EOF
   assert_status_document_unchanged
+}
+
+# A write that fails AFTER a creation landed (here field1's priority edit to a
+# value caldav refuses at execution) names the landed creation, and -apply
+# warns that the file (never rewritten) still names it by temp id.
+# Re-applying the fixed document skips the creation via the receipt; with the
+# receipt gone, caldav itself recognizes the repeated idempotency key. Either
+# way: one object, never a duplicate.
+function organize_create_failure_after_creation_is_reported_and_reapply_is_idempotent { # @test
+  assert_status_document_unchanged
+  local edited="$BATS_TEST_TMPDIR/edited.txt" fixed="$BATS_TEST_TMPDIR/fixed.txt"
+  status_document |
+    sed -e 's/^- \[field1.ics location=Bank priority=0_must\] Pay rent$/- [field1.ics location=Bank priority=bogus] Pay rent/' \
+      -e 's/^## =in-process$/## =in-process\n\n- [+call priority=0_must] Call the bank/' >"$edited"
+  sed 's/priority=bogus/priority=0_must/' "$edited" >"$fixed"
+
+  run_cg organize -apply "$edited" -commit
+  assert_failure 2
+  normalize_created
+  output="${output//$edited/<edited>}"
+  assert_output - <<'EOF'
+organize: 2 change(s):
+
+  - [+call priority={+0_must+} status={+in-process+}] {+Call the bank+}
+  - [field1.ics location=Bank priority=[-0_must-]{+bogus+}] Pay rent
+
+organize: created +call → <key>.ics
+organize: WARNING — <edited> still names +call by temp id, but they now exist; re-applying it unedited skips them (the creation ledger), and edits to their boxes are not applied — regenerate to edit them
+cutting-garden: organize: apply failed after creating objects — already created: +call → <key>.ics; no further writes were attempted (re-applying this document skips them — the creation ledger): priority "bogus" is neither an integer nor a priority band (0_must, 1_should, 2_nice, 3_unspecified)
+EOF
+
+  run_cg organize -apply "$fixed" -commit
+  assert_success
+  normalize_created
+  assert_output - <<'EOF'
+organize: +call already created → <key>.ics (skipped)
+organize: no changes to apply
+EOF
+
+  # Lose the host receipt: the create is sent again, and caldav answers the
+  # repeated key with the existing object.
+  find "$HOME" -type d -name organize-creations -prune -exec rm -rf {} +
+  run_cg organize -apply "$fixed" -commit
+  assert_success
+  normalize_created
+  assert_output - <<'EOF'
+organize: 1 change(s):
+
+  - [+call priority={+0_must+} status={+in-process+}] {+Call the bank+}
+
+organize: +call already existed → <key>.ics (idempotency key)
+organize: wrote 1 change(s)
+EOF
+
+  run_cg list -format json -query 'status=in-process' "$CAL"
+  assert_success
+  normalize_created
+  assert_output '{"uri":"caldav:http://127.0.0.1:43116/dav/fields/<key>.ics","name":"<key>.ics","type":"caldav-object-vtodo-v1"}'
 }
