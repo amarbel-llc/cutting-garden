@@ -17,7 +17,7 @@
     # — we import it as `pkgsUpstream` below to source upstream
     # packages (yt-dlp) without the amarbel-llc/nixpkgs gomod2nix
     # overlay, so their closures hit cache instead of rebuilding.
-    nixpkgs-master.url = "github:NixOS/nixpkgs/f13ff45afd1bb73e640eaa08a7066dbed07e3238";
+    nixpkgs-master.url = "github:NixOS/nixpkgs/e94cb152ed51bd6e24eb4a41f1460252beb52cd2";
     flake-utils.url = "github:numtide/flake-utils";
     # Tracks the latest madder. The `madder` binary in the devshell
     # and the cutting-garden -> madder go.mod dep need to speak the
