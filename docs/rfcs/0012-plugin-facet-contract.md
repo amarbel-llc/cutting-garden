@@ -503,6 +503,15 @@ snapshot so that individual summary is internally consistent, even though
 consecutive reads are not. §11 defines how live summaries are memoized and
 kept fresh without recomputing on every read.
 
+A summary SHOULD be cheaper than enumerating the container, but a
+`FacetCounter` MAY serve a summary that costs about as much as one
+enumeration when that summary is EXACT and carries something no cheaper
+source can — the known-empty values of §3 are the case in point: a forge's
+issues container folds its full issue listing to report every open
+milestone with no issues at count 0, which `organize` needs to pre-render
+empty target buckets. A plugin that cannot keep such a summary exact MUST
+decline (`ok == false`) rather than approximate.
+
 ### 11. Summary memoization, change tokens, and eager refresh
 
 Facets are the progressive-disclosure lifeline (FDR 0021): the implicit
