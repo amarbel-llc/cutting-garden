@@ -56,6 +56,8 @@ type newObject struct {
 	Key string
 	// TempID is the temp id as the document spells it (`+wrap-bug`, `+`).
 	TempID string
+	// LedgerKey is its creation-ledger key (creationLedgerKeys).
+	LedgerKey string
 	// Lines are the physical body lines of its appearances, in order.
 	Lines []int
 	// Type is the resolved node type (F9).
@@ -194,8 +196,10 @@ func mergeCreations(
 ) ([]newObject, error) {
 	var objects []newObject
 	var problems []string
+	ledgerKeys := creationLedgerKeys(appearances, order)
 	for _, key := range order {
 		obj, objProblems := mergeCreation(key, appearances[key], cc)
+		obj.LedgerKey = ledgerKeys[key]
 		problems = append(problems, objProblems...)
 		if len(objProblems) == 0 {
 			objects = append(objects, obj)
@@ -395,19 +399,33 @@ func collapseWhitespace(s string) string {
 // edited document that the pinned base does not carry. Each is a SEPARABLE
 // refusal — dropping the line invalidates nothing else — and the returned
 // document has those lines removed, so the other planners never see them.
-func unknownIDRefusals(edited, base document) ([]refusal, document) {
+//
+// An id the creation ledger records as CREATED by an earlier apply of this
+// same document (created — its box ids; the interactive path rewrites a
+// failed apply's temp ids to them) is not refused: its line is dropped too,
+// and returned in earlier, since the object already exists and a created
+// object's box is not re-applied.
+func unknownIDRefusals(
+	edited, base document, created map[string]bool,
+) (refused []refusal, stripped document, earlier []string) {
 	known := map[string]bool{}
 	for _, ln := range base.objectLines() {
 		known[ln.ID] = true
 	}
 
-	var refused []refusal
 	reported := map[string]bool{}
 	keep := func(lines []objectLine) []objectLine {
 		var out []objectLine
 		for _, ln := range lines {
 			if known[ln.ID] {
 				out = append(out, ln)
+				continue
+			}
+			if created[ln.ID] {
+				if !reported[ln.ID] {
+					reported[ln.ID] = true
+					earlier = append(earlier, ln.ID)
+				}
 				continue
 			}
 			if !reported[ln.ID] {
@@ -418,14 +436,14 @@ func unknownIDRefusals(edited, base document) ([]refusal, document) {
 		return out
 	}
 
-	stripped := edited
+	stripped = edited
 	stripped.Ungrouped = keep(edited.Ungrouped)
 	stripped.Sections = make([]section, len(edited.Sections))
 	for i, s := range edited.Sections {
 		s.Lines = keep(s.Lines)
 		stripped.Sections[i] = s
 	}
-	return refused, stripped
+	return refused, stripped, earlier
 }
 
 func unknownIDRefusal(ln objectLine) refusal {
@@ -529,6 +547,13 @@ func creationFields(
 // must be (when resolvable) of the declared container type, every required
 // field must be present, and the plugin must build a body — any refusal lands
 // before the diff and before anything is written.
+//
+// A creation the ledger already records for this `_base` (an earlier apply of
+// the same document landed it) is NOT planned: it is returned as skipped, and
+// the object is treated as existing. Its box is not re-applied against the
+// created node — the node was created from the same merged fields, and edits
+// typed into a temp-id box after its creation are out of scope (regenerate to
+// edit the object).
 func planCreations(
 	ctx context.Context,
 	objects []newObject,
@@ -536,17 +561,31 @@ func planCreations(
 	anchor string,
 	tagDim string,
 	trailer map[string]string,
-) ([]creation, error) {
+	ledger creationLedger,
+	base string,
+) (planned []creation, skipped []skippedCreation, err error) {
+	var pending []newObject
+	for _, obj := range objects {
+		entry, recorded, err := ledger.lookup(base, obj.LedgerKey)
+		if err != nil {
+			return nil, nil, err
+		}
+		if recorded {
+			skipped = append(skipped, skippedCreation{Object: obj, Entry: entry})
+			continue
+		}
+		pending = append(pending, obj)
+	}
+	objects = pending
 	if len(objects) == 0 {
-		return nil, nil
+		return nil, skipped, nil
 	}
 	surface, err := resolveCreationSurface(lister)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	anchorType, anchorResolved := cgp.ResolveNodeTypeByURI(lister, anchor)
 
-	var planned []creation
 	var problems []string
 	for _, obj := range objects {
 		decl, ok := surface.declared[obj.Type]
@@ -573,7 +612,7 @@ func planCreations(
 		}
 		fields, err := creationFields(obj, tagDim, trailerField)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if missing := cgp.MissingRequiredFields(decl, fields); len(missing) > 0 {
 			problems = append(problems, fmt.Sprintf(
@@ -592,12 +631,74 @@ func planCreations(
 		planned = append(planned, creation{Object: obj, Body: body})
 	}
 	if len(problems) > 0 {
-		return nil, errors.BadRequestf(
+		return nil, nil, errors.BadRequestf(
 			"organize --apply: %d new object(s) cannot be created:\n  %s",
 			len(problems), strings.Join(problems, "\n  "),
 		)
 	}
-	return planned, nil
+	return planned, skipped, nil
+}
+
+// skippedCreation is a temp-id object the ledger shows an earlier apply of
+// this document already created.
+type skippedCreation struct {
+	Object newObject
+	Entry  ledgerEntry
+}
+
+// reportSkippedCreations names each ledger-skipped creation.
+func (cmd *Organize) reportSkippedCreations(skipped []skippedCreation) {
+	for _, s := range skipped {
+		fmt.Fprintf(cmd.output, "organize: %s already created → %s (skipped)\n",
+			s.Object.TempID, trellis.QuoteIfNeeded(s.Entry.ID))
+	}
+}
+
+// landedCreation is one creation that landed during this apply.
+type landedCreation struct {
+	TempID string
+	Key    string
+	ID     string
+}
+
+// applyRun is one apply's creation bookkeeping: the ledger it records into
+// and consults (scoped by the document's `_base`), and what landed — so a
+// failure in any LATER write can name the objects that already exist, and
+// the interactive path can rewrite its buffer.
+type applyRun struct {
+	ledger        creationLedger
+	base          string
+	landed        []landedCreation
+	creationsDone bool
+}
+
+func (run *applyRun) landedList() string {
+	parts := make([]string, len(run.landed))
+	for i, l := range run.landed {
+		parts[i] = fmt.Sprintf("%s → %s", l.TempID, trellis.QuoteIfNeeded(l.ID))
+	}
+	return strings.Join(parts, ", ")
+}
+
+// landedByKey maps each landed creation's ledger key to its box id.
+func (run *applyRun) landedByKey() map[string]string {
+	out := make(map[string]string, len(run.landed))
+	for _, l := range run.landed {
+		out[l.Key] = l.ID
+	}
+	return out
+}
+
+// laterStepFailure is the error for a write that failed AFTER creations
+// landed: it names them (the creation-loop failure, creationFailure, names
+// its own), so the user knows what now exists.
+func laterStepFailure(run *applyRun, err error) error {
+	return errors.ErrorWithStackf(
+		"organize: apply failed after creating objects — already created: %s; "+
+			"no further writes were attempted (re-applying this document skips "+
+			"them — the creation ledger): %s",
+		run.landedList(), errorText(err),
+	)
 }
 
 // errorText is an error's own message, without dewey's stack decoration.
@@ -607,17 +708,22 @@ func errorText(err error) string {
 
 // executeCreations creates every planned object under the anchor, FIRST in
 // the write order (so a later write in the same apply could reference it),
-// printing `organize: created +x → <id>` as each lands. A failure aborts the
-// rest of the apply — no further creations, no edits — naming what already
-// landed, so the user can regenerate and see it.
+// printing `organize: created +x → <id>` as each lands and recording it in
+// the creation ledger BEFORE the next write, so even a mid-apply failure
+// leaves every landed creation guarded. A create failure aborts the rest of
+// the apply — no further creations, no edits — naming what already landed.
+// A ledger that cannot be written is a loud warning, not a failure: the
+// object exists either way, only the re-apply guard is lost.
 func (cmd *Organize) executeCreations(
 	ctx context.Context,
 	lister cgp.RootLister,
 	anchor string,
 	idOf boxIDer,
 	planned []creation,
+	run *applyRun,
 ) error {
 	if len(planned) == 0 {
+		run.creationsDone = true
 		return nil
 	}
 	creator, _ := lister.(cgp.ContainerCreator) // presence checked at plan time
@@ -625,25 +731,35 @@ func (cmd *Organize) executeCreations(
 	if err != nil {
 		return errors.BadRequestf("organize --apply: anchor %q: %s", anchor, err)
 	}
-	var landed []string
 	for _, c := range planned {
 		created, err := creator.CreateChild(ctx, container, bytes.NewReader(c.Body), c.Object.Type)
 		if err != nil {
-			return creationFailure(c.Object, landed, err)
+			return creationFailure(c.Object, run, err)
 		}
 		id := idOf(created.String())
-		landed = append(landed, fmt.Sprintf("%s → %s", c.Object.TempID, trellis.QuoteIfNeeded(id)))
+		run.landed = append(run.landed, landedCreation{
+			TempID: c.Object.TempID, Key: c.Object.LedgerKey, ID: id,
+		})
 		fmt.Fprintf(cmd.output, "organize: created %s → %s\n", c.Object.TempID, trellis.QuoteIfNeeded(id))
+		if err := run.ledger.record(run.base, ledgerEntry{
+			Key: c.Object.LedgerKey, TempID: c.Object.TempID, URI: created.String(), ID: id,
+		}); err != nil {
+			fmt.Fprintf(cmd.output,
+				"organize: WARNING — could not record %s in the creation ledger (%s); "+
+					"re-applying this document would create it again\n",
+				c.Object.TempID, errorText(err))
+		}
 	}
+	run.creationsDone = true
 	return nil
 }
 
 // creationFailure is the error for a create that failed mid-apply: nothing
 // after it was attempted, and every creation before it is named as landed.
-func creationFailure(obj newObject, landed []string, err error) error {
+func creationFailure(obj newObject, run *applyRun, err error) error {
 	already := "no object was created"
-	if len(landed) > 0 {
-		already = "already created: " + strings.Join(landed, ", ")
+	if len(run.landed) > 0 {
+		already = "already created: " + run.landedList()
 	}
 	return errors.ErrorWithStackf(
 		"organize: create %s (%s) failed — %s; no further writes were attempted "+

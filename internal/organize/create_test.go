@@ -309,7 +309,7 @@ func TestUnknownIDRefusals(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse edited: %v", err)
 	}
-	refused, stripped := unknownIDRefusals(edited, base)
+	refused, stripped, _ := unknownIDRefusals(edited, base, nil)
 	if len(refused) != 1 {
 		t.Fatalf("refused = %+v, want one", refused)
 	}
@@ -322,6 +322,14 @@ func TestUnknownIDRefusals(t *testing.T) {
 	}
 	if n := len(stripped.objectLines()); n != 1 {
 		t.Errorf("stripped document has %d lines, want 1", n)
+	}
+
+	// An id the ledger records as created by an earlier apply of this
+	// document (a rewritten buffer) is dropped, not refused.
+	refused, stripped, earlier := unknownIDRefusals(edited, base, map[string]bool{"typo.ics": true})
+	if len(refused) != 0 || !reflect.DeepEqual(earlier, []string{"typo.ics"}) ||
+		len(stripped.objectLines()) != 1 {
+		t.Errorf("ledger-known id: refused %+v, earlier %v", refused, earlier)
 	}
 }
 
@@ -364,8 +372,16 @@ func TestPlanCreations(t *testing.T) {
 	}
 	trailer := map[string]string{"todo": "summary"}
 
+	plan := func(plugin cgp.RootLister, objects ...newObject) ([]creation, error) {
+		planned, _, err := planCreations(
+			context.Background(), objects, plugin, "fake://host/cal/", "categories", trailer,
+			creationLedger{}, "",
+		)
+		return planned, err
+	}
+
 	plugin := &createFake{required: []string{"summary"}}
-	planned, err := planCreations(context.Background(), []newObject{obj}, plugin, "fake://host/cal/", "categories", trailer)
+	planned, err := plan(plugin, obj)
 	if err != nil {
 		t.Fatalf("planCreations: %v", err)
 	}
@@ -378,7 +394,7 @@ func TestPlanCreations(t *testing.T) {
 
 	// A missing required field refuses at plan time, naming it.
 	plugin = &createFake{required: []string{"date_start"}}
-	_, err = planCreations(context.Background(), []newObject{obj}, plugin, "fake://host/cal/", "categories", trailer)
+	_, err = plan(plugin, obj)
 	if err == nil || !errors.Is400BadRequest(err) || !strings.Contains(err.Error(), "requires date_start") {
 		t.Fatalf("planCreations = %v; want the required-field refusal", err)
 	}
@@ -386,36 +402,135 @@ func TestPlanCreations(t *testing.T) {
 	// A type the plugin does not declare creatable refuses.
 	other := obj
 	other.Type = "event"
-	_, err = planCreations(context.Background(), []newObject{other}, &createFake{}, "fake://host/cal/", "categories", trailer)
+	_, err = plan(&createFake{}, other)
 	if err == nil || !strings.Contains(err.Error(), "!event is not creatable") {
 		t.Fatalf("planCreations = %v; want not-creatable", err)
 	}
 
 	// The plugin's own body refusal lands at plan time too.
 	plugin = &createFake{failWith: errors.BadRequestf("priority %q is not a band", "7")}
-	_, err = planCreations(context.Background(), []newObject{obj}, plugin, "fake://host/cal/", "categories", trailer)
+	_, err = plan(plugin, obj)
 	if err == nil || !strings.Contains(err.Error(), `priority "7" is not a band`) {
 		t.Fatalf("planCreations = %v; want the plugin's refusal", err)
 	}
 
 	// A plugin with no creation surface refuses outright.
-	_, err = planCreations(context.Background(), []newObject{obj}, &fakeLister{}, "fake://host/cal/", "", trailer)
+	_, err = plan(&fakeLister{}, obj)
 	if err == nil || !strings.Contains(err.Error(), "declares no creatable node types") {
 		t.Fatalf("planCreations = %v; want no-creation-surface", err)
 	}
 }
 
-func TestExecuteCreations_ReportsTempToRealID(t *testing.T) {
+// Execution records each landed creation in the ledger (scoped by `_base`);
+// planning the same document again skips it instead of creating it twice.
+func TestExecuteCreations_RecordsInLedgerAndReplanSkips(t *testing.T) {
 	var out strings.Builder
 	cmd := newWithOutput(&out)
-	plugin := &createFake{}
-	planned := []creation{{Object: newObject{TempID: "+x", Lines: []int{3}, Type: "todo"}, Body: []byte(`{}`)}}
+	plugin := &createFake{required: []string{"summary"}}
+	obj := newObject{
+		TempID: "+x", LedgerKey: "+x", Lines: []int{3}, Type: "todo", Trailer: "Buy milk",
+		Fields: map[string]string{},
+	}
+	planned := []creation{{Object: obj, Body: []byte(`{}`)}}
 	idOf := func(uri string) string { return strings.TrimPrefix(uri, "fake://host/cal/") }
-	if err := cmd.executeCreations(context.Background(), plugin, "fake://host/cal/", idOf, planned); err != nil {
+	run := &applyRun{ledger: creationLedger{dir: t.TempDir()}, base: "blake2b256-base"}
+	if err := cmd.executeCreations(context.Background(), plugin, "fake://host/cal/", idOf, planned, run); err != nil {
 		t.Fatalf("executeCreations: %v", err)
 	}
 	if got := out.String(); got != "organize: created +x → new-1.ics\n" {
 		t.Fatalf("output = %q", got)
+	}
+	if !run.creationsDone || run.landedList() != "+x → new-1.ics" {
+		t.Fatalf("run = %+v", run)
+	}
+
+	entry, ok, err := run.ledger.lookup("blake2b256-base", "+x")
+	if err != nil || !ok || entry.URI != "fake://host/cal/new-1.ics" || entry.ID != "new-1.ics" {
+		t.Fatalf("ledger lookup = %+v, %v, %v", entry, ok, err)
+	}
+	if _, ok, _ := run.ledger.lookup("blake2b256-other", "+x"); ok {
+		t.Fatal("a different _base must not see the creation")
+	}
+
+	again, skipped, err := planCreations(
+		context.Background(), []newObject{obj}, plugin, "fake://host/cal/", "", map[string]string{"todo": "summary"},
+		run.ledger, "blake2b256-base",
+	)
+	if err != nil || len(again) != 0 || len(skipped) != 1 || skipped[0].Entry.ID != "new-1.ics" {
+		t.Fatalf("replan = %+v, skipped %+v, %v", again, skipped, err)
+	}
+	cmd.reportSkippedCreations(skipped)
+	if !strings.HasSuffix(out.String(), "organize: +x already created → new-1.ics (skipped)\n") {
+		t.Fatalf("output = %q", out.String())
+	}
+}
+
+// A later-step failure names every creation that landed.
+func TestLaterStepFailure_NamesLandedCreations(t *testing.T) {
+	run := &applyRun{landed: []landedCreation{
+		{TempID: "+wrap-bug", ID: "4"}, {TempID: "+call", ID: "u.ics"},
+	}}
+	err := laterStepFailure(run, errors.BadRequestf("priority %q is not a band", "bogus"))
+	for _, want := range []string{
+		"already created: +wrap-bug → 4, +call → u.ics",
+		"no further writes were attempted",
+		`priority "bogus" is not a band`,
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q lacks %q", err, want)
+		}
+	}
+}
+
+// Bare `+` boxes are keyed by content (plus occurrence), named temp ids by
+// name; the key is independent of where the line sits.
+func TestCreationLedgerKeys(t *testing.T) {
+	keysOf := func(body string) []string {
+		doc, err := parseDocument(statusEnvelope + body)
+		if err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		apps, order, _, err := splitCreations(doc)
+		if err != nil {
+			t.Fatalf("split: %v", err)
+		}
+		keys := creationLedgerKeys(apps, order)
+		out := make([]string, len(order))
+		for i, k := range order {
+			out[i] = keys[k]
+		}
+		return out
+	}
+	a := keysOf("\n# status=\n\n## =open\n\n- [+x] A\n- [+] Same\n- [+] Same\n- [+] Other\n")
+	b := keysOf("\n- [a.ics] moved lines above\n\n# status=\n\n## =open\n\n- [+] Same\n- [+x] A\n- [+] Same\n- [+] Other\n")
+	if a[0] != "+x" || !strings.HasSuffix(a[1], "#1") || !strings.HasSuffix(a[2], "#2") ||
+		strings.TrimSuffix(a[1], "#1") != strings.TrimSuffix(a[2], "#2") || a[3] == a[1] {
+		t.Fatalf("keys = %v", a)
+	}
+	if !reflect.DeepEqual([]string{a[1], a[0], a[2], a[3]}, b) {
+		t.Fatalf("keys moved: %v vs %v", a, b)
+	}
+}
+
+// The interactive buffer rewrite replaces every appearance of a landed temp id
+// (bare, quoted, bare `+`) with the real box id and touches nothing else.
+func TestRewriteLandedTempIDs(t *testing.T) {
+	body := "\n# status=\n\n## =open\n\n- [+x prio=1] A\n- [+\"y z\"] B\n- [+] C\n- [+keep] D\n\n## =done\n\n- [+x] A\n"
+	text := statusEnvelope + body
+	doc, _ := parseDocument(text)
+	apps, order, _, _ := splitCreations(doc)
+	keys := creationLedgerKeys(apps, order)
+	bareKey := keys[order[2]]
+
+	got, err := rewriteLandedTempIDs(text, map[string]string{
+		"+x": "4", "+y z": "a b.ics", bareKey: "7",
+	})
+	if err != nil {
+		t.Fatalf("rewrite: %v", err)
+	}
+	want := statusEnvelope + "\n# status=\n\n## =open\n\n- [4 prio=1] A\n- [\"a b.ics\"] B\n- [7] C\n- [+keep] D\n\n## =done\n\n- [4] A\n"
+	if got != want {
+		t.Fatalf("rewrite =\n%s\nwant\n%s", got, want)
 	}
 }
 

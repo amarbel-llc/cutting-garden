@@ -307,10 +307,32 @@ func (cmd *Organize) runInteractive(
 	// interactive is applyMode's, not a hard-coded true: -dry-run must never
 	// prompt, and the separable-refusal gate (resolveRefusals) keys on it alone.
 	commit, interactive := applyMode(cmd.DryRun, cmd.Commit, true)
-	committed, err := cmd.applyDocument(ctx, cfg, string(editedBytes), commit, interactive, true)
+	committed, landed, err := cmd.applyDocument(ctx, cfg, string(editedBytes), commit, interactive, true)
 	if err != nil {
-		// Keep the edited buffer so the user can resolve conflicts and re-apply.
-		fmt.Fprintf(cmd.output, "organize: edited document left at %s\n", tmpPath)
+		// Keep the edited buffer so the user can resolve conflicts and
+		// re-apply. Objects created before the failure get their real ids
+		// written into the buffer (their temp ids would otherwise name
+		// them as still-to-create; the ledger guards them either way).
+		if len(landed) == 0 {
+			fmt.Fprintf(cmd.output, "organize: edited document left at %s\n", tmpPath)
+			return err
+		}
+		run := applyRun{landed: landed}
+		rewritten, rerr := rewriteLandedTempIDs(string(editedBytes), run.landedByKey())
+		if rerr == nil {
+			rerr = os.WriteFile(tmpPath, []byte(rewritten), 0o600)
+		}
+		if rerr != nil {
+			fmt.Fprintf(cmd.output,
+				"organize: edited document left at %s (its temp ids for %s were NOT "+
+					"rewritten: %s; re-applying it skips them — the creation ledger)\n",
+				tmpPath, run.landedList(), errorText(rerr))
+			return err
+		}
+		fmt.Fprintf(cmd.output,
+			"organize: edited document left at %s, with the created objects' temp ids "+
+				"rewritten to their real ids (%s), so re-applying it is safe\n",
+			tmpPath, run.landedList())
 		return err
 	}
 	if committed {

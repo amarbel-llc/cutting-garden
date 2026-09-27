@@ -43,7 +43,15 @@ func (cmd *Organize) runApply(
 	}
 	tty := stdoutIsTerminal()
 	commit, interactive := applyMode(cmd.DryRun, cmd.Commit, tty)
-	_, err = cmd.applyDocument(ctx, cfg, editedText, commit, interactive, tty)
+	_, landed, err := cmd.applyDocument(ctx, cfg, editedText, commit, interactive, tty)
+	if err != nil {
+		// The user's file is never rewritten; say what it still names.
+		source := applyPath
+		if source == "-" {
+			source = "the document on stdin"
+		}
+		cmd.warnLandedTempIDs(source, landed)
+	}
 	return err
 }
 
@@ -75,9 +83,12 @@ func (cmd *Organize) runCommitDirectly(
 	if err != nil {
 		return err
 	}
-	_, err = cmd.applyDocument(
+	_, landed, err := cmd.applyDocument(
 		ctx, cfg, editedText, true, false, stdoutIsTerminal(),
 	)
+	if err != nil {
+		cmd.warnLandedTempIDs("the document on stdin", landed)
+	}
 	return err
 }
 
@@ -94,9 +105,44 @@ func (cmd *Organize) runCommitDirectly(
 // the `[organize] tag_atoms` / `tag_strip` defaults the document's own
 // `_tag-atoms` / `_tag-strip` fields win over (effectiveTagAtoms /
 // effectiveTagStrip, design G3).
+//
+// landed names the creations that landed during this apply — non-empty even
+// when err is set, so a caller can warn about (or rewrite) the temp ids of
+// objects that now exist. A failure in any write AFTER the creations is
+// reported naming them (laterStepFailure).
 func (cmd *Organize) applyDocument(
 	ctx errors.Context, cfg *cgconfig.ConfigV0, editedText string,
 	commit, interactive, color bool,
+) (committed bool, landed []landedCreation, err error) {
+	run := &applyRun{}
+	committed, err = cmd.applyEdited(ctx, cfg, editedText, commit, interactive, color, run)
+	if err != nil && run.creationsDone && len(run.landed) > 0 {
+		err = laterStepFailure(run, err)
+	}
+	return committed, run.landed, err
+}
+
+// warnLandedTempIDs is the -apply / -commit-directly warning after a failed
+// apply that created objects: the document (which organize does not rewrite)
+// still names them by temp id.
+func (cmd *Organize) warnLandedTempIDs(source string, landed []landedCreation) {
+	if len(landed) == 0 {
+		return
+	}
+	ids := make([]string, len(landed))
+	for i, l := range landed {
+		ids[i] = l.TempID
+	}
+	fmt.Fprintf(cmd.output,
+		"organize: WARNING — %s still names %s by temp id, but they now exist; "+
+			"re-applying it unedited skips them (the creation ledger), and edits "+
+			"to their boxes are not applied — regenerate to edit them\n",
+		source, strings.Join(ids, ", "))
+}
+
+func (cmd *Organize) applyEdited(
+	ctx errors.Context, cfg *cgconfig.ConfigV0, editedText string,
+	commit, interactive, color bool, run *applyRun,
 ) (committed bool, err error) {
 	edited, err := parseDocument(editedText)
 	if err != nil {
@@ -154,11 +200,29 @@ func (cmd *Organize) applyDocument(
 	// neither temp nor in the pinned base is a separable refusal, and its line
 	// is dropped from the document every other planner sees. From here on
 	// `edited` holds existing objects only.
+	//
+	// The creation ledger (ledger.go), scoped by `_base`, guards all of it: a
+	// temp id an earlier apply of this document already created is skipped,
+	// and an unknown id that is such an object's real id (a rewritten
+	// interactive buffer) is dropped rather than refused.
+	run.ledger = creationLedger{
+		dir: command_components.MakeCgEnvDir(ctx).GetXDG().State.MakePath(ledgerDirName).String(),
+	}
+	run.base = edited.BaseDigest
+	recorded, err := run.ledger.entries(run.base)
+	if err != nil {
+		return false, err
+	}
+	createdIDs := map[string]bool{}
+	for _, e := range recorded {
+		createdIDs[e.ID] = true
+	}
+
 	appearances, creationOrder, edited, err := splitCreations(edited)
 	if err != nil {
 		return false, err
 	}
-	unknownRefused, edited := unknownIDRefusals(edited, base)
+	unknownRefused, edited, createdEarlier := unknownIDRefusals(edited, base, createdIDs)
 	newObjects, err := mergeCreations(appearances, creationOrder, creationContext{
 		spec: spec, tagDim: tagDim, documentType: edited.Type,
 	})
@@ -166,13 +230,21 @@ func (cmd *Organize) applyDocument(
 		return false, err
 	}
 	_, trailerFields := fieldWriteSchema(lister)
-	creations, err := planCreations(ctx, newObjects, lister, edited.Anchor, tagDim, trailerFields)
+	creations, skipped, err := planCreations(
+		ctx, newObjects, lister, edited.Anchor, tagDim, trailerFields, run.ledger, run.base,
+	)
 	if err != nil {
 		return false, err
 	}
+	cmd.reportSkippedCreations(skipped)
+	for _, id := range createdEarlier {
+		fmt.Fprintf(cmd.output,
+			"organize: %s was created by an earlier apply of this document (skipped)\n",
+			trellis.QuoteIfNeeded(id))
+	}
 	pending := pendingApply{
 		creations: creations, refused: unknownRefused,
-		anchor: edited.Anchor, docType: edited.Type,
+		anchor: edited.Anchor, docType: edited.Type, run: run,
 	}
 
 	// Box tag atoms are membership edits (design G7, native tags slice 2 T3):
@@ -381,7 +453,7 @@ func (cmd *Organize) applyDocument(
 
 	// Creations land FIRST (a later write could reference them); a failed
 	// create aborts everything after it, naming what landed.
-	if err := cmd.executeCreations(ctx, lister, pending.anchor, idOf, pending.creations); err != nil {
+	if err := cmd.executeCreations(ctx, lister, pending.anchor, idOf, pending.creations, pending.run); err != nil {
 		return false, err
 	}
 	if len(atomEdits) > 0 {
@@ -860,7 +932,10 @@ func (cmd *Organize) applyMemberships(
 		return false, nil
 	}
 
-	if err := cmd.executeCreations(ctx, lister, pending.anchor, idOf, pending.creations); err != nil {
+	if pending.run == nil {
+		pending.run = &applyRun{}
+	}
+	if err := cmd.executeCreations(ctx, lister, pending.anchor, idOf, pending.creations, pending.run); err != nil {
 		return false, err
 	}
 	if len(memberships) > 0 {
@@ -891,6 +966,9 @@ type pendingApply struct {
 	refused   []refusal
 	anchor    string
 	docType   string
+	// run is the apply's creation bookkeeping (ledger + landed); never nil
+	// on the apply path (a zero applyRun records nothing).
+	run *applyRun
 }
 
 // resolveMembershipWrites resolves the plugin's write surface for a multi-valued
