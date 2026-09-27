@@ -2,9 +2,12 @@
 -- organize documents (RFC 0015 / FDR 0023; cutting-garden#43).
 --
 -- Minimal by design (the read-side slice): register the shipped parser for the
--- organize filetype, start tree-sitter highlighting, and fold by heading depth.
+-- organize filetype, start tree-sitter highlighting, fold by heading depth, and
+-- elide box interiors at rest (cutting-garden#253, lua/cutting_garden/elide.lua).
 -- The behavioral ftplugin (gf-to-object, type actions, format) and the LSP
 -- completion layer (cutting-garden#219) are deliberately out of scope here.
+
+local elide = require('cutting_garden.elide')
 
 local M = {}
 
@@ -25,7 +28,13 @@ function M.foldexpr()
   return '='
 end
 
-function M.setup()
+-- setup({ elide = { mode = 'box' | 'metadata' | 'off', char = '…' } }). Each
+-- section is a table of levers merged over the current options, so calling
+-- setup() again (the plugin/ auto-setup does, bare) keeps earlier choices.
+function M.setup(opts)
+  opts = opts or {}
+  elide.configure(opts.elide)
+
   vim.treesitter.language.register(LANG, FT)
 
   -- Auto-detect the interactive organize buffer. The $EDITOR round-trip (#50)
@@ -50,7 +59,14 @@ function M.setup()
       vim.opt_local.foldmethod = 'expr'
       vim.opt_local.foldexpr = "v:lua.require'cutting_garden'.foldexpr()"
       vim.opt_local.commentstring = '%%s'
+      elide.attach(args.buf)
     end,
+  })
+
+  vim.api.nvim_create_user_command('CgElideToggle', function()
+    elide.toggle(0)
+  end, {
+    desc = 'cutting-garden: toggle organize box eliding in this buffer',
   })
 end
 

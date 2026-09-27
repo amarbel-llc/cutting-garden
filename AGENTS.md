@@ -172,6 +172,10 @@ grammar (`zz-nvim/grammars/organize`) is the dialect's conformance
 corpus: `just test-grammar-corpus` (= `checks.grammar-corpus`) runs it,
 `just codemod-generate-tree-sitter` regenerates the committed parser, and
 the devShell carries the flake-pinned `tree-sitter` + `nodejs` toolchain.
+The plugin's box eliding (`zz-nvim/lua/cutting_garden/elide.lua`, #253:
+`box` / `metadata` / `off` modes, reveal under the cursor) is pinned by
+golden screens — `just test-nvim-elide` (= `checks.nvim-elide`) drives
+headless neovim over `zz-nvim/test/elide_spec.lua`.
 
 Comments and TODOs frequently reference upstream dodder issues (#161, #183,
 …) and madder issues — check those before "fixing" what looks like a bug; some

@@ -738,6 +738,34 @@
           # godyn-go (the default attr) needs goRun / ingest / manifest.
           inherit (cuttingGarden) passthru;
         };
+
+        # cutting-garden.nvim (cutting-garden#43): the tree-sitter grammar +
+        # neovim plugin for organize-document syntax highlighting and box
+        # eliding (#253). buildGrammar compiles the committed src/parser.c
+        # (generate = false) into a parser .so; buildVimPlugin stages the plugin
+        # (queries/, lua/, plugin/) plus the .so under parser/. `nix build
+        # .#cutting-garden-nvim` yields the plugin; add its store path to
+        # neovim's runtimepath (or via home-manager). Grammar modules are
+        # vendored from dodder/zz-nvim; the share-later extraction is a tracked
+        # #43 followup. A let binding so checks.nvim-elide can load it.
+        cuttingGardenNvim =
+          let
+            organizeGrammar = pkgs.tree-sitter.buildGrammar {
+              language = "cutting_garden_organize";
+              version = "0.1.0";
+              src = ./zz-nvim/grammars/organize;
+              generate = false;
+            };
+          in
+          pkgs.vimUtils.buildVimPlugin {
+            pname = "cutting-garden-nvim";
+            version = "0.1.0";
+            src = ./zz-nvim;
+            postInstall = ''
+              mkdir -p "$out/parser"
+              cp ${organizeGrammar}/parser "$out/parser/cutting_garden_organize.so"
+            '';
+          };
       in
       {
         packages = {
@@ -847,32 +875,8 @@
           # Bare file at $out, same shape as marklid-grammar above.
           hyphence-content-grammar = hyphence.packages.${system}.hyphence-content-grammar;
 
-          # cutting-garden.nvim (cutting-garden#43): the tree-sitter grammar +
-          # neovim plugin for organize-document syntax highlighting.
-          # buildGrammar compiles the committed src/parser.c (generate = false)
-          # into a parser .so; buildVimPlugin stages the plugin (queries/, lua/,
-          # plugin/) plus the .so under parser/. `nix build .#cutting-garden-nvim`
-          # yields the plugin; add its store path to neovim's runtimepath (or via
-          # home-manager). Grammar modules are vendored from dodder/zz-nvim; the
-          # share-later extraction is a tracked #43 followup.
-          cutting-garden-nvim =
-            let
-              organizeGrammar = pkgs.tree-sitter.buildGrammar {
-                language = "cutting_garden_organize";
-                version = "0.1.0";
-                src = ./zz-nvim/grammars/organize;
-                generate = false;
-              };
-            in
-            pkgs.vimUtils.buildVimPlugin {
-              pname = "cutting-garden-nvim";
-              version = "0.1.0";
-              src = ./zz-nvim;
-              postInstall = ''
-                mkdir -p "$out/parser"
-                cp ${organizeGrammar}/parser "$out/parser/cutting_garden_organize.so"
-              '';
-            };
+          # cutting-garden.nvim (cutting-garden#43) — see cuttingGardenNvim.
+          cutting-garden-nvim = cuttingGardenNvim;
 
           # bats-capture is the hermetic Phase 2 step 9 test lane. It
           # builds a derivation whose only purpose is to run the bats
@@ -1131,6 +1135,32 @@
               export HOME="$TMPDIR/home"
               mkdir -p "$HOME"
               tree-sitter test
+              touch "$out"
+            '';
+
+        # Box eliding (cutting-garden#253) as golden screens: headless neovim
+        # loads the BUILT plugin (parser .so + lua) with --clean, opens the
+        # fixture organize document, and zz-nvim/test/elide_spec.lua asserts
+        # exact screen rows (screenstring after redraw!) per cursor position,
+        # mode (normal / insert / visual) and elide lever. `-c luafile`, not
+        # `-l`: the spec's steps yield to the main loop so fed keys really
+        # enter insert/visual mode; it exits via `cquit`. nvim writes
+        # state/log under $HOME, hence HOME under $TMPDIR. `just
+        # test-nvim-elide` builds it (a `test` aggregate leaf); `nix flake
+        # check` runs it too. Success leaves a stamp at $out.
+        checks.nvim-elide =
+          pkgs.runCommand "cutting-garden-nvim-elide"
+            {
+              nativeBuildInputs = [ pkgs.neovim-unwrapped ];
+              src = ./zz-nvim/test;
+            }
+            ''
+              export HOME="$TMPDIR/home"
+              mkdir -p "$HOME"
+              nvim --version | head -n 1
+              CG_NVIM_PLUGIN=${cuttingGardenNvim} \
+                CG_NVIM_FIXTURE="$src/fixtures/cg-organize-elide.txt" \
+                nvim --clean --headless -c "luafile $src/elide_spec.lua"
               touch "$out"
             '';
 

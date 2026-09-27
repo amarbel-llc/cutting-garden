@@ -5,11 +5,14 @@
 ; Capture vocabulary for the native-tags dialect (design G9/G11): every TAG —
 ; a box's tag atom (bare or quoted), a tag bucket heading, the `_group-by`
 ; namespace — is `@tag`, distinct from an object id (`@variable`), a field key
-; (`@property`), and a field value (`@string`/`@constant`). The planned
-; elide-on-hover feature keys on that split (tags are what it hides), so keep
-; `@tag` for tags only. A `(…)` meta qualifier is `@attribute` (an annotation on
-; a term, not a value); an empty reset heading keeps the marker capture so it
-; reads as structure.
+; (`@property`), and a field value (`@string`/`@constant`); keep `@tag` for
+; tags only. Box eliding (lua/cutting_garden/elide.lua, #253) walks the parse
+; tree, not these captures: its `metadata` mode hides the id / `!type` /
+; `name=value` / `@blob` atoms and keeps TAGS visible (`box` mode hides the
+; whole interior); its ellipsis takes the box bracket's `@punctuation.bracket`.
+; A `(…)` meta qualifier is `@attribute` (an annotation on a term, not a
+; value); an empty reset heading keeps the marker capture so it reads as
+; structure.
 
 ; --- hyphence metadata envelope ---
 (metadata "---" @punctuation.special)

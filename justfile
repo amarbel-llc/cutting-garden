@@ -19,7 +19,7 @@ build-nix-check:
     nix flake check --show-trace
 
 [group('post-build')]
-test: validate-generate validate-generate-dagnabit validate-grammar test-grammar-corpus test-go-godyn lint-go lint-fmt lint-worktree lint-go-analyzers test-bats
+test: validate-generate validate-generate-dagnabit validate-grammar test-grammar-corpus test-nvim-elide test-go-godyn lint-go lint-fmt lint-worktree lint-go-analyzers test-bats
 
 # godyn's per-package go test lane (checks.cutting-garden-godyn-tests; a skip
 # stub off x86_64-linux, where godyn is not validated). A `test` aggregate
@@ -108,6 +108,12 @@ test-bats:
 test-grammar-corpus:
     nix build ".#checks.$(nix eval --impure --raw --expr builtins.currentSystem).grammar-corpus" --no-link --show-trace
     gum log --level info "test-grammar-corpus: ok"
+
+# run the nvim box-eliding golden-screen spec (sandboxed checks.nvim-elide, #253)
+[group('post-build')]
+test-nvim-elide:
+    nix build ".#checks.$(nix eval --impure --raw --expr builtins.currentSystem).nvim-elide" --no-link --show-trace
+    gum log --level info "test-nvim-elide: ok"
 
 # The corpus run un-sandboxed in the devshell (the pinned tree-sitter CLI) with
 # tree-sitter's own flags passed through — `-u` rewrites each test's expected

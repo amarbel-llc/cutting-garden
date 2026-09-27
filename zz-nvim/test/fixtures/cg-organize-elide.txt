@@ -1,0 +1,13 @@
+---
+! organize-base-v1
+---
+
+# work
+
+- [nsA.ics project-client-acme work date_due=2026-09-01] Acme retainer
+- [nsD.ics other] Loose idea
+- [lit2.ics
+    work-x
+    location=Bank] Read book
+- [t1.ics !caldav-object-vtodo-v1 urgent %overdue] Typed
+- [field4.ics] Someday idea
