@@ -35,6 +35,10 @@
           {
             "type": "box_object_id",
             "named": true
+          },
+          {
+            "type": "box_temp_id",
+            "named": true
           }
         ]
       }
@@ -174,6 +178,41 @@
   },
   {
     "type": "box_tag_quoted",
+    "named": true,
+    "fields": {},
+    "children": {
+      "multiple": true,
+      "required": false,
+      "types": [
+        {
+          "type": "box_escape",
+          "named": true
+        }
+      ]
+    }
+  },
+  {
+    "type": "box_temp_id",
+    "named": true,
+    "fields": {
+      "name": {
+        "multiple": false,
+        "required": false,
+        "types": [
+          {
+            "type": "box_temp_name",
+            "named": true
+          },
+          {
+            "type": "box_temp_quoted",
+            "named": true
+          }
+        ]
+      }
+    }
+  },
+  {
+    "type": "box_temp_quoted",
     "named": true,
     "fields": {},
     "children": {
@@ -770,6 +809,10 @@
     "named": false
   },
   {
+    "type": "+",
+    "named": false
+  },
+  {
     "type": "-",
     "named": false
   },
@@ -803,6 +846,10 @@
   },
   {
     "type": "box_object_id",
+    "named": true
+  },
+  {
+    "type": "box_temp_name",
     "named": true
   },
   {

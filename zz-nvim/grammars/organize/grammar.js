@@ -157,6 +157,33 @@ module.exports = grammar({
     ...box,
     ...markl,
 
+    // Overrides the shared box (spread above, so this wins) to admit a TEMP id
+    // in the id slot (forge organize F8, RFC 0015 §Creation): `+<id>`,
+    // `+"<id with reserved runes>"`, or a bare `+` names an object organize
+    // CREATES. The `+` is never a real id's first rune (box_object_id starts
+    // alphanumeric), so the two id forms never compete.
+    box: $ =>
+      seq(
+        '[',
+        field('id', choice($.box_object_id, $.box_temp_id)),
+        repeat(seq($._box_space, $._box_item)),
+        optional($._box_space),
+        ']',
+      ),
+    box_temp_id: $ =>
+      seq(
+        '+',
+        optional(
+          field(
+            'name',
+            choice(
+              alias(token.immediate(IDENT), $.box_temp_name),
+              alias($.box_quoted, $.box_temp_quoted),
+            ),
+          ),
+        ),
+      ),
+
     // Overrides the shared box's `_box_space` (spread above, so this wins): an
     // organize box interior may wrap, so the separator between box atoms is a
     // run of blanks OR one line break with its surrounding blanks

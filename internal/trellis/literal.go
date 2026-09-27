@@ -16,6 +16,11 @@ import (
 // non-`=` operators — survives ParseLiteral, so a Literal is always exactly
 // re-spellable by WriteLiteral and never carries query semantics.
 type Literal struct {
+	// New marks a TEMP-ID box (forge organize F8): the first slot was
+	// `+<opaque>`, `+"<opaque>"`, or a bare `+` — an object that does not
+	// exist yet, which organize creates. ID then holds the decoded opaque
+	// part (empty for a bare `+`), never the `+`.
+	New bool
 	// ID is the object reference, decoded (a quoted `"one/uno.zettel"` id
 	// arrives unquoted here; WriteLiteral re-quotes it as needed).
 	ID string
@@ -66,12 +71,15 @@ func ParseLiteralPrefix(src string) (Literal, string, error) {
 	p := &parser{src: []rune(src)}
 	p.skipSPOpt()
 	start := p.pos
+	if lit, matched, err := p.parseTempIDBox(start); matched {
+		if err != nil {
+			return Literal{}, "", err
+		}
+		return lit, string(p.src[p.pos:]), nil
+	}
 	group, ok := p.parseGroup()
 	if !ok {
-		se := p.syntaxError("expected a `[…]` group").(*SyntaxError)
-		opensGroup := start < len(p.src) && p.src[start] == '['
-		se.Incomplete = opensGroup && (p.farthest >= len(p.src) || p.ranOutInString)
-		return Literal{}, "", errors.BadRequestf("box literal: %w", se)
+		return Literal{}, "", p.boxSyntaxError(start, "expected a `[…]` group")
 	}
 	interior := string(p.src[start+1 : p.pos-1])
 	lit, err := projectLiteral(group, interior)
@@ -79,6 +87,70 @@ func ParseLiteralPrefix(src string) (Literal, string, error) {
 		return Literal{}, "", err
 	}
 	return lit, string(p.src[p.pos:]), nil
+}
+
+// boxSyntaxError is the bad request a box that does not parse becomes,
+// wrapping the *SyntaxError with its Incomplete bit: the box opened a group at
+// start but the input ended inside it (or inside a String).
+func (p *parser) boxSyntaxError(start int, fallback string) error {
+	se := p.syntaxError(fallback).(*SyntaxError)
+	opensGroup := start < len(p.src) && p.src[start] == '['
+	se.Incomplete = opensGroup && (p.farthest >= len(p.src) || p.ranOutInString)
+	return errors.BadRequestf("box literal: %w", se)
+}
+
+// parseTempIDBox parses a TEMP-ID box (forge organize F8):
+//
+//	'[' SP? '+' (String / IdentRune+)? (SP TermRun)? SP? ']'
+//
+// matched is false (and nothing is consumed) when the box does not open with
+// `+` — the caller then parses an ordinary group. The literal grammar owns
+// this production, not the trellis query grammar: a group body opening with a
+// sigil is a version subpath there (`[+ step]`), which is never ground, so a
+// box never meant one and the `+` slot is free for creation. The rest of the
+// interior is the ordinary ground subset (projectAttrs).
+func (p *parser) parseTempIDBox(start int) (lit Literal, matched bool, err error) {
+	if !p.literal("[") {
+		return Literal{}, false, nil
+	}
+	p.skipSPOpt()
+	if p.atEOF() || p.src[p.pos] != '+' {
+		p.pos = start
+		return Literal{}, false, nil
+	}
+	p.pos++
+
+	lit.New = true
+	switch {
+	case !p.atEOF() && (p.src[p.pos] == '"' || p.src[p.pos] == '\''):
+		id, ok := p.parseString()
+		if !ok {
+			return Literal{}, true, p.boxSyntaxError(start, "unterminated temp id")
+		}
+		lit.ID = id
+	case IsIdentRuneAt(p.src, p.pos):
+		lit.ID, _ = p.scanIdentText()
+	}
+
+	var terms []Term
+	afterID := p.pos
+	if p.skipSP() {
+		if run, ok := p.parseTermRun(); ok {
+			terms = run
+		} else {
+			p.pos = afterID
+		}
+	}
+	p.skipSPOpt()
+	if !p.literal("]") {
+		return Literal{}, true, p.boxSyntaxError(
+			start, "a temp id `+…` must be followed by whitespace or `]`",
+		)
+	}
+
+	interior := string(p.src[start+1 : p.pos-1])
+	lit, err = projectAttrs(lit, terms, interior)
+	return lit, true, err
 }
 
 // projectLiteral applies the groundness bar to a parsed Group; interior is
@@ -98,18 +170,24 @@ func projectLiteral(group Group, interior string) (Literal, error) {
 		)
 	}
 
-	var lit Literal
-	for i, term := range alts.Alts[0].Terms {
+	terms := alts.Alts[0].Terms
+	first := terms[0]
+	if first.Negate || first.Exact {
+		return Literal{}, notGround(interior, first, "a `^`/`=` prefix is a query decoration")
+	}
+	id, ok := plainIdent(first.Basic)
+	if !ok {
+		return Literal{}, notGround(interior, first, "the first term must be the object id")
+	}
+	return projectAttrs(Literal{ID: id}, terms[1:], interior)
+}
+
+// projectAttrs applies the groundness bar to the terms AFTER a box's id slot
+// (an ordinary id or a temp id), filling lit's type, tags and atoms.
+func projectAttrs(lit Literal, terms []Term, interior string) (Literal, error) {
+	for _, term := range terms {
 		if term.Negate || term.Exact {
 			return Literal{}, notGround(interior, term, "a `^`/`=` prefix is a query decoration")
-		}
-		if i == 0 {
-			id, ok := plainIdent(term.Basic)
-			if !ok {
-				return Literal{}, notGround(interior, term, "the first term must be the object id")
-			}
-			lit.ID = id
-			continue
 		}
 		switch b := term.Basic.(type) {
 		case TypeBasicTerm:
@@ -218,7 +296,11 @@ type SpelledLiteral struct {
 // SpellLiteral spells every slot of lit through the ONE quoting rule
 // (QuoteIfNeeded, design G9).
 func SpellLiteral(lit Literal) SpelledLiteral {
-	s := SpelledLiteral{ID: QuoteIfNeeded(lit.ID), Type: lit.Type}
+	id := QuoteIfNeeded(lit.ID)
+	if lit.New {
+		id = SpellTempID(lit.ID)
+	}
+	s := SpelledLiteral{ID: id, Type: lit.Type}
 	for _, tag := range lit.Tags {
 		s.Tags = append(s.Tags, QuoteIfNeeded(tag))
 	}
@@ -226,6 +308,16 @@ func SpellLiteral(lit Literal) SpelledLiteral {
 		s.Atoms = append(s.Atoms, SpellAtom(atom))
 	}
 	return s
+}
+
+// SpellTempID spells a temp id's box slot (forge organize F8): a bare `+` for
+// the empty (single-appearance) id, else `+` followed by the opaque id through
+// the one quoting rule — `+wrap-bug`, `+"wrap bug"`.
+func SpellTempID(id string) string {
+	if id == "" {
+		return "+"
+	}
+	return "+" + QuoteIfNeeded(id)
 }
 
 // SpellAtom spells one ground atom as `name=value`, each side through

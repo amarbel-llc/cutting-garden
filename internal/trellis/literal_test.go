@@ -161,10 +161,105 @@ func TestLiteral_NotGround(t *testing.T) {
 	}
 
 	// Group-level rejections (no single term to name).
-	for _, interior := range []string{``, `a, b`, `-> x`, `+ x`, `x.ics k=`} {
+	// (`: x` is a version subpath; `+ x` is not — a leading `+` is a temp id,
+	// TestLiteral_TempID.)
+	for _, interior := range []string{``, `a, b`, `-> x`, `: x`, `x.ics k=`} {
 		_, err := ParseLiteral(interior)
 		if err == nil || !errors.Is400BadRequest(err) {
 			t.Fatalf("ParseLiteral(%q) = %v; want a bad request", interior, err)
+		}
+	}
+}
+
+// TestLiteral_TempID pins the organize creation box (forge organize F8): a
+// box whose FIRST slot is `+<opaque>`, `+"<opaque with reserved runes>"`, or a
+// bare `+` names an object that does not exist yet. The temp id decodes into
+// ID with New set; the rest of the interior is the ordinary ground subset; the
+// writer spells it back as `+` plus the one quoting rule.
+func TestLiteral_TempID(t *testing.T) {
+	cases := []struct {
+		name     string
+		interior string
+		want     Literal
+		spelled  string
+	}{
+		{
+			name:     "bare temp id with type, tag and atom",
+			interior: `+wrap-bug !fj-issue-v1 bug milestone=v0.3`,
+			want: Literal{
+				New: true, ID: "wrap-bug", Type: "fj-issue-v1",
+				Tags: []string{"bug"}, Atoms: []Atom{{"milestone", "v0.3"}},
+			},
+		},
+		{
+			name:     "quoted temp id",
+			interior: `+"wrap bug" work`,
+			want:     Literal{New: true, ID: "wrap bug", Tags: []string{"work"}},
+		},
+		{
+			name:     "single-appearance creation",
+			interior: `+`,
+			want:     Literal{New: true},
+		},
+		{
+			name:     "single-appearance creation with slots",
+			interior: `+ !caldav-object-vtodo-v1 status=needs-action`,
+			want: Literal{
+				New: true, Type: "caldav-object-vtodo-v1",
+				Atoms: []Atom{{"status", "needs-action"}},
+			},
+		},
+		{
+			name:     "extra whitespace collapses",
+			interior: `  +x   k=v `,
+			want:     Literal{New: true, ID: "x", Atoms: []Atom{{"k", "v"}}},
+			spelled:  `+x k=v`,
+		},
+		{
+			name:     "an id-interior sigil stays in the temp id",
+			interior: `+a:b`,
+			want:     Literal{New: true, ID: "a:b"},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := ParseLiteral(tc.interior)
+			if err != nil {
+				t.Fatalf("ParseLiteral(%q): %v", tc.interior, err)
+			}
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("ParseLiteral(%q) = %+v, want %+v", tc.interior, got, tc.want)
+			}
+			var b strings.Builder
+			WriteLiteral(&b, got)
+			wantSpelled := tc.spelled
+			if wantSpelled == "" {
+				wantSpelled = tc.interior
+			}
+			if b.String() != wantSpelled {
+				t.Fatalf("WriteLiteral = %q, want %q", b.String(), wantSpelled)
+			}
+			again, err := ParseLiteral(b.String())
+			if err != nil || !reflect.DeepEqual(again, got) {
+				t.Fatalf("re-parse %q = %+v, %v; want %+v", b.String(), again, err, got)
+			}
+		})
+	}
+
+	// A temp id must end at whitespace or the closing `]`, and the rest of
+	// the box still has to be ground.
+	for _, interior := range []string{`+x: y`, `+"a"b`, `+x k*=v`, `+x ^y`} {
+		if _, err := ParseLiteral(interior); err == nil || !errors.Is400BadRequest(err) {
+			t.Errorf("ParseLiteral(%q) = %v; want a bad request", interior, err)
+		}
+	}
+
+	// An unclosed temp-id box is Incomplete (organize joins a wrapped box).
+	for _, src := range []string{`[+x k="a`, `[+"open`, `[+ !t`} {
+		_, _, err := ParseLiteralPrefix(src)
+		var se *SyntaxError
+		if err == nil || !stderrors.As(err, &se) || !se.Incomplete {
+			t.Errorf("ParseLiteralPrefix(%q) = %v; want an Incomplete syntax error", src, err)
 		}
 	}
 }
