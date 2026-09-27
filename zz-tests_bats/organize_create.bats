@@ -324,7 +324,7 @@ EOF
   run curl -fsS "${CALDAV_SOURCE#caldav:}fields/$uid.ics"
   assert_success
   assert_line --regexp '^BEGIN:VEVENT[[:space:]]*$'
-  assert_line --regexp "^UID:$uid[[:space:]]*\$"
+  assert_line --regexp "^UID:${uid}[[:space:]]*\$"
   assert_line --regexp '^SUMMARY:Dentist[[:space:]]*$'
   assert_line --regexp '^DTSTART;VALUE=DATE:20261001[[:space:]]*$'
   refute_line --regexp '^STATUS:'
