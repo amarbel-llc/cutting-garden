@@ -96,6 +96,26 @@ type Manifest struct {
 	// node's name back as Text, and restores it. Optional — omitting it SKIPs
 	// the point.
 	Trailer *TrailerSpec
+	// Creation, when non-nil, parameterizes the creation point (RFC 0013
+	// §Creation, forge organize F10): the driver builds the HOST node.
+	// create_child body for a new node of Type under Container from the
+	// declared field mapping — the trailer text, plus optionally one
+	// single-valued and one multi-valued dimension — creates it, reads it
+	// back through nodes.list of Container, and deletes it. Optional —
+	// omitting it SKIPs the point.
+	Creation *CreationSpec
+}
+
+// CreationSpec parameterizes the creation point. OneDimension/OneValue and
+// ManyDimension/ManySet are each optional.
+type CreationSpec struct {
+	Container     string
+	Type          string
+	Trailer       string
+	OneDimension  string
+	OneValue      string
+	ManyDimension string
+	ManySet       []string
 }
 
 // TrailerSpec names the node the trailer point retitles and the text.
@@ -356,6 +376,28 @@ func LoadManifest(path string) (*Manifest, error) {
 			}
 		}
 		manifest.Trailer = spec
+	}
+
+	if sub, ok, err := decodeTable(model, "creation"); err != nil {
+		return nil, err
+	} else if ok {
+		spec := &CreationSpec{}
+		for key, into := range map[string]*string{
+			"container":      &spec.Container,
+			"type":           &spec.Type,
+			"trailer":        &spec.Trailer,
+			"one_dimension":  &spec.OneDimension,
+			"one_value":      &spec.OneValue,
+			"many_dimension": &spec.ManyDimension,
+		} {
+			if err := decodeString(sub, key, into); err != nil {
+				return nil, err
+			}
+		}
+		if err := decodeStringSlice(sub, "many_set", &spec.ManySet); err != nil {
+			return nil, err
+		}
+		manifest.Creation = spec
 	}
 
 	if leftover := model.Undecoded(); len(leftover) > 0 {

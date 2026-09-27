@@ -821,6 +821,11 @@ type NodeTypeView struct {
 	// trailer (the node's name) writes through.
 	InlineFields []string `json:"inline_fields,omitempty"`
 	TrailerField string   `json:"trailer_field,omitempty"`
+	// Creatable is the OPTIONAL creation declaration (RFC 0013 §Creation,
+	// forge organize F10) — additive under §Compatibility. The host reads it
+	// off the view (CreationsOf); a Go peer sets it through
+	// cutting_garden_plugins.CreationDescriber.
+	Creatable *CreatableView `json:"creatable,omitempty"`
 }
 
 // NodeTypeViewFrom projects a declared NodeType onto the wire. A leaf

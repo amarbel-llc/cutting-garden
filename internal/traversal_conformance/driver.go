@@ -94,6 +94,7 @@ func Run(
 	r.caseFacetWrites(ctx)
 	r.casePresentation(ctx)
 	r.caseTerminalValues()
+	r.caseCreation(ctx)
 
 	tw.Plan()
 

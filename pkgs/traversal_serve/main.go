@@ -27,6 +27,14 @@ type BulkOpView = internal.BulkOpView
 // filter, and one op template.
 type BulkSweepView = internal.BulkSweepView
 
+// CreatableView is the wire form of cutting_garden_plugins.NodeTypeCreation,
+// carried as the OPTIONAL `creatable` member of the created type's node_types
+// entry. Container is REQUIRED: the node_types tag of the container type a
+// new node is created under. Required names the document fields a new node
+// MUST be given (facet dimension keys or the type's trailer_field); absent ≙
+// none.
+type CreatableView = internal.CreatableView
+
 // FacetContainerBreakdownView is the wire form of
 // cutting_garden_plugins.FacetContainerBreakdown (RFC 0012 §13): one
 // immediate child container's contribution to the summary. Name MAY be
@@ -349,6 +357,10 @@ var CodeOf = internal.CodeOf
 // announce line. Absence means the process was not launched by a host:
 // the caller MUST exit non-zero without touching stdout.
 var CookieFromEnv = internal.CookieFromEnv
+
+// CreationsOf collects the creatable node types of an initialize result, in
+// node_types order (exported for the conformance driver).
+var CreationsOf = internal.CreationsOf
 var DecodePluginStanza = internal.DecodePluginStanza
 var DecodePluginStanzaInto = internal.DecodePluginStanzaInto
 var EncodePluginStanzaFrom = internal.EncodePluginStanzaFrom
@@ -491,6 +503,19 @@ var Serve = internal.Serve
 // ToFacetContainerBreakdowns is the inverse of
 // FacetContainerBreakdownViewsFrom.
 var ToFacetContainerBreakdowns = internal.ToFacetContainerBreakdowns
+
+// ValidateCreationDeclaration is the host's bring-up check of the `creatable`
+// members of an initialize result's node_types entries (exported for the
+// conformance driver and a Go peer's own tests):
+//
+//  1. `container` names a declared node_types tag whose entry is a container;
+//  2. the plugin advertises `container-create` (creation rides
+//     node.create_child);
+//  3. the type declares a `trailer_field` (organize requires every new
+//     object's description, which is sent under it);
+//  4. every `required` entry is a field the host can send: the type's
+//     trailer_field or a dimension with a `one` / `many` facet write.
+var ValidateCreationDeclaration = internal.ValidateCreationDeclaration
 
 // ValidateFacetWriteDeclaration is the host's bring-up check of an
 // initialize facet_writes block (exported for the conformance driver and

@@ -774,16 +774,29 @@ func (p *TreePlugin) DescribeBodies() []cutting_garden_plugins.NodeTypeBody {
 			},
 			Example: map[string]any{"title": "example", "state": "open"},
 		},
+		{
+			// The tracker's creatable ticket (RFC 0013 §Creation): the peer
+			// numbers it, so it is created only via CreateChild, from the
+			// host-built fields body.
+			Tag: TicketType,
+			Accepts: []string{
+				"application/json (create: title, state, milestone, labels;" +
+					" patch: the same keys)",
+			},
+			Example:                map[string]any{"title": "example", "state": "open"},
+			ServerAssignedIdentity: true,
+		},
 	}
 }
 
 // CreateChild is the ContainerCreator capability (cutting-garden#143):
 // the peer assigns the created node's identity — a deterministic
-// child-N name under the container — and reports it back.
+// child-N name under the container (or, for a ticket, the next ticket
+// number — RFC 0013 §Creation) — and reports it back.
 func (p *TreePlugin) CreateChild(
 	_ context.Context, container *url.URL, body io.Reader, typ string,
 ) (*url.URL, error) {
-	if typ != AssignedLeafType {
+	if typ != AssignedLeafType && typ != TicketType {
 		return nil, errors.BadRequestf(
 			"create_child under %s: type %q is not server-assigned",
 			container.String(), typ,
@@ -797,15 +810,22 @@ func (p *TreePlugin) CreateChild(
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	parent, found := p.nodes[container.String()]
+	// readKey: a container spelled with a trailing `/` (an organize
+	// document's `_anchor`) addresses the same node.
+	containerKey := readKey(container)
+	parent, found := p.nodes[containerKey]
 	if !found || !parent.container() {
 		return nil, errors.BadRequestf(
 			"create_child: %s is not a container", container.String(),
 		)
 	}
 
+	if typ == TicketType {
+		return p.createTicketLocked(containerKey, parent, data)
+	}
+
 	p.assigned++
-	key := strings.TrimRight(container.String(), "/") +
+	key := containerKey +
 		fmt.Sprintf("/assigned-%d", p.assigned)
 	p.nodes[key] = &memNode{
 		name:       fmt.Sprintf("assigned-%d", p.assigned),

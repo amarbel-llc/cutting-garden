@@ -120,6 +120,17 @@ func testpeerManifest(t *testing.T) *traversal_conformance.Manifest {
 			Node:      testpeer.TicketTwo,
 			Text:      "Retitled by conformance",
 		},
+		// The ticket type is creatable under a box (RFC 0013 §Creation): the
+		// host-built body carries the title, a state and a label set.
+		Creation: &traversal_conformance.CreationSpec{
+			Container:     testpeer.TrackerBox,
+			Type:          testpeer.TicketType,
+			Trailer:       "Created by conformance",
+			OneDimension:  "state",
+			OneValue:      "closed",
+			ManyDimension: "label",
+			ManySet:       []string{"bug", "area-organize"},
+		},
 	}
 }
 
@@ -175,7 +186,11 @@ func TestRunPassesConformantTestpeer(t *testing.T) {
 			" the host",
 		"ok 20 - node.patch: host-built trailer_field body renames the node",
 		"ok 21 - initialize: facet terminal_values are usable by the host",
-		"1..21",
+		"ok 22 - initialize: node_types creatable declarations are usable by" +
+			" the host",
+		"ok 23 - node.create_child: host-built create body creates the node" +
+			" with its fields",
+		"1..23",
 	} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("output missing %q:\n%s", want, out.String())
@@ -464,6 +479,15 @@ dimension = "milestone"
 container = "cgtest://fixture/tracker"
 node = "cgtest://fixture/tracker/2"
 text = "Retitled"
+
+[creation]
+container = "cgtest://fixture/tracker"
+type = "cgtest-ticket-v1"
+trailer = "Created"
+one_dimension = "state"
+one_value = "open"
+many_dimension = "label"
+many_set = ["bug"]
 `
 	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
 		t.Fatalf("write manifest: %v", err)
@@ -488,6 +512,18 @@ text = "Retitled"
 		Text:      "Retitled",
 	}); !reflect.DeepEqual(got, want) {
 		t.Errorf("Trailer = %+v, want %+v", got, want)
+	}
+
+	if got, want := manifest.Creation, (&traversal_conformance.CreationSpec{
+		Container:     "cgtest://fixture/tracker",
+		Type:          "cgtest-ticket-v1",
+		Trailer:       "Created",
+		OneDimension:  "state",
+		OneValue:      "open",
+		ManyDimension: "label",
+		ManySet:       []string{"bug"},
+	}); !reflect.DeepEqual(got, want) {
+		t.Errorf("Creation = %+v, want %+v", got, want)
 	}
 
 	if got, want := manifest.FacetWrite, (&traversal_conformance.FacetWriteSpec{

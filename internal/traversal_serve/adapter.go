@@ -79,6 +79,10 @@ var (
 	_ cutting_garden_plugins.FieldPresenter         = (*WirePlugin)(nil)
 	_ cutting_garden_plugins.ListingFieldsDescriber = (*WirePlugin)(nil)
 	_ cutting_garden_plugins.FieldWriteApplier      = (*WirePlugin)(nil)
+	// The creation declaration (RFC 0013 §Creation): node_types `creatable`
+	// members, and the host-built node.create_child body.
+	_ cutting_garden_plugins.CreationDescriber = (*WirePlugin)(nil)
+	_ cutting_garden_plugins.CreateApplier     = (*WirePlugin)(nil)
 )
 
 // NewWirePlugin returns the adapter for spec. It does NOT spawn — the
@@ -219,6 +223,7 @@ func (w *WirePlugin) liveSession() (*Session, error) {
 		ValidateFacetWriteDeclaration,
 		ValidatePresentationDeclaration,
 		ValidateTerminalValuesDeclaration,
+		ValidateCreationDeclaration,
 	} {
 		if err := validate(sess.Init); err != nil {
 			w.fatalErr = errors.ErrorWithStackf(
@@ -442,6 +447,38 @@ func (w *WirePlugin) BuildFieldWritePatch(
 	}
 
 	body, err := presentationOf(sess).BuildFieldWritePatch(node, edits)
+	if err != nil {
+		return nil, errors.BadRequestf("wire plugin %q: %s", w.spec.Name, err)
+	}
+
+	return body, nil
+}
+
+// DescribeCreation is the CreationDescriber, answered from the node_types
+// `creatable` members. A peer declaring none (or one that failed to launch)
+// answers nil — organize then refuses a `+` box with "declares no creatable
+// node types".
+func (w *WirePlugin) DescribeCreation() []cutting_garden_plugins.NodeTypeCreation {
+	sess, err := w.liveSession()
+	if err != nil {
+		return nil
+	}
+
+	return CreationsOf(sess.Init)
+}
+
+// BuildCreateBody is the CreateApplier: the host-built node.create_child body
+// from the declared field mapping (Presentation.BuildCreateBody). No wire call
+// — the body travels later via node.create_child.
+func (w *WirePlugin) BuildCreateBody(
+	_ context.Context, typ string, fields map[string][]string,
+) ([]byte, error) {
+	sess, err := w.liveSession()
+	if err != nil {
+		return nil, err
+	}
+
+	body, err := presentationOf(sess).BuildCreateBody(typ, fields)
 	if err != nil {
 		return nil, errors.BadRequestf("wire plugin %q: %s", w.spec.Name, err)
 	}

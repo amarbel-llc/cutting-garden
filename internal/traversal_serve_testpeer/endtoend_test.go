@@ -737,6 +737,79 @@ func TestWireTrackerPresentationIndistinguishableFromLinked(t *testing.T) {
 	}
 }
 
+// TestWireTrackerCreationIndistinguishableFromLinked pins RFC 0013 §Creation
+// end to end: the linked peer and the wire host declare the SAME creatable
+// ticket, build the SAME create body from the same document fields, and a
+// node.create_child with it lists back as a ticket carrying those fields.
+func TestWireTrackerCreationIndistinguishableFromLinked(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	t.Setenv(mainModeEnv, "1")
+
+	linked := NewPlugin()
+	wire := traversal_serve.NewWirePlugin(traversal_serve.PluginSpec{
+		Name:    "cgtest-e2e-creation",
+		Command: []string{selfExecutable(t)},
+		Schemes: []string{Scheme},
+	})
+	defer func() { _ = wire.Close() }()
+
+	if got, want := wire.DescribeCreation(), linked.DescribeCreation(); len(want) == 0 ||
+		!reflect.DeepEqual(got, want) {
+		t.Fatalf("DescribeCreation:\nlinked: %+v\nwire:   %+v", want, got)
+	}
+
+	fields := map[string][]string{
+		"title": {"Wrapped boxes"}, "milestone": {"v0.3"}, "label": {"bug"},
+	}
+	linkedBody, err := linked.BuildCreateBody(ctx, TicketType, fields)
+	if err != nil {
+		t.Fatalf("linked BuildCreateBody: %v", err)
+	}
+	wireBody, err := wire.BuildCreateBody(ctx, TicketType, fields)
+	if err != nil {
+		t.Fatalf("wire BuildCreateBody: %v", err)
+	}
+	want := `{"labels":["bug"],"milestone":"v0.3","title":"Wrapped boxes"}`
+	if string(linkedBody) != want || string(wireBody) != want {
+		t.Fatalf("create bodies linked %s, wire %s, want %s", linkedBody, wireBody, want)
+	}
+
+	tracker := mustParseURL(t, TrackerBox+"/")
+	linkedCreated, err := linked.CreateChild(ctx, tracker, strings.NewReader(string(linkedBody)), TicketType)
+	if err != nil {
+		t.Fatalf("linked CreateChild: %v", err)
+	}
+	wireCreated, err := wire.CreateChild(ctx, tracker, strings.NewReader(string(wireBody)), TicketType)
+	if err != nil {
+		t.Fatalf("wire CreateChild: %v", err)
+	}
+	if linkedCreated.String() != TrackerBox+"/4" || wireCreated.String() != TrackerBox+"/4" {
+		t.Fatalf("created linked %s, wire %s, want %s/4", linkedCreated, wireCreated, TrackerBox)
+	}
+
+	nodes, err := wire.ListRoots(ctx, mustParseURL(t, TrackerBox))
+	if err != nil {
+		t.Fatalf("wire ListRoots: %v", err)
+	}
+	created := nodes[len(nodes)-1]
+	if created.Name != "Wrapped boxes" || created.Type != TicketType ||
+		!reflect.DeepEqual(facetKeysOf(created.Facets["milestone"]), []string{"v0.3"}) ||
+		!reflect.DeepEqual(facetKeysOf(created.Facets["label"]), []string{"bug"}) ||
+		!reflect.DeepEqual(facetKeysOf(created.Facets["state"]), []string{"open"}) {
+		t.Fatalf("created ticket = %+v", created)
+	}
+}
+
+func facetKeysOf(values []cutting_garden_plugins.FacetValue) []string {
+	keys := make([]string, len(values))
+	for i, v := range values {
+		keys[i] = v.Key
+	}
+	return keys
+}
+
 func mustJSON(t *testing.T, value any) string {
 	t.Helper()
 

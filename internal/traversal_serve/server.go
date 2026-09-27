@@ -199,6 +199,16 @@ func newServer(cfg ServeConfig) (*server, error) {
 		}
 	}
 
+	// The creation declarations (RFC 0013 §Creation) likewise ride the
+	// node_types entries of the types they make creatable.
+	if describer, ok := cfg.Plugin.(cutting_garden_plugins.CreationDescriber); ok {
+		if err := applyCreations(
+			srv.init.NodeTypes, describer.DescribeCreation(),
+		); err != nil {
+			return nil, err
+		}
+	}
+
 	capabilities := []string{}
 
 	if provider, ok := cfg.Plugin.(cutting_garden_plugins.RootProvider); ok {
