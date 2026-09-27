@@ -1055,6 +1055,114 @@ function test_testpeer_tracker_mcp_describes_tag_set { # @test
 EOF
 }
 
+# Creation over the wire (RFC 0013 §Creation, forge organize F8–F10): the
+# ticket type is `creatable` under a box (required: its title). A temp id
+# appearing ungrouped and under `## =v0.3` is ONE new ticket — its milestone
+# the bucket, its labels the union of both boxes' tag atoms — and the HOST
+# builds the node.create_child body from the facet_writes fields + the
+# trailer_field ({"labels":[…],"milestone":"v0.3","title":"…"}). The peer
+# numbers it 4, reported as `created +wrap-bug → 4`.
+# bats test_tags=testpeer
+function test_testpeer_tracker_creates_a_ticket { # @test
+  configure_testpeer_wire_plugin
+
+  run_cg_stdout organize -group-by milestone= -query '!cgtest-ticket-v1' \
+    cgtest://fixture/tracker
+  assert_success
+  assert_output - <<-'EOM'
+	---
+	% generated: `cg organize -group-by milestone= -query "!cgtest-ticket-v1 _terminal=no" cgtest://fixture/tracker`
+	- _base = @blake2b256-h9648ghhw52dl394umam7puynajvan7s3k3qdx3g87c054e4ysxsqj5wzd
+	- _anchor = cgtest://fixture/tracker/
+	- _query = !cgtest-ticket-v1 _terminal=no
+	- _type = !cgtest-ticket-v1
+	! organize-base-v1
+	---
+
+	- [2 "good first issue"] Write the docs
+
+	# milestone=
+
+	## =v0.1
+
+	- [1 area-organize bug] Fix the parser
+
+	## =v0.2
+
+	## =v0.3
+	EOM
+
+  local edited="$BATS_TEST_TMPDIR/edited.txt"
+  cat >"$edited" <<-'EOM'
+	---
+	% generated: `cg organize -group-by milestone= -query "!cgtest-ticket-v1 _terminal=no" cgtest://fixture/tracker`
+	- _base = @blake2b256-h9648ghhw52dl394umam7puynajvan7s3k3qdx3g87c054e4ysxsqj5wzd
+	- _anchor = cgtest://fixture/tracker/
+	- _query = !cgtest-ticket-v1 _terminal=no
+	- _type = !cgtest-ticket-v1
+	! organize-base-v1
+	---
+
+	- [2 "good first issue"] Write the docs
+	- [+wrap-bug area-organize] Wrapped boxes lose their description
+
+	# milestone=
+
+	## =v0.1
+
+	- [1 area-organize bug] Fix the parser
+
+	## =v0.2
+
+	## =v0.3
+
+	- [+wrap-bug bug] Wrapped boxes lose their description
+	EOM
+
+  run_cg_stdout organize -apply "$edited" -commit
+  assert_success
+  assert_output - <<'EOF'
+organize: 1 change(s):
+
+  - [+wrap-bug {+area-organize+} {+bug+} milestone={+v0.3+}] {+Wrapped boxes lose their description+}
+
+organize: created +wrap-bug → 4
+organize: wrote 1 change(s)
+EOF
+
+  run_cg_stdout list -format json -query 'milestone=v0.3' cgtest://fixture/tracker
+  assert_success
+  assert_output '{"uri":"cgtest://fixture/tracker/4","name":"Wrapped boxes lose their description","type":"cgtest-ticket-v1","tags":["area-organize","bug"]}'
+
+  run_cg_stdout organize -group-by milestone= -query '!cgtest-ticket-v1' \
+    cgtest://fixture/tracker
+  assert_success
+  assert_output - <<-'EOM'
+	---
+	% generated: `cg organize -group-by milestone= -query "!cgtest-ticket-v1 _terminal=no" cgtest://fixture/tracker`
+	- _base = @blake2b256-ec2dl2ld280wfm7hqs6vxh3hmek222u6f5r06ztt7vtd76salphqyajhpp
+	- _anchor = cgtest://fixture/tracker/
+	- _query = !cgtest-ticket-v1 _terminal=no
+	- _type = !cgtest-ticket-v1
+	! organize-base-v1
+	---
+
+	- [2 "good first issue"] Write the docs
+
+	# milestone=
+
+	## =v0.1
+
+	- [1 area-organize bug] Fix the parser
+
+	## =v0.2
+
+	## =v0.3
+
+	- [4 area-organize bug] Wrapped boxes lose their description
+	EOM
+}
+
 # ---------------------------------------------------------------------
 # CONFORMANCE — session-level METHOD SEMANTICS, driven by the driver
 # BINARY (cutting-garden#186). This is the "shell-honest tree case" the
@@ -1127,6 +1235,15 @@ dimension = "milestone"
 container = "cgtest://fixture/tracker"
 node = "cgtest://fixture/tracker/2"
 text = "Retitled by conformance"
+
+[creation]
+container = "cgtest://fixture/tracker"
+type = "cgtest-ticket-v1"
+trailer = "Created by conformance"
+one_dimension = "state"
+one_value = "closed"
+many_dimension = "label"
+many_set = ["bug", "area-organize"]
 EOF
 
   run --separate-stderr "$CG_CONFORMANCE_TRAVERSAL" --manifest "$manifest"
@@ -1135,7 +1252,7 @@ EOF
   # whole multi-line output as ONE string (no per-line/multiline flag),
   # so `^not ok` would never match a mid-output failure — a false-safe
   # assertion. --partial 'not ok' catches a failing point anywhere.
-  assert_output --partial '1..21'
+  assert_output --partial '1..23'
   assert_output --partial 'ok 1 - initialize'
   assert_output --partial 'ok 11 - leaf.read: container returns its own body'
   assert_output --partial 'ok 13 - nodes.list: filter pushdown returns a sound subset'
@@ -1161,6 +1278,12 @@ EOF
   # terminal_values (forge organize F4): a peer naming terminal values on
   # a facet dimension must pass the host's bring-up check (SKIP if none).
   assert_output --partial 'ok 21 - initialize: facet terminal_values are usable by the host'
+  # Creation (RFC 0013 §Creation, forge organize F10): a peer carrying a
+  # `creatable` node_types member must pass the host's bring-up check, and
+  # its node.create_child must accept the host-built fields body (a
+  # substituted peer names its own [creation] container/type, or SKIPs).
+  assert_output --partial 'ok 22 - initialize: node_types creatable declarations are usable by the host'
+  assert_output --partial 'ok 23 - node.create_child: host-built create body creates the node with its fields'
   refute_output --partial 'not ok'
 }
 

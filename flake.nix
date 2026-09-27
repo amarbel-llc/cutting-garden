@@ -779,6 +779,10 @@
           # so the debug-organize-fastmail-fixture dev-loop recipe can build it.
           cutting-garden-fastmail-testserver = cuttingGardenFastmailTestServer;
 
+          # The test-only CalDAV server (bats CG_TEST_CALDAV), exposed so the
+          # debug-organize-create-vectors dev-loop recipe can build it.
+          cutting-garden-caldav-testserver = cuttingGardenCaldavTestServer;
+
           # The store-pinned `conformist --staged --exit-zero-on-fix` hook from
           # the CODEGEN eval (formatters + tommy + dagnabit-facade lanes, no
           # presets.eng). On the devShell PATH as `conformist-pre-commit`; the

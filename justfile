@@ -1938,6 +1938,15 @@ debug-conformance-traversal:
     container = "cgtest://fixture/tracker"
     node = "cgtest://fixture/tracker/2"
     text = "Retitled by conformance"
+
+    [creation]
+    container = "cgtest://fixture/tracker"
+    type = "cgtest-ticket-v1"
+    trailer = "Created by conformance"
+    one_dimension = "state"
+    one_value = "closed"
+    many_dimension = "label"
+    many_set = ["bug", "area-organize"]
     EOF
     "$driver" --manifest "$tmp/m.toml"
 
@@ -2025,6 +2034,44 @@ debug-organize-tracker-vectors GROUP_BY='milestone=' EDITED='' FLAGS='':
       gen after
     fi
     banner list-json; "$cg" list -format json cgtest://fixture/tracker
+
+# Render the organize CREATION lane's caldav vectors (forge organize F8–F10,
+# zz-tests_bats/organize_create.bats): the nix-built CLI against the nix-built
+# caldav testserver's /dav/fields/ calendar on the lane's pinned port 43116
+# (lib/caldav.bash), so the `_base` digests match the heredocs. Generates the
+# GROUP_BY document; with EDITED (a path to an edited copy of it — its `_base`
+# is deterministic, so write it once from a prior run's output) applies it with
+# -commit (a refusal prints its exit code), regenerates, and prints `list
+# -format json`. New objects carry minted random UIDs, which the lane
+# normalizes. WRITES to the throwaway in-memory server only.
+#
+# render the organize creation lane's caldav vectors
+[group('debug')]
+debug-organize-create-vectors GROUP_BY='status=' EDITED='':
+    #!/usr/bin/env bash
+    set -euo pipefail
+    root="{{ justfile_directory() }}"
+    edited="{{ EDITED }}"
+    [[ -z $edited || $edited == /* ]] || edited="$root/$edited"
+    cd "$root"
+    cg="$(nix build .#default --no-link --print-out-paths)/bin/cutting-garden"
+    srv="$(nix build .#cutting-garden-caldav-testserver --no-link --print-out-paths)/bin/cutting-garden-caldav-testserver"
+    work="$root/.tmp/organize-create-vectors"
+    rm -rf "$work"; mkdir -p "$work/config"
+    export XDG_CONFIG_HOME="$work/config" CG_TEST_CALDAV_FIELDS=1 CG_TEST_CALDAV_PORT=43116
+    cd "$work"
+    nix develop "$root" --command madder init -encryption none .default >/dev/null
+    coproc SRV { "$srv"; }
+    read -r -u "${SRV[0]}" source_url _calpath
+    cal="${source_url%/dav/}/dav/fields/"
+    banner() { printf '\n### %s\n' "$*"; }
+    banner generate; "$cg" organize -group-by '{{ GROUP_BY }}' "$cal"
+    if [[ -n $edited ]]; then
+      banner apply; "$cg" organize -apply "$edited" -commit 2>&1 || echo "exit=$?"
+      banner after; "$cg" organize -group-by '{{ GROUP_BY }}' "$cal"
+    fi
+    banner list-json; "$cg" list -format json "$cal"
+    exec {SRV[1]}>&- || true
 
 # Run one package's go tests (optionally one test via RUN, plus extra
 # test-binary FLAGS such as -test.v) without the full `just test` lane — the
