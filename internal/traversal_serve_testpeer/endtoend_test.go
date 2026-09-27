@@ -763,11 +763,11 @@ func TestWireTrackerCreationIndistinguishableFromLinked(t *testing.T) {
 	fields := map[string][]string{
 		"title": {"Wrapped boxes"}, "milestone": {"v0.3"}, "label": {"bug"},
 	}
-	linkedBody, err := linked.BuildCreateBody(ctx, TicketType, fields)
+	linkedBody, err := linked.BuildCreateBody(ctx, TicketType, fields, "")
 	if err != nil {
 		t.Fatalf("linked BuildCreateBody: %v", err)
 	}
-	wireBody, err := wire.BuildCreateBody(ctx, TicketType, fields)
+	wireBody, err := wire.BuildCreateBody(ctx, TicketType, fields, "")
 	if err != nil {
 		t.Fatalf("wire BuildCreateBody: %v", err)
 	}

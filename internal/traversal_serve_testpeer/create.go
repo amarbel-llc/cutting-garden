@@ -39,7 +39,7 @@ func (p *TreePlugin) DescribeCreation() []cutting_garden_plugins.NodeTypeCreatio
 // wire host sends (the presentation synthesis), so linked and wire creation
 // put the same bytes on create_child.
 func (p *TreePlugin) BuildCreateBody(
-	_ context.Context, typ string, fields map[string][]string,
+	_ context.Context, typ string, fields map[string][]string, _ string,
 ) ([]byte, error) {
 	return p.presentation().BuildCreateBody(typ, fields)
 }

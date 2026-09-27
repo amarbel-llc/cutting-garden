@@ -76,6 +76,8 @@ type newObject struct {
 type creation struct {
 	Object newObject
 	Body   []byte
+	// Key is the creation's idempotency key (creationIdempotencyKey).
+	Key string
 }
 
 // creationKey is the merge key of one temp-id line.
@@ -621,14 +623,15 @@ func planCreations(
 			))
 			continue
 		}
-		body, err := surface.applier.BuildCreateBody(ctx, obj.Type, fields)
+		key := creationIdempotencyKey(base, obj.LedgerKey)
+		body, err := surface.applier.BuildCreateBody(ctx, obj.Type, fields, key)
 		if err != nil {
 			problems = append(problems, fmt.Sprintf(
 				"%s (%s): %s", obj.TempID, obj.lineList(), errorText(err),
 			))
 			continue
 		}
-		planned = append(planned, creation{Object: obj, Body: body})
+		planned = append(planned, creation{Object: obj, Body: body, Key: key})
 	}
 	if len(problems) > 0 {
 		return nil, nil, errors.BadRequestf(
@@ -731,8 +734,19 @@ func (cmd *Organize) executeCreations(
 	if err != nil {
 		return errors.BadRequestf("organize --apply: anchor %q: %s", anchor, err)
 	}
+	keyed, _ := lister.(cgp.IdempotentCreator)
 	for _, c := range planned {
-		created, err := creator.CreateChild(ctx, container, bytes.NewReader(c.Body), c.Object.Type)
+		var (
+			created *url.URL
+			existed bool
+		)
+		if keyed != nil {
+			created, existed, err = keyed.CreateChildWithKey(
+				ctx, container, bytes.NewReader(c.Body), c.Object.Type, c.Key,
+			)
+		} else {
+			created, err = creator.CreateChild(ctx, container, bytes.NewReader(c.Body), c.Object.Type)
+		}
 		if err != nil {
 			return creationFailure(c.Object, run, err)
 		}
@@ -740,9 +754,17 @@ func (cmd *Organize) executeCreations(
 		run.landed = append(run.landed, landedCreation{
 			TempID: c.Object.TempID, Key: c.Object.LedgerKey, ID: id,
 		})
-		fmt.Fprintf(cmd.output, "organize: created %s → %s\n", c.Object.TempID, trellis.QuoteIfNeeded(id))
+		if existed {
+			// The receipt missed it but the plugin recognized the key: an
+			// earlier apply of this document already created it.
+			fmt.Fprintf(cmd.output, "organize: %s already existed → %s (idempotency key)\n",
+				c.Object.TempID, trellis.QuoteIfNeeded(id))
+		} else {
+			fmt.Fprintf(cmd.output, "organize: created %s → %s\n", c.Object.TempID, trellis.QuoteIfNeeded(id))
+		}
 		if err := run.ledger.record(run.base, ledgerEntry{
-			Key: c.Object.LedgerKey, TempID: c.Object.TempID, URI: created.String(), ID: id,
+			Key: c.Object.LedgerKey, TempID: c.Object.TempID, IdempotencyKey: c.Key,
+			URI: created.String(), ID: id,
 		}); err != nil {
 			fmt.Fprintf(cmd.output,
 				"organize: WARNING — could not record %s in the creation ledger (%s); "+

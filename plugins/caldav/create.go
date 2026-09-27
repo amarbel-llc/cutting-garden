@@ -28,6 +28,7 @@ var (
 	_ cutting_garden_plugins.CreationDescriber = (*Plugin)(nil)
 	_ cutting_garden_plugins.CreateApplier     = (*Plugin)(nil)
 	_ cutting_garden_plugins.ContainerCreator  = (*Plugin)(nil)
+	_ cutting_garden_plugins.IdempotentCreator = (*Plugin)(nil)
 )
 
 // DescribeCreation declares the creatable object types: a task needs only its
@@ -57,12 +58,20 @@ type createDateField struct {
 // status defaults to NEEDS-ACTION. The UID is minted here. A field caldav
 // cannot set on create (a read-only facet such as due_band, an end date, a
 // time without its date) is a bad request.
+//
+// The UID is the creation's idempotency key when one is given (organize
+// always gives one, derived from the document's `_base` and temp id), so a
+// repeated create of the same object addresses the same `<key>.ics`
+// (CreateChildWithKey); without a key a random UID is minted.
 func (Plugin) BuildCreateBody(
-	_ context.Context, typ string, fields map[string][]string,
+	_ context.Context, typ string, fields map[string][]string, key string,
 ) ([]byte, error) {
-	uid, err := mintUID()
-	if err != nil {
-		return nil, err
+	uid := key
+	if uid == "" {
+		var err error
+		if uid, err = mintUID(); err != nil {
+			return nil, err
+		}
 	}
 
 	switch typ {
@@ -254,16 +263,47 @@ var mintUID = func() (string, error) {
 // at `<calendar>/<UID>.ics` — the name caldav's restore uses too — returning
 // the new node's URI. The PUT is If-None-Match strict, so an existing object is
 // never overwritten.
-func (Plugin) CreateChild(
+func (p Plugin) CreateChild(
 	ctx context.Context, container *url.URL, body io.Reader, typ string,
 ) (*url.URL, error) {
+	created, _, err := p.createChild(ctx, container, body, typ, "")
+	return created, err
+}
+
+// CreateChildWithKey is the IdempotentCreator: CreateChild for a body whose
+// UID is the creation's idempotency key (BuildCreateBody). When the strict
+// PUT finds `<key>.ics` already present (412), the object at that href is
+// fetched and — if its UID IS the key, i.e. it is this very creation from an
+// earlier apply — its URI is returned with existed = true instead of an
+// error. A present object with any other UID is a coincidence, not ours, and
+// stays the strict "already exists" error. The body's UID must equal key.
+func (p Plugin) CreateChildWithKey(
+	ctx context.Context, container *url.URL, body io.Reader, typ, key string,
+) (*url.URL, bool, error) {
+	if key == "" {
+		return nil, false, errors.BadRequestf("caldav plugin: CreateChildWithKey requires a key")
+	}
+	return p.createChild(ctx, container, body, typ, key)
+}
+
+// objectExistsError is createChild's 412: the href already holds an object.
+type objectExistsError struct{ href string }
+
+func (e objectExistsError) Error() string {
+	return "caldav plugin: object already exists at " + e.href +
+		" (create is strict; use update to overwrite)"
+}
+
+func (Plugin) createChild(
+	ctx context.Context, container *url.URL, body io.Reader, typ, key string,
+) (*url.URL, bool, error) {
 	if container == nil {
-		return nil, errors.ErrorWithStackf("caldav plugin: CreateChild requires a container URI")
+		return nil, false, errors.ErrorWithStackf("caldav plugin: CreateChild requires a container URI")
 	}
 	switch typ {
 	case typeVTODO, typeVEVENT, typeVJOURNAL:
 	default:
-		return nil, errors.BadRequestf(
+		return nil, false, errors.BadRequestf(
 			"caldav plugin: cannot create a %q under a calendar (want %s / %s / %s)",
 			typ, typeVTODO, typeVEVENT, typeVJOURNAL,
 		)
@@ -271,31 +311,54 @@ func (Plugin) CreateChild(
 
 	icalData, err := normalizeObjectBody(body)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	view, ok := parseObjectView(icalData)
 	if !ok {
-		return nil, errors.BadRequestf("caldav plugin: create body is not a VTODO, VEVENT or VJOURNAL")
+		return nil, false, errors.BadRequestf("caldav plugin: create body is not a VTODO, VEVENT or VJOURNAL")
 	}
 	if got := objectType(view.Component); got != typ {
-		return nil, errors.BadRequestf(
+		return nil, false, errors.BadRequestf(
 			"caldav plugin: create body is a %s, but the type asked for is %q", view.Component, typ,
 		)
 	}
 	uid := uidOfView(view)
 	if uid == "" || strings.ContainsAny(uid, "/?#") {
-		return nil, errors.BadRequestf("caldav plugin: create body carries no usable UID (%q)", uid)
+		return nil, false, errors.BadRequestf("caldav plugin: create body carries no usable UID (%q)", uid)
+	}
+	if key != "" && uid != key {
+		return nil, false, errors.BadRequestf(
+			"caldav plugin: create body UID %q is not its idempotency key %q", uid, key,
+		)
 	}
 
 	c, base, err := clientForNode(container)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	href := strings.TrimSuffix(base, "/") + "/" + url.PathEscape(uid) + ".ics"
-	if err := c.createResource(ctx, href, icalData); err != nil {
-		return nil, err
+	err = c.putResourceCond(
+		ctx, href, icalData, map[string]string{"If-None-Match": "*"},
+		objectExistsError{href: href},
+	)
+	var exists objectExistsError
+	switch {
+	case err == nil:
+		return caldavURIForAbs(href), false, nil
+	case key != "" && errors.As(err, &exists):
+		// Ours only if the stored object's UID is the key.
+		stored, gerr := c.getResource(ctx, href)
+		if gerr != nil {
+			return nil, false, gerr
+		}
+		if storedView, ok := parseObjectView(stored); ok && uidOfView(storedView) == key {
+			return caldavURIForAbs(href), true, nil
+		}
+		return nil, false, errors.BadRequestf("%s", exists.Error())
+	case errors.As(err, &exists):
+		return nil, false, errors.BadRequestf("%s", exists.Error())
 	}
-	return caldavURIForAbs(href), nil
+	return nil, false, err
 }
 
 // uidOfView reads the parsed object's UID, whichever component it is.

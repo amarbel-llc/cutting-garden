@@ -42,6 +42,9 @@ type ledgerEntry struct {
 	Key string `json:"key"`
 	// TempID is the temp id as the document spelled it.
 	TempID string `json:"temp_id"`
+	// IdempotencyKey is the key the create request carried
+	// (creationIdempotencyKey).
+	IdempotencyKey string `json:"idempotency_key,omitempty"`
 	// URI is the created node's URI; ID its box id against the anchor.
 	URI string `json:"uri"`
 	ID  string `json:"id"`
@@ -165,6 +168,26 @@ func creationLedgerKeys(
 		keys[mergeKey] = fmt.Sprintf("+#%s#%d", hash, seen[hash])
 	}
 	return keys
+}
+
+// idempotencyKeyVersion prefixes every creation idempotency key; the hashed
+// domain tag names the derivation, so a future scheme is a new prefix.
+const (
+	idempotencyKeyVersion = "cgk1-"
+	idempotencyKeyDomain  = "cutting-garden/organize-create/v1"
+)
+
+// creationIdempotencyKey derives a creation's IDEMPOTENCY KEY from the
+// document's identity: `cgk1-` + the first 32 hex runes of
+// sha256("cutting-garden/organize-create/v1" NUL <_base digest> NUL <temp
+// key>). It is printable (`[a-z0-9-]`, 37 runes — safe as a URL path segment
+// and an iCalendar UID), stable across re-applies of one document, and new
+// for a new generation (a new `_base`). Every create request carries it; a
+// plugin that chooses identity from it (caldav) makes the create itself
+// idempotent, the receipt covering the rest.
+func creationIdempotencyKey(base, tempKey string) string {
+	sum := sha256.Sum256([]byte(idempotencyKeyDomain + "\x00" + base + "\x00" + tempKey))
+	return idempotencyKeyVersion + hex.EncodeToString(sum[:16])
 }
 
 func barePlusContentHash(ln objectLine) string {

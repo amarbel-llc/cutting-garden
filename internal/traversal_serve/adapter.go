@@ -471,7 +471,7 @@ func (w *WirePlugin) DescribeCreation() []cutting_garden_plugins.NodeTypeCreatio
 // from the declared field mapping (Presentation.BuildCreateBody). No wire call
 // — the body travels later via node.create_child.
 func (w *WirePlugin) BuildCreateBody(
-	_ context.Context, typ string, fields map[string][]string,
+	_ context.Context, typ string, fields map[string][]string, _ string,
 ) ([]byte, error) {
 	sess, err := w.liveSession()
 	if err != nil {

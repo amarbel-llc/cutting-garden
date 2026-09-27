@@ -339,6 +339,7 @@ type createFake struct {
 	fakeLister
 	required []string
 	built    map[string][]string
+	key      string
 	failWith error
 	created  []string
 }
@@ -348,13 +349,76 @@ func (f *createFake) DescribeCreation() []cgp.NodeTypeCreation {
 }
 
 func (f *createFake) BuildCreateBody(
-	_ context.Context, typ string, fields map[string][]string,
+	_ context.Context, typ string, fields map[string][]string, key string,
 ) ([]byte, error) {
 	if f.failWith != nil {
 		return nil, f.failWith
 	}
 	f.built = fields
+	f.key = key
 	return json.Marshal(fields)
+}
+
+// keyedFake adds the IdempotentCreator: a repeated key returns the first URI
+// with existed.
+type keyedFake struct {
+	createFake
+	byKey map[string]string
+}
+
+func (f *keyedFake) CreateChildWithKey(
+	_ context.Context, container *url.URL, _ io.Reader, _ string, key string,
+) (*url.URL, bool, error) {
+	if uri, ok := f.byKey[key]; ok {
+		u, err := url.Parse(uri)
+		return u, true, err
+	}
+	uri := container.String() + key + ".ics"
+	f.byKey[key] = uri
+	u, err := url.Parse(uri)
+	return u, false, err
+}
+
+// The idempotency key is derived from the document's identity: stable for
+// (base, temp key), printable, and different for another base or temp id.
+func TestCreationIdempotencyKey(t *testing.T) {
+	k := creationIdempotencyKey("blake2b256-aaa", "+x")
+	if k != creationIdempotencyKey("blake2b256-aaa", "+x") {
+		t.Fatal("key is not stable")
+	}
+	if !strings.HasPrefix(k, "cgk1-") || len(k) != 37 || strings.Trim(k[5:], "0123456789abcdef") != "" {
+		t.Fatalf("key %q is not cgk1- + 32 hex", k)
+	}
+	if k == creationIdempotencyKey("blake2b256-bbb", "+x") || k == creationIdempotencyKey("blake2b256-aaa", "+y") {
+		t.Fatal("key must differ for another base or temp id")
+	}
+}
+
+// With an IdempotentCreator the key rides every create; a key the plugin
+// already knows reports "already existed" and records the receipt.
+func TestExecuteCreations_IdempotentCreator(t *testing.T) {
+	var out strings.Builder
+	cmd := newWithOutput(&out)
+	plugin := &keyedFake{byKey: map[string]string{}}
+	idOf := func(uri string) string { return strings.TrimPrefix(uri, "fake://host/cal/") }
+	obj := newObject{TempID: "+x", LedgerKey: "+x", Lines: []int{3}, Type: "todo"}
+	planned := []creation{{Object: obj, Body: []byte(`{}`), Key: "cgk1-k"}}
+
+	run := &applyRun{}
+	if err := cmd.executeCreations(context.Background(), plugin, "fake://host/cal/", idOf, planned, run); err != nil {
+		t.Fatalf("first: %v", err)
+	}
+	run = &applyRun{ledger: creationLedger{dir: t.TempDir()}, base: "b"}
+	if err := cmd.executeCreations(context.Background(), plugin, "fake://host/cal/", idOf, planned, run); err != nil {
+		t.Fatalf("second: %v", err)
+	}
+	want := "organize: created +x → cgk1-k.ics\norganize: +x already existed → cgk1-k.ics (idempotency key)\n"
+	if out.String() != want {
+		t.Fatalf("output = %q, want %q", out.String(), want)
+	}
+	if entry, ok, _ := run.ledger.lookup("b", "+x"); !ok || entry.IdempotencyKey != "cgk1-k" {
+		t.Fatalf("receipt = %+v, %v", entry, ok)
+	}
 }
 
 func (f *createFake) CreateChild(

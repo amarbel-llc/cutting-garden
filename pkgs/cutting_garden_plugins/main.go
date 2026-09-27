@@ -354,6 +354,14 @@ type FieldValue = internal.FieldValue
 // writable-but-applier-less plugin loudly rather than guessing the patch shape.
 type FieldWriteApplier = internal.FieldWriteApplier
 
+// IdempotentCreator is the OPTIONAL keyed sibling of ContainerCreator: create
+// a child under container from body, carrying the creation's idempotency key.
+// A repeated call with the same key MUST NOT create a duplicate: the plugin
+// recognizes that the keyed create already landed and returns the SAME node's
+// URI with existed = true. Organize prefers it over CreateChild when a plugin
+// has it; CreateChild itself (and so MCP create_node) stays strict.
+type IdempotentCreator = internal.IdempotentCreator
+
 // IdentityCodec is the reusable 1<->1 passthrough codec: one stored field maps to
 // one presentation field, value unchanged (FDR 0025). It reproduces a plain box
 // atom / listing field (a caldav location, status, or summary) — the common case

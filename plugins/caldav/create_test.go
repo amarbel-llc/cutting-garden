@@ -37,7 +37,7 @@ func TestBuildCreateBody_VTODO(t *testing.T) {
 		"date_due":   {"2026-10-01"},
 		"time_due":   {"09-30"},
 		"date_start": {"20260930"},
-	})
+	}, "")
 	if err != nil {
 		t.Fatalf("BuildCreateBody: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestBuildCreateBody_VTODODefaultsAndFloatingTime(t *testing.T) {
 		"summary":    {"Call"},
 		"date_start": {"2026-10-02"},
 		"time_start": {"14-05"},
-	})
+	}, "")
 	if err != nil {
 		t.Fatalf("BuildCreateBody: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestBuildCreateBody_VEVENT(t *testing.T) {
 	body, err := Plugin{}.BuildCreateBody(context.Background(), typeVEVENT, map[string][]string{
 		"summary":    {"Dentist"},
 		"date_start": {"2026-10-01"},
-	})
+	}, "")
 	if err != nil {
 		t.Fatalf("BuildCreateBody: %v", err)
 	}
@@ -110,7 +110,7 @@ func TestBuildCreateBody_Refusals(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := Plugin{}.BuildCreateBody(context.Background(), tc.typ, tc.fields)
+			_, err := Plugin{}.BuildCreateBody(context.Background(), tc.typ, tc.fields, "")
 			if err == nil || !errors.Is400BadRequest(err) || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("BuildCreateBody = %v; want a bad request containing %q", err, tc.want)
 			}
@@ -125,7 +125,7 @@ func TestCreateChild_StoresAtUIDHref(t *testing.T) {
 	f, home := startFakeEmpty(t)
 	body, err := Plugin{}.BuildCreateBody(context.Background(), typeVTODO, map[string][]string{
 		"summary": {"New task"},
-	})
+	}, "")
 	if err != nil {
 		t.Fatalf("BuildCreateBody: %v", err)
 	}
@@ -158,5 +158,51 @@ func TestCreateChild_StoresAtUIDHref(t *testing.T) {
 		strings.NewReader(string(body)), typeVEVENT,
 	); err == nil || !errors.Is400BadRequest(err) {
 		t.Fatalf("CreateChild with a mismatched type = %v; want a bad request", err)
+	}
+}
+
+// With an idempotency key the UID IS the key; a repeated keyed create finds
+// its own object (same UID) and reports it as existed, while an object at the
+// same href with ANOTHER UID stays the strict error.
+func TestCreateChildWithKey_IsIdempotent(t *testing.T) {
+	f, home := startFakeEmpty(t)
+	const key = "cgk1-0123456789abcdef0123456789abcdef"
+	body, err := Plugin{}.BuildCreateBody(context.Background(), typeVTODO, map[string][]string{
+		"summary": {"Keyed"},
+	}, key)
+	if err != nil {
+		t.Fatalf("BuildCreateBody: %v", err)
+	}
+	if !strings.Contains(string(body), "UID:"+key) {
+		t.Fatalf("body UID is not the key:\n%s", body)
+	}
+	cal := mustParseURL(t, objectArg(home, "/dav/cal/"))
+
+	first, existed, err := Plugin{}.CreateChildWithKey(context.Background(), cal, strings.NewReader(string(body)), typeVTODO, key)
+	if err != nil || existed || !strings.HasSuffix(first.String(), "/dav/cal/"+key+".ics") {
+		t.Fatalf("first = %v, existed %v, %v", first, existed, err)
+	}
+	again, existed, err := Plugin{}.CreateChildWithKey(context.Background(), cal, strings.NewReader(string(body)), typeVTODO, key)
+	if err != nil || !existed || again.String() != first.String() {
+		t.Fatalf("again = %v, existed %v, %v", again, existed, err)
+	}
+	if n := len(f.resources); n != 1 {
+		t.Fatalf("resources = %d, want 1 (no duplicate)", n)
+	}
+
+	// A coincidental object at the key's href with another UID is not ours.
+	const other = "cgk1-ffffffffffffffffffffffffffffffff"
+	f.resources["/dav/cal/"+other+".ics"] = vtodo("someone-else", "Theirs")
+	otherBody, _ := Plugin{}.BuildCreateBody(context.Background(), typeVTODO, map[string][]string{
+		"summary": {"Mine"},
+	}, other)
+	if _, _, err := (Plugin{}).CreateChildWithKey(context.Background(), cal, strings.NewReader(string(otherBody)), typeVTODO, other); err == nil ||
+		!strings.Contains(err.Error(), "already exists") {
+		t.Fatalf("coincidental UID = %v; want the strict already-exists error", err)
+	}
+
+	// The body's UID must be the key.
+	if _, _, err := (Plugin{}).CreateChildWithKey(context.Background(), cal, strings.NewReader(string(body)), typeVTODO, other); err == nil {
+		t.Fatal("a body whose UID is not the key must be refused")
 	}
 }

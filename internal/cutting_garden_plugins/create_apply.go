@@ -3,6 +3,8 @@ package cutting_garden_plugins
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/url"
 )
 
 // NodeTypeCreation declares that organize (RFC 0015, forge organize F10) may
@@ -60,9 +62,30 @@ type CreateApplier interface {
 	// complete set for a multi-valued one (the tag dimension). A field the
 	// plugin cannot write on create, or an unusable value, is a bad request —
 	// organize calls this at PLAN time, so the refusal lands before the diff.
+	//
+	// key is the creation's IDEMPOTENCY KEY (printable, `[a-z0-9-]`, stable
+	// for one document's temp id — organize derives it from the document's
+	// `_base` and the temp id). A plugin whose substrate lets the client
+	// choose identity SHOULD derive the new node's identity from it (caldav:
+	// UID = key), so a repeated create is recognizable (IdempotentCreator).
+	// Empty means no key: mint identity as usual.
 	BuildCreateBody(
-		ctx context.Context, typ string, fields map[string][]string,
+		ctx context.Context, typ string, fields map[string][]string, key string,
 	) ([]byte, error)
+}
+
+// IdempotentCreator is the OPTIONAL keyed sibling of ContainerCreator: create
+// a child under container from body, carrying the creation's idempotency key.
+// A repeated call with the same key MUST NOT create a duplicate: the plugin
+// recognizes that the keyed create already landed and returns the SAME node's
+// URI with existed = true. Organize prefers it over CreateChild when a plugin
+// has it; CreateChild itself (and so MCP create_node) stays strict.
+type IdempotentCreator interface {
+	Plugin
+
+	CreateChildWithKey(
+		ctx context.Context, container *url.URL, body io.Reader, typ, key string,
+	) (created *url.URL, existed bool, err error)
 }
 
 // MissingRequiredFields returns the Required fields of creation absent (or
