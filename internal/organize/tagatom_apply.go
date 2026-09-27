@@ -65,9 +65,10 @@ type tagDelta struct {
 // none` effective-set reading (only ever true for a TAG grouping); interp is
 // the tag dimension's resolved interpreter (nil when the plugin declares no
 // tag dimension — bucketOfTag then derives nothing beyond the whole-dimension
-// identity). Ids absent from the base (hand-added lines) are out of scope,
-// like everywhere else in the merge. The returned map holds only ids with a
-// non-empty delta.
+// identity). Ids absent from the base never reach here — temp-id boxes are
+// creations and any other unknown id is refused upstream (F8c,
+// unknownIDRefusals); the guard below is defensive. The returned map holds
+// only ids with a non-empty delta.
 func planTagAtomDeltas(
 	edited, base document, spec groupSpec, stripNone bool, interp cgp.TagInterpreter,
 ) (map[string]tagDelta, error) {
@@ -84,7 +85,7 @@ func planTagAtomDeltas(
 	var conflicts []string
 	for _, id := range editedLed.order {
 		if _, inBase := baseLed.appearances[id]; !inBase {
-			continue // an added line — out of scope, like everywhere in the merge
+			continue // unreachable after the F8c refusal; defensive
 		}
 		apps := editedLed.appearances[id]
 

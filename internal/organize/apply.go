@@ -145,6 +145,35 @@ func (cmd *Organize) applyDocument(
 	// Live nodes are keyed by the SAME id resolver generate built the box ids
 	// with, bound to the lister `_anchor` re-resolves to (Task 5b).
 	idOf := boxIDsFor(lister, edited.Anchor)
+	tagDim := node_view.FirstTagDim(lister)
+
+	// Creations first (forge organize F8–F10, create.go): the temp-id boxes are
+	// split out and F8b-merged, their types resolved (F9), and each planned
+	// against the plugin's creation declaration — a missing required field or
+	// an unbuildable body refuses HERE, before the diff. Then F8c: a box id
+	// neither temp nor in the pinned base is a separable refusal, and its line
+	// is dropped from the document every other planner sees. From here on
+	// `edited` holds existing objects only.
+	appearances, creationOrder, edited, err := splitCreations(edited)
+	if err != nil {
+		return false, err
+	}
+	unknownRefused, edited := unknownIDRefusals(edited, base)
+	newObjects, err := mergeCreations(appearances, creationOrder, creationContext{
+		spec: spec, tagDim: tagDim, documentType: edited.Type,
+	})
+	if err != nil {
+		return false, err
+	}
+	_, trailerFields := fieldWriteSchema(lister)
+	creations, err := planCreations(ctx, newObjects, lister, edited.Anchor, tagDim, trailerFields)
+	if err != nil {
+		return false, err
+	}
+	pending := pendingApply{
+		creations: creations, refused: unknownRefused,
+		anchor: edited.Anchor, docType: edited.Type,
+	}
 
 	// Box tag atoms are membership edits (design G7, native tags slice 2 T3):
 	// diff the edited boxes' tag atoms against the pinned base per the
@@ -153,7 +182,6 @@ func (cmd *Organize) applyDocument(
 	// dimension whenever one is declared — the same resolution the membership
 	// path performs for a tag-grouped dim.
 	var tagInterp cgp.TagInterpreter
-	tagDim := node_view.FirstTagDim(lister)
 	if tagDim != "" {
 		if tagInterp, _, err = node_view.InterpreterForDimension(
 			lister, tagDim, cfg.Tags.Interpreter,
@@ -210,7 +238,7 @@ func (cmd *Organize) applyDocument(
 		// #231 slice 3), from the config loaded above.
 		return cmd.applyMemberships(
 			ctx, edited, base, liveNodes, lister, dim, spec.Namespace, cfg.Tags.Interpreter,
-			atomDeltas, !stripNone, commit, interactive, color,
+			atomDeltas, !stripNone, pending, commit, interactive, color,
 		)
 	}
 
@@ -279,14 +307,16 @@ func (cmd *Organize) applyDocument(
 		moveMutator cgp.NodeMutator
 		moveApplier cgp.FacetWriteApplier
 		moveWrites  map[string]cgp.FacetWrite
-		refused     []refusal
+		refused     = pending.refused
 	)
 	if len(moves) > 0 {
 		var werr error
 		if moveMutator, moveApplier, moveWrites, werr = resolveWrites(lister, dim); werr != nil {
 			return false, werr
 		}
-		moves, refused = partitionRefusedMoves(moves, moveWrites, idOf)
+		var moveRefused []refusal
+		moves, moveRefused = partitionRefusedMoves(moves, moveWrites, idOf)
+		refused = append(refused, moveRefused...)
 		for _, mv := range moves {
 			if err := checkMoveWritable(moveWrites, mv); err != nil {
 				return false, err
@@ -299,7 +329,7 @@ func (cmd *Organize) applyDocument(
 		return false, err
 	}
 	if len(refused) > 0 {
-		remaining := len(buildChanges(
+		remaining := len(pending.creations) + len(buildChanges(
 			edited, base, moves, fieldEdits, atomEdits, moveLabel(spec), tagDim, trailer, tagInterp, idOf,
 		))
 		if err := cmd.resolveRefusals(refused, remaining, interactive); err != nil {
@@ -323,7 +353,7 @@ func (cmd *Organize) applyDocument(
 	changes := buildChanges(
 		edited, base, moves, fieldEdits, atomEdits, moveLabel(spec), tagDim, trailer, tagInterp, idOf,
 	)
-	total := len(changes)
+	total := len(pending.creations) + len(changes)
 	if total == 0 {
 		if len(refused) > 0 {
 			fmt.Fprintln(cmd.output, "organize: nothing left to apply after dropping the refused edit(s)")
@@ -335,7 +365,9 @@ func (cmd *Organize) applyDocument(
 	}
 
 	fmt.Fprintf(cmd.output, "organize: %d change(s):\n\n", total)
-	renderChanges(cmd.output, changes, edited.TagAtoms == tagAtomsTrailing, color)
+	trailingTags := edited.TagAtoms == tagAtomsTrailing
+	renderCreations(cmd.output, pending.creations, pending.docType, tagInterp, trailingTags, color)
+	renderChanges(cmd.output, changes, trailingTags, color)
 	fmt.Fprintln(cmd.output)
 
 	write, err := cmd.reviewGate(total, commit, interactive)
@@ -347,6 +379,11 @@ func (cmd *Organize) applyDocument(
 		return false, nil
 	}
 
+	// Creations land FIRST (a later write could reference them); a failed
+	// create aborts everything after it, naming what landed.
+	if err := cmd.executeCreations(ctx, lister, pending.anchor, idOf, pending.creations); err != nil {
+		return false, err
+	}
 	if len(atomEdits) > 0 {
 		if err := cmd.executeMemberships(ctx, atomMutator, atomApplier, atomWrites, atomEdits); err != nil {
 			return false, err
@@ -403,8 +440,9 @@ func resolveTagDimension(spec groupSpec, lister cgp.RootLister) (groupSpec, erro
 // node URIs, so the URI spelling never has to match by string. A node whose edited bucket
 // differs from its base bucket is a move, UNLESS the live state has already
 // drifted from the base — a conflict, reported as a structured rejection rather
-// than silently overwritten (RFC 0015). Additions/deletions vs the base are out
-// of scope this slice and ignored.
+// than silently overwritten (RFC 0015). An id absent from the base never
+// reaches here: temp-id boxes are split out as creations and any other unknown
+// id is refused (F8c, unknownIDRefusals) before planning.
 //
 // The base and edited assignments come from the documents' own `=<value>`
 // headings, which a date grouping already rendered coarse — so only the LIVE
@@ -436,7 +474,7 @@ func planMoves(
 	for key, to := range editedAsg {
 		from, inBase := baseAsg[key]
 		if !inBase || to == from {
-			continue // an added line, or an unmoved node
+			continue // an unmoved node (unknown ids were refused upstream, F8c)
 		}
 		liveBucket, inLive := liveAsg[key]
 		if !inLive || liveBucket != from {
@@ -732,6 +770,7 @@ func (cmd *Organize) applyMemberships(
 	tagsOverride string,
 	atomDeltas map[string]tagDelta,
 	placementFolds bool,
+	pending pendingApply,
 	commit, interactive, color bool,
 ) (committed bool, err error) {
 	// Resolve the grouped dimension's tag interpreter from the field's declared
@@ -792,14 +831,24 @@ func (cmd *Organize) applyMemberships(
 	// One preview line per object, membership and field edits folded together
 	// (#260/#270) — the same renderer the single-valued path uses.
 	changes := buildChanges(edited, base, nil, fieldEdits, memberships, "", dim, trailer, interp, idOf)
-	total := len(changes)
+	total := len(pending.creations) + len(changes)
+	if err := cmd.resolveRefusals(pending.refused, total, interactive); err != nil {
+		return false, err
+	}
 	if total == 0 {
-		fmt.Fprintln(cmd.output, "organize: no changes to apply")
+		if len(pending.refused) > 0 {
+			fmt.Fprintln(cmd.output, "organize: nothing left to apply after dropping the refused edit(s)")
+		} else {
+			fmt.Fprintln(cmd.output, "organize: no changes to apply")
+		}
+		cmd.reportSkipped(pending.refused)
 		return commit, nil
 	}
 
 	fmt.Fprintf(cmd.output, "organize: %d change(s):\n\n", total)
-	renderChanges(cmd.output, changes, edited.TagAtoms == tagAtomsTrailing, color)
+	trailingTags := edited.TagAtoms == tagAtomsTrailing
+	renderCreations(cmd.output, pending.creations, pending.docType, interp, trailingTags, color)
+	renderChanges(cmd.output, changes, trailingTags, color)
 	fmt.Fprintln(cmd.output)
 
 	write, err := cmd.reviewGate(total, commit, interactive)
@@ -807,9 +856,13 @@ func (cmd *Organize) applyMemberships(
 		return false, err
 	}
 	if !write {
+		cmd.reportSkipped(pending.refused)
 		return false, nil
 	}
 
+	if err := cmd.executeCreations(ctx, lister, pending.anchor, idOf, pending.creations); err != nil {
+		return false, err
+	}
 	if len(memberships) > 0 {
 		if err := cmd.executeMemberships(ctx, memberMutator, memberApplier, memberWrites, memberships); err != nil {
 			return false, err
@@ -825,7 +878,19 @@ func (cmd *Organize) applyMemberships(
 		}
 	}
 	fmt.Fprintf(cmd.output, "organize: wrote %d change(s)\n", total)
+	cmd.reportSkipped(pending.refused)
 	return true, nil
+}
+
+// pendingApply carries what both apply branches (the single-valued facet path
+// and the multi-valued membership path) share beyond their own planners: the
+// planned creations (executed first), the F8c separable refusals, and what
+// rendering and executing a creation needs.
+type pendingApply struct {
+	creations []creation
+	refused   []refusal
+	anchor    string
+	docType   string
 }
 
 // resolveMembershipWrites resolves the plugin's write surface for a multi-valued

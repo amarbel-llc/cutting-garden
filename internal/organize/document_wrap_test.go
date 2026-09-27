@@ -29,13 +29,34 @@ func parseWrapBody(t *testing.T, body string) document {
 // (and sections) its single-line twin does.
 func assertSameDocument(t *testing.T, wrapped, unwrapped string) {
 	t.Helper()
-	got, want := parseWrapBody(t, wrapped), parseWrapBody(t, unwrapped)
+	got, want := withoutLineNumbers(parseWrapBody(t, wrapped)), withoutLineNumbers(parseWrapBody(t, unwrapped))
 	if !reflect.DeepEqual(got.Ungrouped, want.Ungrouped) {
 		t.Errorf("ungrouped lines differ:\n got %+v\nwant %+v", got.Ungrouped, want.Ungrouped)
 	}
 	if !reflect.DeepEqual(got.Sections, want.Sections) {
 		t.Errorf("sections differ:\n got %+v\nwant %+v", got.Sections, want.Sections)
 	}
+}
+
+// withoutLineNumbers zeroes every object line's physical Line: a wrapped body
+// spans more lines than its twin, so later boxes start on different lines.
+func withoutLineNumbers(doc document) document {
+	zero := func(lines []objectLine) []objectLine {
+		out := make([]objectLine, len(lines))
+		for i, ln := range lines {
+			ln.Line = 0
+			out[i] = ln
+		}
+		return out
+	}
+	doc.Ungrouped = zero(doc.Ungrouped)
+	sections := make([]section, len(doc.Sections))
+	for i, s := range doc.Sections {
+		s.Lines = zero(s.Lines)
+		sections[i] = s
+	}
+	doc.Sections = sections
+	return doc
 }
 
 // assertBodyRejected pins that body is a bad request whose message carries

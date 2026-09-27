@@ -691,7 +691,7 @@ func TestApplyMemberships_AddApplies(t *testing.T) {
 	cmd := newWithOutput(io.Discard)
 	wrote, err := cmd.applyMemberships(
 		context.Background(), edited, base, live, fake, "categories", "", "",
-		nil, true, true, false, false,
+		nil, true, pendingApply{}, true, false, false,
 	)
 	if err != nil {
 		t.Fatalf("applyMemberships: %v", err)

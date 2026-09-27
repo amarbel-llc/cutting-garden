@@ -115,7 +115,8 @@ func atomMap(atoms []cgp.BoxAtom) map[string]string {
 // writable field the plugin declares clearable (clearable, from
 // clearableFields: a clearable write:one facet write, forge organize F12),
 // which applies as an edit with an empty Value. Only ids present in BOTH base
-// and live are considered; an added or removed line is out of scope here.
+// and live are considered: a new object is a `+` creation (create.go) and any
+// other id absent from the base is refused upstream (F8c).
 func planFieldEdits(
 	edited, base document,
 	liveNodes []cgp.Node,

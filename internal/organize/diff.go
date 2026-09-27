@@ -384,6 +384,49 @@ func renderChanges(w io.Writer, changes []objectChange, trailingTags, color bool
 	}
 }
 
+// renderCreations writes one preview line per planned creation (forge
+// organize F8), ahead of the edit lines — creations execute first. The line is
+// the merged object's box with EVERY slot marked added: the temp id itself is
+// left plain (the `+` IS the new-object marker, and `{++x+}` would read as
+// noise), the `!type` shown only when the document is not single-type, each
+// tag `{+t+}` in SortKey order, each field `name={+value+}` in name order, and
+// the whole description `{+…+}`:
+//
+//   - [+wrap-bug {+bug+} milestone={+v0.3+}] {+Wrapped boxes lose their description+}
+func renderCreations(
+	w io.Writer, creations []creation, docType string,
+	interp cgp.TagInterpreter, trailingTags, color bool,
+) {
+	for _, c := range creations {
+		fmt.Fprintln(w, renderCreation(c.Object, docType, interp, trailingTags, color))
+	}
+}
+
+func renderCreation(
+	obj newObject, docType string, interp cgp.TagInterpreter, trailingTags, color bool,
+) string {
+	s := trellis.SpelledLiteral{ID: obj.TempID}
+	if obj.Type != docType {
+		s.Type = obj.Type
+	}
+	for _, t := range diffTagSets(nil, obj.Tags, nil, interp) {
+		s.Tags = append(s.Tags, paintAdded(trellis.QuoteIfNeeded(t.word), color))
+	}
+	names := make([]string, 0, len(obj.Fields))
+	for name := range obj.Fields {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		s.Atoms = append(s.Atoms,
+			trellis.QuoteIfNeeded(name)+"="+paintAdded(trellis.QuoteIfNeeded(obj.Fields[name]), color))
+	}
+	var b strings.Builder
+	b.WriteString("  ")
+	node_view.WriteSpelledObjectLine(&b, s, paintAdded(obj.Trailer, color), trailingTags)
+	return strings.TrimSuffix(b.String(), "\n")
+}
+
 // objectLinesByID indexes a document's object lines by box id —
 // last-line-wins for the type, atoms and trailer (a multi-appearance object's
 // lines agree on everything but their bucket and its placement tag), with the

@@ -15,11 +15,11 @@ import (
 // any refusal (Err, exit 64, nothing written); at a terminal the user may strip
 // the refused edits and continue with the rest (resolveRefusals).
 //
-// The one class today is a move of a non-clearable write:one dimension into
-// the no-value section (forge organize F12). Planned candidates for the same
-// record: an unknown non-`+` box id (F8c) and a move + same-property atom edit
-// (#271, rejectMoveFieldCollisions). The document parser tracks no line
-// numbers, so a refusal names the object by its box id.
+// Two classes today: a move of a non-clearable write:one dimension into the
+// no-value section (forge organize F12), and a box id that is neither a `+`
+// temp id nor in the pinned base (F8c, unknownIDRefusal — its Field names the
+// body line). A planned candidate for the same record: a move +
+// same-property atom edit (#271, rejectMoveFieldCollisions).
 type refusal struct {
 	ObjectID string
 	// Field is the dimension / field the refused edit writes.

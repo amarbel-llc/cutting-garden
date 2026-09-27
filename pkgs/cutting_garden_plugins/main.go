@@ -145,6 +145,22 @@ type ConfigSectionDecoder = internal.ConfigSectionDecoder
 // operations report the node's post-operation address.
 type ContainerCreator = internal.ContainerCreator
 
+// CreateApplier BUILDS the body of one new node from its merged document
+// fields — the creation-side sibling of FacetWriteApplier / FieldWriteApplier:
+// the organize apply engine hands the plugin the merged object and sends
+// whatever bytes come back through ContainerCreator.CreateChild, so the
+// framework never learns the substrate's body shape (RFC 0009 no-inversion).
+// The plugin owns every completion a create needs (a caldav date+time split
+// recombined into one DTSTART with a default TZID, a priority band completed
+// to its canonical integer, a minted UID).
+type CreateApplier = internal.CreateApplier
+
+// CreationDescriber is the OPTIONAL capability declaring which node types
+// organize may create (forge organize F10). Probed by type assertion, like
+// FacetWriteDescriber. A plugin that implements it MUST also implement
+// CreateApplier (to build the body) and ContainerCreator (to create).
+type CreationDescriber = internal.CreationDescriber
+
 // DateGranularity is a bucket coarseness for a FacetDate dimension: the
 // --group-by qualifier spelling ("date_due=(month)") and the config default.
 type DateGranularity = internal.DateGranularity
@@ -461,6 +477,22 @@ type NodeType = internal.NodeType
 // describe_node_types tool, so an agent can construct a valid body without
 // guessing or reading an existing node first.
 type NodeTypeBody = internal.NodeTypeBody
+
+// NodeTypeCreation declares that organize (RFC 0015, forge organize F10) may
+// CREATE nodes of one type: a `+` temp-id box in an organize document becomes
+// a new node of Tag, created under a container node of ContainerType through
+// the plugin's ContainerCreator — the plugin assigns and returns the new
+// node's identity.
+//
+// Fields are named in the DOCUMENT's vocabulary — the presented field keys a
+// box and the grouping speak (caldav `summary`, `status`, `date_start`,
+// `time_start`, `priority`, `categories`; a forge's `title`, `state`,
+// `milestone`, `label`): the grouped dimension's bucket, each inline atom, the
+// tag dimension's merged set, and the trailer under the type's declared
+// trailer field. It is the creation-side sibling of FacetWrite (RFC 0012
+// §Write mapping) and, like it, metadata only: the plugin's CreateApplier
+// owns the document-field → substrate mapping.
+type NodeTypeCreation = internal.NodeTypeCreation
 
 // NodeTypeFacetWrites binds a set of FacetWrites to one node type — the
 // write-side counterpart of NodeTypeFacets.
@@ -791,6 +823,11 @@ var FindFacetDimension = internal.FindFacetDimension
 // at a point that required a named interpreter is a bad request.
 var LookupTagInterpreter = internal.LookupTagInterpreter
 
+// MissingRequiredFields returns the Required fields of creation absent (or
+// empty) in fields, in declaration order — the plan-time check organize makes
+// before building any body.
+var MissingRequiredFields = internal.MissingRequiredFields
+
 // MustRegisterCapture installs p in the default capture registry
 // under every scheme p.Schemes() returns. Panics on duplicate
 // registration; intended for plugin init() functions where a clash
@@ -1038,6 +1075,12 @@ var StringsOf = internal.StringsOf
 // TruncateDateKey coarsens a date bucket key to the granularity by prefix
 // truncation. A key already at or coarser than the granularity is unchanged.
 var TruncateDateKey = internal.TruncateDateKey
+
+// ValidateCreations cross-checks creation declarations against the plugin's
+// declared node types: every Tag and ContainerType MUST be a declared type,
+// the container type MUST be a container, and a type is declared creatable at
+// most once. It returns the first violation (nil when consistent).
+var ValidateCreations = internal.ValidateCreations
 
 // ValidateFacetWrites cross-checks write mappings against the read-side facet
 // schema. It returns the first violation (nil when consistent) so a plugin's

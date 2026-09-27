@@ -153,8 +153,15 @@ func firstNonEmpty(vals ...string) string {
 // trailer. The box interior is a trellis.Literal (native tags design G13): the
 // parse and the spelling both belong to trellis.
 type objectLine struct {
+	// New marks a temp-id box (`+<id>`, `+"<id>"`, bare `+` — forge organize
+	// F8): an object to CREATE. ID then holds the opaque temp id (empty for a
+	// bare `+`), which never names a live node (create.go).
+	New  bool
 	ID   string
 	Type string
+	// Line is the physical body line the box starts on (1-based; 0 for a
+	// generated line) — what creation diagnostics name.
+	Line int
 	// Tags are the bare / quoted identifier tokens a box carries (design G9:
 	// bare is ALWAYS a tag; leading by default, after the atoms under
 	// `_tag-atoms = trailing`). Since native tags slice 2 generate RENDERS them
@@ -412,7 +419,7 @@ func writeBody(b *strings.Builder, doc document) {
 // frame (`- [<interior>] <desc>`, design G13), shared with `list -format
 // espalier` since native tags slice 4 so the two surfaces cannot drift.
 func writeObjectLine(b *strings.Builder, ln objectLine, trailingTags bool) {
-	lit := trellis.Literal{ID: ln.ID, Type: ln.Type, Tags: ln.Tags}
+	lit := trellis.Literal{New: ln.New, ID: ln.ID, Type: ln.Type, Tags: ln.Tags}
 	for _, f := range ln.Fields {
 		lit.Atoms = append(lit.Atoms, trellis.Atom{Name: f.Name, Value: f.Value})
 	}
@@ -622,6 +629,7 @@ func parseWrappedBox(lines []string, start int) (objectLine, int, error) {
 	for last := start; ; {
 		ln, err := parseObjectLine(src)
 		if err == nil {
+			ln.Line = start + 1
 			return ln, last, nil
 		}
 		if !isIncompleteBox(err) {
@@ -733,7 +741,10 @@ func parseObjectLine(rest string) (objectLine, error) {
 	if err != nil {
 		return objectLine{}, err
 	}
-	ln := objectLine{ID: lit.ID, Type: lit.Type, Tags: lit.Tags, Desc: strings.TrimSpace(trailer)}
+	ln := objectLine{
+		New: lit.New, ID: lit.ID, Type: lit.Type, Tags: lit.Tags,
+		Desc: strings.TrimSpace(trailer),
+	}
 	for _, a := range lit.Atoms {
 		ln.Fields = append(ln.Fields, cgp.BoxAtom{Name: a.Name, Value: a.Value})
 	}

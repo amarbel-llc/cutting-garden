@@ -29,9 +29,9 @@ type membershipEdit struct {
 // per-object set-diff (buckets added and removed relative to base) onto the LIVE
 // tag set through the interpreter — a bucket a concurrent edit already changed
 // simply folds to a no-op, so this slice needs no hard conflict path (unlike the
-// single-valued field merge). Only ids present in base are iterated (a brand-new
-// object is out of scope, mirroring planFieldEdits ignoring added lines); an id in
-// base but not live is skipped. Deleting an object's last line — an id in base and
+// single-valued field merge). Only ids present in base are iterated (a new object
+// is a `+` creation, planned separately — create.go — and any other unknown id is
+// refused upstream, F8c); an id in base but not live is skipped. Deleting an object's last line — an id in base and
 // live but ABSENT from the edited document entirely — is out of scope
 // (cutting-garden#215's `%:allow-deletion` gate) and rejects loudly; an object
 // still present but moved out of every bucket (present ungrouped, empty membership)
