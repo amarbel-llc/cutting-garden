@@ -111,6 +111,18 @@ func TestConnectionFromArg_Precedence(t *testing.T) {
 	}
 }
 
+func TestAccountsConfig_Validate_RejectsConflictingPasswordFields(t *testing.T) {
+	c := AccountsConfig{Accounts: []config_common.Account{{
+		Root:           config_common.Root{Name: "x", URL: "jira://host/PROJ"},
+		PasswordEnv:    "FOO",
+		PasswordSource: "env",
+		PasswordKey:    "FOO",
+	}}}
+	if err := c.Validate(); err == nil {
+		t.Error("want error: password_env conflicts with password_source/password_key")
+	}
+}
+
 func TestValidate_RejectsBadAccounts(t *testing.T) {
 	cases := []struct {
 		name string

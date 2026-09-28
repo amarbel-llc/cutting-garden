@@ -104,6 +104,12 @@ func (c AccountsConfig) Validate() error {
 			)
 		}
 		seenHostPath[key] = struct{}{}
+
+		if err := acct.ValidatePassword(); err != nil {
+			return errors.BadRequestf(
+				"jira.accounts[%q]: %s", acct.Name, err,
+			)
+		}
 	}
 	return nil
 }

@@ -74,6 +74,18 @@ func TestMatchAccount_LongestPrefixAndHost(t *testing.T) {
 	}
 }
 
+func TestAccountsConfig_Validate_RejectsConflictingPasswordFields(t *testing.T) {
+	c := AccountsConfig{Accounts: []config_common.Account{{
+		Root:           config_common.Root{Name: "x", URL: "caldav://host/dav/"},
+		PasswordEnv:    "FOO",
+		PasswordSource: "env",
+		PasswordKey:    "FOO",
+	}}}
+	if err := c.Validate(); err == nil {
+		t.Error("want error: password_env conflicts with password_source/password_key")
+	}
+}
+
 func TestConnectionFromArg_Precedence(t *testing.T) {
 	setAccounts(t, acct("me", "caldav://dav.host/dav/me/", "acctuser", "CALDAV_TEST_PW"))
 	t.Setenv("CALDAV_TEST_PW", "acctsecret")

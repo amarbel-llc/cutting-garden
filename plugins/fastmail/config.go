@@ -105,6 +105,12 @@ func (c AccountsConfig) Validate() error {
 				)
 			}
 		}
+
+		if err := acct.ValidatePassword(); err != nil {
+			return errors.BadRequestf(
+				"fastmail.accounts[%q]: %s", acct.Name, err,
+			)
+		}
 	}
 	return nil
 }

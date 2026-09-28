@@ -80,6 +80,24 @@ func TestSessionURLFor_DefaultsToFastmail(t *testing.T) {
 	}
 }
 
+func TestConfigSection_RejectsConflictingPasswordFields(t *testing.T) {
+	setAccounts(t)
+	err := decodeConfigSection(sectionModel(t, `
+[[accounts]]
+name = "x"
+url = "fastmail://x/"
+password_env = "FOO"
+password_source = "env"
+password_key = "FOO"
+`))
+	if err == nil {
+		t.Fatal("want error: password_env conflicts with password_source/password_key")
+	}
+	if !errors.Is400BadRequest(err) {
+		t.Errorf("want EX_USAGE (400 bad request), got %v", err)
+	}
+}
+
 func TestConfigSection_ValidateFailureSurfaces(t *testing.T) {
 	setAccounts(t)
 	err := decodeConfigSection(sectionModel(t, `
