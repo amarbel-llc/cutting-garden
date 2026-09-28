@@ -10,8 +10,11 @@
 package config_common
 
 import (
+	"bytes"
 	"fmt"
 	"os"
+	"os/exec"
+	"strings"
 )
 
 // Root is a plugin entry point with no credentials — a "preferred root"
@@ -108,12 +111,64 @@ func (a Account) ValidatePassword() error {
 	return nil
 }
 
-// Password resolves the account's password from the environment variable
-// named by PasswordEnv, or "" when PasswordEnv is empty or the variable
-// is unset.
-func (a Account) Password() string {
-	if a.PasswordEnv == "" {
-		return ""
+// Password resolves the account's password: PasswordEnv (legacy) or
+// PasswordSource ("env": PasswordKey as an env var name; "piggy":
+// PasswordKey as a `piggy pass show` entry name). Returns "", nil when no
+// password field is set. A "piggy" source's missing binary or failed
+// decrypt is a hard error — unlike an unset env var, which silently
+// resolves to "" (ValidatePassword already guarantees PasswordSource is
+// one of "", "env", "piggy" and that PasswordSource/PasswordKey are set
+// together, so the switch below has no further default case to reach).
+func (a Account) Password() (string, error) {
+	switch {
+	case a.PasswordEnv != "":
+		return os.Getenv(a.PasswordEnv), nil
+	case a.PasswordSource == "env":
+		return os.Getenv(a.PasswordKey), nil
+	case a.PasswordSource == "piggy":
+		return piggyPassShow(a.PasswordKey)
+	default:
+		return "", nil
 	}
-	return os.Getenv(a.PasswordEnv)
+}
+
+// piggyStderrTailBytes caps how much of `piggy pass show`'s stderr is
+// buffered for the failure diagnostic — same bound and rationale as
+// plugins/optical and plugins/googlephotos' stderr tails.
+const piggyStderrTailBytes = 4096
+
+// piggyPassShow decrypts and returns the named piggy pass entry via
+// `piggy pass show <key>`, trimming the trailing newline `pass show`
+// writes. The binary is resolved through exec.LookPath, honoring the
+// caller's PATH (the same convention as plugins/optical, plugins/ytdlp,
+// plugins/googlephotos). No context.Context threading in v1 — a v2
+// revision threads interfaces.ActiveContext through for both a single
+// `pass show` and a batched `pass show-batch` session (out of scope here).
+func piggyPassShow(key string) (string, error) {
+	binPath, err := exec.LookPath("piggy")
+	if err != nil {
+		return "", fmt.Errorf(
+			"config_common: piggy not found on PATH (%w)\n"+
+				"hint: enter the devshell or run a nix-built binary",
+			err,
+		)
+	}
+
+	cmd := exec.Command(binPath, "pass", "show", key)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if runErr := cmd.Run(); runErr != nil {
+		tail := stderr.Bytes()
+		if len(tail) > piggyStderrTailBytes {
+			tail = tail[len(tail)-piggyStderrTailBytes:]
+		}
+		return "", fmt.Errorf(
+			"config_common: piggy pass show %q failed (%w)\nstderr-tail: %s",
+			key, runErr, tail,
+		)
+	}
+
+	return strings.TrimRight(stdout.String(), "\n"), nil
 }
