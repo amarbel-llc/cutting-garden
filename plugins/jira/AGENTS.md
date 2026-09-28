@@ -80,7 +80,8 @@ Credentials resolve by the RFC 0007 precedence (`connectionFromArg`,
 `url.go`): the URL's userinfo (`user:token@host`) when present, else a
 configured account matched by host + longest project-path prefix
 (`[[jira.accounts]]`, injected via `SetConfiguredAccounts`; the API token
-comes from the account's `password_env`), else the global `JIRA_USERNAME` /
+comes from the account's `password_env` or
+`password_source`/`password_key` — RFC 0007), else the global `JIRA_USERNAME` /
 `JIRA_API_TOKEN` (the same env vars `sisyphus` uses — username is the
 Atlassian account email, the "password" is the API token, sent as HTTP
 basic auth). A request with no resolvable credentials is sent

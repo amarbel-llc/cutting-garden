@@ -24,7 +24,8 @@ The endpoint host comes from the URL; credentials resolve by the RFC 0007
 precedence (`connectionFromArg`, `config.go`): the URL's userinfo when
 present, else a configured account matched by host + longest path prefix
 (`[[caldav.accounts]]`, injected via `SetConfiguredAccounts`; password
-from the account's `password_env`), else the global `CALDAV_USERNAME` /
+from the account's `password_env` or `password_source`/`password_key` —
+RFC 0007), else the global `CALDAV_USERNAME` /
 `CALDAV_PASSWORD` (the same env vars bob's caldav used). A request with no
 resolvable credentials is sent unauthenticated — the server's 401 is
 surfaced as the capture/diff/restore error.

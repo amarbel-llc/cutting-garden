@@ -7,6 +7,9 @@ revised: 2026-07-19 (new § The Root-Labeler Capability: an OPTIONAL
   cutting-garden#120)
   2026-07-19 (§ The Root-Provider Capability: root aggregation is a
   per-plugin fault-isolation boundary, not fail-fast — cutting-garden#165)
+  2026-09-28 (§ Shared Base Types: add PasswordSource/PasswordKey as a
+  second password indirection alongside PasswordEnv, resolving to a piggy
+  pass store entry)
 ---
 
 # Configuration Subsystem and Root Enumeration (cutting-garden config.toml)
@@ -281,9 +284,11 @@ type Root struct {
 // credential indirection.
 type Account struct {
     Root
-    Username    string `toml:"username,omitempty"`
-    PasswordEnv string `toml:"password_env,omitempty"`
-    SessionURL  string `toml:"session_url,omitempty"`
+    Username       string `toml:"username,omitempty"`
+    PasswordEnv    string `toml:"password_env,omitempty"`
+    PasswordSource string `toml:"password_source,omitempty"`
+    PasswordKey    string `toml:"password_key,omitempty"`
+    SessionURL     string `toml:"session_url,omitempty"`
 }
 ```
 
@@ -299,6 +304,13 @@ Field semantics:
   is the account password. The password value MUST NOT appear in the config
   file directly (§ Security Considerations). An unset named variable resolves
   to an empty password.
+- `PasswordSource` — OPTIONAL. Selects the backend `PasswordKey` is
+  resolved against: `"env"` (an environment variable name — the new
+  spelling of `PasswordEnv`) or `"piggy"` (a `piggy pass show` entry name).
+  MUST be set together with `PasswordKey`, and MUST NOT be set together
+  with `PasswordEnv`.
+- `PasswordKey` — OPTIONAL. The key to resolve within `PasswordSource`'s
+  backend. MUST be set together with `PasswordSource`.
 - `SessionURL` — OPTIONAL. An absolute `http(s)` URL overriding the endpoint
   a plugin with a FIXED API host would otherwise hard-code — today only the
   fastmail plugin's JMAP Session URL, which is how a test lane points a
@@ -488,9 +500,12 @@ if any `internal/` package imports `plugins/`, in production code or in tests.
 
 ## Security Considerations
 
-- **No plaintext secrets in the file.** Passwords MUST be referenced by
-  environment-variable name (`PasswordEnv`), never written into `config.toml`.
-  Inline plaintext passwords MUST NOT be a supported field.
+- **No plaintext secrets in the file.** Passwords MUST be referenced
+  indirectly — by environment-variable name (`PasswordEnv`, or
+  `PasswordSource="env"` + `PasswordKey`) or by a piggy pass store entry
+  name (`PasswordSource="piggy"` + `PasswordKey`) — never written into
+  `config.toml` directly. Inline plaintext passwords MUST NOT be a
+  supported field.
 - **Credentials MUST NOT leak into surfaced URIs.** The `*url.URL` values a
   plugin returns from `Roots`, and every child node URI its traversal emits,
   MUST be credential-free. MCP resource URIs are visible to the connected
