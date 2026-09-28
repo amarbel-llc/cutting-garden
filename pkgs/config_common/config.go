@@ -31,9 +31,16 @@ type Root struct {
 
 // Account is a credentialed root (a Root plus credential indirection) for
 // plugins whose roots require authentication (caldav, and the planned
-// sftp/webdav/github). PasswordEnv names the environment variable holding
-// the password; the secret itself is never stored in the config file
-// (RFC 0007 § Security Considerations).
+// sftp/webdav/github). The password comes from exactly one of:
+//   - PasswordEnv (legacy): the name of an environment variable.
+//   - PasswordSource + PasswordKey: PasswordSource selects the backend
+//     ("env" resolves PasswordKey as an environment variable name — the
+//     new spelling of PasswordEnv; "piggy" resolves PasswordKey as a
+//     `piggy pass show` entry name). ValidatePassword enforces mutual
+//     exclusivity and the PasswordSource enum; see that method.
+//
+// The secret itself is never stored in the config file (RFC 0007 §
+// Security Considerations).
 //
 // SessionURL overrides the endpoint a plugin with a FIXED API host would
 // otherwise hard-code — today only the fastmail plugin's JMAP Session URL
@@ -44,9 +51,11 @@ type Root struct {
 //go:generate tommy generate
 type Account struct {
 	Root
-	Username    string `toml:"username,omitempty"`
-	PasswordEnv string `toml:"password_env,omitempty"`
-	SessionURL  string `toml:"session_url,omitempty"`
+	Username       string `toml:"username,omitempty"`
+	PasswordEnv    string `toml:"password_env,omitempty"`
+	PasswordSource string `toml:"password_source,omitempty"`
+	PasswordKey    string `toml:"password_key,omitempty"`
+	SessionURL     string `toml:"session_url,omitempty"`
 }
 
 // AccountsSection is the TOML shape of an account-bearing plugin's

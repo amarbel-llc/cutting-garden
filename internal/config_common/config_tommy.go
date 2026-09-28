@@ -168,6 +168,18 @@ func DecodeAccount(input []byte) (*AccountDocument, error) {
 			_vPasswordEnv.MarkConsumed()
 		}
 	}
+	if _vPasswordSource, _ok := model.Get("password_source"); _ok && _vPasswordSource.Kind == cst.VLeaf {
+		if _x, _xok := cst.ExtractString(_vPasswordSource.Leaf); _xok {
+			d.data.PasswordSource = _x
+			_vPasswordSource.MarkConsumed()
+		}
+	}
+	if _vPasswordKey, _ok := model.Get("password_key"); _ok && _vPasswordKey.Kind == cst.VLeaf {
+		if _x, _xok := cst.ExtractString(_vPasswordKey.Leaf); _xok {
+			d.data.PasswordKey = _x
+			_vPasswordKey.MarkConsumed()
+		}
+	}
 	if _vSessionUrl, _ok := model.Get("session_url"); _ok && _vSessionUrl.Kind == cst.VLeaf {
 		if _x, _xok := cst.ExtractString(_vSessionUrl.Leaf); _xok {
 			d.data.SessionURL = _x
@@ -205,6 +217,20 @@ func (d *AccountDocument) Encode() ([]byte, error) {
 		}
 	} else {
 		cst.DeleteValue(d.cstDoc.Root(), "password_env")
+	}
+	if d.data.PasswordSource != "" {
+		if err := cst.SetAny(d.cstDoc.Root(), "password_source", d.data.PasswordSource); err != nil {
+			return nil, fmt.Errorf("%w", err)
+		}
+	} else {
+		cst.DeleteValue(d.cstDoc.Root(), "password_source")
+	}
+	if d.data.PasswordKey != "" {
+		if err := cst.SetAny(d.cstDoc.Root(), "password_key", d.data.PasswordKey); err != nil {
+			return nil, fmt.Errorf("%w", err)
+		}
+	} else {
+		cst.DeleteValue(d.cstDoc.Root(), "password_key")
 	}
 	if d.data.SessionURL != "" {
 		if err := cst.SetAny(d.cstDoc.Root(), "session_url", d.data.SessionURL); err != nil {
@@ -264,6 +290,18 @@ func DecodeAccountInto(data *Account, sub *cst.Value) error {
 			_vPasswordEnv.MarkConsumed()
 		}
 	}
+	if _vPasswordSource, _ok := sub.Get("password_source"); _ok && _vPasswordSource.Kind == cst.VLeaf {
+		if _x, _xok := cst.ExtractString(_vPasswordSource.Leaf); _xok {
+			data.PasswordSource = _x
+			_vPasswordSource.MarkConsumed()
+		}
+	}
+	if _vPasswordKey, _ok := sub.Get("password_key"); _ok && _vPasswordKey.Kind == cst.VLeaf {
+		if _x, _xok := cst.ExtractString(_vPasswordKey.Leaf); _xok {
+			data.PasswordKey = _x
+			_vPasswordKey.MarkConsumed()
+		}
+	}
 	if _vSessionUrl, _ok := sub.Get("session_url"); _ok && _vSessionUrl.Kind == cst.VLeaf {
 		if _x, _xok := cst.ExtractString(_vSessionUrl.Leaf); _xok {
 			data.SessionURL = _x
@@ -297,6 +335,20 @@ func EncodeAccountFrom(data *Account, doc *document.Document, container *cst.Nod
 		}
 	} else {
 		cst.DeleteValue(container, "password_env")
+	}
+	if data.PasswordSource != "" {
+		if err := cst.SetAny(container, "password_source", data.PasswordSource); err != nil {
+			return fmt.Errorf("%w", err)
+		}
+	} else {
+		cst.DeleteValue(container, "password_source")
+	}
+	if data.PasswordKey != "" {
+		if err := cst.SetAny(container, "password_key", data.PasswordKey); err != nil {
+			return fmt.Errorf("%w", err)
+		}
+	} else {
+		cst.DeleteValue(container, "password_key")
 	}
 	if data.SessionURL != "" {
 		if err := cst.SetAny(container, "session_url", data.SessionURL); err != nil {
@@ -365,6 +417,18 @@ func DecodeAccountsSection(input []byte) (*AccountsSectionDocument, error) {
 					_vAccountsPasswordEnv.MarkConsumed()
 				}
 			}
+			if _vAccountsPasswordSource, _ok := _eAccounts.Get("password_source"); _ok && _vAccountsPasswordSource.Kind == cst.VLeaf {
+				if _x, _xok := cst.ExtractString(_vAccountsPasswordSource.Leaf); _xok {
+					d.data.Accounts[i].PasswordSource = _x
+					_vAccountsPasswordSource.MarkConsumed()
+				}
+			}
+			if _vAccountsPasswordKey, _ok := _eAccounts.Get("password_key"); _ok && _vAccountsPasswordKey.Kind == cst.VLeaf {
+				if _x, _xok := cst.ExtractString(_vAccountsPasswordKey.Leaf); _xok {
+					d.data.Accounts[i].PasswordKey = _x
+					_vAccountsPasswordKey.MarkConsumed()
+				}
+			}
 			if _vAccountsSessionUrl, _ok := _eAccounts.Get("session_url"); _ok && _vAccountsSessionUrl.Kind == cst.VLeaf {
 				if _x, _xok := cst.ExtractString(_vAccountsSessionUrl.Leaf); _xok {
 					d.data.Accounts[i].SessionURL = _x
@@ -416,6 +480,20 @@ func (d *AccountsSectionDocument) Encode() ([]byte, error) {
 				}
 			} else {
 				cst.DeleteValue(container, "password_env")
+			}
+			if d.data.Accounts[i].PasswordSource != "" {
+				if err := cst.SetAny(container, "password_source", d.data.Accounts[i].PasswordSource); err != nil {
+					return nil, fmt.Errorf("%w", err)
+				}
+			} else {
+				cst.DeleteValue(container, "password_source")
+			}
+			if d.data.Accounts[i].PasswordKey != "" {
+				if err := cst.SetAny(container, "password_key", d.data.Accounts[i].PasswordKey); err != nil {
+					return nil, fmt.Errorf("%w", err)
+				}
+			} else {
+				cst.DeleteValue(container, "password_key")
 			}
 			if d.data.Accounts[i].SessionURL != "" {
 				if err := cst.SetAny(container, "session_url", d.data.Accounts[i].SessionURL); err != nil {
@@ -483,6 +561,18 @@ func DecodeAccountsSectionInto(data *AccountsSection, sub *cst.Value) error {
 					_vAccountsPasswordEnv.MarkConsumed()
 				}
 			}
+			if _vAccountsPasswordSource, _ok := _eAccounts.Get("password_source"); _ok && _vAccountsPasswordSource.Kind == cst.VLeaf {
+				if _x, _xok := cst.ExtractString(_vAccountsPasswordSource.Leaf); _xok {
+					data.Accounts[i].PasswordSource = _x
+					_vAccountsPasswordSource.MarkConsumed()
+				}
+			}
+			if _vAccountsPasswordKey, _ok := _eAccounts.Get("password_key"); _ok && _vAccountsPasswordKey.Kind == cst.VLeaf {
+				if _x, _xok := cst.ExtractString(_vAccountsPasswordKey.Leaf); _xok {
+					data.Accounts[i].PasswordKey = _x
+					_vAccountsPasswordKey.MarkConsumed()
+				}
+			}
 			if _vAccountsSessionUrl, _ok := _eAccounts.Get("session_url"); _ok && _vAccountsSessionUrl.Kind == cst.VLeaf {
 				if _x, _xok := cst.ExtractString(_vAccountsSessionUrl.Leaf); _xok {
 					data.Accounts[i].SessionURL = _x
@@ -532,6 +622,20 @@ func EncodeAccountsSectionFrom(data *AccountsSection, doc *document.Document, co
 				}
 			} else {
 				cst.DeleteValue(container, "password_env")
+			}
+			if data.Accounts[i].PasswordSource != "" {
+				if err := cst.SetAny(container, "password_source", data.Accounts[i].PasswordSource); err != nil {
+					return fmt.Errorf("%w", err)
+				}
+			} else {
+				cst.DeleteValue(container, "password_source")
+			}
+			if data.Accounts[i].PasswordKey != "" {
+				if err := cst.SetAny(container, "password_key", data.Accounts[i].PasswordKey); err != nil {
+					return fmt.Errorf("%w", err)
+				}
+			} else {
+				cst.DeleteValue(container, "password_key")
 			}
 			if data.Accounts[i].SessionURL != "" {
 				if err := cst.SetAny(container, "session_url", data.Accounts[i].SessionURL); err != nil {
