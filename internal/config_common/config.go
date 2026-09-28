@@ -9,7 +9,10 @@
 // sections and imports no plugin (RFC 0007 § Package Layering).
 package config_common
 
-import "os"
+import (
+	"fmt"
+	"os"
+)
 
 // Root is a plugin entry point with no credentials — a "preferred root"
 // for plugins that cannot enumerate roots from ambient state (e.g. a
@@ -74,6 +77,35 @@ type Account struct {
 //go:generate tommy generate
 type AccountsSection struct {
 	Accounts []Account `toml:"accounts"`
+}
+
+// ValidatePassword enforces mutual exclusivity between the legacy
+// PasswordEnv and the PasswordSource/PasswordKey pair, and validates the
+// PasswordSource enum. A plugin's own AccountsConfig.Validate calls this
+// from its per-account loop and wraps the error with its own
+// "<scheme>.accounts[%q]: %s" context (acct.Name is already known to be
+// non-empty by the time that loop reaches this check).
+func (a Account) ValidatePassword() error {
+	if a.PasswordEnv != "" && (a.PasswordSource != "" || a.PasswordKey != "") {
+		return fmt.Errorf(
+			"password_env is mutually exclusive with password_source/password_key",
+		)
+	}
+	if (a.PasswordSource == "") != (a.PasswordKey == "") {
+		return fmt.Errorf(
+			"password_source and password_key must be set together",
+		)
+	}
+	switch a.PasswordSource {
+	case "", "env", "piggy":
+		// ok
+	default:
+		return fmt.Errorf(
+			"unknown password_source %q (want \"env\" or \"piggy\")",
+			a.PasswordSource,
+		)
+	}
+	return nil
 }
 
 // Password resolves the account's password from the environment variable
