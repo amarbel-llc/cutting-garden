@@ -168,7 +168,11 @@ func resolveClient(ref nodeRef) (*client, error) {
 			"fastmail plugin: unknown account %q", ref.account,
 		)
 	}
-	return newClient(sessionURLFor(acct), acct.Password()), nil
+	password, err := acct.Password()
+	if err != nil {
+		return nil, errors.Wrapf(err, "fastmail plugin: account %q", acct.Name)
+	}
+	return newClient(sessionURLFor(acct), password), nil
 }
 
 // sessionURLFor is the account's JMAP Session endpoint: its configured

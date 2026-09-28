@@ -112,10 +112,12 @@ func connectionFromArg(u *url.URL) (base, username, token string, err error) {
 		base = parsed.String()
 	} else if acct, ok := matchAccount(parsed.Host, strings.TrimLeft(parsed.Path, "/")); ok {
 		// Step 2: a configured account matching this node's host + longest
-		// project-path prefix supplies the credentials; the token comes
-		// from the account's PasswordEnv.
+		// project-path prefix supplies the credentials.
 		username = acct.Username
-		token = acct.Password()
+		token, err = acct.Password()
+		if err != nil {
+			return "", "", "", errors.Wrapf(err, "jira plugin: account %q", acct.Name)
+		}
 	} else {
 		// Step 3: fall back to the global environment.
 		username = os.Getenv(envUsername)
