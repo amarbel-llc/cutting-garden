@@ -352,12 +352,19 @@
         # deliberately NOT presets.eng (the convention linters stay at the
         # merge/worktree gate, not commit/repair time). build.preCommit from THIS
         # eval is the sweatfile pre-commit hook; build.repair is the spinclass
-        # merge-REPAIR hook. Formatting only since go.nix: codegen drift is the
-        # checks.*-codegen gate, regenerated through godyn-go.
+        # merge-REPAIR hook. Codegen drift stays gated by checks.*-codegen; the
+        # codegen-repair linter (normally enabled by presets.eng, which this
+        # eval omits) applies those checks' passthru.codegenPatch at repair
+        # time, so a flake.lock bump that restamps tommy/dagnabit output heals
+        # itself in merge-repair instead of failing the gate.
         conformistCodegenEval = conformist.lib.evalModule pkgs {
           imports = [
             ./conformist.nix
             conformistTommyModule
+            {
+              linters.codegen-repair.enable = true;
+              linters.codegen-repair.package = conformist.packages.${system}.default;
+            }
           ];
           package = conformist.packages.${system}.default;
         };
