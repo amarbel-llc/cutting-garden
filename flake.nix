@@ -846,10 +846,10 @@
           # both codegen lanes is what fires them on a lock-only bump.
           conformist-repair = conformistCodegenEval.config.build.repair;
 
-          # The generated PURE-lane config, pointed at by dagnabit's
-          # DAGNABIT_CONFORMIST_CONFIG (purse-first#159) so `dagnabit export
-          # -check` formats the generated facades with cutting-garden's REAL
-          # config — there is no conformist.toml on disk for dagnabit to find.
+          # The generated PURE-lane config (cutting-garden's REAL config, with
+          # linters and excludes). NOT usable as dagnabit's
+          # DAGNABIT_CONFORMIST_CONFIG, which must be the formatters-only
+          # dagnabit-facade config (see dagnabitPinned).
           conformist-config = conformistEval.config.build.configFile;
 
           # The generated impure-lane config (git-state eng-convention checks),

@@ -307,7 +307,7 @@ validate-generate:
 # like codemod-generate. Run after adding or changing a `//go:generate dagnabit
 # export` directive, or after a purse-first bump (the facades stamp dagnabit's
 # version). The flake's dagnabit wrapper pins DAGNABIT_CONFORMIST_CONFIG to the
-# generated PURE conformist config and puts the raw conformist on PATH, so the
+# formatters-only dagnabit-facade config and puts the raw conformist on PATH, so the
 # post-generation format pass matches the drift check.
 #
 # codemod-generate (tommy) runs afterwards: copy mode prepends dagnabit's header
