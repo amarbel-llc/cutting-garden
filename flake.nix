@@ -311,9 +311,15 @@
         # dagnabit with its post-generation conformist pass pinned: the raw
         # conformist binary on PATH (dagnabit passes --tree-root, which the
         # module wrapper would collide with, purse-first#159) and
-        # DAGNABIT_CONFORMIST_CONFIG naming this repo's generated PURE config, so
+        # DAGNABIT_CONFORMIST_CONFIG naming the formatters-only dagnabit-facade
+        # config (dagnabit validates it: no linters, excludes or working-dir), so
         # the facades format identically in the codegen check and in a godyn-go
         # regeneration (neither sees a conformist.toml on disk).
+        conformistFacadeFormatEval = conformist.lib.evalModule pkgs {
+          imports = [ purse-first.lib.conformistModules.dagnabit-facade ];
+          package = conformist.packages.${system}.default;
+        };
+
         dagnabitPinned =
           pkgs.runCommand "dagnabit-pinned"
             {
@@ -324,7 +330,7 @@
               makeWrapper ${
                 pkgs.lib.getExe' purse-first.packages.${system}.dagnabit "dagnabit"
               } $out/bin/dagnabit \
-                --set DAGNABIT_CONFORMIST_CONFIG ${conformistEval.config.build.configFile} \
+                --set DAGNABIT_CONFORMIST_CONFIG ${conformistFacadeFormatEval.config.build.configFile} \
                 --prefix PATH : ${pkgs.lib.makeBinPath [ conformist.packages.${system}.default ]}
             '';
 
