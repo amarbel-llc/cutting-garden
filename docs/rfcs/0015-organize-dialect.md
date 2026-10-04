@@ -74,6 +74,13 @@ revised: |
     idempotency key derived from `_base` + temp id rides every create, and a
     host creation receipt (keyed by `_base`) skips recorded creations; a
     failure after creations landed names them.
+  2026-10-04 — EXTENDED by RFC 0020 (multi-root documents): several roots in
+    one document as envelope bindings from a name to a container, with a
+    per-name `_query/<name>` field (in place of `_anchor`/`_query`/`_type`),
+    the name used as a type (`!name`), id-first object resolution,
+    grouping and tags across types, re-type moves, apply across roots; the
+    `-query` flag is removed. Proposed, not implemented; this document's
+    single-anchor form is unchanged.
 ---
 
 # The organize document dialect
