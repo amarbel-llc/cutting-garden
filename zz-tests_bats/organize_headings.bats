@@ -44,17 +44,17 @@ teardown() {
 # bats file_tags=organize
 
 # The generated document's `_base` digest, and the digests after each edit.
-BASE_GENERATED=blake2b256-usdexhm8tx5w6neeyxr4pvza4vy6ad2pshr44yvl6e27uw83fzmqz2fu5e
-BASE_AFTER_DOUBLE=blake2b256-9n257aymfx5asjeg8xazn97d8he206ut6kcttughrmlhag6z9m0sgxxt4t
-BASE_AFTER_RESET=blake2b256-3au7akd338jdzakprftj9rft0eyx60m0wty56xhgudjhypckgacszae94m
-BASE_AFTER_NOOP=blake2b256-hrxpk0394vjjn45xak9sru9ae6nc7fvnzud737qkwa6t8t26uu8sr6x7mq
+BASE_GENERATED=blake2b256-hqwaqc20953h4gw2tutms8q877dnyjvu5ksqmsg8ngmp4wnqc69qt076yp
+BASE_AFTER_DOUBLE=blake2b256-grx2ekjw2dc3nj3ckajjll3p5kwurhjr39gj85vn7l6mydu9msqsg9e3es
+BASE_AFTER_RESET=blake2b256-m266v73sh7nu9puvklqtvj7axdushh5xqp485m8q3lve050vv9kss22h9q
+BASE_AFTER_NOOP=blake2b256-euq79ddva98sxzlastnypjpwgtxx50pqv399mysu59ygfrw227qsc030v8
 
 # envelope_header prints the `-group-by (tags)` document's hyphence envelope
 # pinned at `_base` $1 — the part every document in this lane shares.
 envelope_header() {
   cat <<-EOM
 	---
-	% generated: \`cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:24109/dav/fields/\`
+	% generated: \`cg organize 'caldav:http://127.0.0.1:24109/dav/fields/ -> _terminal=no' '(tags)'\`
 	- _base = @$1
 	- _anchor = caldav:http://127.0.0.1:24109/dav/fields/
 	- _query = _terminal=no

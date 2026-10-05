@@ -48,8 +48,8 @@ generate_doc() {
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:24101/dav/cal/`
-	- _base = @blake2b256-pffr5xydp6md2yafhun9rjck8pq98r5l726ac2qp2psudq3m0vlq6dsclq
+	% generated: `cg organize 'caldav:http://127.0.0.1:24101/dav/cal/ -> _terminal=no' status=`
+	- _base = @blake2b256-tvyyx0hefvhj8gmt65qy68ggwv4sgza4n4cztk3jeu4956r573qs3nkvch
 	- _anchor = caldav:http://127.0.0.1:24101/dav/cal/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -78,8 +78,8 @@ generate_doc() {
 write_task1_completed() {
   cat >"$1" <<-'EOM'
 	---
-	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:24101/dav/cal/`
-	- _base = @blake2b256-pffr5xydp6md2yafhun9rjck8pq98r5l726ac2qp2psudq3m0vlq6dsclq
+	% generated: `cg organize 'caldav:http://127.0.0.1:24101/dav/cal/ -> _terminal=no' status=`
+	- _base = @blake2b256-tvyyx0hefvhj8gmt65qy68ggwv4sgza4n4cztk3jeu4956r573qs3nkvch
 	- _anchor = caldav:http://127.0.0.1:24101/dav/cal/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -109,8 +109,8 @@ write_task1_completed() {
 write_task1_cancelled() {
   cat >"$1" <<-'EOM'
 	---
-	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:24101/dav/cal/`
-	- _base = @blake2b256-pffr5xydp6md2yafhun9rjck8pq98r5l726ac2qp2psudq3m0vlq6dsclq
+	% generated: `cg organize 'caldav:http://127.0.0.1:24101/dav/cal/ -> _terminal=no' status=`
+	- _base = @blake2b256-tvyyx0hefvhj8gmt65qy68ggwv4sgza4n4cztk3jeu4956r573qs3nkvch
 	- _anchor = caldav:http://127.0.0.1:24101/dav/cal/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -143,8 +143,8 @@ assert_task1_completed() {
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:24101/dav/cal/`
-	- _base = @blake2b256-eeaac7jn3lma5ydn30rvj26qm6vppth6kfejzj2e5ul5w46dwh3s9qxzq8
+	% generated: `cg organize 'caldav:http://127.0.0.1:24101/dav/cal/ -> _terminal=no' status=`
+	- _base = @blake2b256-7l754q228ug7lantv0sf7t2q3tkv2jquwfx30dsfatj4839yv96qqzlhzm
 	- _anchor = caldav:http://127.0.0.1:24101/dav/cal/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1

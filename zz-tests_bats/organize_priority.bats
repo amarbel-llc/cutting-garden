@@ -60,8 +60,8 @@ generate_priority() {
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by priority= -query "_terminal=no" caldav:http://127.0.0.1:24105/dav/fields/`
-	- _base = @blake2b256-cdc2nunrr3m8etnjs6vd2zpaz0m4r60zxpzwewejkz8efr59ff6q0502a3
+	% generated: `cg organize 'caldav:http://127.0.0.1:24105/dav/fields/ -> _terminal=no' priority=`
+	- _base = @blake2b256-x39f3r67d652h5sh9d4ux89s2v6pnvyvu02h74fvxf3hg977et2szm3ujc
 	- _anchor = caldav:http://127.0.0.1:24105/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -105,8 +105,8 @@ function organize_priority_band_move_rewrites { # @test
   local edited="$BATS_TEST_TMPDIR/edited.txt"
   cat >"$edited" <<-'EOM'
 	---
-	% generated: `cg organize -group-by priority= -query "_terminal=no" caldav:http://127.0.0.1:24105/dav/fields/`
-	- _base = @blake2b256-cdc2nunrr3m8etnjs6vd2zpaz0m4r60zxpzwewejkz8efr59ff6q0502a3
+	% generated: `cg organize 'caldav:http://127.0.0.1:24105/dav/fields/ -> _terminal=no' priority=`
+	- _base = @blake2b256-x39f3r67d652h5sh9d4ux89s2v6pnvyvu02h74fvxf3hg977et2szm3ujc
 	- _anchor = caldav:http://127.0.0.1:24105/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -164,8 +164,8 @@ EOF
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by priority= -query "_terminal=no" caldav:http://127.0.0.1:24105/dav/fields/`
-	- _base = @blake2b256-63qftg56362ae4ek4k0wf0azv8ff09psrjmtg9rx8glqg7tujaxsu5l529
+	% generated: `cg organize 'caldav:http://127.0.0.1:24105/dav/fields/ -> _terminal=no' priority=`
+	- _base = @blake2b256-eewa2exls9hwe7lgcrghclfwlxrus8dut7fh5gy75vk9p7h8utcqug8gnz
 	- _anchor = caldav:http://127.0.0.1:24105/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -201,8 +201,8 @@ function organize_priority_unspecified_clears { # @test
   local edited="$BATS_TEST_TMPDIR/edited.txt"
   cat >"$edited" <<-'EOM'
 	---
-	% generated: `cg organize -group-by priority= -query "_terminal=no" caldav:http://127.0.0.1:24105/dav/fields/`
-	- _base = @blake2b256-cdc2nunrr3m8etnjs6vd2zpaz0m4r60zxpzwewejkz8efr59ff6q0502a3
+	% generated: `cg organize 'caldav:http://127.0.0.1:24105/dav/fields/ -> _terminal=no' priority=`
+	- _base = @blake2b256-x39f3r67d652h5sh9d4ux89s2v6pnvyvu02h74fvxf3hg977et2szm3ujc
 	- _anchor = caldav:http://127.0.0.1:24105/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -251,8 +251,8 @@ EOF
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by priority= -query "_terminal=no" caldav:http://127.0.0.1:24105/dav/fields/`
-	- _base = @blake2b256-dljsqlyj5zeavdegustktu2cstlk28h3zlmkexnwjzsf5pv0ev9sglm28l
+	% generated: `cg organize 'caldav:http://127.0.0.1:24105/dav/fields/ -> _terminal=no' priority=`
+	- _base = @blake2b256-uc2ldsstyq7wmjx05ktwjknljtmhkzvhd0m8e7hplq4p3cfhd6us37dxyh
 	- _anchor = caldav:http://127.0.0.1:24105/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -288,8 +288,8 @@ generate_status_fields() {
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:24105/dav/fields/`
-	- _base = @blake2b256-vhzyuu6226xswrdd02dx94mk5qjc297lnmnjxy3rwlk806ds5lesecf3uk
+	% generated: `cg organize 'caldav:http://127.0.0.1:24105/dav/fields/ -> _terminal=no' status=`
+	- _base = @blake2b256-s5wgs35f9pz66jdjc2wu244v8ulwmgmyc2grpg0ut82k4vnwypus28fg5x
 	- _anchor = caldav:http://127.0.0.1:24105/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -325,8 +325,8 @@ function organize_priority_field_edit_band_completes { # @test
   local edited="$BATS_TEST_TMPDIR/edited.txt"
   cat >"$edited" <<-'EOM'
 	---
-	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:24105/dav/fields/`
-	- _base = @blake2b256-vhzyuu6226xswrdd02dx94mk5qjc297lnmnjxy3rwlk806ds5lesecf3uk
+	% generated: `cg organize 'caldav:http://127.0.0.1:24105/dav/fields/ -> _terminal=no' status=`
+	- _base = @blake2b256-s5wgs35f9pz66jdjc2wu244v8ulwmgmyc2grpg0ut82k4vnwypus28fg5x
 	- _anchor = caldav:http://127.0.0.1:24105/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -371,8 +371,8 @@ EOF
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:24105/dav/fields/`
-	- _base = @blake2b256-ggfvjjpcdwmekruk6tq7ajj2rjykstkjtcs22rwyzcdt5s9ax06sy95y69
+	% generated: `cg organize 'caldav:http://127.0.0.1:24105/dav/fields/ -> _terminal=no' status=`
+	- _base = @blake2b256-yrwpnul40l0jxqn890wwpsndzdepcuxqdzwfpnefyx3x3xxwdhnqwzkl3m
 	- _anchor = caldav:http://127.0.0.1:24105/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -408,8 +408,8 @@ function organize_priority_field_edit_raw_int_writes_verbatim { # @test
   local edited="$BATS_TEST_TMPDIR/edited.txt"
   cat >"$edited" <<-'EOM'
 	---
-	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:24105/dav/fields/`
-	- _base = @blake2b256-vhzyuu6226xswrdd02dx94mk5qjc297lnmnjxy3rwlk806ds5lesecf3uk
+	% generated: `cg organize 'caldav:http://127.0.0.1:24105/dav/fields/ -> _terminal=no' status=`
+	- _base = @blake2b256-s5wgs35f9pz66jdjc2wu244v8ulwmgmyc2grpg0ut82k4vnwypus28fg5x
 	- _anchor = caldav:http://127.0.0.1:24105/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -453,8 +453,8 @@ EOF
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:24105/dav/fields/`
-	- _base = @blake2b256-mf7y92eqpeaxk0alkzhug2fn09w6pkefg752sl4jqcayjgd98umq4fe6uq
+	% generated: `cg organize 'caldav:http://127.0.0.1:24105/dav/fields/ -> _terminal=no' status=`
+	- _base = @blake2b256-cqrtpvc5seqlch2l2k58ytmp3evl9x7sgyg54y2zhmp6yug6g0lqfl60ld
 	- _anchor = caldav:http://127.0.0.1:24105/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1

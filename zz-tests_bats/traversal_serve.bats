@@ -228,8 +228,8 @@ function test_testpeer_organize_write_one_move_round_trips { # @test
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by state= -query "!cgtest-obj-v1 _terminal=no" cgtest://fixture/box`
-	- _base = @blake2b256-kj0x76z3jzj2famvrenzwnqlvtzqy6jhsmd6jwhqgw4y7t6hy07qm9rw5y
+	% generated: `cg organize 'cgtest://fixture/box -> !cgtest-obj-v1 _terminal=no' state=`
+	- _base = @blake2b256-k6z8p9s2shpn8zvn6l30ns0h9xchz5vcyqr2xqvuhzh3phway9usrlgass
 	- _anchor = cgtest://fixture/box/
 	- _query = !cgtest-obj-v1 _terminal=no
 	- _type = !cgtest-obj-v1
@@ -250,8 +250,8 @@ function test_testpeer_organize_write_one_move_round_trips { # @test
   local edited="$BATS_TEST_TMPDIR/edited.txt"
   cat >"$edited" <<-'EOM'
 	---
-	% generated: `cg organize -group-by state= -query "!cgtest-obj-v1 _terminal=no" cgtest://fixture/box`
-	- _base = @blake2b256-kj0x76z3jzj2famvrenzwnqlvtzqy6jhsmd6jwhqgw4y7t6hy07qm9rw5y
+	% generated: `cg organize 'cgtest://fixture/box -> !cgtest-obj-v1 _terminal=no' state=`
+	- _base = @blake2b256-k6z8p9s2shpn8zvn6l30ns0h9xchz5vcyqr2xqvuhzh3phway9usrlgass
 	- _anchor = cgtest://fixture/box/
 	- _query = !cgtest-obj-v1 _terminal=no
 	- _type = !cgtest-obj-v1
@@ -290,8 +290,8 @@ EOF
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by state= -query "!cgtest-obj-v1 _terminal=no" cgtest://fixture/box`
-	- _base = @blake2b256-f632jpwqelncf6znzkfj9mqh9qvyvpma7z6jlykrwev0s7xd9g4qg9dh24
+	% generated: `cg organize 'cgtest://fixture/box -> !cgtest-obj-v1 _terminal=no' state=`
+	- _base = @blake2b256-mtqqn78khgu4gzg49ku3wqy7wlwvs0g9uhlpva85gn7teqmc5a9sj042ek
 	- _anchor = cgtest://fixture/box/
 	- _query = !cgtest-obj-v1 _terminal=no
 	- _type = !cgtest-obj-v1
@@ -317,8 +317,8 @@ function test_testpeer_organize_write_many_replaces_membership { # @test
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by tag= -query "!cgtest-obj-v1 _terminal=no" cgtest://fixture/box`
-	- _base = @blake2b256-987zr4rgqrpsuwx9gag2p0surzmv7jeydym3u3k332culm72wussf5fwn2
+	% generated: `cg organize 'cgtest://fixture/box -> !cgtest-obj-v1 _terminal=no' tag=`
+	- _base = @blake2b256-xv5vlsczmcz3vnpl2vr7y8v852m2nn7xqzskx5x2vvdq753s68rsr8vhe3
 	- _anchor = cgtest://fixture/box/
 	- _query = !cgtest-obj-v1 _terminal=no
 	- _type = !cgtest-obj-v1
@@ -342,8 +342,8 @@ function test_testpeer_organize_write_many_replaces_membership { # @test
   local edited="$BATS_TEST_TMPDIR/edited.txt"
   cat >"$edited" <<-'EOM'
 	---
-	% generated: `cg organize -group-by tag= -query "!cgtest-obj-v1 _terminal=no" cgtest://fixture/box`
-	- _base = @blake2b256-987zr4rgqrpsuwx9gag2p0surzmv7jeydym3u3k332culm72wussf5fwn2
+	% generated: `cg organize 'cgtest://fixture/box -> !cgtest-obj-v1 _terminal=no' tag=`
+	- _base = @blake2b256-xv5vlsczmcz3vnpl2vr7y8v852m2nn7xqzskx5x2vvdq753s68rsr8vhe3
 	- _anchor = cgtest://fixture/box/
 	- _query = !cgtest-obj-v1 _terminal=no
 	- _type = !cgtest-obj-v1
@@ -386,8 +386,8 @@ EOF
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by tag= -query "!cgtest-obj-v1 _terminal=no" cgtest://fixture/box`
-	- _base = @blake2b256-wy2mwmlqj46m2af3dhfv394f9v0yg970cnv9n9udvp4tv3vnnwuq6mmc9a
+	% generated: `cg organize 'cgtest://fixture/box -> !cgtest-obj-v1 _terminal=no' tag=`
+	- _base = @blake2b256-26s6dxhthgj5aa2aushseuv47ywump22r2achkcugsqltvy4q4pqvz9ea9
 	- _anchor = cgtest://fixture/box/
 	- _query = !cgtest-obj-v1 _terminal=no
 	- _type = !cgtest-obj-v1
@@ -454,8 +454,8 @@ function test_testpeer_tracker_clearable_move_clears_milestone { # @test
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by milestone= -query "!cgtest-ticket-v1 _terminal=no" cgtest://fixture/tracker`
-	- _base = @blake2b256-h9648ghhw52dl394umam7puynajvan7s3k3qdx3g87c054e4ysxsqj5wzd
+	% generated: `cg organize 'cgtest://fixture/tracker -> !cgtest-ticket-v1 _terminal=no' milestone=`
+	- _base = @blake2b256-58nu7guw9kt8xvu52zv5kakmqjvzd36vpght2m727jq4xj27upasgcrkua
 	- _anchor = cgtest://fixture/tracker/
 	- _query = !cgtest-ticket-v1 _terminal=no
 	- _type = !cgtest-ticket-v1
@@ -478,8 +478,8 @@ function test_testpeer_tracker_clearable_move_clears_milestone { # @test
   local edited="$BATS_TEST_TMPDIR/edited.txt"
   cat >"$edited" <<-'EOM'
 	---
-	% generated: `cg organize -group-by milestone= -query "!cgtest-ticket-v1 _terminal=no" cgtest://fixture/tracker`
-	- _base = @blake2b256-h9648ghhw52dl394umam7puynajvan7s3k3qdx3g87c054e4ysxsqj5wzd
+	% generated: `cg organize 'cgtest://fixture/tracker -> !cgtest-ticket-v1 _terminal=no' milestone=`
+	- _base = @blake2b256-58nu7guw9kt8xvu52zv5kakmqjvzd36vpght2m727jq4xj27upasgcrkua
 	- _anchor = cgtest://fixture/tracker/
 	- _query = !cgtest-ticket-v1 _terminal=no
 	- _type = !cgtest-ticket-v1
@@ -516,8 +516,8 @@ EOF
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by milestone= -query "!cgtest-ticket-v1 _terminal=no" cgtest://fixture/tracker`
-	- _base = @blake2b256-4237z7z72gtfpqz76ke8l2qxw46w9fwvl3v9685y5xxzchw8j3tqq6w7f6
+	% generated: `cg organize 'cgtest://fixture/tracker -> !cgtest-ticket-v1 _terminal=no' milestone=`
+	- _base = @blake2b256-cvu08dw9khvm39cech0gyhpwfdem53mej5ksjtpn97jgrwkvqwdq8xwm80
 	- _anchor = cgtest://fixture/tracker/
 	- _query = !cgtest-ticket-v1 _terminal=no
 	- _type = !cgtest-ticket-v1
@@ -557,8 +557,8 @@ function test_testpeer_tracker_zero_count_milestone_is_a_target { # @test
   local edited="$BATS_TEST_TMPDIR/edited.txt"
   cat >"$edited" <<-'EOM'
 	---
-	% generated: `cg organize -group-by milestone= -query "!cgtest-ticket-v1 _terminal=no" cgtest://fixture/tracker`
-	- _base = @blake2b256-h9648ghhw52dl394umam7puynajvan7s3k3qdx3g87c054e4ysxsqj5wzd
+	% generated: `cg organize 'cgtest://fixture/tracker -> !cgtest-ticket-v1 _terminal=no' milestone=`
+	- _base = @blake2b256-58nu7guw9kt8xvu52zv5kakmqjvzd36vpght2m727jq4xj27upasgcrkua
 	- _anchor = cgtest://fixture/tracker/
 	- _query = !cgtest-ticket-v1 _terminal=no
 	- _type = !cgtest-ticket-v1
@@ -596,8 +596,8 @@ EOF
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by milestone= -query "!cgtest-ticket-v1 _terminal=no" cgtest://fixture/tracker`
-	- _base = @blake2b256-atgtecaxg96xyn4qa9lqjj8kpujj7auc30rpel2pyysucc8xmjgqepy847
+	% generated: `cg organize 'cgtest://fixture/tracker -> !cgtest-ticket-v1 _terminal=no' milestone=`
+	- _base = @blake2b256-r2xkuuxeqynpa3r70tf2ua4p57wdz76nj8j8hkqwf0s5cn2gs03q7rwt70
 	- _anchor = cgtest://fixture/tracker/
 	- _query = !cgtest-ticket-v1 _terminal=no
 	- _type = !cgtest-ticket-v1
@@ -630,8 +630,8 @@ function test_testpeer_tracker_non_clearable_move_is_refused { # @test
   local edited="$BATS_TEST_TMPDIR/edited.txt"
   cat >"$edited" <<-'EOM'
 	---
-	% generated: `cg organize -group-by state= -query "!cgtest-ticket-v1" cgtest://fixture/tracker`
-	- _base = @blake2b256-6glrdvkxt352fweyrtsxmc4gqkaqwju4g402g9gcqget3wym8ves573jxm
+	% generated: `cg organize 'cgtest://fixture/tracker -> !cgtest-ticket-v1' state=`
+	- _base = @blake2b256-wn2xrnakd5wsn466kjvx8prxr9le3y8rvwhdwj64gcwdplk284csr8gr4s
 	- _anchor = cgtest://fixture/tracker/
 	- _query = !cgtest-ticket-v1
 	- _type = !cgtest-ticket-v1
@@ -651,8 +651,8 @@ function test_testpeer_tracker_non_clearable_move_is_refused { # @test
 	EOM
 
   # Generate first so the pinned base blob exists in the store.
-  run_cg_stdout organize -include-terminal -group-by state= \
-    -query '!cgtest-ticket-v1' cgtest://fixture/tracker
+  run_cg_stdout organize -include-terminal \
+    'cgtest://fixture/tracker -> !cgtest-ticket-v1' state=
   assert_success
 
   run_cg_stdout organize -apply "$edited" -commit
@@ -679,8 +679,8 @@ function test_testpeer_tracker_terminal_values_hide_closed_by_default { # @test
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by state= -query "!cgtest-ticket-v1 _terminal=no" cgtest://fixture/tracker`
-	- _base = @blake2b256-m599s6ugwj6l2g3m42tmx53t5cp6wgk6w5y58cpac0j9s05gf3lq82p3nl
+	% generated: `cg organize 'cgtest://fixture/tracker -> !cgtest-ticket-v1 _terminal=no' state=`
+	- _base = @blake2b256-j8e4jz6g92zv5vlwy0wwn5t6cst02rgmgfzc962dgled6w03409qtuzwq3
 	- _anchor = cgtest://fixture/tracker/
 	- _query = !cgtest-ticket-v1 _terminal=no
 	- _type = !cgtest-ticket-v1
@@ -697,13 +697,13 @@ function test_testpeer_tracker_terminal_values_hide_closed_by_default { # @test
 	## =closed
 	EOM
 
-  run_cg_stdout organize -include-terminal -group-by state= \
-    -query '!cgtest-ticket-v1' cgtest://fixture/tracker
+  run_cg_stdout organize -include-terminal \
+    'cgtest://fixture/tracker -> !cgtest-ticket-v1' state=
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by state= -query "!cgtest-ticket-v1" cgtest://fixture/tracker`
-	- _base = @blake2b256-6glrdvkxt352fweyrtsxmc4gqkaqwju4g402g9gcqget3wym8ves573jxm
+	% generated: `cg organize 'cgtest://fixture/tracker -> !cgtest-ticket-v1' state=`
+	- _base = @blake2b256-wn2xrnakd5wsn466kjvx8prxr9le3y8rvwhdwj64gcwdplk284csr8gr4s
 	- _anchor = cgtest://fixture/tracker/
 	- _query = !cgtest-ticket-v1
 	- _type = !cgtest-ticket-v1
@@ -748,8 +748,8 @@ EOF
   local edited="$BATS_TEST_TMPDIR/edited.txt"
   cat >"$edited" <<-'EOM'
 	---
-	% generated: `cg organize -group-by milestone= -query "!cgtest-ticket-v1 _terminal=no" cgtest://fixture/tracker`
-	- _base = @blake2b256-h9648ghhw52dl394umam7puynajvan7s3k3qdx3g87c054e4ysxsqj5wzd
+	% generated: `cg organize 'cgtest://fixture/tracker -> !cgtest-ticket-v1 _terminal=no' milestone=`
+	- _base = @blake2b256-58nu7guw9kt8xvu52zv5kakmqjvzd36vpght2m727jq4xj27upasgcrkua
 	- _anchor = cgtest://fixture/tracker/
 	- _query = !cgtest-ticket-v1 _terminal=no
 	- _type = !cgtest-ticket-v1
@@ -787,8 +787,8 @@ EOF
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by milestone= -query "!cgtest-ticket-v1 _terminal=no" cgtest://fixture/tracker`
-	- _base = @blake2b256-7nagwc7nn4gr9e3033nhtdqwz2yxc62wgz42jfnktdc9qmvvk93svt8xk3
+	% generated: `cg organize 'cgtest://fixture/tracker -> !cgtest-ticket-v1 _terminal=no' milestone=`
+	- _base = @blake2b256-rdsgwhp3shsytv8eeszatlp0mruwlgy28e7u7h4x26mfez8s6dssy500ad
 	- _anchor = cgtest://fixture/tracker/
 	- _query = !cgtest-ticket-v1 _terminal=no
 	- _type = !cgtest-ticket-v1
@@ -823,8 +823,8 @@ function test_testpeer_tracker_tag_groupings { # @test
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by area -query "!cgtest-ticket-v1 _terminal=no" cgtest://fixture/tracker`
-	- _base = @blake2b256-zksa9xxjugtcepw49a38r6czygc3h3ylkul20ulvfr4anpawa26qljpxjk
+	% generated: `cg organize 'cgtest://fixture/tracker -> !cgtest-ticket-v1 _terminal=no' area`
+	- _base = @blake2b256-elvade2h0p0sfs0jnmtekqc3pdckjc644zlm4l06lqck2yhdeegq7m3nkl
 	- _anchor = cgtest://fixture/tracker/
 	- _query = !cgtest-ticket-v1 _terminal=no
 	- _type = !cgtest-ticket-v1
@@ -845,8 +845,8 @@ function test_testpeer_tracker_tag_groupings { # @test
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by (tags) -query "!cgtest-ticket-v1 _terminal=no" cgtest://fixture/tracker`
-	- _base = @blake2b256-237nc70c76ypy0vur4fh7crg22t7ssz3rk4mt3t6w6cgryhggvkszkzcvz
+	% generated: `cg organize 'cgtest://fixture/tracker -> !cgtest-ticket-v1 _terminal=no' '(tags)'`
+	- _base = @blake2b256-d358lncx5dtw56hgeeek4tgh2ms8d5d2zz0j3pvzalue25hzjxrse3f6df
 	- _anchor = cgtest://fixture/tracker/
 	- _query = !cgtest-ticket-v1 _terminal=no
 	- _type = !cgtest-ticket-v1
@@ -870,8 +870,8 @@ function test_testpeer_tracker_tag_groupings { # @test
   local edited="$BATS_TEST_TMPDIR/edited.txt"
   cat >"$edited" <<-'EOM'
 	---
-	% generated: `cg organize -group-by (tags) -query "!cgtest-ticket-v1 _terminal=no" cgtest://fixture/tracker`
-	- _base = @blake2b256-237nc70c76ypy0vur4fh7crg22t7ssz3rk4mt3t6w6cgryhggvkszkzcvz
+	% generated: `cg organize 'cgtest://fixture/tracker -> !cgtest-ticket-v1 _terminal=no' '(tags)'`
+	- _base = @blake2b256-d358lncx5dtw56hgeeek4tgh2ms8d5d2zz0j3pvzalue25hzjxrse3f6df
 	- _anchor = cgtest://fixture/tracker/
 	- _query = !cgtest-ticket-v1 _terminal=no
 	- _type = !cgtest-ticket-v1
@@ -922,13 +922,13 @@ EOF
 function test_testpeer_tracker_inline_atom_and_trailer_edits { # @test
   configure_testpeer_wire_plugin
 
-  run_cg_stdout organize -include-terminal -group-by state= \
-    -query '!cgtest-ticket-v1' cgtest://fixture/tracker
+  run_cg_stdout organize -include-terminal \
+    'cgtest://fixture/tracker -> !cgtest-ticket-v1' state=
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by state= -query "!cgtest-ticket-v1" cgtest://fixture/tracker`
-	- _base = @blake2b256-6glrdvkxt352fweyrtsxmc4gqkaqwju4g402g9gcqget3wym8ves573jxm
+	% generated: `cg organize 'cgtest://fixture/tracker -> !cgtest-ticket-v1' state=`
+	- _base = @blake2b256-wn2xrnakd5wsn466kjvx8prxr9le3y8rvwhdwj64gcwdplk284csr8gr4s
 	- _anchor = cgtest://fixture/tracker/
 	- _query = !cgtest-ticket-v1
 	- _type = !cgtest-ticket-v1
@@ -950,8 +950,8 @@ function test_testpeer_tracker_inline_atom_and_trailer_edits { # @test
   local edited="$BATS_TEST_TMPDIR/edited.txt"
   cat >"$edited" <<-'EOM'
 	---
-	% generated: `cg organize -group-by state= -query "!cgtest-ticket-v1" cgtest://fixture/tracker`
-	- _base = @blake2b256-6glrdvkxt352fweyrtsxmc4gqkaqwju4g402g9gcqget3wym8ves573jxm
+	% generated: `cg organize 'cgtest://fixture/tracker -> !cgtest-ticket-v1' state=`
+	- _base = @blake2b256-wn2xrnakd5wsn466kjvx8prxr9le3y8rvwhdwj64gcwdplk284csr8gr4s
 	- _anchor = cgtest://fixture/tracker/
 	- _query = !cgtest-ticket-v1
 	- _type = !cgtest-ticket-v1
@@ -986,13 +986,13 @@ EOF
   assert_success
   assert_output '{"uri":"cgtest://fixture/tracker/1","name":"Fix the parser","type":"cgtest-ticket-v1","tags":["area-organize","bug"]}'
 
-  run_cg_stdout organize -include-terminal -group-by state= \
-    -query '!cgtest-ticket-v1' cgtest://fixture/tracker
+  run_cg_stdout organize -include-terminal \
+    'cgtest://fixture/tracker -> !cgtest-ticket-v1' state=
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by state= -query "!cgtest-ticket-v1" cgtest://fixture/tracker`
-	- _base = @blake2b256-2g54qg84vehw95gh8lr9mt4f7dsr67n3ccnafy02k45plnw4vlesh933ty
+	% generated: `cg organize 'cgtest://fixture/tracker -> !cgtest-ticket-v1' state=`
+	- _base = @blake2b256-my50fqra6p976jlr95wx5ccewmhtcqhg68sgealqkh72fsryj9xq2teqjy
 	- _anchor = cgtest://fixture/tracker/
 	- _query = !cgtest-ticket-v1
 	- _type = !cgtest-ticket-v1
@@ -1058,8 +1058,8 @@ function test_testpeer_tracker_creates_a_ticket { # @test
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by milestone= -query "!cgtest-ticket-v1 _terminal=no" cgtest://fixture/tracker`
-	- _base = @blake2b256-h9648ghhw52dl394umam7puynajvan7s3k3qdx3g87c054e4ysxsqj5wzd
+	% generated: `cg organize 'cgtest://fixture/tracker -> !cgtest-ticket-v1 _terminal=no' milestone=`
+	- _base = @blake2b256-58nu7guw9kt8xvu52zv5kakmqjvzd36vpght2m727jq4xj27upasgcrkua
 	- _anchor = cgtest://fixture/tracker/
 	- _query = !cgtest-ticket-v1 _terminal=no
 	- _type = !cgtest-ticket-v1
@@ -1082,8 +1082,8 @@ function test_testpeer_tracker_creates_a_ticket { # @test
   local edited="$BATS_TEST_TMPDIR/edited.txt"
   cat >"$edited" <<-'EOM'
 	---
-	% generated: `cg organize -group-by milestone= -query "!cgtest-ticket-v1 _terminal=no" cgtest://fixture/tracker`
-	- _base = @blake2b256-h9648ghhw52dl394umam7puynajvan7s3k3qdx3g87c054e4ysxsqj5wzd
+	% generated: `cg organize 'cgtest://fixture/tracker -> !cgtest-ticket-v1 _terminal=no' milestone=`
+	- _base = @blake2b256-58nu7guw9kt8xvu52zv5kakmqjvzd36vpght2m727jq4xj27upasgcrkua
 	- _anchor = cgtest://fixture/tracker/
 	- _query = !cgtest-ticket-v1 _terminal=no
 	- _type = !cgtest-ticket-v1
@@ -1125,8 +1125,8 @@ EOF
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by milestone= -query "!cgtest-ticket-v1 _terminal=no" cgtest://fixture/tracker`
-	- _base = @blake2b256-ec2dl2ld280wfm7hqs6vxh3hmek222u6f5r06ztt7vtd76salphqyajhpp
+	% generated: `cg organize 'cgtest://fixture/tracker -> !cgtest-ticket-v1 _terminal=no' milestone=`
+	- _base = @blake2b256-09kp0e3mkscvp2hlejjqyt0c2n4upcv3yl3z4mxqtn4kpxg0n7kq23hry4
 	- _anchor = cgtest://fixture/tracker/
 	- _query = !cgtest-ticket-v1 _terminal=no
 	- _type = !cgtest-ticket-v1

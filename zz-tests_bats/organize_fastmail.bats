@@ -45,8 +45,8 @@ generate_inbox() {
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by _inbox fastmail://test/Inbox/`
-	- _base = @blake2b256-5j54at3zuxa692qvl7aarpth3zvj50yvcrf42xthexsxwwjr6rgsmtsq3r
+	% generated: `cg organize fastmail://test/Inbox/ _inbox`
+	- _base = @blake2b256-2292782sw2stf6zujtnguykqrj9lu0aw8xp2kzmvc4aj2d59jeyqecgyrt
 	- _anchor = fastmail://test/Inbox/
 	- _type = !cutting_garden-fastmail-thread-v1
 	- _group-by = _inbox
@@ -69,8 +69,8 @@ edited_inbox() {
   local edited="$BATS_TEST_TMPDIR/edited.txt"
   cat >"$edited" <<-'EOM'
 	---
-	% generated: `cg organize -group-by _inbox fastmail://test/Inbox/`
-	- _base = @blake2b256-5j54at3zuxa692qvl7aarpth3zvj50yvcrf42xthexsxwwjr6rgsmtsq3r
+	% generated: `cg organize fastmail://test/Inbox/ _inbox`
+	- _base = @blake2b256-2292782sw2stf6zujtnguykqrj9lu0aw8xp2kzmvc4aj2d59jeyqecgyrt
 	- _anchor = fastmail://test/Inbox/
 	- _type = !cutting_garden-fastmail-thread-v1
 	- _group-by = _inbox
@@ -144,8 +144,8 @@ function organize_fastmail_inbox_ungrouped_render { # @test
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by has_attachment= fastmail://test/Inbox/`
-	- _base = @blake2b256-wq3t4k596lfsdchex9glgwuvwk88snq9wz3wjuqn6kfamudk44ks8rzh86
+	% generated: `cg organize fastmail://test/Inbox/ has_attachment=`
+	- _base = @blake2b256-dj002eqmuzxa0ppu9l7sk0mup5sssm7vdel0wjgn0cls8fytucuqafyr5u
 	- _anchor = fastmail://test/Inbox/
 	- _type = !cutting_garden-fastmail-thread-v1
 	! organize-base-v1
@@ -215,8 +215,8 @@ EOF
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by _inbox fastmail://test/Inbox/`
-	- _base = @blake2b256-c7h3shs0jqfmdlgmlzz979pmes66rxuntfm2fsp9xdrn5vs6395sh07prk
+	% generated: `cg organize fastmail://test/Inbox/ _inbox`
+	- _base = @blake2b256-2w36y8k53jjgfv95nlkkapscknekk4505krvrl6gcqjm0anc8fkssw20c4
 	- _anchor = fastmail://test/Inbox/
 	- _type = !cutting_garden-fastmail-thread-v1
 	- _group-by = _inbox
@@ -270,8 +270,8 @@ EOF
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by _inbox fastmail://test/Inbox/`
-	- _base = @blake2b256-sq7q4ks7hmpjm6p4axcg4yvt5mvvw6m754xwmcs37us75a8q6t6qev6u6w
+	% generated: `cg organize fastmail://test/Inbox/ _inbox`
+	- _base = @blake2b256-d2k5ylqmjhqeq8xyuatac9u5e9tnv3h32ezm7kgcsxrdh6vaeh6spew72z
 	- _anchor = fastmail://test/Inbox/
 	- _type = !cutting_garden-fastmail-thread-v1
 	- _group-by = _inbox
@@ -341,8 +341,8 @@ EOF
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by _inbox fastmail://test/Inbox/`
-	- _base = @blake2b256-0836w05zfjp97sszyu06wzardnfnkdc0v833q9frd73rap3rvxeqpyluwh
+	% generated: `cg organize fastmail://test/Inbox/ _inbox`
+	- _base = @blake2b256-rwklsawjlzng4xqwlpepet50uys08fev2a6mg3dqf0ntq703nxzsjxt3wx
 	- _anchor = fastmail://test/Inbox/
 	- _type = !cutting_garden-fastmail-thread-v1
 	- _group-by = _inbox
@@ -400,8 +400,8 @@ EOF
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by _inbox fastmail://test/Inbox/`
-	- _base = @blake2b256-5kejh0cvvtv2m2pj29nv88w3q68hnz4frhz8j6f56cl9dw590dmsxp3edp
+	% generated: `cg organize fastmail://test/Inbox/ _inbox`
+	- _base = @blake2b256-g26v9fjaw0gt4jsn75dsuug2ahzweljfxysy9ne47ft4j9lk9heqffn5c7
 	- _anchor = fastmail://test/Inbox/
 	- _type = !cutting_garden-fastmail-thread-v1
 	- _group-by = _inbox
@@ -461,8 +461,8 @@ EOF
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by _inbox fastmail://test/Inbox/`
-	- _base = @blake2b256-ramncahpzrmznen678rl4ssz3p29qvwfxkhwt4e0vjvhck8fj9uq5k2s7t
+	% generated: `cg organize fastmail://test/Inbox/ _inbox`
+	- _base = @blake2b256-76l2uq54xrgztcske3jxztvs2ehnj7rgsajvktcefzp749tqmusq7hn6lx
 	- _anchor = fastmail://test/Inbox/
 	- _type = !cutting_garden-fastmail-thread-v1
 	- _group-by = _inbox
@@ -571,8 +571,8 @@ EOF
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by _inbox fastmail://test/Inbox/`
-	- _base = @blake2b256-gz8ymssvgh72e8j77zj7yfp6dfaj2c3wxvvnt02gcd76t9dkchpqmmyaku
+	% generated: `cg organize fastmail://test/Inbox/ _inbox`
+	- _base = @blake2b256-ey8lxswh530xcalt7fn0vnvejpfwz2xzd4d03ke6xkjpszuq5h9s5wzpaw
 	- _anchor = fastmail://test/Inbox/
 	- _type = !cutting_garden-fastmail-thread-v1
 	- _group-by = _inbox
@@ -647,8 +647,8 @@ function organize_fastmail_group_by_date_month { # @test
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by date=(month) fastmail://test/Inbox/`
-	- _base = @blake2b256-mc35yz5yvrtdltm4l69qj7dw7d9ku4mxk2x4hussmw4lzc83zcnqyujs02
+	% generated: `cg organize fastmail://test/Inbox/ 'date=(month)'`
+	- _base = @blake2b256-z5npjdt63rqsqnc6dmgpryv8elpjul6n6p9yj7mf262qkee2lzeqt9sn4s
 	- _anchor = fastmail://test/Inbox/
 	- _type = !cutting_garden-fastmail-thread-v1
 	! organize-base-v1

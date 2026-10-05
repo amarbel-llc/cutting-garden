@@ -2,7 +2,7 @@
 (tags) grouping: buckets at `#`, a quoted tag heading (organize_literal.bats generate_grouped)
 ========================================
 ---
-% generated: `cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:24107/dav/lit/`
+% generated: `cg organize 'caldav:http://127.0.0.1:24107/dav/lit/ -> _terminal=no' '(tags)'`
 - _base = @blake2b256-tmm4308jsj6er2962f645yzpgvhtkc4qfxcqggagks63c2gct0usa7jefr
 - _anchor = caldav:http://127.0.0.1:24107/dav/lit/
 - _query = _terminal=no
@@ -83,7 +83,7 @@
 namespace grouping: `- _group-by = project`, `# project` root + nested `## -client` buckets (organize_ns.bats generate_grouped)
 ========================================
 ---
-% generated: `cg organize -group-by project -query "_terminal=no" caldav:http://127.0.0.1:24103/dav/ns/`
+% generated: `cg organize 'caldav:http://127.0.0.1:24103/dav/ns/ -> _terminal=no' project`
 - _base = @blake2b256-estwgmflazsefw07z9zp262s6ahrp58kmcghq88ej4n3ved8efds4rx9vg
 - _anchor = caldav:http://127.0.0.1:24103/dav/ns/
 - _query = _terminal=no
@@ -174,7 +174,7 @@ namespace grouping: `- _group-by = project`, `# project` root + nested `## -clie
 field grouping: `# status=` dimension heading, `## =value` buckets (organize_groupby.bats organize_groupby_field)
 ========================================
 ---
-% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:24108/dav/fields/`
+% generated: `cg organize 'caldav:http://127.0.0.1:24108/dav/fields/ -> _terminal=no' status=`
 - _base = @blake2b256-z0rzmgdglx3g4r4fhgy40fyf5y6ptj5tvm7zqenhyl75lcrlp7wqh3w96k
 - _anchor = caldav:http://127.0.0.1:24108/dav/fields/
 - _query = _terminal=no
@@ -294,7 +294,7 @@ field grouping: `# status=` dimension heading, `## =value` buckets (organize_gro
 date field at a granularity: `# date_due=(month)` qualifier (organize_groupby.bats organize_groupby_date_granularity)
 ========================================
 ---
-% generated: `cg organize -group-by date_due=(month) -query "_terminal=no" caldav:http://127.0.0.1:24108/dav/sched/`
+% generated: `cg organize 'caldav:http://127.0.0.1:24108/dav/sched/ -> _terminal=no' 'date_due=(month)'`
 - _base = @blake2b256-2negckx3etgmu87w35wjfl0gpyp3yte0d4ukrqeff8kmys6878uqyyll3g
 - _anchor = caldav:http://127.0.0.1:24108/dav/sched/
 - _query = _terminal=no
@@ -411,7 +411,7 @@ box tag atoms: bare (`work-x status`) and quoted (`"_ inbox"`) tags after the id
 empty headings are resets: `##` pops to the parent, `#` to ungrouped (organize_headings.bats organize_headings_reset_pops_to_parent_and_ungrouped)
 ========================================
 ---
-% generated: `cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:24109/dav/fields/`
+% generated: `cg organize 'caldav:http://127.0.0.1:24109/dav/fields/ -> _terminal=no' '(tags)'`
 - _base = @blake2b256-usdexhm8tx5w6neeyxr4pvza4vy6ad2pshr44yvl6e27uw83fzmqz2fu5e
 - _anchor = caldav:http://127.0.0.1:24109/dav/fields/
 - _query = _terminal=no
@@ -816,7 +816,7 @@ type heading (spelling 1) and a typed, blob-bearing box (legacy ladder, kept par
 `- _tag-atoms = trailing` envelope lever: quoted tag atoms, a trailing tag after a `k=v` atom (organize_tagatoms.bats organize_tagatoms_trailing_config)
 ========================================
 ---
-% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:24110/dav/lit/`
+% generated: `cg organize 'caldav:http://127.0.0.1:24110/dav/lit/ -> _terminal=no' status=`
 - _base = @blake2b256-2c5gk9a26pys4eaya87nf5hwm2psauk56cj8esgguwsuufm352qqhyj8wk
 - _anchor = caldav:http://127.0.0.1:24110/dav/lit/
 - _query = _terminal=no
@@ -919,7 +919,7 @@ type heading (spelling 1) and a typed, blob-bearing box (legacy ladder, kept par
 `- _tag-strip = none` envelope lever: placement (Via) tags kept in every box (organize_tagatoms.bats organize_tagatoms_strip_none)
 ========================================
 ---
-% generated: `cg organize -group-by project -query "_terminal=no" caldav:http://127.0.0.1:24110/dav/ns/`
+% generated: `cg organize 'caldav:http://127.0.0.1:24110/dav/ns/ -> _terminal=no' project`
 - _base = @blake2b256-p3cvknryzz6ezypupjrqand0lpj555kt02n833dcnw3gux5048qs7kttvr
 - _anchor = caldav:http://127.0.0.1:24110/dav/ns/
 - _query = _terminal=no

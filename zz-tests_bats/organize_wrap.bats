@@ -42,15 +42,15 @@ teardown() {
 
 # The generated document's `_base` digest, and the digest after the wrapped
 # edit's commit.
-BASE_GENERATED=blake2b256-k6nx7r8praydrppwk3z5mlxn59q82lx54mmca3rsarss6jnmg8vss5lzfp
-BASE_WRAPPED_EDITED=blake2b256-e24hhmuvf8l6md5yfmd8t76u7segne4j3getvuuskc769hnf03xqqgdfdp
+BASE_GENERATED=blake2b256-r4ds7r4awz7e2s5cqqwfmtxxez4xg8c3xp9dm95ffxlyhzurfjasv2szld
+BASE_WRAPPED_EDITED=blake2b256-3hs268jmfwuc68u37sgstx0uqr0aslj8794dq4xva6705k8uytzs9l0w49
 
 # wrap_doc prints a whole `-group-by (tags)` document pinned at `_base` $1, the
 # body read from stdin.
 wrap_doc() {
   cat <<-EOM
 	---
-	% generated: \`cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:24115/dav/lit/\`
+	% generated: \`cg organize 'caldav:http://127.0.0.1:24115/dav/lit/ -> _terminal=no' '(tags)'\`
 	- _base = @$1
 	- _anchor = caldav:http://127.0.0.1:24115/dav/lit/
 	- _query = _terminal=no

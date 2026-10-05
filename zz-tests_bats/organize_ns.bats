@@ -72,8 +72,8 @@ generate_grouped() {
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by project -query "_terminal=no" caldav:http://127.0.0.1:24103/dav/ns/`
-	- _base = @blake2b256-estwgmflazsefw07z9zp262s6ahrp58kmcghq88ej4n3ved8efds4rx9vg
+	% generated: `cg organize 'caldav:http://127.0.0.1:24103/dav/ns/ -> _terminal=no' project`
+	- _base = @blake2b256-p7h5zkwc6tyzlza98h7475qkx84nhnp6sm7lhf5sfu4q2jaapjqssarnnd
 	- _anchor = caldav:http://127.0.0.1:24103/dav/ns/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -121,8 +121,8 @@ function organize_ns_rollup_move_writes_reconstructed_tag { # @test
   local edited="$BATS_TEST_TMPDIR/edited.txt"
   cat >"$edited" <<-'EOM'
 	---
-	% generated: `cg organize -group-by project -query "_terminal=no" caldav:http://127.0.0.1:24103/dav/ns/`
-	- _base = @blake2b256-estwgmflazsefw07z9zp262s6ahrp58kmcghq88ej4n3ved8efds4rx9vg
+	% generated: `cg organize 'caldav:http://127.0.0.1:24103/dav/ns/ -> _terminal=no' project`
+	- _base = @blake2b256-p7h5zkwc6tyzlza98h7475qkx84nhnp6sm7lhf5sfu4q2jaapjqssarnnd
 	- _anchor = caldav:http://127.0.0.1:24103/dav/ns/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -167,8 +167,8 @@ EOF
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by project -query "_terminal=no" caldav:http://127.0.0.1:24103/dav/ns/`
-	- _base = @blake2b256-w057dr4puzyd9ex6cas6dux7zl07n3xjc7mz69ptarcye3sapvcqj3mmdd
+	% generated: `cg organize 'caldav:http://127.0.0.1:24103/dav/ns/ -> _terminal=no' project`
+	- _base = @blake2b256-j299g407nd3l96kn57j4ulpq5g346lx2t0r0cmj9zz3kq974peqqsl4dmk
 	- _anchor = caldav:http://127.0.0.1:24103/dav/ns/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -207,8 +207,8 @@ function organize_ns_direct_root_placement_writes_bare_tag { # @test
   local edited="$BATS_TEST_TMPDIR/edited.txt"
   cat >"$edited" <<-'EOM'
 	---
-	% generated: `cg organize -group-by project -query "_terminal=no" caldav:http://127.0.0.1:24103/dav/ns/`
-	- _base = @blake2b256-estwgmflazsefw07z9zp262s6ahrp58kmcghq88ej4n3ved8efds4rx9vg
+	% generated: `cg organize 'caldav:http://127.0.0.1:24103/dav/ns/ -> _terminal=no' project`
+	- _base = @blake2b256-p7h5zkwc6tyzlza98h7475qkx84nhnp6sm7lhf5sfu4q2jaapjqssarnnd
 	- _anchor = caldav:http://127.0.0.1:24103/dav/ns/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -250,8 +250,8 @@ EOF
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by project -query "_terminal=no" caldav:http://127.0.0.1:24103/dav/ns/`
-	- _base = @blake2b256-gg0xkldrf7sdaduym8cty044t6tpj4h9hhz89q4uma4th07yjmmqtjnutu
+	% generated: `cg organize 'caldav:http://127.0.0.1:24103/dav/ns/ -> _terminal=no' project`
+	- _base = @blake2b256-dnx7aw2v2f7x086rz58znmetu64nkpwkmct3hh4wa3g4c7q4hstszvslun
 	- _anchor = caldav:http://127.0.0.1:24103/dav/ns/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
