@@ -24,7 +24,8 @@
 # recognizes a repeated key (a 412 on `<key>.ics` whose UID is the key).
 #
 # Whole-document vectors (G16): pinned port + serialized tests, see
-# lib/caldav.bash. Regenerate with `just debug-organize-create-vectors`.
+# lib/caldav.bash. Regenerate with `just test-bats-update-vectors
+# organize_create.bats`.
 
 setup_file() {
   export BATS_NO_PARALLELIZE_WITHIN_FILE=true
@@ -32,6 +33,7 @@ setup_file() {
 
 setup() {
   load "$(dirname "$BATS_TEST_FILE")/lib/common.bash"
+  load "$(dirname "$BATS_TEST_FILE")/lib/vectors.bash"
   load "$(dirname "$BATS_TEST_FILE")/lib/caldav.bash"
   export output
   export CG_TEST_CALDAV_FIELDS=1
@@ -92,7 +94,7 @@ status_document() {
 assert_status_document_unchanged() {
   run_cg organize -group-by status= "$CAL"
   assert_success
-  assert_output "$(status_document)"
+  assert_vector "$(status_document)"
 }
 
 # A temp id under two TAG headings is ONE object: its tags are both
@@ -103,7 +105,7 @@ assert_status_document_unchanged() {
 function organize_create_merges_tag_appearances { # @test
   run_cg organize -group-by '(tags)' "$CAL"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:43116/dav/fields/`
 	- _base = @blake2b256-f60tptc2u3l6s5k3csuwqpu2xha2pj7ckdt7e5lzl09nsvhyw0ns9p5mff
@@ -166,7 +168,7 @@ function organize_create_merges_tag_appearances { # @test
   run_cg organize -apply "$edited" -commit
   assert_success
   normalize_created
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 organize: 1 change(s):
 
   - [+milk {+groceries+} {+shopping+} status={+in-process+}] {+Buy oat milk+}
@@ -183,7 +185,7 @@ EOF
   run_cg organize -group-by '(tags)' "$CAL"
   assert_success
   normalize_created
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:43116/dav/fields/`
 	- _base = @<digest>
@@ -229,7 +231,7 @@ function organize_create_vtodo_under_status_bucket { # @test
 
   run_cg organize -apply "$edited"
   assert_success
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 organize: 1 change(s):
 
   - [+call priority={+0_must+} status={+in-process+}] {+Call the bank+}
@@ -241,7 +243,7 @@ EOF
   run_cg organize -apply "$edited" -commit
   assert_success
   normalize_created
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 organize: 1 change(s):
 
   - [+call priority={+0_must+} status={+in-process+}] {+Call the bank+}
@@ -255,7 +257,7 @@ EOF
   # document's `_base` and the temp id derive it.
   run_cg organize -apply "$edited" -commit
   assert_success
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 organize: +call already created → cgk1-ddd9cfa02d1d9a8b8b51deb5b55f49ed.ics (skipped)
 organize: no changes to apply
 EOF
@@ -266,7 +268,7 @@ EOF
   run_cg organize -group-by status= "$CAL"
   assert_success
   normalize_created
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:43116/dav/fields/`
 	- _base = @<digest>
@@ -312,7 +314,7 @@ function organize_create_vevent_with_a_date { # @test
   uid="$(sed -n 's/^organize: created +dentist → \(cgk1-[0-9a-f]\{32\}\)\.ics$/\1/p' <<<"$output")"
   [[ -n $uid ]] || fail "no created line for +dentist in: $output"
   normalize_created
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 organize: 1 change(s):
 
   - [+dentist !caldav-object-vevent-v1 date_start={+2026-10-01+}] {+Dentist+}
@@ -340,7 +342,7 @@ function organize_create_refuses_a_missing_required_field { # @test
 
   run_cg organize -apply "$edited" -commit
   assert_failure 64
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 cutting-garden: organize --apply: 1 new object(s) cannot be created:
   +meet (line 5): creating a !caldav-object-vevent-v1 requires date_start
 EOF
@@ -376,7 +378,7 @@ function organize_create_refuses_disagreeing_appearances { # @test
 
   run_cg organize -apply "$edited" -commit
   assert_failure 64
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 cutting-garden: organize --apply: 1 problem(s) with new object(s) (`+` boxes); re-edit the document:
   +x (lines 11, 15): appearances disagree on status: needs-action (line 11, its heading) vs in-process (line 15, its heading)
 EOF
@@ -401,7 +403,7 @@ function organize_create_failure_after_creation_is_reported_and_reapply_is_idemp
   assert_failure 2
   normalize_created
   output="${output//$edited/<edited>}"
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 organize: 2 change(s):
 
   - [+call priority={+0_must+} status={+in-process+}] {+Call the bank+}
@@ -415,7 +417,7 @@ EOF
   run_cg organize -apply "$fixed" -commit
   assert_success
   normalize_created
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 organize: +call already created → <key>.ics (skipped)
 organize: no changes to apply
 EOF
@@ -426,7 +428,7 @@ EOF
   run_cg organize -apply "$fixed" -commit
   assert_success
   normalize_created
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 organize: 1 change(s):
 
   - [+call priority={+0_must+} status={+in-process+}] {+Call the bank+}

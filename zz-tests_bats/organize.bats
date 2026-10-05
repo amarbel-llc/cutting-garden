@@ -22,6 +22,7 @@ setup_file() {
 setup() {
   load "$(dirname "$BATS_TEST_FILE")/lib/common.bash"
   load "$(dirname "$BATS_TEST_FILE")/lib/caldav.bash"
+  load "$(dirname "$BATS_TEST_FILE")/lib/vectors.bash"
   export output
   start_caldav_server 43101
   init_store
@@ -45,7 +46,7 @@ teardown() {
 generate_doc() {
   run_cg organize -group-by status= "$CAL"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:43101/dav/cal/`
 	- _base = @blake2b256-a6cg9xeaq0a4902fwktqpjd9rs2zt5r0mj0w6qcyf7clsj3g8nssnkpaym
@@ -140,7 +141,7 @@ write_task1_cancelled() {
 assert_task1_completed() {
   run_cg organize -group-by status= "$CAL"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:43101/dav/cal/`
 	- _base = @blake2b256-90vj30rjmsvjh2z5aymsgr25e0e679zm760ywskgzjhhcnpeatnqvu4pge
@@ -183,7 +184,7 @@ function organize_apply_status_move_commits { # @test
 
   run_cg organize -apply "$edited" -commit
   assert_success
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 organize: 1 change(s):
 
   - [task1.ics status={+completed+}] Buy milk
@@ -231,7 +232,7 @@ function organize_apply_dry_run_does_not_write { # @test
 
   run_cg organize -apply "$edited"
   assert_success
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 organize: 1 change(s):
 
   - [task1.ics status={+completed+}] Buy milk
@@ -259,7 +260,7 @@ function organize_commit_directly_from_stdin_writes { # @test
 
   run_cg organize -commit-directly <"$edited"
   assert_success
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 organize: 1 change(s):
 
   - [task1.ics status={+completed+}] Buy milk
@@ -297,7 +298,7 @@ function organize_apply_conflict_rejects { # @test
   # The whole rejection: completed windowed task1 OUT of the `_terminal=no`
   # live listing, so the merge sees no live bucket at all (live="") — still a
   # drift from the pinned base, and the exact refused move is named.
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	cutting-garden: organize --apply: 1 conflict(s) — the live state drifted from the pinned base; regenerate and re-edit:
 	  task1.ics: base="" live="" (your edit moved it to "cancelled")
 	EOM

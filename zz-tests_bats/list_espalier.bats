@@ -28,6 +28,7 @@ setup_file() {
 
 setup() {
   load "$(dirname "$BATS_TEST_FILE")/lib/common.bash"
+  load "$(dirname "$BATS_TEST_FILE")/lib/vectors.bash"
   load "$(dirname "$BATS_TEST_FILE")/lib/caldav.bash"
   export output
   export CG_TEST_CALDAV_NS=1
@@ -65,7 +66,7 @@ function list_espalier_matches_organize_object_lines { # @test
 
   # The same output, pinned literally: anchor-relative ids against the listed
   # URI, the tag atom leading (SortKey order), the SUMMARY trailer.
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	- [nsA.ics project-client-acme] Acme retainer
 	- [nsB.ics project-client-baxter] Baxter audit
 	- [nsC.ics project-cutting_garden] CG roadmap
@@ -81,7 +82,7 @@ function list_espalier_matches_organize_object_lines { # @test
 function list_espalier_query_filters_and_renders_boxes { # @test
   run_cg list -format espalier -query 'project' "$CAL"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	- [nsA.ics project-client-acme] Acme retainer
 	- [nsB.ics project-client-baxter] Baxter audit
 	- [nsC.ics project-cutting_garden] CG roadmap
@@ -96,7 +97,7 @@ function list_espalier_query_filters_and_renders_boxes { # @test
 function list_text_mesa_table_carries_tags_column { # @test
   run_cg list "$CAL"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	URI	NAME	TYPE	TAGS
 	caldav:http://127.0.0.1:43112/dav/ns/nsA.ics	nsA.ics	caldav-object-vtodo-v1	project-client-acme
 	caldav:http://127.0.0.1:43112/dav/ns/nsB.ics	nsB.ics	caldav-object-vtodo-v1	project-client-baxter
@@ -133,7 +134,7 @@ function list_espalier_multi_type_inlines_type { # @test
 
   run_cg list -format espalier "file://$tree/"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	- [a.txt !cutting_garden-file-object-v1] a.txt
 	- [sub !cutting_garden-file-directory-v1] sub
 	EOM

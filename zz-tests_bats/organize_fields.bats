@@ -36,6 +36,7 @@ setup_file() {
 
 setup() {
   load "$(dirname "$BATS_TEST_FILE")/lib/common.bash"
+  load "$(dirname "$BATS_TEST_FILE")/lib/vectors.bash"
   load "$(dirname "$BATS_TEST_FILE")/lib/caldav.bash"
   export output
   export CG_TEST_CALDAV_FIELDS=1
@@ -57,7 +58,7 @@ teardown() {
 generate_fields() {
   run_cg organize -group-by priority= "$CAL"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by priority= -query "_terminal=no" caldav:http://127.0.0.1:43106/dav/fields/`
 	- _base = @blake2b256-3jtp9ku2dd4asel3nxhdhu957c57wq9qdjmsyvhnkjumpx9ryxxqke0xqz
@@ -129,7 +130,7 @@ write_field1_edited() {
 assert_field1_office() {
   run_cg organize -group-by priority= "$CAL"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by priority= -query "_terminal=no" caldav:http://127.0.0.1:43106/dav/fields/`
 	- _base = @blake2b256-nymyna6rlff9n85d7dwlgwa59psnnvj7sq8xj3klp9mtahlqrspsvztfff
@@ -170,7 +171,7 @@ function organize_fields_location_edit_writes { # @test
 
   run_cg organize -apply "$edited" -commit
   assert_success
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 organize: 1 change(s):
 
   - [field1.ics location=[-Bank-]{+Office+} status=needs-action] Pay rent
@@ -197,7 +198,7 @@ function organize_fields_summary_trailer_edit_writes { # @test
 
   run_cg organize -apply "$edited" -commit
   assert_success
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 organize: 1 change(s):
 
   - [field1.ics location=Bank status=needs-action] Pay rent {+now+}
@@ -211,7 +212,7 @@ EOF
 
   run_cg organize -group-by priority= "$CAL"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by priority= -query "_terminal=no" caldav:http://127.0.0.1:43106/dav/fields/`
 	- _base = @blake2b256-8zh6cjdfek03f7tyu4dt4el47m606k7fsc3sz4melylaa7eqtxfq3p6su3
@@ -259,7 +260,7 @@ function organize_fields_conflict_rejects { # @test
   assert_failure 2
   # The whole rejection: the exact refused field edit with base/live/edited
   # values named.
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	cutting-garden: organize --apply: 1 field conflict(s) — the live state drifted from the pinned base; regenerate and re-edit:
 	  field1.ics.location: base="Bank" live="Office" (your edit set "Warehouse")
 	EOM
@@ -275,7 +276,7 @@ function organize_fields_conflict_rejects { # @test
 generate_status_doc() {
   run_cg organize -group-by status= "$CAL"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:43106/dav/fields/`
 	- _base = @blake2b256-qts79njmm2s4s6zc35h5cgdyweyf0pqlsqmmr5ydtzym2ml5ghss2axafa
@@ -349,7 +350,7 @@ function organize_fields_missing_status_move_in_writes { # @test
 
   run_cg organize -apply "$edited" -commit
   assert_success
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 organize: 1 change(s):
 
   - [field5.ics status={+needs-action+}] Waiting idea
@@ -366,7 +367,7 @@ EOF
 
   run_cg organize -group-by status= "$CAL"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:43106/dav/fields/`
 	- _base = @blake2b256-hv39f5e6rml297ptcz6mj99s9ea5vtwys27tprswa5l58rd72f8qcq3n3g
@@ -433,7 +434,7 @@ function organize_fields_missing_status_absence_is_noop { # @test
 
   run_cg organize -apply "$edited" -commit
   assert_success
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 organize: 1 change(s):
 
   - [field1.ics location=Bank priority=0_must status=[-needs-action-]{+in-process+}] Pay rent
@@ -446,7 +447,7 @@ EOF
   # all, no STATUS.
   run curl -fsS "${CALDAV_SOURCE#caldav:}fields/field5.ics"
   assert_success
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 BEGIN:VCALENDAR
 VERSION:2.0
 BEGIN:VTODO
@@ -458,7 +459,7 @@ EOF
 
   run_cg organize -group-by status= "$CAL"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:43106/dav/fields/`
 	- _base = @blake2b256-vk5q42akwtfyqtkm2lqkna6kstzfq00x7kus7qy9nt7gersg2czs4xycxg

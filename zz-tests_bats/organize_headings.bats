@@ -28,6 +28,7 @@ setup_file() {
 
 setup() {
   load "$(dirname "$BATS_TEST_FILE")/lib/common.bash"
+  load "$(dirname "$BATS_TEST_FILE")/lib/vectors.bash"
   load "$(dirname "$BATS_TEST_FILE")/lib/caldav.bash"
   export output
   export CG_TEST_CALDAV_FIELDS=1
@@ -78,7 +79,7 @@ headings_doc() {
 generate_grouped() {
   run_cg organize -group-by '(tags)' "$CAL"
   assert_success
-  assert_output "$(
+  assert_vector "$(
     headings_doc "$BASE_GENERATED" <<-'EOM'
 
 	- [field1.ics location=Bank status=needs-action priority=0_must] Pay rent
@@ -139,7 +140,7 @@ function organize_headings_double_hash_document_applies_identically { # @test
 
   run_cg organize -apply "$edited" -commit
   assert_success
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 organize: 1 change(s):
 
   - [field3.ics {+errand+} [-work-] priority=2_nice] Water plants
@@ -152,7 +153,7 @@ EOF
 
   run_cg organize -group-by '(tags)' "$CAL"
   assert_success
-  assert_output "$(
+  assert_vector "$(
     headings_doc "$BASE_AFTER_DOUBLE" <<-'EOM'
 
 	- [field1.ics location=Bank status=needs-action priority=0_must] Pay rent
@@ -217,7 +218,7 @@ function organize_headings_reset_pops_to_parent_and_ungrouped { # @test
 
   run_cg organize -apply "$edited" -commit
   assert_success
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 organize: 3 change(s):
 
   - [field1.ics {+work+} location=Bank status=needs-action priority=0_must] Pay rent
@@ -234,7 +235,7 @@ EOF
 
   run_cg organize -group-by '(tags)' "$CAL"
   assert_success
-  assert_output "$(
+  assert_vector "$(
     headings_doc "$BASE_AFTER_RESET" <<-'EOM'
 
 	- [field2.ics priority=1_should] Read book
@@ -279,7 +280,7 @@ function organize_headings_reset_deeper_than_current_is_noop { # @test
 
   run_cg organize -apply "$edited" -commit
   assert_success
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 organize: 1 change(s):
 
   - [field4.ics {+work+}] Someday idea
@@ -291,7 +292,7 @@ EOF
 
   run_cg organize -group-by '(tags)' "$CAL"
   assert_success
-  assert_output "$(
+  assert_vector "$(
     headings_doc "$BASE_AFTER_NOOP" <<-'EOM'
 
 	- [field1.ics location=Bank status=needs-action priority=0_must] Pay rent

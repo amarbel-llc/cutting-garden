@@ -29,6 +29,7 @@ setup_file() {
 
 setup() {
   load "$(dirname "$BATS_TEST_FILE")/lib/common.bash"
+  load "$(dirname "$BATS_TEST_FILE")/lib/vectors.bash"
   load "$(dirname "$BATS_TEST_FILE")/lib/caldav.bash"
   export output
   export CG_TEST_CALDAV_FIELDS=1 CG_TEST_CALDAV_SCHED=1 CG_TEST_CALDAV_NS=1
@@ -60,7 +61,7 @@ teardown() {
 function organize_groupby_tags_whole_set { # @test
   run_cg organize -group-by '(tags)' "$FIELDS"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:43108/dav/fields/`
 	- _base = @blake2b256-mu5d9d3e5hlnr65qff750ukjs49ja22ju33sedygz94ceg0387usncgrh8
@@ -94,7 +95,7 @@ function organize_groupby_tags_whole_set { # @test
 function organize_groupby_namespace_rollup { # @test
   run_cg organize -group-by project "$NS"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by project -query "_terminal=no" caldav:http://127.0.0.1:43108/dav/ns/`
 	- _base = @blake2b256-lnpcee9m69hd4yaqrtsmfux0rwpzg7zwsum08q9q35paqm53e6zssrhgpu
@@ -128,7 +129,7 @@ function organize_groupby_namespace_rollup { # @test
 function organize_groupby_field { # @test
   run_cg organize -group-by status= "$FIELDS"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:43108/dav/fields/`
 	- _base = @blake2b256-y3vsd27dwnf3guccl6dd6unvq9hl5edwf7qym0ccw5j0ptq3sd8s24au0d
@@ -164,7 +165,7 @@ function organize_groupby_field { # @test
 function organize_groupby_date_granularity { # @test
   run_cg organize -group-by 'date_due=(month)' "$SCHED"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by date_due=(month) -query "_terminal=no" caldav:http://127.0.0.1:43108/dav/sched/`
 	- _base = @blake2b256-gencqx53cka0dgfqa3gakt9hunzujhkl0s6kyw4wychdj7s688ssr4unyf
@@ -187,7 +188,7 @@ function organize_groupby_date_granularity { # @test
 
   run_cg organize -group-by 'date_due=(year)' "$SCHED"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by date_due=(year) -query "_terminal=no" caldav:http://127.0.0.1:43108/dav/sched/`
 	- _base = @blake2b256-zfg6rknfep932d9pqt5l93m7cz6eh847vjg965mz8p9lzfgs0pksquymyt

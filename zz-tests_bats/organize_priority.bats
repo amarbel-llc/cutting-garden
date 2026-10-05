@@ -34,6 +34,7 @@ setup_file() {
 
 setup() {
   load "$(dirname "$BATS_TEST_FILE")/lib/common.bash"
+  load "$(dirname "$BATS_TEST_FILE")/lib/vectors.bash"
   load "$(dirname "$BATS_TEST_FILE")/lib/caldav.bash"
   export output
   export CG_TEST_CALDAV_FIELDS=1
@@ -57,7 +58,7 @@ teardown() {
 generate_priority() {
   run_cg organize -group-by priority= "$CAL"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by priority= -query "_terminal=no" caldav:http://127.0.0.1:43105/dav/fields/`
 	- _base = @blake2b256-9e8zackwge2wgg2aent8607azz5f3a6rg788ms95tvt5rffhwfwqk6w6hv
@@ -133,7 +134,7 @@ function organize_priority_band_move_rewrites { # @test
 
   run_cg organize -apply "$edited" -commit
   assert_success
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 organize: 1 change(s):
 
   - [field2.ics errand work priority=[-1_should-]{+0_must+}] Read book
@@ -161,7 +162,7 @@ EOF
 
   run_cg organize -group-by priority= "$CAL"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by priority= -query "_terminal=no" caldav:http://127.0.0.1:43105/dav/fields/`
 	- _base = @blake2b256-gau46h37pd7wqd8ggnkak0x2crqqyuw58pphkj78el6qc0yv3gcqpl9ez8
@@ -229,7 +230,7 @@ function organize_priority_unspecified_clears { # @test
 
   run_cg organize -apply "$edited" -commit
   assert_success
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 organize: 1 change(s):
 
   - [field1.ics location=Bank status=needs-action priority=[-0_must-]{+3_unspecified+}] Pay rent
@@ -248,7 +249,7 @@ EOF
 
   run_cg organize -group-by priority= "$CAL"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by priority= -query "_terminal=no" caldav:http://127.0.0.1:43105/dav/fields/`
 	- _base = @blake2b256-aakvumshxh5gymwc0u2c3y57gwny7aswkj43ldh6q0lnhz0dwehq0w4ds2
@@ -285,7 +286,7 @@ EOF
 generate_status_fields() {
   run_cg organize -group-by status= "$CAL"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:43105/dav/fields/`
 	- _base = @blake2b256-66glzzxqcd2dmn0kyya9xwn30225fka6vnk8e05qlsm70yztlnaqnpvdzf
@@ -352,7 +353,7 @@ function organize_priority_field_edit_band_completes { # @test
 
   run_cg organize -apply "$edited" -commit
   assert_success
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 organize: 1 change(s):
 
   - [field3.ics work priority=[-2_nice-]{+0_must+}] Water plants
@@ -368,7 +369,7 @@ EOF
 
   run_cg organize -group-by status= "$CAL"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:43105/dav/fields/`
 	- _base = @blake2b256-xaxgjjalj4l25zm9hldzkqetv4wrr4aae7zgln878twt2rssge6q2qfqee
@@ -435,7 +436,7 @@ function organize_priority_field_edit_raw_int_writes_verbatim { # @test
 
   run_cg organize -apply "$edited" -commit
   assert_success
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 organize: 1 change(s):
 
   - [field2.ics errand work priority=[-1_should-]{+7+}] Read book
@@ -450,7 +451,7 @@ EOF
 
   run_cg organize -group-by status= "$CAL"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:43105/dav/fields/`
 	- _base = @blake2b256-jjg6uhzutljvxwr2j6cs80xa0mt5ugqxyf5t5tsmaqjqhxulvfhqd8p7jy

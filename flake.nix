@@ -790,6 +790,126 @@
               cp ${organizeGrammar}/parser "$out/parser/cutting_garden_organize.so"
             '';
           };
+
+        # The binaries the bats suite resolves through lib/common.bash's
+        # require_bin, shared by the hermetic lane (bats-capture) and the host
+        # runner (cuttingGardenBatsHost) so the two can never run a different
+        # pairing.
+        batsLaneBinaries = {
+          # cuttingGardenWithDoc (not the bare cuttingGarden) so
+          # install_artifacts.bats — which derives $prefix from CG_BIN —
+          # sees the merged tree's share/man/man5 and man7 pages
+          # (cutting-garden#166 / cutting-garden#172) alongside the
+          # go-codegen'd man1 pages.
+          CG_BIN = {
+            base = cuttingGardenWithDoc;
+            name = "cutting-garden";
+          };
+          MADDER_BIN = {
+            base = madder.packages.${system}.madder;
+            name = "madder";
+          };
+          # git is test scaffolding for the git-plugin E2E
+          # (zz-tests_bats/capture.bats): the test builds a local fixture
+          # repo with $GIT_BIN. cutting-garden then captures it purely
+          # via go-git — it needs no `git` binary of its own.
+          GIT_BIN = {
+            base = pkgs.git;
+            name = "git";
+          };
+          # The test git-over-ssh server backing zz-tests_bats/ssh.bats.
+          CG_TEST_GIT_SSHD = {
+            base = cuttingGardenTestGitSshd;
+            name = "cutting-garden-test-git-sshd";
+          };
+          # The test CalDAV server backing zz-tests_bats/caldav.bats.
+          CG_TEST_CALDAV = {
+            base = cuttingGardenCaldavTestServer;
+            name = "cutting-garden-caldav-testserver";
+          };
+          # The test JMAP server backing zz-tests_bats/organize_fastmail.bats.
+          CG_TEST_FASTMAIL = {
+            base = cuttingGardenFastmailTestServer;
+            name = "cutting-garden-fastmail-testserver";
+          };
+          # The RFC 0008 test peer backing zz-tests_bats/capture_serve.bats.
+          CG_TEST_CAPTURE_SERVE = {
+            base = cuttingGardenTestCaptureServe;
+            name = "cutting-garden-test-capture-serve";
+          };
+          # The RFC 0013 test peer backing zz-tests_bats/traversal_serve.bats.
+          CG_TEST_TRAVERSAL_SERVE = {
+            base = cuttingGardenTestTraversalServe;
+            name = "cutting-garden-test-traversal-serve";
+          };
+          # The RFC 0013 session-level conformance DRIVER backing the
+          # method-semantics case in zz-tests_bats/traversal_serve.bats
+          # (cutting-garden#186).
+          CG_CONFORMANCE_TRAVERSAL = {
+            base = cuttingGardenConformanceTraversal;
+            name = "cutting-garden-conformance-traversal";
+          };
+        };
+
+        batsLaneLibPath = bats.packages.${system}.bats-libs.batsLibPath;
+
+        # openssh: ssh.bats's lib/git_ssh.bash runs ssh-agent /
+        # ssh-keygen / ssh-add (the plugin authenticates ssh via the
+        # agent). git: the test ssh server execs git's pack helpers
+        # (git-upload-pack / git-receive-pack) by name on PATH.
+        # jq: lib/common.bash's receipt helpers parse the unified
+        # tap-ndjson capture wire (Stage B). curl: organize_date.bats GETs
+        # a rescheduled VTODO's raw iCalendar off the test server to assert
+        # the DUE splice preserved its day, clock time, and TZID (FDR 0023
+        # Slice 2b).
+        batsLaneTools = [
+          pkgs.openssh
+          pkgs.git
+          pkgs.jq
+          pkgs.curl
+        ];
+
+        # `bats` on the host with bats-capture's binaries, lib path and tools
+        # — the un-sandboxed twin the vector-regeneration recipe needs, since
+        # a sandboxed build cannot write back into the checkout
+        # (cutting-garden#250). The environment is rebuilt from scratch
+        # (`env -i`) so nothing ambient — above all the operator's
+        # XDG_CONFIG_HOME, and with it their config.toml — reaches a test the
+        # sandbox would have run without it. CG_UPDATE_VECTORS is the one
+        # variable passed through (lib/vectors.bash). Run it from
+        # zz-tests_bats/; arguments go to bats verbatim.
+        cuttingGardenBatsHost = pkgs.writeShellApplication rec {
+          name = "cutting-garden-bats-host";
+          runtimeInputs = [
+            pkgs.bats
+            pkgs.parallel
+            pkgs.bash
+            pkgs.coreutils
+            pkgs.gnugrep
+            pkgs.gnused
+            pkgs.gawk
+            pkgs.findutils
+            pkgs.diffutils
+          ]
+          ++ batsLaneTools;
+          text = ''
+            exec env -i \
+              PATH=${pkgs.lib.escapeShellArg (pkgs.lib.makeBinPath runtimeInputs)} \
+              HOME=/homeless-shelter \
+              TMPDIR="''${TMPDIR:-/tmp}" \
+              TERM="''${TERM:-dumb}" \
+              BATS_LIB_PATH=${pkgs.lib.escapeShellArg batsLaneLibPath} \
+              CG_UPDATE_VECTORS="''${CG_UPDATE_VECTORS:-}" \
+              ${
+                pkgs.lib.concatStringsSep " \\\n  " (
+                  pkgs.lib.mapAttrsToList (
+                    envVar: spec: "${envVar}=${pkgs.lib.escapeShellArg "${spec.base}/bin/${spec.name}"}"
+                  ) batsLaneBinaries
+                )
+              } \
+              bats "$@"
+          '';
+        };
       in
       {
         packages = {
@@ -823,8 +943,8 @@
           conformance-traversal = cuttingGardenConformanceTraversal;
 
           # The RFC 0013 test peer (bats CG_TEST_TRAVERSAL_SERVE), exposed so
-          # the debug-conformance-traversal / debug-organize-traversal-vectors
-          # dev-loop recipes can build it (the devShell carries no go).
+          # the debug-conformance-traversal dev-loop recipe can build it (the
+          # devShell carries no go).
           cutting-garden-test-traversal-serve = cuttingGardenTestTraversalServe;
 
           # The test-only fastmail JMAP server (bats CG_TEST_FASTMAIL), exposed
@@ -832,7 +952,8 @@
           cutting-garden-fastmail-testserver = cuttingGardenFastmailTestServer;
 
           # The test-only CalDAV server (bats CG_TEST_CALDAV), exposed so the
-          # debug-organize-create-vectors dev-loop recipe can build it.
+          # debug-organize-* dev-loop recipes can build it
+          # (debug-build-caldav-testserver).
           cutting-garden-caldav-testserver = cuttingGardenCaldavTestServer;
 
           # The store-pinned `conformist --staged --exit-zero-on-fix` hook from
@@ -911,62 +1032,8 @@
           bats-capture = bats.lib.${system}.batsLane {
             base = cuttingGarden;
             batsSrc = ./zz-tests_bats;
-            binaries = {
-              # cuttingGardenWithDoc (not the bare cuttingGarden) so
-              # install_artifacts.bats — which derives $prefix from CG_BIN —
-              # sees the merged tree's share/man/man5 and man7 pages
-              # (cutting-garden#166 / cutting-garden#172) alongside the
-              # go-codegen'd man1 pages.
-              CG_BIN = {
-                base = cuttingGardenWithDoc;
-                name = "cutting-garden";
-              };
-              MADDER_BIN = {
-                base = madder.packages.${system}.madder;
-                name = "madder";
-              };
-              # git is test scaffolding for the git-plugin E2E
-              # (zz-tests_bats/capture.bats): the test builds a local fixture
-              # repo with $GIT_BIN. cutting-garden then captures it purely
-              # via go-git — it needs no `git` binary of its own.
-              GIT_BIN = {
-                base = pkgs.git;
-                name = "git";
-              };
-              # The test git-over-ssh server backing zz-tests_bats/ssh.bats.
-              CG_TEST_GIT_SSHD = {
-                base = cuttingGardenTestGitSshd;
-                name = "cutting-garden-test-git-sshd";
-              };
-              # The test CalDAV server backing zz-tests_bats/caldav.bats.
-              CG_TEST_CALDAV = {
-                base = cuttingGardenCaldavTestServer;
-                name = "cutting-garden-caldav-testserver";
-              };
-              # The test JMAP server backing zz-tests_bats/organize_fastmail.bats.
-              CG_TEST_FASTMAIL = {
-                base = cuttingGardenFastmailTestServer;
-                name = "cutting-garden-fastmail-testserver";
-              };
-              # The RFC 0008 test peer backing zz-tests_bats/capture_serve.bats.
-              CG_TEST_CAPTURE_SERVE = {
-                base = cuttingGardenTestCaptureServe;
-                name = "cutting-garden-test-capture-serve";
-              };
-              # The RFC 0013 test peer backing zz-tests_bats/traversal_serve.bats.
-              CG_TEST_TRAVERSAL_SERVE = {
-                base = cuttingGardenTestTraversalServe;
-                name = "cutting-garden-test-traversal-serve";
-              };
-              # The RFC 0013 session-level conformance DRIVER backing the
-              # method-semantics case in zz-tests_bats/traversal_serve.bats
-              # (cutting-garden#186).
-              CG_CONFORMANCE_TRAVERSAL = {
-                base = cuttingGardenConformanceTraversal;
-                name = "cutting-garden-conformance-traversal";
-              };
-            };
-            batsLibPath = [ bats.packages.${system}.bats-libs.batsLibPath ];
+            binaries = batsLaneBinaries;
+            batsLibPath = [ batsLaneLibPath ];
             # version.env staged sibling-of-bats (lands at stage/version.env;
             # bats runs from stage/zz-tests_bats/) so version.bats can read
             # the source-of-truth release version via
@@ -978,22 +1045,12 @@
                 dest = "version.env";
               }
             ];
-            # openssh: ssh.bats's lib/git_ssh.bash runs ssh-agent /
-            # ssh-keygen / ssh-add (the plugin authenticates ssh via the
-            # agent). git: the test ssh server execs git's pack helpers
-            # (git-upload-pack / git-receive-pack) by name on PATH.
-            # jq: lib/common.bash's receipt helpers parse the unified
-            # tap-ndjson capture wire (Stage B). curl: organize_date.bats GETs
-            # a rescheduled VTODO's raw iCalendar off the test server to assert
-            # the DUE splice preserved its day, clock time, and TZID (FDR 0023
-            # Slice 2b).
-            nativeBuildInputs = [
-              pkgs.openssh
-              pkgs.git
-              pkgs.jq
-              pkgs.curl
-            ];
+            nativeBuildInputs = batsLaneTools;
           };
+
+          # The bats suite run on the HOST against bats-capture's exact
+          # binaries — see cuttingGardenBatsHost.
+          cutting-garden-bats-host = cuttingGardenBatsHost;
         };
 
         devShells.default = pkgs.mkShell {

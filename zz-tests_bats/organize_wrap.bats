@@ -25,6 +25,7 @@ setup_file() {
 
 setup() {
   load "$(dirname "$BATS_TEST_FILE")/lib/common.bash"
+  load "$(dirname "$BATS_TEST_FILE")/lib/vectors.bash"
   load "$(dirname "$BATS_TEST_FILE")/lib/caldav.bash"
   export output
   export CG_TEST_CALDAV_LIT=1
@@ -64,7 +65,7 @@ wrap_doc() {
 generate_grouped() {
   run_cg organize -group-by '(tags)' "$CAL"
   assert_success
-  assert_output "$(
+  assert_vector "$(
     wrap_doc "$BASE_GENERATED" <<-'EOM'
 
 	- [lit2.ics location=Bank] Read book
@@ -123,7 +124,7 @@ write_wrapped_edit() {
 assert_nothing_written() {
   run curl -fsS "${CALDAV_SOURCE#caldav:}lit/lit2.ics"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	BEGIN:VCALENDAR
 	VERSION:2.0
 	BEGIN:VTODO
@@ -146,7 +147,7 @@ function organize_wrap_applies_like_unwrapped { # @test
 
   run_cg organize -apply "$unwrapped"
   assert_success
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 organize: 2 change(s):
 
   - [lit2.ics {+work-x+} location=Bank] Read book
@@ -158,7 +159,7 @@ EOF
   # The wrapped twin previews byte-identically to the dry-run above.
   run_cg organize -apply "$wrapped"
   assert_success
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 organize: 2 change(s):
 
   - [lit2.ics {+work-x+} location=Bank] Read book
@@ -169,7 +170,7 @@ EOF
 
   run_cg organize -apply "$wrapped" -commit
   assert_success
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 organize: 2 change(s):
 
   - [lit2.ics {+work-x+} location=Bank] Read book
@@ -182,7 +183,7 @@ EOF
 
   run_cg organize -group-by '(tags)' "$CAL"
   assert_success
-  assert_output "$(
+  assert_vector "$(
     wrap_doc "$BASE_WRAPPED_EDITED" <<-'EOM'
 
 	# "_ inbox"

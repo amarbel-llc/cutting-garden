@@ -36,6 +36,7 @@ setup_file() {
 
 setup() {
   load "$(dirname "$BATS_TEST_FILE")/lib/common.bash"
+  load "$(dirname "$BATS_TEST_FILE")/lib/vectors.bash"
   load "$(dirname "$BATS_TEST_FILE")/lib/caldav.bash"
   export output
   export CG_TEST_CALDAV_LIT=1
@@ -89,7 +90,7 @@ lit_doc() {
 generate_grouped() {
   run_cg organize -group-by '(tags)' "$CAL"
   assert_success
-  assert_output "$(
+  assert_vector "$(
     lit_doc "$BASE_GENERATED" <<-'EOM'
 
 	- [lit2.ics location=Bank] Read book
@@ -131,7 +132,7 @@ write_lit2_edited() {
 assert_lit2_untouched() {
   run curl -fsS "${CALDAV_SOURCE#caldav:}lit/lit2.ics"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	BEGIN:VCALENDAR
 	VERSION:2.0
 	BEGIN:VTODO
@@ -156,7 +157,7 @@ function organize_literal_bare_token_is_tag { # @test
 
   run_cg organize -apply "$edited"
   assert_success
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 organize: 1 change(s):
 
   - [lit2.ics {+status+} {+work-x+} location=Bank] Read book
@@ -177,7 +178,7 @@ function organize_literal_quoted_box_token_parses { # @test
 
   run_cg organize -apply "$edited"
   assert_success
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 organize: 1 change(s):
 
   - [lit2.ics {+"_ inbox"+} location=Bank] Read book
@@ -225,7 +226,7 @@ function organize_literal_quoted_tag_heading_round_trips { # @test
 
   run_cg organize -apply "$edited" -commit
   assert_success
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 organize: 1 change(s):
 
   - [lit2.ics {+"_ inbox"+} location=Bank] Read book
@@ -237,7 +238,7 @@ EOF
 
   run_cg organize -group-by '(tags)' "$CAL"
   assert_success
-  assert_output "$(
+  assert_vector "$(
     lit_doc "$BASE_MOVED" <<-'EOM'
 
 	# "_ inbox"
@@ -278,7 +279,7 @@ function organize_literal_text_escaping_round_trips { # @test
 
   run_cg organize -apply "$edited" -commit
   assert_success
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 organize: 1 change(s):
 
   - [lit3.ics] Plan, then do {+now+}
@@ -295,7 +296,7 @@ EOF
 
   run_cg organize -group-by '(tags)' "$CAL"
   assert_success
-  assert_output "$(
+  assert_vector "$(
     lit_doc "$BASE_SUMMARY_EDITED" <<-'EOM'
 
 	- [lit2.ics location=Bank] Read book

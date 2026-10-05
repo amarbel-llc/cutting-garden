@@ -27,6 +27,7 @@ setup_file() {
 
 setup() {
   load "$(dirname "$BATS_TEST_FILE")/lib/common.bash"
+  load "$(dirname "$BATS_TEST_FILE")/lib/vectors.bash"
   load "$(dirname "$BATS_TEST_FILE")/lib/fastmail.bash"
   load "$(dirname "$BATS_TEST_FILE")/lib/mcp.bash"
   export output
@@ -45,7 +46,7 @@ teardown() {
 generate_inbox() {
   run_cg organize -group-by _inbox "${FASTMAIL_ROOT}Inbox/"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by _inbox fastmail://test/Inbox/`
 	- _base = @blake2b256-5j54at3zuxa692qvl7aarpth3zvj50yvcrf42xthexsxwwjr6rgsmtsq3r
@@ -115,7 +116,7 @@ email_states() {
 function organize_fastmail_list_json_smoke { # @test
   run_cg list -format json "${FASTMAIL_ROOT}Inbox/"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	{"uri":"fastmail://test/Inbox/?thread=T1","name":"Your statement is ready","type":"cutting_garden-fastmail-thread-v1","tags":["_inbox","_unread","payee-one_medical"]}
 	{"uri":"fastmail://test/Inbox/?thread=T2","name":"Interview loop","type":"cutting_garden-fastmail-thread-v1","tags":["_inbox","proj-x-msft","req-others"]}
 	{"uri":"fastmail://test/Inbox/?thread=T3","name":"Lunch next week?","type":"cutting_garden-fastmail-thread-v1","tags":["_flagged","_inbox"]}
@@ -144,7 +145,7 @@ function organize_fastmail_inbox_grouped_render { # @test
 function organize_fastmail_inbox_ungrouped_render { # @test
   run_cg organize -group-by has_attachment= "${FASTMAIL_ROOT}Inbox/"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by has_attachment= fastmail://test/Inbox/`
 	- _base = @blake2b256-wq3t4k596lfsdchex9glgwuvwk88snq9wz3wjuqn6kfamudk44ks8rzh86
@@ -186,7 +187,7 @@ function organize_fastmail_archive_by_move { # @test
 
   run_cg organize -apply "$edited" -commit
   assert_success
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 organize: 1 change(s):
 
   - [T1 [-_inbox-] _unread payee-one_medical from="billing@example.com"] Your statement is ready
@@ -197,25 +198,25 @@ EOF
   # T1 left the Inbox, is still under its label, and did NOT land in Archive.
   run_cg list -format json "${FASTMAIL_ROOT}Inbox/"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	{"uri":"fastmail://test/Inbox/?thread=T2","name":"Interview loop","type":"cutting_garden-fastmail-thread-v1","tags":["_inbox","proj-x-msft","req-others"]}
 	{"uri":"fastmail://test/Inbox/?thread=T3","name":"Lunch next week?","type":"cutting_garden-fastmail-thread-v1","tags":["_flagged","_inbox"]}
 	{"uri":"fastmail://test/Inbox/?thread=T4","name":"Project wrap-up","type":"cutting_garden-fastmail-thread-v1","tags":["_inbox","proj-24-t-10x"]}
 	EOM
   run_cg list -format json "${FASTMAIL_ROOT}payee/-one_medical/"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	{"uri":"fastmail://test/payee/-one_medical/?thread=T1","name":"Your statement is ready","type":"cutting_garden-fastmail-thread-v1","tags":["_unread","payee-one_medical"]}
 	EOM
   run_cg list -format json "${FASTMAIL_ROOT}Archive/"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	{"uri":"fastmail://test/Archive/?thread=T5","name":"Resume received","type":"cutting_garden-fastmail-thread-v1","tags":["area-career-resume"]}
 	EOM
 
   run_cg organize -group-by _inbox "${FASTMAIL_ROOT}Inbox/"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by _inbox fastmail://test/Inbox/`
 	- _base = @blake2b256-c7h3shs0jqfmdlgmlzz979pmes66rxuntfm2fsp9xdrn5vs6395sh07prk
@@ -253,7 +254,7 @@ function organize_fastmail_archive_unlabeled_lands_in_archive { # @test
 
   run_cg organize -apply "$edited" -commit
   assert_success
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 organize: 1 change(s):
 
   - [T3 _flagged [-_inbox-] from="friend@example.com"] Lunch next week?
@@ -263,14 +264,14 @@ EOF
 
   run_cg list -format json "${FASTMAIL_ROOT}Archive/"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	{"uri":"fastmail://test/Archive/?thread=T3","name":"Lunch next week?","type":"cutting_garden-fastmail-thread-v1","tags":["_flagged"]}
 	{"uri":"fastmail://test/Archive/?thread=T5","name":"Resume received","type":"cutting_garden-fastmail-thread-v1","tags":["area-career-resume"]}
 	EOM
 
   run_cg organize -group-by _inbox "${FASTMAIL_ROOT}Inbox/"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by _inbox fastmail://test/Inbox/`
 	- _base = @blake2b256-sq7q4ks7hmpjm6p4axcg4yvt5mvvw6m754xwmcs37us75a8q6t6qev6u6w
@@ -309,7 +310,7 @@ function organize_fastmail_state_atoms { # @test
 
   run_cg organize -apply "$edited" -commit
   assert_success
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 organize: 2 change(s):
 
   - [T1 {+_flagged+} [-_unread-] payee-one_medical from="billing@example.com"] Your statement is ready
@@ -323,7 +324,7 @@ EOF
     'fastmail://test/Inbox/?email=M2a&thread=T2' \
     'fastmail://test/Inbox/?email=M2b&thread=T2' \
     'fastmail://test/Inbox/?email=M2c&thread=T2'
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	{"id":"M1","mailboxIds":{"mb-inbox":true,"mb-one_medical":true},"keywords":{"$flagged":true,"$seen":true}}
 	{"id":"M2a","mailboxIds":{"mb-inbox":true,"mb-msft":true},"keywords":{"$flagged":true,"$seen":true}}
 	{"id":"M2b","mailboxIds":{"mb-sent":true},"keywords":{"$flagged":true,"$seen":true}}
@@ -332,7 +333,7 @@ EOF
 
   run_cg list -format json "${FASTMAIL_ROOT}Inbox/"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	{"uri":"fastmail://test/Inbox/?thread=T1","name":"Your statement is ready","type":"cutting_garden-fastmail-thread-v1","tags":["_flagged","_inbox","payee-one_medical"]}
 	{"uri":"fastmail://test/Inbox/?thread=T2","name":"Interview loop","type":"cutting_garden-fastmail-thread-v1","tags":["_flagged","_inbox","proj-x-msft","req-others"]}
 	{"uri":"fastmail://test/Inbox/?thread=T3","name":"Lunch next week?","type":"cutting_garden-fastmail-thread-v1","tags":["_flagged","_inbox"]}
@@ -341,7 +342,7 @@ EOF
 
   run_cg organize -group-by _inbox "${FASTMAIL_ROOT}Inbox/"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by _inbox fastmail://test/Inbox/`
 	- _base = @blake2b256-0836w05zfjp97sszyu06wzardnfnkdc0v833q9frd73rap3rvxeqpyluwh
@@ -379,7 +380,7 @@ function organize_fastmail_trash_atom { # @test
 
   run_cg organize -apply "$edited" -commit
   assert_success
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 organize: 1 change(s):
 
   - [T4 {+_trash+} proj-24-t-10x from="team@example.com"] Project wrap-up
@@ -389,18 +390,18 @@ EOF
 
   run_cg list -format json "${FASTMAIL_ROOT}Trash/"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	{"uri":"fastmail://test/Trash/?thread=T4","name":"Project wrap-up","type":"cutting_garden-fastmail-thread-v1","tags":["_inbox","_trash","proj-24-t-10x"]}
 	EOM
   run_cg list -format json "${FASTMAIL_ROOT}zz-archive/proj/-24-t/-10x/"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	{"uri":"fastmail://test/zz-archive/proj/-24-t/-10x/?thread=T4","name":"Project wrap-up","type":"cutting_garden-fastmail-thread-v1","tags":["_inbox","_trash","proj-24-t-10x"]}
 	EOM
 
   run_cg organize -group-by _inbox "${FASTMAIL_ROOT}Inbox/"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by _inbox fastmail://test/Inbox/`
 	- _base = @blake2b256-5kejh0cvvtv2m2pj29nv88w3q68hnz4frhz8j6f56cl9dw590dmsxp3edp
@@ -439,7 +440,7 @@ function organize_fastmail_create_continuation_tag { # @test
 
   run_cg organize -apply "$edited" -commit
   assert_success
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 organize: 1 change(s):
 
   - [T3 _flagged {+payee-acme+} from="friend@example.com"] Lunch next week?
@@ -449,19 +450,19 @@ EOF
 
   run_cg list -format json "${FASTMAIL_ROOT}payee/"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	{"uri":"fastmail://test/payee/-acme/","name":"-acme","type":"cutting_garden-fastmail-mailbox-v1"}
 	{"uri":"fastmail://test/payee/-one_medical/","name":"-one_medical","type":"cutting_garden-fastmail-mailbox-v1"}
 	EOM
   run_cg list -format json "${FASTMAIL_ROOT}payee/-acme/"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	{"uri":"fastmail://test/payee/-acme/?thread=T3","name":"Lunch next week?","type":"cutting_garden-fastmail-thread-v1","tags":["_flagged","_inbox","payee-acme"]}
 	EOM
 
   run_cg organize -group-by _inbox "${FASTMAIL_ROOT}Inbox/"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by _inbox fastmail://test/Inbox/`
 	- _base = @blake2b256-ramncahpzrmznen678rl4ssz3p29qvwfxkhwt4e0vjvhck8fj9uq5k2s7t
@@ -503,7 +504,7 @@ function organize_fastmail_create_sibling_tag { # @test
 
   run_cg organize -apply "$edited" -commit
   assert_success
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 organize: 1 change(s):
 
   - [T3 _flagged {+proj-trips-26-10-hike+} from="friend@example.com"] Lunch next week?
@@ -513,13 +514,13 @@ EOF
 
   run_cg list -format json "${FASTMAIL_ROOT}area/-travel/"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	{"uri":"fastmail://test/area/-travel/proj-trips-26-09-yoga/","name":"proj-trips-26-09-yoga","type":"cutting_garden-fastmail-mailbox-v1"}
 	{"uri":"fastmail://test/area/-travel/proj-trips-26-10-hike/","name":"proj-trips-26-10-hike","type":"cutting_garden-fastmail-mailbox-v1"}
 	EOM
   run_cg list -format json "${FASTMAIL_ROOT}area/-travel/proj-trips-26-10-hike/"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	{"uri":"fastmail://test/area/-travel/proj-trips-26-10-hike/?thread=T3","name":"Lunch next week?","type":"cutting_garden-fastmail-thread-v1","tags":["_flagged","_inbox","proj-trips-26-10-hike"]}
 	EOM
 }
@@ -542,7 +543,7 @@ function organize_fastmail_create_root_tag { # @test
 
   run_cg organize -apply "$edited" -commit
   assert_success
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 organize: 1 change(s):
 
   - [T3 _flagged {+misc-thing+} from="friend@example.com"] Lunch next week?
@@ -552,7 +553,7 @@ EOF
 
   run_cg list -format json "$FASTMAIL_ROOT"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	{"uri":"fastmail://test/Archive/","name":"Archive","type":"cutting_garden-fastmail-mailbox-v1"}
 	{"uri":"fastmail://test/Inbox/","name":"Inbox","type":"cutting_garden-fastmail-mailbox-v1"}
 	{"uri":"fastmail://test/Sent/","name":"Sent","type":"cutting_garden-fastmail-mailbox-v1"}
@@ -565,13 +566,13 @@ EOF
 	EOM
   run_cg list -format json "${FASTMAIL_ROOT}misc-thing/"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	{"uri":"fastmail://test/misc-thing/?thread=T3","name":"Lunch next week?","type":"cutting_garden-fastmail-thread-v1","tags":["_flagged","_inbox","misc-thing"]}
 	EOM
 
   run_cg organize -group-by _inbox "${FASTMAIL_ROOT}Inbox/"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by _inbox fastmail://test/Inbox/`
 	- _base = @blake2b256-gz8ymssvgh72e8j77zj7yfp6dfaj2c3wxvvnt02gcd76t9dkchpqmmyaku
@@ -610,7 +611,7 @@ function organize_fastmail_reserved_state_tag_rejected { # @test
 
   run_cg organize -apply "$edited" -commit
   assert_failure 64
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 organize: 1 change(s):
 
   - [T3 _flagged {+_sent+} from="friend@example.com"] Lunch next week?
@@ -632,7 +633,7 @@ function organize_fastmail_list_json_carries_tags { # @test
   output="$(mcp_result_text "$output" 3 | jq -c '
     .[].types[] | select(.tag | startswith("cutting_garden-fastmail-"))
     | {tag} + (if has("tag_set") then {tag_set} else {} end)')"
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	{"tag":"cutting_garden-fastmail-mailbox-v1"}
 	{"tag":"cutting_garden-fastmail-thread-v1","tag_set":{"field":"tags","interpreter":"dodder-hyphen"}}
 	{"tag":"cutting_garden-fastmail-email-v1"}
@@ -647,7 +648,7 @@ function organize_fastmail_list_json_carries_tags { # @test
 function organize_fastmail_group_by_date_month { # @test
   run_cg organize -group-by 'date=(month)' "${FASTMAIL_ROOT}Inbox/"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by date=(month) fastmail://test/Inbox/`
 	- _base = @blake2b256-mc35yz5yvrtdltm4l69qj7dw7d9ku4mxk2x4hussmw4lzc83zcnqyujs02

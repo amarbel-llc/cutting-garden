@@ -26,6 +26,7 @@ setup_file() {
 
 setup() {
   load "$(dirname "$BATS_TEST_FILE")/lib/common.bash"
+  load "$(dirname "$BATS_TEST_FILE")/lib/vectors.bash"
   load "$(dirname "$BATS_TEST_FILE")/lib/caldav.bash"
   export output
   export CG_TEST_CALDAV_LIT=1
@@ -60,7 +61,7 @@ put_ics() {
 generate_status_doc() {
   run_cg organize -group-by status= "$LIT"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:43111/dav/lit/`
 	- _base = @blake2b256-ds5v08vsq056f25466mt43k9d82t3yr9980n3ejd6dnhkunh6yss3japhu
@@ -115,10 +116,10 @@ function fmt_organize_regenerates_and_rewrites_base { # @test
 
   run_cg fmt-organize "$doc"
   assert_success
-  assert_output "fmt-organize: $doc rewritten — _base @blake2b256-ds5v08vsq056f25466mt43k9d82t3yr9980n3ejd6dnhkunh6yss3japhu → @blake2b256-2lgqcr9ssgc9v7pzrxku400r9e3phm4hutqktu69lknt43lp8vdscjxk7g"
+  assert_vector "fmt-organize: $doc rewritten — _base @blake2b256-ds5v08vsq056f25466mt43k9d82t3yr9980n3ejd6dnhkunh6yss3japhu → @blake2b256-2lgqcr9ssgc9v7pzrxku400r9e3phm4hutqktu69lknt43lp8vdscjxk7g"
 
   run cat "$doc"
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:43111/dav/lit/`
 	- _base = @blake2b256-2lgqcr9ssgc9v7pzrxku400r9e3phm4hutqktu69lknt43lp8vdscjxk7g
@@ -233,7 +234,7 @@ function fmt_organize_keeps_trailing_lever { # @test
 
   run_cg organize -group-by status= "$LIT"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:43111/dav/lit/`
 	- _base = @blake2b256-qqmuy48yta4mxp3q4362u9cefcdjafrwcax87q9n376dv8fpv0nqjz9hsh
@@ -275,10 +276,10 @@ function fmt_organize_keeps_trailing_lever { # @test
 
   run_cg fmt-organize "$doc"
   assert_success
-  assert_output "fmt-organize: $doc rewritten — _base @blake2b256-qqmuy48yta4mxp3q4362u9cefcdjafrwcax87q9n376dv8fpv0nqjz9hsh → @blake2b256-wsxykeay2ura3f5re6zme58hg3953ptkccaqp6xng7v9fcgf37uqfnsevr"
+  assert_vector "fmt-organize: $doc rewritten — _base @blake2b256-qqmuy48yta4mxp3q4362u9cefcdjafrwcax87q9n376dv8fpv0nqjz9hsh → @blake2b256-wsxykeay2ura3f5re6zme58hg3953ptkccaqp6xng7v9fcgf37uqfnsevr"
 
   run cat "$doc"
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:43111/dav/lit/`
 	- _base = @blake2b256-wsxykeay2ura3f5re6zme58hg3953ptkccaqp6xng7v9fcgf37uqfnsevr

@@ -245,12 +245,23 @@ Every decision above is pinned by a WHOLE-DOCUMENT bats vector (dodder's
 `assert_output - <<-EOM` form): the exact invocation, the full expected
 document (envelope + body), and for edits the full input document plus the
 resulting state re-listed via `list -format espalier`. One `@test` per decision,
-named by grill number. `lib/golden.bash` is ported (`assert_golden`,
-`CG_UPDATE_GOLDENS=1`, `just test-bats-update-goldens`) for bulk outputs (mesa
-tables). Normalization masks only the testserver's random port; `_base` digests
-stay verbatim. The existing organize lanes' awk/partial asserts convert to
-whole-document vectors FIRST (behaviour-neutral) so the dialect changes show up
-as reviewable vector diffs. `…-native-tags-vectors.md` indexes G# → test.
+named by grill number. `_base` digests stay verbatim — nothing is masked; the
+testserver's port is pinned per lane instead. The existing organize lanes'
+awk/partial asserts convert to whole-document vectors FIRST (behaviour-neutral)
+so the dialect changes show up as reviewable vector diffs.
+`…-native-tags-vectors.md` indexes G# → test.
+
+**Regeneration (2026-10-05 amendment, cutting-garden#250 — supersedes the
+`lib/golden.bash` port this section first planned: `assert_golden`,
+`CG_UPDATE_GOLDENS=1`, `just test-bats-update-goldens`).** The vectors stay
+inline and are rewritten IN PLACE rather than moving to golden files, so the
+full input and output documents keep reading top to bottom in the test. A
+vector is spelled `assert_vector - <<-'EOM'` (`zz-tests_bats/lib/vectors.bash`
+— outside update mode it is `assert_output`); `just test-bats-update-vectors`
+runs the lanes on the host with `CG_UPDATE_VECTORS` set, rewrites each
+mismatching heredoc with the actual output, and carries the new envelope and
+digests to the edited input documents pinned to them. No golden files exist:
+the bulk outputs (mesa tables) landed as inline `assert_tab_table` rows.
 
 ## Followups (filed, not built)
 

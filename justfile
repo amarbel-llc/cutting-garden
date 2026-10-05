@@ -109,6 +109,79 @@ lint-go-analyzers: (lint-go-analyzer "seqerror") (lint-go-analyzer "repool") (li
 test-bats:
     nix build .#bats-capture --show-trace
 
+# Run bats files on the HOST against the hermetic lane's exact binaries
+# (.#cutting-garden-bats-host: bats-capture's CG_BIN / MADDER_BIN / testserver
+# pairing, a from-scratch environment) — the fast dev-loop for one lane, with
+# live output and no sandbox rebuild of the whole suite. ARGS go to bats
+# verbatim, relative to zz-tests_bats/ (`just debug-test-bats organize.bats`,
+# `just debug-test-bats -f wrap organize_wrap.bats`). The gate stays test-bats.
+#
+# run bats files on the host against the hermetic lane's binaries
+[group('debug')]
+debug-test-bats *ARGS='*.bats':
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{ justfile_directory() }}"
+    runner="$(nix build .#cutting-garden-bats-host --no-link --print-out-paths)/bin/cutting-garden-bats-host"
+    cd zz-tests_bats
+    "$runner" --jobs "$(nproc)" {{ ARGS }}
+
+# Regenerate the whole-document vectors (`assert_vector - <<-'EOM'` heredocs,
+# zz-tests_bats/lib/vectors.bash) IN PLACE after a change to what organize
+# emits (cutting-garden#250): runs TARGETS on the host through debug-test-bats'
+# runner with CG_UPDATE_VECTORS set, so each mismatching assert_vector records
+# its actual output instead of failing, then lib/update_vectors.bash rewrites
+# the heredocs — `_base` digests VERBATIM, never masked — and carries each new
+# envelope/digest to the edited input documents pinned to it. It repeats to a
+# fixpoint, since an `after` document only renders once the input it follows
+# applies, then runs TARGETS for real: the recipe's status is that run's.
+# Anything it could not rewrite is named on stderr for a manual edit; the last
+# pass's records and bats log stay in .tmp/update-vectors/. REVIEW THE DIFF —
+# it writes whatever the binary printed. The gate stays test-bats.
+#
+# regenerate the whole-document bats vectors in place from a host run
+[group('maintenance')]
+test-bats-update-vectors *TARGETS='*.bats':
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{ justfile_directory() }}"
+    runner="$(nix build .#cutting-garden-bats-host --no-link --print-out-paths)/bin/cutting-garden-bats-host"
+    records="$PWD/.tmp/update-vectors"
+    cd zz-tests_bats
+    for pass in 1 2 3 4 5 6 7 8; do
+      rm -rf "$records"
+      mkdir -p "$records"
+      CG_UPDATE_VECTORS="$records" "$runner" --jobs "$(nproc)" {{ TARGETS }} >"$records/bats.log" 2>&1 || true
+      status=0
+      bash lib/update_vectors.bash "$records" || status=$?
+      [[ $status == 3 ]] && break
+      [[ $status == 0 ]] || exit "$status"
+      echo "test-bats-update-vectors: pass $pass rewrote vectors; re-running" >&2
+    done
+    "$runner" --jobs "$(nproc)" {{ TARGETS }}
+
+# Make every blake2b256 digest in TARGETS stale (each gains a `stale` prefix, so
+# distinct digests stay distinct) — the self-check for test-bats-update-vectors
+# after a change to lib/vectors.bash or lib/update_vectors.bash: stale the
+# lanes, regenerate, and `git diff zz-tests_bats` must come back EMPTY. A
+# digest that does not come back names a vector the regeneration cannot reach.
+# Run it on a clean tree; `git checkout zz-tests_bats` undoes it.
+#
+# Show what is listening on the bats lanes' pinned testserver ports (431xx,
+# zz-tests_bats/lib/caldav.bash) — the first look when a host bats run dies
+# with "address already in use" (cutting-garden#254): an orphaned testserver
+# from an interrupted run shows up here with its pid.
+#
+# list listeners on the bats lanes' pinned testserver ports
+[group('debug')]
+debug-bats-ports:
+    ss -ltnp | grep -E ':431[0-9]{2}\b' || echo "no listener on 431xx"
+
+# stale every digest in bats lanes to exercise test-bats-update-vectors
+[group('debug')]
+debug-stale-bats-vectors *TARGETS='organize*.bats fmt_organize.bats list_espalier.bats traversal_serve.bats':
+    cd zz-tests_bats && sed -i 's/blake2b256-\([a-z0-9]\{8\}\)/blake2b256-stale\1/g' {{ TARGETS }}
+
 # Run the organize tree-sitter grammar's corpus (zz-nvim, cutting-garden#43) as a
 # merge-gate leaf, mirroring test-bats: builds the sandboxed
 # checks.<system>.grammar-corpus derivation (flake.nix), which runs
@@ -988,564 +1061,6 @@ debug-organize-literal:
     "$cg" organize -group-by '(tags)' "$cal"
     exec {SRV[1]}>&- || true
 
-# Regenerate EVERY organize lane's whole-document vectors (native tags slice 1,
-# design G10/G16): for each zz-tests_bats/organize*.bats lane, start the caldav
-# testserver on the lane's pinned port (lib/caldav.bash), render the generate
-# document, apply the lane's edit, and re-render — printing each document under a
-# `### <lane> <label>` banner so the `_base` digests can be pasted into the
-# heredocs after a dialect change (the group-by spelling reaches provenance and
-# thus the digest). Also drives the organize_groupby.bats rejections. It PRINTS
-# the documents only — it does not rewrite the bats files; pasting the digests
-# back is manual. A real vectors-regeneration lane (`CG_UPDATE_GOLDENS`-style,
-# design G16's golden.bash port) is a followup tracked in
-# docs/plans/2026-08-30-native-tags-slice1.md "Out of scope". Uses the
-# NIX-built CLI (see debug-organize-literal for why) and a throwaway XDG config
-# dir so the host's config.toml never leaks into the bare-date default. WRITES to
-# the throwaway in-memory servers only.
-[group('debug')]
-debug-organize-vectors:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    root="{{ justfile_directory() }}"
-    cd "$root"
-    nix build .#default --out-link .tmp/cg-result
-    cg=.tmp/cg-result/bin/cutting-garden
-    nix develop --command go build -o .tmp/cutting-garden-caldav-testserver ./cmd/cutting-garden-caldav-testserver
-    nix develop --command madder init -encryption none .default 2>/dev/null || true
-    export XDG_CONFIG_HOME="$root/.tmp/organize-vectors-config"
-    rm -rf "$XDG_CONFIG_HOME"; mkdir -p "$XDG_CONFIG_HOME/cutting-garden"
-    dodder_hyphen() { printf '[tags]\ninterpreter = "dodder-hyphen"\n' >"$XDG_CONFIG_HOME/cutting-garden/config.toml"; }
-    no_config() { rm -f "$XDG_CONFIG_HOME/cutting-garden/config.toml"; }
-    start_srv() { # port [ENV=1 ...]
-      local port="$1"; shift
-      coproc SRV { env CG_TEST_CALDAV_PORT="$port" "$@" .tmp/cutting-garden-caldav-testserver; }
-      read -r -u "${SRV[0]}" source_url _calpath
-      home="${source_url%/dav/}/dav/"
-    }
-    stop_srv() { exec {SRV[1]}>&- || true; wait "$SRV_PID" 2>/dev/null || true; }
-    banner() { printf '\n### %s\n' "$*"; }
-    gen() { # label cal spec
-      banner "$1"; "$cg" organize -group-by "$3" "$2" | tee ".tmp/organize-vectors-$1.txt"
-    }
-    apply_doc() { banner "$1 apply"; "$cg" organize -apply "$2" -commit; }
-    reject() { banner "$1"; "$cg" organize -group-by "$3" "$2" || echo "exit=$?"; }
-    # move_line DOC HEADING LINE_REGEX: delete the object line matching the regex
-    # and re-insert it right after HEADING (+ blank), in $DOC.edited. The regex
-    # reaches awk through -v, which re-processes backslash escapes — so spell the
-    # box's `[` as `.` (`^- .task1.ics`), never `\[`.
-    move_line() {
-      awk -v h="$2" -v re="$3" '
-        $0 ~ re && !moved { moved = 1; next }
-        { print }
-        $0 == h { print ""; print saved }
-      ' saved="$(grep -E "$3" "$1")" "$1" >"$1.edited"
-    }
-
-    no_config
-    start_srv 43101
-    cal="${home}cal/"
-    gen organize-generate "$cal" 'status='
-    move_line .tmp/organize-vectors-organize-generate.txt '## =completed' '^- .task1.ics'
-    apply_doc organize .tmp/organize-vectors-organize-generate.txt.edited
-    gen organize-after "$cal" 'status='
-    stop_srv
-
-    start_srv 43102 CG_TEST_CALDAV_FIELDS=1
-    cal="${home}fields/"
-    gen tags-generate "$cal" '(tags)'
-    move_line .tmp/organize-vectors-tags-generate.txt '# errand' '^- .field3.ics'
-    apply_doc tags .tmp/organize-vectors-tags-generate.txt.edited
-    gen tags-after "$cal" '(tags)'
-    stop_srv
-
-    dodder_hyphen
-    start_srv 43103 CG_TEST_CALDAV_NS=1
-    cal="${home}ns/"
-    gen ns-generate "$cal" 'project'
-    move_line .tmp/organize-vectors-ns-generate.txt '## -cutting_garden' '^- .nsA.ics'
-    apply_doc ns .tmp/organize-vectors-ns-generate.txt.edited
-    gen ns-after "$cal" 'project'
-    stop_srv
-    # G10a direct-under-root lane (fresh server, same generate doc): move nsD
-    # directly under the `# project` root heading — apply writes the BARE tag.
-    start_srv 43103 CG_TEST_CALDAV_NS=1
-    cal="${home}ns/"
-    move_line .tmp/organize-vectors-ns-generate.txt '# project' '^- .nsD.ics'
-    apply_doc ns-root .tmp/organize-vectors-ns-generate.txt.edited
-    gen ns-after-root "$cal" 'project'
-    stop_srv
-    no_config
-
-    start_srv 43104 CG_TEST_CALDAV_SCHED=1
-    cal="${home}sched/"
-    gen date-day "$cal" 'date_due='
-    gen date-month "$cal" 'date_due=(month)'
-    move_line .tmp/organize-vectors-date-month.txt '## =2026-09' '^- .sched1.ics'
-    apply_doc date .tmp/organize-vectors-date-month.txt.edited
-    gen date-after "$cal" 'date_due=(month)'
-    stop_srv
-
-    start_srv 43105 CG_TEST_CALDAV_FIELDS=1
-    cal="${home}fields/"
-    gen priority-generate "$cal" 'priority='
-    move_line .tmp/organize-vectors-priority-generate.txt '## =0_must' '^- .field2.ics'
-    apply_doc priority-must .tmp/organize-vectors-priority-generate.txt.edited
-    gen priority-after-must "$cal" 'priority='
-    stop_srv
-    start_srv 43105 CG_TEST_CALDAV_FIELDS=1
-    cal="${home}fields/"
-    move_line .tmp/organize-vectors-priority-generate.txt '## =3_unspecified' '^- .field1.ics'
-    apply_doc priority-unspecified .tmp/organize-vectors-priority-generate.txt.edited
-    gen priority-after-unspecified "$cal" 'priority='
-    stop_srv
-    # slice 1.5 D field-edit lane (organize_priority.bats): grouped by status=
-    # so the band atoms are visible (not stripped); a band-valued atom edit
-    # (field3 2_nice -> 0_must) completes to the canonical RFC 5545 int, and a
-    # raw-int edit (field2 1_should -> 7) writes verbatim.
-    start_srv 43105 CG_TEST_CALDAV_FIELDS=1
-    cal="${home}fields/"
-    gen priority-fieldedit-generate "$cal" 'status='
-    sed 's/priority=2_nice/priority=0_must/' .tmp/organize-vectors-priority-fieldedit-generate.txt >.tmp/organize-vectors-priority-fieldedit-generate.txt.edited
-    apply_doc priority-fieldedit-band .tmp/organize-vectors-priority-fieldedit-generate.txt.edited
-    gen priority-fieldedit-after-band "$cal" 'status='
-    stop_srv
-    start_srv 43105 CG_TEST_CALDAV_FIELDS=1
-    cal="${home}fields/"
-    sed 's/priority=1_should/priority=7/' .tmp/organize-vectors-priority-fieldedit-generate.txt >.tmp/organize-vectors-priority-fieldedit-generate.txt.edited
-    apply_doc priority-fieldedit-rawint .tmp/organize-vectors-priority-fieldedit-generate.txt.edited
-    gen priority-fieldedit-after-rawint "$cal" 'status='
-    stop_srv
-
-    start_srv 43106 CG_TEST_CALDAV_FIELDS=1
-    cal="${home}fields/"
-    gen fields-generate "$cal" 'priority='
-    sed 's/location=Bank/location=Office/' .tmp/organize-vectors-fields-generate.txt >.tmp/organize-vectors-fields-generate.txt.edited
-    apply_doc fields-office .tmp/organize-vectors-fields-generate.txt.edited
-    gen fields-after-office "$cal" 'priority='
-    stop_srv
-    start_srv 43106 CG_TEST_CALDAV_FIELDS=1
-    cal="${home}fields/"
-    sed 's/Pay rent$/Pay rent now/' .tmp/organize-vectors-fields-generate.txt >.tmp/organize-vectors-fields-generate.txt.edited
-    apply_doc fields-now .tmp/organize-vectors-fields-generate.txt.edited
-    gen fields-after-now "$cal" 'priority='
-    stop_srv
-    # slice 1.5 C missing-STATUS lane (organize_fields.bats): grouped by status=
-    # the status-less field2..field5 sit ungrouped with no status atom; moving
-    # field5 under `## =needs-action` ASSIGNS its STATUS (RFC 0015 write:one
-    # move-in), while leaving it ungrouped across an unrelated apply
-    # (field1 -> =in-process) writes NOTHING to it (absence is a no-op).
-    start_srv 43106 CG_TEST_CALDAV_FIELDS=1
-    cal="${home}fields/"
-    gen fields-status-generate "$cal" 'status='
-    move_line .tmp/organize-vectors-fields-status-generate.txt '## =needs-action' '^- .field5.ics'
-    apply_doc fields-status-movein .tmp/organize-vectors-fields-status-generate.txt.edited
-    banner 'fields-status-movein curl field5 (expect STATUS:NEEDS-ACTION)'
-    curl -fsS "${home#caldav:}fields/field5.ics"
-    gen fields-status-after-movein "$cal" 'status='
-    stop_srv
-    start_srv 43106 CG_TEST_CALDAV_FIELDS=1
-    cal="${home}fields/"
-    move_line .tmp/organize-vectors-fields-status-generate.txt '## =in-process' '^- .field1.ics'
-    apply_doc fields-status-noop .tmp/organize-vectors-fields-status-generate.txt.edited
-    banner 'fields-status-noop curl field5 (expect NO STATUS line)'
-    curl -fsS "${home#caldav:}fields/field5.ics"
-    gen fields-status-after-noop "$cal" 'status='
-    stop_srv
-
-    start_srv 43107 CG_TEST_CALDAV_LIT=1
-    cal="${home}lit/"
-    gen literal-generate "$cal" '(tags)'
-    move_line .tmp/organize-vectors-literal-generate.txt '# "_ inbox"' '^- .lit2.ics'
-    apply_doc literal .tmp/organize-vectors-literal-generate.txt.edited
-    gen literal-after "$cal" '(tags)'
-    stop_srv
-    # slice 1.5 F TEXT-escaping lane (fresh server): lit3's trailer edit
-    # re-escapes `SUMMARY:Plan\, then do now` on the wire.
-    start_srv 43107 CG_TEST_CALDAV_LIT=1
-    cal="${home}lit/"
-    sed 's/^- \[lit3.ics\] Plan, then do$/- [lit3.ics] Plan, then do now/' .tmp/organize-vectors-literal-generate.txt >.tmp/organize-vectors-literal-generate.txt.edited
-    apply_doc literal-summary .tmp/organize-vectors-literal-generate.txt.edited
-    banner 'literal-summary curl lit3 (expect SUMMARY:Plan\, then do now)'
-    curl -fsS "${home#caldav:}lit/lit3.ics"
-    gen literal-summary-after "$cal" '(tags)'
-    stop_srv
-
-    dodder_hyphen
-    start_srv 43108 CG_TEST_CALDAV_FIELDS=1 CG_TEST_CALDAV_SCHED=1 CG_TEST_CALDAV_NS=1
-    gen groupby-tags "${home}fields/" '(tags)'
-    gen groupby-namespace "${home}ns/" 'project'
-    gen groupby-field "${home}fields/" 'status='
-    gen groupby-date-month "${home}sched/" 'date_due=(month)'
-    gen groupby-date-year "${home}sched/" 'date_due=(year)'
-    reject groupby-reject-colon "${home}sched/" 'date_due:month'
-    reject groupby-reject-bare-tagdim "${home}fields/" 'categories'
-    reject groupby-reject-slash "${home}fields/" 'categories/project'
-    reject groupby-reject-bare-field "${home}fields/" 'status'
-    reject groupby-reject-value "${home}fields/" 'status=x'
-    reject groupby-reject-qualifier "${home}fields/" '(foo)'
-    stop_srv
-    no_config
-
-    # organize_headings.bats (design G10 depth normalization + empty-heading
-    # resets): each apply runs against a FRESH server, as the bats lane does.
-    # with_body DOC OUT writes OUT as DOC's envelope (through the closing `---`)
-    # followed by the body on stdin.
-    with_body() { { awk '{print} /^---$/ && ++c == 2 {exit}' "$1"; cat; } >"$2"; }
-    hd=.tmp/organize-vectors-headings-generate.txt
-    start_srv 43109 CG_TEST_CALDAV_FIELDS=1
-    cal="${home}fields/"
-    gen headings-generate "$cal" '(tags)'
-    with_body "$hd" "$hd.double" <<-'EOM'
-
-    	- [field1.ics location=Bank status=needs-action priority=0_must] Pay rent
-    	- [field4.ics] Someday idea
-    	- [field5.ics] Waiting idea
-
-    	## errand
-
-    	- [field2.ics work priority=1_should] Read book
-    	- [field3.ics priority=2_nice] Water plants
-
-    	## work
-
-    	- [field2.ics errand priority=1_should] Read book
-    	EOM
-    apply_doc headings-double "$hd.double"
-    gen headings-after-double "$cal" '(tags)'
-    stop_srv
-    start_srv 43109 CG_TEST_CALDAV_FIELDS=1
-    with_body "$hd" "$hd.reset" <<-'EOM'
-
-    	- [field5.ics] Waiting idea
-
-    	# work
-
-    	- [field3.ics priority=2_nice] Water plants
-
-    	## errand
-
-    	- [field4.ics] Someday idea
-
-    	##
-
-    	- [field1.ics location=Bank status=needs-action priority=0_must] Pay rent
-
-    	#
-
-    	- [field2.ics priority=1_should] Read book
-    	EOM
-    # (field2's ungrouped line above is spelled BARE, expressing the remove-all:
-    # pulling it out WITH its sibling tag atoms would re-assert them as
-    # membership adds — box atoms are authoritative since slice 2 T3 (G7) —
-    # and the apply would fold to no change.)
-    apply_doc headings-reset "$hd.reset"
-    gen headings-after-reset "$cal" '(tags)'
-    stop_srv
-    start_srv 43109 CG_TEST_CALDAV_FIELDS=1
-    with_body "$hd" "$hd.noop" <<-'EOM'
-
-    	- [field1.ics location=Bank status=needs-action priority=0_must] Pay rent
-    	- [field5.ics] Waiting idea
-
-    	# errand
-
-    	- [field2.ics work priority=1_should] Read book
-
-    	# work
-
-    	- [field2.ics errand priority=1_should] Read book
-    	- [field3.ics priority=2_nice] Water plants
-
-    	##
-
-    	- [field4.ics] Someday idea
-    	EOM
-    apply_doc headings-noop "$hd.noop"
-    gen headings-after-noop "$cal" '(tags)'
-    stop_srv
-
-    # organize_tagatoms.bats (native tags slice 2, design G1/G2/G3): key-free
-    # tag atoms + the `_tag-atoms` / `_tag-strip` levers. Fixture augmentation
-    # is per-test via curl PUT against the in-memory server (a second tag on
-    # lit1, a chore tag on lit2, the bare `project` on nsD), so the seeded
-    # /dav/lit/ + /dav/ns/ fixtures — and every other lane's vectors — stay
-    # untouched.
-    put_ics() { curl -fsS -X PUT --data-binary @- "$1" >/dev/null; }
-    org_config() { # multi-line config body on stdin
-      cat >"$XDG_CONFIG_HOME/cutting-garden/config.toml"
-    }
-    no_config
-    # G1 leading default (+ pass-through apply: a move keeps the box's tags).
-    start_srv 43110 CG_TEST_CALDAV_LIT=1
-    cal="${home}lit/"
-    gen tagatoms-leading "$cal" 'status='
-    move_line .tmp/organize-vectors-tagatoms-leading.txt '## =needs-action' '^- .lit1.ics'
-    apply_doc tagatoms-pass .tmp/organize-vectors-tagatoms-leading.txt.edited
-    banner 'tagatoms-pass curl lit1 (expect STATUS:NEEDS-ACTION + CATEGORIES:_ inbox)'
-    curl -fsS "${home#caldav:}lit/lit1.ics"
-    gen tagatoms-pass-after "$cal" 'status='
-    stop_srv
-    # G7 box tag edits are membership writes (slice 2 T3): an ADDED atom and a
-    # REMOVED atom each land as a full-set CATEGORIES write (curl-verified,
-    # after-render shows the box).
-    start_srv 43110 CG_TEST_CALDAV_LIT=1
-    cal="${home}lit/"
-    gen tagatoms-add-generate "$cal" 'status='
-    sed 's/^- \[lit2.ics location=Bank\]/- [lit2.ics urgent location=Bank]/' .tmp/organize-vectors-tagatoms-add-generate.txt >.tmp/organize-vectors-tagatoms-add-generate.txt.edited
-    apply_doc tagatoms-add .tmp/organize-vectors-tagatoms-add-generate.txt.edited
-    banner 'tagatoms-add curl lit2 (expect CATEGORIES:urgent)'
-    curl -fsS "${home#caldav:}lit/lit2.ics"
-    gen tagatoms-add-after "$cal" 'status='
-    stop_srv
-    start_srv 43110 CG_TEST_CALDAV_LIT=1
-    cal="${home}lit/"
-    gen tagatoms-remove-generate "$cal" 'status='
-    sed 's/^- \[lit1.ics "_ inbox"\]/- [lit1.ics]/' .tmp/organize-vectors-tagatoms-remove-generate.txt >.tmp/organize-vectors-tagatoms-remove-generate.txt.edited
-    apply_doc tagatoms-remove .tmp/organize-vectors-tagatoms-remove-generate.txt.edited
-    banner 'tagatoms-remove curl lit1 (expect NO CATEGORIES line)'
-    curl -fsS "${home#caldav:}lit/lit1.ics"
-    gen tagatoms-remove-after "$cal" 'status='
-    stop_srv
-    # G1 trailing via config (+ G3 doc-wins: the doc's `- _tag-atoms = leading`
-    # edit wins over the trailing config, and repositioned tags are not an edit).
-    org_config <<-'EOF'
-    	[organize]
-    	tag_atoms = "trailing"
-    	EOF
-    start_srv 43110 CG_TEST_CALDAV_LIT=1
-    cal="${home}lit/"
-    put_ics "${home#caldav:}lit/lit2.ics" <<-'EOF'
-    	BEGIN:VCALENDAR
-    	VERSION:2.0
-    	BEGIN:VTODO
-    	UID:lit2
-    	SUMMARY:Read book
-    	LOCATION:Bank
-    	CATEGORIES:chore
-    	END:VTODO
-    	END:VCALENDAR
-    	EOF
-    gen tagatoms-trailing "$cal" 'status='
-    sed -e 's/^- _tag-atoms = trailing$/- _tag-atoms = leading/' \
-      -e 's/^- \[lit2.ics location=Bank chore\]/- [lit2.ics chore location=Bank]/' \
-      .tmp/organize-vectors-tagatoms-trailing.txt >.tmp/organize-vectors-tagatoms-trailing.txt.edited
-    move_line .tmp/organize-vectors-tagatoms-trailing.txt.edited '## =needs-action' '^- .lit1.ics'
-    mv .tmp/organize-vectors-tagatoms-trailing.txt.edited.edited .tmp/organize-vectors-tagatoms-trailing.txt.edited
-    apply_doc tagatoms-docwins .tmp/organize-vectors-tagatoms-trailing.txt.edited
-    banner 'tagatoms-docwins curl lit1 (expect STATUS:NEEDS-ACTION)'
-    curl -fsS "${home#caldav:}lit/lit1.ics"
-    stop_srv
-    # G1 none via config.
-    org_config <<-'EOF'
-    	[organize]
-    	tag_atoms = "none"
-    	EOF
-    start_srv 43110 CG_TEST_CALDAV_LIT=1
-    cal="${home}lit/"
-    gen tagatoms-none "$cal" 'status='
-    stop_srv
-    # G2 placement strip under (tags): a two-tag lit1 keeps the OTHER tag in
-    # each bucket's box.
-    no_config
-    start_srv 43110 CG_TEST_CALDAV_LIT=1
-    cal="${home}lit/"
-    put_ics "${home#caldav:}lit/lit1.ics" <<-'EOF'
-    	BEGIN:VCALENDAR
-    	VERSION:2.0
-    	BEGIN:VTODO
-    	UID:lit1
-    	SUMMARY:Triage inbox
-    	CATEGORIES:_ inbox,urgent
-    	END:VTODO
-    	END:VCALENDAR
-    	EOF
-    gen tagatoms-strip "$cal" '(tags)'
-    # …and a whole-dimension bucket-to-bucket MOVE: lit3 from
-    # `# "planning, misc"` to `# urgent` (the target bucket's lit1 keeps its
-    # sibling tag atom untouched).
-    move_line .tmp/organize-vectors-tagatoms-strip.txt '# urgent' '^- .lit3.ics'
-    apply_doc tagatoms-tagmove .tmp/organize-vectors-tagatoms-strip.txt.edited
-    banner 'tagatoms-tagmove curl lit3 (expect CATEGORIES:urgent)'
-    curl -fsS "${home#caldav:}lit/lit3.ics"
-    gen tagatoms-tagmove-after "$cal" '(tags)'
-    stop_srv
-    # G7 conflicts against the two-tag strip document (fresh server, re-seeded
-    # lit1): a non-placement tag added to ONE box only (cross-appearance
-    # disagreement) and a still-placed tag removed from a box
-    # (placement-vs-box) each refuse with exit 2.
-    start_srv 43110 CG_TEST_CALDAV_LIT=1
-    cal="${home}lit/"
-    put_ics "${home#caldav:}lit/lit1.ics" <<-'EOF'
-    	BEGIN:VCALENDAR
-    	VERSION:2.0
-    	BEGIN:VTODO
-    	UID:lit1
-    	SUMMARY:Triage inbox
-    	CATEGORIES:_ inbox,urgent
-    	END:VTODO
-    	END:VCALENDAR
-    	EOF
-    sed 's/^- \[lit1.ics urgent\] Triage inbox$/- [lit1.ics urgent foo] Triage inbox/' .tmp/organize-vectors-tagatoms-strip.txt >.tmp/organize-vectors-tagatoms-strip.txt.edited
-    banner 'tagatoms-conflict-disagree apply (expect exit 2)'
-    "$cg" organize -apply .tmp/organize-vectors-tagatoms-strip.txt.edited -commit || echo "exit=$?"
-    sed 's/^- \[lit1.ics urgent\] Triage inbox$/- [lit1.ics] Triage inbox/' .tmp/organize-vectors-tagatoms-strip.txt >.tmp/organize-vectors-tagatoms-strip.txt.edited
-    banner 'tagatoms-conflict-placement apply (expect exit 2)'
-    "$cg" organize -apply .tmp/organize-vectors-tagatoms-strip.txt.edited -commit || echo "exit=$?"
-    stop_srv
-    # G10a root strip: nsD carrying other,project files under `# project` with
-    # only `other` in the box.
-    org_config <<-'EOF'
-    	[tags]
-    	interpreter = "dodder-hyphen"
-    	EOF
-    start_srv 43110 CG_TEST_CALDAV_NS=1
-    cal="${home}ns/"
-    put_ics "${home#caldav:}ns/nsD.ics" <<-'EOF'
-    	BEGIN:VCALENDAR
-    	VERSION:2.0
-    	BEGIN:VTODO
-    	UID:nsD
-    	SUMMARY:Loose idea
-    	CATEGORIES:other,project
-    	END:VTODO
-    	END:VCALENDAR
-    	EOF
-    gen tagatoms-nsroot "$cal" 'project'
-    stop_srv
-    # G2 all-contributors strip: BOTH of nsE's -client-rolling tags strip under
-    # `## -client`; the out-of-namespace `urgent` sibling stays in the box.
-    start_srv 43110 CG_TEST_CALDAV_NS=1
-    cal="${home}ns/"
-    put_ics "${home#caldav:}ns/nsE.ics" <<-'EOF'
-    	BEGIN:VCALENDAR
-    	VERSION:2.0
-    	BEGIN:VTODO
-    	UID:nsE
-    	SUMMARY:Two clients
-    	CATEGORIES:project-client-acme,project-client-baxter,urgent
-    	END:VTODO
-    	END:VCALENDAR
-    	EOF
-    gen tagatoms-nse "$cal" 'project'
-    stop_srv
-    # G2 `_tag-strip = none`: the Via tags stay in every box.
-    org_config <<-'EOF'
-    	[tags]
-    	interpreter = "dodder-hyphen"
-
-    	[organize]
-    	tag_strip = "none"
-    	EOF
-    start_srv 43110 CG_TEST_CALDAV_NS=1
-    cal="${home}ns/"
-    gen tagatoms-stripnone "$cal" 'project'
-    # …and the G7 `_tag-strip = none` move-is-not-an-edit reading: nsA moved
-    # between rollup buckets with its box atom untouched KEEPS the old tag
-    # (box authoritative); only the new bucket's reconstructed tag is added.
-    move_line .tmp/organize-vectors-tagatoms-stripnone.txt '## -cutting_garden' '^- .nsA.ics'
-    apply_doc tagatoms-stripnone-move .tmp/organize-vectors-tagatoms-stripnone.txt.edited
-    banner 'tagatoms-stripnone-move curl nsA (expect CATEGORIES:project-client-acme,project-cutting_garden)'
-    curl -fsS "${home#caldav:}ns/nsA.ics"
-    gen tagatoms-stripnone-after "$cal" 'project'
-    stop_srv
-    no_config
-
-# Regenerate the fmt_organize.bats whole-document vectors (native tags design
-# G4, slice 3): on the lane's pinned port 43111 (lib/caldav.bash), generate the
-# /dav/lit/ status document, run `fmt-organize` unchanged, drift lit2's SUMMARY
-# via curl PUT and fmt again (rewritten), then the trailing-lever lane
-# (generate under `[organize] tag_atoms = trailing`, REMOVE the config, drift,
-# fmt) — printing each summary line + rewritten file under a `###` banner so
-# the `_base` digests can be pasted into the bats heredocs. PRINTS only;
-# pasting back is manual (same caveat as debug-organize-vectors). Uses the
-# NIX-built CLI (see debug-organize-literal for why) and a throwaway XDG config
-# dir. WRITES to the throwaway in-memory server only.
-[group('debug')]
-debug-fmt-organize-vectors:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    root="{{ justfile_directory() }}"
-    cd "$root"
-    nix build .#default --out-link .tmp/cg-result
-    cg=.tmp/cg-result/bin/cutting-garden
-    nix develop --command go build -o .tmp/cutting-garden-caldav-testserver ./cmd/cutting-garden-caldav-testserver
-    nix develop --command madder init -encryption none .default 2>/dev/null || true
-    export XDG_CONFIG_HOME="$root/.tmp/fmt-organize-vectors-config"
-    rm -rf "$XDG_CONFIG_HOME"; mkdir -p "$XDG_CONFIG_HOME/cutting-garden"
-    banner() { printf '\n### %s\n' "$*"; }
-    start_srv() {
-      coproc SRV { env CG_TEST_CALDAV_PORT=43111 CG_TEST_CALDAV_LIT=1 .tmp/cutting-garden-caldav-testserver; }
-      read -r -u "${SRV[0]}" source_url _calpath
-      home="${source_url%/dav/}/dav/"
-    }
-    stop_srv() { exec {SRV[1]}>&- || true; wait "$SRV_PID" 2>/dev/null || true; }
-    put_lit2() { curl -fsS -X PUT --data-binary @- "${home#caldav:}lit/lit2.ics"; }
-    doc=.tmp/fmt-organize-vectors-doc.txt
-
-    start_srv
-    banner generate
-    "$cg" organize -group-by status= "${home}lit/" | tee "$doc"
-    banner fmt-unchanged
-    "$cg" fmt-organize "$doc"
-    put_lit2 <<-'EOF'
-    	BEGIN:VCALENDAR
-    	VERSION:2.0
-    	BEGIN:VTODO
-    	UID:lit2
-    	SUMMARY:Read many books
-    	LOCATION:Bank
-    	END:VTODO
-    	END:VCALENDAR
-    	EOF
-    banner fmt-rewritten
-    "$cg" fmt-organize "$doc"
-    banner fmt-after
-    cat "$doc"
-    stop_srv
-
-    # The refuse leg runs with the server DOWN: the clean-body gate fires
-    # before any network touch, so an unapplied edit refuses offline (exit 64).
-    awk '
-      /^- \[lit1.ics/ { saved = $0; next }
-      { print }
-      /^## =needs-action$/ { print ""; print saved }
-    ' "$doc" >"$doc.edited"
-    banner fmt-refuse
-    "$cg" fmt-organize "$doc.edited" || echo "exit=$?"
-
-    printf '[organize]\ntag_atoms = "trailing"\n' >"$XDG_CONFIG_HOME/cutting-garden/config.toml"
-    start_srv
-    put_lit2 <<-'EOF'
-    	BEGIN:VCALENDAR
-    	VERSION:2.0
-    	BEGIN:VTODO
-    	UID:lit2
-    	SUMMARY:Read book
-    	LOCATION:Bank
-    	CATEGORIES:chore
-    	END:VTODO
-    	END:VCALENDAR
-    	EOF
-    banner trailing-generate
-    "$cg" organize -group-by status= "${home}lit/" | tee "$doc"
-    rm -f "$XDG_CONFIG_HOME/cutting-garden/config.toml"
-    put_lit2 <<-'EOF'
-    	BEGIN:VCALENDAR
-    	VERSION:2.0
-    	BEGIN:VTODO
-    	UID:lit2
-    	SUMMARY:Read many books
-    	LOCATION:Bank
-    	CATEGORIES:chore
-    	END:VTODO
-    	END:VCALENDAR
-    	EOF
-    banner trailing-fmt
-    "$cg" fmt-organize "$doc"
-    banner trailing-after
-    cat "$doc"
-    stop_srv
-
 # Drop into an interactive shell in a throwaway tempdir with a fresh madder store
 # and the Fastmail caldav creds (CALDAV_USERNAME/PASSWORD) exported — the manual
 # eyeball loop for `cg organize` against a LIVE Fastmail calendar (FDR 0025 Slice 1
@@ -1971,129 +1486,6 @@ debug-conformance-traversal:
     many_set = ["bug", "area-organize"]
     EOF
     "$driver" --manifest "$tmp/m.toml"
-
-# Render the organize-over-the-wire documents the traversal_serve.bats
-# TESTPEER vectors pin (the RFC 0013 facet_writes amendment): the nix-built
-# CLI against the nix-built RFC 0013 test peer configured as a
-# [[traversal_plugins]] wire plugin, with the peer's tree persisted in a
-# throwaway state file (CG_TESTPEER_STATE_FILE) so an apply in one invocation
-# is visible to the next. Prints each document under a `### <label>` banner so
-# the `_base` digests can be pasted into the bats heredocs; the lane's edits
-# are passed as EDIT (a sed script over the state= document) and TAG_EDIT (over
-# the tag= document). WRITES to the throwaway state file only.
-#
-# render the organize-over-the-wire documents for the traversal_serve.bats vectors
-[group('debug')]
-debug-organize-traversal-vectors EDIT='' TAG_EDIT='':
-    #!/usr/bin/env bash
-    set -euo pipefail
-    root="{{ justfile_directory() }}"
-    cd "$root"
-    cg="$(nix build .#default --no-link --print-out-paths)/bin/cutting-garden"
-    peer="$(nix build .#cutting-garden-test-traversal-serve --no-link --print-out-paths)/bin/cutting-garden-test-traversal-serve"
-    work="$root/.tmp/organize-traversal-vectors"
-    rm -rf "$work"; mkdir -p "$work/config/cutting-garden"
-    export XDG_CONFIG_HOME="$work/config"
-    export CG_TESTPEER_STATE_FILE="$work/state.json"
-    printf '[[traversal_plugins]]\nname = "cgtest"\ncommand = ["%s"]\nschemes = ["cgtest"]\n' "$peer" \
-      >"$XDG_CONFIG_HOME/cutting-garden/config.toml"
-    cd "$work"
-    nix develop "$root" --command madder init -encryption none .default >/dev/null
-    banner() { printf '\n### %s\n' "$*"; }
-    gen() { banner "$1"; "$cg" organize -group-by "$2" -query '!cgtest-obj-v1' cgtest://fixture/box | tee "$work/$1.txt"; }
-    gen state-generate 'state='
-    if [[ -n '{{ EDIT }}' ]]; then
-      sed -e '{{ EDIT }}' "$work/state-generate.txt" >"$work/state-edited.txt"
-      banner state-edited; cat "$work/state-edited.txt"
-      banner state-apply; "$cg" organize -apply "$work/state-edited.txt" -commit || echo "exit=$?"
-      gen state-after 'state='
-    fi
-    gen tag-generate 'tag='
-    if [[ -n '{{ TAG_EDIT }}' ]]; then
-      sed -e '{{ TAG_EDIT }}' "$work/tag-generate.txt" >"$work/tag-edited.txt"
-      banner tag-edited; cat "$work/tag-edited.txt"
-      banner tag-apply; "$cg" organize -apply "$work/tag-edited.txt" -commit || echo "exit=$?"
-      gen tag-after 'tag='
-    fi
-    banner list-state-open; "$cg" list -query 'state=open' cgtest://fixture/box
-    banner list-tag-c; "$cg" list -query 'tag=c' cgtest://fixture/box
-
-# Render the organize-over-the-wire documents the traversal_serve.bats TRACKER
-# vectors pin (the forge organize plan's stream-2 RFC 0013 additions: clearable
-# writes, tag_set, inline_fields, trailer_field): the nix-built CLI against the
-# nix-built test peer's cgtest://fixture/tracker, a fresh throwaway state file
-# per run. Generates the GROUP_BY document; with EDITED (a path to an edited
-# copy of that document — its `_base` is deterministic, so write it once from a
-# prior run's output) it applies it with -commit and regenerates, then prints
-# the tracker's `list -format json`. FLAGS are extra organize generate flags
-# (e.g. -include-terminal, to keep the closed ticket the peer's terminal_values
-# hide by default). WRITES to the throwaway state file only.
-#
-# render the organize-over-the-wire tracker documents for the traversal_serve.bats vectors
-[group('debug')]
-debug-organize-tracker-vectors GROUP_BY='milestone=' EDITED='' FLAGS='':
-    #!/usr/bin/env bash
-    set -euo pipefail
-    root="{{ justfile_directory() }}"
-    edited="{{ EDITED }}"
-    [[ -z $edited || $edited == /* ]] || edited="$root/$edited"
-    cd "$root"
-    cg="$(nix build .#default --no-link --print-out-paths)/bin/cutting-garden"
-    peer="$(nix build .#cutting-garden-test-traversal-serve --no-link --print-out-paths)/bin/cutting-garden-test-traversal-serve"
-    work="$root/.tmp/organize-tracker-vectors"
-    rm -rf "$work"; mkdir -p "$work/config/cutting-garden"
-    export XDG_CONFIG_HOME="$work/config"
-    export CG_TESTPEER_STATE_FILE="$work/state.json"
-    printf '[[traversal_plugins]]\nname = "cgtest"\ncommand = ["%s"]\nschemes = ["cgtest"]\n' "$peer" \
-      >"$XDG_CONFIG_HOME/cutting-garden/config.toml"
-    cd "$work"
-    nix develop "$root" --command madder init -encryption none .default >/dev/null
-    banner() { printf '\n### %s\n' "$*"; }
-    gen() { banner "$1"; "$cg" organize {{ FLAGS }} -group-by '{{ GROUP_BY }}' -query '!cgtest-ticket-v1' cgtest://fixture/tracker | tee "$work/$1.txt"; }
-    gen generate
-    if [[ -n $edited ]]; then
-      banner apply; "$cg" organize -apply "$edited" -commit || echo "exit=$?"
-      gen after
-    fi
-    banner list-json; "$cg" list -format json cgtest://fixture/tracker
-
-# Render the organize CREATION lane's caldav vectors (forge organize F8–F10,
-# zz-tests_bats/organize_create.bats): the nix-built CLI against the nix-built
-# caldav testserver's /dav/fields/ calendar on the lane's pinned port 43116
-# (lib/caldav.bash), so the `_base` digests match the heredocs. Generates the
-# GROUP_BY document; with EDITED (a path to an edited copy of it — its `_base`
-# is deterministic, so write it once from a prior run's output) applies it with
-# -commit (a refusal prints its exit code), regenerates, and prints `list
-# -format json`. New objects carry minted random UIDs, which the lane
-# normalizes. WRITES to the throwaway in-memory server only.
-#
-# render the organize creation lane's caldav vectors
-[group('debug')]
-debug-organize-create-vectors GROUP_BY='status=' EDITED='':
-    #!/usr/bin/env bash
-    set -euo pipefail
-    root="{{ justfile_directory() }}"
-    edited="{{ EDITED }}"
-    [[ -z $edited || $edited == /* ]] || edited="$root/$edited"
-    cd "$root"
-    cg="$(nix build .#default --no-link --print-out-paths)/bin/cutting-garden"
-    srv="$(nix build .#cutting-garden-caldav-testserver --no-link --print-out-paths)/bin/cutting-garden-caldav-testserver"
-    work="$root/.tmp/organize-create-vectors"
-    rm -rf "$work"; mkdir -p "$work/config"
-    export XDG_CONFIG_HOME="$work/config" CG_TEST_CALDAV_FIELDS=1 CG_TEST_CALDAV_PORT=43116
-    cd "$work"
-    nix develop "$root" --command madder init -encryption none .default >/dev/null
-    coproc SRV { "$srv"; }
-    read -r -u "${SRV[0]}" source_url _calpath
-    cal="${source_url%/dav/}/dav/fields/"
-    banner() { printf '\n### %s\n' "$*"; }
-    banner generate; "$cg" organize -group-by '{{ GROUP_BY }}' "$cal"
-    if [[ -n $edited ]]; then
-      banner apply; "$cg" organize -apply "$edited" -commit 2>&1 || echo "exit=$?"
-      banner after; "$cg" organize -group-by '{{ GROUP_BY }}' "$cal"
-    fi
-    banner list-json; "$cg" list -format json "$cal"
-    exec {SRV[1]}>&- || true
 
 # Run one package's go tests (optionally one test via RUN, plus extra
 # test-binary FLAGS such as -test.v) without the full `just test` lane — the

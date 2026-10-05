@@ -36,6 +36,7 @@ setup_file() {
 
 setup() {
   load "$(dirname "$BATS_TEST_FILE")/lib/common.bash"
+  load "$(dirname "$BATS_TEST_FILE")/lib/vectors.bash"
   load "$(dirname "$BATS_TEST_FILE")/lib/caldav.bash"
   export output
   export CG_TEST_CALDAV_LIT=1 CG_TEST_CALDAV_NS=1
@@ -74,7 +75,7 @@ put_ics() {
 generate_lit_status() {
   run_cg organize -group-by status= "$LIT"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:43110/dav/lit/`
 	- _base = @blake2b256-8hc5rhypmupd73xp0sw7jxavvhf9f406auk3rnujyptsgk2kag4sp27vk0
@@ -141,7 +142,7 @@ function organize_tagatoms_unchanged_tags_pass_through { # @test
 
   run_cg organize -apply "$edited" -commit
   assert_success
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 organize: 1 change(s):
 
   - [lit1.ics "_ inbox" status={+needs-action+}] Triage inbox
@@ -158,7 +159,7 @@ EOF
 
   run_cg organize -group-by status= "$LIT"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:43110/dav/lit/`
 	- _base = @blake2b256-keglll539yhq9unxd6tagtjaucvrq2xhka7mj4jw9sprsmddr8lqt7naup
@@ -219,7 +220,7 @@ function organize_tagatoms_add_writes_membership { # @test
 	EOM
   run_cg organize -apply "$edited" -commit
   assert_success
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 organize: 1 change(s):
 
   - [lit2.ics {+urgent+} location=Bank] Read book
@@ -235,7 +236,7 @@ EOF
 
   run_cg organize -group-by status= "$LIT"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:43110/dav/lit/`
 	- _base = @blake2b256-l8mjkejmjnachg32hqa72g8z4867a420950sra4uxrpfczt4qdeq5apgma
@@ -294,7 +295,7 @@ function organize_tagatoms_remove_writes_membership { # @test
 	EOM
   run_cg organize -apply "$edited" -commit
   assert_success
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 organize: 1 change(s):
 
   - [lit1.ics [-"_ inbox"-]] Triage inbox
@@ -308,7 +309,7 @@ EOF
 
   run_cg organize -group-by status= "$LIT"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:43110/dav/lit/`
 	- _base = @blake2b256-f8ggv86gmwv07y08f764s6fjfvz8avah7ymzqw6xtk0rgnzyrh3q8nrcjr
@@ -362,7 +363,7 @@ trailing_config_and_chore() {
 generate_lit_trailing() {
   run_cg organize -group-by status= "$LIT"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:43110/dav/lit/`
 	- _base = @blake2b256-mvdp7h560r84657w9mfld8vuwfk28x8up4mvxp0pkwhdekurp23q90l3vu
@@ -434,7 +435,7 @@ function organize_tagatoms_doc_wins { # @test
 
   run_cg organize -apply "$edited" -commit
   assert_success
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 organize: 1 change(s):
 
   - [lit1.ics "_ inbox" status={+needs-action+}] Triage inbox
@@ -459,7 +460,7 @@ function organize_tagatoms_none_config { # @test
 
   run_cg organize -group-by status= "$LIT"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:43110/dav/lit/`
 	- _base = @blake2b256-xxs9z8jfqfjawe24ln5nhlrxdu8fayhxfrw2s4l35krkqqff5vqswucckt
@@ -505,7 +506,7 @@ function organize_tagatoms_strip_placement_keeps_sibling { # @test
 
   run_cg organize -group-by '(tags)' "$LIT"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:43110/dav/lit/`
 	- _base = @blake2b256-pprpzrjd28t3ldp04fgp4fy9pxsmfq9upt75rek0nh0058hg0qhs6v6csd
@@ -581,7 +582,7 @@ function organize_tagatoms_whole_dim_move_applies { # @test
 
   run_cg organize -apply "$edited" -commit
   assert_success
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 organize: 1 change(s):
 
   - [lit3.ics [-"planning, misc"-] {+urgent+}] Plan, then do
@@ -595,7 +596,7 @@ EOF
 
   run_cg organize -group-by '(tags)' "$LIT"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:43110/dav/lit/`
 	- _base = @blake2b256-8dr2vzg9qwj9qv58y03are8r9q0xvcct3h8mej8vh5p6fv4qvt3sl46j9w
@@ -655,7 +656,7 @@ function organize_tagatoms_cross_appearance_disagreement_conflicts { # @test
 
   run_cg organize -apply "$edited" -commit
   assert_failure 2
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 cutting-garden: organize --apply: 1 tag conflict(s) — box tag atoms disagree with placement or across appearances; re-edit the document:
   object lit1.ics: appearances disagree on tag foo: present under "_ inbox", absent under urgent
 EOF
@@ -677,7 +678,7 @@ function organize_tagatoms_placement_vs_box_conflicts { # @test
 
   run_cg organize -apply "$edited" -commit
   assert_failure 2
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 cutting-garden: organize --apply: 1 tag conflict(s) — box tag atoms disagree with placement or across appearances; re-edit the document:
   object lit1.ics: placement says urgent (still under urgent), box says not-urgent (removed under "_ inbox")
 EOF
@@ -709,7 +710,7 @@ function organize_tagatoms_ns_root_strip { # @test
 
   run_cg organize -group-by project "$NS"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by project -query "_terminal=no" caldav:http://127.0.0.1:43110/dav/ns/`
 	- _base = @blake2b256-ypuy3mdaxzzvt7mru0td8409fsjg9r4lke92uz50tclrp4ev6xqqq03gu8
@@ -758,7 +759,7 @@ function organize_tagatoms_ns_strip_all_contributors { # @test
 
   run_cg organize -group-by project "$NS"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by project -query "_terminal=no" caldav:http://127.0.0.1:43110/dav/ns/`
 	- _base = @blake2b256-4ym7tmy7k05a2al2p80nrjn4dleg2za723f8anlqmxe98np94r5s9s2ags
@@ -799,7 +800,7 @@ function organize_tagatoms_strip_none { # @test
 
   run_cg organize -group-by project "$NS"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by project -query "_terminal=no" caldav:http://127.0.0.1:43110/dav/ns/`
 	- _base = @blake2b256-kxd2w9tpk6qfpaafplceqf4kv7ggevz3zhn6zvprsxrgaja05n7qf7z4t9
@@ -874,7 +875,7 @@ function organize_tagatoms_strip_none_move_is_not_an_edit { # @test
 
   run_cg organize -apply "$edited" -commit
   assert_success
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 organize: 1 change(s):
 
   - [nsA.ics project-client-acme {+project-cutting_garden+}] Acme retainer
@@ -889,7 +890,7 @@ EOF
 
   run_cg organize -group-by project "$NS"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by project -query "_terminal=no" caldav:http://127.0.0.1:43110/dav/ns/`
 	- _base = @blake2b256-p7z0uhg0xkhkdl3fue7uu7gywwlqt02nzd7svf6an9t0ak6dnqnsdlqfvh

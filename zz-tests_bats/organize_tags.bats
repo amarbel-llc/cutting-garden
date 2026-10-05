@@ -30,6 +30,7 @@ setup_file() {
 
 setup() {
   load "$(dirname "$BATS_TEST_FILE")/lib/common.bash"
+  load "$(dirname "$BATS_TEST_FILE")/lib/vectors.bash"
   load "$(dirname "$BATS_TEST_FILE")/lib/caldav.bash"
   export output
   export CG_TEST_CALDAV_FIELDS=1
@@ -56,7 +57,7 @@ teardown() {
 generate_grouped() {
   run_cg organize -group-by '(tags)' "$CAL"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:43102/dav/fields/`
 	- _base = @blake2b256-a35sf80axhk3xfyzhg3vf7cexxxqx52cw7c8gdr8tgyjp9fnmzjq3xn6jl
@@ -102,7 +103,7 @@ function organize_categories_multi_membership { # @test
 function list_facets_categories_filter { # @test
   run_cg list -facets -filter 'categories=work' "$CAL"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	categories  work 2  errand 1
 	component   VTODO 2
 	due_band    later 0  overdue 0  this-week 0  today 0
@@ -147,7 +148,7 @@ function organize_categories_apply_writes { # @test
 
   run_cg organize -apply "$edited" -commit
   assert_success
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 organize: 1 change(s):
 
   - [field3.ics {+errand+} [-work-] priority=2_nice] Water plants
@@ -160,7 +161,7 @@ EOF
 
   run_cg organize -group-by '(tags)' "$CAL"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:43102/dav/fields/`
 	- _base = @blake2b256-dpk58j7ut89evkm283km5k2tv3f4gagcvkshs6nzle7xxyjepgvql5jggg

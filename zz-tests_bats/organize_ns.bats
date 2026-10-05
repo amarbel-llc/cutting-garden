@@ -42,6 +42,7 @@ setup_file() {
 
 setup() {
   load "$(dirname "$BATS_TEST_FILE")/lib/common.bash"
+  load "$(dirname "$BATS_TEST_FILE")/lib/vectors.bash"
   load "$(dirname "$BATS_TEST_FILE")/lib/caldav.bash"
   export output
   export CG_TEST_CALDAV_NS=1
@@ -69,7 +70,7 @@ teardown() {
 generate_grouped() {
   run_cg organize -group-by project "$CAL"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by project -query "_terminal=no" caldav:http://127.0.0.1:43103/dav/ns/`
 	- _base = @blake2b256-yu624kdcgwz29tj8nh6eka0chs3rqpyt7u53tgyvvx6v5zznz5gs9ypmm4
@@ -145,7 +146,7 @@ function organize_ns_rollup_move_writes_reconstructed_tag { # @test
 
   run_cg organize -apply "$edited" -commit
   assert_success
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 organize: 1 change(s):
 
   - [nsA.ics [-project-client-acme-] {+project-cutting_garden+}] Acme retainer
@@ -164,7 +165,7 @@ EOF
 
   run_cg organize -group-by project "$CAL"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by project -query "_terminal=no" caldav:http://127.0.0.1:43103/dav/ns/`
 	- _base = @blake2b256-4yfvv4wyma5yt8wz6f6umfplw7pqc72vnja5n6e77ceqharjmvvqppk96m
@@ -231,7 +232,7 @@ function organize_ns_direct_root_placement_writes_bare_tag { # @test
 
   run_cg organize -apply "$edited" -commit
   assert_success
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 organize: 1 change(s):
 
   - [nsD.ics other {+project+}] Loose idea
@@ -247,7 +248,7 @@ EOF
 
   run_cg organize -group-by project "$CAL"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by project -query "_terminal=no" caldav:http://127.0.0.1:43103/dav/ns/`
 	- _base = @blake2b256-lcdjhf2je7lpvn0vd2dp2gg4d4g5weeyu5r05qufj4p6ufqrsr0qpygaa7
@@ -285,7 +286,7 @@ EOF
 function organize_ns_list_json_carries_tags { # @test
   run_cg list -format json "$CAL"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	{"uri":"caldav:http://127.0.0.1:43103/dav/ns/nsA.ics","name":"nsA.ics","type":"caldav-object-vtodo-v1","tags":["project-client-acme"]}
 	{"uri":"caldav:http://127.0.0.1:43103/dav/ns/nsB.ics","name":"nsB.ics","type":"caldav-object-vtodo-v1","tags":["project-client-baxter"]}
 	{"uri":"caldav:http://127.0.0.1:43103/dav/ns/nsC.ics","name":"nsC.ics","type":"caldav-object-vtodo-v1","tags":["project-cutting_garden"]}

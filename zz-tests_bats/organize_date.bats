@@ -23,6 +23,7 @@ setup_file() {
 
 setup() {
   load "$(dirname "$BATS_TEST_FILE")/lib/common.bash"
+  load "$(dirname "$BATS_TEST_FILE")/lib/vectors.bash"
   load "$(dirname "$BATS_TEST_FILE")/lib/caldav.bash"
   export output
   # Opt this lane's testserver into the dedicated /dav/sched/ calendar (kept out
@@ -53,7 +54,7 @@ teardown() {
 generate_month() {
   run_cg organize -group-by "${1:-date_due=(month)}" "$CAL"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by date_due=(month) -query "_terminal=no" caldav:http://127.0.0.1:43104/dav/sched/`
 	- _base = @blake2b256-kuaxfueta7yl0n5ceqfacpnvt9zpkcrk0t5uwgz9fhp3vejp09fst9zgap
@@ -115,7 +116,7 @@ function organize_date_month_reschedule_preserves_datetime { # @test
 
   run_cg organize -apply "$edited" -commit
   assert_success
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 organize: 1 change(s):
 
   - [sched1.ics date_due=2026-08-15 time_due=14-30 date_due=(month)=[-2026-08-]{+2026-09+}] Book flights
@@ -153,7 +154,7 @@ EOF
   # spliced to the 15th of the new month, the emptied 2026-08 bucket gone.
   run_cg organize -group-by 'date_due=(month)' "$CAL"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by date_due=(month) -query "_terminal=no" caldav:http://127.0.0.1:43104/dav/sched/`
 	- _base = @blake2b256-m9syr55ukvvauq6ey2wwl0hcvdkgatx69xluu4fjyk3mz9z00z3qmpeqxu
@@ -203,7 +204,7 @@ function organize_date_move_and_atom_edit_conflict { # @test
 
   run_cg organize -apply "$edited" -commit
   assert_failure 64
-  assert_output - <<'EOF'
+  assert_vector - <<'EOF'
 cutting-garden: organize --apply: 1 conflicting edit(s) — a bucket move and a field edit both write the same property:
   sched1.ics: moved to bucket 2026-09 and date_due edited to 2026-09-20 in the same document; make one edit
 EOF
@@ -225,7 +226,7 @@ EOF
 function organize_date_bare_groups_by_day { # @test
   run_cg organize -group-by date_due= "$CAL"
   assert_success
-  assert_output - <<-'EOM'
+  assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize -group-by date_due=(day) -query "_terminal=no" caldav:http://127.0.0.1:43104/dav/sched/`
 	- _base = @blake2b256-sv5d5z5w5dnwxtn3k9gp78cwgepp0dfsnn0ftajr9gwc5ltr90wqh6jfx6

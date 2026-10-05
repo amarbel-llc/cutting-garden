@@ -1,7 +1,8 @@
 # Native tags — vector index (G# → bats test)
 
 Review checklist for `2026-08-30-native-tags-design.md`. Every row is a
-whole-document vector (`assert_output - <<-EOM`) unless marked golden. Test
+whole-document vector (`assert_vector - <<-'EOM'`, regenerated in place by
+`just test-bats-update-vectors` — design G16's regeneration amendment). Test
 names are filled in as each slice lands; `—` = not yet written. Bats names
 are the `function <name> { # @test` form; Go names are `go test` functions.
 Slice 1 rows verified against the tree 2026-08-30 (T7). Slice 2 rows (G1, G2,

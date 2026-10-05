@@ -145,4 +145,6 @@ Rendering tags from data (Slice 2), `fmt-organize` (3), `list` changes (4),
   documents; pasting the `_base` digests back into the bats heredocs is
   manual. The gap: a `CG_UPDATE_GOLDENS`-style lane that rewrites the vectors
   in place (the G16 golden.bash port generalized to the whole-document
-  heredocs).
+  heredocs). **Landed 2026-10-05 (cutting-garden#250)** as
+  `just test-bats-update-vectors` / `CG_UPDATE_VECTORS`; it retired
+  `debug-organize-vectors` and its four sibling print-only recipes.

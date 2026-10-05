@@ -164,10 +164,19 @@ shared writer + the `node_view` espalier-view helpers, and
 `list -format text` is a dewey mesa table (TAB-separated on a pipe)
 with a TAGS column when the plugin declares a tag dimension. The organize bats lanes are
 whole-document vectors
-(`assert_output - <<-EOM`) against the caldav testserver on a pinned port
-per lane (`CG_TEST_CALDAV_PORT`; the port table lives in
+(`assert_vector - <<-'EOM'`, `zz-tests_bats/lib/vectors.bash` — it is
+`assert_output` outside update mode) against the caldav testserver on a
+pinned port per lane (`CG_TEST_CALDAV_PORT`; the port table lives in
 `zz-tests_bats/lib/caldav.bash`), indexed G# → test in
-`docs/plans/2026-08-30-native-tags-vectors.md`. The nvim tree-sitter
+`docs/plans/2026-08-30-native-tags-vectors.md`. After a change to what
+organize emits, do NOT hand-paste `_base` digests: `just
+test-bats-update-vectors [files]` reruns the lanes on the host
+(`.#cutting-garden-bats-host`: `bats-capture`'s exact binaries, a
+from-scratch environment) and rewrites the heredocs in place, digests
+verbatim, carrying each new envelope/digest to the edited input documents
+pinned to it — then review the diff. `just debug-test-bats [files]` is the
+same host runner for iterating on one lane; `zz-tests_bats/vectors.bats`
+pins the rewriter itself. The nvim tree-sitter
 grammar (`zz-nvim/grammars/organize`) is the dialect's conformance
 corpus: `just test-grammar-corpus` (= `checks.grammar-corpus`) runs it,
 `just codemod-generate-tree-sitter` regenerates the committed parser, and
