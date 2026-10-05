@@ -2,7 +2,7 @@
 // (RFC 0015 / FDR 0023).
 //
 //   ---
-//   % generated: `cg organize -group-by status= caldav:.../cal/`
+//   % generated: `cg organize caldav:.../cal/ status=`
 //   - _base = @blake2b256-9ft3x
 //   - _anchor = caldav:.../cal/
 //   - _type = !caldav-object-vtodo-v1

@@ -5,9 +5,11 @@
 //
 // Invocation shapes:
 //
-//	organize <uri> <group-by> [--query <trellis>]           interactive (TTY) / generate (pipe)
-//	  (<group-by> may be positional as shown, or the --group-by flag: `(tags)`,
-//	  `project`, `status=`, `date_due=(month)` — native tags design G10)
+//	organize <expression> <group-by>                        interactive (TTY) / generate (pipe)
+//	  (<expression> is one trellis expression carrying its own origin, RFC 0020
+//	  §4.1: `<uri>` alone, or `'<uri> -> <query>'`. <group-by> may be positional
+//	  as shown, or the --group-by flag: `(tags)`, `project`, `status=`,
+//	  `date_due=(month)` — native tags design G10)
 //	organize --apply <path> [--commit|--dry-run]            apply an edited document
 //	organize --commit-directly < doc                        apply from stdin, committing
 //
@@ -40,10 +42,14 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
+	"strings"
+	"unicode"
 
 	"code.linenisgreat.com/cutting-garden/internal/cgconfig"
 	"code.linenisgreat.com/cutting-garden/internal/command"
 	"code.linenisgreat.com/cutting-garden/internal/command_components"
+	"code.linenisgreat.com/cutting-garden/internal/trellis_eval"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/interfaces"
 	"github.com/mattn/go-isatty"
@@ -51,9 +57,16 @@ import (
 
 // Organize is the value registered for the `organize` subcommand.
 type Organize struct {
-	// Query is an optional trellis query (RFC 0014) selecting the nodes to
-	// organize; empty means the anchor's enriched child listing.
+	// Query is the trellis query (RFC 0014) selecting the nodes to organize —
+	// the part of the positional expression after the origin's `->` (RFC 0020
+	// §4.1); empty means the anchor's enriched child listing.
 	Query string
+	// originSource is the positional expression's origin as written, echoed
+	// into the document's provenance note.
+	originSource string
+	// removedQuery receives the retired -query flag so passing it is a usage
+	// error that names the replacement, not an "unknown flag".
+	removedQuery string
 	// GroupBy is the grouping the document is built around (required to
 	// generate), in the one spelling the `_group-by` directive and the dimension
 	// heading share (native tags design G10): `(tags)` for the type's whole tag
@@ -128,10 +141,11 @@ func (*Organize) GetSeeAlso() []string {
 
 func (cmd *Organize) SetFlagDefinitions(flagSet interfaces.CLIFlagDefinitions) {
 	flagSet.StringVar(
-		&cmd.Query,
+		&cmd.removedQuery,
 		"query",
 		"",
-		"trellis query selecting the nodes to organize (RFC 0014; optional)",
+		"REMOVED (RFC 0020): write the selection as the first argument instead, "+
+			"`'<uri> -> <trellis query>'`; passing this flag is a usage error",
 	)
 	flagSet.StringVar(
 		&cmd.GroupBy,
@@ -215,19 +229,37 @@ func (cmd *Organize) Run(req command.Request) {
 		return
 	}
 
+	if cmd.removedQuery != "" {
+		errors.ContextCancelWithBadRequestf(ctx,
+			"organize: -query was removed; put the selection in the first "+
+				"argument as one trellis expression: "+
+				"`cg organize '<uri> -> %s' [group-by]` (RFC 0020 §4.1)",
+			cmd.removedQuery)
+		return
+	}
+
 	args := req.PeekArgs()
 	switch {
 	case len(args) == 0:
 		errors.ContextCancelWithBadRequestf(ctx,
-			"organize requires a <uri> to generate (or --apply <path> to apply "+
-				"an edited document)")
+			"organize requires a selection to generate — a <uri>, or "+
+				"`'<uri> -> <trellis query>'` (or --apply <path> to apply an "+
+				"edited document)")
 		return
 	case len(args) > 2:
 		errors.ContextCancelWithBadRequestf(ctx,
 			"too many positional arguments; organize takes at most two "+
-				"(<uri> [group-by]), trailing: %v", args[2:])
+				"(<expression> [group-by]), trailing: %v", args[2:])
 		return
 	}
+
+	selection, err := parseSelection(args[0])
+	if err != nil {
+		errors.ContextCancelWithError(ctx, err)
+		return
+	}
+	cmd.Query = selection.Query
+	cmd.originSource = selection.OriginSource
 
 	// A bare second positional is the grouping dimension — sugar for -group-by, so
 	// `cg organize caldav:task priority` works (cutting-garden#216, the ergonomic
@@ -243,9 +275,32 @@ func (cmd *Organize) Run(req command.Request) {
 		cmd.GroupBy = args[1]
 	}
 
-	if err := cmd.runGenerateOrInteractive(ctx, cfg, args[0]); err != nil {
+	if err := cmd.runGenerateOrInteractive(ctx, cfg, selection.Origin); err != nil {
 		errors.ContextCancelWithError(ctx, err)
 	}
+}
+
+// parseSelection reads organize's first positional as ONE trellis expression in
+// origin-in-expression form (RFC 0020 §4.1): `<uri>` alone, or
+// `<uri> -> <query>`, the origin naming the anchor and the remainder the
+// selection within it.
+//
+// An argument with no whitespace cannot hold a combinator (they require
+// surrounding whitespace), so it can only be an origin. If it does not parse as
+// a trellis term it is taken as a literal URI: a URL carrying a reserved rune
+// (`user@host` in a CalDAV path) stays usable unquoted, as it was when this
+// argument was a plain <uri>.
+func parseSelection(arg string) (trellis_eval.Selection, error) {
+	selection, err := trellis_eval.SplitOrigin(arg)
+	if err == nil {
+		return selection, nil
+	}
+	if !strings.ContainsFunc(arg, unicode.IsSpace) {
+		return trellis_eval.Selection{Origin: arg, OriginSource: strconv.Quote(arg)}, nil
+	}
+	return trellis_eval.Selection{}, errors.BadRequestf(
+		"organize: selection %q: %s (expected `<uri>` or `<uri> -> <trellis query>`)",
+		arg, err)
 }
 
 // runGenerateOrInteractive chooses the default behavior for a bare `organize

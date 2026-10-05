@@ -51,6 +51,85 @@ func Parse(src string) (*Query, error) {
 	return &Query{Path: path}, nil
 }
 
+// LeadingStep is SplitLeadingStep's result: a query's first step, the
+// combinator bridging it to the rest (nil when the query is that one step),
+// and the source spellings of both halves.
+type LeadingStep struct {
+	Step Step
+	// StepSource is the first step's source text, verbatim.
+	StepSource string
+	// Combinator joins the first step to Rest; nil when Rest is empty.
+	Combinator *Combinator
+	// Rest is the source text after that combinator, verbatim apart from
+	// surrounding whitespace — itself a complete query. Empty for a
+	// one-step query.
+	Rest string
+}
+
+// SplitLeadingStep splits src after its first step, returning that step and
+// the SOURCE TEXT of everything past the combinator that follows it. It
+// exists for origin-in-expression consumers (FDR 0022 §Origin resolution)
+// that resolve the first step themselves and hand the remainder on as a
+// query string: the AST records no source spans and the package has no
+// query printer, so the remainder can only be recovered by position.
+//
+// src must be a complete query with no leading combinator; Rest, when
+// non-empty, is guaranteed to Parse. Errors are a *SyntaxError.
+func SplitLeadingStep(src string) (LeadingStep, error) {
+	p := &parser{src: []rune(src)}
+	p.skipSPOpt()
+
+	leadStart := p.pos
+	if _, ok := p.parseCombinator(); ok && p.skipSP() {
+		return LeadingStep{}, &SyntaxError{
+			Offset: leadStart,
+			Msg:    "a leading combinator has no first step to split at",
+		}
+	}
+	p.pos = leadStart
+
+	stepStart := p.pos
+	step, ok := p.parseStep()
+	if !ok {
+		return LeadingStep{}, p.syntaxError("expected a query")
+	}
+	out := LeadingStep{Step: step, StepSource: string(p.src[stepStart:p.pos])}
+
+	afterStep := p.pos
+	p.skipSPOpt()
+	if p.atEOF() {
+		return out, nil
+	}
+	p.pos = afterStep
+
+	if !p.skipSP() {
+		return LeadingStep{}, p.syntaxError("unexpected trailing input")
+	}
+	comb, ok := p.parseCombinator()
+	if !ok || !p.skipSP() {
+		return LeadingStep{}, p.syntaxError("expected a combinator after the first step")
+	}
+
+	end := len(p.src)
+	for end > p.pos && isSP1(p.src[end-1]) {
+		end--
+	}
+	rest := string(p.src[p.pos:end])
+	if _, err := Parse(rest); err != nil {
+		if serr, isSyntax := err.(*SyntaxError); isSyntax {
+			// Report the offset against src, not against the remainder.
+			return LeadingStep{}, &SyntaxError{
+				Offset: p.pos + serr.Offset, Msg: serr.Msg,
+			}
+		}
+		return LeadingStep{}, err
+	}
+
+	out.Combinator = &comb
+	out.Rest = rest
+	return out, nil
+}
+
 // parser is a hand-rolled recursive-descent, backtracking parser over
 // trellis.peg. Each grammar rule has a corresponding parseX method; ordered
 // choices try alternatives in the grammar's own order and restore p.pos on

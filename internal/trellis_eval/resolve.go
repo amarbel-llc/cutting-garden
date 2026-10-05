@@ -79,6 +79,47 @@ func EvaluateResolving(
 	return ev.run(ctx, remSteps, remCombinators)
 }
 
+// Selection is an origin-in-expression query split for a consumer that
+// resolves the origin itself and passes the rest on as a query string.
+type Selection struct {
+	// Origin is the origin URI, unquoted — what an OriginResolver resolves.
+	Origin string
+	// OriginSource is the origin as written (quoted when the source quoted
+	// it), for echoing the expression back to a user.
+	OriginSource string
+	// Query is the source text after the origin's `->`, verbatim; empty for a
+	// bare origin. Evaluating it against the resolved origin is equivalent to
+	// EvaluateResolving over the whole expression.
+	Query string
+}
+
+// SplitOrigin splits an origin-in-expression query (`origin -> step…`) into its
+// origin and the remainder's source text, applying the same origin rules as
+// EvaluateResolving: a single undecorated identifier, bridged to the rest by a
+// forward `->`. The remainder is NOT validated against the evaluator's supported
+// subset here — Evaluate does that when it runs.
+func SplitOrigin(src string) (Selection, error) {
+	lead, err := trellis.SplitLeadingStep(src)
+	if err != nil {
+		return Selection{}, errors.BadRequestf("%s", err)
+	}
+	origin, err := originString(lead.Step)
+	if err != nil {
+		return Selection{}, err
+	}
+	if lead.Combinator != nil && lead.Combinator.Kind != trellis.CombinatorFwd {
+		return Selection{}, errors.BadRequestf(unsupported,
+			"a non-forward combinator after the origin URI (only `->` bridges an "+
+				"origin to its children this slice, got "+
+				combinatorName(lead.Combinator.Kind)+")")
+	}
+	return Selection{
+		Origin:       origin,
+		OriginSource: lead.StepSource,
+		Query:        lead.Rest,
+	}, nil
+}
+
 // validateOriginQuery checks q is a well-formed origin-in-expression query: no
 // leading combinator, a leading lone URI origin term, a forward combinator (if
 // any) bridging the origin to its children, and a remainder within the

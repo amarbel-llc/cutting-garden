@@ -224,8 +224,7 @@ run_cg_stdout() {
 function test_testpeer_organize_write_one_move_round_trips { # @test
   configure_testpeer_wire_plugin
 
-  run_cg_stdout organize -group-by state= -query '!cgtest-obj-v1' \
-    cgtest://fixture/box
+  run_cg_stdout organize 'cgtest://fixture/box -> !cgtest-obj-v1' state=
   assert_success
   assert_vector - <<-'EOM'
 	---
@@ -287,8 +286,7 @@ EOF
   assert_success
   assert_output ''
 
-  run_cg_stdout organize -group-by state= -query '!cgtest-obj-v1' \
-    cgtest://fixture/box
+  run_cg_stdout organize 'cgtest://fixture/box -> !cgtest-obj-v1' state=
   assert_success
   assert_vector - <<-'EOM'
 	---
@@ -315,8 +313,7 @@ EOF
 function test_testpeer_organize_write_many_replaces_membership { # @test
   configure_testpeer_wire_plugin
 
-  run_cg_stdout organize -group-by tag= -query '!cgtest-obj-v1' \
-    cgtest://fixture/box
+  run_cg_stdout organize 'cgtest://fixture/box -> !cgtest-obj-v1' tag=
   assert_success
   assert_vector - <<-'EOM'
 	---
@@ -385,8 +382,7 @@ EOF
   assert_success
   assert_output ''
 
-  run_cg_stdout organize -group-by tag= -query '!cgtest-obj-v1' \
-    cgtest://fixture/box
+  run_cg_stdout organize 'cgtest://fixture/box -> !cgtest-obj-v1' tag=
   assert_success
   assert_vector - <<-'EOM'
 	---
@@ -454,8 +450,7 @@ function test_testpeer_undeclared_terminal_value_fails_initialize { # @test
 function test_testpeer_tracker_clearable_move_clears_milestone { # @test
   configure_testpeer_wire_plugin
 
-  run_cg_stdout organize -group-by milestone= -query '!cgtest-ticket-v1' \
-    cgtest://fixture/tracker
+  run_cg_stdout organize 'cgtest://fixture/tracker -> !cgtest-ticket-v1' milestone=
   assert_success
   assert_vector - <<-'EOM'
 	---
@@ -517,8 +512,7 @@ EOF
   assert_success
   assert_output ''
 
-  run_cg_stdout organize -group-by milestone= -query '!cgtest-ticket-v1' \
-    cgtest://fixture/tracker
+  run_cg_stdout organize 'cgtest://fixture/tracker -> !cgtest-ticket-v1' milestone=
   assert_success
   assert_vector - <<-'EOM'
 	---
@@ -557,8 +551,7 @@ function test_testpeer_tracker_zero_count_milestone_is_a_target { # @test
   output="$(jq -c '.facets.milestone' <<<"$output")"
   assert_output '{"v0.1":1,"v0.2":1,"v0.3":0}'
 
-  run_cg_stdout organize -group-by milestone= -query '!cgtest-ticket-v1' \
-    cgtest://fixture/tracker
+  run_cg_stdout organize 'cgtest://fixture/tracker -> !cgtest-ticket-v1' milestone=
   assert_success
 
   local edited="$BATS_TEST_TMPDIR/edited.txt"
@@ -599,8 +592,7 @@ EOF
   assert_success
   assert_output '{"uri":"cgtest://fixture/tracker/1","name":"Fix the parser","type":"cgtest-ticket-v1","tags":["area-organize","bug"]}'
 
-  run_cg_stdout organize -group-by milestone= -query '!cgtest-ticket-v1' \
-    cgtest://fixture/tracker
+  run_cg_stdout organize 'cgtest://fixture/tracker -> !cgtest-ticket-v1' milestone=
   assert_success
   assert_vector - <<-'EOM'
 	---
@@ -683,8 +675,7 @@ function test_testpeer_tracker_non_clearable_move_is_refused { # @test
 function test_testpeer_tracker_terminal_values_hide_closed_by_default { # @test
   configure_testpeer_wire_plugin
 
-  run_cg_stdout organize -group-by state= -query '!cgtest-ticket-v1' \
-    cgtest://fixture/tracker
+  run_cg_stdout organize 'cgtest://fixture/tracker -> !cgtest-ticket-v1' state=
   assert_success
   assert_vector - <<-'EOM'
 	---
@@ -751,8 +742,7 @@ function test_testpeer_tracker_tag_atoms_render_and_edit { # @test
 {"uri":"cgtest://fixture/tracker/3","name":"Ship it","type":"cgtest-ticket-v1","tags":["area-organize-apply"]}
 EOF
 
-  run_cg_stdout organize -group-by milestone= -query '!cgtest-ticket-v1' \
-    cgtest://fixture/tracker
+  run_cg_stdout organize 'cgtest://fixture/tracker -> !cgtest-ticket-v1' milestone=
   assert_success
 
   local edited="$BATS_TEST_TMPDIR/edited.txt"
@@ -793,8 +783,7 @@ EOF
   assert_success
   assert_output ''
 
-  run_cg_stdout organize -group-by milestone= -query '!cgtest-ticket-v1' \
-    cgtest://fixture/tracker
+  run_cg_stdout organize 'cgtest://fixture/tracker -> !cgtest-ticket-v1' milestone=
   assert_success
   assert_vector - <<-'EOM'
 	---
@@ -830,8 +819,7 @@ EOF
 function test_testpeer_tracker_tag_groupings { # @test
   configure_testpeer_wire_plugin
 
-  run_cg_stdout organize -group-by area -query '!cgtest-ticket-v1' \
-    cgtest://fixture/tracker
+  run_cg_stdout organize 'cgtest://fixture/tracker -> !cgtest-ticket-v1' area
   assert_success
   assert_vector - <<-'EOM'
 	---
@@ -853,8 +841,7 @@ function test_testpeer_tracker_tag_groupings { # @test
 	- [1 bug milestone=v0.1] Fix the parser
 	EOM
 
-  run_cg_stdout organize -group-by '(tags)' -query '!cgtest-ticket-v1' \
-    cgtest://fixture/tracker
+  run_cg_stdout organize 'cgtest://fixture/tracker -> !cgtest-ticket-v1' '(tags)'
   assert_success
   assert_vector - <<-'EOM'
 	---
@@ -1067,8 +1054,7 @@ EOF
 function test_testpeer_tracker_creates_a_ticket { # @test
   configure_testpeer_wire_plugin
 
-  run_cg_stdout organize -group-by milestone= -query '!cgtest-ticket-v1' \
-    cgtest://fixture/tracker
+  run_cg_stdout organize 'cgtest://fixture/tracker -> !cgtest-ticket-v1' milestone=
   assert_success
   assert_vector - <<-'EOM'
 	---
@@ -1135,8 +1121,7 @@ EOF
   assert_success
   assert_output '{"uri":"cgtest://fixture/tracker/4","name":"Wrapped boxes lose their description","type":"cgtest-ticket-v1","tags":["area-organize","bug"]}'
 
-  run_cg_stdout organize -group-by milestone= -query '!cgtest-ticket-v1' \
-    cgtest://fixture/tracker
+  run_cg_stdout organize 'cgtest://fixture/tracker -> !cgtest-ticket-v1' milestone=
   assert_success
   assert_vector - <<-'EOM'
 	---

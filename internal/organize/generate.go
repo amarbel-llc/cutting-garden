@@ -34,6 +34,10 @@ type generateParams struct {
 	// time and echoed precisely so re-selection never re-injects the default
 	// (the same verbatim rule apply follows).
 	query string
+	// originSource is the positional expression's origin as the user wrote it
+	// (flag path), echoed into the provenance note; empty falls back to the
+	// resolved uri.
+	originSource string
 	// includeTerminal is the flag path's -include-terminal; ignored when
 	// fromDocument (the doc's `_query` already reflects the choice).
 	includeTerminal bool
@@ -71,6 +75,7 @@ func (cmd *Organize) buildAndStore(
 	rendered, _, err := buildAndStoreFrom(ctx, cfg, uriStr, generateParams{
 		groupBy:         cmd.GroupBy,
 		query:           cmd.Query,
+		originSource:    cmd.originSource,
 		includeTerminal: cmd.IncludeTerminal,
 	})
 	return rendered, err
@@ -196,7 +201,11 @@ func buildAndStoreFrom(
 	// is visible. The document path preserves the original note verbatim.
 	doc.Provenance = p.provenance
 	if doc.Provenance == "" {
-		doc.Provenance = provenance(spec.String(), effective, uriStr)
+		origin := p.originSource
+		if origin == "" {
+			origin = uriStr
+		}
+		doc.Provenance = provenance(spec.String(), effective, origin)
 	}
 
 	// The canonical form (no `_base`) is the exact bytes hashed and stored; its
@@ -733,12 +742,34 @@ func commonStringPrefix(a, b string) string {
 
 // provenance renders the inert `%` provenance note recording how the document was
 // generated. The echoed command is wrapped in backticks so it reads as code and
-// copy-pastes unambiguously (cutting-garden#243).
-func provenance(groupBy, query, uri string) string {
+// copy-pastes unambiguously (cutting-garden#243). It is spelled in the
+// positional form (RFC 0020 §4.1): the selection as one trellis expression —
+// origin as the user wrote it, then the EFFECTIVE query — followed by the
+// group-by, each shell-quoted when it needs to be.
+func provenance(groupBy, query, origin string) string {
+	expression := origin
 	if query != "" {
-		return fmt.Sprintf("generated: `cg organize -group-by %s -query %q %s`", groupBy, query, uri)
+		expression = origin + " -> " + query
 	}
-	return fmt.Sprintf("generated: `cg organize -group-by %s %s`", groupBy, uri)
+	return fmt.Sprintf("generated: `cg organize %s %s`",
+		shellQuote(expression), shellQuote(groupBy))
+}
+
+// shellQuote returns s as one POSIX shell word: bare when every rune is safe
+// unquoted, single-quoted otherwise.
+func shellQuote(s string) string {
+	safe := s != ""
+	for _, r := range s {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' ||
+			strings.ContainsRune("_@%+=:,./-", r)) {
+			safe = false
+			break
+		}
+	}
+	if safe {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // storeBase writes the canonical document as a content-addressed blob and returns

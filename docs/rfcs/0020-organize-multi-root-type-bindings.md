@@ -220,6 +220,13 @@ cg organize <expression> [group-by]
   error (exit 64) that names the expression form.
 - A lone URI or `<scheme>:<account>` is a valid origin-only path, so
   `cg organize caldav:task priority` keeps its meaning.
+- An argument containing no whitespace cannot hold a combinator, so it can
+  only be an origin. When such an argument is not a valid trellis term — a
+  URL carrying a reserved rune, such as `user@host` in a path — it MUST be
+  taken as a literal URI, so a URL that was usable unquoted before this
+  form stays usable. An argument that contains whitespace MUST parse as a
+  trellis expression; a reserved rune in its origin MUST be quoted
+  (`'"caldav://h/me@example.com/" -> status=needs-action'`).
 
 #### 4.2 Bound types in an expression
 

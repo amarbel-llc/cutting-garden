@@ -81,6 +81,14 @@ revised: |
     grouping and tags across types, re-type moves, apply across roots; the
     `-query` flag is removed. Proposed, not implemented; this document's
     single-anchor form is unchanged.
+  2026-10-05 — RFC 0020 §4.1 IMPLEMENTED (slice 1, cutting-garden#293): the
+    selection is ONE positional trellis expression carrying its own origin
+    (`cg organize '<uri> -> <query>' [group-by]`, or `<uri>` alone); the
+    `-query` flag is a usage error naming that form. The `% generated:`
+    provenance note echoes the positional form — the origin as written, the
+    effective query, then the group-by, shell-quoted where needed — so every
+    document's provenance line, and with it its `_base` digest, changed. The
+    envelope fields (`_anchor`, `_query`, `_type`) are unchanged.
 ---
 
 # The organize document dialect
@@ -110,7 +118,7 @@ document — the exact bytes presented to and edited by the end-user:
 
 ```
 ---
-% generated: `cg organize -group-by status= caldav:https://…/cal/`
+% generated: `cg organize caldav:https://…/cal/ status=`
 - _base = @blake2b256-<digest of this doc with the _base line excised>
 - _anchor = caldav:https://…/cal/
 - _type = !caldav-object-vtodo-v1      (spelling 2 only; see below)
@@ -879,7 +887,8 @@ state on other plugins.
 - **Default + composition (one rule).** The generated `_query` ALWAYS
   echoes the full effective query, so the default is visible and editable.
   organize appends `_terminal=no` UNLESS the plugin declares no terminal
-  values, `--include-terminal` is passed, or the user's `-query` already
+  values, `--include-terminal` is passed, or the user's query (the part of
+  the positional expression after the origin's `->`, RFC 0020 §4.1) already
   references `_terminal` (explicit mention wins). Appending applies the
   clause to the query's last step — the selected objects. apply takes the
   echoed query verbatim (never re-injecting), so generate and apply agree.

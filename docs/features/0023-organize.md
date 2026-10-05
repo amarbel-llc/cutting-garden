@@ -88,9 +88,11 @@ overtaken twice since: field writes landed with FDR 0025's unified-codec
 migration (the #218 write-side), and status/priority DO render as atoms
 except under their own grouping heading (#229's renderer-placement rule).
 
-- `cg organize <uri> [--query <trellis>] [--group-by <facet-key>]
-  [--mode …] [--allow-deletion]` — anchor and query per trellis's
-  host-supplied-anchor rule; one grouped dimension (self-drilling).
+- `cg organize <expression> [<group-by>] [--mode …] [--allow-deletion]` —
+  `<expression>` is one trellis expression carrying its own origin
+  (`<uri>`, or `'<uri> -> <query>'`; RFC 0020 §4.1, which replaced the
+  separate `--query` flag — passing it is now a usage error); one grouped
+  dimension (self-drilling), positional or `--group-by`.
 - **Mapping capability**: the plugin-declared extension of the facet
   schema — `write: none|one|many` per dimension, bucket→field mapping,
   completion rules (e.g. date-bucket moves preserve clock time —

@@ -25,7 +25,7 @@ func selectNodes(
 	if query != "" {
 		q, perr := trellis.Parse(query)
 		if perr != nil {
-			return nil, errors.BadRequestf("organize --query: %s", perr)
+			return nil, errors.BadRequestf("organize: selection query %q: %s", query, perr)
 		}
 		// withTerminal makes the synthetic `_terminal` dimension matchable, so a
 		// `_terminal=no`/`_terminal=yes` predicate evaluates through the ordinary

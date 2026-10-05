@@ -217,3 +217,69 @@ func TestEvaluateResolving_Rejects(t *testing.T) {
 		})
 	}
 }
+
+// TestSplitOrigin pins the source-text split organize's positional selection
+// rides on (RFC 0020 §4.1): the origin comes back unquoted for resolving and
+// as written for echoing, and the remainder is the query text verbatim.
+func TestSplitOrigin(t *testing.T) {
+	cases := []struct {
+		name, src                string
+		origin, originSrc, query string
+	}{
+		{"bare origin", "caldav:task", "caldav:task", "caldav:task", ""},
+		{
+			"origin and one step", "caldav:task -> status=needs-action",
+			"caldav:task", "caldav:task", "status=needs-action",
+		},
+		{
+			"remainder kept verbatim, inner spacing included",
+			"  fake:cal  ->  !event-v1   due<\"2026-08-01\" -> x  ",
+			"fake:cal", "fake:cal", `!event-v1   due<"2026-08-01" -> x`,
+		},
+		{
+			"quoted origin with a reserved rune",
+			`"caldav://h/user/me@example.com/cal/" -> component=VTODO`,
+			"caldav://h/user/me@example.com/cal/",
+			`"caldav://h/user/me@example.com/cal/"`, "component=VTODO",
+		},
+		{
+			"brackets in the remainder are not split",
+			"fake:cal -> [-> !event-v1] [a, b]",
+			"fake:cal", "fake:cal", "[-> !event-v1] [a, b]",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := SplitOrigin(tc.src)
+			if err != nil {
+				t.Fatalf("SplitOrigin(%q): %v", tc.src, err)
+			}
+			if got.Origin != tc.origin || got.OriginSource != tc.originSrc ||
+				got.Query != tc.query {
+				t.Errorf("SplitOrigin(%q) = %+v, want origin %q source %q query %q",
+					tc.src, got, tc.origin, tc.originSrc, tc.query)
+			}
+		})
+	}
+
+	rejects := []struct{ name, src, wantSub string }{
+		{"leading combinator", "-> !event-v1", "leading combinator"},
+		{"non-forward bridge", "fake:cal ->> !event-v1", "non-forward"},
+		{"multi-term origin", "fake:cal !calendar-v1 -> x", "single URI term"},
+		{"dangling combinator", "fake:cal ->", "syntax error"},
+		{"malformed remainder", "fake:cal -> [unclosed", "syntax error"},
+		{"unquoted reserved rune in origin", "caldav://h/me@example.com/ -> x", "syntax error"},
+	}
+	for _, tc := range rejects {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := SplitOrigin(tc.src)
+			if err == nil {
+				t.Fatalf("SplitOrigin(%q): expected an error", tc.src)
+			}
+			if !strings.Contains(err.Error(), tc.wantSub) {
+				t.Errorf("SplitOrigin(%q): error %q does not contain %q",
+					tc.src, err.Error(), tc.wantSub)
+			}
+		})
+	}
+}
