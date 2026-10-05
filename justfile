@@ -1,3 +1,20 @@
+# Shell fragment the live-Fastmail CalDAV debug recipes interpolate
+# (`caldav_live_env`) at the top of their script — the ONE place the piggy
+# entry and the CalDAV host are named (cutting-garden#234). It loads the
+# credentials from piggy into the environment, never echoed or written to disk,
+# and names the account home twice over: $caldav_account_url (the https URL)
+# and $caldav_home (cutting-garden's `caldav:` source form).
+caldav_live_env := '''
+    set +x
+    set -a
+    . <(piggy pass show fastmail-caldav.env)
+    set +a
+    : "${CALDAV_USERNAME:?fastmail-caldav.env did not define CALDAV_USERNAME}"
+    : "${CALDAV_PASSWORD:?fastmail-caldav.env did not define CALDAV_PASSWORD}"
+    caldav_account_url="https://caldav.fastmail.com/dav/calendars/user/${CALDAV_USERNAME}/"
+    caldav_home="caldav:${caldav_account_url}"
+'''
+
 default: build test
 
 [group('build')]
@@ -550,14 +567,8 @@ debug-madder-init STORE='.test':
 debug-caldav-expand-probe CAL='93fe8ff4-b027-4c5e-a961-96ec236624d8' START='20260720T000000Z' END='20260727T000000Z':
     #!/usr/bin/env bash
     set -euo pipefail
-    set +x
-    set -a
-    . <(piggy pass show fastmail-caldav.env)
-    set +a
-    : "${CALDAV_USERNAME:?fastmail-caldav.env did not define CALDAV_USERNAME}"
-    : "${CALDAV_PASSWORD:?fastmail-caldav.env did not define CALDAV_PASSWORD}"
-
-    url="https://caldav.fastmail.com/dav/calendars/user/${CALDAV_USERNAME}/{{ CAL }}/"
+    {{ caldav_live_env }}
+    url="${caldav_account_url}{{ CAL }}/"
     tmp="$(mktemp -d)"
     trap 'rm -rf "$tmp"' EXIT
 
@@ -1078,11 +1089,8 @@ debug-caldav-shell:
     tmp="$(mktemp -d)"
     cd "$tmp"
     madder init -encryption none .default >/dev/null
-    set -a
-    . <(piggy pass show fastmail-caldav.env)
-    set +a
-    : "${CALDAV_USERNAME:?fastmail-caldav.env did not define CALDAV_USERNAME}"
-    export CG_CALDAV_HOME="caldav:https://caldav.fastmail.com/dav/calendars/user/${CALDAV_USERNAME}/"
+    {{ caldav_live_env }}
+    export CG_CALDAV_HOME="$caldav_home"
     echo "# tempdir: $tmp (fresh .default store via profile madder)" >&2
     echo "# creds loaded: CALDAV_USERNAME=$CALDAV_USERNAME; \$CG_CALDAV_HOME is set" >&2
     echo "# try:  cg list \$CG_CALDAV_HOME" >&2
@@ -1102,21 +1110,15 @@ debug-caldav-shell:
 debug-organize-live CAL='' GROUP_BY='status=': debug-build-go
     #!/usr/bin/env bash
     set -euo pipefail
-    set +x
-    set -a
-    . <(piggy pass show fastmail-caldav.env)
-    set +a
-    : "${CALDAV_USERNAME:?fastmail-caldav.env did not define CALDAV_USERNAME}"
-    : "${CALDAV_PASSWORD:?fastmail-caldav.env did not define CALDAV_PASSWORD}"
+    {{ caldav_live_env }}
     root="{{ justfile_directory() }}"
     cd "$root"
     nix develop --command madder init -encryption none .default 2>/dev/null || true
-    home="caldav:https://caldav.fastmail.com/dav/calendars/user/${CALDAV_USERNAME}/"
     if [[ -z '{{ CAL }}' ]]; then
       echo "# discovering calendars under the account home (pick the task list's UID)" >&2
-      .tmp/cutting-garden list "$home"
+      .tmp/cutting-garden list "$caldav_home"
     else
-      cal="${home}{{ CAL }}/"
+      cal="${caldav_home}{{ CAL }}/"
       echo "# cg organize -group-by '{{ GROUP_BY }}' $cal" >&2
       echo '# ---------------------------------------------------------------' >&2
       .tmp/cutting-garden organize -group-by '{{ GROUP_BY }}' "$cal"
@@ -1159,16 +1161,11 @@ debug-organize-fastmail-live ACCOUNT='personal' GROUP_BY='_inbox': debug-build-g
 debug-organize-live-apply CAL='zz-ax-vtodo-playground' GROUP_BY='status=' VALUE='completed': debug-build-go
     #!/usr/bin/env bash
     set -euo pipefail
-    set +x
-    set -a
-    . <(piggy pass show fastmail-caldav.env)
-    set +a
-    : "${CALDAV_USERNAME:?fastmail-caldav.env did not define CALDAV_USERNAME}"
-    : "${CALDAV_PASSWORD:?fastmail-caldav.env did not define CALDAV_PASSWORD}"
+    {{ caldav_live_env }}
     root="{{ justfile_directory() }}"
     cd "$root"
     nix develop --command madder init -encryption none .default 2>/dev/null || true
-    cal="caldav:https://caldav.fastmail.com/dav/calendars/user/${CALDAV_USERNAME}/{{ CAL }}/"
+    cal="${caldav_home}{{ CAL }}/"
     gen="$(mktemp)"; edited="$(mktemp)"
     trap 'rm -f "$gen" "$edited"' EXIT
     .tmp/cutting-garden organize -group-by '{{ GROUP_BY }}' "$cal" >"$gen"
@@ -1196,16 +1193,11 @@ debug-organize-live-apply CAL='zz-ax-vtodo-playground' GROUP_BY='status=' VALUE=
 debug-organize-live-edit CAL='zz-ax-vtodo-playground' GROUP_BY='status=' COMMIT='': debug-build-go
     #!/usr/bin/env bash
     set -euo pipefail
-    set +x
-    set -a
-    . <(piggy pass show fastmail-caldav.env)
-    set +a
-    : "${CALDAV_USERNAME:?fastmail-caldav.env did not define CALDAV_USERNAME}"
-    : "${CALDAV_PASSWORD:?fastmail-caldav.env did not define CALDAV_PASSWORD}"
+    {{ caldav_live_env }}
     root="{{ justfile_directory() }}"
     cd "$root"
     nix develop --command madder init -encryption none .default 2>/dev/null || true
-    cal="caldav:https://caldav.fastmail.com/dav/calendars/user/${CALDAV_USERNAME}/{{ CAL }}/"
+    cal="${caldav_home}{{ CAL }}/"
     # No stdout redirect: cg detects the TTY and drives the interactive
     # generate -> $EDITOR -> apply round-trip itself.
     if [[ -n '{{ COMMIT }}' ]]; then
