@@ -853,6 +853,12 @@
 
         batsLaneLibPath = bats.packages.${system}.bats-libs.batsLibPath;
 
+        # The bats runner itself, named once for both lanes. batsLane would
+        # otherwise take the bats flake's default while the host runner took
+        # this flake's pkgs.bats — the same derivation only for as long as the
+        # two flakes' package sets happen to coincide.
+        batsLaneRunner = pkgs.bats;
+
         # openssh: ssh.bats's lib/git_ssh.bash runs ssh-agent /
         # ssh-keygen / ssh-add (the plugin authenticates ssh via the
         # agent). git: the test ssh server execs git's pack helpers
@@ -881,7 +887,7 @@
         cuttingGardenBatsHost = pkgs.writeShellApplication rec {
           name = "cutting-garden-bats-host";
           runtimeInputs = [
-            pkgs.bats
+            batsLaneRunner
             pkgs.parallel
             pkgs.bash
             pkgs.coreutils
@@ -1031,6 +1037,7 @@
           # nix build with the bats diagnostic.
           bats-capture = bats.lib.${system}.batsLane {
             base = cuttingGarden;
+            bats = batsLaneRunner;
             batsSrc = ./zz-tests_bats;
             binaries = batsLaneBinaries;
             batsLibPath = [ batsLaneLibPath ];
