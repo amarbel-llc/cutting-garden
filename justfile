@@ -477,6 +477,18 @@ debug-build-go:
     nix build '.#default' --out-link .tmp/cutting-garden-result
     ln -sfn cutting-garden-result/bin/cutting-garden .tmp/cutting-garden
 
+# Build the in-memory CalDAV testserver into
+# .tmp/cutting-garden-caldav-testserver for the debug-organize-* recipes — the
+# nix-built `.#cutting-garden-caldav-testserver` the bats lanes run, since the
+# devShell carries no `go` to build it with (cutting-garden#240).
+#
+# build the caldav testserver into .tmp/ for the debug dev-loop
+[group('debug')]
+debug-build-caldav-testserver:
+    mkdir -p .tmp
+    nix build '.#cutting-garden-caldav-testserver' --out-link .tmp/cutting-garden-caldav-testserver-result
+    ln -sfn cutting-garden-caldav-testserver-result/bin/cutting-garden-caldav-testserver .tmp/cutting-garden-caldav-testserver
+
 # Create a small two-file capture fixture tree under .tmp/cap-fixture for
 # the capture debug recipes to point at.
 #
@@ -780,12 +792,11 @@ debug-jmap-backup DIR PAGE='1000':
 #
 # render the organize document for the caldav testserver's Personal calendar
 [group('debug')]
-debug-organize-fixture GROUP_BY='status=': debug-build-go
+debug-organize-fixture GROUP_BY='status=': debug-build-go debug-build-caldav-testserver
     #!/usr/bin/env bash
     set -euo pipefail
     root="{{ justfile_directory() }}"
     cd "$root"
-    nix develop --command go build -o .tmp/cutting-garden-caldav-testserver ./cmd/cutting-garden-caldav-testserver
     nix develop --command madder init -encryption none .default 2>/dev/null || true
     coproc SRV { .tmp/cutting-garden-caldav-testserver; }
     read -r -u "${SRV[0]}" source_url _calpath
@@ -887,12 +898,11 @@ debug-organize-fastmail-apply EDITED GROUP_BY='_inbox' *READBACK='': debug-build
 #
 # print the /dav/ns/ `list -format json` NDJSON (tags array dev-loop)
 [group('debug')]
-debug-list-ns-json: debug-build-go
+debug-list-ns-json: debug-build-go debug-build-caldav-testserver
     #!/usr/bin/env bash
     set -euo pipefail
     root="{{ justfile_directory() }}"
     cd "$root"
-    nix develop --command go build -o .tmp/cutting-garden-caldav-testserver ./cmd/cutting-garden-caldav-testserver
     export CG_TEST_CALDAV_NS=1
     coproc SRV { .tmp/cutting-garden-caldav-testserver; }
     read -r -u "${SRV[0]}" source_url _calpath
@@ -906,12 +916,11 @@ debug-list-ns-json: debug-build-go
 # host-run twin of zz-tests_bats/organize_date.bats — WRITES to the throwaway
 # in-memory server only (nothing persists past the coproc).
 [group('debug')]
-debug-organize-month-reschedule: debug-build-go
+debug-organize-month-reschedule: debug-build-go debug-build-caldav-testserver
     #!/usr/bin/env bash
     set -euo pipefail
     root="{{ justfile_directory() }}"
     cd "$root"
-    nix develop --command go build -o .tmp/cutting-garden-caldav-testserver ./cmd/cutting-garden-caldav-testserver
     nix develop --command madder init -encryption none .default 2>/dev/null || true
     export CG_TEST_CALDAV_SCHED=1
     coproc SRV { .tmp/cutting-garden-caldav-testserver; }
@@ -939,12 +948,11 @@ debug-organize-month-reschedule: debug-build-go
 # heredocs in zz-tests_bats/organize_priority.bats + organize_fields.bats —
 # WRITES to the throwaway in-memory server only.
 [group('debug')]
-debug-organize-fields: debug-build-go
+debug-organize-fields: debug-build-go debug-build-caldav-testserver
     #!/usr/bin/env bash
     set -euo pipefail
     root="{{ justfile_directory() }}"
     cd "$root"
-    nix develop --command go build -o .tmp/cutting-garden-caldav-testserver ./cmd/cutting-garden-caldav-testserver
     nix develop --command madder init -encryption none .default 2>/dev/null || true
     export CG_TEST_CALDAV_FIELDS=1
     coproc SRV { .tmp/cutting-garden-caldav-testserver; }
@@ -963,17 +971,15 @@ debug-organize-fields: debug-build-go
 
 # Eyeball the categories tag dimension (RFC 0019) that
 # zz-tests_bats/organize_tags.bats pins: the --facets/--filter histogram over the
-# multi-tag fixture, and the two-tag membership listing. The pure-read lanes need
-# no blob store, so they survive the #87 store-config skew that blocks the
-# store-backed group-by/apply eyeball locally (run those via the hermetic bats
-# build); the group-by/apply reject is left to debug-organize-fields' pattern.
+# multi-tag fixture, and the two-tag membership listing. Pure reads, so it needs
+# no blob store; the store-backed group-by/apply eyeball is
+# debug-organize-fields' pattern.
 [group('debug')]
-debug-organize-categories: debug-build-go
+debug-organize-categories: debug-build-go debug-build-caldav-testserver
     #!/usr/bin/env bash
     set -euo pipefail
     root="{{ justfile_directory() }}"
     cd "$root"
-    nix develop --command go build -o .tmp/cutting-garden-caldav-testserver ./cmd/cutting-garden-caldav-testserver
     export CG_TEST_CALDAV_FIELDS=1
     coproc SRV { .tmp/cutting-garden-caldav-testserver; }
     read -r -u "${SRV[0]}" source_url _calpath
@@ -995,25 +1001,19 @@ debug-organize-categories: debug-build-go
 # RFC 5545 TEXT-escaping vector (native tags slice 1.5 F): lit3's wire-escaped
 # `SUMMARY:Plan\, then do` renders unescaped, a trailer edit appends " now", and
 # the write-back re-escapes on the wire.
-# The host-run source for the whole-document heredocs in
-# zz-tests_bats/organize_literal.bats: pins CG_TEST_CALDAV_PORT=43107 (the lane's
-# port, lib/caldav.bash) so the `_base` digests match. WRITES to the throwaway
-# in-memory server only.
-#
-# Unlike debug-organize-fields this uses the NIX-built CLI (`nix build`, the
-# flake-bridged madder) rather than the go-built one: `nix develop --command go
-# build` links the go.mod-pinned madder library, which cannot read the store
-# config the devshell's newer `madder init` writes (cutting-garden#87). Stage any
-# new source files first — `nix build` sees only git-tracked paths.
+# The host-run eyeball twin of zz-tests_bats/organize_literal.bats: pins
+# CG_TEST_CALDAV_PORT=43107 (the lane's port, lib/caldav.bash) so the `_base`
+# digests match the lane's vectors (which regenerate through
+# test-bats-update-vectors, not from this output). WRITES to the throwaway
+# in-memory server only. Stage any new source files first — `nix build` sees
+# only git-tracked paths.
 [group('debug')]
-debug-organize-literal:
+debug-organize-literal: debug-build-go debug-build-caldav-testserver
     #!/usr/bin/env bash
     set -euo pipefail
     root="{{ justfile_directory() }}"
     cd "$root"
-    nix build .#default --out-link .tmp/cg-result
-    cg=.tmp/cg-result/bin/cutting-garden
-    nix develop --command go build -o .tmp/cutting-garden-caldav-testserver ./cmd/cutting-garden-caldav-testserver
+    cg=.tmp/cutting-garden
     nix develop --command madder init -encryption none .default 2>/dev/null || true
     export CG_TEST_CALDAV_LIT=1 CG_TEST_CALDAV_PORT=43107
     coproc SRV { .tmp/cutting-garden-caldav-testserver; }
@@ -1193,7 +1193,7 @@ debug-organize-live-apply CAL='zz-ax-vtodo-playground' GROUP_BY='status=' VALUE=
 #
 # interactively edit + apply the organize document for a live Fastmail calendar
 [group('debug')]
-debug-organize-live-edit CAL='zz-ax-vtodo-playground' GROUP_BY='status=' COMMIT='':
+debug-organize-live-edit CAL='zz-ax-vtodo-playground' GROUP_BY='status=' COMMIT='': debug-build-go
     #!/usr/bin/env bash
     set -euo pipefail
     set +x
@@ -1204,7 +1204,6 @@ debug-organize-live-edit CAL='zz-ax-vtodo-playground' GROUP_BY='status=' COMMIT=
     : "${CALDAV_PASSWORD:?fastmail-caldav.env did not define CALDAV_PASSWORD}"
     root="{{ justfile_directory() }}"
     cd "$root"
-    nix develop --command go build -o .tmp/cutting-garden ./cmd/cutting-garden
     nix develop --command madder init -encryption none .default 2>/dev/null || true
     cal="caldav:https://caldav.fastmail.com/dav/calendars/user/${CALDAV_USERNAME}/{{ CAL }}/"
     # No stdout redirect: cg detects the TTY and drives the interactive
