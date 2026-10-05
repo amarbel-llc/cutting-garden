@@ -315,6 +315,16 @@
         # config (dagnabit validates it: no linters, excludes or working-dir), so
         # the facades format identically in the codegen check and in a godyn-go
         # regeneration (neither sees a conformist.toml on disk).
+        #
+        # CONFORMIST_NO_CACHE: each `//go:generate dagnabit export` regenerates
+        # every facade raw and reformats it, a dozen times within one build.
+        # With conformist's format cache on, a pass sometimes skipped one facade
+        # (8 files formatted instead of 9); whenever the LAST pass did, that
+        # facade stayed unformatted and the drift check reported it out of date
+        # — 9 of 20 sandboxed rebuilds, 0 of 12 with the cache off
+        # (cutting-garden#291; `just debug-codegen-patch-rebuild`). The cache
+        # keys on mtime and size (conformist RFC 0001), so a same-size raw
+        # rewrite inside its mtime resolution is the suspected skip; unverified.
         conformistFacadeFormatEval = conformist.lib.evalModule pkgs {
           imports = [ purse-first.lib.conformistModules.dagnabit-facade ];
           package = conformist.packages.${system}.default;
@@ -331,6 +341,7 @@
                 pkgs.lib.getExe' purse-first.packages.${system}.dagnabit "dagnabit"
               } $out/bin/dagnabit \
                 --set DAGNABIT_CONFORMIST_CONFIG ${conformistFacadeFormatEval.config.build.configFile} \
+                --set CONFORMIST_NO_CACHE true \
                 --prefix PATH : ${pkgs.lib.makeBinPath [ conformist.packages.${system}.default ]}
             '';
 

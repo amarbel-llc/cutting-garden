@@ -2248,6 +2248,46 @@ debug-gofumpt-diff FILE:
     echo "gofumpt: $gofumpt"
     "$gofumpt" -d "{{ FILE }}"
 
+# Rebuild a codegen check's passthru.codegenPatch derivation N times with
+# `nix build --rebuild` and count the failures, classifying each (out-of-sync
+# facade, non-deterministic output, other) and keeping every failing run's log
+# under .tmp/codegen-flake/. The reproduction loop for the intermittent
+# checks.dagnabit-codegen merge-gate failure (cutting-garden#291): the gate
+# failed once and passed on an immediate retry with no tracked-file change.
+#
+# rebuild a codegen-patch derivation N times and count the failures
+[group('debug')]
+debug-codegen-patch-rebuild N='10' CHECK='dagnabit-codegen':
+    #!/usr/bin/env bash
+    set -uo pipefail
+    sys=$(nix eval --impure --raw --expr builtins.currentSystem)
+    attr="{{ justfile_directory() }}#checks.$sys.{{ CHECK }}.codegenPatch"
+    out="{{ justfile_directory() }}/.tmp/codegen-flake"
+    rm -rf "$out" && mkdir -p "$out"
+    fail=0
+    for i in $(seq 1 {{ N }}); do
+      log="$out/run-$i.log"
+      # --rebuild needs a valid output to compare against; the plain build
+      # provides it (and is itself a sample when the path is not yet valid).
+      # -L keeps the whole build log (the failure summary alone is 25 lines);
+      # passing logs are kept too, to diff against the failing ones.
+      if nix build "$attr" --no-link -L >"$log" 2>&1 \
+        && nix build "$attr" --no-link --rebuild -L >>"$log" 2>&1; then
+        echo "run $i: ok — $log"
+        continue
+      fi
+      fail=$((fail + 1))
+      if grep -q 'out of sync' "$log"; then
+        kind="out-of-sync: $(grep -A3 'out of sync' "$log" | grep -o '[a-z_]*/main.go.*' | sort -u | tr '\n' ' ')"
+      elif grep -q 'may not be deterministic' "$log"; then
+        kind='non-deterministic output'
+      else
+        kind='other'
+      fi
+      echo "run $i: FAILED ($kind) — $log"
+    done
+    echo "failures: $fail / {{ N }}"
+
 # Run each impure (git-state) conformist linter directly against the worktree
 # and report its own stdout/stderr and exit status. `just lint-worktree` runs
 # the same set through conformist, which swallows per-linter output on success —
