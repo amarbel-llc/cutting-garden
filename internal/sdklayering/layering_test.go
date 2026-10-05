@@ -83,8 +83,8 @@ func goListEdges(t *testing.T, tmpl, pattern string) [][2]string {
 func goListLines(t *testing.T, tmpl, pattern string) []string {
 	t.Helper()
 	// A per-package godyn test run has no go toolchain or module tree;
-	// `just debug-test-layering` (go test through the godyn-go escape
-	// hatch) is where this guard runs.
+	// `just test-go-layering` (go test through the godyn-go escape hatch,
+	// a `test` aggregate leaf) is where this guard runs.
 	if _, err := exec.LookPath("go"); err != nil {
 		t.Skip("no go toolchain on PATH")
 	}

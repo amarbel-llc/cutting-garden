@@ -19,7 +19,7 @@ build-nix-check:
     nix flake check --show-trace
 
 [group('post-build')]
-test: validate-generate validate-generate-dagnabit validate-grammar test-grammar-corpus test-nvim-elide test-go-godyn lint-go lint-fmt lint-worktree lint-go-analyzers test-bats
+test: validate-generate validate-generate-dagnabit validate-grammar test-grammar-corpus test-nvim-elide test-go-godyn test-go-layering lint-go lint-fmt lint-worktree lint-go-analyzers test-bats
 
 # godyn's per-package go test lane (checks.cutting-garden-godyn-tests; a skip
 # stub off x86_64-linux, where godyn is not validated). A `test` aggregate
@@ -31,6 +31,22 @@ test: validate-generate validate-generate-dagnabit validate-grammar test-grammar
 [group('post-build')]
 test-go-godyn *NIX_ARGS:
     nix build ".#checks.$(nix eval --impure --raw --expr builtins.currentSystem).cutting-garden-godyn-tests" --no-link --show-trace {{ NIX_ARGS }}
+
+# The internal/sdklayering import guards (RFC 0009 §4 no-inversion; the
+# invalidation-cone clauses: internal/ imports no plugins/ in production or
+# tests, and command_components does not reach node_view). They shell out to
+# `go list`, so the godyn per-package lane above skips them (no toolchain in
+# its sandbox); this runs them through the godyn-go escape hatch, where the
+# rendered go.mod and a toolchain exist. A `test` aggregate leaf, so a new
+# import edge that re-widens the rebuild cone fails the merge gate
+# (cutting-garden#263). Also the dev-loop for the guards: it sees uncommitted
+# edits to tracked files.
+#
+# run the sdklayering import guards (go test via godyn-go)
+[group('post-build')]
+test-go-layering:
+    nix run --inputs-from . igloo#godyn-go -- -- go test -v ./internal/sdklayering/
+    gum log --level info "test-go-layering: ok"
 
 # godyn's per-package vet (the toolchain's go vet) and lint (godyn-lint: vet
 # passes + staticcheck defaults) lanes, checks.<system>.vet / lint. Skip stubs
@@ -2091,19 +2107,6 @@ debug-organize-create-vectors GROUP_BY='status=' EDITED='':
 [group('debug')]
 debug-test-pkg PKG='internal/serve' RUN='' *FLAGS='':
     nix run --inputs-from . igloo#godyn-test -- -A "packages.$(nix eval --impure --raw --expr builtins.currentSystem).cutting-garden-godyn-tests" {{ PKG }} -- {{ if RUN == '' { '' } else { quote('-test.run=' + RUN) } }} {{ FLAGS }}
-
-# Run the internal/sdklayering import guards (RFC 0009 §4 no-inversion, the
-# invalidation-cone "internal/ imports no plugins/" clause). They shell out to
-# `go list`, so the godyn per-package lane skips them (no toolchain in the
-# sandbox); this runs `go test` through the godyn-go escape hatch, where the
-# rendered go.mod and a toolchain exist. Not wired into `test` — the guard is
-# not in the merge gate (docs/plans/2026-09-21-invalidation-cone-moves.md
-# § Out of scope); this is the dev-loop for it.
-#
-# run the sdklayering import guards (go test via godyn-go)
-[group('debug')]
-debug-test-layering:
-    nix run --inputs-from . igloo#godyn-go -- -- go test -v ./internal/sdklayering/
 
 # Print the RFC 0001 producer outPaths (go-pkgs / go-pkgs-test) for FLAKEREF —
 # e.g. `git+file://$PWD?rev=<sha>` — to confirm a builder migration or an igloo
