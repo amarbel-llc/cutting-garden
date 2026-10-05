@@ -29,7 +29,7 @@ setup() {
   load "$(dirname "$BATS_TEST_FILE")/lib/caldav.bash"
   export output
   export CG_TEST_CALDAV_LIT=1
-  start_caldav_server 43115
+  start_caldav_server 24115
   init_store
   CAL="${CALDAV_SOURCE%/dav/}/dav/lit/"
 }
@@ -42,17 +42,17 @@ teardown() {
 
 # The generated document's `_base` digest, and the digest after the wrapped
 # edit's commit.
-BASE_GENERATED=blake2b256-jxrdjyuwmku8m25ak4cdc37jtlddkusxupplfvj0n8zjgvjyxzyqpfmsvg
-BASE_WRAPPED_EDITED=blake2b256-94v6p5cl9cqwczcusefw7mnuy554ettsu25yemnn480h6usufsystkfn4f
+BASE_GENERATED=blake2b256-k6nx7r8praydrppwk3z5mlxn59q82lx54mmca3rsarss6jnmg8vss5lzfp
+BASE_WRAPPED_EDITED=blake2b256-e24hhmuvf8l6md5yfmd8t76u7segne4j3getvuuskc769hnf03xqqgdfdp
 
 # wrap_doc prints a whole `-group-by (tags)` document pinned at `_base` $1, the
 # body read from stdin.
 wrap_doc() {
   cat <<-EOM
 	---
-	% generated: \`cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:43115/dav/lit/\`
+	% generated: \`cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:24115/dav/lit/\`
 	- _base = @$1
-	- _anchor = caldav:http://127.0.0.1:43115/dav/lit/
+	- _anchor = caldav:http://127.0.0.1:24115/dav/lit/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
 	- _group-by = (tags)

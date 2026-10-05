@@ -167,7 +167,9 @@ whole-document vectors
 (`assert_vector - <<-'EOM'`, `zz-tests_bats/lib/vectors.bash` — it is
 `assert_output` outside update mode) against the caldav testserver on a
 pinned port per lane (`CG_TEST_CALDAV_PORT`; the port table lives in
-`zz-tests_bats/lib/caldav.bash`), indexed G# → test in
+`zz-tests_bats/lib/caldav.bash`, and stays BELOW 32768 so the kernel never
+hands a lane's port to another socket — #254; the fastmail lane needs no
+pin, its documents anchor at `fastmail://test/`), indexed G# → test in
 `docs/plans/2026-08-30-native-tags-vectors.md`. After a change to what
 organize emits, do NOT hand-paste `_base` digests: `just
 test-bats-update-vectors [files]` reruns the lanes on the host

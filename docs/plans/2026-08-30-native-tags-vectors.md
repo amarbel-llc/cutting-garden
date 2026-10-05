@@ -70,7 +70,7 @@ below (the case title names the lane), and `just test-grammar-corpus`
 ## Fastmail tags slice 1
 
 Decisions D1–D6 and Task 5b of `2026-09-21-fastmail-tags-slice1.md`, pinned
-against the fastmail testserver's triage fixture (port 43113,
+against the fastmail testserver's triage fixture (a kernel-assigned port,
 `plugins/fastmail/fastmailtestserver/triage_fixture.go`). Every file below is
 `organize_fastmail.bats`; each test runs against a fresh server. Per-message
 keyword read-backs go through `cg mcp` `read_node` on the member email nodes

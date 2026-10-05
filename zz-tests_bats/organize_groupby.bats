@@ -42,7 +42,7 @@ setup() {
 	[tags]
 	interpreter = "dodder-hyphen"
 	EOF
-  start_caldav_server 43108
+  start_caldav_server 24108
   init_store
   FIELDS="${CALDAV_SOURCE%/dav/}/dav/fields/"
   NS="${CALDAV_SOURCE%/dav/}/dav/ns/"
@@ -63,9 +63,9 @@ function organize_groupby_tags_whole_set { # @test
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:43108/dav/fields/`
-	- _base = @blake2b256-mu5d9d3e5hlnr65qff750ukjs49ja22ju33sedygz94ceg0387usncgrh8
-	- _anchor = caldav:http://127.0.0.1:43108/dav/fields/
+	% generated: `cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:24108/dav/fields/`
+	- _base = @blake2b256-x4w2qr7v9p05y6alfphusscevztk94weznld9d2cgznwuda47jdqr0a073
+	- _anchor = caldav:http://127.0.0.1:24108/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
 	- _group-by = (tags)
@@ -97,9 +97,9 @@ function organize_groupby_namespace_rollup { # @test
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by project -query "_terminal=no" caldav:http://127.0.0.1:43108/dav/ns/`
-	- _base = @blake2b256-lnpcee9m69hd4yaqrtsmfux0rwpzg7zwsum08q9q35paqm53e6zssrhgpu
-	- _anchor = caldav:http://127.0.0.1:43108/dav/ns/
+	% generated: `cg organize -group-by project -query "_terminal=no" caldav:http://127.0.0.1:24108/dav/ns/`
+	- _base = @blake2b256-685klcjlyqhwdj2trjj7mzdgyf4nfhpj4l7rmugml3dscru7jxlqvphc5r
+	- _anchor = caldav:http://127.0.0.1:24108/dav/ns/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
 	- _group-by = project
@@ -131,9 +131,9 @@ function organize_groupby_field { # @test
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:43108/dav/fields/`
-	- _base = @blake2b256-y3vsd27dwnf3guccl6dd6unvq9hl5edwf7qym0ccw5j0ptq3sd8s24au0d
-	- _anchor = caldav:http://127.0.0.1:43108/dav/fields/
+	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:24108/dav/fields/`
+	- _base = @blake2b256-z0rzmgdglx3g4r4fhgy40fyf5y6ptj5tvm7zqenhyl75lcrlp7wqh3w96k
+	- _anchor = caldav:http://127.0.0.1:24108/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
 	! organize-base-v1
@@ -167,9 +167,9 @@ function organize_groupby_date_granularity { # @test
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by date_due=(month) -query "_terminal=no" caldav:http://127.0.0.1:43108/dav/sched/`
-	- _base = @blake2b256-gencqx53cka0dgfqa3gakt9hunzujhkl0s6kyw4wychdj7s688ssr4unyf
-	- _anchor = caldav:http://127.0.0.1:43108/dav/sched/
+	% generated: `cg organize -group-by date_due=(month) -query "_terminal=no" caldav:http://127.0.0.1:24108/dav/sched/`
+	- _base = @blake2b256-2negckx3etgmu87w35wjfl0gpyp3yte0d4ukrqeff8kmys6878uqyyll3g
+	- _anchor = caldav:http://127.0.0.1:24108/dav/sched/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
 	! organize-base-v1
@@ -190,9 +190,9 @@ function organize_groupby_date_granularity { # @test
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by date_due=(year) -query "_terminal=no" caldav:http://127.0.0.1:43108/dav/sched/`
-	- _base = @blake2b256-zfg6rknfep932d9pqt5l93m7cz6eh847vjg965mz8p9lzfgs0pksquymyt
-	- _anchor = caldav:http://127.0.0.1:43108/dav/sched/
+	% generated: `cg organize -group-by date_due=(year) -query "_terminal=no" caldav:http://127.0.0.1:24108/dav/sched/`
+	- _base = @blake2b256-w93az0lpyq6gyhtqv76w585u0tx7zndhp8fva9dgwsfgy5hpjyhqygr488
+	- _anchor = caldav:http://127.0.0.1:24108/dav/sched/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
 	! organize-base-v1

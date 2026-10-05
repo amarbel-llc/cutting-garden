@@ -50,7 +50,7 @@ setup() {
   # own sandboxed config dir. The naive-rejects lane overwrites this with
   # naive to pin the clear error.
   write_dodder_hyphen_config
-  start_caldav_server 43103
+  start_caldav_server 24103
   init_store
   CAL="${CALDAV_SOURCE%/dav/}/dav/ns/"
 }
@@ -72,9 +72,9 @@ generate_grouped() {
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by project -query "_terminal=no" caldav:http://127.0.0.1:43103/dav/ns/`
-	- _base = @blake2b256-yu624kdcgwz29tj8nh6eka0chs3rqpyt7u53tgyvvx6v5zznz5gs9ypmm4
-	- _anchor = caldav:http://127.0.0.1:43103/dav/ns/
+	% generated: `cg organize -group-by project -query "_terminal=no" caldav:http://127.0.0.1:24103/dav/ns/`
+	- _base = @blake2b256-estwgmflazsefw07z9zp262s6ahrp58kmcghq88ej4n3ved8efds4rx9vg
+	- _anchor = caldav:http://127.0.0.1:24103/dav/ns/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
 	- _group-by = project
@@ -121,9 +121,9 @@ function organize_ns_rollup_move_writes_reconstructed_tag { # @test
   local edited="$BATS_TEST_TMPDIR/edited.txt"
   cat >"$edited" <<-'EOM'
 	---
-	% generated: `cg organize -group-by project -query "_terminal=no" caldav:http://127.0.0.1:43103/dav/ns/`
-	- _base = @blake2b256-yu624kdcgwz29tj8nh6eka0chs3rqpyt7u53tgyvvx6v5zznz5gs9ypmm4
-	- _anchor = caldav:http://127.0.0.1:43103/dav/ns/
+	% generated: `cg organize -group-by project -query "_terminal=no" caldav:http://127.0.0.1:24103/dav/ns/`
+	- _base = @blake2b256-estwgmflazsefw07z9zp262s6ahrp58kmcghq88ej4n3ved8efds4rx9vg
+	- _anchor = caldav:http://127.0.0.1:24103/dav/ns/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
 	- _group-by = project
@@ -167,9 +167,9 @@ EOF
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by project -query "_terminal=no" caldav:http://127.0.0.1:43103/dav/ns/`
-	- _base = @blake2b256-4yfvv4wyma5yt8wz6f6umfplw7pqc72vnja5n6e77ceqharjmvvqppk96m
-	- _anchor = caldav:http://127.0.0.1:43103/dav/ns/
+	% generated: `cg organize -group-by project -query "_terminal=no" caldav:http://127.0.0.1:24103/dav/ns/`
+	- _base = @blake2b256-w057dr4puzyd9ex6cas6dux7zl07n3xjc7mz69ptarcye3sapvcqj3mmdd
+	- _anchor = caldav:http://127.0.0.1:24103/dav/ns/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
 	- _group-by = project
@@ -207,9 +207,9 @@ function organize_ns_direct_root_placement_writes_bare_tag { # @test
   local edited="$BATS_TEST_TMPDIR/edited.txt"
   cat >"$edited" <<-'EOM'
 	---
-	% generated: `cg organize -group-by project -query "_terminal=no" caldav:http://127.0.0.1:43103/dav/ns/`
-	- _base = @blake2b256-yu624kdcgwz29tj8nh6eka0chs3rqpyt7u53tgyvvx6v5zznz5gs9ypmm4
-	- _anchor = caldav:http://127.0.0.1:43103/dav/ns/
+	% generated: `cg organize -group-by project -query "_terminal=no" caldav:http://127.0.0.1:24103/dav/ns/`
+	- _base = @blake2b256-estwgmflazsefw07z9zp262s6ahrp58kmcghq88ej4n3ved8efds4rx9vg
+	- _anchor = caldav:http://127.0.0.1:24103/dav/ns/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
 	- _group-by = project
@@ -250,9 +250,9 @@ EOF
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by project -query "_terminal=no" caldav:http://127.0.0.1:43103/dav/ns/`
-	- _base = @blake2b256-lcdjhf2je7lpvn0vd2dp2gg4d4g5weeyu5r05qufj4p6ufqrsr0qpygaa7
-	- _anchor = caldav:http://127.0.0.1:43103/dav/ns/
+	% generated: `cg organize -group-by project -query "_terminal=no" caldav:http://127.0.0.1:24103/dav/ns/`
+	- _base = @blake2b256-gg0xkldrf7sdaduym8cty044t6tpj4h9hhz89q4uma4th07yjmmqtjnutu
+	- _anchor = caldav:http://127.0.0.1:24103/dav/ns/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
 	- _group-by = project
@@ -287,10 +287,10 @@ function organize_ns_list_json_carries_tags { # @test
   run_cg list -format json "$CAL"
   assert_success
   assert_vector - <<-'EOM'
-	{"uri":"caldav:http://127.0.0.1:43103/dav/ns/nsA.ics","name":"nsA.ics","type":"caldav-object-vtodo-v1","tags":["project-client-acme"]}
-	{"uri":"caldav:http://127.0.0.1:43103/dav/ns/nsB.ics","name":"nsB.ics","type":"caldav-object-vtodo-v1","tags":["project-client-baxter"]}
-	{"uri":"caldav:http://127.0.0.1:43103/dav/ns/nsC.ics","name":"nsC.ics","type":"caldav-object-vtodo-v1","tags":["project-cutting_garden"]}
-	{"uri":"caldav:http://127.0.0.1:43103/dav/ns/nsD.ics","name":"nsD.ics","type":"caldav-object-vtodo-v1","tags":["other"]}
+	{"uri":"caldav:http://127.0.0.1:24103/dav/ns/nsA.ics","name":"nsA.ics","type":"caldav-object-vtodo-v1","tags":["project-client-acme"]}
+	{"uri":"caldav:http://127.0.0.1:24103/dav/ns/nsB.ics","name":"nsB.ics","type":"caldav-object-vtodo-v1","tags":["project-client-baxter"]}
+	{"uri":"caldav:http://127.0.0.1:24103/dav/ns/nsC.ics","name":"nsC.ics","type":"caldav-object-vtodo-v1","tags":["project-cutting_garden"]}
+	{"uri":"caldav:http://127.0.0.1:24103/dav/ns/nsD.ics","name":"nsD.ics","type":"caldav-object-vtodo-v1","tags":["other"]}
 	EOM
 }
 

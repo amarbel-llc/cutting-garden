@@ -36,7 +36,7 @@ setup() {
   # matches the project-* hierarchy transitively through it, and every
   # rendered tag set orders by its SortKey.
   write_dodder_hyphen_config
-  start_caldav_server 43112
+  start_caldav_server 24112
   init_store
   CAL="${CALDAV_SOURCE%/dav/}/dav/ns/"
 }
@@ -99,10 +99,10 @@ function list_text_mesa_table_carries_tags_column { # @test
   assert_success
   assert_vector - <<-'EOM'
 	URI	NAME	TYPE	TAGS
-	caldav:http://127.0.0.1:43112/dav/ns/nsA.ics	nsA.ics	caldav-object-vtodo-v1	project-client-acme
-	caldav:http://127.0.0.1:43112/dav/ns/nsB.ics	nsB.ics	caldav-object-vtodo-v1	project-client-baxter
-	caldav:http://127.0.0.1:43112/dav/ns/nsC.ics	nsC.ics	caldav-object-vtodo-v1	project-cutting_garden
-	caldav:http://127.0.0.1:43112/dav/ns/nsD.ics	nsD.ics	caldav-object-vtodo-v1	other
+	caldav:http://127.0.0.1:24112/dav/ns/nsA.ics	nsA.ics	caldav-object-vtodo-v1	project-client-acme
+	caldav:http://127.0.0.1:24112/dav/ns/nsB.ics	nsB.ics	caldav-object-vtodo-v1	project-client-baxter
+	caldav:http://127.0.0.1:24112/dav/ns/nsC.ics	nsC.ics	caldav-object-vtodo-v1	project-cutting_garden
+	caldav:http://127.0.0.1:24112/dav/ns/nsD.ics	nsD.ics	caldav-object-vtodo-v1	other
 	EOM
 }
 

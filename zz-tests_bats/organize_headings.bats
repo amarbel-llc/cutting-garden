@@ -32,7 +32,7 @@ setup() {
   load "$(dirname "$BATS_TEST_FILE")/lib/caldav.bash"
   export output
   export CG_TEST_CALDAV_FIELDS=1
-  start_caldav_server 43109
+  start_caldav_server 24109
   init_store
   CAL="${CALDAV_SOURCE%/dav/}/dav/fields/"
 }
@@ -44,19 +44,19 @@ teardown() {
 # bats file_tags=organize
 
 # The generated document's `_base` digest, and the digests after each edit.
-BASE_GENERATED=blake2b256-8g87687xrqlx7vnx4lf5nva0hjapm4raa07sp4ygpsta7qkqtksqrcup3h
-BASE_AFTER_DOUBLE=blake2b256-69dh6d7fnl44vcv0x2pf4chd79zc9nlvdpycszjs47qx5q8r6v4qlk6nje
-BASE_AFTER_RESET=blake2b256-scs2rd038u7ygjgncruj0yu0tkmkd4nxfywujd7vwag80xmqkudsdfjqjq
-BASE_AFTER_NOOP=blake2b256-kdanaa7gt05aaua4m6pqds5jncjz2gawaf4wf2wawkj6lj6wuh0s8hwen7
+BASE_GENERATED=blake2b256-usdexhm8tx5w6neeyxr4pvza4vy6ad2pshr44yvl6e27uw83fzmqz2fu5e
+BASE_AFTER_DOUBLE=blake2b256-9n257aymfx5asjeg8xazn97d8he206ut6kcttughrmlhag6z9m0sgxxt4t
+BASE_AFTER_RESET=blake2b256-3au7akd338jdzakprftj9rft0eyx60m0wty56xhgudjhypckgacszae94m
+BASE_AFTER_NOOP=blake2b256-hrxpk0394vjjn45xak9sru9ae6nc7fvnzud737qkwa6t8t26uu8sr6x7mq
 
 # envelope_header prints the `-group-by (tags)` document's hyphence envelope
 # pinned at `_base` $1 — the part every document in this lane shares.
 envelope_header() {
   cat <<-EOM
 	---
-	% generated: \`cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:43109/dav/fields/\`
+	% generated: \`cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:24109/dav/fields/\`
 	- _base = @$1
-	- _anchor = caldav:http://127.0.0.1:43109/dav/fields/
+	- _anchor = caldav:http://127.0.0.1:24109/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
 	- _group-by = (tags)

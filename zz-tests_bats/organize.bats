@@ -24,7 +24,7 @@ setup() {
   load "$(dirname "$BATS_TEST_FILE")/lib/caldav.bash"
   load "$(dirname "$BATS_TEST_FILE")/lib/vectors.bash"
   export output
-  start_caldav_server 43101
+  start_caldav_server 24101
   init_store
   # The Personal calendar holds task1.ics + task2.ics (VTODO); its VEVENT
   # (event1.ics) windows out of the object listing (#176/#177).
@@ -48,9 +48,9 @@ generate_doc() {
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:43101/dav/cal/`
-	- _base = @blake2b256-a6cg9xeaq0a4902fwktqpjd9rs2zt5r0mj0w6qcyf7clsj3g8nssnkpaym
-	- _anchor = caldav:http://127.0.0.1:43101/dav/cal/
+	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:24101/dav/cal/`
+	- _base = @blake2b256-pffr5xydp6md2yafhun9rjck8pq98r5l726ac2qp2psudq3m0vlq6dsclq
+	- _anchor = caldav:http://127.0.0.1:24101/dav/cal/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
 	! organize-base-v1
@@ -78,9 +78,9 @@ generate_doc() {
 write_task1_completed() {
   cat >"$1" <<-'EOM'
 	---
-	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:43101/dav/cal/`
-	- _base = @blake2b256-a6cg9xeaq0a4902fwktqpjd9rs2zt5r0mj0w6qcyf7clsj3g8nssnkpaym
-	- _anchor = caldav:http://127.0.0.1:43101/dav/cal/
+	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:24101/dav/cal/`
+	- _base = @blake2b256-pffr5xydp6md2yafhun9rjck8pq98r5l726ac2qp2psudq3m0vlq6dsclq
+	- _anchor = caldav:http://127.0.0.1:24101/dav/cal/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
 	! organize-base-v1
@@ -109,9 +109,9 @@ write_task1_completed() {
 write_task1_cancelled() {
   cat >"$1" <<-'EOM'
 	---
-	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:43101/dav/cal/`
-	- _base = @blake2b256-a6cg9xeaq0a4902fwktqpjd9rs2zt5r0mj0w6qcyf7clsj3g8nssnkpaym
-	- _anchor = caldav:http://127.0.0.1:43101/dav/cal/
+	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:24101/dav/cal/`
+	- _base = @blake2b256-pffr5xydp6md2yafhun9rjck8pq98r5l726ac2qp2psudq3m0vlq6dsclq
+	- _anchor = caldav:http://127.0.0.1:24101/dav/cal/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
 	! organize-base-v1
@@ -143,9 +143,9 @@ assert_task1_completed() {
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:43101/dav/cal/`
-	- _base = @blake2b256-90vj30rjmsvjh2z5aymsgr25e0e679zm760ywskgzjhhcnpeatnqvu4pge
-	- _anchor = caldav:http://127.0.0.1:43101/dav/cal/
+	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:24101/dav/cal/`
+	- _base = @blake2b256-eeaac7jn3lma5ydn30rvj26qm6vppth6kfejzj2e5ul5w46dwh3s9qxzq8
+	- _anchor = caldav:http://127.0.0.1:24101/dav/cal/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
 	! organize-base-v1
@@ -209,7 +209,7 @@ EOF
   assert_success
   assert_tab_table \
     "$(tab_row URI NAME TYPE TAGS)" \
-    "$(tab_row caldav:http://127.0.0.1:43101/dav/cal/task1.ics task1.ics caldav-object-vtodo-v1 '')"
+    "$(tab_row caldav:http://127.0.0.1:24101/dav/cal/task1.ics task1.ics caldav-object-vtodo-v1 '')"
 
   # The old uppercase spelling still matches — the FoldCase dimension folds
   # BOTH sides of the predicate (FDR 0025 case-fold matching rule).
@@ -217,7 +217,7 @@ EOF
   assert_success
   assert_tab_table \
     "$(tab_row URI NAME TYPE TAGS)" \
-    "$(tab_row caldav:http://127.0.0.1:43101/dav/cal/task1.ics task1.ics caldav-object-vtodo-v1 '')"
+    "$(tab_row caldav:http://127.0.0.1:24101/dav/cal/task1.ics task1.ics caldav-object-vtodo-v1 '')"
 
   assert_task1_completed
 }
@@ -272,7 +272,7 @@ EOF
   assert_success
   assert_tab_table \
     "$(tab_row URI NAME TYPE TAGS)" \
-    "$(tab_row caldav:http://127.0.0.1:43101/dav/cal/task1.ics task1.ics caldav-object-vtodo-v1 '')"
+    "$(tab_row caldav:http://127.0.0.1:24101/dav/cal/task1.ics task1.ics caldav-object-vtodo-v1 '')"
 
   assert_task1_completed
 }
@@ -307,7 +307,7 @@ function organize_apply_conflict_rejects { # @test
   assert_success
   assert_tab_table \
     "$(tab_row URI NAME TYPE TAGS)" \
-    "$(tab_row caldav:http://127.0.0.1:43101/dav/cal/task1.ics task1.ics caldav-object-vtodo-v1 '')"
+    "$(tab_row caldav:http://127.0.0.1:24101/dav/cal/task1.ics task1.ics caldav-object-vtodo-v1 '')"
 
   run_cg list -query 'status=cancelled' "$CAL"
   assert_success

@@ -34,7 +34,7 @@ setup() {
   load "$(dirname "$BATS_TEST_FILE")/lib/caldav.bash"
   export output
   export CG_TEST_CALDAV_FIELDS=1
-  start_caldav_server 43102
+  start_caldav_server 24102
   init_store
   CAL="${CALDAV_SOURCE%/dav/}/dav/fields/"
 }
@@ -59,9 +59,9 @@ generate_grouped() {
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:43102/dav/fields/`
-	- _base = @blake2b256-a35sf80axhk3xfyzhg3vf7cexxxqx52cw7c8gdr8tgyjp9fnmzjq3xn6jl
-	- _anchor = caldav:http://127.0.0.1:43102/dav/fields/
+	% generated: `cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:24102/dav/fields/`
+	- _base = @blake2b256-0l656fzzczphwargpplsk6n526kr76l8zv6dmzlfdeglfnh6mefqnlq0l6
+	- _anchor = caldav:http://127.0.0.1:24102/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
 	- _group-by = (tags)
@@ -123,9 +123,9 @@ function organize_categories_apply_writes { # @test
   local edited="$BATS_TEST_TMPDIR/edited.txt"
   cat >"$edited" <<-'EOM'
 	---
-	% generated: `cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:43102/dav/fields/`
-	- _base = @blake2b256-a35sf80axhk3xfyzhg3vf7cexxxqx52cw7c8gdr8tgyjp9fnmzjq3xn6jl
-	- _anchor = caldav:http://127.0.0.1:43102/dav/fields/
+	% generated: `cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:24102/dav/fields/`
+	- _base = @blake2b256-0l656fzzczphwargpplsk6n526kr76l8zv6dmzlfdeglfnh6mefqnlq0l6
+	- _anchor = caldav:http://127.0.0.1:24102/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
 	- _group-by = (tags)
@@ -163,9 +163,9 @@ EOF
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:43102/dav/fields/`
-	- _base = @blake2b256-dpk58j7ut89evkm283km5k2tv3f4gagcvkshs6nzle7xxyjepgvql5jggg
-	- _anchor = caldav:http://127.0.0.1:43102/dav/fields/
+	% generated: `cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:24102/dav/fields/`
+	- _base = @blake2b256-wz434vnktylse9nzt29vk2h24kma9cwdptpdzaw5e0xdcssmhq8q7xrenw
+	- _anchor = caldav:http://127.0.0.1:24102/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
 	- _group-by = (tags)

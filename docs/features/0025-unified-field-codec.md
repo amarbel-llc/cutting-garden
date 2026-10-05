@@ -472,7 +472,7 @@ helpers (`RelativeID`, `NodeDescription`, `BoxAtomPresenter`,
 interior is spelled by `trellis.WriteLiteral` — so `list --query project
 -format espalier` shows exactly the boxes organize would (RFC 0014's
 isometry, pinned by derivation in `zz-tests_bats/list_espalier.bats`, port
-43112). Ids are anchor-relative against the listed URI, tag atoms lead in
+24112). Ids are anchor-relative against the listed URI, tag atoms lead in
 SortKey order, lines sort by box id, `!type` inlines only for a multi-type
 set, and a plugin without the tag/atom capabilities renders `- [<id>]
 <name>`. `list -format text` moved off tabwriter onto

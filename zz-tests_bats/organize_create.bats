@@ -37,7 +37,7 @@ setup() {
   load "$(dirname "$BATS_TEST_FILE")/lib/caldav.bash"
   export output
   export CG_TEST_CALDAV_FIELDS=1
-  start_caldav_server 43116
+  start_caldav_server 24116
   init_store
   CAL="${CALDAV_SOURCE%/dav/}/dav/fields/"
 }
@@ -60,9 +60,9 @@ normalize_created() {
 status_document() {
   cat <<-'EOM'
 	---
-	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:43116/dav/fields/`
-	- _base = @blake2b256-nv5nw6gf6tzqzdlspg6uzkj58eyqzttwexvq6r49per02vrtm9xsvtlrnv
-	- _anchor = caldav:http://127.0.0.1:43116/dav/fields/
+	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:24116/dav/fields/`
+	- _base = @blake2b256-fhmdql3ctryqgngawgqhxgucyscza9dx0rfthum6s68me4fxky3qu3nh35
+	- _anchor = caldav:http://127.0.0.1:24116/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
 	! organize-base-v1
@@ -107,9 +107,9 @@ function organize_create_merges_tag_appearances { # @test
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:43116/dav/fields/`
-	- _base = @blake2b256-f60tptc2u3l6s5k3csuwqpu2xha2pj7ckdt7e5lzl09nsvhyw0ns9p5mff
-	- _anchor = caldav:http://127.0.0.1:43116/dav/fields/
+	% generated: `cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:24116/dav/fields/`
+	- _base = @blake2b256-0khrdlna5epav5eplpzhc2mqz3pdcr60sj7kmud3dmrplns3qnasu8h830
+	- _anchor = caldav:http://127.0.0.1:24116/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
 	- _group-by = (tags)
@@ -133,9 +133,9 @@ function organize_create_merges_tag_appearances { # @test
   local edited="$BATS_TEST_TMPDIR/edited.txt"
   cat >"$edited" <<-'EOM'
 	---
-	% generated: `cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:43116/dav/fields/`
-	- _base = @blake2b256-f60tptc2u3l6s5k3csuwqpu2xha2pj7ckdt7e5lzl09nsvhyw0ns9p5mff
-	- _anchor = caldav:http://127.0.0.1:43116/dav/fields/
+	% generated: `cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:24116/dav/fields/`
+	- _base = @blake2b256-0khrdlna5epav5eplpzhc2mqz3pdcr60sj7kmud3dmrplns3qnasu8h830
+	- _anchor = caldav:http://127.0.0.1:24116/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
 	- _group-by = (tags)
@@ -180,16 +180,16 @@ EOF
   run_cg list -format json -query 'categories=groceries' "$CAL"
   assert_success
   normalize_created
-  assert_output '{"uri":"caldav:http://127.0.0.1:43116/dav/fields/<key>.ics","name":"<key>.ics","type":"caldav-object-vtodo-v1","tags":["groceries","shopping"]}'
+  assert_output '{"uri":"caldav:http://127.0.0.1:24116/dav/fields/<key>.ics","name":"<key>.ics","type":"caldav-object-vtodo-v1","tags":["groceries","shopping"]}'
 
   run_cg organize -group-by '(tags)' "$CAL"
   assert_success
   normalize_created
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:43116/dav/fields/`
+	% generated: `cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:24116/dav/fields/`
 	- _base = @<digest>
-	- _anchor = caldav:http://127.0.0.1:43116/dav/fields/
+	- _anchor = caldav:http://127.0.0.1:24116/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
 	- _group-by = (tags)
@@ -258,21 +258,23 @@ EOF
   run_cg organize -apply "$edited" -commit
   assert_success
   assert_vector - <<'EOF'
-organize: +call already created → cgk1-ddd9cfa02d1d9a8b8b51deb5b55f49ed.ics (skipped)
+organize: +call already created → cgk1-67565802aeedc494981e994948824794.ics (skipped)
 organize: no changes to apply
 EOF
   run_cg list -format json -query 'status=in-process' "$CAL"
   assert_success
-  assert_output '{"uri":"caldav:http://127.0.0.1:43116/dav/fields/cgk1-ddd9cfa02d1d9a8b8b51deb5b55f49ed.ics","name":"cgk1-ddd9cfa02d1d9a8b8b51deb5b55f49ed.ics","type":"caldav-object-vtodo-v1"}'
+  assert_vector - <<'EOF'
+{"uri":"caldav:http://127.0.0.1:24116/dav/fields/cgk1-67565802aeedc494981e994948824794.ics","name":"cgk1-67565802aeedc494981e994948824794.ics","type":"caldav-object-vtodo-v1"}
+EOF
 
   run_cg organize -group-by status= "$CAL"
   assert_success
   normalize_created
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:43116/dav/fields/`
+	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:24116/dav/fields/`
 	- _base = @<digest>
-	- _anchor = caldav:http://127.0.0.1:43116/dav/fields/
+	- _anchor = caldav:http://127.0.0.1:24116/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
 	! organize-base-v1
@@ -440,5 +442,5 @@ EOF
   run_cg list -format json -query 'status=in-process' "$CAL"
   assert_success
   normalize_created
-  assert_output '{"uri":"caldav:http://127.0.0.1:43116/dav/fields/<key>.ics","name":"<key>.ics","type":"caldav-object-vtodo-v1"}'
+  assert_output '{"uri":"caldav:http://127.0.0.1:24116/dav/fields/<key>.ics","name":"<key>.ics","type":"caldav-object-vtodo-v1"}'
 }

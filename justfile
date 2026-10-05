@@ -189,15 +189,18 @@ test-bats-update-vectors *TARGETS='*.bats':
     fi
     "$runner" --jobs "$(nproc)" {{ TARGETS }}
 
-# Show what is listening on the bats lanes' pinned testserver ports (431xx,
-# zz-tests_bats/lib/caldav.bash) — the first look when a host bats run dies
-# with "address already in use" (cutting-garden#254): an orphaned testserver
-# from an interrupted run shows up here with its pid.
+# Show what is listening on the bats lanes' pinned testserver ports (241xx,
+# zz-tests_bats/lib/caldav.bash) and the range the kernel assigns ports from —
+# the first look when a bats run dies with "address already in use"
+# (cutting-garden#254). The pinned ports must sit OUTSIDE that range; a
+# listener shown here is an orphaned testserver or another program configured
+# on the same port.
 #
-# list listeners on the bats lanes' pinned testserver ports
+# list listeners on the bats lanes' pinned ports and the kernel's port range
 [group('debug')]
 debug-bats-ports:
-    ss -ltnp | grep -E ':431[0-9]{2}\b' || echo "no listener on 431xx"
+    @echo "kernel-assigned port range: $(cat /proc/sys/net/ipv4/ip_local_port_range)"
+    @ss -ltnp | grep -E ':241[0-9]{2}\b' || echo "no listener on 241xx"
 
 # Make every blake2b256 digest in TARGETS stale (each gains a `stale` prefix, so
 # distinct digests stay distinct) — the self-check for test-bats-update-vectors
@@ -831,9 +834,9 @@ debug-organize-fixture GROUP_BY='status=': debug-build-go debug-build-caldav-tes
 
 # Render the organize document for the fastmail testserver's Inbox (fastmail
 # tags slice 1) — the eyeball loop for zz-tests_bats/organize_fastmail.bats.
-# Builds the binary + cutting-garden-fastmail-testserver, starts the server on
-# the lane's pinned port 43113 (so the document, `_base` included, matches the
-# bats vectors byte for byte), and runs organize from a throwaway dir holding
+# Builds the binary + cutting-garden-fastmail-testserver, starts the server (any
+# port: the document anchors at `fastmail://test/`, so it matches the bats
+# vectors byte for byte regardless), and runs organize from a throwaway dir holding
 # its own madder store and a config.toml pointing the `test` account's
 # session_url at the server. READ-ONLY on the in-memory server.
 #
@@ -848,7 +851,7 @@ debug-organize-fastmail-fixture GROUP_BY='_inbox': debug-build-go
     work="$(mktemp -d)"
     trap 'rm -rf "$work"' EXIT
     (cd "$work" && nix develop "$root" --command madder init -encryption none .default >/dev/null)
-    coproc SRV { CG_TEST_FASTMAIL_PORT=43113 .tmp/cutting-garden-fastmail-testserver-result/bin/cutting-garden-fastmail-testserver; }
+    coproc SRV { .tmp/cutting-garden-fastmail-testserver-result/bin/cutting-garden-fastmail-testserver; }
     read -r -u "${SRV[0]}" session_url _account_id
     mkdir -p "$work/config/cutting-garden"
     printf '[[fastmail.accounts]]\nname = "test"\nurl = "fastmail://test/"\nsession_url = "%s"\n' \
@@ -873,7 +876,7 @@ debug-list-fastmail-json: debug-build-go
     nix build '.#cutting-garden-fastmail-testserver' --out-link .tmp/cutting-garden-fastmail-testserver-result
     work="$(mktemp -d)"
     trap 'rm -rf "$work"' EXIT
-    coproc SRV { CG_TEST_FASTMAIL_PORT=43113 .tmp/cutting-garden-fastmail-testserver-result/bin/cutting-garden-fastmail-testserver; }
+    coproc SRV { .tmp/cutting-garden-fastmail-testserver-result/bin/cutting-garden-fastmail-testserver; }
     read -r -u "${SRV[0]}" session_url _account_id
     mkdir -p "$work/config/cutting-garden"
     printf '[[fastmail.accounts]]\nname = "test"\nurl = "fastmail://test/"\nsession_url = "%s"\n' \
@@ -882,8 +885,8 @@ debug-list-fastmail-json: debug-build-go
     exec {SRV[1]}>&- || true
 
 # The write twin of debug-organize-fastmail-fixture — the source loop for
-# organize_fastmail.bats's apply vectors: against a FRESH testserver on the
-# lane's port 43113, generate the GROUP_BY document (printed; its `_base` blob
+# organize_fastmail.bats's apply vectors: against a FRESH testserver, generate
+# the GROUP_BY document (printed; its `_base` blob
 # lands in a throwaway store), apply EDITED (a hand-edited copy of that
 # document) with -commit, re-render, then print `list -format json` for each
 # READBACK URI. A failing apply is printed with its exit code, not aborted on.
@@ -901,7 +904,7 @@ debug-organize-fastmail-apply EDITED GROUP_BY='_inbox' *READBACK='': debug-build
     work="$(mktemp -d)"
     trap 'rm -rf "$work"' EXIT
     (cd "$work" && nix develop "$root" --command madder init -encryption none .default >/dev/null)
-    coproc SRV { CG_TEST_FASTMAIL_PORT=43113 .tmp/cutting-garden-fastmail-testserver-result/bin/cutting-garden-fastmail-testserver; }
+    coproc SRV { .tmp/cutting-garden-fastmail-testserver-result/bin/cutting-garden-fastmail-testserver; }
     read -r -u "${SRV[0]}" session_url _account_id
     mkdir -p "$work/config/cutting-garden"
     printf '[[fastmail.accounts]]\nname = "test"\nurl = "fastmail://test/"\nsession_url = "%s"\n' \
@@ -1025,7 +1028,7 @@ debug-organize-categories: debug-build-go debug-build-caldav-testserver
 # `SUMMARY:Plan\, then do` renders unescaped, a trailer edit appends " now", and
 # the write-back re-escapes on the wire.
 # The host-run eyeball twin of zz-tests_bats/organize_literal.bats: pins
-# CG_TEST_CALDAV_PORT=43107 (the lane's port, lib/caldav.bash) so the `_base`
+# CG_TEST_CALDAV_PORT=24107 (the lane's port, lib/caldav.bash) so the `_base`
 # digests match the lane's vectors (which regenerate through
 # test-bats-update-vectors, not from this output). WRITES to the throwaway
 # in-memory server only. Stage any new source files first — `nix build` sees
@@ -1038,7 +1041,7 @@ debug-organize-literal: debug-build-go debug-build-caldav-testserver
     cd "$root"
     cg=.tmp/cutting-garden
     nix develop --command madder init -encryption none .default 2>/dev/null || true
-    export CG_TEST_CALDAV_LIT=1 CG_TEST_CALDAV_PORT=43107
+    export CG_TEST_CALDAV_LIT=1 CG_TEST_CALDAV_PORT=24107
     coproc SRV { .tmp/cutting-garden-caldav-testserver; }
     read -r -u "${SRV[0]}" source_url _calpath
     cal="${source_url%/dav/}/dav/lit/"

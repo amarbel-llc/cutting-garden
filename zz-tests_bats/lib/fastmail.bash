@@ -12,10 +12,12 @@
 # FASTMAIL_ROOT (`fastmail://test/`) and FASTMAIL_SESSION_URL. Pair with
 # stop_fastmail_server in teardown.
 #
-# $1 pins the listen port (CG_TEST_FASTMAIL_PORT). The port is written into
-# config.toml and reaches every organize document's `_base` digest, so the
-# lane MUST pin one and serialize its tests (see the port table and rules in
-# lib/caldav.bash — ONE table for every pinned-port lane).
+# The server listens on a kernel-assigned port by default, and a lane should
+# leave it that way: the port lives only in config.toml's session_url. Documents
+# anchor at `fastmail://test/`, so it reaches no vector and no `_base` digest —
+# organize_fastmail.bats passes unchanged on any port (cutting-garden#254). An
+# optional $1 still pins it (CG_TEST_FASTMAIL_PORT) for a caller that needs a
+# known address.
 #
 # No [tags] interpreter override is written: the fastmail thread type's `tags`
 # field DECLARES dodder-hyphen itself, so the lane exercises that plugin

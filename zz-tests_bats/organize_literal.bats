@@ -40,7 +40,7 @@ setup() {
   load "$(dirname "$BATS_TEST_FILE")/lib/caldav.bash"
   export output
   export CG_TEST_CALDAV_LIT=1
-  start_caldav_server 43107
+  start_caldav_server 24107
   init_store
   CAL="${CALDAV_SOURCE%/dav/}/dav/lit/"
 }
@@ -53,18 +53,18 @@ teardown() {
 
 # The generated document's `_base` digest, the digest after lit2 has moved
 # into the `"_ inbox"` bucket, and the digest after lit3's summary trailer edit.
-BASE_GENERATED=blake2b256-7frh9cjnxar4pzj4xpy324stupzgj55snaxmja3p5vmckheg7g8sftyzfe
-BASE_MOVED=blake2b256-unlx9rq9jr5kl6hyjd0f3mzcx9cz33tswfrnah0veegnpnt79lgsllzz7r
-BASE_SUMMARY_EDITED=blake2b256-mjsll3smgpepl5ma2aysf0k5zvkqlfndyjsepfv2qgzz89lt5kwsxcxd3r
+BASE_GENERATED=blake2b256-tmm4308jsj6er2962f645yzpgvhtkc4qfxcqggagks63c2gct0usa7jefr
+BASE_MOVED=blake2b256-76mpns0ytu5wy4vpd2gp65lj3qky4psppc2h0am9sfqdjgs9jpdsu27qfm
+BASE_SUMMARY_EDITED=blake2b256-xyksehllmu4tpdl4qx7tpgsmlr6nrhykmz249xyvu2dn2rjrnksq8w42e5
 
 # envelope_header prints the `-group-by (tags)` document's hyphence envelope
 # pinned at `_base` $1 — the part every document in this lane shares.
 envelope_header() {
   cat <<-EOM
 	---
-	% generated: \`cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:43107/dav/lit/\`
+	% generated: \`cg organize -group-by (tags) -query "_terminal=no" caldav:http://127.0.0.1:24107/dav/lit/\`
 	- _base = @$1
-	- _anchor = caldav:http://127.0.0.1:43107/dav/lit/
+	- _anchor = caldav:http://127.0.0.1:24107/dav/lit/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
 	- _group-by = (tags)

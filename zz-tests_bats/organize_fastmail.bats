@@ -18,12 +18,9 @@
 # The G# → test index for this lane is the "fastmail tags slice 1" section of
 # docs/plans/2026-08-30-native-tags-vectors.md.
 #
-# Whole-document vectors (G16): pinned port 43113 + serialized tests, see the
-# port table in lib/caldav.bash.
-
-setup_file() {
-  export BATS_NO_PARALLELIZE_WITHIN_FILE=true
-}
+# Whole-document vectors (G16). The testserver listens on a kernel-assigned
+# port: documents anchor at `fastmail://test/`, so no port reaches a vector
+# (cutting-garden#254), and each test's own server is all it needs.
 
 setup() {
   load "$(dirname "$BATS_TEST_FILE")/lib/common.bash"
@@ -31,7 +28,7 @@ setup() {
   load "$(dirname "$BATS_TEST_FILE")/lib/fastmail.bash"
   load "$(dirname "$BATS_TEST_FILE")/lib/mcp.bash"
   export output
-  start_fastmail_server 43113
+  start_fastmail_server
   init_store
 }
 

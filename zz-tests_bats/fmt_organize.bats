@@ -37,7 +37,7 @@ setup() {
   export XDG_CONFIG_HOME="$HOME/.config"
   mkdir -p "$XDG_CONFIG_HOME/cutting-garden"
   rm -f "$XDG_CONFIG_HOME/cutting-garden/config.toml"
-  start_caldav_server 43111
+  start_caldav_server 24111
   init_store
   LIT="${CALDAV_SOURCE%/dav/}/dav/lit/"
 }
@@ -63,9 +63,9 @@ generate_status_doc() {
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:43111/dav/lit/`
-	- _base = @blake2b256-ds5v08vsq056f25466mt43k9d82t3yr9980n3ejd6dnhkunh6yss3japhu
-	- _anchor = caldav:http://127.0.0.1:43111/dav/lit/
+	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:24111/dav/lit/`
+	- _base = @blake2b256-pzpn2m8cey22xms36aqdw2wkafhs3vwnfygmz3apulrlf6lmu6pqsx7nak
+	- _anchor = caldav:http://127.0.0.1:24111/dav/lit/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
 	! organize-base-v1
@@ -116,14 +116,14 @@ function fmt_organize_regenerates_and_rewrites_base { # @test
 
   run_cg fmt-organize "$doc"
   assert_success
-  assert_vector "fmt-organize: $doc rewritten — _base @blake2b256-ds5v08vsq056f25466mt43k9d82t3yr9980n3ejd6dnhkunh6yss3japhu → @blake2b256-2lgqcr9ssgc9v7pzrxku400r9e3phm4hutqktu69lknt43lp8vdscjxk7g"
+  assert_vector "fmt-organize: $doc rewritten — _base @blake2b256-pzpn2m8cey22xms36aqdw2wkafhs3vwnfygmz3apulrlf6lmu6pqsx7nak → @blake2b256-s35ufn3n5amk7ehzjk2flugwrdnl947498zxs8lqq42yamljuuqq9y3r5l"
 
   run cat "$doc"
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:43111/dav/lit/`
-	- _base = @blake2b256-2lgqcr9ssgc9v7pzrxku400r9e3phm4hutqktu69lknt43lp8vdscjxk7g
-	- _anchor = caldav:http://127.0.0.1:43111/dav/lit/
+	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:24111/dav/lit/`
+	- _base = @blake2b256-s35ufn3n5amk7ehzjk2flugwrdnl947498zxs8lqq42yamljuuqq9y3r5l
+	- _anchor = caldav:http://127.0.0.1:24111/dav/lit/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
 	! organize-base-v1
@@ -172,9 +172,9 @@ function fmt_organize_refuses_unapplied_edits { # @test
   generate_status_doc "$doc"
   cat >"$edited" <<-'EOM'
 	---
-	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:43111/dav/lit/`
-	- _base = @blake2b256-ds5v08vsq056f25466mt43k9d82t3yr9980n3ejd6dnhkunh6yss3japhu
-	- _anchor = caldav:http://127.0.0.1:43111/dav/lit/
+	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:24111/dav/lit/`
+	- _base = @blake2b256-pzpn2m8cey22xms36aqdw2wkafhs3vwnfygmz3apulrlf6lmu6pqsx7nak
+	- _anchor = caldav:http://127.0.0.1:24111/dav/lit/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
 	! organize-base-v1
@@ -236,9 +236,9 @@ function fmt_organize_keeps_trailing_lever { # @test
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:43111/dav/lit/`
-	- _base = @blake2b256-qqmuy48yta4mxp3q4362u9cefcdjafrwcax87q9n376dv8fpv0nqjz9hsh
-	- _anchor = caldav:http://127.0.0.1:43111/dav/lit/
+	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:24111/dav/lit/`
+	- _base = @blake2b256-622dcxy0qq0h2ny38emv4w45k0dvel6tt70wze2fq6dzvqv5auys7kag98
+	- _anchor = caldav:http://127.0.0.1:24111/dav/lit/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
 	- _tag-atoms = trailing
@@ -276,14 +276,14 @@ function fmt_organize_keeps_trailing_lever { # @test
 
   run_cg fmt-organize "$doc"
   assert_success
-  assert_vector "fmt-organize: $doc rewritten — _base @blake2b256-qqmuy48yta4mxp3q4362u9cefcdjafrwcax87q9n376dv8fpv0nqjz9hsh → @blake2b256-wsxykeay2ura3f5re6zme58hg3953ptkccaqp6xng7v9fcgf37uqfnsevr"
+  assert_vector "fmt-organize: $doc rewritten — _base @blake2b256-622dcxy0qq0h2ny38emv4w45k0dvel6tt70wze2fq6dzvqv5auys7kag98 → @blake2b256-e8738rk3x48pggqnzhmmvme92mwgygtdj75eqrx7tndn6v6kc87qfwzwea"
 
   run cat "$doc"
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:43111/dav/lit/`
-	- _base = @blake2b256-wsxykeay2ura3f5re6zme58hg3953ptkccaqp6xng7v9fcgf37uqfnsevr
-	- _anchor = caldav:http://127.0.0.1:43111/dav/lit/
+	% generated: `cg organize -group-by status= -query "_terminal=no" caldav:http://127.0.0.1:24111/dav/lit/`
+	- _base = @blake2b256-e8738rk3x48pggqnzhmmvme92mwgygtdj75eqrx7tndn6v6kc87qfwzwea
+	- _anchor = caldav:http://127.0.0.1:24111/dav/lit/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
 	- _tag-atoms = trailing

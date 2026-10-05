@@ -33,7 +33,7 @@ setup() {
   # $XDG_CONFIG_HOME, so an ambient value on a host (non-sandbox) run would leak
   # the developer's real config into the bare-group-by default resolution.
   export XDG_CONFIG_HOME="$HOME/.config"
-  start_caldav_server 43104
+  start_caldav_server 24104
   init_store
   CAL="${CALDAV_SOURCE%/dav/}/dav/sched/"
 }
@@ -56,9 +56,9 @@ generate_month() {
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by date_due=(month) -query "_terminal=no" caldav:http://127.0.0.1:43104/dav/sched/`
-	- _base = @blake2b256-kuaxfueta7yl0n5ceqfacpnvt9zpkcrk0t5uwgz9fhp3vejp09fst9zgap
-	- _anchor = caldav:http://127.0.0.1:43104/dav/sched/
+	% generated: `cg organize -group-by date_due=(month) -query "_terminal=no" caldav:http://127.0.0.1:24104/dav/sched/`
+	- _base = @blake2b256-jauvz62qcafljd037wzc4dgejyrw03nstv360mvhwd2f9radauvq6z2r06
+	- _anchor = caldav:http://127.0.0.1:24104/dav/sched/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
 	! organize-base-v1
@@ -96,9 +96,9 @@ function organize_date_month_reschedule_preserves_datetime { # @test
   local edited="$BATS_TEST_TMPDIR/edited.txt"
   cat >"$edited" <<-'EOM'
 	---
-	% generated: `cg organize -group-by date_due=(month) -query "_terminal=no" caldav:http://127.0.0.1:43104/dav/sched/`
-	- _base = @blake2b256-kuaxfueta7yl0n5ceqfacpnvt9zpkcrk0t5uwgz9fhp3vejp09fst9zgap
-	- _anchor = caldav:http://127.0.0.1:43104/dav/sched/
+	% generated: `cg organize -group-by date_due=(month) -query "_terminal=no" caldav:http://127.0.0.1:24104/dav/sched/`
+	- _base = @blake2b256-jauvz62qcafljd037wzc4dgejyrw03nstv360mvhwd2f9radauvq6z2r06
+	- _anchor = caldav:http://127.0.0.1:24104/dav/sched/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
 	! organize-base-v1
@@ -135,8 +135,8 @@ EOF
   assert_success
   assert_tab_table \
     "$(tab_row URI NAME TYPE TAGS)" \
-    "$(tab_row caldav:http://127.0.0.1:43104/dav/sched/sched1.ics sched1.ics caldav-object-vtodo-v1 '')" \
-    "$(tab_row caldav:http://127.0.0.1:43104/dav/sched/sched2.ics sched2.ics caldav-object-vtodo-v1 '')"
+    "$(tab_row caldav:http://127.0.0.1:24104/dav/sched/sched1.ics sched1.ics caldav-object-vtodo-v1 '')" \
+    "$(tab_row caldav:http://127.0.0.1:24104/dav/sched/sched2.ics sched2.ics caldav-object-vtodo-v1 '')"
 
   run_cg list -query 'date_due=2026-08' "$CAL"
   assert_success
@@ -156,9 +156,9 @@ EOF
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by date_due=(month) -query "_terminal=no" caldav:http://127.0.0.1:43104/dav/sched/`
-	- _base = @blake2b256-m9syr55ukvvauq6ey2wwl0hcvdkgatx69xluu4fjyk3mz9z00z3qmpeqxu
-	- _anchor = caldav:http://127.0.0.1:43104/dav/sched/
+	% generated: `cg organize -group-by date_due=(month) -query "_terminal=no" caldav:http://127.0.0.1:24104/dav/sched/`
+	- _base = @blake2b256-6j463t3fywp50r7hhd9xatayq8r8pds3wyv9rqd08gz9zfh5gltqkegqus
+	- _anchor = caldav:http://127.0.0.1:24104/dav/sched/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
 	! organize-base-v1
@@ -184,9 +184,9 @@ function organize_date_move_and_atom_edit_conflict { # @test
   local edited="$BATS_TEST_TMPDIR/edited.txt"
   cat >"$edited" <<-'EOM'
 	---
-	% generated: `cg organize -group-by date_due=(month) -query "_terminal=no" caldav:http://127.0.0.1:43104/dav/sched/`
-	- _base = @blake2b256-kuaxfueta7yl0n5ceqfacpnvt9zpkcrk0t5uwgz9fhp3vejp09fst9zgap
-	- _anchor = caldav:http://127.0.0.1:43104/dav/sched/
+	% generated: `cg organize -group-by date_due=(month) -query "_terminal=no" caldav:http://127.0.0.1:24104/dav/sched/`
+	- _base = @blake2b256-jauvz62qcafljd037wzc4dgejyrw03nstv360mvhwd2f9radauvq6z2r06
+	- _anchor = caldav:http://127.0.0.1:24104/dav/sched/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
 	! organize-base-v1
@@ -228,9 +228,9 @@ function organize_date_bare_groups_by_day { # @test
   assert_success
   assert_vector - <<-'EOM'
 	---
-	% generated: `cg organize -group-by date_due=(day) -query "_terminal=no" caldav:http://127.0.0.1:43104/dav/sched/`
-	- _base = @blake2b256-sv5d5z5w5dnwxtn3k9gp78cwgepp0dfsnn0ftajr9gwc5ltr90wqh6jfx6
-	- _anchor = caldav:http://127.0.0.1:43104/dav/sched/
+	% generated: `cg organize -group-by date_due=(day) -query "_terminal=no" caldav:http://127.0.0.1:24104/dav/sched/`
+	- _base = @blake2b256-zg0fa974ajw6hy2kwhdhw5wmfza460ak4rwv6vrx6zvj50kavlyskn7adj
+	- _anchor = caldav:http://127.0.0.1:24104/dav/sched/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
 	! organize-base-v1

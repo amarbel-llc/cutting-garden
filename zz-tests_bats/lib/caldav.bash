@@ -22,25 +22,32 @@
 # (a) pick one no other file uses and (b) serialize its own tests via
 # `setup_file() { export BATS_NO_PARALLELIZE_WITHIN_FILE=true; }` — each test
 # starts its own server on the same port, and stop_caldav_server waits for the
-# previous one to exit first. Assigned ports (pick the next free one for a new
+# previous one to exit first.
+#
+# The ports sit BELOW 32768 on purpose (cutting-garden#254). The kernel hands
+# out ports for `bind(0)` listeners and for outbound connections' source side
+# from ip_local_port_range (32768–60999 by default), so a table inside that
+# range can find its port already taken by any socket in the run — which is
+# how whole files failed in setup with "address already in use". A dynamic
+# port is not an option here: the plain-HTTP testserver is reachable only as
+# `caldav:http://host:port/…`, and that URL is the document's `_anchor`. Keep
+# new lanes below 32768. Assigned ports (pick the next free one for a new
 # lane):
 #
-#   43101  organize.bats
-#   43102  organize_tags.bats
-#   43103  organize_ns.bats
-#   43104  organize_date.bats
-#   43105  organize_priority.bats
-#   43106  organize_fields.bats
-#   43107  organize_literal.bats
-#   43108  organize_groupby.bats
-#   43109  organize_headings.bats
-#   43110  organize_tagatoms.bats
-#   43111  fmt_organize.bats
-#   43112  list_espalier.bats
-#   43113  organize_fastmail.bats  (lib/fastmail.bash's JMAP testserver)
-#   43114  (spare, reserved for the fastmail lanes)
-#   43115  organize_wrap.bats
-#   43116  organize_create.bats
+#   24101  organize.bats
+#   24102  organize_tags.bats
+#   24103  organize_ns.bats
+#   24104  organize_date.bats
+#   24105  organize_priority.bats
+#   24106  organize_fields.bats
+#   24107  organize_literal.bats
+#   24108  organize_groupby.bats
+#   24109  organize_headings.bats
+#   24110  organize_tagatoms.bats
+#   24111  fmt_organize.bats
+#   24112  list_espalier.bats
+#   24115  organize_wrap.bats
+#   24116  organize_create.bats
 
 # assert_categories URL EXPECTED curl-reads the live iCalendar object at URL (the
 # plain-HTTP form, `${CALDAV_SOURCE#caldav:}<cal>/<id>.ics`) and asserts its
