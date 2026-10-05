@@ -165,25 +165,29 @@ test-bats-update-vectors *TARGETS='*.bats':
     runner="$(nix build .#cutting-garden-bats-host --no-link --print-out-paths)/bin/cutting-garden-bats-host"
     records="$PWD/.tmp/update-vectors"
     cd zz-tests_bats
-    for pass in 1 2 3 4 5 6 7 8; do
+    for pass in {1..8}; do
       rm -rf "$records"
       mkdir -p "$records"
-      CG_UPDATE_VECTORS="$records" "$runner" --jobs "$(nproc)" {{ TARGETS }} >"$records/bats.log" 2>&1 || true
+      bats_status=0
+      CG_UPDATE_VECTORS="$records" "$runner" --jobs "$(nproc)" {{ TARGETS }} >"$records/bats.log" 2>&1 || bats_status=$?
       status=0
       bash lib/update_vectors.bash "$records" || status=$?
       [[ $status == 3 ]] && break
       [[ $status == 0 ]] || exit "$status"
       echo "test-bats-update-vectors: pass $pass rewrote vectors; re-running" >&2
     done
+    # A pass that recorded no mismatch compared every vector for real: it IS
+    # the verifying run.
+    recorded=("$records"/record.*)
+    if [[ ! -e ${recorded[0]} ]]; then
+      cat "$records/bats.log"
+      exit "$bats_status"
+    fi
+    if [[ $status == 0 ]]; then
+      echo "test-bats-update-vectors: still rewriting after $pass passes — no fixpoint; inspect the diff" >&2
+    fi
     "$runner" --jobs "$(nproc)" {{ TARGETS }}
 
-# Make every blake2b256 digest in TARGETS stale (each gains a `stale` prefix, so
-# distinct digests stay distinct) — the self-check for test-bats-update-vectors
-# after a change to lib/vectors.bash or lib/update_vectors.bash: stale the
-# lanes, regenerate, and `git diff zz-tests_bats` must come back EMPTY. A
-# digest that does not come back names a vector the regeneration cannot reach.
-# Run it on a clean tree; `git checkout zz-tests_bats` undoes it.
-#
 # Show what is listening on the bats lanes' pinned testserver ports (431xx,
 # zz-tests_bats/lib/caldav.bash) — the first look when a host bats run dies
 # with "address already in use" (cutting-garden#254): an orphaned testserver
@@ -194,6 +198,13 @@ test-bats-update-vectors *TARGETS='*.bats':
 debug-bats-ports:
     ss -ltnp | grep -E ':431[0-9]{2}\b' || echo "no listener on 431xx"
 
+# Make every blake2b256 digest in TARGETS stale (each gains a `stale` prefix, so
+# distinct digests stay distinct) — the self-check for test-bats-update-vectors
+# after a change to lib/vectors.bash or lib/update_vectors.bash: stale the
+# lanes, regenerate, and `git diff zz-tests_bats` must come back EMPTY. A
+# digest that does not come back names a vector the regeneration cannot reach.
+# Run it on a clean tree; `git checkout zz-tests_bats` undoes it.
+#
 # stale every digest in bats lanes to exercise test-bats-update-vectors
 [group('debug')]
 debug-stale-bats-vectors *TARGETS='organize*.bats fmt_organize.bats list_espalier.bats traversal_serve.bats':

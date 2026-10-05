@@ -32,14 +32,19 @@ report() { printf 'update-vectors: %s\n' "$*" >&2; }
 
 leading_tabs() { printf '%s' "${1%%[!$'\t']*}"; }
 
-# read_lines NAME FILE loads FILE's lines into array NAME, dropping trailing
-# empty lines (assert_output ignores them, so neither side carries any).
-read_lines() {
+# drop_trailing_blanks NAME: assert_output ignores trailing empty lines, so
+# neither side of a comparison carries any.
+drop_trailing_blanks() {
   local -n lines_ref="$1"
-  mapfile -t lines_ref <"$2"
   while ((${#lines_ref[@]} > 0)) && [[ -z ${lines_ref[-1]} ]]; do
     unset 'lines_ref[-1]'
   done
+}
+
+# read_lines NAME FILE
+read_lines() {
+  mapfile -t "$1" <"$2"
+  drop_trailing_blanks "$1"
 }
 
 # envelope_of FILE prints the document's hyphence envelope — its opening `---`
@@ -109,7 +114,7 @@ rewrite_site() {
   local end candidate
   for ((end = line; end < ${#L[@]}; end++)); do
     candidate="${L[end]}"
-    [[ -n $dash ]] && candidate="${candidate#"$(leading_tabs "$candidate")"}"
+    [[ -n $dash ]] && candidate="${candidate#"${candidate%%[!$'\t']*}"}"
     [[ $candidate == "$delimiter" ]] && break
   done
   if ((end >= ${#L[@]})); then
@@ -121,12 +126,10 @@ rewrite_site() {
   if [[ -n $dash ]]; then
     local i
     for i in "${!body[@]}"; do
-      body[i]="${body[i]#"$(leading_tabs "${body[i]}")"}"
+      body[i]="${body[i]#"${body[i]%%[!$'\t']*}"}"
     done
   fi
-  while ((${#body[@]} > 0)) && [[ -z ${body[-1]} ]]; do
-    unset 'body[-1]'
-  done
+  drop_trailing_blanks body
   read_lines expected "$record/expected"
   if [[ ${body[*]@Q} != "${expected[*]@Q}" ]]; then
     report "$file:$line: the heredoc is not what the test compared against — left alone"
@@ -142,11 +145,7 @@ rewrite_site() {
       report "$file:$line: the output has a line a <<${dash}'$delimiter' heredoc cannot carry — update it by hand"
       return 1
     fi
-    if [[ -z $text ]]; then
-      replacement+=("")
-    else
-      replacement+=("$indent$text")
-    fi
+    replacement+=("${text:+$indent$text}")
   done
 
   L=("${L[@]:0:line}" "${replacement[@]}" "${L[@]:end}")
@@ -166,9 +165,8 @@ replace_envelopes() {
     while ((i < ${#L[@]})); do
       matched=0
       if [[ ${L[i]} == *"${old_lines[0]}" ]] && ((i + ${#old_lines[@]} <= ${#L[@]})); then
-        indent="${L[i]%"${old_lines[0]}"}"
+        indent="${L[i]%%[!$'\t']*}"
         matched=1
-        [[ $indent == "$(leading_tabs "${L[i]}")" ]] || matched=0
         for ((k = 0; matched && k < ${#old_lines[@]}; k++)); do
           [[ ${L[i + k]} == "$indent${old_lines[k]}" ]] || matched=0
         done
