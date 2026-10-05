@@ -12,6 +12,9 @@
 #
 #   - every other copy of a replaced document's envelope (the `---` … `---`
 #     block) becomes the new envelope;
+#   - every remaining copy of a replaced `% generated:` provenance line becomes
+#     the new line (an input whose envelope was itself edited); a copy a helper
+#     spells with shell escapes cannot be swapped and is named instead;
 #   - every remaining mention of a replaced digest becomes the new digest (an
 #     input whose envelope was itself edited, a `BASE_*=` variable, the
 #     `@old → @new` an fmt summary names). Old and new digests pair by position.
@@ -195,6 +198,27 @@ replace_digests() {
   done
 }
 
+# replace_provenance swaps every remaining copy of an old `% generated:` line
+# for its new one — the copies replace_envelopes cannot reach, in an input
+# whose envelope was hand-edited. A copy it cannot swap, because a helper
+# spells it with shell escapes, is named: the suite tolerates a stale
+# provenance note in an input document, so nothing else would point at it.
+replace_provenance() {
+  local key old i text
+  for key in "${!replacement_of[@]}"; do
+    [[ $key == "provenance "* && -z ${poisoned[$key]:-} ]] || continue
+    old="${key#provenance }"
+    for i in "${!L[@]}"; do
+      text="${L[i]#"${L[i]%%[!$'\t']*}"}"
+      if [[ $text == "$old" ]]; then
+        L[i]="${L[i]%"$old"}${replacement_of[$key]}"
+      elif [[ ${text//\\/} == "$old" ]]; then
+        report "$file:$((i + 1)): still carries the old \`% generated:\` note, spelled with escapes — update it by hand"
+      fi
+    done
+  done
+}
+
 declare -A site_record=() site_conflict=() file_seen=()
 for record in "$records"/record.*; do
   [[ -d $record ]] || continue
@@ -235,6 +259,9 @@ for file in "${!file_seen[@]}"; do
     note_digest_replacements "$record/expected" "$record/actual"
     note_replacement envelope \
       "$(envelope_of "$record/expected")" "$(envelope_of "$record/actual")"
+    note_replacement provenance \
+      "$(grep -m1 '^% generated:' "$record/expected" || true)" \
+      "$(grep -m1 '^% generated:' "$record/actual" || true)"
   done
 
   poison_chained_replacements
@@ -244,6 +271,7 @@ for file in "${!file_seen[@]}"; do
     fi
   done
   replace_envelopes
+  replace_provenance
   replace_digests
 
   if [[ ${L[*]@Q} != "$before" ]]; then

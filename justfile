@@ -129,9 +129,10 @@ test-bats:
 # Run bats files on the HOST against the hermetic lane's exact binaries
 # (.#cutting-garden-bats-host: bats-capture's CG_BIN / MADDER_BIN / testserver
 # pairing, a from-scratch environment) — the fast dev-loop for one lane, with
-# live output and no sandbox rebuild of the whole suite. ARGS go to bats
-# verbatim, relative to zz-tests_bats/ (`just debug-test-bats organize.bats`,
-# `just debug-test-bats -f wrap organize_wrap.bats`). The gate stays test-bats.
+# live output and no sandbox rebuild of the whole suite. ARGS go to bats, which
+# runs IN zz-tests_bats/: name files relative to it (`just debug-test-bats
+# organize.bats`, `just debug-test-bats -f wrap organize_wrap.bats`); a
+# `zz-tests_bats/` prefix is accepted and dropped. The gate stays test-bats.
 #
 # run bats files on the host against the hermetic lane's binaries
 [group('debug')]
@@ -141,7 +142,7 @@ debug-test-bats *ARGS='*.bats':
     cd "{{ justfile_directory() }}"
     runner="$(nix build .#cutting-garden-bats-host --no-link --print-out-paths)/bin/cutting-garden-bats-host"
     cd zz-tests_bats
-    "$runner" --jobs "$(nproc)" {{ ARGS }}
+    "$runner" --jobs "$(nproc)" {{ replace(ARGS, 'zz-tests_bats/', '') }}
 
 # Regenerate the whole-document vectors (`assert_vector - <<-'EOM'` heredocs,
 # zz-tests_bats/lib/vectors.bash) IN PLACE after a change to what organize
@@ -153,6 +154,8 @@ debug-test-bats *ARGS='*.bats':
 # fixpoint, since an `after` document only renders once the input it follows
 # applies; the recipe's status is that of a run in which every vector was
 # compared for real (the last pass, when it recorded no mismatch).
+# TARGETS are bats files relative to zz-tests_bats/, as for debug-test-bats (a
+# `zz-tests_bats/` prefix is accepted and dropped).
 # Anything it could not rewrite is named on stderr for a manual edit; the last
 # pass's records and bats log stay in .tmp/update-vectors/. REVIEW THE DIFF —
 # it writes whatever the binary printed. The gate stays test-bats.
@@ -170,7 +173,7 @@ test-bats-update-vectors *TARGETS='*.bats':
       rm -rf "$records"
       mkdir -p "$records"
       bats_status=0
-      CG_UPDATE_VECTORS="$records" "$runner" --jobs "$(nproc)" {{ TARGETS }} >"$records/bats.log" 2>&1 || bats_status=$?
+      CG_UPDATE_VECTORS="$records" "$runner" --jobs "$(nproc)" {{ replace(TARGETS, 'zz-tests_bats/', '') }} >"$records/bats.log" 2>&1 || bats_status=$?
       status=0
       bash lib/update_vectors.bash "$records" || status=$?
       [[ $status == 3 ]] && break
@@ -187,7 +190,7 @@ test-bats-update-vectors *TARGETS='*.bats':
     if [[ $status == 0 ]]; then
       echo "test-bats-update-vectors: still rewriting after $pass passes — no fixpoint; inspect the diff" >&2
     fi
-    "$runner" --jobs "$(nproc)" {{ TARGETS }}
+    "$runner" --jobs "$(nproc)" {{ replace(TARGETS, 'zz-tests_bats/', '') }}
 
 # Show what is listening on the bats lanes' pinned testserver ports (241xx,
 # zz-tests_bats/lib/caldav.bash) and the range the kernel assigns ports from —
@@ -212,7 +215,7 @@ debug-bats-ports:
 # stale every digest in bats lanes to exercise test-bats-update-vectors
 [group('debug')]
 debug-stale-bats-vectors *TARGETS='organize*.bats fmt_organize.bats list_espalier.bats traversal_serve.bats':
-    cd zz-tests_bats && sed -i 's/blake2b256-\([a-z0-9]\{8\}\)/blake2b256-stale\1/g' {{ TARGETS }}
+    cd zz-tests_bats && sed -i 's/blake2b256-\([a-z0-9]\{8\}\)/blake2b256-stale\1/g' {{ replace(TARGETS, 'zz-tests_bats/', '') }}
 
 # Run the organize tree-sitter grammar's corpus (zz-nvim, cutting-garden#43) as a
 # merge-gate leaf, mirroring test-bats: builds the sandboxed

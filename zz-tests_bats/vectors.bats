@@ -25,13 +25,15 @@ setup() {
 
 # write_lane writes the stand-in lane: a generated-document vector, an edited
 # input pinned to the same envelope, an input whose envelope was itself edited
-# (so only its digest can follow), and a digest held in a variable.
+# (so its provenance line and digest follow one by one), a helper that spells
+# the provenance line with shell escapes (which can only be named), and a
+# digest held in a variable.
 write_lane() {
   cat >"$LANE" <<'LANE'
 generate() {
   assert_vector - <<-'EOM'
 	---
-	% generated: old
+	% generated: `cg old`
 	- _base = @blake2b256-old
 	---
 
@@ -42,7 +44,7 @@ generate() {
 write_edit() {
   cat >"$1" <<-'EOM'
 	---
-	% generated: old
+	% generated: `cg old`
 	- _base = @blake2b256-old
 	---
 
@@ -53,10 +55,16 @@ write_edit() {
 write_lever_edit() {
   cat >"$1" <<-'EOM'
 	---
-	% generated: old
+	% generated: `cg old`
 	- _base = @blake2b256-old
 	- _lever = on
 	---
+	EOM
+}
+
+envelope_header() {
+  cat <<-EOM
+	% generated: \`cg old\`
 	EOM
 }
 
@@ -69,7 +77,7 @@ LANE
 regenerated_output() {
   cat <<'EOM'
 ---
-% generated: new
+% generated: `cg new`
 - extra < line
 - _base = @blake2b256-new
 ---
@@ -89,7 +97,9 @@ function update_vectors_rewrites_heredoc_and_carries_envelope { # @test
 
   run bash "$BATS_TEST_DIRNAME/lib/update_vectors.bash" "$RECORDS"
   assert_success
-  assert_output "update-vectors: $LANE: rewrote 1 vector(s)"
+  # shellcheck disable=SC2016  # the backticks are the message's own quoting, not expansion
+  assert_output "update-vectors: $LANE:38: still carries the old "'`% generated:` note, spelled with escapes — update it by hand'"
+update-vectors: $LANE: rewrote 1 vector(s)"
 
   run cat "$LANE"
   assert_success
@@ -97,7 +107,7 @@ function update_vectors_rewrites_heredoc_and_carries_envelope { # @test
 generate() {
   assert_vector - <<-'EOM'
 	---
-	% generated: new
+	% generated: `cg new`
 	- extra < line
 	- _base = @blake2b256-new
 	---
@@ -110,7 +120,7 @@ generate() {
 write_edit() {
   cat >"$1" <<-'EOM'
 	---
-	% generated: new
+	% generated: `cg new`
 	- extra < line
 	- _base = @blake2b256-new
 	---
@@ -122,10 +132,16 @@ write_edit() {
 write_lever_edit() {
   cat >"$1" <<-'EOM'
 	---
-	% generated: old
+	% generated: `cg new`
 	- _base = @blake2b256-new
 	- _lever = on
 	---
+	EOM
+}
+
+envelope_header() {
+  cat <<-EOM
+	% generated: \`cg old\`
 	EOM
 }
 
