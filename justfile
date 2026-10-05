@@ -151,7 +151,8 @@ debug-test-bats *ARGS='*.bats':
 # the heredocs — `_base` digests VERBATIM, never masked — and carries each new
 # envelope/digest to the edited input documents pinned to it. It repeats to a
 # fixpoint, since an `after` document only renders once the input it follows
-# applies, then runs TARGETS for real: the recipe's status is that run's.
+# applies; the recipe's status is that of a run in which every vector was
+# compared for real (the last pass, when it recorded no mismatch).
 # Anything it could not rewrite is named on stderr for a manual edit; the last
 # pass's records and bats log stay in .tmp/update-vectors/. REVIEW THE DIFF —
 # it writes whatever the binary printed. The gate stays test-bats.
