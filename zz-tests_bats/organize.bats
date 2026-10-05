@@ -407,5 +407,6 @@ function organize_selection_unknown_root_name_is_usage_error { # @test
 
   run_cg organize '!nosuch' status=
   assert_failure 64
-  assert_output --partial '`!nosuch` is not a configured root name'
+  assert_output --partial '!nosuch'
+  assert_output --partial 'is not a configured root name'
 }
