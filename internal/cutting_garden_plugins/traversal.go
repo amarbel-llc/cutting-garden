@@ -220,6 +220,29 @@ type RootLabeler interface {
 	RootLabels(ctx context.Context) (map[string]string, error)
 }
 
+// RootNamer is the OPTIONAL capability a RootProvider implements to report
+// the CONFIGURED NAME of each of its own top-level roots — the `name` of the
+// account or root stanza that produced it (RFC 0007). The framework owns no
+// plugin's config section, so this is the only way it can learn that a root
+// is "the caldav account named task"; it is what lets a root be addressed as
+// a bound type, `!task`, in a selection (RFC 0020 §3.4).
+//
+// Distinct from RootLabeler on purpose: a label is a display string that may
+// come from the substrate (a calendar's displayname) and may cost a network
+// round trip; a name is the user's own configured identifier, stable and
+// known without I/O.
+type RootNamer interface {
+	RootProvider
+
+	// RootNames returns the configured name of zero or more of the plugin's
+	// roots (as returned by Roots()), keyed by the root URL's String() form.
+	// A root with no configured name (an intrinsic root) is simply absent.
+	// It MUST NOT perform I/O. Names are unique within one plugin; two
+	// plugins MAY report the same name, which the caller treats as
+	// ambiguous.
+	RootNames(ctx context.Context) (map[string]string, error)
+}
+
 // LeafContent is one leaf node's fetched content, returned by ReadLeaf. It
 // carries two views of the same object: a structured, JSON-marshalable
 // projection a client reads (the parsed fields), and the verbatim source

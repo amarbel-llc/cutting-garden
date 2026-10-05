@@ -378,7 +378,7 @@ wire carries no token for it yet.
 
 # CAPABILITY POSTURE
 
-Every optional capability - *RootProvider*, *RootLabeler*, *LeafReader*,
+Every optional capability - *RootProvider*, *RootLabeler*, *RootNamer*, *LeafReader*,
 *FacetDescriber*, *FacetCounter*, *FacetVersioner*, *FacetLabeler*,
 *EnrichedLister*, *ListingFieldsDescriber*, *NodeMutator*, *BulkMutator*,
 *BodyDescriber*, *ContainerCreator*, *FacetWriteDescriber*, *CreationDescriber*, *CreateApplier*, *NodeIDer*, and whatever this list grows to next -

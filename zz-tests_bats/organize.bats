@@ -315,3 +315,97 @@ function organize_apply_conflict_rejects { # @test
 
   assert_task1_completed
 }
+
+# write_personal_account declares a caldav account NAMED `personal` at the
+# Personal calendar. The account URL is the opaque `caldav:http://…` form: a
+# `caldav://` URL means HTTPS, and the testserver is plain HTTP.
+write_personal_account() {
+  export XDG_CONFIG_HOME="$HOME/.config"
+  mkdir -p "$XDG_CONFIG_HOME/cutting-garden"
+  cat >"$XDG_CONFIG_HOME/cutting-garden/config.toml" <<-EOF
+	[[caldav.accounts]]
+	name = "personal"
+	url = "${CAL}"
+	EOF
+}
+
+# A selection may open with a configured root's NAME as a bound type (RFC 0020
+# §3.4, §4.2): `!personal` resolves through the account's `name` to the same
+# root the URL names, so the document is generate_doc's — anchor, query and
+# body — with only the provenance note (and so `_base`) spelling the selection
+# as typed.
+function organize_selection_by_root_name { # @test
+  write_personal_account
+
+  run_cg organize '!personal' status=
+  assert_success
+  assert_vector - <<-'EOM'
+	---
+	% generated: `cg organize '!personal -> _terminal=no' status=`
+	- _base = @blake2b256-vd0lh2p6krwzjsxrs57meu9fw4ty08rzntepy0admq0csfyp5jvqrlqyk3
+	- _anchor = caldav:http://127.0.0.1:24101/dav/cal/
+	- _query = _terminal=no
+	- _type = !caldav-object-vtodo-v1
+	! organize-base-v1
+	---
+
+	- [task1.ics] Buy milk
+	- [task2.ics] Walk dog
+
+	# status=
+
+	## =needs-action
+
+	## =in-process
+
+	## =completed
+
+	## =cancelled
+	EOM
+}
+
+# Terms after the bound type select WITHIN its root, in the same step or after
+# a `->`; both spell one selection, so both yield the same document.
+function organize_selection_by_root_name_with_terms { # @test
+  write_personal_account
+
+  run_cg organize '!personal summary*=milk' status=
+  assert_success
+  assert_vector - <<-'EOM'
+	---
+	% generated: `cg organize '!personal -> summary*=milk _terminal=no' status=`
+	- _base = @blake2b256-ds7agzrg67qrhvmj3yrnr06lypu6dmuqhwpus8ppegs2zgdt7yzszp96gv
+	- _anchor = caldav:http://127.0.0.1:24101/dav/cal/
+	- _query = summary*=milk _terminal=no
+	- _type = !caldav-object-vtodo-v1
+	! organize-base-v1
+	---
+
+	- [task1.ics] Buy milk
+
+	# status=
+
+	## =needs-action
+
+	## =in-process
+
+	## =completed
+
+	## =cancelled
+	EOM
+  local by_step="$output"
+
+  run_cg organize '!personal -> summary*=milk' status=
+  assert_success
+  assert_equal "$output" "$by_step"
+}
+
+# An unknown root name is a usage error naming it — never a fall-through to
+# treating `!nosuch` as a plugin node type with no origin.
+function organize_selection_unknown_root_name_is_usage_error { # @test
+  write_personal_account
+
+  run_cg organize '!nosuch' status=
+  assert_failure 64
+  assert_output --partial '`!nosuch` is not a configured root name'
+}

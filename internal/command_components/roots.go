@@ -238,6 +238,49 @@ func AggregateRoots(ctx context.Context, warnw io.Writer) ([]*url.URL, error) {
 	return out, nil
 }
 
+// NamedRoot is one configured root that answers to a name: the root's URL and
+// the schemes of the plugin that reported it (for telling apart two plugins
+// that use the same name).
+type NamedRoot struct {
+	URL     string
+	Schemes []string
+}
+
+// AggregateRootNames probes every registered plugin implementing RootNamer and
+// returns the configured root names it knows, each with the root(s) answering
+// to it — the name table a bound type (`!task`) resolves through (RFC 0020
+// §3.4). A name reported by more than one plugin maps to several roots; the
+// caller refuses such a name as ambiguous. Call LoadAndInjectConfig first.
+//
+// A plugin's failure is a non-fatal warning, like AggregateRootLabels: its
+// names are simply absent.
+func AggregateRootNames(ctx context.Context, warnw io.Writer) map[string][]NamedRoot {
+	names := map[string][]NamedRoot{}
+	for _, plugin := range cutting_garden_plugins.RegisteredPlugins() {
+		namer, ok := plugin.(cutting_garden_plugins.RootNamer)
+		if !ok {
+			continue
+		}
+		got, err := namer.RootNames(ctx)
+		if err != nil && warnw != nil {
+			fmt.Fprintf(warnw,
+				"warning: plugin %v: root names unavailable: %s\n",
+				namer.Schemes(), err)
+		}
+		urls := make([]string, 0, len(got))
+		for u := range got {
+			urls = append(urls, u)
+		}
+		slices.Sort(urls)
+		for _, u := range urls {
+			if name := got[u]; name != "" {
+				names[name] = append(names[name], NamedRoot{URL: u, Schemes: namer.Schemes()})
+			}
+		}
+	}
+	return names
+}
+
 // AggregateRootLabels probes every registered plugin implementing
 // RootLabeler (cutting-garden#120) and merges their root->label maps into
 // one, keyed by each root URL's String() form — the SAME key AggregateRoots'

@@ -141,6 +141,44 @@ type RootProvider interface {
   the same holds for every child URI a plugin's traversal emits
   (§ Security Considerations).
 
+### The Root-Namer Capability
+
+A `RootProvider` MAY additionally implement an OPTIONAL sibling capability
+that reports the CONFIGURED NAME of each of its roots — the `name` of the
+account or root stanza that produced it:
+
+```go
+// RootNamer is the OPTIONAL capability a RootProvider implements to report
+// the configured name of each of its own roots.
+type RootNamer interface {
+    RootProvider
+    // RootNames returns the configured name of zero or more of the plugin's
+    // roots (as returned by Roots()), keyed by the root URL's String() form.
+    RootNames(ctx context.Context) (map[string]string, error)
+}
+```
+
+The framework owns no plugin's config section (§ Plugin-Owned Sections), so
+this capability is the only way it can learn that a root is "the account
+named `task`". It is what lets a root be addressed by name as a bound type
+(`!task`) in an organize selection (RFC 0020 §3.4).
+
+- `RootNames` MUST NOT perform I/O: a name is the user's configured
+  identifier, known from config alone. (Contrast `RootLabeler`, whose label
+  MAY come from the substrate and cost a round trip.)
+- A root with no configured name — an intrinsic root — MUST be absent from
+  the map; an empty name is treated as absent.
+- Names are unique within one plugin's section (§ validation). Two plugins
+  MAY report the same name; a consumer that needs one root per name MUST
+  treat such a name as ambiguous rather than pick one.
+- A non-nil error MUST be non-fatal, under the same per-plugin fault
+  isolation as `Roots` and `RootLabels`: the aggregating command warns and
+  that plugin's names are simply absent.
+
+The implementers are the account-bearing linked plugins (caldav, fastmail,
+jira). The capability has no traversal-wire token yet, so an out-of-process
+plugin's roots cannot be named this way.
+
 ### The Root-Labeler Capability
 
 A `RootProvider` MAY additionally implement an OPTIONAL sibling capability

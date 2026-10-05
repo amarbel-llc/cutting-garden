@@ -145,7 +145,26 @@ func SetConfiguredAccounts(accounts []config_common.Account) {
 	configuredAccounts = accounts
 }
 
-var _ cutting_garden_plugins.RootProvider = (*Plugin)(nil)
+var (
+	_ cutting_garden_plugins.RootProvider = (*Plugin)(nil)
+	_ cutting_garden_plugins.RootNamer    = (*Plugin)(nil)
+)
+
+// RootNames reports each configured account's `name` against its root URL
+// (RFC 0020 §3.4), keyed exactly as Roots() spells that URL. No I/O. An
+// account whose URL does not parse is skipped here; Roots() reports it.
+func (Plugin) RootNames(context.Context) (map[string]string, error) {
+	names := make(map[string]string, len(configuredAccounts))
+	for _, acct := range configuredAccounts {
+		u, err := url.Parse(acct.URL)
+		if err != nil {
+			continue
+		}
+		u.User = nil
+		names[u.String()] = acct.Name
+	}
+	return names, nil
+}
 
 // Roots returns each configured account's endpoint URL as a credential-
 // free traversal root (RFC 0007 § The Root-Provider Capability). With no

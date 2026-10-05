@@ -1,6 +1,11 @@
 package organize
 
-import "testing"
+import (
+	"strings"
+	"testing"
+
+	"code.linenisgreat.com/cutting-garden/internal/command_components"
+)
 
 // TestProvenanceWrapsCommandInBackticks pins cutting-garden#243: the generated
 // `% generated:` note wraps the echoed command in backticks so it renders as
@@ -49,8 +54,9 @@ func TestParseSelection(t *testing.T) {
 			`"caldav://h/me@example.com/"`, "",
 		},
 	}
+	noNames := func() map[string][]command_components.NamedRoot { return nil }
 	for _, c := range cases {
-		got, err := parseSelection(c.arg)
+		got, err := parseSelection(c.arg, noNames)
 		if err != nil {
 			t.Errorf("parseSelection(%q): %v", c.arg, err)
 			continue
@@ -67,8 +73,63 @@ func TestParseSelection(t *testing.T) {
 		"caldav://h/me@example.com/ -> x=y", // reserved rune AND whitespace: must be quoted
 		"caldav:task -> [unclosed",
 	} {
-		if _, err := parseSelection(arg); err == nil {
+		if _, err := parseSelection(arg, noNames); err == nil {
 			t.Errorf("parseSelection(%q): expected an error", arg)
+		}
+	}
+}
+
+// TestParseSelection_BoundType pins RFC 0020 §3.4 / §4.2: a selection may open
+// with `!<name>`, a configured root's name, and what follows selects within
+// that root — as further terms of the same step or as a step after `->`.
+func TestParseSelection_BoundType(t *testing.T) {
+	names := func() map[string][]command_components.NamedRoot {
+		return map[string][]command_components.NamedRoot{
+			"task": {{URL: "caldav://h/cal/task/", Schemes: []string{"caldav"}}},
+			"shared": {
+				{URL: "caldav://h/cal/shared/", Schemes: []string{"caldav"}},
+				{URL: "fastmail://shared/", Schemes: []string{"fastmail"}},
+			},
+		}
+	}
+
+	cases := []struct{ arg, query string }{
+		{"!task", ""},
+		{"!task priority=0_must", "priority=0_must"},
+		{"!task -> priority=0_must", "priority=0_must"},
+		{"  !task   status=needs-action  due<\"2026-08-01\" ", `status=needs-action  due<"2026-08-01"`},
+		{"!task -> [a, b] -> x", "[a, b] -> x"},
+	}
+	for _, c := range cases {
+		got, err := parseSelection(c.arg, names)
+		if err != nil {
+			t.Errorf("parseSelection(%q): %v", c.arg, err)
+			continue
+		}
+		if got.Origin != "caldav://h/cal/task/" || got.OriginSource != "!task" ||
+			got.Query != c.query {
+			t.Errorf("parseSelection(%q) = %+v, want the task root, source !task, query %q",
+				c.arg, got, c.query)
+		}
+	}
+
+	rejects := []struct{ arg, wantSub string }{
+		{"!nosuch", "not a configured root name"},
+		{"!caldav-object-vtodo-v1 status=x", "not a configured root name"},
+		{"!shared", "ambiguous"},
+		{"^!task", "cannot be negated"},
+		{"!task ->", "expected a step"},
+		{"!task [unclosed", "syntax error"},
+	}
+	for _, c := range rejects {
+		_, err := parseSelection(c.arg, names)
+		if err == nil {
+			t.Errorf("parseSelection(%q): expected an error", c.arg)
+			continue
+		}
+		if !strings.Contains(err.Error(), c.wantSub) {
+			t.Errorf("parseSelection(%q): error %q does not contain %q",
+				c.arg, err.Error(), c.wantSub)
 		}
 	}
 }

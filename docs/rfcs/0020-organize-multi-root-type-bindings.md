@@ -203,6 +203,11 @@ to its URL. Because account names are unique only within one plugin's section,
 two accounts in different sections MAY yield the same name; a selection that
 uses such a name MUST be refused as ambiguous, naming both accounts.
 
+A plugin reports these names through the optional `RootNamer` capability
+(RFC 0007 § The Root-Namer Capability). Only linked plugins can implement
+it today: the traversal wire carries no token for it, so an out-of-process
+plugin's roots have no name until RFC 0013 gains one.
+
 ### 4. Selection
 
 #### 4.1 The command line
@@ -237,6 +242,7 @@ onto the root's selection:
 |---|---|
 | `!task` | the container bound to `task` |
 | `!task priority=0_must` | within it, objects matching `priority=0_must` |
+| `!task -> priority=0_must` | the same: a `->` after the bound type is the hop into its container |
 | `[!task priority=0_must, !cg-issue milestone=v0.3]` | both roots, each with its own terms |
 
 - Each alternative of a several-root selection yields one binding and one

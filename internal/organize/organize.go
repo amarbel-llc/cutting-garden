@@ -49,6 +49,7 @@ import (
 	"code.linenisgreat.com/cutting-garden/internal/cgconfig"
 	"code.linenisgreat.com/cutting-garden/internal/command"
 	"code.linenisgreat.com/cutting-garden/internal/command_components"
+	"code.linenisgreat.com/cutting-garden/internal/trellis"
 	"code.linenisgreat.com/cutting-garden/internal/trellis_eval"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/interfaces"
@@ -253,7 +254,12 @@ func (cmd *Organize) Run(req command.Request) {
 		return
 	}
 
-	selection, err := parseSelection(args[0])
+	selection, err := parseSelection(
+		args[0],
+		func() map[string][]command_components.NamedRoot {
+			return command_components.AggregateRootNames(ctx, os.Stderr)
+		},
+	)
 	if err != nil {
 		errors.ContextCancelWithError(ctx, err)
 		return
@@ -290,7 +296,18 @@ func (cmd *Organize) Run(req command.Request) {
 // a trellis term it is taken as a literal URI: a URL carrying a reserved rune
 // (`user@host` in a CalDAV path) stays usable unquoted, as it was when this
 // argument was a plain <uri>.
-func parseSelection(arg string) (trellis_eval.Selection, error) {
+//
+// The origin may instead be a BOUND TYPE, `!<name>` (RFC 0020 §3.4, §4.2): a
+// configured root's name, resolved through rootNames. Further terms in the same
+// step — or a step after `->` — select within that root, so `!task
+// priority=0_must` and `!task -> priority=0_must` mean the same.
+func parseSelection(
+	arg string, rootNames func() map[string][]command_components.NamedRoot,
+) (trellis_eval.Selection, error) {
+	if selection, matched, err := parseBoundTypeSelection(arg, rootNames); matched {
+		return selection, err
+	}
+
 	selection, err := trellis_eval.SplitOrigin(arg)
 	if err == nil {
 		return selection, nil
@@ -301,6 +318,67 @@ func parseSelection(arg string) (trellis_eval.Selection, error) {
 	return trellis_eval.Selection{}, errors.BadRequestf(
 		"organize: selection %q: %s (expected `<uri>` or `<uri> -> <trellis query>`)",
 		arg, err)
+}
+
+// parseBoundTypeSelection handles a selection that opens with a type term.
+// matched is false when arg does not open with one, leaving it to the URI
+// path; once it does, the outcome (a selection or an error) is final.
+func parseBoundTypeSelection(
+	arg string, rootNames func() map[string][]command_components.NamedRoot,
+) (selection trellis_eval.Selection, matched bool, err error) {
+	lead, perr := trellis.SplitLeadingTerm(arg)
+	if perr != nil {
+		return selection, false, nil
+	}
+	typ, ok := lead.Term.Basic.(trellis.TypeBasicTerm)
+	if !ok {
+		return selection, false, nil
+	}
+	name := typ.Type.Name
+	if lead.Term.Negate || lead.Term.Exact || typ.Sigil != nil {
+		return selection, true, errors.BadRequestf(
+			"organize: selection %q: the root name `!%s` cannot be negated (`^`), "+
+				"exact-matched (`=`) or carry a sigil", arg, name)
+	}
+
+	roots := rootNames()[name]
+	switch len(roots) {
+	case 0:
+		return selection, true, errors.BadRequestf(
+			"organize: selection %q: `!%s` is not a configured root name (a "+
+				"selection opens with a <uri> or the `name` of a configured "+
+				"account; a plugin node type cannot open one)", arg, name)
+	case 1:
+	default:
+		where := make([]string, len(roots))
+		for i, r := range roots {
+			where[i] = fmt.Sprintf("%s (%s)", r.URL, strings.Join(r.Schemes, ","))
+		}
+		return selection, true, errors.BadRequestf(
+			"organize: selection %q: the root name `!%s` is ambiguous — it names %s; "+
+				"select one by its <uri>", arg, name, strings.Join(where, " and "))
+	}
+
+	query := lead.Rest
+	if after, bridged := strings.CutPrefix(query, "->"); bridged &&
+		(after == "" || unicode.IsSpace([]rune(after)[0])) {
+		query = strings.TrimSpace(after)
+		if query == "" {
+			return selection, true, errors.BadRequestf(
+				"organize: selection %q: expected a step after `->`", arg)
+		}
+	}
+	if query != "" {
+		if _, qerr := trellis.Parse(query); qerr != nil {
+			return selection, true, errors.BadRequestf(
+				"organize: selection %q: %s", arg, qerr)
+		}
+	}
+	return trellis_eval.Selection{
+		Origin:       roots[0].URL,
+		OriginSource: lead.TermSource,
+		Query:        query,
+	}, true, nil
 }
 
 // runGenerateOrInteractive chooses the default behavior for a bare `organize

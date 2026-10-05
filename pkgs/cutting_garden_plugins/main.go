@@ -634,6 +634,19 @@ type RootLabeler = internal.RootLabeler
 // than re-deriving the tree independently. See FDR 0014.
 type RootLister = internal.RootLister
 
+// RootNamer is the OPTIONAL capability a RootProvider implements to report
+// the CONFIGURED NAME of each of its own top-level roots — the `name` of the
+// account or root stanza that produced it (RFC 0007). The framework owns no
+// plugin's config section, so this is the only way it can learn that a root
+// is "the caldav account named task"; it is what lets a root be addressed as
+// a bound type, `!task`, in a selection (RFC 0020 §3.4).
+//
+// Distinct from RootLabeler on purpose: a label is a display string that may
+// come from the substrate (a calendar's displayname) and may cost a network
+// round trip; a name is the user's own configured identifier, stable and
+// known without I/O.
+type RootNamer = internal.RootNamer
+
 // RootProvider is the OPTIONAL capability of a RootLister that can
 // enumerate its own top-level roots with no input node — the entry points
 // a no-argument `mcp` / `list` surfaces (RFC 0007). It is probed by type

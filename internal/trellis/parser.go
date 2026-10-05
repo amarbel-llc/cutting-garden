@@ -128,6 +128,42 @@ func SplitLeadingStep(src string) (LeadingStep, error) {
 	return out, nil
 }
 
+// LeadingTerm is SplitLeadingTerm's result.
+type LeadingTerm struct {
+	Term Term
+	// TermSource is the term's source text, verbatim.
+	TermSource string
+	// Rest is the source text after the term with surrounding whitespace
+	// removed. It is NOT validated: it may be empty, further terms of the
+	// same step, or open with a combinator.
+	Rest string
+}
+
+// SplitLeadingTerm splits src after its first TERM, the term-level twin of
+// SplitLeadingStep: for a consumer that resolves a query's leading term
+// itself — a bound type naming a root, RFC 0020 §4.2 — and treats what
+// follows as the rest of the selection. Errors are a *SyntaxError.
+func SplitLeadingTerm(src string) (LeadingTerm, error) {
+	p := &parser{src: []rune(src)}
+	p.skipSPOpt()
+	start := p.pos
+	term, ok := p.parseTerm()
+	if !ok {
+		return LeadingTerm{}, p.syntaxError("expected a term")
+	}
+	out := LeadingTerm{Term: term, TermSource: string(p.src[start:p.pos])}
+	if !p.atEOF() && !isSP1(p.src[p.pos]) {
+		return LeadingTerm{}, p.syntaxError("unexpected trailing input")
+	}
+	p.skipSPOpt()
+	end := len(p.src)
+	for end > p.pos && isSP1(p.src[end-1]) {
+		end--
+	}
+	out.Rest = string(p.src[p.pos:end])
+	return out, nil
+}
+
 // parser is a hand-rolled recursive-descent, backtracking parser over
 // trellis.peg. Each grammar rule has a corresponding parseX method; ordered
 // choices try alternatives in the grammar's own order and restore p.pos on

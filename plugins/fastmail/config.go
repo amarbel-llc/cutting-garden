@@ -151,6 +151,16 @@ func (Plugin) RootLabels(context.Context) (map[string]string, error) {
 	return labels, nil
 }
 
+// RootNames reports each configured account's `name` against its root URI
+// (RFC 0020 §3.4). No I/O.
+func (Plugin) RootNames(context.Context) (map[string]string, error) {
+	names := make(map[string]string, len(configuredAccounts))
+	for _, acct := range configuredAccounts {
+		names[accountRootURI(acct.Name).String()] = acct.Name
+	}
+	return names, nil
+}
+
 // accountByName returns the configured account whose Name equals name.
 // Validate guarantees names are unique, so the first match is definitive;
 // ok is false when no account carries that name.

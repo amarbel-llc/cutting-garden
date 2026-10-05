@@ -96,6 +96,7 @@ var (
 	_ cutting_garden_plugins.RootLister             = (*Plugin)(nil)
 	_ cutting_garden_plugins.RootProvider           = (*Plugin)(nil)
 	_ cutting_garden_plugins.RootLabeler            = (*Plugin)(nil)
+	_ cutting_garden_plugins.RootNamer              = (*Plugin)(nil)
 	_ cutting_garden_plugins.LeafReader             = (*Plugin)(nil)
 	_ cutting_garden_plugins.FacetDescriber         = (*Plugin)(nil)
 	_ cutting_garden_plugins.FacetCounter           = (*Plugin)(nil)
