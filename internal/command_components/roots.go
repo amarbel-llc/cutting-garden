@@ -25,9 +25,12 @@ import (
 //
 // It also registers each [[plugins]] / [[traversal_plugins]] wire
 // plugin stanza (RFC 0013 §Host integration, generalized by
-// cutting-garden#146 slice 2). Scheme registration is not idempotent,
-// so that step runs once per process — one process loads one config —
-// and its result is replayed on later calls.
+// cutting-garden#146 slice 2). Scheme registration itself is not
+// idempotent, so each stanza is registered once per process and
+// remembered by its definition: loading the same stanza again is a no-op,
+// a later load's NEW stanzas still register, and a stanza whose
+// definition changed under the same name is a bad request
+// (cutting-garden#262).
 //
 // The loaded config is returned so a caller that also needs a config
 // VALUE (e.g. the mcp server's [tags] override) reuses this load instead
@@ -43,19 +46,33 @@ func LoadAndInjectConfig(warnw io.Writer) (*cgconfig.ConfigV0, error) {
 		return nil, err
 	}
 
-	pluginRegisterOnce.Do(func() {
-		pluginRegisterErr = registerPlugins(cfg, raw)
-	})
-	if pluginRegisterErr != nil {
-		return nil, pluginRegisterErr
+	if err := registerPlugins(cfg, raw); err != nil {
+		return nil, err
 	}
 	return cfg, nil
 }
 
+// registeredStanzas remembers each wire-plugin stanza this process has
+// registered, by name, with the definition it was registered under.
 var (
-	pluginRegisterOnce sync.Once
-	pluginRegisterErr  error
+	registeredStanzasMu sync.Mutex
+	registeredStanzas   = map[string]string{}
 )
+
+// stanzaDefinition is everything about a stanza that decides what gets
+// registered, so two loads of one stanza compare equal exactly when
+// registering the second would be redundant.
+func stanzaDefinition(
+	stanza traversal_serve.PluginStanza,
+	legacyVerbatimCommand bool,
+	configTOML string,
+) string {
+	return fmt.Sprintf(
+		"%t\x00%q\x00%q\x00%q\x00%s",
+		legacyVerbatimCommand, stanza.Command, stanza.Schemes,
+		stanza.EffectiveProtocols(), configTOML,
+	)
+}
 
 // registerPlugins builds and registers one wire plugin per configured
 // stanza: the RFC 0013 §Host integration switch-on, generalized by
@@ -95,6 +112,20 @@ func registerStanza(
 	configTOML, err := traversal_serve.SectionTOML(raw, stanza.Section())
 	if err != nil {
 		return errors.BadRequestf("plugin %q: %s", stanza.Name, err)
+	}
+
+	definition := stanzaDefinition(stanza, legacyVerbatimCommand, configTOML)
+	registeredStanzasMu.Lock()
+	defer registeredStanzasMu.Unlock()
+	if prior, ok := registeredStanzas[stanza.Name]; ok {
+		if prior == definition {
+			return nil
+		}
+		return errors.BadRequestf(
+			"plugin %q: already registered in this process with a different"+
+				" definition (command, schemes, protocols, or config section)",
+			stanza.Name,
+		)
 	}
 
 	protocols := stanza.EffectiveProtocols()
@@ -164,6 +195,7 @@ func registerStanza(
 		}
 	}
 
+	registeredStanzas[stanza.Name] = definition
 	return nil
 }
 
