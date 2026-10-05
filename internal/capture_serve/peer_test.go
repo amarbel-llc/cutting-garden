@@ -342,15 +342,21 @@ func TestPeer_CallHonorsContext(t *testing.T) {
 
 // TestPeer_CloseFailsPendingCalls pins that tearing the peer down releases
 // a blocked caller with the terminal error instead of leaking it.
+//
+// The handler ignores its context on purpose: Close cancels the handler
+// context before it closes the socket, so a handler that returned on
+// cancellation could get a success response onto the wire ahead of the
+// teardown and make Call return nil (cutting-garden#190). Blocking on stall
+// alone guarantees no response exists, so only the teardown can release the
+// caller.
 func TestPeer_CloseFailsPendingCalls(t *testing.T) {
 	stall := make(chan struct{})
+	entered := make(chan struct{})
 	pluginSide := HandlerFunc(func(
-		ctx context.Context, _ string, _ json.RawMessage,
+		context.Context, string, json.RawMessage,
 	) (any, *os.File, error) {
-		select {
-		case <-stall:
-		case <-ctx.Done():
-		}
+		close(entered)
+		<-stall
 		return nil, nil, nil
 	})
 
@@ -365,8 +371,12 @@ func TestPeer_CloseFailsPendingCalls(t *testing.T) {
 		)
 	}()
 
-	// Let the request hit the wire before tearing down.
-	time.Sleep(20 * time.Millisecond)
+	// The request is in the handler, so the caller is genuinely pending.
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("handler never received the request")
+	}
 	plugin.Close()
 
 	select {
