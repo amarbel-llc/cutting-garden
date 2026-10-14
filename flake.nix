@@ -1281,7 +1281,10 @@
                   passwordEnv = "CALDAV_PERSONAL_PASSWORD";
                 }
               ];
-              sampleConfig = shared.renderConfigToml { caldav.accounts = sampleAccounts; };
+              sampleConfig = shared.renderConfigToml {
+                caldav.accounts = sampleAccounts;
+                tags.interpreter = "dodder-hyphen";
+              };
 
               # Instantiate the exported NixOS module through a minimal host so the
               # module's option-merge + config block (not just the bare renderer)
@@ -1298,6 +1301,7 @@
                       services.cutting-garden = {
                         enable = true;
                         caldav.accounts = sampleAccounts;
+                        tags.interpreter = "dodder-hyphen";
                       };
                     }
                   ];
@@ -1312,6 +1316,11 @@
               grep -q 'url = "caldav://dav.example/dav/me/"' ${sampleConfig}
               grep -q 'username = "me"' ${sampleConfig}
               grep -q 'password_env = "CALDAV_PERSONAL_PASSWORD"' ${sampleConfig}
+
+              # cutting-garden#304: tags.interpreter renders a top-level [tags]
+              # table (RFC 0019 §4 layer 2), not a bogus [[plugins]] stanza.
+              grep -q '^\[tags\]$' ${sampleConfig}
+              grep -q 'interpreter = "dodder-hyphen"' ${sampleConfig}
 
               # The NixOS module wires the shared renderer: its rendered /etc file
               # must match the renderer's direct output for the same accounts.

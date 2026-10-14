@@ -49,7 +49,9 @@ A malformed *[[traversal_plugins]]*/*[[plugins]]* entry aborts config loading
 with an EX_USAGE (64) exit, naming the stanza and the problem.
 
 One linked-plugin account field is documented here because nothing else in
-the file hints at it; see *THE FASTMAIL SESSION_URL OVERRIDE* below.
+the file hints at it; see *THE FASTMAIL SESSION_URL OVERRIDE* below. One
+framework-level table is documented for the same reason; see *THE [TAGS]
+OVERRIDE* below.
 
 # THE STANZA FIELDS
 
@@ -208,6 +210,30 @@ name = "test"
 url = "fastmail://test/"
 session_url = "http://127.0.0.1:43113/jmap/session"
 ```
+
+# THE [TAGS] OVERRIDE
+
+A top-level *[tags]* table overrides which named tag interpreter (RFC 0019)
+governs every tag field's match/group/write-back semantics, host-wide:
+
+*interpreter*
+	String. OPTIONAL. The name of a REGISTERED tag interpreter - *"naive"*
+	(exact, whole-dimension; the default most tag fields declare) or
+	*"dodder-hyphen"* (hyphen-segment hierarchy with namespace rollup). An
+	unknown name aborts config loading with EX_USAGE, naming it. Omitting the
+	*[tags]* table entirely leaves every tag field's own declared default in
+	effect (RFC 0019 §4 layer 1).
+
+```
+[tags]
+interpreter = "dodder-hyphen"
+```
+
+This is the GLOBAL override (RFC 0019 §4 layer 2) - it applies to every tag
+field on every plugin. RFC 0019 §4 also specifies a layer-3 PER-ACCOUNT
+*interpreter* override, narrower than this table; it is not yet implemented
+on the config-decoding side (cutting-garden#304), so no plugin account
+stanza accepts it today.
 
 # SEE ALSO
 

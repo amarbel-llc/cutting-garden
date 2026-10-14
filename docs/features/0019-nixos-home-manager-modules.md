@@ -86,6 +86,15 @@ the Go structs (`internal/config_common`, `plugins/caldav`).
   `name`); the nix module stays plugin-agnostic — it has no per-plugin-type
   option, mirroring the Go side's own config-agnostic `SectionTOML`
   wrapper-stripping.
+- `tags.interpreter` (cutting-garden#304) — `nullOr (enum ["naive"
+  "dodder-hyphen"])`, default `null`, rendered to a top-level `[tags]` table's
+  `interpreter` key (RFC 0019 §4 layer 2: the global override, which beats
+  every tag field's own declared default host-wide). `null` omits the
+  `[tags]` table entirely. Restricted to the registry's two builtins; a
+  future wire-registered interpreter name would need the enum widened. No
+  per-account override option exists — RFC 0019 §4 layer 3 specifies one, but
+  the Go config loader does not yet decode a per-account `interpreter` key,
+  so there is nothing for this schema to render it to.
 
 ### Options (NixOS only)
 
@@ -121,6 +130,7 @@ services.cutting-garden = {
   enable = true;
   caldav.accounts = [{ name = "team"; url = "caldav://dav.host/dav/team/";
                        username = "me"; passwordEnv = "CALDAV_TEAM_PASSWORD"; }];
+  tags.interpreter = "dodder-hyphen";
   traversalPlugins = [{
     name = "fj";
     command = [ "${fj-cg}/bin/fj-cg" "traversal-serve" ];
@@ -162,6 +172,9 @@ services.cutting-garden = {
 
 - [RFC 0007](../rfcs/0007-config-subsystem.md) — the config.toml schema these
   modules render (`Root`/`Account`, the caldav section, file location).
+- [RFC 0019](../rfcs/0019-tag-interpreter-contract.md) §4 — the `[tags]`
+  global override `tags.interpreter` renders, and why there is no per-account
+  option yet.
 - circus FDR-0004 (mcp-tunnel) — the moxy-single-origin model Path 1 follows;
   circus FDR-0007 / `nix-cache/nix/module.nix` — the module + `secretKeyFile`
   secret-seam template mirrored here.

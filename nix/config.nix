@@ -197,6 +197,31 @@ in
         defaults to `name`).
       '';
     };
+
+    tags.interpreter = mkOption {
+      type = types.nullOr (
+        types.enum [
+          "naive"
+          "dodder-hyphen"
+        ]
+      );
+      default = null;
+      example = "dodder-hyphen";
+      description = ''
+        Global tag-interpreter override (RFC 0019 §4 layer 2), rendered to a
+        top-level `[tags]` table's `interpreter` key in config.toml.
+        Overrides every tag field's declared default (RFC 0019 §4 layer 1 —
+        e.g. caldav's `categories` field defaults to `naive`) host-wide.
+        Restricted to the two interpreters the registry carries as builtins
+        today (RFC 0019 §3); a future wire-registered interpreter name
+        (RFC 0019 §8, defined but unimplemented) would need this enum
+        widened. `null` (the default) omits the `[tags]` table entirely,
+        leaving every field's own declared default in effect. There is no
+        per-account override option: RFC 0019 §4 layer 3 specifies one, but
+        the Go config loader does not yet decode a per-account `interpreter`
+        key (cutting-garden#304), so this schema has nothing to render it to.
+      '';
+    };
   };
 
   # renderConfigToml maps the typed config to a config.toml store path, or null
@@ -214,6 +239,7 @@ in
       traversalPlugins = cfg.traversalPlugins or [ ];
       plugins = cfg.plugins or [ ];
       caldavAccounts = cfg.caldav.accounts or [ ];
+      tagsInterpreter = cfg.tags.interpreter or null;
 
       renderStanza =
         p:
@@ -251,6 +277,9 @@ in
         }
         // lib.optionalAttrs (plugins != [ ]) {
           plugins = map renderStanza plugins;
+        }
+        // lib.optionalAttrs (tagsInterpreter != null) {
+          tags.interpreter = tagsInterpreter;
         }
         // pluginConfigSections;
     in
