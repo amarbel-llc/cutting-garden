@@ -1,7 +1,9 @@
 package orgtext
 
 import (
+	"bytes"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -120,6 +122,7 @@ type Options struct {
 }
 
 type line struct {
+	index            int // 0-based line number
 	start, end, next int // end excludes "\n" and a trailing "\r"
 	text             string
 }
@@ -129,31 +132,23 @@ func splitLines(src []byte) []line {
 	for start := 0; start < len(src); {
 		next := len(src)
 		end := len(src)
-		if i := indexByteFrom(src, start, '\n'); i >= 0 {
-			end, next = i, i+1
+		if i := bytes.IndexByte(src[start:], '\n'); i >= 0 {
+			end, next = start+i, start+i+1
 		}
 		if end > start && src[end-1] == '\r' {
 			end--
 		}
-		out = append(out, line{start: start, end: end, next: next, text: string(src[start:end])})
+		out = append(out, line{index: len(out), start: start, end: end, next: next, text: string(src[start:end])})
 		start = next
 	}
 	return out
 }
 
-func indexByteFrom(b []byte, from int, c byte) int {
-	for i := from; i < len(b); i++ {
-		if b[i] == c {
-			return i
-		}
-	}
-	return -1
-}
-
 var (
 	headlineRe  = regexp.MustCompile(`^(\*+)[ \t]+(.*)$`)
 	tagSuffixRe = regexp.MustCompile(`(?:^|[ \t]+)(:(?:[^\s:]+:)+)[ \t]*$`)
-	priorityRe  = regexp.MustCompile(`^\[#([A-Za-z0-9])\](?:[ \t]+|$)`)
+	priorityRe  = regexp.MustCompile(`^\[#([A-Z]|[0-9]{1,2})\](?:[ \t]+|$)`)
+	blockRe     = regexp.MustCompile(`(?i)^[ \t]*#\+(BEGIN|END)_`)
 	planningRe  = regexp.MustCompile(`(SCHEDULED|DEADLINE|CLOSED):[ \t]*[<\[](\d{4}-\d{2}-\d{2})[^>\]]*[>\]]`)
 	propertyRe  = regexp.MustCompile(`^[ \t]*:([^\s:]+):(?:[ \t]+(.*?))?[ \t]*$`)
 	drawerRe    = regexp.MustCompile(`^[ \t]*:([A-Za-z0-9_-]+):[ \t]*$`)
@@ -163,18 +158,19 @@ var (
 // Parse parses src as an org file. It never fails: problems it can
 // tolerate are reported in File.Warnings.
 func Parse(src []byte, opts Options) *File {
-	f := &File{src: src}
 	lines := splitLines(src)
+	f := &File{src: src}
 	defaults := opts.Keywords
 	if len(defaults.Active)+len(defaults.Done) == 0 {
 		defaults = DefaultKeywords
 	}
 	f.Keywords = defaults
-	f.readSettings(lines)
+	inBlock := blockLines(lines)
+	f.readSettings(lines, inBlock)
 
 	var heads []int // indexes into lines of headline lines
 	for i, l := range lines {
-		if headlineRe.MatchString(l.text) {
+		if !inBlock[i] && headlineRe.MatchString(l.text) {
 			heads = append(heads, i)
 		}
 	}
@@ -191,15 +187,11 @@ func Parse(src []byte, opts Options) *File {
 			bodyEndLine = heads[hi+1]
 		}
 		h := f.parseHeadline(lines, li, bodyEndLine)
+		// Every headline still open at a level >= h's ends where h starts;
+		// those left open at EOF keep End = len(src).
 		h.SubtreeSpan = Span{lines[li].start, len(src)}
-		for _, later := range heads[hi+1:] {
-			if levelOf(lines[later].text) <= h.Level {
-				h.SubtreeSpan.End = lines[later].start
-				break
-			}
-		}
-
 		for len(stack) > 0 && stack[len(stack)-1].Level >= h.Level {
+			stack[len(stack)-1].SubtreeSpan.End = h.SubtreeSpan.Start
 			stack = stack[:len(stack)-1]
 		}
 		if len(stack) == 0 {
@@ -220,11 +212,37 @@ func Parse(src []byte, opts Options) *File {
 	return f
 }
 
-// readSettings scans every `#+KEY:` line for TODO sequences and FILETAGS.
-// Any #+TODO line replaces the default sequence; several accumulate.
-func (f *File) readSettings(lines []line) {
+// blockLines marks the lines inside `#+BEGIN_…` / `#+END_…` blocks (the
+// delimiters included), where org sees neither headlines nor settings. An
+// unclosed block runs to the end of the file, as in org.
+func blockLines(lines []line) []bool {
+	in := make([]bool, len(lines))
+	open := false
+	for i, l := range lines {
+		m := blockRe.FindStringSubmatch(l.text)
+		switch {
+		case m != nil && strings.EqualFold(m[1], "BEGIN"):
+			open = true
+			in[i] = true
+		case m != nil && open:
+			in[i] = true
+			open = false
+		default:
+			in[i] = open
+		}
+	}
+	return in
+}
+
+// readSettings scans every `#+KEY:` line outside blocks for TODO sequences
+// and FILETAGS. Any #+TODO line replaces the default sequence; several
+// accumulate.
+func (f *File) readSettings(lines []line, inBlock []bool) {
 	var fileKeywords Keywords
 	for i, l := range lines {
+		if inBlock[i] {
+			continue
+		}
 		m := settingRe.FindStringSubmatch(l.text)
 		if m == nil {
 			continue
@@ -250,14 +268,6 @@ func (f *File) warn(lineIndex int, msg string) {
 	f.Warnings = append(f.Warnings, Warning{Line: lineIndex + 1, Message: msg})
 }
 
-func levelOf(text string) int {
-	n := 0
-	for n < len(text) && text[n] == '*' {
-		n++
-	}
-	return n
-}
-
 // parseHeadline parses the headline at lines[li], whose own region (planning,
 // drawer, body) ends before lines[bodyEnd].
 func (f *File) parseHeadline(lines []line, li, bodyEnd int) *Headline {
@@ -271,12 +281,16 @@ func (f *File) parseHeadline(lines []line, li, bodyEnd int) *Headline {
 		rest = rest[:tm[0]]
 	}
 	rest = strings.TrimSpace(rest)
-	if word, after, _ := strings.Cut(rest, " "); f.Keywords.Contains(word) {
+	word, after := rest, ""
+	if i := strings.IndexAny(rest, " \t"); i >= 0 {
+		word, after = rest[:i], rest[i:]
+	}
+	if f.Keywords.Contains(word) {
 		h.Keyword = word
 		rest = strings.TrimSpace(after)
 	}
 	if pm := priorityRe.FindStringSubmatch(rest); pm != nil {
-		h.Priority = strings.ToUpper(pm[1])
+		h.Priority = pm[1]
 		rest = strings.TrimSpace(rest[len(pm[0]):])
 	}
 	h.Title = rest
@@ -284,8 +298,14 @@ func (f *File) parseHeadline(lines []line, li, bodyEnd int) *Headline {
 	cur := li + 1
 	insertAt := l.next
 	h.PlanningSpan = Span{insertAt, insertAt}
+	// A line is planning only if it starts with a planning keyword AND
+	// carries a timestamp; otherwise it stays body text.
+	var planning [][]string
 	if cur < bodyEnd && isPlanningLine(lines[cur].text) {
-		for _, pm := range planningRe.FindAllStringSubmatch(lines[cur].text, -1) {
+		planning = planningRe.FindAllStringSubmatch(lines[cur].text, -1)
+	}
+	if len(planning) > 0 {
+		for _, pm := range planning {
 			switch pm[1] {
 			case "SCHEDULED":
 				h.Planning.Scheduled = pm[2]
@@ -317,16 +337,13 @@ func (f *File) parseHeadline(lines []line, li, bodyEnd int) *Headline {
 		}
 	}
 
-	bodyStart := h.DrawerSpan.End
-	if h.DrawerSpan.Empty() {
-		bodyStart = insertAt
-	}
+	bodyStart := h.DrawerSpan.End // == insertAt when the drawer is absent
 	bodyStop := len(f.src)
 	if bodyEnd < len(lines) {
 		bodyStop = lines[bodyEnd].start
 	}
 	h.BodySpan = Span{bodyStart, bodyStop}
-	h.Body = f.bodyText(lines[cur:bodyEnd], cur)
+	h.Body = f.bodyText(lines[cur:bodyEnd])
 	return h
 }
 
@@ -353,8 +370,7 @@ func isPlanningLine(text string) bool {
 
 // bodyText renders body lines without drawers (LOGBOOK and the like stay
 // only in the raw subtree), dedented and trimmed of blank edges.
-// firstIndex is the index of body[0] in the file's lines, for warnings.
-func (f *File) bodyText(body []line, firstIndex int) string {
+func (f *File) bodyText(body []line) string {
 	var kept []string
 	for i := 0; i < len(body); i++ {
 		t := body[i].text
@@ -363,7 +379,7 @@ func (f *File) bodyText(body []line, firstIndex int) string {
 				i = end
 				continue
 			}
-			f.warn(firstIndex+i, "drawer :"+dm[1]+": has no :END:; kept as body text")
+			f.warn(body[i].index, "drawer :"+dm[1]+": has no :END:; kept as body text")
 		}
 		kept = append(kept, t)
 	}
@@ -406,7 +422,7 @@ func splitTags(s string) []string {
 func withoutTags(tags, drop []string) []string {
 	var out []string
 	for _, t := range tags {
-		if !containsString(drop, t) {
+		if !slices.Contains(drop, t) {
 			out = append(out, t)
 		}
 	}
@@ -452,7 +468,7 @@ func (f *File) SynthesizeHeadline(stem string) *Headline {
 		Level:        1,
 		Title:        title,
 		Tags:         append([]string(nil), f.FileTags...),
-		Body:         f.bodyText(content, 0),
+		Body:         (&File{}).bodyText(content), // scratch File: repeat calls must not re-append warnings
 		OutlinePath:  []string{title},
 		Synthetic:    true,
 		LineSpan:     Span{0, 0},

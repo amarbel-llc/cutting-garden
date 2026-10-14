@@ -240,6 +240,54 @@ func TestParse_TitleEdgeCases(t *testing.T) {
 	}
 }
 
+func TestParse_KeywordThenTab(t *testing.T) {
+	h := Parse([]byte("* TODO\tBuy milk\n"), Options{}).Headlines[0]
+	if h.Keyword != "TODO" || h.Title != "Buy milk" {
+		t.Errorf("got keyword=%q title=%q", h.Keyword, h.Title)
+	}
+}
+
+func TestParse_PlanningKeywordWithoutTimestampStaysBody(t *testing.T) {
+	h := Parse([]byte("* TODO x\nDEADLINE: talk to Bob first\n"), Options{}).Headlines[0]
+	if h.Planning.Deadline != "" || !h.PlanningSpan.Empty() || h.Body != "DEADLINE: talk to Bob first" {
+		t.Errorf("planning=%+v span=%+v body=%q", h.Planning, h.PlanningSpan, h.Body)
+	}
+}
+
+func TestParse_Priorities(t *testing.T) {
+	cases := map[string]struct{ priority, title string }{
+		"* [#B] x":  {"B", "x"},
+		"* [#10] x": {"10", "x"},
+		"* [#a] x":  {"", "[#a] x"},
+	}
+	for src, want := range cases {
+		h := Parse([]byte(src+"\n"), Options{}).Headlines[0]
+		if h.Priority != want.priority || h.Title != want.title {
+			t.Errorf("%q: priority=%q title=%q", src, h.Priority, h.Title)
+		}
+	}
+}
+
+func TestParse_BlocksHideHeadlinesAndSettings(t *testing.T) {
+	src := "* Note\n#+BEGIN_EXAMPLE\n#+TODO: A | B\n* not a heading\n#+END_EXAMPLE\n* TODO Real\n"
+	f := Parse([]byte(src), Options{})
+	if len(f.Headlines) != 2 || f.Headlines[1].Keyword != "TODO" {
+		t.Fatalf("got %+v", view(f.Headlines))
+	}
+	if want := "#+BEGIN_EXAMPLE\n#+TODO: A | B\n* not a heading\n#+END_EXAMPLE"; f.Headlines[0].Body != want {
+		t.Errorf("body = %q", f.Headlines[0].Body)
+	}
+}
+
+func TestSynthesizeHeadline_WarningsNotDuplicated(t *testing.T) {
+	f := Parse([]byte("#+TITLE: x\n:LOGBOOK:\nfoo\n"), Options{})
+	f.SynthesizeHeadline("x")
+	f.SynthesizeHeadline("x")
+	if len(f.Warnings) != 0 {
+		t.Errorf("SynthesizeHeadline must not append warnings: %+v", f.Warnings)
+	}
+}
+
 func TestParse_NotAHeadline(t *testing.T) {
 	f := Parse([]byte("*bold* text\n*\n"), Options{})
 	if len(f.Headlines) != 0 {

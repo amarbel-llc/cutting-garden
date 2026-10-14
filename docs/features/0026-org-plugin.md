@@ -63,9 +63,10 @@ Taken 2026-10-14:
   bare terms, which go through the interpreter and match the whole subtree.
   A facet predicate (`tags=x`) is exact membership, and `tags!=x` is not
   "lacks x": use `^x` or `^tags=x`. Hyphenated tags are not legal Emacs org
-  syntax, but Orgzly accepts them. This decision exposed a host split:
-  krone's caldav was `naive` while flic's was `dodder-hyphen`. #304 added the
-  `tags.interpreter` module option to fix it (per-account: #305).
+  syntax, but Orgzly accepts them. This decision exposed a host split: a
+  module-managed host's caldav was `naive` while a hand-configured one was
+  `dodder-hyphen`. #304 added the `tags.interpreter` module option to fix it
+  (per-account: #305).
 - **D4, inheritance.** `tags` is the effective set: own tags, plus
   ancestors', plus `#+FILETAGS`, as in dodder. `own_tags` is a separate
   field. `zz-agent_quoted` is never inherited.

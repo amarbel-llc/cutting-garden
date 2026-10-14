@@ -6,6 +6,7 @@ package orgtext
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -52,11 +53,11 @@ func keywordWords(s string) []string {
 
 // Contains reports whether word is any keyword in k.
 func (k Keywords) Contains(word string) bool {
-	return k.IsDone(word) || containsString(k.Active, word)
+	return k.IsDone(word) || slices.Contains(k.Active, word)
 }
 
 // IsDone reports whether word is a terminal (done) keyword in k.
-func (k Keywords) IsDone(word string) bool { return containsString(k.Done, word) }
+func (k Keywords) IsDone(word string) bool { return slices.Contains(k.Done, word) }
 
 // merge returns the union of k and other, keeping first-seen order.
 func (k Keywords) merge(other Keywords) Keywords {
@@ -66,19 +67,10 @@ func (k Keywords) merge(other Keywords) Keywords {
 	}
 }
 
-func containsString(list []string, s string) bool {
-	for _, x := range list {
-		if x == s {
-			return true
-		}
-	}
-	return false
-}
-
 func appendUnique(list []string, items ...string) []string {
 	out := append([]string(nil), list...)
 	for _, it := range items {
-		if !containsString(out, it) {
+		if !slices.Contains(out, it) {
 			out = append(out, it)
 		}
 	}
