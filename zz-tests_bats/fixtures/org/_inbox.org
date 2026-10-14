@@ -1,0 +1,13 @@
+#+FILETAGS: :zz-inbox:
+* TODO Call the plumber about the leak              :project-house:
+  DEADLINE: <2026-10-10 Fri>
+  Ask about the shutoff valve too.
+* NEXT Draft the plugin doc                         :project-garden:req-internet:
+  SCHEDULED: <2026-10-14 Tue>
+  :PROPERTIES:
+  :ID:       3f9c1e2a-7b44-4c1e-9a0d-2f1f6c0b8e11
+  :END:
+** Ask about appends
+* Idea: expose CLOSED dates
+* DONE Renew passport                               :area-travel:
+  CLOSED: [2026-10-02 Thu 09:14]

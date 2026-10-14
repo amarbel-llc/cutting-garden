@@ -578,6 +578,18 @@
           meta.mainProgram = "cutting-garden-fastmail-testserver";
         };
 
+        # cutting-garden-org-testserver is a test-only in-memory WebDAV
+        # server (plugins/org/orgtestserver as a standalone binary, seeded
+        # from a fixture directory) that backs the bats org lane
+        # (zz-tests_bats/org_webdav.bats via lib/org.bash): the hermetic
+        # stand-in for Fastmail Files (FDR 0026, cutting-garden#307). Built
+        # as its own derivation and NOT shipped.
+        cuttingGardenOrgTestServer = buildCuttingGardenGo {
+          pname = "cutting-garden-org-testserver";
+          subPackages = [ "cmd/cutting-garden-org-testserver" ];
+          meta.mainProgram = "cutting-garden-org-testserver";
+        };
+
         # cutting-garden-test-capture-serve is the RFC 0008 test plugin
         # (internal/capture_serve_testpeer as a standalone binary): a
         # deterministic capture-serve peer backing the bats bring-up
@@ -832,6 +844,11 @@
             base = cuttingGardenFastmailTestServer;
             name = "cutting-garden-fastmail-testserver";
           };
+          # The test WebDAV server backing zz-tests_bats/org_webdav.bats.
+          CG_TEST_ORG = {
+            base = cuttingGardenOrgTestServer;
+            name = "cutting-garden-org-testserver";
+          };
           # The RFC 0008 test peer backing zz-tests_bats/capture_serve.bats.
           CG_TEST_CAPTURE_SERVE = {
             base = cuttingGardenTestCaptureServe;
@@ -961,6 +978,10 @@
           # debug-organize-* dev-loop recipes can build it
           # (debug-build-caldav-testserver).
           cutting-garden-caldav-testserver = cuttingGardenCaldavTestServer;
+
+          # The test-only WebDAV server (bats CG_TEST_ORG), exposed so
+          # `nix build .#cutting-garden-org-testserver` checks it alone.
+          cutting-garden-org-testserver = cuttingGardenOrgTestServer;
 
           # The store-pinned `conformist --staged --exit-zero-on-fix` hook from
           # the CODEGEN eval (formatters + tommy + dagnabit-facade lanes, no
