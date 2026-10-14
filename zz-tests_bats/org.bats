@@ -81,6 +81,24 @@ function org_mcp_query_title_regex { # @test
   assert_output "org://test/_inbox.org?h=Call+the+plumber+about+the+leak"
 }
 
+# Slice 2 (FDR 0026 D12, #309): quote mints :ID: and adds zz-agent_quoted
+# under a WebDAV lock; reading the node again shows the durable id.
+function org_mcp_quote_mints_a_durable_id { # @test
+  mcp_drive org://test/ \
+    "$(tools_call 3 patch_node '{"uri":"org://test/_inbox.org?h=Call+the+plumber+about+the+leak","body":"{\"quote\": true}"}')"
+  run mcp_result_text "$output" 3
+  assert_output --partial "quote"
+
+  mcp_drive org://test/ "$(tools_call 4 read_node '{"uri":"org://test/_inbox.org?h=Call+the+plumber+about+the+leak"}')"
+  run jq -r '.fields.id_synthetic, (.fields.own_tags | join(" ")), (.fields.id | test("^[0-9a-f-]{36}$"))' \
+    <<<"$(mcp_result_text "$output" 4 | sed '/^raw bytes:/d')"
+  assert_output - <<-'EOM'
+	false
+	project-house zz-agent_quoted
+	true
+	EOM
+}
+
 function org_unknown_headline_is_a_clear_error { # @test
   mcp_drive org://test/ "$(tools_call 3 read_node '{"uri":"org://test/_inbox.org?h=Renamed"}')"
   run mcp_result_text "$output" 3

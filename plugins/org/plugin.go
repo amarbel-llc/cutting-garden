@@ -5,8 +5,8 @@
 // account → folder → file → headline → child headlines.
 //
 // Like fastmail it is scheme-only (MustRegisterScheme): no capture,
-// restore or diff. Slice 1 never writes; the narrow "quote" write is
-// slice 2 (#309). Parsing lives in the orgtext leaf package.
+// restore or diff. Its only write is the narrow "quote" (quote.go, D12),
+// under a WebDAV lock. Parsing lives in the orgtext leaf package.
 package org
 
 import (

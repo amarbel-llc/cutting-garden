@@ -24,6 +24,7 @@ const (
 	fieldFile          = "file"
 	fieldLevel         = "level"
 	fieldIDSynthetic   = "id_synthetic"
+	fieldID            = "id"
 	fieldModified      = "modified"
 
 	// valueNone is the known-empty value for a headline without a keyword,
@@ -93,6 +94,10 @@ func headlineNode(pf *parsedFile, n *hnode, now time.Time) cutting_garden_plugin
 		fieldFile:        pf.rel,
 		fieldLevel:       h.Level,
 		fieldIDSynthetic: h.ID() == "",
+	}
+	if id := h.ID(); id != "" {
+		// After a quote, an agent reads this to learn the durable ?id= URI.
+		fields[fieldID] = id
 	}
 	facets := map[string][]cutting_garden_plugins.FacetValue{
 		fieldState:         {{Key: orNone(h.Keyword)}},

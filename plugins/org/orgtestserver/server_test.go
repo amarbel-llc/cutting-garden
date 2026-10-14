@@ -101,7 +101,73 @@ func TestPropfindDepth0AndRefusals(t *testing.T) {
 	if resp, _ := do(t, "PROPFIND", s.URL(), "infinity", true); resp.StatusCode != http.StatusForbidden {
 		t.Errorf("Depth infinity: status = %d, want 403", resp.StatusCode)
 	}
-	if resp, _ := do(t, http.MethodPut, s.URL()+"_inbox.org", "", true); resp.StatusCode != http.StatusMethodNotAllowed {
-		t.Errorf("PUT: status = %d, want 405 until #309", resp.StatusCode)
+	if resp, _ := do(t, http.MethodDelete, s.URL()+"_inbox.org", "", true); resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Errorf("DELETE: status = %d, want 405", resp.StatusCode)
+	}
+}
+
+func putWith(t *testing.T, url, ifHeader, body string) int {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodPut, url, strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.SetBasicAuth(Username, Password)
+	if ifHeader != "" {
+		req.Header.Set("If", ifHeader)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	return resp.StatusCode
+}
+
+func TestLockEnforcedConditionalHeadersIgnored(t *testing.T) {
+	s := newSeeded(t)
+	target := s.URL() + "_inbox.org"
+
+	// Like Fastmail Files: a stale If-Match is ignored, the write lands.
+	req, _ := http.NewRequest(http.MethodPut, target, strings.NewReader("x\n"))
+	req.SetBasicAuth(Username, Password)
+	req.Header.Set("If-Match", `"stale"`)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent || string(s.Content("_inbox.org")) != "x\n" {
+		t.Fatalf("If-Match should be ignored: status %d", resp.StatusCode)
+	}
+
+	lockResp, _ := do(t, "LOCK", target, "", true)
+	token := lockResp.Header.Get("Lock-Token")
+	if lockResp.StatusCode != http.StatusOK || token == "" {
+		t.Fatalf("LOCK: status %d token %q", lockResp.StatusCode, token)
+	}
+	if again, _ := do(t, "LOCK", target, "", true); again.StatusCode != http.StatusLocked {
+		t.Errorf("second LOCK = %d, want 423", again.StatusCode)
+	}
+	if code := putWith(t, target, "", "y\n"); code != http.StatusLocked {
+		t.Errorf("PUT without token = %d, want 423", code)
+	}
+	if code := putWith(t, target, "("+token+")", "y\n"); code != http.StatusNoContent {
+		t.Errorf("PUT with token = %d, want 204", code)
+	}
+
+	req, _ = http.NewRequest("UNLOCK", target, nil)
+	req.SetBasicAuth(Username, Password)
+	req.Header.Set("Lock-Token", token)
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusNoContent {
+		t.Errorf("UNLOCK = %d", resp.StatusCode)
+	}
+	if code := putWith(t, target, "", "z\n"); code != http.StatusNoContent {
+		t.Errorf("PUT after unlock = %d", code)
 	}
 }

@@ -191,6 +191,76 @@ func (c *davClient) get(ctx context.Context, rel string) (body []byte, etag stri
 	return body, resp.Header.Get("ETag"), nil
 }
 
+// errLocked reports that another writer holds the file's lock (423).
+var errLocked = stderrors.New("locked by another writer")
+
+const lockBody = `<?xml version="1.0" encoding="utf-8"?>
+<D:lockinfo xmlns:D="DAV:"><D:lockscope><D:exclusive/></D:lockscope>
+<D:locktype><D:write/></D:locktype></D:lockinfo>`
+
+// lock takes an exclusive write lock on rel with a 60 s timeout, so a
+// crashed writer's lock expires on its own (cutting-garden#267).
+func (c *davClient) lock(ctx context.Context, rel string) (token string, err error) {
+	resp, err := c.do(ctx, "LOCK", rel, http.Header{
+		"Timeout":      {"Second-60"},
+		"Depth":        {"0"},
+		"Content-Type": {`application/xml; charset="utf-8"`},
+	}, []byte(lockBody))
+	if err != nil {
+		return "", errors.Wrapf(err, "org plugin: LOCK %s", rel)
+	}
+	defer errors.DeferredCloser(&err, resp.Body)
+	switch resp.StatusCode {
+	case http.StatusOK, http.StatusCreated:
+	case http.StatusLocked:
+		return "", errLocked
+	default:
+		return "", statusError("LOCK", rel, resp)
+	}
+	token = strings.Trim(strings.TrimSpace(resp.Header.Get("Lock-Token")), "<>")
+	if token == "" {
+		return "", errors.ErrorWithStackf("org plugin: LOCK %s: no Lock-Token in the response", rel)
+	}
+	return token, nil
+}
+
+// outcomeUnknown marks a PUT that may or may not have landed: a 5xx, or no
+// answer after the body was sent. It must not be retried blindly — a retry
+// could apply the change twice — so the caller re-reads the file instead.
+type outcomeUnknown struct{ msg string }
+
+func (e outcomeUnknown) Error() string { return e.msg }
+
+// put uploads body under the lock token.
+func (c *davClient) put(ctx context.Context, rel string, body []byte, token string) (err error) {
+	resp, err := c.do(ctx, http.MethodPut, rel, http.Header{
+		"If":           {"(<" + token + ">)"},
+		"Content-Type": {"text/plain; charset=utf-8"},
+	}, body)
+	if err != nil {
+		return outcomeUnknown{msg: fmt.Sprintf(
+			"org plugin: PUT %s: outcome unknown (%v); re-read the file before retrying", rel, err)}
+	}
+	defer errors.DeferredCloser(&err, resp.Body)
+	switch {
+	case resp.StatusCode/100 == 2:
+		return nil
+	case resp.StatusCode >= 500:
+		return outcomeUnknown{msg: fmt.Sprintf(
+			"org plugin: PUT %s: %s: outcome unknown; re-read the file before retrying", rel, resp.Status)}
+	default:
+		return statusError("PUT", rel, resp)
+	}
+}
+
+// unlock releases the lock. Failures are left to the lock's timeout.
+func (c *davClient) unlock(ctx context.Context, rel, token string) {
+	resp, err := c.do(ctx, "UNLOCK", rel, http.Header{"Lock-Token": {"<" + token + ">"}}, nil)
+	if err == nil {
+		_ = resp.Body.Close()
+	}
+}
+
 // authFailure marks a 401/403 so callers that tolerate per-file trouble
 // still fail on bad credentials.
 type authFailure struct{ msg string }

@@ -1,8 +1,10 @@
 // Package orgtestserver is a test-only, in-memory WebDAV server for the org
 // plugin (FDR 0026, cutting-garden#307): the hermetic stand-in for Fastmail
 // Files, which Orgzly syncs `.org` files through. It serves PROPFIND (Depth
-// 0/1) and GET behind HTTP Basic auth, and changes a file's ETag on every
-// write. LOCK/UNLOCK arrive with the slice-2 quote write (#309).
+// 0/1), GET, PUT, LOCK and UNLOCK behind HTTP Basic auth, and changes a
+// file's ETag on every write. Like Fastmail Files (cutting-garden#267) it
+// ignores conditional headers (If-Match and friends) but enforces LOCK: a
+// PUT to a locked file without `If: (<token>)` is 423.
 //
 // ETags and modification times are deterministic: a global write counter,
 // with times counted in seconds from a fixed epoch, so bats vectors stay
@@ -12,6 +14,7 @@ package orgtestserver
 import (
 	"encoding/xml"
 	"fmt"
+	"io"
 	"io/fs"
 	"net"
 	"net/http"
@@ -49,6 +52,40 @@ type Server struct {
 	mu     sync.Mutex
 	files  map[string]*file // key: slash path without a leading slash
 	writes int
+	locks  map[string]string // path → lock token
+	tokens int
+}
+
+// Lock takes an exclusive lock on p as another writer would, returning
+// its token: tests use it to make the plugin meet a held lock.
+func (s *Server) Lock(p string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.lockLocked(strings.Trim(p, "/"))
+}
+
+// Unlock releases a lock taken with Lock.
+func (s *Server) Unlock(p string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.locks, strings.Trim(p, "/"))
+}
+
+// Content returns a file's current bytes.
+func (s *Server) Content(p string) []byte {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if f, ok := s.files[strings.Trim(p, "/")]; ok {
+		return append([]byte(nil), f.content...)
+	}
+	return nil
+}
+
+func (s *Server) lockLocked(p string) string {
+	s.tokens++
+	token := "opaquelocktoken:t" + strconv.Itoa(s.tokens)
+	s.locks[p] = token
+	return token
 }
 
 // Start starts a server on an ephemeral loopback port.
@@ -57,7 +94,7 @@ func Start() *Server { return StartAt("") }
 // StartAt starts a server on addr ("host:port"), or an ephemeral loopback
 // port when addr is empty.
 func StartAt(addr string) *Server {
-	s := &Server{files: map[string]*file{}}
+	s := &Server{files: map[string]*file{}, locks: map[string]string{}}
 	ts := httptest.NewUnstartedServer(http.HandlerFunc(s.serveHTTP))
 	if addr != "" {
 		l, err := net.Listen("tcp", addr)
@@ -79,10 +116,15 @@ func (s *Server) URL() string { return s.srv.URL + "/" }
 func (s *Server) Close() { s.srv.Close() }
 
 // Put creates or replaces the file at p (slash-separated, relative to the
-// root), giving it a new ETag and modification time.
+// root), giving it a new ETag and modification time. It bypasses locks, as
+// an unconditional uploader like Orgzly would.
 func (s *Server) Put(p string, content []byte) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.putLocked(p, content)
+}
+
+func (s *Server) putLocked(p string, content []byte) {
 	s.writes++
 	s.files[strings.Trim(p, "/")] = &file{
 		content: append([]byte(nil), content...),
@@ -132,10 +174,59 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		s.propfind(w, r, p)
 	case http.MethodGet:
 		s.get(w, p)
+	case http.MethodPut:
+		s.put(w, r, p)
+	case "LOCK":
+		s.lock(w, p)
+	case "UNLOCK":
+		s.unlock(w, r, p)
 	default:
-		w.Header().Set("Allow", "OPTIONS, GET, PROPFIND")
+		w.Header().Set("Allow", "OPTIONS, GET, PUT, PROPFIND, LOCK, UNLOCK")
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// put writes the body, refusing with 423 when the file is locked and the
+// request does not carry `If: (<token>)`. Conditional headers are ignored.
+func (s *Server) put(w http.ResponseWriter, r *http.Request, p string) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if token, locked := s.locks[p]; locked && !strings.Contains(r.Header.Get("If"), "<"+token+">") {
+		http.Error(w, "locked", http.StatusLocked)
+		return
+	}
+	s.putLocked(p, body)
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) lock(w http.ResponseWriter, p string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, locked := s.locks[p]; locked {
+		http.Error(w, "locked", http.StatusLocked)
+		return
+	}
+	token := s.lockLocked(p)
+	w.Header().Set("Lock-Token", "<"+token+">")
+	w.Header().Set("Content-Type", `application/xml; charset="utf-8"`)
+	_, _ = io.WriteString(w, xml.Header+`<D:prop xmlns:D="DAV:"><D:lockdiscovery><D:activelock><D:locktoken><D:href>`+
+		token+`</D:href></D:locktoken></D:activelock></D:lockdiscovery></D:prop>`)
+}
+
+func (s *Server) unlock(w http.ResponseWriter, r *http.Request, p string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if token, locked := s.locks[p]; !locked || r.Header.Get("Lock-Token") != "<"+token+">" {
+		http.Error(w, "no such lock", http.StatusConflict)
+		return
+	}
+	delete(s.locks, p)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) get(w http.ResponseWriter, p string) {

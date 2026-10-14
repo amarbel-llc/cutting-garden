@@ -92,6 +92,7 @@ func (Plugin) DescribeListingFields() []cutting_garden_plugins.NodeTypeListingFi
 			field(fieldOwnTags, "Own tags"),
 			field(fieldFile, "File"),
 			field(fieldLevel, "Level"),
+			field(fieldID, "ID"),
 			field(fieldIDSynthetic, "Synthetic id"),
 		}},
 	}

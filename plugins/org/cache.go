@@ -44,6 +44,13 @@ func resetCache() {
 	cache = map[string]*parsedFile{}
 }
 
+// resetCacheEntry drops one file after this process wrote it.
+func resetCacheEntry(account, rel string) {
+	cacheMu.Lock()
+	defer cacheMu.Unlock()
+	delete(cache, account+"\x00"+rel)
+}
+
 // loadFile returns rel parsed. knownETag, when non-empty (from a folder
 // PROPFIND), lets a cache hit skip the GET entirely.
 func loadFile(ctx context.Context, c *davClient, a account, rel, knownETag string) (*parsedFile, error) {

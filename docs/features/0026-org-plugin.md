@@ -167,7 +167,14 @@ start with a step matching the anchor's children (a leading `->>` is not
 supported yet, #211), and a regex containing `(` is quoted:
 `[!cutting_garden-org-file-v1, !cutting_garden-org-folder-v1] ->>
 !cutting_garden-org-headline-v1 title~="(?i)leak"`.
-Slice 2 adds the quote mutation only. Everything organize needs for editing
+Slice 2 adds `NodeMutator` (only `PatchNode` with `{"quote": true}`;
+create/put/delete are bad requests) and `BodyDescriber` (so
+describe_node_types marks the headline writable and shows the body).
+`PatchNode` can only report applied field names, not a new URI, so the
+agent reads the node again: the old `?h=` URI still resolves, its fields
+now carry `id`, and later listings mint the `?id=` URI. A re-quote changes
+nothing and reports nothing applied, which the mcp `patch_node` tool
+surfaces as "nothing applied". Everything organize needs for editing
 (`FacetWriteDescriber`, tag writes, `CreationDescriber`) is deferred.
 
 Slice 1 does not depend on the RFC 0020 organize grammar work. swift-plum
@@ -177,8 +184,12 @@ server.
 ## Slices
 
 1. **Read-only traversal:** parser, WebDAV test server, plugin, bats lane.
-2. **Quote** (D12): LOCK → GET → splice → PUT with the lock token → UNLOCK
-   (#267). The test server gains LOCK.
+2. **Quote** (D12, landed): LOCK (60 s timeout; on 423, 5 retries sleeping
+   1–5 s) → fresh GET → splice the `:ID:` drawer line and the tag, keeping
+   the file's line endings → PUT with the lock token → UNLOCK on every
+   path (#267). A 5xx or a lost response is "outcome unknown" and is never
+   retried blindly. The test server enforces LOCK and, like Fastmail Files,
+   ignores conditional headers.
 3. Later: capture and edits (D7/D8), organize writes, local-dir/SFTP
    transports, archival capture (dodder FDR 0013's reference set).
 
