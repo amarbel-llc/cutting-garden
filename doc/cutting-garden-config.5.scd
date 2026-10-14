@@ -211,6 +211,32 @@ url = "fastmail://test/"
 session_url = "http://127.0.0.1:43113/jmap/session"
 ```
 
+# THE ORG ACCOUNTS
+
+An *[[org.accounts]]* entry (FDR 0026) names a WebDAV folder of *.org* files,
+such as the one Orgzly syncs through Fastmail Files. Its *url* is the WebDAV
+folder's absolute http(s) URL, and the account's root is *org://<name>/*;
+every *\*.org* file beneath the folder is exposed, subfolders included.
+Credentials use the shared *username* / *password_source* / *password_key*
+keys. One extra key applies:
+
+*todo_keywords*
+	String. OPTIONAL. The default TODO keyword sequence, in org's
+	*#+TODO* syntax: active states, then *|*, then done states (default
+	*"TODO | DONE"*). A file's own *#+TODO* line overrides it for that file.
+	It exists because Orgzly keeps its keywords in app settings, not in the
+	files. Other plugins ignore it.
+
+```
+[[org.accounts]]
+name = "personal"
+url = "https://myfiles.fastmail.com/Library/orgzly/"
+username = "you@example.com"
+password_source = "piggy"
+password_key = "cutting-garden/fastmail-files"
+todo_keywords = "TODO NEXT | DONE CANCELLED"
+```
+
 # THE [TAGS] OVERRIDE
 
 A top-level *[tags]* table overrides which named tag interpreter (RFC 0019)

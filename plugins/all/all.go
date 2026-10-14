@@ -26,5 +26,6 @@ import (
 	_ "code.linenisgreat.com/cutting-garden/plugins/googlephotos"
 	_ "code.linenisgreat.com/cutting-garden/plugins/jira"
 	_ "code.linenisgreat.com/cutting-garden/plugins/optical"
+	_ "code.linenisgreat.com/cutting-garden/plugins/org"
 	_ "code.linenisgreat.com/cutting-garden/plugins/ytdlp"
 )

@@ -1,0 +1,180 @@
+package org
+
+import (
+	"bytes"
+	"context"
+	"encoding/xml"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"path"
+	"strings"
+	"time"
+
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
+)
+
+// davEntry is one PROPFIND response entry, with its path relative to the
+// account's base folder ("" for the base itself; folders end in "/").
+type davEntry struct {
+	rel     string
+	dir     bool
+	etag    string
+	modTime time.Time
+}
+
+// davClient is a minimal read-only WebDAV client: PROPFIND (Depth 0/1)
+// and GET with Basic auth. The caldav plugin's client is package-private,
+// and a shared DAV package is cutting-garden#54's open layer question.
+type davClient struct {
+	base     *url.URL
+	username string
+	password string
+	http     *http.Client
+}
+
+func newDavClient(a account) (*davClient, error) {
+	password, err := a.Password()
+	if err != nil {
+		return nil, errors.Wrapf(err, "org plugin: account %q", a.Name)
+	}
+	return &davClient{
+		base:     a.base,
+		username: a.Username,
+		password: password,
+		http:     &http.Client{Timeout: 60 * time.Second},
+	}, nil
+}
+
+func (c *davClient) resolve(rel string) *url.URL {
+	u := *c.base
+	u.Path = c.base.Path + rel
+	u.RawPath = ""
+	return &u
+}
+
+func (c *davClient) do(ctx context.Context, method, rel string, header http.Header, body []byte) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, method, c.resolve(rel).String(), bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	for k, v := range header {
+		req.Header[k] = v
+	}
+	if c.username != "" || c.password != "" {
+		req.SetBasicAuth(c.username, c.password)
+	}
+	return c.http.Do(req)
+}
+
+const propfindBody = `<?xml version="1.0" encoding="utf-8"?>
+<D:propfind xmlns:D="DAV:"><D:prop>
+<D:resourcetype/><D:getetag/><D:getlastmodified/>
+</D:prop></D:propfind>`
+
+type msResponse struct {
+	Href     string `xml:"href"`
+	Propstat []struct {
+		Status string `xml:"status"`
+		Prop   struct {
+			ResourceType struct {
+				Collection *struct{} `xml:"collection"`
+			} `xml:"resourcetype"`
+			ETag         string `xml:"getetag"`
+			LastModified string `xml:"getlastmodified"`
+		} `xml:"prop"`
+	} `xml:"propstat"`
+}
+
+// propfind lists rel (a folder ending in "/", or a file) at depth "0" or
+// "1". The entry for rel itself is included.
+func (c *davClient) propfind(ctx context.Context, rel, depth string) ([]davEntry, error) {
+	resp, err := c.do(ctx, "PROPFIND", rel, http.Header{
+		"Depth":        {depth},
+		"Content-Type": {`application/xml; charset="utf-8"`},
+	}, []byte(propfindBody))
+	if err != nil {
+		return nil, errors.Wrapf(err, "org plugin: PROPFIND %s", rel)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusMultiStatus {
+		return nil, statusError("PROPFIND", rel, resp)
+	}
+	var ms struct {
+		Responses []msResponse `xml:"response"`
+	}
+	if err := xml.NewDecoder(resp.Body).Decode(&ms); err != nil {
+		return nil, errors.Wrapf(err, "org plugin: PROPFIND %s: bad multistatus", rel)
+	}
+
+	var out []davEntry
+	for _, r := range ms.Responses {
+		entry, ok := c.entryFor(r)
+		if ok {
+			out = append(out, entry)
+		}
+	}
+	return out, nil
+}
+
+// entryFor converts a response to a davEntry relative to the base, taking
+// the first 200 propstat. Entries outside the base are dropped.
+func (c *davClient) entryFor(r msResponse) (davEntry, bool) {
+	href, err := url.Parse(strings.TrimSpace(r.Href))
+	if err != nil {
+		return davEntry{}, false
+	}
+	p := href.Path
+	if !strings.HasPrefix(p, c.base.Path) {
+		return davEntry{}, false
+	}
+	e := davEntry{rel: strings.TrimPrefix(p, c.base.Path)}
+	for _, ps := range r.Propstat {
+		if !strings.Contains(ps.Status, " 200") {
+			continue
+		}
+		e.dir = ps.Prop.ResourceType.Collection != nil
+		e.etag = ps.Prop.ETag
+		e.modTime, _ = http.ParseTime(ps.Prop.LastModified)
+		break
+	}
+	if e.dir && e.rel != "" && !strings.HasSuffix(e.rel, "/") {
+		e.rel += "/"
+	}
+	return e, true
+}
+
+// get fetches a file's bytes and ETag.
+func (c *davClient) get(ctx context.Context, rel string) ([]byte, string, error) {
+	resp, err := c.do(ctx, http.MethodGet, rel, nil, nil)
+	if err != nil {
+		return nil, "", errors.Wrapf(err, "org plugin: GET %s", rel)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, "", statusError("GET", rel, resp)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, "", errors.Wrapf(err, "org plugin: GET %s: truncated body", rel)
+	}
+	return body, resp.Header.Get("ETag"), nil
+}
+
+// statusError names the failing request; 401/403/404 are surfaced with
+// the status so the caller sees credential and path problems plainly.
+func statusError(method, rel string, resp *http.Response) error {
+	snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 256))
+	msg := fmt.Sprintf("org plugin: %s %s: %s", method, rel, resp.Status)
+	if s := strings.TrimSpace(string(snippet)); s != "" {
+		msg += ": " + s
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		return errors.BadRequestf("%s", msg)
+	}
+	return errors.ErrorWithStackf("%s", msg)
+}
+
+// fileStem is a file's base name without ".org".
+func fileStem(rel string) string { return strings.TrimSuffix(path.Base(rel), ".org") }

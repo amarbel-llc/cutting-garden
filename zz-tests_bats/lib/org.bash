@@ -31,6 +31,24 @@ start_org_server() {
   export ORG_WEBDAV_URL="$line"
 }
 
+# write_org_config pins the config dir under the sandboxed $HOME and
+# declares the `test` org account against the running server, with the
+# Orgzly-style keyword default and the password read from the environment.
+write_org_config() {
+  export XDG_CONFIG_HOME="$HOME/.config"
+  export CG_TEST_ORG_PASSWORD=test
+  mkdir -p "$XDG_CONFIG_HOME/cutting-garden"
+  cat >"$XDG_CONFIG_HOME/cutting-garden/config.toml" <<-EOF
+	[[org.accounts]]
+	name = "test"
+	url = "${ORG_WEBDAV_URL}"
+	username = "test"
+	password_source = "env"
+	password_key = "CG_TEST_ORG_PASSWORD"
+	todo_keywords = "TODO NEXT | DONE CANCELLED"
+	EOF
+}
+
 # org_dav METHOD PATH [DEPTH] issues an authenticated request against the
 # running server, printing the body.
 org_dav() {

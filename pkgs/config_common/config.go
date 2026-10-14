@@ -54,6 +54,11 @@ type Root struct {
 // lane points a `fastmail://<name>/` account at its in-memory test server.
 // Plugins whose URL already names the server (caldav, jira) ignore it.
 //
+// TodoKeywords is the org plugin's default TODO keyword sequence, e.g.
+// "TODO NEXT | DONE CANCELLED" (FDR 0026 D3): Orgzly keeps its keywords in
+// app settings, not in the files, so the account declares them, and a
+// file's own #+TODO line overrides. Other plugins ignore it.
+//
 //go:generate tommy generate
 type Account struct {
 	Root
@@ -62,6 +67,7 @@ type Account struct {
 	PasswordSource string `toml:"password_source,omitempty"`
 	PasswordKey    string `toml:"password_key,omitempty"`
 	SessionURL     string `toml:"session_url,omitempty"`
+	TodoKeywords   string `toml:"todo_keywords,omitempty"`
 }
 
 // AccountsSection is the TOML shape of an account-bearing plugin's

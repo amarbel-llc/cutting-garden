@@ -186,6 +186,12 @@ func DecodeAccount(input []byte) (*AccountDocument, error) {
 			_vSessionUrl.MarkConsumed()
 		}
 	}
+	if _vTodoKeywords, _ok := model.Get("todo_keywords"); _ok && _vTodoKeywords.Kind == cst.VLeaf {
+		if _x, _xok := cst.ExtractString(_vTodoKeywords.Leaf); _xok {
+			d.data.TodoKeywords = _x
+			_vTodoKeywords.MarkConsumed()
+		}
+	}
 	return d, nil
 }
 
@@ -238,6 +244,13 @@ func (d *AccountDocument) Encode() ([]byte, error) {
 		}
 	} else {
 		cst.DeleteValue(d.cstDoc.Root(), "session_url")
+	}
+	if d.data.TodoKeywords != "" {
+		if err := cst.SetAny(d.cstDoc.Root(), "todo_keywords", d.data.TodoKeywords); err != nil {
+			return nil, fmt.Errorf("%w", err)
+		}
+	} else {
+		cst.DeleteValue(d.cstDoc.Root(), "todo_keywords")
 	}
 	return d.cstDoc.Bytes(), nil
 }
@@ -308,6 +321,12 @@ func DecodeAccountInto(data *Account, sub *cst.Value) error {
 			_vSessionUrl.MarkConsumed()
 		}
 	}
+	if _vTodoKeywords, _ok := sub.Get("todo_keywords"); _ok && _vTodoKeywords.Kind == cst.VLeaf {
+		if _x, _xok := cst.ExtractString(_vTodoKeywords.Leaf); _xok {
+			data.TodoKeywords = _x
+			_vTodoKeywords.MarkConsumed()
+		}
+	}
 	return nil
 }
 
@@ -356,6 +375,13 @@ func EncodeAccountFrom(data *Account, doc *document.Document, container *cst.Nod
 		}
 	} else {
 		cst.DeleteValue(container, "session_url")
+	}
+	if data.TodoKeywords != "" {
+		if err := cst.SetAny(container, "todo_keywords", data.TodoKeywords); err != nil {
+			return fmt.Errorf("%w", err)
+		}
+	} else {
+		cst.DeleteValue(container, "todo_keywords")
 	}
 	return nil
 }
@@ -435,6 +461,12 @@ func DecodeAccountsSection(input []byte) (*AccountsSectionDocument, error) {
 					_vAccountsSessionUrl.MarkConsumed()
 				}
 			}
+			if _vAccountsTodoKeywords, _ok := _eAccounts.Get("todo_keywords"); _ok && _vAccountsTodoKeywords.Kind == cst.VLeaf {
+				if _x, _xok := cst.ExtractString(_vAccountsTodoKeywords.Leaf); _xok {
+					d.data.Accounts[i].TodoKeywords = _x
+					_vAccountsTodoKeywords.MarkConsumed()
+				}
+			}
 		}
 	}
 	if _eaAccounts, _eaok := model.Get("accounts"); _eaok && _eaAccounts.IsEmptyArray() {
@@ -501,6 +533,13 @@ func (d *AccountsSectionDocument) Encode() ([]byte, error) {
 				}
 			} else {
 				cst.DeleteValue(container, "session_url")
+			}
+			if d.data.Accounts[i].TodoKeywords != "" {
+				if err := cst.SetAny(container, "todo_keywords", d.data.Accounts[i].TodoKeywords); err != nil {
+					return nil, fmt.Errorf("%w", err)
+				}
+			} else {
+				cst.DeleteValue(container, "todo_keywords")
 			}
 		}
 	}
@@ -579,6 +618,12 @@ func DecodeAccountsSectionInto(data *AccountsSection, sub *cst.Value) error {
 					_vAccountsSessionUrl.MarkConsumed()
 				}
 			}
+			if _vAccountsTodoKeywords, _ok := _eAccounts.Get("todo_keywords"); _ok && _vAccountsTodoKeywords.Kind == cst.VLeaf {
+				if _x, _xok := cst.ExtractString(_vAccountsTodoKeywords.Leaf); _xok {
+					data.Accounts[i].TodoKeywords = _x
+					_vAccountsTodoKeywords.MarkConsumed()
+				}
+			}
 		}
 	}
 	if _eaAccounts, _eaok := sub.Get("accounts"); _eaok && _eaAccounts.IsEmptyArray() {
@@ -643,6 +688,13 @@ func EncodeAccountsSectionFrom(data *AccountsSection, doc *document.Document, co
 				}
 			} else {
 				cst.DeleteValue(container, "session_url")
+			}
+			if data.Accounts[i].TodoKeywords != "" {
+				if err := cst.SetAny(container, "todo_keywords", data.Accounts[i].TodoKeywords); err != nil {
+					return fmt.Errorf("%w", err)
+				}
+			} else {
+				cst.DeleteValue(container, "todo_keywords")
 			}
 		}
 	}

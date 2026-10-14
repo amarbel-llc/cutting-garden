@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: experimental
 date: 2026-10-07
 promotion-criteria: |
   Promote to `experimental` once Slice 1 lands: `plugins/org/` reads a
@@ -114,9 +114,10 @@ An `[org]` section claimed through `MustRegisterConfigSection`. Each account:
     password_key = "cutting-garden/fastmail-files"
     todo_keywords = "TODO NEXT | DONE CANCELLED"
 
-`todo_keywords` is beyond the shared `config_common.AccountsSection` schema.
-Per CLAUDE.md, a plugin needing extra section fields puts its schema in an
-imported leaf package.
+`url` is the WebDAV folder (it names the server); the account's root is
+`org://<name>/`. `todo_keywords` is a field on the shared
+`config_common.Account`, following the `session_url` precedent of a
+plugin-specific field there; other plugins ignore it.
 
 ## Parsing
 
@@ -134,16 +135,27 @@ first non-empty line).
 
 - Missing credentials fail that root with the failing source named; other
   roots still list.
-- An unparseable line is reported as a warning naming file and line; no
-  headline is silently dropped.
-- An unreachable file lists with an `error` field, and its siblings still
-  list.
+- An unparseable line is reported as a warning naming file and line, in
+  `read_node` of the file or any of its headlines; no headline is silently
+  dropped.
+- A stale headline reference (renamed, moved) fails as a bad request naming
+  the file, never as a closest match.
+- In a folder-wide `read_facets`, an unreadable file is skipped and the
+  summary is marked incomplete (`complete: false`); listing a folder never
+  fetches its files, so it is unaffected.
 
 ## Capability posture
 
 Slice 1 implements `RootProvider`, `RootNamer` (so `!<account>` works as an
 organize origin later), `RootLister`, `LeafReader`, `FacetDescriber`,
-`FacetCounter`, `EnrichedLister`, `ListingFieldsDescriber` and `NodeIDer`.
+`FacetCounter`, `FacetVersioner` (a file's ETag; folders decline),
+`ListingFieldsDescriber`, `UnifiedDescriber` and `NodeIDer`. ListRoots
+already populates Facets and Fields (the file is parsed anyway), so there
+is no separate `EnrichedLister`; the host filters. Trellis queries must
+start with a step matching the anchor's children (a leading `->>` is not
+supported yet, #211), and a regex containing `(` is quoted:
+`[!cutting_garden-org-file-v1, !cutting_garden-org-folder-v1] ->>
+!cutting_garden-org-headline-v1 title~="(?i)leak"`.
 Slice 2 adds the quote mutation only. Everything organize needs for editing
 (`FacetWriteDescriber`, tag writes, `CreationDescriber`) is deferred.
 

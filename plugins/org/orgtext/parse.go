@@ -439,6 +439,9 @@ func resolveTags(h *Headline, inherited, noInherit []string) {
 	}
 }
 
+// Bytes returns the whole parsed source.
+func (f *File) Bytes() []byte { return f.src }
+
 // Source returns the bytes of span s.
 func (f *File) Source(s Span) []byte { return f.src[s.Start:s.End] }
 
