@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/url"
 	"regexp"
+	"slices"
 	"time"
 
 	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
@@ -95,15 +96,30 @@ func (t target) quote(ctx context.Context) (changed bool, err error) {
 		return false, errors.BadRequestf(
 			"org plugin: %s has no headlines; there is nothing to quote", t.ref.path)
 	}
-	updated, changed := spliceQuote(body, n.h)
+	updated, changed := spliceQuote(body, n.h, n.idShadowed())
 	if !changed {
 		return false, nil
 	}
-	if err := t.client.put(ctx, t.ref.path, updated, token); err != nil {
+	defer resetCacheEntry(t.acct.Name, t.ref.path)
+	err = t.client.put(ctx, t.ref.path, updated, token)
+	var unknown outcomeUnknown
+	if stderrors.As(err, &unknown) {
+		// Still holding the lock, so a re-read settles it: if our bytes are
+		// there, the write landed.
+		if now, _, getErr := t.client.get(ctx, t.ref.path); getErr == nil && bytes.Equal(now, updated) {
+			return true, nil
+		}
+	}
+	if err != nil {
 		return false, err
 	}
-	resetCacheEntry(t.acct.Name, t.ref.path)
 	return true, nil
+}
+
+// idShadowed reports a copy-pasted headline whose :ID: an earlier headline
+// already holds: its ID does not address it, so a quote replaces it.
+func (n *hnode) idShadowed() bool {
+	return n.h.ID() != "" && n.uri.Query().Get("id") == ""
 }
 
 func (t target) lockWithRetry(ctx context.Context) (string, error) {
@@ -132,34 +148,38 @@ func (t target) lockWithRetry(ctx context.Context) (string, error) {
 // tagSuffixRe finds a headline line's trailing tag block.
 var tagSuffixRe = regexp.MustCompile(`([ \t]+)(:(?:[^\s:]+:)+)[ \t]*$`)
 
-// spliceQuote adds :ID: (when absent) and the zz-agent_quoted own tag
-// (when absent) to h in src, touching nothing else. changed is false when
-// h already has both.
-func spliceQuote(src []byte, h *orgtext.Headline) (out []byte, changed bool) {
+// idLineRe matches a drawer's ID property line, value or not.
+var idLineRe = regexp.MustCompile(`(?i)^[ \t]*:ID:`)
+
+// spliceQuote gives h a fresh :ID: (when it has none, an empty one, or a
+// shadowed copy's) and the zz-agent_quoted own tag (when absent), touching
+// nothing else. New lines use the headline's own line ending. changed is
+// false when h already has both.
+func spliceQuote(src []byte, h *orgtext.Headline, idShadowed bool) (out []byte, changed bool) {
 	nl := "\n"
-	if bytes.Contains(src, []byte("\r\n")) {
+	if h.LineSpan.End < len(src) && src[h.LineSpan.End] == '\r' {
 		nl = "\r\n"
 	}
 	out = append([]byte(nil), src...)
 
 	// The drawer edit sits after the headline line, so splice it first and
 	// the line's offsets stay valid.
-	if h.ID() == "" {
-		idLine := ":ID:       " + newUUID() + nl
+	if h.ID() == "" || idShadowed {
+		idLine := ":ID:       " + newUUID()
 		if h.DrawerSpan.Empty() {
-			out = insertAt(out, h.DrawerSpan.Start, []byte(":PROPERTIES:"+nl+idLine+":END:"+nl))
+			ins := ":PROPERTIES:" + nl + idLine + nl + ":END:" + nl
+			at := h.DrawerSpan.Start
+			if at > 0 && src[at-1] != '\n' {
+				ins = nl + ins // the file ended without a newline
+			}
+			out = insertAt(out, at, []byte(ins))
 		} else {
-			afterOpen := h.DrawerSpan.Start + bytes.IndexByte(src[h.DrawerSpan.Start:], '\n') + 1
-			out = insertAt(out, afterOpen, []byte(idLine))
+			out = spliceDrawerID(out, h.DrawerSpan, idLine, nl)
 		}
 		changed = true
 	}
 
-	hasTag := false
-	for _, tag := range h.OwnTags {
-		hasTag = hasTag || tag == agentQuotedTag
-	}
-	if !hasTag {
+	if !slices.Contains(h.OwnTags, agentQuotedTag) {
 		line := string(src[h.LineSpan.Start:h.LineSpan.End])
 		var newLine string
 		if m := tagSuffixRe.FindStringSubmatchIndex(line); m != nil {
@@ -171,6 +191,28 @@ func spliceQuote(src []byte, h *orgtext.Headline) (out []byte, changed bool) {
 		changed = true
 	}
 	return out, changed
+}
+
+// spliceDrawerID replaces the drawer's existing :ID: line (empty or
+// shadowed) with idLine, or inserts idLine after `:PROPERTIES:` when there
+// is none, so the drawer never holds two IDs.
+func spliceDrawerID(src []byte, drawer orgtext.Span, idLine, nl string) []byte {
+	start := drawer.Start
+	for start < drawer.End {
+		end := start + bytes.IndexByte(src[start:drawer.End], '\n') + 1
+		if end <= start { // last line without a newline
+			end = drawer.End
+		}
+		line := bytes.TrimRight(src[start:end], "\r\n")
+		if idLineRe.Match(line) {
+			out := append([]byte(nil), src[:start]...)
+			out = append(out, idLine...)
+			return append(out, src[start+len(line):]...)
+		}
+		start = end
+	}
+	afterOpen := drawer.Start + bytes.IndexByte(src[drawer.Start:], '\n') + 1
+	return insertAt(src, afterOpen, []byte(idLine+nl))
 }
 
 func insertAt(b []byte, at int, ins []byte) []byte {

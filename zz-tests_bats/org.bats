@@ -87,7 +87,7 @@ function org_mcp_quote_mints_a_durable_id { # @test
   mcp_drive org://test/ \
     "$(tools_call 3 patch_node '{"uri":"org://test/_inbox.org?h=Call+the+plumber+about+the+leak","body":"{\"quote\": true}"}')"
   run mcp_result_text "$output" 3
-  assert_output --partial "quote"
+  assert_output --partial "(applied: quote)"
 
   mcp_drive org://test/ "$(tools_call 4 read_node '{"uri":"org://test/_inbox.org?h=Call+the+plumber+about+the+leak"}')"
   run jq -r '.fields.id_synthetic, (.fields.own_tags | join(" ")), (.fields.id | test("^[0-9a-f-]{36}$"))' \

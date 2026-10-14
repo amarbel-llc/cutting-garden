@@ -740,9 +740,11 @@ func patchOutcome(uri string, applied []string) (string, error) {
 
 	if len(applied) == 0 {
 		return "", errors.BadRequestf(
-			"patch_node: nothing was applied to %s — the plugin recognized"+
-				" none of the fields in the body, so the node is unchanged."+
-				" Call describe_node_types to see which fields this node"+
+			"patch_node: nothing was applied to %s, so the node is"+
+				" unchanged — either the plugin recognized none of the"+
+				" fields in the body, or the node already held what they"+
+				" ask for (an idempotent re-apply). Read the node to tell"+
+				" which; describe_node_types lists the fields this node"+
 				" type accepts on patch.",
 			uri,
 		)

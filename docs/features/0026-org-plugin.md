@@ -187,8 +187,12 @@ server.
 2. **Quote** (D12, landed): LOCK (60 s timeout; on 423, 5 retries sleeping
    1–5 s) → fresh GET → splice the `:ID:` drawer line and the tag, keeping
    the file's line endings → PUT with the lock token → UNLOCK on every
-   path (#267). A 5xx or a lost response is "outcome unknown" and is never
-   retried blindly. The test server enforces LOCK and, like Fastmail Files,
+   path (#267). Each request has a 25 s timeout, so GET + PUT fit in the
+   lock. A 5xx or a lost response is "outcome unknown": still holding the
+   lock, the plugin re-reads the file and reports success only if its bytes
+   landed; it never retries blindly. A copy-pasted duplicate `:ID:`, or an
+   empty one, is replaced rather than duplicated, and the splice keeps the
+   headline's own line ending. The test server enforces LOCK and, like Fastmail Files,
    ignores conditional headers.
 3. Later: capture and edits (D7/D8), organize writes, local-dir/SFTP
    transports, archival capture (dodder FDR 0013's reference set).

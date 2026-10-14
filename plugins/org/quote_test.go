@@ -99,6 +99,72 @@ func TestQuote_CRLFAndUntaggedHeadline(t *testing.T) {
 	}
 }
 
+func TestQuote_EdgeSplices(t *testing.T) {
+	cases := []struct {
+		name, src, uri string
+		want           func(id string) string
+	}{
+		{
+			"no trailing newline", "* Note", "org://test/e.org?h=Note",
+			func(id string) string {
+				return "* Note :zz-agent_quoted:\n:PROPERTIES:\n:ID:       " + id + "\n:END:\n"
+			},
+		},
+		{
+			"planning line without trailing newline", "* X\nDEADLINE: <2026-01-02 Fri>", "org://test/e.org?h=X",
+			func(id string) string {
+				return "* X :zz-agent_quoted:\nDEADLINE: <2026-01-02 Fri>\n:PROPERTIES:\n:ID:       " + id + "\n:END:\n"
+			},
+		},
+		{
+			"empty :ID: line is replaced, not duplicated", "* N\n:PROPERTIES:\n:ID:\n:END:\n", "org://test/e.org?h=N",
+			func(id string) string { return "* N :zz-agent_quoted:\n:PROPERTIES:\n:ID:       " + id + "\n:END:\n" },
+		},
+		{
+			"line ending follows the headline, not the file", "* A\r\nx\r\n* B\nbody\n", "org://test/e.org?h=B",
+			func(id string) string {
+				return "* A\r\nx\r\n* B :zz-agent_quoted:\n:PROPERTIES:\n:ID:       " + id + "\n:END:\nbody\n"
+			},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			srv := setup(t)
+			srv.Put("e.org", []byte(c.src))
+			if _, err := quote(t, c.uri); err != nil {
+				t.Fatal(err)
+			}
+			got := string(srv.Content("e.org"))
+			if want := c.want(uuidRe.FindString(got)); got != want {
+				t.Errorf("got  %q\nwant %q", got, want)
+			}
+		})
+	}
+}
+
+func TestQuote_ShadowedDuplicateIDGetsItsOwn(t *testing.T) {
+	srv := setup(t)
+	srv.Put("dup.org", []byte("* A\n:PROPERTIES:\n:ID: same\n:END:\n* B\n:PROPERTIES:\n:ID: same\n:END:\n"))
+
+	nodes, err := Plugin{}.ListRoots(context.Background(), mustURL(t, "org://test/dup.org"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := nodes[1].Fields[fieldID]; ok || nodes[1].Fields[fieldIDSynthetic] != true {
+		t.Errorf("a shadowed copy must not report the original's id: %v", nodes[1].Fields)
+	}
+
+	if _, err := quote(t, "org://test/dup.org?h=B"); err != nil {
+		t.Fatal(err)
+	}
+	got := string(srv.Content("dup.org"))
+	newID := uuidRe.FindString(got)
+	want := "* A\n:PROPERTIES:\n:ID: same\n:END:\n* B :zz-agent_quoted:\n:PROPERTIES:\n:ID:       " + newID + "\n:END:\n"
+	if got != want {
+		t.Errorf("got  %q\nwant %q", got, want)
+	}
+}
+
 func TestQuote_HeldLockGivesUpCleanly(t *testing.T) {
 	srv := setup(t)
 	saved := lockRetryDelays

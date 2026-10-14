@@ -73,7 +73,8 @@ func newDavClient(a account) (*davClient, error) {
 		base:     a.base,
 		username: a.Username,
 		password: password,
-		http:     &http.Client{Timeout: 60 * time.Second},
+		// 25 s per request keeps a quote's GET + PUT inside its 60 s lock.
+		http: &http.Client{Timeout: 25 * time.Second},
 	}, nil
 }
 

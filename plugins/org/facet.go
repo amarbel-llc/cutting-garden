@@ -89,13 +89,16 @@ func headlineNode(pf *parsedFile, n *hnode, now time.Time) cutting_garden_plugin
 		fieldState:    orNone(h.Keyword),
 		fieldPriority: orNone(h.Priority),
 		// Copies: the headline lives in the shared parse cache.
-		fieldTags:        nonNil(slices.Clone(h.Tags)),
-		fieldOwnTags:     nonNil(slices.Clone(h.OwnTags)),
-		fieldFile:        pf.rel,
-		fieldLevel:       h.Level,
-		fieldIDSynthetic: h.ID() == "",
+		fieldTags:    nonNil(slices.Clone(h.Tags)),
+		fieldOwnTags: nonNil(slices.Clone(h.OwnTags)),
+		fieldFile:    pf.rel,
+		fieldLevel:   h.Level,
 	}
-	if id := h.ID(); id != "" {
+	// The id is reported only when it addresses this headline: a copy-pasted
+	// duplicate's shadowed :ID: would point at the original.
+	id := n.uri.Query().Get("id")
+	fields[fieldIDSynthetic] = id == ""
+	if id != "" {
 		// After a quote, an agent reads this to learn the durable ?id= URI.
 		fields[fieldID] = id
 	}
