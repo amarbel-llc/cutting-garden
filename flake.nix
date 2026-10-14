@@ -1302,8 +1302,30 @@
                   passwordEnv = "CALDAV_PERSONAL_PASSWORD";
                 }
               ];
+              # The other account-bearing sections and the credential-source
+              # fields (password_source/key, session_url, todo_keywords).
+              sampleFastmail = [
+                {
+                  name = "personal";
+                  url = "fastmail://personal/";
+                  passwordSource = "env";
+                  passwordKey = "FASTMAIL_TOKEN";
+                }
+              ];
+              sampleOrg = [
+                {
+                  name = "notes";
+                  url = "https://dav.example/orgzly/";
+                  username = "me";
+                  passwordSource = "piggy";
+                  passwordKey = "cutting-garden/files";
+                  todoKeywords = "TODO NEXT | DONE CANCELLED";
+                }
+              ];
               sampleConfig = shared.renderConfigToml {
                 caldav.accounts = sampleAccounts;
+                fastmail.accounts = sampleFastmail;
+                org.accounts = sampleOrg;
                 tags.interpreter = "dodder-hyphen";
               };
 
@@ -1322,6 +1344,8 @@
                       services.cutting-garden = {
                         enable = true;
                         caldav.accounts = sampleAccounts;
+                        fastmail.accounts = sampleFastmail;
+                        org.accounts = sampleOrg;
                         tags.interpreter = "dodder-hyphen";
                       };
                     }
@@ -1337,6 +1361,13 @@
               grep -q 'url = "caldav://dav.example/dav/me/"' ${sampleConfig}
               grep -q 'username = "me"' ${sampleConfig}
               grep -q 'password_env = "CALDAV_PERSONAL_PASSWORD"' ${sampleConfig}
+
+              # fastmail and org sections, with the credential-source fields.
+              grep -q '^\[\[fastmail.accounts\]\]$' ${sampleConfig}
+              grep -q '^\[\[org.accounts\]\]$' ${sampleConfig}
+              grep -q 'password_source = "piggy"' ${sampleConfig}
+              grep -q 'password_key = "cutting-garden/files"' ${sampleConfig}
+              grep -q 'todo_keywords = "TODO NEXT | DONE CANCELLED"' ${sampleConfig}
 
               # cutting-garden#304: tags.interpreter renders a top-level [tags]
               # table (RFC 0019 §4 layer 2), not a bogus [[plugins]] stanza.
@@ -1357,6 +1388,8 @@
               cp ${sampleConfig} "$XDG_CONFIG_HOME/cutting-garden/config.toml"
               ${cuttingGarden}/bin/cutting-garden list | tee out.txt
               grep -q 'caldav://dav.example/dav/me/' out.txt
+              grep -q 'fastmail://personal/' out.txt
+              grep -q 'org://notes/' out.txt
 
               touch "$out"
             '';

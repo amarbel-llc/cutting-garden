@@ -36,11 +36,64 @@ let
         description = ''
           Name of the environment variable holding the account password (TOML
           `password_env`) — NEVER the secret value itself (RFC 0007 § Security
-          Considerations). Omitted from config.toml when null.
+          Considerations). Omitted from config.toml when null. Mutually
+          exclusive with `passwordSource`/`passwordKey`.
+        '';
+      };
+      passwordSource = mkOption {
+        type = types.nullOr (
+          types.enum [
+            "env"
+            "piggy"
+          ]
+        );
+        default = null;
+        example = "piggy";
+        description = ''
+          Credential backend (TOML `password_source`): `env` reads
+          `passwordKey` as an environment variable name, `piggy` as a
+          `piggy pass show` entry. Set together with `passwordKey`.
+        '';
+      };
+      passwordKey = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        example = "cutting-garden/fastmail-caldav";
+        description = "Credential name for `passwordSource` (TOML `password_key`).";
+      };
+      sessionUrl = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        description = ''
+          fastmail only: replaces the fixed JMAP Session endpoint (TOML
+          `session_url`). Other plugins ignore it.
+        '';
+      };
+      todoKeywords = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        example = "TODO NEXT | DONE CANCELLED";
+        description = ''
+          org only: the default TODO keyword sequence (TOML `todo_keywords`,
+          FDR 0026 D3); a file's own `#+TODO` overrides it. Other plugins
+          ignore it.
         '';
       };
     };
   };
+
+  # accountsOption declares one account-bearing plugin's `[[<scheme>.accounts]]`
+  # list; every such plugin decodes the same config_common.AccountsSection.
+  accountsOption =
+    scheme: description:
+    mkOption {
+      type = types.listOf account;
+      default = [ ];
+      description = ''
+        cutting-garden ${scheme} accounts (RFC 0007), rendered to
+        `[[${scheme}.accounts]]` tables in config.toml. ${description}
+      '';
+    };
 
   # pluginStanza mirrors internal/traversal_serve.PluginStanza (RFC 0013
   # §Host integration, generalized by cutting-garden#146 slice 2). It backs
@@ -161,6 +214,16 @@ in
       '';
     };
 
+    fastmail.accounts = accountsOption "fastmail" ''
+      `url` is `fastmail://<name>/` (the host slot names the account); the
+      JMAP bearer token comes from the credential fields (FDR 0024).
+    '';
+
+    org.accounts = accountsOption "org" ''
+      `url` is the WebDAV folder of `.org` files (e.g. Orgzly's folder on
+      Fastmail Files); the account's root is `org://<name>/` (FDR 0026).
+    '';
+
     traversalPlugins = mkOption {
       type = types.listOf pluginStanza;
       default = [ ];
@@ -238,8 +301,26 @@ in
       # always supplies.
       traversalPlugins = cfg.traversalPlugins or [ ];
       plugins = cfg.plugins or [ ];
-      caldavAccounts = cfg.caldav.accounts or [ ];
       tagsInterpreter = cfg.tags.interpreter or null;
+
+      # Every account-bearing section renders through one function, so the
+      # TOML keys stay in lockstep with config_common.Account's tags.
+      accountSections = lib.filterAttrs (_: accounts: accounts != [ ]) {
+        caldav = cfg.caldav.accounts or [ ];
+        fastmail = cfg.fastmail.accounts or [ ];
+        org = cfg.org.accounts or [ ];
+      };
+      renderAccount =
+        a:
+        lib.filterAttrs (_: v: v != null) {
+          inherit (a) name url;
+          username = a.username or null;
+          password_env = a.passwordEnv or null;
+          password_source = a.passwordSource or null;
+          password_key = a.passwordKey or null;
+          session_url = a.sessionUrl or null;
+          todo_keywords = a.todoKeywords or null;
+        };
 
       renderStanza =
         p:
@@ -262,16 +343,7 @@ in
       );
 
       settings =
-        lib.optionalAttrs (caldavAccounts != [ ]) {
-          caldav.accounts = map (
-            a:
-            {
-              inherit (a) name url;
-            }
-            // lib.optionalAttrs (a.username != null) { inherit (a) username; }
-            // lib.optionalAttrs (a.passwordEnv != null) { password_env = a.passwordEnv; }
-          ) caldavAccounts;
-        }
+        lib.mapAttrs (_: accounts: { accounts = map renderAccount accounts; }) accountSections
         // lib.optionalAttrs (traversalPlugins != [ ]) {
           traversal_plugins = map renderStanza traversalPlugins;
         }
