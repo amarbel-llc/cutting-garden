@@ -2,117 +2,171 @@
 status: proposed
 date: 2026-10-07
 promotion-criteria: |
-  DRAFT OUTLINE — loose on purpose; a heavier pass should flesh out every
-  section marked (TODO). Promote to `experimental` once Slice 1 lands:
-  `plugins/org/` reads a WebDAV-hosted directory of `.org` files and
-  `cg list` / `cg mcp` traverse `root → folder → file → headline →
-  child headline` with the facets below, pinned by a bats lane against an
-  in-repo WebDAV test server. Read-only; the plugin never writes to the
-  remote in Slice 1.
+  Promote to `experimental` once Slice 1 lands: `plugins/org/` reads a
+  WebDAV-hosted directory of `.org` files and `cg list` / `cg mcp` traverse
+  `account → folder → file → headline → child headline` with the facets
+  below, pinned by a bats lane against an in-repo WebDAV test server.
+  Read-only; the plugin never writes to the remote in Slice 1.
 ---
 
 # Org (org-mode) plugin
 
 ## Problem Statement
 
-A user's Org outlines (synced to a phone through Orgzly over WebDAV) are not
-a cutting-garden substrate. dodder has a `haustoria_orgmode` that ingests
-top-level headings as zettels (dodder FDR 0013 frames cutting-garden as the
-canonical haustoria protocol and names an org plugin as a reference-set
-member). This record makes Org a native, in-tree, **traversal** plugin first,
-so it is browsable over `list` / `mcp` / `read_facets`; `organize` / trellis /
-espalier writes follow in a later slice.
+The user keeps notes as Org outlines, synced to a phone by Orgzly through
+Fastmail Files (WebDAV). They are not a cutting-garden substrate yet. Agents
+need to read them mid-session as part of the user's knowledge graph, next to
+`!task` (caldav), mail (fastmail) and forge issues (smith). This record makes
+Org a native, in-tree **traversal** plugin, browsable over `list` / `mcp` /
+`read_facets` / trellis queries. Writes beyond a single "quote" operation are
+deferred.
 
-Orgzly has no code of its own here: it only syncs plain `.org` files over
-WebDAV.
+Orgzly is transitional: the user intends to move to dodder, possibly via an
+Orgzly fork that talks to dodder directly. Agents will later claim notes into
+project tags. So the design favours dodder's semantics (hyphen tags, tag
+inheritance) over Orgzly-specific machinery, and does not over-engineer id
+stability. Orgzly has no code here; it only syncs plain `.org` files.
 
-## Decisions taken (2026-10-07, with the user)
+The UX design was worked out as user stories in a Google Doc on 2026-10-14
+("org-mode plugin UX design (FDR 0026)"). This record holds its decisions.
 
-- **Scheme:** `org:`.
-- **Tree shape:** nested outline — a headline is a container; child
-  headlines are its children.
-- **Source, Slice 1:** WebDAV only (the Orgzly sync path). Local-directory
-  and SFTP transports are deferred. (Note: a local-fs transport is
-  ~50 LOC in the dodder prior art and a natural later addition.)
-- **Capture/restore/diff:** out of scope; scheme-only plugin like
-  fastmail (`MustRegisterScheme`).
+## Decisions
 
-## Node model (TODO: flesh out)
+Taken 2026-10-07:
 
-    org://<account>/                      root (config account)
-      <folder>/                           WebDAV collection
-        <file>.org                        container: file preamble + headlines
-          <headline>                      container: body via ReadLeaf
-            <child headline> ...
+- **Scheme:** `org:`, a scheme-only plugin like fastmail
+  (`MustRegisterScheme`). Capture, restore and diff are out of scope.
+- **Tree:** account → folder → `file.org` → headline → child headlines. A
+  headline is a container.
+- **Types**, horizontally versioned per FDR 0018:
+  `cutting_garden-org-folder-v1`, `-file-v1`, `-headline-v1`.
+- **Source:** WebDAV only (the Orgzly sync path). Local-directory and SFTP
+  transports are deferred.
 
-- Types, horizontally versioned per FDR 0018: `cutting_garden-org-folder-v1`,
-  `-file-v1`, `-headline-v1`.
-- **Ids (TODO — the hard part):** use the `:ID:` property when present.
-  Otherwise synthesize deterministically from file path + outline path (and
-  a disambiguating ordinal for duplicate titles). Slice 1 MUST NOT write
-  `:ID:` back; the dodder haustoria does (byte-splice on read), which a
-  read-only slice cannot copy. Consider declaring a URI template (RFC 0018)
-  and `NodeIDer` for organize later.
-- A file with no headlines synthesizes a single headline (dodder prior art:
-  id = file stem, title = first non-empty line).
+Taken 2026-10-14:
 
-## Parsing (TODO)
+- **D1, URIs and ids.** A file is positional, `org://<account>/<path>.org`.
+  A headline is `…/<file>.org?id=<:ID:>` when it has an `:ID:`. Otherwise it
+  is a synthetic `…/<file>.org?h=<outline path joined by />`, with `&n=2` for
+  a duplicate title. A synthetic id carries `id_synthetic: true`: it breaks
+  on rename and fails as not-found, never as a closest match. This mirrors
+  fastmail's `?thread=`; implement `NodeIDer`.
+- **D12, quote (Slice 2).** An agent makes a reference durable with a
+  dedicated `patch_node` body `{"quote": true}`. The plugin mints the `:ID:`
+  (a UUID the agent does not choose) and adds the own tag `zz-agent_quoted`.
+  Quoting is idempotent, and a headline that already has an `:ID:` only
+  gains the tag. The intent is deliberately narrow, which suits scoped agent
+  access (#303).
+- **D11, tags.** The `tags` field declares `dodder-hyphen` as its default
+  interpreter (RFC 0019), matching the user's `!task` categories
+  (`project-reno-phase_1`, `area-home`, `zz-inbox`). Agents query tags with
+  bare terms, which go through the interpreter and match the whole subtree.
+  A facet predicate (`tags=x`) is exact membership, and `tags!=x` is not
+  "lacks x": use `^x` or `^tags=x`. Hyphenated tags are not legal Emacs org
+  syntax, but Orgzly accepts them. This decision exposed a host split:
+  krone's caldav was `naive` while flic's was `dodder-hyphen`. #304 added the
+  `tags.interpreter` module option to fix it (per-account: #305).
+- **D4, inheritance.** `tags` is the effective set: own tags, plus
+  ancestors', plus `#+FILETAGS`, as in dodder. `own_tags` is a separate
+  field. `zz-agent_quoted` is never inherited.
+- **D5, read_node.** Returns the parsed fields (title, state, priority,
+  tags, own_tags, scheduled/deadline/closed in ISO form, properties, level,
+  outline_path, file, id_synthetic), the own body (text before the first
+  child), and a madder blob link to the verbatim subtree. Logbook drawers
+  appear only in the blob.
+- **D3, TODO keywords.** Orgzly keeps its keywords in app settings, not in
+  files. A per-account `todo_keywords` (e.g. `"TODO NEXT | DONE CANCELLED"`)
+  is the default, and a file's `#+TODO` overrides it. Words after `|` are
+  terminal values. A headline with no keyword has `state: none`.
+- **D6, dates.** `scheduled_band` and `deadline_band` (overdue / today /
+  this-week / later / none, like caldav's `due_band`), plus a `closed` date
+  facet. Active body timestamps are not dates (deferred).
+- **D10, text search.** Trellis `title~=` / `_body~=` now; RFC 0016 search
+  when it lands.
+- **D9, freshness.** An in-process cache keyed by ETag. One PROPFIND per
+  folder finds changed files; only those are re-fetched and re-parsed.
+  Listings carry a `version` derived from the ETags.
+- **D2, scope.** One base WebDAV URL per account. Every `*.org` file beneath
+  it is exposed, and subdirectories become folder nodes. Other files are
+  skipped, and the listing reports how many.
+- **Deferred (D7, D8):** agent capture and any other writes, and the
+  conflict policy against Orgzly. Orgzly uploads unconditionally, and
+  Fastmail Files ignores conditional headers but enforces LOCK (#267).
+  Writes into files the user edits on the phone need a real-device test of
+  Orgzly's conflict behaviour first.
 
-Hand-rolled, line-oriented parser inside the plugin (cutting-garden plugins
-cannot import dodder `internal/`, and the dodder PEG parser is
-top-level-only and skips TODO/priority/planning). Extract: level, TODO
-keyword, priority cookie, title, trailing `:tag:` suffix, planning line
-(SCHEDULED / DEADLINE / CLOSED), `:PROPERTIES:` drawer, body. Keep **byte
-spans** per headline (body start/end, drawer insert point) from day one so
-later lossless organize edits are possible. Open: `#+TODO` per-file keyword
-sets, `#+FILETAGS` and tag inheritance, CRLF, large files (dodder re-reads
-whole files per call; consider ETag-keyed caching).
+## Facets
 
-## Facets (TODO)
+On the headline type: `state` (terminal values from the keyword set, D3),
+`tags` (`tag_set`, `dodder-hyphen`, effective set, D4/D11), `priority`
+(A/B/C/none), `scheduled_band`, `deadline_band`, `closed`, `file`.
 
-Candidates: `state` (TODO keyword; a `terminal_values` set for DONE /
-CANCELLED), `tags` (a `tag_set`), `priority`, `scheduled` / `deadline`
-(date facets with bands like caldav's `due_band`), `file`, `folder`.
-Implement `FacetDescriber` + `FacetCounter` (+ `FacetVersioner` via file
-ETags).
+## Config
 
-## Config (TODO)
+An `[org]` section claimed through `MustRegisterConfigSection`. Each account:
 
-An `[org]` section claimed through `MustRegisterConfigSection` over the
-shared `config_common.AccountsSection`: per account WebDAV url, username,
-credential source (env fallback, mirroring dodder's `ORGMODE_WEBDAV_*`).
-Open: how folder scoping is declared (dodder's `FolderMapping`).
+    [[org.accounts]]
+    name = "personal"
+    url = "https://myfiles.fastmail.com/Library/orgzly/"
+    username = "…"
+    password_source = "piggy"
+    password_key = "cutting-garden/fastmail-files"
+    todo_keywords = "TODO NEXT | DONE CANCELLED"
 
-## Capability posture (Slice 1)
+`todo_keywords` is beyond the shared `config_common.AccountsSection` schema.
+Per CLAUDE.md, a plugin needing extra section fields puts its schema in an
+imported leaf package.
 
-Implements: `RootProvider`, `RootLister`, `LeafReader`, `FacetDescriber`,
-`FacetCounter`, `EnrichedLister`, `ListingFieldsDescriber`. Defers:
-`NodeMutator`, `FacetWriteDescriber`, tag writes, `CreationDescriber`,
-`NodeIDer` — i.e. everything organize needs.
+## Parsing
 
-## Later slices (TODO)
+A hand-rolled, line-oriented parser inside the plugin. Plugins cannot import
+dodder `internal/`, and the dodder PEG parser is top-level-only. Per
+headline it extracts level, TODO keyword, priority cookie, title, tags (any
+non-space, non-colon run between colons), the planning line, the
+`:PROPERTIES:` drawer and the body. It keeps byte spans (headline line,
+planning, drawer, body, subtree end) from day one, so Slice 2 can splice
+without reformatting. It handles `#+TODO`, `#+FILETAGS` and CRLF. A file
+with no headlines yields a single synthesized node (id = file stem, title =
+first non-empty line).
 
-1. Organize/trellis/espalier: TODO state and tags as writable dimensions,
-   creation of headlines, byte-splice edits with ETag-conditional writes.
-2. Local-dir and SFTP transports.
-3. Archival capture (`cutting_garden-capture_receipt-org-v1`) to satisfy
-   dodder FDR 0013's reference set; dodder-side consumption lives in
-   dodder's lane.
+## Failure behaviour
+
+- Missing credentials fail that root with the failing source named; other
+  roots still list.
+- An unparseable line is reported as a warning naming file and line; no
+  headline is silently dropped.
+- An unreachable file lists with an `error` field, and its siblings still
+  list.
+
+## Capability posture
+
+Slice 1 implements `RootProvider`, `RootNamer` (so `!<account>` works as an
+organize origin later), `RootLister`, `LeafReader`, `FacetDescriber`,
+`FacetCounter`, `EnrichedLister`, `ListingFieldsDescriber` and `NodeIDer`.
+Slice 2 adds the quote mutation only. Everything organize needs for editing
+(`FacetWriteDescriber`, tag writes, `CreationDescriber`) is deferred.
+
+Slice 1 does not depend on the RFC 0020 organize grammar work. swift-plum
+verified on 2026-10-14 that it touches neither trellis_eval nor the MCP
+server.
+
+## Slices
+
+1. **Read-only traversal:** parser, WebDAV test server, plugin, bats lane.
+2. **Quote** (D12): LOCK → GET → splice → PUT with the lock token → UNLOCK
+   (#267). The test server gains LOCK.
+3. Later: capture and edits (D7/D8), organize writes, local-dir/SFTP
+   transports, archival capture (dodder FDR 0013's reference set).
 
 ## Prior art and links
 
-- dodder `go/internal/lima/haustoria_orgmode/` (main.go, headings.go,
-  transport_webdav.go), `go/internal/0/orgmode/` (hand-rolled parser),
-  `go/internal/0/orgmode_peg/`. Reuse ideas, not code; ask the dodder
-  session for answers about it.
-- dodder `docs/features/0013-cutting-garden-haustoria.md`.
-- `plugins/fastmail/` (scheme-only plugin pattern), FDR 0024, FDR 0021
-  (facets), RFC 0012 (facet contract), cutting-garden-plugins(7).
-
-## Known gaps in prior art (TODO: verify)
-
-- No code extracts SCHEDULED/DEADLINE/priority/TODO state today; those
-  facets are net-new work.
-- The dodder bats lane for orgmode is skipped (SFTP server blocked by
-  sandbox, dodder #118/#191), so the sync path is unverified there; we need
-  our own WebDAV test server fixture.
+- dodder `go/internal/lima/haustoria_orgmode/`, `go/internal/0/orgmode/`,
+  `docs/features/0013-cutting-garden-haustoria.md`. Reuse ideas, not code.
+- circus pebble tools (FDR 0027): append to `_inbox.org` over WebDAV with
+  LOCK, writing level-1 headlines tagged `:zz-from_pebble:zz-inbox:` with
+  `:CREATED:`. Their retry and outcome-unknown rules are the model for
+  Slice 2.
+- `plugins/fastmail/` (scheme-only, NodeIDer), `plugins/caldav/client.go`
+  (DAV client), FDR 0021, RFC 0012, RFC 0019, cutting-garden-plugins(7).
+- cutting-garden#267 (LOCK requirement), #54 (generic webdav), #303 (scoped
+  agent access), #304 / #305 (tag interpreter config).
