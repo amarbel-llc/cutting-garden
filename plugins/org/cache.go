@@ -3,6 +3,7 @@ package org
 import (
 	"context"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -78,14 +79,22 @@ func parseFile(a account, rel, etag string, body []byte) *parsedFile {
 	if len(heads) == 0 {
 		heads = []*orgtext.Headline{f.SynthesizeHeadline(fileStem(rel))}
 	}
-	seen := map[string]int{} // outline path → occurrences so far
+	seen := map[string]int{}    // outline path → occurrences so far
+	seenID := map[string]bool{} // a duplicated :ID: (copy-pasted headline)
 	var build func([]*orgtext.Headline) []*hnode
 	build = func(hs []*orgtext.Headline) []*hnode {
 		out := make([]*hnode, 0, len(hs))
 		for _, h := range hs {
 			pathKey := strings.Join(h.OutlinePath, "\x00")
 			seen[pathKey]++
-			n := &hnode{h: h, uri: headlineURI(a.Name, rel, h.ID(), h.OutlinePath, seen[pathKey])}
+			// Only the first holder of an :ID: is addressed by it; a copy
+			// falls back to its outline path so it stays reachable.
+			id := h.ID()
+			if id != "" && seenID[id] {
+				id = ""
+			}
+			seenID[h.ID()] = true
+			n := &hnode{h: h, uri: headlineURI(a.Name, rel, id, h.OutlinePath, seen[pathKey])}
 			n.children = build(h.Children)
 			out = append(out, n)
 		}
@@ -108,7 +117,7 @@ func (pf *parsedFile) find(ref nodeRef) (*hnode, bool) {
 					found = n
 					return true
 				}
-			} else if equalPath(n.h.OutlinePath, ref.outline) {
+			} else if slices.Equal(n.h.OutlinePath, ref.outline) {
 				count++
 				if count == ref.nth {
 					found = n
@@ -123,18 +132,6 @@ func (pf *parsedFile) find(ref nodeRef) (*hnode, bool) {
 	}
 	walk(pf.top)
 	return found, found != nil
-}
-
-func equalPath(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }
 
 // eachHeadline visits every headline in ns and their descendants.

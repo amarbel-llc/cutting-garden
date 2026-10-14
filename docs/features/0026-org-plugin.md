@@ -85,11 +85,12 @@ Taken 2026-10-14:
 - **D10, text search.** Trellis `title~=` / `_body~=` now; RFC 0016 search
   when it lands.
 - **D9, freshness.** An in-process cache keyed by ETag. One PROPFIND per
-  folder finds changed files; only those are re-fetched and re-parsed.
-  Listings carry a `version` derived from the ETags.
+  folder finds changed files; only those are re-fetched and re-parsed, and
+  a single file is checked with a Depth-0 PROPFIND before any GET. A file
+  or headline's facet version is the file's ETag; a folder declines one.
 - **D2, scope.** One base WebDAV URL per account. Every `*.org` file beneath
   it is exposed, and subdirectories become folder nodes. Other files are
-  skipped, and the listing reports how many.
+  skipped by design.
 - **Deferred (D7, D8):** agent capture and any other writes, and the
   conflict policy against Orgzly. Orgzly uploads unconditionally, and
   Fastmail Files ignores conditional headers but enforces LOCK (#267).
@@ -128,8 +129,15 @@ non-space, non-colon run between colons), the planning line, the
 `:PROPERTIES:` drawer and the body. It keeps byte spans (headline line,
 planning, drawer, body, subtree end) from day one, so Slice 2 can splice
 without reformatting. It handles `#+TODO`, `#+FILETAGS` and CRLF. A file
-with no headlines yields a single synthesized node (id = file stem, title =
-first non-empty line).
+with no headlines yields a single synthesized node, titled by its first
+non-empty line (else the file stem) and addressed like any headline by that
+title. A copy-pasted headline that repeats another's `:ID:` is addressed by
+its outline path, so both stay reachable.
+
+Known gap: the `state` dimension's terminal values come from the accounts'
+`todo_keywords`, because a facet declaration is static. A file's own
+`#+TODO` done words (e.g. `DROPPED`) are treated as done for the date bands
+but are not terminal for organize's default exclusion.
 
 ## Failure behaviour
 
@@ -140,9 +148,12 @@ first non-empty line).
   dropped.
 - A stale headline reference (renamed, moved) fails as a bad request naming
   the file, never as a closest match.
-- In a folder-wide `read_facets`, an unreadable file is skipped and the
-  summary is marked incomplete (`complete: false`); listing a folder never
-  fetches its files, so it is unaffected.
+- In a folder-wide `read_facets`, an unreadable file or subfolder is
+  skipped and the summary is marked incomplete (`complete: false`); a 401 or
+  403 still fails the call, so bad credentials never pass as an empty
+  summary. Listing a folder never fetches its files, so it is unaffected.
+- A URI with a `.` or `..` segment is refused, so no path escapes the
+  account's folder.
 
 ## Capability posture
 

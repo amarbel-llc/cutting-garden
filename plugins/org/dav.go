@@ -4,12 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/xml"
+	stderrors "errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"path"
 	"strings"
+	"sync"
 	"time"
 
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
@@ -34,10 +36,38 @@ type davClient struct {
 	http     *http.Client
 }
 
-func newDavClient(a account) (*davClient, error) {
-	password, err := a.Password()
+// passwords memoizes each account's resolved password for the process:
+// resolving can mean a `piggy pass show` subprocess, and a long-lived
+// `cg mcp` would otherwise pay it on every call. Reset with the config.
+var (
+	passwordsMu sync.Mutex
+	passwords   = map[string]string{}
+)
+
+func resetPasswords() {
+	passwordsMu.Lock()
+	defer passwordsMu.Unlock()
+	passwords = map[string]string{}
+}
+
+func accountPassword(a account) (string, error) {
+	passwordsMu.Lock()
+	defer passwordsMu.Unlock()
+	if p, ok := passwords[a.Name]; ok {
+		return p, nil
+	}
+	p, err := a.Password()
 	if err != nil {
-		return nil, errors.Wrapf(err, "org plugin: account %q", a.Name)
+		return "", errors.Wrapf(err, "org plugin: account %q", a.Name)
+	}
+	passwords[a.Name] = p
+	return p, nil
+}
+
+func newDavClient(a account) (*davClient, error) {
+	password, err := accountPassword(a)
+	if err != nil {
+		return nil, err
 	}
 	return &davClient{
 		base:     a.base,
@@ -162,18 +192,33 @@ func (c *davClient) get(ctx context.Context, rel string) ([]byte, string, error)
 	return body, resp.Header.Get("ETag"), nil
 }
 
-// statusError names the failing request; 401/403/404 are surfaced with
-// the status so the caller sees credential and path problems plainly.
+// authFailure marks a 401/403 so callers that tolerate per-file trouble
+// still fail on bad credentials.
+type authFailure struct{ msg string }
+
+func (e authFailure) Error() string { return e.msg }
+
+func isAuthFailure(err error) bool {
+	var af authFailure
+	return stderrors.As(err, &af)
+}
+
+// statusError names the failing request and its status: 404 is a bad
+// request (a stale path), 401/403 an authFailure.
 func statusError(method, rel string, resp *http.Response) error {
 	snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 256))
 	msg := fmt.Sprintf("org plugin: %s %s: %s", method, rel, resp.Status)
 	if s := strings.TrimSpace(string(snippet)); s != "" {
 		msg += ": " + s
 	}
-	if resp.StatusCode == http.StatusNotFound {
+	switch resp.StatusCode {
+	case http.StatusNotFound:
 		return errors.BadRequestf("%s", msg)
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return authFailure{msg: msg}
+	default:
+		return errors.ErrorWithStackf("%s", msg)
 	}
-	return errors.ErrorWithStackf("%s", msg)
 }
 
 // fileStem is a file's base name without ".org".

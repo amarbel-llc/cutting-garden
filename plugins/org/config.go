@@ -89,6 +89,7 @@ var configuredAccounts []account
 func setConfiguredAccounts(accounts []account) {
 	configuredAccounts = accounts
 	resetCache()
+	resetPasswords()
 }
 
 func accountByName(name string) (account, bool) {

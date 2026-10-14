@@ -45,6 +45,13 @@ func classifyURI(u *url.URL) (nodeRef, error) {
 	ref := nodeRef{account: u.Host, nth: 1}
 	p := strings.TrimPrefix(u.Path, "/")
 	q := u.Query()
+	// No "." or ".." segments: a path must not escape the account's
+	// WebDAV folder (the server would normalize it, credentials attached).
+	for _, seg := range strings.Split(p, "/") {
+		if seg == "." || seg == ".." {
+			return nodeRef{}, errors.BadRequestf("org plugin: %q has a %q segment", u.String(), seg)
+		}
+	}
 
 	switch {
 	case p == "" || strings.HasSuffix(p, "/"):
@@ -85,6 +92,8 @@ func classifyURI(u *url.URL) (nodeRef, error) {
 	return ref, nil
 }
 
+var titleEscaper = strings.NewReplacer("%", "%25", "/", "%2F")
+
 // folderURI mints org://<account>/<dir>/ (dir "" for the root).
 func folderURI(account, dir string) *url.URL {
 	u := &url.URL{Scheme: schemeOrg, Host: account, Path: "/" + dir}
@@ -112,7 +121,7 @@ func headlineURI(account, path, id string, outline []string, nth int) *url.URL {
 		segs := make([]string, len(outline))
 		for i, title := range outline {
 			// Escape so a "/" inside a title cannot split the path.
-			segs[i] = strings.ReplaceAll(strings.ReplaceAll(title, "%", "%25"), "/", "%2F")
+			segs[i] = titleEscaper.Replace(title)
 		}
 		q.Set("h", strings.Join(segs, "/"))
 		if nth > 1 {

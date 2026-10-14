@@ -3,6 +3,7 @@ package org
 import (
 	"context"
 	"net/url"
+	"slices"
 	"time"
 
 	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
@@ -51,12 +52,14 @@ func dateBand(day string, done bool, now time.Time) string {
 	if day == "" || done {
 		return valueNone
 	}
-	d, err := time.ParseInLocation("2006-01-02", day, now.Location())
+	// Compare calendar dates in UTC so a DST change between today and the
+	// date cannot shift the day count.
+	d, err := time.Parse("2006-01-02", day)
 	if err != nil {
 		return valueNone
 	}
-	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
-	switch days := int(d.Sub(today).Hours() / 24); {
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+	switch days := int(d.Sub(today).Hours()) / 24; {
 	case days < 0:
 		return bandOverdue
 	case days == 0:
@@ -81,11 +84,12 @@ func headlineNode(pf *parsedFile, n *hnode, now time.Time) cutting_garden_plugin
 	h := n.h
 	done := pf.file.Keywords.IsDone(h.Keyword)
 	fields := map[string]any{
-		fieldTitle:       h.Title,
-		fieldState:       orNone(h.Keyword),
-		fieldPriority:    orNone(h.Priority),
-		fieldTags:        nonNil(h.Tags),
-		fieldOwnTags:     nonNil(h.OwnTags),
+		fieldTitle:    h.Title,
+		fieldState:    orNone(h.Keyword),
+		fieldPriority: orNone(h.Priority),
+		// Copies: the headline lives in the shared parse cache.
+		fieldTags:        nonNil(slices.Clone(h.Tags)),
+		fieldOwnTags:     nonNil(slices.Clone(h.OwnTags)),
 		fieldFile:        pf.rel,
 		fieldLevel:       h.Level,
 		fieldIDSynthetic: h.ID() == "",
@@ -174,13 +178,7 @@ func (t target) countEntry(ctx context.Context, e davEntry, acc *facetAccumulato
 	if !e.dir {
 		pf, err := loadFile(ctx, t.client, t.acct, e.rel, e.etag)
 		if err != nil {
-			// Fault isolation: one unreadable file marks the summary partial
-			// rather than failing the whole folder.
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			acc.complete = false
-			return nil
+			return acc.tolerate(ctx, err)
 		}
 		eachHeadline(pf.top, func(n *hnode) { acc.add(headlineNode(pf, n, now)) })
 		return nil
@@ -189,7 +187,7 @@ func (t target) countEntry(ctx context.Context, e davEntry, acc *facetAccumulato
 	sub.ref = nodeRef{account: t.ref.account, kind: kindFolder, path: e.rel, nth: 1}
 	entries, err := sub.listFolder(ctx)
 	if err != nil {
-		return err
+		return acc.tolerate(ctx, err)
 	}
 	for _, child := range entries {
 		if err := sub.countEntry(ctx, child, acc, now); err != nil {
@@ -210,6 +208,21 @@ type facetAccumulator struct {
 
 func newFacetAccumulator(filter cutting_garden_plugins.FacetFilter) *facetAccumulator {
 	return &facetAccumulator{filter: filter, summary: cutting_garden_plugins.FacetSummary{}, complete: true}
+}
+
+// tolerate implements fault isolation for a folder-wide count: one
+// unreadable file or subfolder marks the summary partial instead of
+// failing it. Cancellation and credential failures (401/403) still fail,
+// so wrong credentials never pass as an empty, incomplete summary.
+func (a *facetAccumulator) tolerate(ctx context.Context, err error) error {
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	if isAuthFailure(err) {
+		return err
+	}
+	a.complete = false
+	return nil
 }
 
 func (a *facetAccumulator) add(n cutting_garden_plugins.Node) {
@@ -235,8 +248,10 @@ func (a *facetAccumulator) add(n cutting_garden_plugins.Node) {
 func (a *facetAccumulator) countTop(pf *parsedFile, ns []*hnode, now time.Time) {
 	for _, n := range ns {
 		before := a.matched
-		eachHeadline([]*hnode{n}, func(d *hnode) { a.add(headlineNode(pf, d, now)) })
-		a.attribute(headlineNode(pf, n, now), a.matched-before)
+		head := headlineNode(pf, n, now)
+		a.add(head)
+		eachHeadline(n.children, func(d *hnode) { a.add(headlineNode(pf, d, now)) })
+		a.attribute(head, a.matched-before)
 	}
 }
 

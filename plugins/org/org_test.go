@@ -215,7 +215,10 @@ func TestRelativeNodeID(t *testing.T) {
 }
 
 func TestClassifyURI_Errors(t *testing.T) {
-	for _, raw := range []string{"org:///x.org", "org://test/notes.txt", "org://test/a.org?id=x&h=y", "org://test/?h=x"} {
+	for _, raw := range []string{
+		"org:///x.org", "org://test/notes.txt", "org://test/a.org?id=x&h=y", "org://test/?h=x",
+		"org://test/../../secret.org", "org://test/a/./b.org",
+	} {
 		if _, err := classifyURI(mustURL(t, raw)); err == nil {
 			t.Errorf("%q: want error", raw)
 		}
@@ -235,5 +238,32 @@ func TestDateBand(t *testing.T) {
 	}
 	if got := dateBand("2026-10-13", true, now); got != valueNone {
 		t.Errorf("done headline band = %s", got)
+	}
+
+	// Across a DST change the day count must not shift.
+	ny, err := time.LoadLocation("America/New_York")
+	if err != nil {
+		t.Skip("no tzdata:", err)
+	}
+	springForward := time.Date(2026, 3, 8, 10, 0, 0, 0, ny)
+	for day, want := range map[string]string{
+		"2026-03-09": bandThisWeek, "2026-03-07": bandOverdue, "2026-03-15": bandLater,
+	} {
+		if got := dateBand(day, false, springForward); got != want {
+			t.Errorf("DST: dateBand(%q) = %s, want %s", day, got, want)
+		}
+	}
+}
+
+func TestDuplicateIDStaysReachable(t *testing.T) {
+	srv := setup(t)
+	srv.Put("dup.org", []byte("* A\n:PROPERTIES:\n:ID: same\n:END:\n* B\n:PROPERTIES:\n:ID: same\n:END:\n"))
+	nodes, err := Plugin{}.ListRoots(context.Background(), mustURL(t, "org://test/dup.org"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"org://test/dup.org?id=same", "org://test/dup.org?h=B"}
+	if diff := cmp.Diff(want, uris(nodes)); diff != "" {
+		t.Errorf("(-want +got):\n%s", diff)
 	}
 }

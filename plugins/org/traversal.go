@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/url"
 	"path"
+	"slices"
 	"strings"
 	"time"
 
@@ -35,9 +36,15 @@ func resolve(u *url.URL) (target, error) {
 	return target{acct: a, client: c, ref: ref}, nil
 }
 
-// file loads the target's file (for a file or headline ref).
+// file loads the target's file (for a file or headline ref). A Depth-0
+// PROPFIND fetches the current ETag first, so an unchanged file is served
+// from the parse cache without a GET (D9).
 func (t target) file(ctx context.Context) (*parsedFile, error) {
-	return loadFile(ctx, t.client, t.acct, t.ref.path, "")
+	etag := ""
+	if entries, err := t.client.propfind(ctx, t.ref.path, "0"); err == nil && len(entries) > 0 {
+		etag = entries[0].etag
+	}
+	return loadFile(ctx, t.client, t.acct, t.ref.path, etag)
 }
 
 // headline resolves the target's headline; a stale or unknown reference
@@ -110,6 +117,7 @@ func (t target) listFolder(ctx context.Context) ([]davEntry, error) {
 			out = append(out, e)
 		}
 	}
+	slices.SortFunc(out, func(a, b davEntry) int { return strings.Compare(a.rel, b.rel) })
 	return out, nil
 }
 
