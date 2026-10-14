@@ -119,7 +119,7 @@ type msResponse struct {
 
 // propfind lists rel (a folder ending in "/", or a file) at depth "0" or
 // "1". The entry for rel itself is included.
-func (c *davClient) propfind(ctx context.Context, rel, depth string) ([]davEntry, error) {
+func (c *davClient) propfind(ctx context.Context, rel, depth string) (out []davEntry, err error) {
 	resp, err := c.do(ctx, "PROPFIND", rel, http.Header{
 		"Depth":        {depth},
 		"Content-Type": {`application/xml; charset="utf-8"`},
@@ -127,7 +127,7 @@ func (c *davClient) propfind(ctx context.Context, rel, depth string) ([]davEntry
 	if err != nil {
 		return nil, errors.Wrapf(err, "org plugin: PROPFIND %s", rel)
 	}
-	defer resp.Body.Close()
+	defer errors.DeferredCloser(&err, resp.Body)
 	if resp.StatusCode != http.StatusMultiStatus {
 		return nil, statusError("PROPFIND", rel, resp)
 	}
@@ -138,7 +138,6 @@ func (c *davClient) propfind(ctx context.Context, rel, depth string) ([]davEntry
 		return nil, errors.Wrapf(err, "org plugin: PROPFIND %s: bad multistatus", rel)
 	}
 
-	var out []davEntry
 	for _, r := range ms.Responses {
 		entry, ok := c.entryFor(r)
 		if ok {
@@ -176,16 +175,16 @@ func (c *davClient) entryFor(r msResponse) (davEntry, bool) {
 }
 
 // get fetches a file's bytes and ETag.
-func (c *davClient) get(ctx context.Context, rel string) ([]byte, string, error) {
+func (c *davClient) get(ctx context.Context, rel string) (body []byte, etag string, err error) {
 	resp, err := c.do(ctx, http.MethodGet, rel, nil, nil)
 	if err != nil {
 		return nil, "", errors.Wrapf(err, "org plugin: GET %s", rel)
 	}
-	defer resp.Body.Close()
+	defer errors.DeferredCloser(&err, resp.Body)
 	if resp.StatusCode != http.StatusOK {
 		return nil, "", statusError("GET", rel, resp)
 	}
-	body, err := io.ReadAll(resp.Body)
+	body, err = io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, "", errors.Wrapf(err, "org plugin: GET %s: truncated body", rel)
 	}
