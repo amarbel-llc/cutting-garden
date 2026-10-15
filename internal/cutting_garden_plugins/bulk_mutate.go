@@ -54,6 +54,24 @@ type BulkOp struct {
 	// Type is a NodeType.Tag, meaningful only for Kind == BulkCreate
 	// (identical to NodeMutator.CreateNode's typ parameter).
 	Type string
+
+	// TempID marks a SERVER-ASSIGNED create (cutting-garden#315): instead of
+	// naming the node by URI, the op creates a child of the container In (or
+	// InRef) through ContainerCreator.CreateChild, and later ops refer to the
+	// created node by this id (Ref / InRef). Opaque, unique within the
+	// request, and set only on a BulkCreate whose URI is nil. The created URI
+	// is reported in BulkResult.Created.
+	TempID string
+	// In is a TempID create's container. Exactly one of In or InRef is set
+	// on a TempID create, and neither on any other op.
+	In *url.URL
+	// InRef names an EARLIER TempID create whose node is this TempID
+	// create's container.
+	InRef string
+	// Ref targets the node an EARLIER TempID create made, in place of URI —
+	// a put, patch, or delete of a node the same request created. Exactly
+	// one of URI, Ref, or TempID addresses each op.
+	Ref string
 }
 
 // BulkSweep selects a node set by predicate — a container Root plus a
@@ -98,7 +116,16 @@ type BulkRequest struct {
 // result.
 type BulkFailure struct {
 	URI *url.URL
+	// Ref is the op's temp id — the one it defined (a TempID create) or
+	// referenced (Ref) — when the op had no URI to report.
+	Ref string
 	Err string
+}
+
+// BulkCreated pairs a TempID create with the URI the source chose.
+type BulkCreated struct {
+	TempID string
+	URI    *url.URL
 }
 
 // BulkResult is a BulkMutate call's outcome; its shape differs by
@@ -121,6 +148,9 @@ type BulkResult struct {
 	// a diagnostic. In best-effort mode AppliedNodes + PatchedNothing +
 	// Failed together are exactly the request's targeted node set.
 	Failed []BulkFailure
+	// Created lists every TempID create that succeeded, in request order —
+	// its node URI also appears in AppliedNodes.
+	Created []BulkCreated
 	// Atomic reports whether the call committed atomically — true ONLY on
 	// an atomic-mode success; false in every best-effort result and the
 	// zero value.
@@ -217,19 +247,7 @@ func (r BulkRequest) Validate() error {
 	}
 
 	if hasOps {
-		for i, op := range r.Ops {
-			if op.URI == nil {
-				return errors.BadRequestf("bulk_mutate: ops[%d] has no uri", i)
-			}
-			if !op.Kind.valid() {
-				return errors.BadRequestf(
-					"bulk_mutate: ops[%d] kind %q is not"+
-						" create/put/patch/delete", i, op.Kind,
-				)
-			}
-		}
-
-		return nil
+		return r.validateOps()
 	}
 
 	if r.Sweep.Root == nil {
@@ -246,6 +264,88 @@ func (r BulkRequest) Validate() error {
 			"bulk_mutate: sweep.op.kind create is invalid — a sweep targets" +
 				" existing matched nodes",
 		)
+	}
+	if op := r.Sweep.Op; op.TempID != "" || op.Ref != "" ||
+		op.In != nil || op.InRef != "" {
+		return errors.BadRequestf(
+			"bulk_mutate: sweep.op cannot carry temp ids — a sweep targets" +
+				" existing matched nodes",
+		)
+	}
+
+	return nil
+}
+
+// validateOps checks each op's kind and addressing, including the temp-id
+// rules (cutting-garden#315): a temp id is defined once, only by a
+// server-assigned create, and referenced only by a LATER op. Atomic requests
+// with temp ids are refused until a plugin can resolve them inside its
+// transaction.
+func (r BulkRequest) validateOps() error {
+	defined := make(map[string]bool)
+
+	for i, op := range r.Ops {
+		if !op.Kind.valid() {
+			return errors.BadRequestf(
+				"bulk_mutate: ops[%d] kind %q is not"+
+					" create/put/patch/delete", i, op.Kind,
+			)
+		}
+
+		addresses := 0
+		for _, set := range []bool{op.URI != nil, op.Ref != "", op.TempID != ""} {
+			if set {
+				addresses++
+			}
+		}
+		if addresses != 1 {
+			return errors.BadRequestf(
+				"bulk_mutate: ops[%d] must be addressed by exactly one of"+
+					" uri, ref, or temp id", i,
+			)
+		}
+
+		for _, ref := range []string{op.Ref, op.InRef} {
+			if ref != "" && !defined[ref] {
+				return errors.BadRequestf(
+					"bulk_mutate: ops[%d] refers to temp id %q, which no"+
+						" earlier create defines", i, ref,
+				)
+			}
+		}
+
+		if op.TempID == "" {
+			if op.In != nil || op.InRef != "" {
+				return errors.BadRequestf(
+					"bulk_mutate: ops[%d] names a container but is not a"+
+						" temp-id create", i,
+				)
+			}
+			continue
+		}
+
+		switch {
+		case op.Kind != BulkCreate:
+			return errors.BadRequestf(
+				"bulk_mutate: ops[%d] defines temp id %q but is a %s, not"+
+					" a create", i, op.TempID, op.Kind,
+			)
+		case (op.In != nil) == (op.InRef != ""):
+			return errors.BadRequestf(
+				"bulk_mutate: ops[%d] temp-id create needs exactly one"+
+					" container (in)", i,
+			)
+		case defined[op.TempID]:
+			return errors.BadRequestf(
+				"bulk_mutate: ops[%d] redefines temp id %q", i, op.TempID,
+			)
+		case r.Atomicity == BulkAtomic:
+			return errors.BadRequestf(
+				"bulk_mutate: temp-id creates are not supported in an" +
+					" atomic request yet",
+			)
+		}
+		defined[op.TempID] = true
 	}
 
 	return nil

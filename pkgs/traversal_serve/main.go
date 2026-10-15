@@ -4,6 +4,9 @@ package traversal_serve
 
 import internal "code.linenisgreat.com/cutting-garden/internal/traversal_serve"
 
+// BulkCreatedView is the wire form of one BulkCreated.
+type BulkCreatedView = internal.BulkCreatedView
+
 // BulkFailureView is the wire form of one BulkFailure.
 type BulkFailureView = internal.BulkFailureView
 
@@ -13,14 +16,18 @@ type BulkFailureView = internal.BulkFailureView
 type BulkMutateParams = internal.BulkMutateParams
 
 // BulkMutateResult is the node.bulk_mutate response. applied /
-// patched_nothing / failed are omitted-as-empty (standard JSON array
-// encoding); atomic is true ONLY on an atomic-mode success.
+// patched_nothing / failed / created are omitted-as-empty (standard JSON
+// array encoding); atomic is true ONLY on an atomic-mode success.
 type BulkMutateResult = internal.BulkMutateResult
 
 // BulkOpView is the wire form of one BulkOp (RFC 0017 §Wire binding).
 // body_base64 is standard base64, present for create/put/patch and absent
 // for delete; type is present only for kind create; uri is absent inside a
 // sweep.op (the plugin fills each match).
+//
+// temp_id / in / in_ref / ref carry the temp-id addressing
+// (cutting-garden#315, BulkOp.TempID et al.). They are sent only to a peer
+// advertising CapBulkTempIDs.
 type BulkOpView = internal.BulkOpView
 
 // BulkSweepView is the wire form of BulkSweep: a Root, an RFC 0012 §6
@@ -585,6 +592,15 @@ const CapBulkAtomic = internal.CapBulkAtomic
 // (RFC 0017), serving best-effort bulk mutation. Additive under
 // RFC 0013 §Compatibility.
 const CapBulkMutate = internal.CapBulkMutate
+
+// CapBulkTempIDs is the OPTIONAL additive token a plugin advertises when
+// its node.bulk_mutate honors temp-id ops (temp_id / in / in_ref / ref,
+// cutting-garden#315): server-assigned creates whose URIs later ops
+// address. The host sends temp-id ops only to a peer advertising it. The
+// Go server advertises it for a BulkMutator that is also a
+// ContainerCreator — cutting_garden_plugins.ApplyBulkOp resolves the
+// temp ids, so a plugin dispatching through it honors them.
+const CapBulkTempIDs = internal.CapBulkTempIDs
 
 // CapContainerCreate gates node.create_child — server-assigned
 // identity creation (ContainerCreator, cutting-garden#143). An

@@ -178,35 +178,9 @@ func ResolveNodeMutatorPlugin(
 	return u, mutator, nil
 }
 
-// ResolveContainerCreatorPlugin parses uriStr as a URL and returns the
-// ContainerCreator registered for its scheme — the server-assigned-identity
-// creation capability (cutting-garden#143) the mcp create_node tool
-// dispatches to for types declared ServerAssignedIdentity. Resolution
-// mirrors ResolveNodeMutatorPlugin.
-func ResolveContainerCreatorPlugin(
-	uriStr string,
-) (*url.URL, cutting_garden_plugins.ContainerCreator, error) {
-	u, err := url.Parse(uriStr)
-	if err != nil {
-		return nil, nil, errors.Wrapf(err, "parse uri %q", uriStr)
-	}
-	plugin, err := resolvePluginForScheme(u.Scheme)
-	if err != nil {
-		return nil, nil, err
-	}
-	creator, ok := plugin.(cutting_garden_plugins.ContainerCreator)
-	if !ok {
-		return nil, nil, errors.ErrorWithStackf(
-			"scheme %q does not support container-create (its plugin "+
-				"assigns no server-side identities)", u.Scheme,
-		)
-	}
-	return u, creator, nil
-}
-
 // ResolveBulkMutatorPlugin parses uriStr as a URL and returns the
 // BulkMutator registered for its scheme — the multi-node write capability
-// the mcp bulk_mutate tool consumes (RFC 0017). Resolution mirrors
+// the mcp mutate_nodes tool sends a batch to (RFC 0017). Resolution mirrors
 // ResolveNodeMutatorPlugin; errors if the plugin implements no BulkMutator.
 func ResolveBulkMutatorPlugin(
 	uriStr string,

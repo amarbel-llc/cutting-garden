@@ -4,9 +4,9 @@
 // script execs `cutting-garden hook`, which routes stdin/stdout through
 // Run.
 //
-// cutting-garden's MCP server (internal/mcp) now exposes the CUD write
-// tools (create_node/put_node/patch_node/delete_node, FDR 0020). Run classifies a
-// PreToolUse event for one of them through mcp_tool_perms — the SAME
+// cutting-garden's MCP server (internal/mcp) exposes the mutate_nodes write
+// tool (FDR 0020, cutting-garden#315). Run classifies a PreToolUse event
+// for a tool through mcp_tool_perms — the SAME
 // classifier that sets the tools' MCP annotations, so the hint a client
 // sees and the decision here cannot drift (the #102 parity ask): a
 // destructive tool emits `ask`, a read tool `allow`, and an unrecognized

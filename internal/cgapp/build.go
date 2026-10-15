@@ -69,8 +69,8 @@ func Build() command.Utility {
 	utility.AddCmd("__write-blob", blob_writer.New())
 	// Hidden plumbing: the clown-plugin PreToolUse hook sink. The plugin's
 	// hooks/handler execs `cutting-garden hook` per hook event; it routes
-	// stdin/stdout through internal/claude_hooks, which gates the CUD write
-	// tools (create/update/delete_node) as `ask` (#102, FDR 0020).
+	// stdin/stdout through internal/claude_hooks, which gates the
+	// mutate_nodes write tool as `ask` (#102, FDR 0020).
 	utility.AddCmd("hook", hook.New())
 	return utility
 }

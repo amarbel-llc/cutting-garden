@@ -85,9 +85,9 @@ function org_mcp_query_title_regex { # @test
 # under a WebDAV lock; reading the node again shows the durable id.
 function org_mcp_quote_mints_a_durable_id { # @test
   mcp_drive org://test/ \
-    "$(tools_call 3 patch_node '{"uri":"org://test/_inbox.org?h=Call+the+plumber+about+the+leak","body":"{\"quote\": true}"}')"
-  run mcp_result_text "$output" 3
-  assert_output --partial "(applied: quote)"
+    "$(tools_call 3 mutate_nodes '{"groups":[{"anchor":"org://test/","ops":[{"kind":"patch","id":"_inbox.org?h=Call+the+plumber+about+the+leak","body":"{\"quote\": true}"}]}]}')"
+  run jq -r '.groups[0].applied | join(",")' <<<"$(mcp_result_text "$output" 3)"
+  assert_output "_inbox.org?h=Call+the+plumber+about+the+leak"
 
   mcp_drive org://test/ "$(tools_call 4 read_node '{"uri":"org://test/_inbox.org?h=Call+the+plumber+about+the+leak"}')"
   run jq -r '.fields.id_synthetic, (.fields.own_tags | join(" ")), (.fields.id | test("^[0-9a-f-]{36}$"))' \
@@ -104,9 +104,9 @@ function org_mcp_quote_mints_a_durable_id { # @test
 # mints the durable :ID: (the write is read back before it is reported).
 function org_mcp_edit_state_and_schedule { # @test
   mcp_drive org://test/ \
-    "$(tools_call 3 patch_node '{"uri":"org://test/_inbox.org?h=Call+the+plumber+about+the+leak","body":"{\"state\": \"DONE\", \"scheduled\": \"2026-10-20\"}"}')"
-  run mcp_result_text "$output" 3
-  assert_output --partial "(applied: state, scheduled)"
+    "$(tools_call 3 mutate_nodes '{"groups":[{"anchor":"org://test/","ops":[{"kind":"patch","id":"_inbox.org?h=Call+the+plumber+about+the+leak","body":"{\"state\": \"DONE\", \"scheduled\": \"2026-10-20\"}"}]}]}')"
+  run jq -r '.groups[0].applied | join(",")' <<<"$(mcp_result_text "$output" 3)"
+  assert_output "_inbox.org?h=Call+the+plumber+about+the+leak"
 
   mcp_drive org://test/ "$(tools_call 4 read_node '{"uri":"org://test/_inbox.org?h=Call+the+plumber+about+the+leak"}')"
   run jq -r '.fields.state, .fields.scheduled, (.fields.closed | test("^[0-9]{4}-")), .fields.id_synthetic' \

@@ -37,11 +37,11 @@
 //     matches, when the plugin computes that attribution — RFC 0012 §13,
 //     cutting-garden#170), describe_node_types (schema discovery,
 //     including declared facet dimensions and listing fields). Write
-//     (FDR 0020, plugins implementing NodeMutator): create_node /
-//     put_node / patch_node / delete_node, advertised only when a
-//     configured root supports mutation and annotated destructive so a
-//     client gates them (and the clown PreToolUse hook classifies them
-//     `ask`, #102).
+//     (FDR 0020, cutting-garden#315): mutate_nodes, one batch of creates,
+//     puts, patches, and deletes addressed by organize's node ids,
+//     advertised only when a configured root supports mutation and
+//     annotated destructive so a client gates it (and the clown
+//     PreToolUse hook classifies it `ask`, #102).
 //
 // Discovery (resources) is read-only and captures nothing; the write tools
 // mutate live nodes directly, with no blob store or receipt. (One
@@ -98,7 +98,7 @@ const instructions = "Resources are the capturable trees of cutting-garden " +
 	"bare=true to opt out of enrichment back to the cheap " +
 	"{uri,name,type,container,mimeType} shape), read_node reads one " +
 	"node, and describe_node_types reports each scheme's node types and " +
-	"what body create_node accepts, including any declared facet " +
+	"what body each type accepts on write, including any declared facet " +
 	"dimensions and listing fields. Call read_facets on a container " +
 	"FIRST, before enumerating it: it summarizes children by their facet " +
 	"dimensions (counts per value, e.g. status or read/unread) without " +
@@ -118,10 +118,11 @@ const instructions = "Resources are the capturable trees of cutting-garden " +
 	"how many matches, so you descend into only those instead of " +
 	"guessing across the whole fan-out. byContainer is absent when the " +
 	"plugin has no per-container attribution to offer for that node — " +
-	"an honest omission, not a bug. The create_node / put_node / " +
-	"patch_node / delete_node tools mutate a node at its URI (e.g. " +
-	"create a calendar event); they are destructive and require user " +
-	"approval."
+	"an honest omission, not a bug. The mutate_nodes tool is the one " +
+	"write tool: it creates, replaces, patches, and deletes nodes in a " +
+	"batch (a single write is a one-op batch), each addressed by the id " +
+	"organize prints for it under an anchor URI; it is destructive and " +
+	"requires user approval."
 
 // MCP is the value registered for the `mcp` subcommand. Endpoints come from
 // the config, or from optional positional args that override it;
@@ -190,8 +191,8 @@ func (*MCP) GetDescription() command.Description {
 			"capture share. Reading a leaf object returns its parsed fields " +
 			"as JSON, plus a content-addressed madder blob link to its " +
 			"verbatim bytes when a store is configured. It also exposes " +
-			"create_node/put_node/patch_node/delete_node write tools (FDR 0020) for " +
-			"plugins that support mutation (caldav); these are annotated " +
+			"the mutate_nodes write tool (FDR 0020) for plugins that support " +
+			"mutation (caldav, jira, fastmail, org); it is annotated " +
 			"destructive and gated by the clown PreToolUse hook. Launched by " +
 			"an MCP client, not run interactively; runs until the client " +
 			"disconnects or it is interrupted.",

@@ -248,9 +248,16 @@ func TestRelativeNodeID(t *testing.T) {
 		if !ok || got != c.want {
 			t.Errorf("RelativeNodeID(%q, %q) = %q, %v", c.node, c.anchor, got, ok)
 		}
+		// ResolveNodeID inverts it (cutting-garden#315).
+		if resolved, ok := (Plugin{}).ResolveNodeID(c.want, c.anchor); !ok || resolved != c.node {
+			t.Errorf("ResolveNodeID(%q, %q) = %q, %v; want %q", c.want, c.anchor, resolved, ok, c.node)
+		}
 	}
 	if _, ok := (Plugin{}).RelativeNodeID("org://test/_inbox.org", "org://test/"); ok {
 		t.Error("files defer to the default id")
+	}
+	if got, ok := (Plugin{}).ResolveNodeID("_inbox.org", "org://test/"); ok {
+		t.Errorf("a file id resolved through the plugin to %q; it takes the default", got)
 	}
 }
 

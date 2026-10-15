@@ -55,3 +55,16 @@ tools_call() {
 mcp_call() {
   mcp_drive "$CALDAV_SOURCE" "$(tools_call 3 "$1" "$2")"
 }
+
+# caldav_cal_uri echoes the seeded calendar's URI — the anchor mutate_nodes
+# ops address their objects under (`e2e.ics`).
+caldav_cal_uri() {
+  echo "${CALDAV_SOURCE%/dav/}/dav/cal/"
+}
+
+# mcp_mutate OPS_JSON drives ONE mutate_nodes call (response id 3) with a
+# single group anchored at the seeded calendar.
+mcp_mutate() {
+  mcp_call mutate_nodes "$(jq -nc --arg a "$(caldav_cal_uri)" --argjson ops "$1" \
+    '{groups:[{anchor:$a,ops:$ops}]}')"
+}

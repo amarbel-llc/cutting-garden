@@ -1,9 +1,10 @@
 #! /usr/bin/env bats
 
-# The CUD write-tools end-to-end lane (FDR 0020): drive `cutting-garden mcp`
-# over its stdio JSON-RPC transport against the caldav testserver and exercise
-# create_node -> put_node -> patch_node -> delete_node end to end, plus the #102 clown
-# PreToolUse hook gating those tools as `ask`. This is the e2e exercise the
+# The write-tool end-to-end lane (FDR 0020, cutting-garden#315): drive
+# `cutting-garden mcp` over its stdio JSON-RPC transport against the caldav
+# testserver and exercise mutate_nodes' create -> put -> patch -> delete end
+# to end, a temp-id create addressed by a later op, plus the #102 clown
+# PreToolUse hook gating the tool as `ask`. This is the e2e exercise the
 # per-layer Go unit tests (caldav mutate, mcp tools, claude_hooks) do not
 # cover in one path.
 #
@@ -29,22 +30,21 @@ teardown() {
 # bats file_tags=mcp
 
 # tools/list advertises the four read tools (describe/list/read/read_facets)
-# and the write tools — the four CUD verbs (create/put/patch/delete) plus
-# bulk_mutate (RFC 0017, advertised because caldav implements BulkMutator) —
-# with the right destructive vs read-only annotations (the hint a client
-# gates on, mirrored by the #102 hook).
+# and the one write tool, mutate_nodes (cutting-garden#315), with the right
+# destructive vs read-only annotations (the hint a client gates on, mirrored
+# by the #102 hook).
 function mcp_advertises_tools { # @test
   mcp_drive "$CALDAV_SOURCE" '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
 
   local names
   names="$(echo "$output" | jq -r 'select(.id==2) | (.result.tools | map(.name) | sort | join(","))')"
-  assert_equal "$names" "bulk_mutate,create_node,delete_node,describe_node_types,list_nodes,patch_node,put_node,read_facets,read_node"
+  assert_equal "$names" "describe_node_types,list_nodes,mutate_nodes,read_facets,read_node"
 
-  # The write tools carry destructiveHint=true; the read tools don't.
+  # The write tool carries destructiveHint=true; the read tools don't.
   local destructive
   destructive="$(echo "$output" | jq -r 'select(.id==2) |
     ([.result.tools[] | select(.annotations.destructiveHint==true) | .name] | sort | join(","))')"
-  assert_equal "$destructive" "bulk_mutate,create_node,delete_node,patch_node,put_node"
+  assert_equal "$destructive" "mutate_nodes"
 
   local readonly_tools
   readonly_tools="$(echo "$output" | jq -r 'select(.id==2) |
@@ -203,17 +203,15 @@ function mcp_list_nodes_filter_retrieves_matching_enriched_nodes { # @test
 }
 
 # An enriched list_nodes entry carries the node's presented tag set (design
-# G12, native tags slice 2): seed a VTODO with CATEGORIES through create_node,
+# G12, native tags slice 2): seed a VTODO with CATEGORIES through mutate_nodes,
 # then list its calendar — the entry gains a top-level `tags` array with the
 # categories in the resolved interpreter's SortKey order (naive here → lexical:
 # errand before work despite the stored work,errand), while the untagged
 # task1.ics sibling omits the key entirely.
 function mcp_list_nodes_enriched_entry_carries_tags { # @test
-  local obj
-  obj="$(caldav_object_uri tagged.ics)"
-  mcp_call create_node "$(jq -nc --arg u "$obj" \
+  mcp_mutate "$(jq -nc \
     --arg b "$(printf 'BEGIN:VCALENDAR\nVERSION:2.0\nBEGIN:VTODO\nUID:tagged\nSUMMARY:Tagged task\nCATEGORIES:work,errand\nEND:VTODO\nEND:VCALENDAR\n')" \
-    '{uri:$u,body:$b,type:"caldav-object-vtodo-v1"}')"
+    '[{kind:"create",id:"tagged.ics",body:$b,type:"caldav-object-vtodo-v1"}]')"
   assert_equal "$(mcp_is_error "$output" 3)" "false"
 
   mcp_drive "$CALDAV_SOURCE" "$(tools_call 3 list_nodes \
@@ -384,66 +382,86 @@ function mcp_emits_blob_link_with_writable_store { # @test
     fail "expected a madder://blobs raw-bytes link with a writable store: $output"
 }
 
+# applied_ids echoes the group's applied ids, comma-joined, from a
+# mutate_nodes result.
+applied_ids() {
+  mcp_result_text "$output" 3 | jq -r '.groups[0].applied | join(",")'
+}
+
 # create -> put -> patch -> delete round-trips one VEVENT through the server,
-# each mutation a separate invocation against the persistent testserver.
+# each mutation a separate invocation against the persistent testserver, the
+# object addressed by its id under the calendar anchor.
 function mcp_cud_round_trips { # @test
-  local obj v1 v2
-  obj="$(caldav_object_uri e2e.ics)"
+  local v1 v2
   v1="$(printf 'BEGIN:VCALENDAR\nVERSION:2.0\nBEGIN:VEVENT\nUID:e2e\nSUMMARY:E2E v1\nEND:VEVENT\nEND:VCALENDAR\n')"
   v2="$(printf 'BEGIN:VCALENDAR\nVERSION:2.0\nBEGIN:VEVENT\nUID:e2e\nSUMMARY:E2E v2\nEND:VEVENT\nEND:VCALENDAR\n')"
 
-  mcp_call create_node "$(jq -nc --arg u "$obj" --arg b "$v1" '{uri:$u,body:$b,type:"caldav-object-vevent-v1"}')"
+  mcp_mutate "$(jq -nc --arg b "$v1" '[{kind:"create",id:"e2e.ics",body:$b,type:"caldav-object-vevent-v1"}]')"
   assert_equal "$(mcp_is_error "$output" 3)" "false"
-  [[ "$(mcp_result_text "$output" 3)" == created* ]] || fail "create: $(mcp_result_text "$output" 3)"
+  assert_equal "$(applied_ids)" "e2e.ics"
 
-  mcp_call put_node "$(jq -nc --arg u "$obj" --arg b "$v2" '{uri:$u,body:$b}')"
+  mcp_mutate "$(jq -nc --arg b "$v2" '[{kind:"put",id:"e2e.ics",body:$b}]')"
   assert_equal "$(mcp_is_error "$output" 3)" "false"
-  [[ "$(mcp_result_text "$output" 3)" == put* ]] || fail "put: $(mcp_result_text "$output" 3)"
+  assert_equal "$(applied_ids)" "e2e.ics"
 
-  mcp_call patch_node "$(jq -nc --arg u "$obj" '{uri:$u,body:"{\"component\":\"VEVENT\",\"event\":{\"summary\":\"E2E patched\"}}"}')"
+  mcp_mutate '[{"kind":"patch","id":"e2e.ics","body":"{\"component\":\"VEVENT\",\"event\":{\"summary\":\"E2E patched\"}}"}]'
   assert_equal "$(mcp_is_error "$output" 3)" "false"
-  [[ "$(mcp_result_text "$output" 3)" == patched* ]] || fail "patch: $(mcp_result_text "$output" 3)"
+  assert_equal "$(applied_ids)" "e2e.ics"
 
-  mcp_call delete_node "$(jq -nc --arg u "$obj" '{uri:$u}')"
+  mcp_mutate '[{"kind":"delete","id":"e2e.ics"}]'
   assert_equal "$(mcp_is_error "$output" 3)" "false"
-  [[ "$(mcp_result_text "$output" 3)" == deleted* ]] || fail "delete: $(mcp_result_text "$output" 3)"
+  assert_equal "$(applied_ids)" "e2e.ics"
 }
 
-# create is strict: a second create on the same object is an error result,
-# not a silent overwrite.
-function mcp_create_is_strict { # @test
-  local obj args
-  obj="$(caldav_object_uri dup.ics)"
-  args="$(jq -nc --arg u "$obj" \
-    --arg b "$(printf 'BEGIN:VCALENDAR\nBEGIN:VEVENT\nUID:dup\nSUMMARY:dup\nEND:VEVENT\nEND:VCALENDAR\n')" \
-    '{uri:$u,body:$b,type:"caldav-object-vevent-v1"}')"
-
-  mcp_call create_node "$args"
+# A temp-id create lets the source name the object, and a later op in the
+# SAME call addresses it by the temp id (cutting-garden#315): the result maps
+# the temp id to the created URI, and both ops applied to that object.
+function mcp_temp_id_create_then_patch { # @test
+  mcp_mutate "$(jq -nc \
+    --arg b "$(printf 'BEGIN:VCALENDAR\nVERSION:2.0\nBEGIN:VTODO\nUID:minted\nSUMMARY:fresh\nEND:VTODO\nEND:VCALENDAR\n')" \
+    '[{kind:"create",id:"+t",body:$b,type:"caldav-object-vtodo-v1"},
+      {kind:"patch",id:"+t",body:"{\"component\":\"VTODO\",\"task\":{\"summary\":\"patched\"}}"}]')"
   assert_equal "$(mcp_is_error "$output" 3)" "false"
 
-  mcp_call create_node "$args"
+  local text created
+  text="$(mcp_result_text "$output" 3)"
+  created="$(echo "$text" | jq -r '.groups[0].created[0] | select(.temp_id=="+t") | .id')"
+  [[ -n $created ]] || fail "no created entry for +t: $text"
+  assert_equal "$(applied_ids)" "$created,$created"
+  assert_equal "$(echo "$text" | jq -r '.groups[0].failed | length')" "0"
+}
+
+# create is strict: a second create on the same object applies nothing, so
+# the call is an error result, not a silent overwrite.
+function mcp_create_is_strict { # @test
+  local ops
+  ops="$(jq -nc \
+    --arg b "$(printf 'BEGIN:VCALENDAR\nBEGIN:VEVENT\nUID:dup\nSUMMARY:dup\nEND:VEVENT\nEND:VCALENDAR\n')" \
+    '[{kind:"create",id:"dup.ics",body:$b,type:"caldav-object-vevent-v1"}]')"
+
+  mcp_mutate "$ops"
+  assert_equal "$(mcp_is_error "$output" 3)" "false"
+
+  mcp_mutate "$ops"
   assert_equal "$(mcp_is_error "$output" 3)" "true"
 }
 
 # put on a missing object is strict too: an error result, not a create.
 function mcp_put_missing_errors { # @test
-  local obj args
-  obj="$(caldav_object_uri ghost.ics)"
-  args="$(jq -nc --arg u "$obj" \
+  mcp_mutate "$(jq -nc \
     --arg b "$(printf 'BEGIN:VCALENDAR\nBEGIN:VTODO\nUID:ghost\nSUMMARY:ghost\nEND:VTODO\nEND:VCALENDAR\n')" \
-    '{uri:$u,body:$b}')"
-
-  mcp_call put_node "$args"
+    '[{kind:"put",id:"ghost.ics",body:$b}]')"
   assert_equal "$(mcp_is_error "$output" 3)" "true"
 }
 
-# The #102 PreToolUse hook (`cutting-garden hook`) classifies a CUD tool as
-# `ask`, exercising the binary's hook subcommand end to end (not just the Go
-# Run unit). Uses the prefix the hook assumes for cutting-garden's MCP tools.
-function hook_gates_cud_tool_ask { # @test
+# The #102 PreToolUse hook (`cutting-garden hook`) classifies the write tool
+# as `ask`, exercising the binary's hook subcommand end to end (not just the
+# Go Run unit). Uses the prefix the hook assumes for cutting-garden's MCP
+# tools.
+function hook_gates_write_tool_ask { # @test
   local eventfile
   eventfile="$BATS_TEST_TMPDIR/hook_event.json"
-  echo '{"hook_event_name":"PreToolUse","tool_name":"mcp__plugin_cutting-garden_cutting-garden__create_node"}' >"$eventfile"
+  echo '{"hook_event_name":"PreToolUse","tool_name":"mcp__plugin_cutting-garden_cutting-garden__mutate_nodes"}' >"$eventfile"
 
   run --separate-stderr timeout --preserve-status 5s "${CG_BIN}" hook <"$eventfile"
   assert_success

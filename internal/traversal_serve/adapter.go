@@ -1174,6 +1174,19 @@ func (w *WirePlugin) BulkMutate(
 		return cutting_garden_plugins.BulkResult{}, err
 	}
 
+	// A peer that never heard of temp ids would see ops with no uri; refuse
+	// here rather than let it guess (cutting-garden#315).
+	if usesTempIDs(req) {
+		if _, advertised, err := w.liveSessionWithCap(CapBulkTempIDs); err != nil {
+			return cutting_garden_plugins.BulkResult{}, err
+		} else if !advertised {
+			return cutting_garden_plugins.BulkResult{}, errors.BadRequestf(
+				"bulk_mutate: plugin %q does not support temp-id creates",
+				w.spec.Name,
+			)
+		}
+	}
+
 	var result BulkMutateResult
 	if err := w.call(
 		ctx, sess, MethodNodeBulkMutate,
@@ -1188,6 +1201,15 @@ func (w *WirePlugin) BulkMutate(
 	}
 
 	return result.ToBulkResult()
+}
+
+func usesTempIDs(req cutting_garden_plugins.BulkRequest) bool {
+	for _, op := range req.Ops {
+		if op.TempID != "" || op.Ref != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // BulkAtomicCapable reports whether the wire peer advertised bulk-atomic in

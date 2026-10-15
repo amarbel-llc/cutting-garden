@@ -40,6 +40,22 @@ promotion-criteria: |
 > replace, identical semantics, renamed) and `PatchNode` (partial-field
 > update). The MCP tools `update_node` → `put_node` and new `patch_node`
 > reflect this. See the "Settled" section for the rationale.
+>
+> **2026-10-15 amendment (cutting-garden#315):** the four singular MCP
+> tools and `bulk_mutate` are replaced by ONE tool, `mutate_nodes`, so
+> agents batch their writes (a single write is a one-op batch). A call is a
+> list of groups, each an `anchor` URI plus `ops` (or a `sweep`); exactly
+> one group is accepted for now, the shape leaving room for batches across
+> plugins. Ops address nodes by the id organize prints under the anchor —
+> resolved back to a URI by `node_view.NodeURIFor`, with the new optional
+> `NodeIDResolver` capability for plugins whose ids are not host+path
+> (fastmail threads, org headlines) — or by a full URI under the anchor. A
+> create may name a temp id (`+name`) for a source-named node that later
+> ops address (RFC 0017 §Temp-id creates). The batch goes to the plugin's
+> `BulkMutator`, else through `BestEffortBulkMutate` over its `NodeMutator`.
+> The result lists `applied`, `patched_nothing`, `failed`, and `created`
+> per id, and is a tool error when nothing applied (the #180 lesson). The
+> Layer 2 table and examples below describe the retired tools.
 
 ## Problem Statement
 

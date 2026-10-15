@@ -130,6 +130,14 @@ const (
 	// (caldav has no multi-object transaction), so every atomic request is
 	// still rejected today.
 	CapBulkAtomic = "bulk-atomic"
+	// CapBulkTempIDs is the OPTIONAL additive token a plugin advertises when
+	// its node.bulk_mutate honors temp-id ops (temp_id / in / in_ref / ref,
+	// cutting-garden#315): server-assigned creates whose URIs later ops
+	// address. The host sends temp-id ops only to a peer advertising it. The
+	// Go server advertises it for a BulkMutator that is also a
+	// ContainerCreator — cutting_garden_plugins.ApplyBulkOp resolves the
+	// temp ids, so a plugin dispatching through it honors them.
+	CapBulkTempIDs = "bulk-temp-ids"
 	// CapSearch gates nodes.search in substring mode, CapSearchRegex the
 	// additional regex mode (RFC 0016 §6); search-regex implies search.
 	CapSearch      = "search"
@@ -463,11 +471,19 @@ type NodeDeleteParams struct {
 // body_base64 is standard base64, present for create/put/patch and absent
 // for delete; type is present only for kind create; uri is absent inside a
 // sweep.op (the plugin fills each match).
+//
+// temp_id / in / in_ref / ref carry the temp-id addressing
+// (cutting-garden#315, BulkOp.TempID et al.). They are sent only to a peer
+// advertising CapBulkTempIDs.
 type BulkOpView struct {
 	Kind       string `json:"kind"`
 	URI        string `json:"uri,omitempty"`
 	BodyBase64 string `json:"body_base64,omitempty"`
 	Type       string `json:"type,omitempty"`
+	TempID     string `json:"temp_id,omitempty"`
+	In         string `json:"in,omitempty"`
+	InRef      string `json:"in_ref,omitempty"`
+	Ref        string `json:"ref,omitempty"`
 }
 
 // BulkSweepView is the wire form of BulkSweep: a Root, an RFC 0012 §6
@@ -490,25 +506,42 @@ type BulkMutateParams struct {
 // BulkFailureView is the wire form of one BulkFailure.
 type BulkFailureView struct {
 	URI string `json:"uri"`
+	Ref string `json:"ref,omitempty"`
 	Err string `json:"err"`
 }
 
+// BulkCreatedView is the wire form of one BulkCreated.
+type BulkCreatedView struct {
+	TempID string `json:"temp_id"`
+	URI    string `json:"uri"`
+}
+
 // BulkMutateResult is the node.bulk_mutate response. applied /
-// patched_nothing / failed are omitted-as-empty (standard JSON array
-// encoding); atomic is true ONLY on an atomic-mode success.
+// patched_nothing / failed / created are omitted-as-empty (standard JSON
+// array encoding); atomic is true ONLY on an atomic-mode success.
 type BulkMutateResult struct {
 	Applied        []string          `json:"applied,omitempty"`
 	PatchedNothing []string          `json:"patched_nothing,omitempty"`
 	Failed         []BulkFailureView `json:"failed,omitempty"`
+	Created        []BulkCreatedView `json:"created,omitempty"`
 	Atomic         bool              `json:"atomic,omitempty"`
 }
 
 // bulkOpViewFrom projects a domain BulkOp onto the wire. A nil URI (a
 // sweep.op template) stays absent; an empty Body (a delete) stays absent.
 func bulkOpViewFrom(op cutting_garden_plugins.BulkOp) BulkOpView {
-	view := BulkOpView{Kind: string(op.Kind), Type: op.Type}
+	view := BulkOpView{
+		Kind:   string(op.Kind),
+		Type:   op.Type,
+		TempID: op.TempID,
+		InRef:  op.InRef,
+		Ref:    op.Ref,
+	}
 	if op.URI != nil {
 		view.URI = op.URI.String()
+	}
+	if op.In != nil {
+		view.In = op.In.String()
 	}
 	if len(op.Body) > 0 {
 		view.BodyBase64 = base64.StdEncoding.EncodeToString(op.Body)
@@ -522,18 +555,30 @@ func bulkOpViewFrom(op cutting_garden_plugins.BulkOp) BulkOpView {
 // mistake the server maps to -32602.
 func (v BulkOpView) toBulkOp() (cutting_garden_plugins.BulkOp, error) {
 	op := cutting_garden_plugins.BulkOp{
-		Kind: cutting_garden_plugins.BulkOpKind(v.Kind),
-		Type: v.Type,
+		Kind:   cutting_garden_plugins.BulkOpKind(v.Kind),
+		Type:   v.Type,
+		TempID: v.TempID,
+		InRef:  v.InRef,
+		Ref:    v.Ref,
 	}
 
-	if v.URI != "" {
-		uri, err := url.Parse(v.URI)
+	for _, field := range []struct {
+		name, raw string
+		dst       **url.URL
+	}{
+		{"uri", v.URI, &op.URI},
+		{"in", v.In, &op.In},
+	} {
+		if field.raw == "" {
+			continue
+		}
+		uri, err := url.Parse(field.raw)
 		if err != nil {
 			return op, errors.BadRequestf(
-				"bulk_mutate: op uri %q: %s", v.URI, err,
+				"bulk_mutate: op %s %q: %s", field.name, field.raw, err,
 			)
 		}
-		op.URI = uri
+		*field.dst = uri
 	}
 
 	if v.BodyBase64 != "" {
@@ -635,12 +680,21 @@ func BulkMutateResultFrom(
 	if len(result.Failed) > 0 {
 		view.Failed = make([]BulkFailureView, len(result.Failed))
 		for i, failure := range result.Failed {
-			bf := BulkFailureView{Err: failure.Err}
+			bf := BulkFailureView{Ref: failure.Ref, Err: failure.Err}
 			if failure.URI != nil {
 				bf.URI = failure.URI.String()
 			}
 			view.Failed[i] = bf
 		}
+	}
+
+	for _, created := range result.Created {
+		if created.URI == nil {
+			continue
+		}
+		view.Created = append(view.Created, BulkCreatedView{
+			TempID: created.TempID, URI: created.URI.String(),
+		})
 	}
 
 	return view
@@ -668,7 +722,7 @@ func (r BulkMutateResult) ToBulkResult() (
 	if len(r.Failed) > 0 {
 		result.Failed = make([]cutting_garden_plugins.BulkFailure, len(r.Failed))
 		for i, view := range r.Failed {
-			bf := cutting_garden_plugins.BulkFailure{Err: view.Err}
+			bf := cutting_garden_plugins.BulkFailure{Ref: view.Ref, Err: view.Err}
 			if view.URI != "" {
 				uri, perr := url.Parse(view.URI)
 				if perr != nil {
@@ -680,6 +734,18 @@ func (r BulkMutateResult) ToBulkResult() (
 			}
 			result.Failed[i] = bf
 		}
+	}
+
+	for i, view := range r.Created {
+		uri, err := url.Parse(view.URI)
+		if err != nil {
+			return result, errors.Wrapf(
+				err, "bulk_mutate: created[%d] uri %q", i, view.URI,
+			)
+		}
+		result.Created = append(result.Created, cutting_garden_plugins.BulkCreated{
+			TempID: view.TempID, URI: uri,
+		})
 	}
 
 	return result, nil

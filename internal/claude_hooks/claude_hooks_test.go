@@ -55,14 +55,11 @@ func TestRun_UnclassifiedTool_NoDecision(t *testing.T) {
 	}
 }
 
-// Each CUD write tool is destructive, so its PreToolUse event is gated with
+// The write tool is destructive, so its PreToolUse event is gated with
 // `ask` — the #102 enforcement.
-func TestRun_CUDTools_Ask(t *testing.T) {
+func TestRun_WriteTool_Ask(t *testing.T) {
 	for _, tool := range []string{
-		mcp_tool_perms.ToolCreateNode,
-		mcp_tool_perms.ToolPutNode,
-		mcp_tool_perms.ToolPatchNode,
-		mcp_tool_perms.ToolDeleteNode,
+		mcp_tool_perms.ToolMutateNodes,
 	} {
 		var out bytes.Buffer
 		in := `{"hook_event_name":"PreToolUse","tool_name":"` + toolNamePrefix + tool + `"}`

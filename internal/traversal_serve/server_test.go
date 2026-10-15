@@ -318,6 +318,12 @@ func (p *fakeFullPlugin) BulkMutate(
 
 	if len(req.Ops) > 0 {
 		for _, op := range req.Ops {
+			// Temp-id ops go through the SDK's dispatch, which resolves them
+			// (cutting-garden#315); the rest are echoed.
+			if op.TempID != "" || op.Ref != "" {
+				cutting_garden_plugins.ApplyBulkOp(ctx, p, op, &result)
+				continue
+			}
 			result.AppliedNodes = append(result.AppliedNodes, op.URI)
 		}
 
@@ -513,7 +519,7 @@ func TestServeInitializeFullPluginDeclaration(t *testing.T) {
 	wantCaps := []string{
 		CapRoots, CapLeafRead, CapFacetCounts,
 		CapFacetVersion, CapFacetLabels, CapMutate, CapContainerCreate,
-		CapFilteredList, CapBulkMutate,
+		CapFilteredList, CapBulkMutate, CapBulkTempIDs,
 	}
 	gotCaps := slices.Clone(result.Capabilities)
 	slices.Sort(gotCaps)

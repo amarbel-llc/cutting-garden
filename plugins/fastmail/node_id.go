@@ -8,7 +8,7 @@ import (
 	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
 )
 
-var _ cutting_garden_plugins.NodeIDer = (*Plugin)(nil)
+var _ cutting_garden_plugins.NodeIDResolver = (*Plugin)(nil)
 
 // RelativeNodeID gives a THREAD its organize box id (fastmail tags slice 1,
 // Task 5b; plan D6 "object ids are thread ids"). A thread's identity rides in
@@ -22,8 +22,8 @@ var _ cutting_garden_plugins.NodeIDer = (*Plugin)(nil)
 //     id, `/`-joined (anchor `fastmail://acct/` → `Inbox/T1`).
 //
 // A `/` or `%` inside one mailbox NAME is percent-escaped so segment
-// boundaries stay unambiguous (the id is never reversed, but it must stay
-// injective); other runes, spaces included, stay readable — the box writer
+// boundaries stay unambiguous (the id is injective, and ResolveNodeID
+// reverses it); other runes, spaces included, stay readable — the box writer
 // quotes the id as a trellis String when it is not a bare identifier. A JMAP
 // thread id is URL-safe (RFC 8620 §1.2), so it never contains `/` and a bare
 // `T1` can never equal a nested `sub/T1`. Every other node — a mailbox,
@@ -49,6 +49,35 @@ func (Plugin) RelativeNodeID(nodeURI, anchor string) (string, bool) {
 		parts = append(parts, escapeIDSegment.Replace(seg))
 	}
 	return strings.Join(append(parts, node.threadID), "/"), true
+}
+
+// ResolveNodeID inverts RelativeNodeID (cutting-garden#315): `T1` is the
+// thread in the anchor's mailbox, `sub/T1` the thread in a descendant
+// mailbox, segments unescaped. An id that does not round-trip through
+// RelativeNodeID is not a thread id and is declined.
+func (p Plugin) ResolveNodeID(id, anchor string) (string, bool) {
+	base, ok := classifyString(anchor)
+	if !ok || (base.kind != kindMailbox && base.kind != kindAccountRoot) {
+		return "", false
+	}
+	segs := strings.Split(id, "/")
+	threadID := segs[len(segs)-1]
+	if threadID == "" {
+		return "", false
+	}
+	path := slices.Clone(base.mailboxPath)
+	for _, seg := range segs[:len(segs)-1] {
+		name, err := url.PathUnescape(seg)
+		if err != nil || name == "" {
+			return "", false
+		}
+		path = append(path, name)
+	}
+	resolved := threadURI(base.account, path, threadID).String()
+	if got, ok := p.RelativeNodeID(resolved, anchor); !ok || got != id {
+		return "", false
+	}
+	return resolved, true
 }
 
 // escapeIDSegment keeps one mailbox name a single id segment.

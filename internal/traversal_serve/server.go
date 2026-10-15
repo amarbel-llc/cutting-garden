@@ -275,6 +275,12 @@ func newServer(cfg ServeConfig) (*server, error) {
 			atomic.BulkAtomicCapable() {
 			capabilities = append(capabilities, CapBulkAtomic)
 		}
+
+		// Temp-id ops create through ContainerCreator, which ApplyBulkOp
+		// probes on the plugin (cutting-garden#315).
+		if _, ok := cfg.Plugin.(cutting_garden_plugins.ContainerCreator); ok {
+			capabilities = append(capabilities, CapBulkTempIDs)
+		}
 	}
 
 	srv.init.Capabilities = capabilities

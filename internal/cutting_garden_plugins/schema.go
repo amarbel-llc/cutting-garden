@@ -7,7 +7,7 @@ package cutting_garden_plugins
 type NodeTypeBody struct {
 	// Tag is the NodeType.Tag this describes (e.g. "caldav-object-v1").
 	Tag string
-	// Accepts names the body formats the create_node/put_node tools take
+	// Accepts names the body formats the mutate_nodes create/put ops take
 	// for this type, human-readable and ordered most-preferred first (e.g.
 	// "application/json (the {component,event|task} object)",
 	// "text/calendar (raw iCalendar)").
@@ -21,7 +21,7 @@ type NodeTypeBody struct {
 	// ContainerCreator.CreateChild — the caller passes a CONTAINER URI and
 	// the source assigns the created node's identity (cutting-garden#143) —
 	// rather than CreateNode's caller-names-the-URI form. The mcp
-	// create_node tool dispatches on this declaration.
+	// mutate_nodes tool creates such a type with a temp id (BulkOp.TempID).
 	ServerAssignedIdentity bool
 }
 

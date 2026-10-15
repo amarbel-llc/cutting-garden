@@ -578,6 +578,39 @@ func TestWirePluginBulkMutate(t *testing.T) {
 	}
 }
 
+// TestWirePluginBulkMutateTempIDs pins the temp-id fields' round trip
+// (cutting-garden#315): a ContainerCreator peer advertises bulk-temp-ids, a
+// temp-id create crosses the wire with its container, a later Ref op lands
+// on the created node, and the created URI comes back in Created.
+func TestWirePluginBulkMutateTempIDs(t *testing.T) {
+	plugin := &fakeFullPlugin{}
+	adapter, _ := newTestWirePlugin(t, memSpec(), fullPluginConfig(plugin))
+	root := mustParseURL(t, fakeRootURI)
+
+	result, err := adapter.BulkMutate(context.Background(), cutting_garden_plugins.BulkRequest{
+		Atomicity: cutting_garden_plugins.BulkBestEffort,
+		Ops: []cutting_garden_plugins.BulkOp{
+			{Kind: cutting_garden_plugins.BulkCreate, TempID: "+a", In: root, Type: "t", Body: []byte("b")},
+			{Kind: cutting_garden_plugins.BulkPatch, Ref: "+a", Body: []byte(`{"x":1}`)},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BulkMutate: %v", err)
+	}
+
+	want := fakeRootURI + "/assigned-1"
+	if len(result.Created) != 1 || result.Created[0].TempID != "+a" ||
+		result.Created[0].URI.String() != want {
+		t.Fatalf("created = %+v, want +a → %s", result.Created, want)
+	}
+	if len(result.AppliedNodes) != 2 || result.AppliedNodes[1].String() != want {
+		t.Errorf("applied = %v, want the created node twice", result.AppliedNodes)
+	}
+	if string(plugin.patchBody) != `{"x":1}` {
+		t.Errorf("the Ref patch did not reach the plugin: %q", plugin.patchBody)
+	}
+}
+
 // TestWirePluginBulkAtomicAdvertisedAndRoundTrips is the RFC 0017 §Atomicity
 // advertisement e2e (cutting-garden#195): against an atomic-CAPABLE peer,
 // the server advertises bulk-atomic, the adapter reports itself

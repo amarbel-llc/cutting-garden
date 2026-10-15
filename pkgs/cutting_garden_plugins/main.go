@@ -48,6 +48,9 @@ type BoxAtom = internal.BoxAtom
 // never in this Go zero value.
 type BulkAtomicity = internal.BulkAtomicity
 
+// BulkCreated pairs a TempID create with the URI the source chose.
+type BulkCreated = internal.BulkCreated
+
 // BulkFailure records one targeted node's failure inside a best-effort
 // result.
 type BulkFailure = internal.BulkFailure
@@ -423,6 +426,21 @@ type MembershipWriteApplier = internal.MembershipWriteApplier
 // tree, as returned by ListRoots.
 type Node = internal.Node
 
+// NodeIDResolver is the OPTIONAL inverse of NodeIDer: it turns an
+// anchor-relative id back into the node URI, so a caller that holds only an
+// id (the mutate_nodes MCP tool, cutting-garden#315) can address the node
+// without listing the anchor first. A NodeIDer plugin SHOULD implement it;
+// without it, its ids resolve through the host+path default
+// (node_view.NodeURIFor), which is right only for the ids it defers.
+//
+// ResolveNodeID MUST invert RelativeNodeID: for every node RelativeNodeID
+// accepts under anchor, ResolveNodeID(RelativeNodeID(uri, anchor), anchor)
+// returns uri. Like RelativeNodeID it MUST be pure — no fetch, no ambient
+// state — so it cannot tell whether the node exists; the mutation that
+// follows reports that. ok=false means the id is not one of the plugin's
+// own ids (the caller then tries the default).
+type NodeIDResolver = internal.NodeIDResolver
+
 // NodeIDer is the OPTIONAL capability a plugin implements to give a node its
 // short, anchor-relative object id — the box id an organize document and
 // `list -format espalier` render (`- [<id> …]`). A plugin that does NOT
@@ -768,6 +786,12 @@ type UnifiedField = internal.UnifiedField
 // result-collection — the #182 patchedNothing-vs-applied distinction most of
 // all — lives here so a subtle bug cannot be fixed inconsistently across
 // plugins.
+//
+// Temp ids (cutting-garden#315) resolve against result.Created, which is why
+// ops MUST run in request order: a TempID create goes through nm's
+// ContainerCreator.CreateChild and records the URI it chose, and a later
+// op's Ref / InRef reads it back. An op whose temp id did not resolve —
+// its create failed — fails without running.
 var ApplyBulkOp = internal.ApplyBulkOp
 
 // BestEffortBulkMutate is the whole best-effort BulkMutate for a plugin that

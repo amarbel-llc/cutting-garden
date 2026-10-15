@@ -48,6 +48,32 @@ func TestRelativeNodeID(t *testing.T) {
 				t.Errorf("RelativeNodeID(%q, %q) = (%q, %v), want (%q, %v)",
 					tc.node, tc.anchor, got, ok, tc.want, tc.wantOK)
 			}
+			if !tc.wantOK {
+				return
+			}
+			// ResolveNodeID inverts it (cutting-garden#315).
+			resolved, ok := Plugin{}.ResolveNodeID(tc.want, tc.anchor)
+			if !ok {
+				t.Fatalf("ResolveNodeID(%q, %q) declined", tc.want, tc.anchor)
+			}
+			if back, _ := (Plugin{}).RelativeNodeID(resolved, tc.anchor); back != tc.want {
+				t.Errorf("ResolveNodeID(%q) = %q, which ids as %q", tc.want, resolved, back)
+			}
+		})
+	}
+}
+
+func TestResolveNodeID_Declines(t *testing.T) {
+	for name, tc := range map[string]struct{ id, anchor string }{
+		"empty thread":        {"Inbox/", "fastmail://test/"},
+		"thread anchor":       {"T1", threadURI("test", []string{"Inbox"}, "T1").String()},
+		"bad escape":          {"a%zz/T1", "fastmail://test/"},
+		"not a fastmail root": {"T1", "caldav://test/Inbox/"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got, ok := (Plugin{}).ResolveNodeID(tc.id, tc.anchor); ok {
+				t.Errorf("resolved to %q", got)
+			}
 		})
 	}
 }

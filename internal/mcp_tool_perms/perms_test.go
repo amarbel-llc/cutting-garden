@@ -2,14 +2,22 @@ package mcp_tool_perms
 
 import "testing"
 
-func TestClassify_CUDToolsAreDestructive(t *testing.T) {
-	for _, tool := range []string{ToolCreateNode, ToolPutNode, ToolPatchNode, ToolDeleteNode, ToolBulkMutate} {
-		class, ok := Classify(tool)
-		if !ok {
-			t.Errorf("%q should be classified", tool)
-		}
-		if class != ClassDestructive {
-			t.Errorf("%q class = %q, want %q", tool, class, ClassDestructive)
+func TestClassify_WriteToolIsDestructive(t *testing.T) {
+	class, ok := Classify(ToolMutateNodes)
+	if !ok {
+		t.Fatalf("%q should be classified", ToolMutateNodes)
+	}
+	if class != ClassDestructive {
+		t.Errorf("%q class = %q, want %q", ToolMutateNodes, class, ClassDestructive)
+	}
+}
+
+// The singular write tools are gone (cutting-garden#315); a stale client
+// calling one must not be handed a decision for a tool that no longer exists.
+func TestClassify_RemovedWriteToolsAreUnclassified(t *testing.T) {
+	for _, tool := range []string{"create_node", "put_node", "patch_node", "delete_node", "bulk_mutate"} {
+		if _, ok := Classify(tool); ok {
+			t.Errorf("%q should be unclassified", tool)
 		}
 	}
 }

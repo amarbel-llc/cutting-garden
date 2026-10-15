@@ -300,6 +300,15 @@ backend cannot transact a request all-or-nothing returns
 best-effort - a half-applied delta the caller asked to be atomic is worse
 than none. See RFC 0017 for the full contract.
 
+Every MCP write goes through this path: the *mutate_nodes* tool sends a
+batch to your *BulkMutate*, or - when you implement only *NodeMutator* - runs
+it op by op through *BestEffortBulkMutate*. A batch may also carry temp-id
+ops: a create with a *TempID* (no URI) asks your *ContainerCreator* to name
+the node, and later ops target it by *Ref*. Delegate to
+*BestEffortBulkMutate* (or *ApplyBulkOp*, in request order) and they are
+resolved for you; a hand-rolled *BulkMutate* that is also a
+*ContainerCreator* MUST honor them (RFC 0017 §Temp-id creates).
+
 # DECLARE WHICH FACETS ARE WRITABLE
 
 *organize --apply* writes only through facet dimensions you DECLARE writable
@@ -400,9 +409,14 @@ your node identity rides somewhere the default cannot see - the fastmail
 plugin's thread id is a query parameter (*fastmail://acct/Inbox/?thread=T1*),
 so every thread in a mailbox would collapse to one id - implement the
 optional *NodeIDer* capability: *RelativeNodeID(nodeURI, anchor)* returns
-*(id, ok)*. It MUST be pure and deterministic in its two arguments: the
-framework never reverses an id, it re-derives each live node's id at apply
-time and matches by string. Return *ok: false* for any node you do not name
+*(id, ok)*. It MUST be pure and deterministic in its two arguments: organize
+never reverses an id, it re-derives each live node's id at apply time and
+matches by string. The *mutate_nodes* MCP tool DOES reverse ids (it lists
+nothing first), so a *NodeIDer* plugin SHOULD also implement
+*NodeIDResolver*: *ResolveNodeID(id, anchor)* returns *(nodeURI, ok)* and
+MUST invert *RelativeNodeID* exactly; an id it declines falls back to the
+default, which appends the id to the anchor's path and refuses an id that
+does not round-trip. Return *ok: false* for any node you do not name
 and it takes the default. Your ids MUST be unique under one anchor: a
 *NodeIDer* plugin whose distinct nodes collide is refused at generate as a
 bad request naming both URIs (the default ids are exempt, see
@@ -414,7 +428,7 @@ wire carries no token for it yet.
 Every optional capability - *RootProvider*, *RootLabeler*, *RootNamer*, *LeafReader*,
 *FacetDescriber*, *FacetCounter*, *FacetVersioner*, *FacetLabeler*,
 *EnrichedLister*, *ListingFieldsDescriber*, *NodeMutator*, *BulkMutator*,
-*BodyDescriber*, *ContainerCreator*, *FacetWriteDescriber*, *CreationDescriber*, *CreateApplier*, *NodeIDer*, and whatever this list grows to next -
+*BodyDescriber*, *ContainerCreator*, *FacetWriteDescriber*, *CreationDescriber*, *CreateApplier*, *NodeIDer*, *NodeIDResolver*, and whatever this list grows to next -
 is discovered by
 TYPE ASSERTION against an already-resolved plugin (or, on the wire, by a
 capability TOKEN advertised in *initialize*). There is no separate

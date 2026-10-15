@@ -59,7 +59,17 @@ func (f *fakeMutator) DeleteNode(_ context.Context, u *url.URL) error {
 	return nil
 }
 
-func fakeMutatorResolve(m *fakeMutator) mutatorResolveFunc {
+// Types and ListRoots make the fake a RootLister, the surface mutate_nodes
+// resolves a group's anchor (and its node ids) through.
+func (*fakeMutator) Types() []cutting_garden_plugins.NodeType { return nil }
+
+func (*fakeMutator) ListRoots(
+	context.Context, *url.URL,
+) ([]cutting_garden_plugins.Node, error) {
+	return nil, nil
+}
+
+func fakeMutatorResolve(m cutting_garden_plugins.NodeMutator) mutatorResolveFunc {
 	return func(uriStr string) (*url.URL, cutting_garden_plugins.NodeMutator, error) {
 		u, err := url.Parse(uriStr)
 		if err != nil {
@@ -70,6 +80,32 @@ func fakeMutatorResolve(m *fakeMutator) mutatorResolveFunc {
 		}
 		return u, m, nil
 	}
+}
+
+func fakeListerResolve(l cutting_garden_plugins.RootLister) resolveFunc {
+	return func(uriStr string) (*url.URL, cutting_garden_plugins.RootLister, error) {
+		u, err := url.Parse(uriStr)
+		if err != nil {
+			return nil, nil, errors.Wrap(err)
+		}
+		if u.Scheme != "faketest" {
+			return nil, nil, errors.ErrorWithStackf("no lister for scheme %q", u.Scheme)
+		}
+		return u, l, nil
+	}
+}
+
+// callMutate runs mutate_nodes with one group over anchor faketest://h/.
+func callMutate(
+	t *testing.T, tools *Tools, groupBody string,
+) *protocol.ToolCallResult {
+	t.Helper()
+	res, err := tools.CallTool(context.Background(), "mutate_nodes",
+		json.RawMessage(`{"groups":[{"anchor":"faketest://h/",`+groupBody+`}]}`))
+	if err != nil {
+		t.Fatalf("transport error: %v", err)
+	}
+	return res
 }
 
 // fakeBulkMutator is a registry-free BulkMutator for the bulk_mutate tool
@@ -115,7 +151,10 @@ func fakeBulkResolve(bm *fakeBulkMutator) bulkResolveFunc {
 	}
 }
 
-func TestCallTool_BulkMutateChangeset(t *testing.T) {
+// TestMutateNodes_BulkChangeset pins the bulk path: ids resolve against the
+// anchor, atomicity defaults to best-effort, and the result reports nodes in
+// the ids the caller sent.
+func TestMutateNodes_BulkChangeset(t *testing.T) {
 	bm := &fakeBulkMutator{}
 	applied, _ := url.Parse("faketest://h/a.ics")
 	bm.result = cutting_garden_plugins.BulkResult{
@@ -124,18 +163,13 @@ func TestCallTool_BulkMutateChangeset(t *testing.T) {
 	tools := newFakeTools(t, &fakeMutator{}, "faketest://h/")
 	tools.resolveBulk = fakeBulkResolve(bm)
 
-	res, err := tools.CallTool(context.Background(), "bulk_mutate",
-		json.RawMessage(`{"ops":[`+
-			`{"kind":"patch","uri":"faketest://h/a.ics","body":"{\"x\":1}"},`+
-			`{"kind":"delete","uri":"faketest://h/b.ics"}]}`))
-	if err != nil {
-		t.Fatalf("transport error: %v", err)
-	}
+	res := callMutate(t, tools, `"ops":[`+
+		`{"kind":"patch","id":"a.ics","body":"{\"x\":1}"},`+
+		`{"kind":"delete","id":"faketest://h/b.ics"}]`)
 	if res.IsError {
-		t.Fatalf("bulk_mutate errored: %+v", res.Content)
+		t.Fatalf("mutate_nodes errored: %+v", res.Content)
 	}
 
-	// atomicity defaulted to best-effort at the tool layer; two ops decoded.
 	if bm.gotReq.Atomicity != cutting_garden_plugins.BulkBestEffort {
 		t.Errorf("atomicity = %q, want best-effort", bm.gotReq.Atomicity)
 	}
@@ -144,38 +178,70 @@ func TestCallTool_BulkMutateChangeset(t *testing.T) {
 		bm.gotReq.Ops[1].Kind != cutting_garden_plugins.BulkDelete {
 		t.Fatalf("ops = %+v", bm.gotReq.Ops)
 	}
+	if got := bm.gotReq.Ops[0].URI.String(); got != "faketest://h/a.ics" {
+		t.Errorf("relative id resolved to %q", got)
+	}
+	if got := bm.gotReq.Ops[1].URI.String(); got != "faketest://h/b.ics" {
+		t.Errorf("full-URI id resolved to %q", got)
+	}
 	if string(bm.gotReq.Ops[0].Body) != `{"x":1}` {
 		t.Errorf("op body = %q", bm.gotReq.Ops[0].Body)
 	}
-	if !strings.Contains(res.Content[0].Text, "faketest://h/a.ics") {
-		t.Errorf("result missing applied node: %q", res.Content[0].Text)
+	if bm.gotReq.Ops[1].Body != nil {
+		t.Errorf("delete carried a body: %q", bm.gotReq.Ops[1].Body)
+	}
+	if !strings.Contains(res.Content[0].Text, `"a.ics"`) {
+		t.Errorf("result does not report the caller's id: %q", res.Content[0].Text)
 	}
 }
 
-// TestCallTool_BulkMutateRejectsBothOpsAndSweep pins that a request
-// supplying BOTH ops and sweep is rejected (BulkRequest.Validate's "got
-// both") and — the point of the fix — that the ops are NOT silently dropped
-// while the sweep runs: BulkMutate must never be dispatched at all.
-func TestCallTool_BulkMutateRejectsBothOpsAndSweep(t *testing.T) {
+// TestMutateNodes_RejectsBothOpsAndSweep pins that a group supplying BOTH
+// ops and sweep is rejected and nothing is dispatched.
+func TestMutateNodes_RejectsBothOpsAndSweep(t *testing.T) {
 	bm := &fakeBulkMutator{}
 	tools := newFakeTools(t, &fakeMutator{}, "faketest://h/")
 	tools.resolveBulk = fakeBulkResolve(bm)
 
-	res, err := tools.CallTool(context.Background(), "bulk_mutate",
-		json.RawMessage(`{`+
-			`"ops":[{"kind":"delete","uri":"faketest://h/a.ics"}],`+
-			`"sweep":{"root":"faketest://h/","op":{"kind":"delete"}}}`))
-
-	// However the layer surfaces the bad request (transport error or an
-	// IsError result), it must not read as a clean success.
-	if err == nil && !res.IsError {
+	res := callMutate(t, tools, `"ops":[{"kind":"delete","id":"a.ics"}],`+
+		`"sweep":{"op":{"kind":"delete"}}`)
+	if !res.IsError {
 		t.Errorf("both ops and sweep accepted as success: %+v", res)
 	}
-	// The zero Atomicity proves BulkMutate was never called — the real call
-	// path always sets a non-empty atomicity before dispatch.
 	if bm.gotReq.Atomicity != "" {
 		t.Errorf("BulkMutate dispatched despite the both-set rejection: %+v",
 			bm.gotReq)
+	}
+}
+
+// TestMutateNodes_RefusesUnsupportedShapes pins the bad requests rejected
+// before anything is dispatched.
+func TestMutateNodes_RefusesUnsupportedShapes(t *testing.T) {
+	for name, args := range map[string]string{
+		"two groups": `{"groups":[{"anchor":"faketest://h/","ops":[{"kind":"delete","id":"a.ics"}]},` +
+			`{"anchor":"faketest://h/","ops":[{"kind":"delete","id":"b.ics"}]}]}`,
+		"no groups":          `{"groups":[]}`,
+		"uri outside anchor": `{"groups":[{"anchor":"faketest://h/sub/","ops":[{"kind":"delete","id":"faketest://h/b.ics"}]}]}`,
+		"temp ref before create": `{"groups":[{"anchor":"faketest://h/","ops":[` +
+			`{"kind":"patch","id":"+t","body":"{}"}]}]}`,
+		"temp id created twice": `{"groups":[{"anchor":"faketest://h/","ops":[` +
+			`{"kind":"create","id":"+t","type":"x","body":"b"},{"kind":"create","id":"+t","type":"x","body":"b"}]}]}`,
+		"in on a plain op": `{"groups":[{"anchor":"faketest://h/","ops":[` +
+			`{"kind":"delete","id":"a.ics","in":"sub/"}]}]}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			m := &fakeMutator{}
+			tools := newFakeTools(t, m, "faketest://h/")
+			res, err := tools.CallTool(context.Background(), "mutate_nodes", json.RawMessage(args))
+			if err != nil {
+				t.Fatalf("transport error: %v", err)
+			}
+			if !res.IsError {
+				t.Errorf("accepted: %+v", res.Content)
+			}
+			if len(m.deleted)+len(m.patched)+len(m.created) != 0 {
+				t.Errorf("mutated despite the refusal: %+v", m)
+			}
+		})
 	}
 }
 
@@ -194,13 +260,12 @@ func (fakeDescribingBulkMutator) DescribeFacets() []cutting_garden_plugins.NodeT
 	}}
 }
 
-// TestCallTool_BulkMutateSweepFilterValidated pins that a sweep's parsed
-// filter is validated against the plugin's declared facet schema before
-// dispatch (the same cutting-garden#161 rule list_nodes and read_facets
-// apply): a filter naming an undeclared dimension is a loud rejection and
-// BulkMutate is never called — previously it silently reached the plugin as
-// a filter matching who-knows-what.
-func TestCallTool_BulkMutateSweepFilterValidated(t *testing.T) {
+// TestMutateNodes_SweepFilterValidated pins that a sweep's parsed filter is
+// validated against the plugin's declared facet schema before dispatch (the
+// same cutting-garden#161 rule list_nodes and read_facets apply): a filter
+// naming an undeclared dimension is a loud rejection and BulkMutate is never
+// called, and the sweep's root is the group's anchor.
+func TestMutateNodes_SweepFilterValidated(t *testing.T) {
 	bm := &fakeDescribingBulkMutator{}
 	tools := newFakeTools(t, &fakeMutator{}, "faketest://h/")
 	tools.resolveBulk = func(uriStr string) (
@@ -212,17 +277,12 @@ func TestCallTool_BulkMutateSweepFilterValidated(t *testing.T) {
 		}
 		return u, bm, nil
 	}
+	tools.resolveLister = fakeListerResolve(bm)
 
-	res, err := tools.CallTool(context.Background(), "bulk_mutate",
-		json.RawMessage(`{"sweep":{"root":"faketest://h/",`+
-			`"filter":"bogus=x","op":{"kind":"delete"}}}`))
-	// However the layer surfaces the bad request, it must not read as a
-	// clean success.
-	if err == nil && !res.IsError {
+	res := callMutate(t, tools, `"sweep":{"filter":"bogus=x","op":{"kind":"delete"}}`)
+	if !res.IsError {
 		t.Errorf("undeclared sweep filter dimension accepted as success: %+v", res)
 	}
-	// The zero Atomicity proves BulkMutate was never called — the real call
-	// path always sets a non-empty atomicity before dispatch.
 	if bm.gotReq.Atomicity != "" {
 		t.Errorf("BulkMutate dispatched despite the invalid filter: %+v",
 			bm.gotReq)
@@ -230,17 +290,18 @@ func TestCallTool_BulkMutateSweepFilterValidated(t *testing.T) {
 
 	// A filter naming a declared dimension still dispatches: the gate must
 	// reject typos, not valid sweeps.
-	res, err = tools.CallTool(context.Background(), "bulk_mutate",
-		json.RawMessage(`{"sweep":{"root":"faketest://h/",`+
-			`"filter":"status=x","op":{"kind":"delete"}}}`))
-	if err != nil {
-		t.Fatalf("valid sweep filter: transport error: %v", err)
+	bm.result = cutting_garden_plugins.BulkResult{
+		AppliedNodes: []*url.URL{{Scheme: "faketest", Host: "h", Path: "/a.ics"}},
 	}
+	res = callMutate(t, tools, `"sweep":{"filter":"status=x","op":{"kind":"delete"}}`)
 	if res.IsError {
 		t.Fatalf("valid sweep filter rejected: %+v", res.Content)
 	}
 	if bm.gotReq.Sweep == nil || len(bm.gotReq.Sweep.Filter) != 1 {
-		t.Errorf("valid sweep not dispatched with its filter: %+v", bm.gotReq)
+		t.Fatalf("valid sweep not dispatched with its filter: %+v", bm.gotReq)
+	}
+	if got := bm.gotReq.Sweep.Root.String(); got != "faketest://h/" {
+		t.Errorf("sweep root = %q, want the anchor", got)
 	}
 }
 
@@ -250,11 +311,7 @@ func TestCallTool_BulkMutateSweepFilterValidated(t *testing.T) {
 // JSON of these hand-written strings.
 func TestToolInputSchemasAreValidJSON(t *testing.T) {
 	for name, schema := range map[string]string{
-		"create_node":         createNodeSchema,
-		"put_node":            putNodeSchema,
-		"patch_node":          patchNodeSchema,
-		"delete_node":         deleteNodeSchema,
-		"bulk_mutate":         bulkMutateSchema,
+		"mutate_nodes":        mutateNodesSchema,
 		"describe_node_types": describeNodeTypesSchema,
 		"list_nodes":          listNodesSchema,
 		"read_node":           readNodeSchema,
@@ -266,21 +323,24 @@ func TestToolInputSchemasAreValidJSON(t *testing.T) {
 	}
 }
 
-// TestListTools_BulkMutateAdvertisedWhenCapable pins that bulk_mutate rides
-// the tool list only when a root's plugin implements BulkMutator.
-func TestListTools_BulkMutateAdvertisedWhenCapable(t *testing.T) {
+// TestListTools_WriteToolAdvertisedForBulkOnlyRoot pins that mutate_nodes
+// rides the tool list for a root whose plugin is only a BulkMutator.
+func TestListTools_WriteToolAdvertisedForBulkOnlyRoot(t *testing.T) {
 	tools := newFakeTools(t, &fakeMutator{}, "faketest://h/")
+	tools.resolve = func(string) (*url.URL, cutting_garden_plugins.NodeMutator, error) {
+		return nil, nil, errors.ErrorWithStackf("no NodeMutator")
+	}
 	tools.resolveBulk = fakeBulkResolve(&fakeBulkMutator{})
 
 	list, _ := tools.ListTools(context.Background())
 	found := false
 	for _, tl := range list {
-		if tl.Name == "bulk_mutate" {
+		if tl.Name == "mutate_nodes" {
 			found = true
 		}
 	}
 	if !found {
-		t.Error("bulk_mutate not advertised despite a BulkMutator root")
+		t.Error("mutate_nodes not advertised despite a BulkMutator root")
 	}
 }
 
@@ -294,7 +354,11 @@ func newFakeTools(t *testing.T, m *fakeMutator, rootStrs ...string) *Tools {
 		}
 		roots = append(roots, u)
 	}
-	return &Tools{roots: roots, resolve: fakeMutatorResolve(m)}
+	return &Tools{
+		roots:         roots,
+		resolve:       fakeMutatorResolve(m),
+		resolveLister: fakeListerResolve(m),
+	}
 }
 
 func TestListToolsV1_AdvertisesToolsWithCorrectAnnotations(t *testing.T) {
@@ -304,16 +368,16 @@ func TestListToolsV1_AdvertisesToolsWithCorrectAnnotations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListToolsV1: %v", err)
 	}
-	// 4 read tools (describe/read/list/read_facets) + 4 CUD tools (destructive).
-	if len(res.Tools) != 8 {
-		t.Fatalf("got %d tools, want 8: %+v", len(res.Tools), res.Tools)
+	// 4 read tools (describe/read/list/read_facets) + mutate_nodes.
+	if len(res.Tools) != 5 {
+		t.Fatalf("got %d tools, want 5: %+v", len(res.Tools), res.Tools)
 	}
 	annByName := map[string]*protocol.ToolAnnotations{}
 	for _, tl := range res.Tools {
 		annByName[tl.Name] = tl.Annotations
 	}
-	// The CUD tools are destructive / not read-only.
-	for _, name := range []string{"create_node", "put_node", "patch_node", "delete_node"} {
+	// The write tool is destructive / not read-only.
+	for _, name := range []string{"mutate_nodes"} {
 		a := annByName[name]
 		if a == nil {
 			t.Fatalf("missing tool %q in %v", name, annByName)
@@ -340,8 +404,8 @@ func TestListTools_V0AdvertisesAll(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTools: %v", err)
 	}
-	if len(list) != 8 {
-		t.Fatalf("got %d tools, want 8 (4 read + 4 CUD)", len(list))
+	if len(list) != 5 {
+		t.Fatalf("got %d tools, want 5 (4 read + mutate_nodes)", len(list))
 	}
 }
 
@@ -360,82 +424,39 @@ func TestListTools_ReadToolsAlwaysAdvertised(t *testing.T) {
 	}
 }
 
-func TestCallTool_CreateDispatches(t *testing.T) {
-	m := &fakeMutator{}
-	tools := newFakeTools(t, m, "faketest://h/")
-	args := json.RawMessage(`{"uri":"faketest://h/x.ics","body":"BEGIN:VEVENT","type":"caldav-object-v1"}`)
-
-	res, err := tools.CallTool(context.Background(), "create_node", args)
-	if err != nil {
-		t.Fatalf("CallTool transport error: %v", err)
-	}
-	if res.IsError {
-		t.Fatalf("unexpected tool error: %+v", res.Content)
-	}
-	if len(m.created) != 1 || m.created[0] != "faketest://h/x.ics" {
-		t.Errorf("CreateNode not dispatched: created=%v", m.created)
-	}
-}
-
-func TestCallToolV1_DeleteDispatches(t *testing.T) {
+// TestMutateNodes_FallbackDispatchesEachVerb pins the NodeMutator fallback
+// (a plugin without BulkMutator): every verb lands on the matching
+// single-node call, in order, addressed by its id under the anchor.
+func TestMutateNodes_FallbackDispatchesEachVerb(t *testing.T) {
 	m := &fakeMutator{}
 	tools := newFakeTools(t, m, "faketest://h/")
 
-	res, err := tools.CallToolV1(context.Background(), "delete_node",
-		json.RawMessage(`{"uri":"faketest://h/x.ics"}`))
-	if err != nil {
-		t.Fatalf("CallToolV1 transport error: %v", err)
-	}
+	res := callMutate(t, tools, `"ops":[`+
+		`{"kind":"create","id":"c.ics","type":"caldav-object-v1","body":"BEGIN:VEVENT"},`+
+		`{"kind":"put","id":"p.ics","body":"BEGIN:VEVENT"},`+
+		`{"kind":"patch","id":"x.ics","body":"{\"summary\":\"new\"}"},`+
+		`{"kind":"delete","id":"d.ics"}]`)
 	if res.IsError {
 		t.Fatalf("unexpected tool error: %+v", res.Content)
 	}
-	if len(m.deleted) != 1 {
-		t.Errorf("DeleteNode not dispatched: deleted=%v", m.deleted)
+	for name, got := range map[string][]string{
+		"faketest://h/c.ics": m.created,
+		"faketest://h/p.ics": m.put,
+		"faketest://h/x.ics": m.patched,
+		"faketest://h/d.ics": m.deleted,
+	} {
+		if len(got) != 1 || got[0] != name {
+			t.Errorf("want one call on %s, got %v", name, got)
+		}
 	}
 }
 
-func TestCallTool_PutDispatches(t *testing.T) {
-	m := &fakeMutator{}
-	tools := newFakeTools(t, m, "faketest://h/")
-	args := json.RawMessage(`{"uri":"faketest://h/x.ics","body":"BEGIN:VEVENT"}`)
-
-	res, err := tools.CallTool(context.Background(), "put_node", args)
-	if err != nil {
-		t.Fatalf("CallTool transport error: %v", err)
-	}
-	if res.IsError {
-		t.Fatalf("unexpected tool error: %+v", res.Content)
-	}
-	if len(m.put) != 1 || m.put[0] != "faketest://h/x.ics" {
-		t.Errorf("PutNode not dispatched: put=%v", m.put)
-	}
-}
-
-func TestCallTool_PatchDispatches(t *testing.T) {
-	m := &fakeMutator{}
-	tools := newFakeTools(t, m, "faketest://h/")
-	args := json.RawMessage(`{"uri":"faketest://h/x.ics","body":"{\"component\":\"VTODO\",\"task\":{\"summary\":\"new\"}}"}`)
-
-	res, err := tools.CallTool(context.Background(), "patch_node", args)
-	if err != nil {
-		t.Fatalf("CallTool transport error: %v", err)
-	}
-	if res.IsError {
-		t.Fatalf("unexpected tool error: %+v", res.Content)
-	}
-	if len(m.patched) != 1 || m.patched[0] != "faketest://h/x.ics" {
-		t.Errorf("PatchNode not dispatched: patched=%v", m.patched)
-	}
-}
-
-// The three states of PatchNode's applied, as the patch_node tool renders
-// them (cutting-garden#182). The middle case is the one that matters: it is
+// The three states of PatchNode's applied, as mutate_nodes reports them
+// (cutting-garden#182). The middle case is the one that matters: it is
 // exactly the shape of the cutting-garden#180 field report — the plugin
 // recognized nothing, changed nothing, and previously answered "patched".
-func TestCallTool_PatchReportsAppliedFields(t *testing.T) {
-	args := json.RawMessage(
-		`{"uri":"faketest://h/x.ics","body":"{\"summary\":\"new\",\"bogus\":1}"}`,
-	)
+func TestMutateNodes_PatchReportsAppliedFields(t *testing.T) {
+	group := `"ops":[{"kind":"patch","id":"x.ics","body":"{\"summary\":\"new\",\"bogus\":1}"}]`
 
 	for _, testCase := range []struct {
 		name       string
@@ -446,7 +467,7 @@ func TestCallTool_PatchReportsAppliedFields(t *testing.T) {
 		{
 			name:       "reported and applied",
 			applied:    []string{"summary"},
-			wantInText: "applied: summary",
+			wantInText: `"applied": [`,
 		},
 		{
 			// Plain success here would be the #180 defect: the caller has
@@ -454,21 +475,22 @@ func TestCallTool_PatchReportsAppliedFields(t *testing.T) {
 			name:       "reported as nothing applied",
 			applied:    []string{},
 			wantErr:    true,
-			wantInText: "nothing was applied",
+			wantInText: `"patched_nothing"`,
 		},
 		{
 			// nil carries no information, so the tool must not invent the
 			// no-op verdict for a plugin that never claimed one.
 			name:       "not reported",
 			applied:    nil,
-			wantInText: "patched faketest://h/x.ics",
+			wantInText: `"x.ics"`,
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			m := &fakeMutator{patchApplied: testCase.applied}
 			tools := newFakeTools(t, m, "faketest://h/")
 
-			res, err := tools.CallTool(context.Background(), "patch_node", args)
+			res, err := tools.CallTool(context.Background(), "mutate_nodes",
+				json.RawMessage(`{"groups":[{"anchor":"faketest://h/",`+group+`}]}`))
 			if err != nil {
 				t.Fatalf("CallTool transport error: %v", err)
 			}
@@ -490,74 +512,76 @@ func TestCallTool_PatchReportsAppliedFields(t *testing.T) {
 	}
 }
 
-// fakeCreator implements ContainerCreator + BodyDescriber: one type is
-// declared server-assigned, so create_node dispatches CreateChild for it
-// (uri = the container) and CreateNode for everything else.
+// fakeCreator adds ContainerCreator to the fake mutator: the source names
+// each child it creates.
 type fakeCreator struct {
 	fakeMutator
 	childrenOf []string
-}
-
-func (f *fakeCreator) DescribeBodies() []cutting_garden_plugins.NodeTypeBody {
-	return []cutting_garden_plugins.NodeTypeBody{
-		{Tag: "test-assigned-v1", ServerAssignedIdentity: true},
-		{Tag: "test-object-v1"},
-	}
 }
 
 func (f *fakeCreator) CreateChild(
 	_ context.Context, container *url.URL, _ io.Reader, _ string,
 ) (*url.URL, error) {
 	f.childrenOf = append(f.childrenOf, container.String())
-	return url.Parse(container.String() + "/assigned-9")
+	return url.Parse(container.String() + "assigned-9.ics")
 }
 
-// TestCallTool_CreateChildDispatches pins the #143 tool semantics: a
-// server-assigned type routes create_node to CreateChild with the uri
-// as the CONTAINER and reports the URI the source chose; a
-// caller-named type on the same plugin still routes to CreateNode.
-func TestCallTool_CreateChildDispatches(t *testing.T) {
-	c := &fakeCreator{}
+// TestMutateNodes_TempIDCreateThenPatch pins the temp-id flow
+// (cutting-garden#315, #143): a create with a temp id goes to CreateChild in
+// the anchor, a later op addresses the created node by that temp id, and the
+// result maps the temp id to the URI the source chose.
+func TestMutateNodes_TempIDCreateThenPatch(t *testing.T) {
+	c := &fakeCreator{fakeMutator: fakeMutator{patchApplied: []string{"x"}}}
 	tools := newFakeTools(t, &c.fakeMutator, "faketest://h/")
-	tools.resolveCreator = func(
-		uriStr string,
-	) (*url.URL, cutting_garden_plugins.ContainerCreator, error) {
-		u, err := url.Parse(uriStr)
-		return u, c, err
-	}
+	tools.resolve = fakeMutatorResolve(c)
 
-	res, err := tools.CallTool(context.Background(), "create_node",
-		json.RawMessage(`{"uri":"faketest://h/box","body":"b","type":"test-assigned-v1"}`))
-	if err != nil {
-		t.Fatalf("transport error: %v", err)
-	}
+	res := callMutate(t, tools, `"ops":[`+
+		`{"kind":"create","id":"+t","type":"test-assigned-v1","body":"b"},`+
+		`{"kind":"patch","id":"+t","body":"{\"x\":1}"}]`)
 	if res.IsError {
 		t.Fatalf("unexpected tool error: %+v", res.Content)
 	}
-	if len(c.childrenOf) != 1 || c.childrenOf[0] != "faketest://h/box" {
-		t.Fatalf("CreateChild not dispatched with the container: %v",
-			c.childrenOf)
+	if len(c.childrenOf) != 1 || c.childrenOf[0] != "faketest://h/" {
+		t.Fatalf("CreateChild not dispatched in the anchor: %v", c.childrenOf)
 	}
-	if len(res.Content) == 0 ||
-		!strings.Contains(res.Content[0].Text, "faketest://h/box/assigned-9") {
-		t.Errorf("result does not report the created URI: %+v", res.Content)
+	if len(c.patched) != 1 || c.patched[0] != "faketest://h/assigned-9.ics" {
+		t.Errorf("the temp-id patch did not reach the created node: %v", c.patched)
 	}
-
-	// A caller-named type on the same plugin still takes CreateNode.
-	res, err = tools.CallTool(context.Background(), "create_node",
-		json.RawMessage(`{"uri":"faketest://h/x.ics","body":"b","type":"test-object-v1"}`))
-	if err != nil || res.IsError {
-		t.Fatalf("caller-named create failed: %v %+v", err, res)
-	}
-	if len(c.created) != 1 || c.created[0] != "faketest://h/x.ics" {
-		t.Errorf("CreateNode not dispatched: %v", c.created)
+	text := res.Content[0].Text
+	for _, want := range []string{`"temp_id": "+t"`, `"uri": "faketest://h/assigned-9.ics"`} {
+		if !strings.Contains(text, want) {
+			t.Errorf("result %q does not contain %q", text, want)
+		}
 	}
 }
 
-func TestCallTool_NonMutatorURIIsToolError(t *testing.T) {
+// TestMutateNodes_FailedCreateFailsItsDependents pins best-effort temp-id
+// semantics: when a create fails, an op addressing its temp id fails
+// without running, and an unrelated op still lands.
+func TestMutateNodes_FailedCreateFailsItsDependents(t *testing.T) {
+	m := &fakeMutator{}
+	tools := newFakeTools(t, m, "faketest://h/")
+
+	// fakeMutator is no ContainerCreator, so the temp-id create fails.
+	res := callMutate(t, tools, `"ops":[`+
+		`{"kind":"create","id":"+t","type":"x","body":"b"},`+
+		`{"kind":"delete","id":"+t"},`+
+		`{"kind":"delete","id":"other.ics"}]`)
+	if res.IsError {
+		t.Fatalf("a partly applied batch must not be a tool error: %+v", res.Content)
+	}
+	if len(m.deleted) != 1 || m.deleted[0] != "faketest://h/other.ics" {
+		t.Errorf("deleted = %v, want only the unrelated node", m.deleted)
+	}
+	if text := res.Content[0].Text; !strings.Contains(text, "depends on the create of temp id +t") {
+		t.Errorf("dependent failure not reported: %q", text)
+	}
+}
+
+func TestMutateNodes_NonMutatorAnchorIsToolError(t *testing.T) {
 	tools := newFakeTools(t, &fakeMutator{}, "faketest://h/")
-	res, err := tools.CallTool(context.Background(), "create_node",
-		json.RawMessage(`{"uri":"bogus://h/x","body":"b"}`))
+	res, err := tools.CallTool(context.Background(), "mutate_nodes",
+		json.RawMessage(`{"groups":[{"anchor":"bogus://h/","ops":[{"kind":"delete","id":"x"}]}]}`))
 	if err != nil {
 		t.Fatalf("transport error: %v", err)
 	}
@@ -566,18 +590,18 @@ func TestCallTool_NonMutatorURIIsToolError(t *testing.T) {
 	}
 }
 
-func TestCallTool_MutationFailureIsToolError(t *testing.T) {
+func TestMutateNodes_AllFailedIsToolError(t *testing.T) {
 	m := &fakeMutator{failCreate: true}
 	tools := newFakeTools(t, m, "faketest://h/")
-	// A mutation rejection must be an IsError result, NOT a transport error
-	// (err==nil) — the agent reads the message and decides.
-	res, err := tools.CallTool(context.Background(), "create_node",
-		json.RawMessage(`{"uri":"faketest://h/x.ics","body":"b"}`))
-	if err != nil {
-		t.Fatalf("mutation failure must not be a transport error: %v", err)
-	}
+	// A rejection must be an IsError result, NOT a transport error — the
+	// agent reads the message and decides.
+	res := callMutate(t, tools,
+		`"ops":[{"kind":"create","id":"x.ics","type":"t","body":"b"}]`)
 	if !res.IsError {
-		t.Error("mutation failure must be an IsError tool result")
+		t.Error("a batch where nothing applied must be an IsError tool result")
+	}
+	if text := res.Content[0].Text; !strings.Contains(text, "boom") {
+		t.Errorf("the plugin's error is missing from the result: %q", text)
 	}
 }
 
@@ -895,10 +919,15 @@ func TestPaginate_LimitZeroIsUnbounded(t *testing.T) {
 	}
 }
 
+// barePlugin is a Plugin and nothing else: no traversal, no writes.
+type barePlugin struct{}
+
+func (barePlugin) Schemes() []string { return []string{"faketest"} }
+func (barePlugin) TypeTag() string   { return "bare-v1" }
+
 func TestCollectSchema_SkipsNonRootListers(t *testing.T) {
-	// A plugin with no traversal (here a bare NodeMutator) contributes no
-	// type catalogue.
-	if s := collectSchema([]cutting_garden_plugins.Plugin{&fakeMutator{}}, ""); len(s) != 0 {
+	// A plugin with no traversal contributes no type catalogue.
+	if s := collectSchema([]cutting_garden_plugins.Plugin{barePlugin{}}, ""); len(s) != 0 {
 		t.Errorf("got %d schemes from a non-RootLister, want 0", len(s))
 	}
 }
@@ -956,6 +985,23 @@ func TestCallTool_ReadNodeReturnsContentAndBlobLink(t *testing.T) {
 	}
 	if !strings.Contains(text, "raw bytes: madder://blobs/abc") {
 		t.Errorf("read_node missing the blob link note: %q", text)
+	}
+}
+
+// An empty body read with content=body renders to an empty string; the tool
+// result must still carry text, since a text block without one is invalid
+// MCP that clients reject (reported against krone's newsblur stories).
+func TestCallToolV1_EmptyResultCarriesText(t *testing.T) {
+	tools := newFakeTools(t, &fakeMutator{}, "faketest://h/")
+	tools.reader = fakeReader{read: &protocol.ResourceReadResult{}}
+
+	res, err := tools.CallToolV1(context.Background(), "read_node",
+		json.RawMessage(`{"uri":"faketest://h/x.ics","content":"body"}`))
+	if err != nil {
+		t.Fatalf("transport error: %v", err)
+	}
+	if res.IsError || len(res.Content) != 1 || res.Content[0].Text != emptyResultText {
+		t.Errorf("result = %+v, want one text block %q", res, emptyResultText)
 	}
 }
 

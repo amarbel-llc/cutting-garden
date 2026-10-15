@@ -519,6 +519,44 @@ Per RFC 0013's growth model, an older host that does not recognize
 and never calls `node.bulk_mutate`; a plugin gains nothing and loses
 nothing by advertising them to such a host.
 
+### Temp-id creates (2026-10-15 amendment, cutting-garden#315)
+
+A batch may create a node whose identity the SOURCE assigns
+(`ContainerCreator.CreateChild`, FDR 0020 §Server-assigned identity) and
+address that node from later ops in the same batch. `BulkOp` gains four
+fields:
+
+- `TempID` — set only on a `BulkCreate` whose `URI` is nil: the op creates
+  a child of its container through `CreateChild`, and later ops refer to
+  the created node by this opaque id. Unique within the request.
+- `In` / `InRef` — the TempID create's container: a URI, or an EARLIER
+  TempID create's node. Exactly one is set on a TempID create, neither on
+  any other op.
+- `Ref` — an op targets the node an EARLIER TempID create made, in place
+  of `URI`. Exactly one of `URI`, `Ref`, or `TempID` addresses each op.
+
+`BulkRequest.Validate` rejects a forward or undefined reference, a
+redefined temp id, a temp id on a non-create, a temp id inside a sweep,
+and — for now — any temp id in an `atomic` request (a plugin would have
+to resolve them inside its own transaction; not yet specified).
+`BulkResult` gains `Created` (`[]BulkCreated{TempID, URI}`, request
+order); a created node's URI also appears in `AppliedNodes`.
+`BulkFailure` gains `Ref`, the op's temp id when it had no URI to report.
+
+Ops run in request order. `ApplyBulkOp` (the shared best-effort loop
+`BestEffortBulkMutate` uses) resolves them: a TempID create goes through
+the plugin's `ContainerCreator` (an op on a plugin without one fails), and
+an op whose temp id did not resolve — its create failed — fails with "depends on the
+create of temp id …" without running.
+
+**Wire.** `ops[]` gains `temp_id`, `in`, `in_ref`, and `ref`; the result
+gains `created: [{"temp_id", "uri"}]`, and `failed[]` entries gain
+`ref`. A plugin advertises the new OPTIONAL token `bulk-temp-ids` when its
+`node.bulk_mutate` honors them; the Go server advertises it for a
+`BulkMutator` that is also a `ContainerCreator`. A host MUST NOT send a
+temp-id op to a peer that did not advertise it (the Go host refuses the
+call as a bad request).
+
 ### Non-goals
 
 - **Not a replacement for `NodeMutator`.** Every single-node mutation
@@ -568,9 +606,10 @@ nothing by advertising them to such a host.
   `atomicity`, permission classification under the #102 destructive-tool
   hook, tool naming — follow the established pattern of a separate
   follow-on FDR (RFC 0012's facet contract → FDR 0021's MCP surface;
-  FDR 0020's `NodeMutator` → its own `create_node`/`put_node`/
-  `patch_node`/`delete_node` tool binding) rather than being specified
-  inline in the capability RFC.
+  FDR 0020's `NodeMutator` → its own tool binding) rather than being
+  specified inline in the capability RFC. (Since cutting-garden#315 that
+  binding is ONE tool, `mutate_nodes`, which sends every write through
+  this capability, falling back to `NodeMutator` per op — FDR 0020.)
 
 ## Security Considerations
 
@@ -616,8 +655,8 @@ nothing by advertising them to such a host.
 
 The reference `BulkMutator` landed with this RFC's acceptance (caldav,
 cutting-garden#191), and conformance tests for this capability live in
-`zz-tests_bats/` across two lanes: the `mcp.bats` CUD lane (per FDR 0020's
-precedent) pins the `bulk_mutate` MCP tool surface, and the
+`zz-tests_bats/` across two lanes: the `mcp.bats` write lane (per FDR 0020's
+precedent) pins the `mutate_nodes` MCP tool surface, and the
 `traversal_serve.bats` portable lane drives the RFC 0013 conformance
 driver's session-level `node.bulk_mutate` case (cutting-garden#196), so an
 external wire peer self-verifies against the same tree. They cover at

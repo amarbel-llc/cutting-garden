@@ -139,6 +139,25 @@ type NodeIDer interface {
 	RelativeNodeID(nodeURI, anchor string) (id string, ok bool)
 }
 
+// NodeIDResolver is the OPTIONAL inverse of NodeIDer: it turns an
+// anchor-relative id back into the node URI, so a caller that holds only an
+// id (the mutate_nodes MCP tool, cutting-garden#315) can address the node
+// without listing the anchor first. A NodeIDer plugin SHOULD implement it;
+// without it, its ids resolve through the host+path default
+// (node_view.NodeURIFor), which is right only for the ids it defers.
+//
+// ResolveNodeID MUST invert RelativeNodeID: for every node RelativeNodeID
+// accepts under anchor, ResolveNodeID(RelativeNodeID(uri, anchor), anchor)
+// returns uri. Like RelativeNodeID it MUST be pure — no fetch, no ambient
+// state — so it cannot tell whether the node exists; the mutation that
+// follows reports that. ok=false means the id is not one of the plugin's
+// own ids (the caller then tries the default).
+type NodeIDResolver interface {
+	NodeIDer
+
+	ResolveNodeID(id, anchor string) (nodeURI string, ok bool)
+}
+
 // EnrichedLister is the OPTIONAL capability a plugin implements to serve a
 // container's children ENRICHED — Facets and Fields populated — and
 // optionally narrowed by filter, in ONE data-bearing fetch

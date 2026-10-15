@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"net/url"
 
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
@@ -17,9 +18,32 @@ import (
 // result-collection — the #182 patchedNothing-vs-applied distinction most of
 // all — lives here so a subtle bug cannot be fixed inconsistently across
 // plugins.
+//
+// Temp ids (cutting-garden#315) resolve against result.Created, which is why
+// ops MUST run in request order: a TempID create goes through nm's
+// ContainerCreator.CreateChild and records the URI it chose, and a later
+// op's Ref / InRef reads it back. An op whose temp id did not resolve —
+// its create failed — fails without running.
 func ApplyBulkOp(
 	ctx context.Context, nm NodeMutator, op BulkOp, result *BulkResult,
 ) {
+	if op.TempID != "" {
+		applyTempCreate(ctx, nm, op, result)
+		return
+	}
+
+	if op.Ref != "" {
+		target, ok := result.createdURI(op.Ref)
+		if !ok {
+			result.Failed = append(result.Failed, BulkFailure{
+				Ref: op.Ref,
+				Err: dependentFailure(op.Ref),
+			})
+			return
+		}
+		op.URI = target
+	}
+
 	var (
 		patchedNothing bool
 		err            error
@@ -33,7 +57,9 @@ func ApplyBulkOp(
 	case BulkPatch:
 		var applied []string
 		applied, err = nm.PatchNode(ctx, op.URI, bytes.NewReader(op.Body))
-		patchedNothing = err == nil && len(applied) == 0
+		// A nil applied means the plugin does not report fields, not that
+		// none landed; only an authoritative empty one is patchedNothing.
+		patchedNothing = err == nil && applied != nil && len(applied) == 0
 	case BulkDelete:
 		err = nm.DeleteNode(ctx, op.URI)
 	default:
@@ -43,13 +69,69 @@ func ApplyBulkOp(
 	switch {
 	case err != nil:
 		result.Failed = append(
-			result.Failed, BulkFailure{URI: op.URI, Err: err.Error()},
+			result.Failed,
+			BulkFailure{URI: op.URI, Ref: op.Ref, Err: err.Error()},
 		)
 	case patchedNothing:
 		result.PatchedNothing = append(result.PatchedNothing, op.URI)
 	default:
 		result.AppliedNodes = append(result.AppliedNodes, op.URI)
 	}
+}
+
+// applyTempCreate runs a server-assigned create: the container is In, or the
+// node an earlier create made (InRef), and the source names the child.
+func applyTempCreate(
+	ctx context.Context, nm NodeMutator, op BulkOp, result *BulkResult,
+) {
+	fail := func(msg string) {
+		result.Failed = append(
+			result.Failed, BulkFailure{Ref: op.TempID, Err: msg},
+		)
+	}
+
+	creator, ok := nm.(ContainerCreator)
+	if !ok {
+		fail("this source does not create server-assigned children")
+		return
+	}
+
+	container := op.In
+	if op.InRef != "" {
+		if container, ok = result.createdURI(op.InRef); !ok {
+			fail(dependentFailure(op.InRef))
+			return
+		}
+	}
+
+	created, err := creator.CreateChild(
+		ctx, container, bytes.NewReader(op.Body), op.Type,
+	)
+	switch {
+	case err != nil:
+		fail(err.Error())
+	case created == nil:
+		fail("the source reported no created URI")
+	default:
+		result.Created = append(
+			result.Created, BulkCreated{TempID: op.TempID, URI: created},
+		)
+		result.AppliedNodes = append(result.AppliedNodes, created)
+	}
+}
+
+// createdURI looks up the node a TempID create in this request made.
+func (r *BulkResult) createdURI(tempID string) (*url.URL, bool) {
+	for _, c := range r.Created {
+		if c.TempID == tempID {
+			return c.URI, true
+		}
+	}
+	return nil, false
+}
+
+func dependentFailure(tempID string) string {
+	return "depends on the create of temp id " + tempID + ", which failed"
 }
 
 // BulkBestEffortOps applies an explicit changeset best-effort via nm,

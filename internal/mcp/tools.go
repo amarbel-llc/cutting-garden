@@ -3,7 +3,6 @@ package mcp
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/url"
 	"path"
 	"strings"
@@ -64,19 +63,15 @@ type readSurface interface {
 
 // Tools implements go-mcp's ToolProviderV1. It always advertises the
 // read-only schema/read/list discovery tools (describe_node_types, read_node,
-// list_nodes), and adds the create_node / put_node / patch_node / delete_node
-// write tools (FDR 0020) when a configured root's plugin implements
-// NodeMutator. A mutation targets the same node URI read_node/list_nodes
+// list_nodes), and adds the mutate_nodes write tool (FDR 0020,
+// cutting-garden#315) when a configured root's plugin can write. A mutation
+// targets the same node URI read_node/list_nodes
 // surface, so the read and write axes share one address space.
 type Tools struct {
 	roots   []*url.URL
 	resolve mutatorResolveFunc
-	// resolveCreator resolves the ContainerCreator capability
-	// (cutting-garden#143): create_node dispatches to CreateChild for
-	// types the plugin declares ServerAssignedIdentity.
-	resolveCreator creatorResolveFunc
-	// resolveBulk resolves the BulkMutator capability (RFC 0017): the
-	// bulk_mutate tool's multi-node write surface.
+	// resolveBulk resolves the BulkMutator capability (RFC 0017): where
+	// mutate_nodes sends a batch, falling back to resolve's NodeMutator.
 	resolveBulk bulkResolveFunc
 	reader      resourceReader
 	// facets is the read_facets tool's read surface (cutting-garden#151).
@@ -102,12 +97,6 @@ type Tools struct {
 	tagsOverride string
 }
 
-// creatorResolveFunc mirrors mutatorResolveFunc for the
-// server-assigned-identity creation capability.
-type creatorResolveFunc func(
-	uriStr string,
-) (*url.URL, cutting_garden_plugins.ContainerCreator, error)
-
 var _ server.ToolProviderV1 = (*Tools)(nil)
 
 // newTools builds a tool provider over the given roots, wired to the real
@@ -115,78 +104,31 @@ var _ server.ToolProviderV1 = (*Tools)(nil)
 // wrap.
 func newTools(roots []*url.URL, reader readSurface) *Tools {
 	return &Tools{
-		roots:          roots,
-		resolve:        command_components.ResolveNodeMutatorPlugin,
-		resolveCreator: command_components.ResolveContainerCreatorPlugin,
-		resolveBulk:    command_components.ResolveBulkMutatorPlugin,
-		reader:         reader,
-		facets:         reader,
-		resolveLister:  command_components.ResolveRootListerPlugin,
+		roots:         roots,
+		resolve:       command_components.ResolveNodeMutatorPlugin,
+		resolveBulk:   command_components.ResolveBulkMutatorPlugin,
+		reader:        reader,
+		facets:        reader,
+		resolveLister: command_components.ResolveRootListerPlugin,
 	}
 }
 
-// hasBulkMutator reports whether any configured root's plugin implements
-// BulkMutator, so the bulk_mutate tool is advertised only where it applies
-// (RFC 0017).
-func (t *Tools) hasBulkMutator() bool {
-	if t.resolveBulk == nil {
-		return false
-	}
+// hasWriter reports whether any configured root's plugin can write —
+// BulkMutator, or NodeMutator through the best-effort fallback — so
+// mutate_nodes is advertised only where it applies.
+func (t *Tools) hasWriter() bool {
 	for _, r := range t.roots {
-		if _, _, err := t.resolveBulk(r.String()); err == nil {
+		if t.bulkMutatorFor(r.String()) != nil {
 			return true
 		}
-	}
-	return false
-}
-
-// hasMutator reports whether any configured root's plugin can mutate —
-// NodeMutator or ContainerCreator — so the server advertises the write
-// tools only where they apply.
-func (t *Tools) hasMutator() bool {
-	for _, r := range t.roots {
 		if _, _, err := t.resolve(r.String()); err == nil {
 			return true
-		}
-		if t.resolveCreator != nil {
-			if _, _, err := t.resolveCreator(r.String()); err == nil {
-				return true
-			}
 		}
 	}
 	return false
 }
 
 const (
-	createNodeSchema = `{"type":"object","required":["uri","body"],` +
-		`"properties":{` +
-		`"uri":{"type":"string","description":"the node URI to create (e.g. caldav://host/cal/x.ics)"},` +
-		`"body":{"type":"string","description":"the object as raw iCalendar (.ics) or the {component,event|task} JSON resources/read returns"},` +
-		`"type":{"type":"string","description":"the node type tag, e.g. caldav-object-vtodo-v1"}}}`
-	putNodeSchema = `{"type":"object","required":["uri","body"],` +
-		`"properties":{` +
-		`"uri":{"type":"string","description":"the existing node URI to overwrite (full replace)"},` +
-		`"body":{"type":"string","description":"the new object as raw iCalendar or {component,event|task} JSON"}}}`
-	patchNodeSchema = `{"type":"object","required":["uri","body"],` +
-		`"properties":{` +
-		`"uri":{"type":"string","description":"the existing node URI to patch"},` +
-		`"body":{"type":"string","description":"a JSON object with only the fields to change; absent fields are left untouched"}}}`
-	deleteNodeSchema = `{"type":"object","required":["uri"],` +
-		`"properties":{"uri":{"type":"string","description":"the node URI to delete"}}}`
-	bulkMutateSchema = `{"type":"object","properties":{` +
-		`"atomicity":{"type":"string","enum":["best-effort","atomic"],"description":"completion mode (optional, default best-effort): best-effort applies each node independently and reports per-node results; atomic is all-or-nothing and is rejected unless the plugin supports it"},` +
-		`"ops":{"type":"array","description":"an explicit changeset: {kind,uri,body,type} ops on distinct nodes applied together. Exactly ONE of ops or sweep.","items":{"type":"object","required":["kind","uri"],"properties":{` +
-		`"kind":{"type":"string","enum":["create","put","patch","delete"]},` +
-		`"uri":{"type":"string"},` +
-		`"body":{"type":"string","description":"the create/put/patch body as a STRING (omit for delete). JSON-encode a JSON-bodied type (newsblur, jira) into this string; pass raw text for a raw-format type (caldav iCalendar, fj markdown) — see describe_node_types' accepts per type"},` +
-		`"type":{"type":"string","description":"the node type tag (only for create)"}}}},` +
-		`"sweep":{"type":"object","description":"a predicate sweep: apply one op to every node under root matching filter. Exactly ONE of ops or sweep.","required":["root","op"],"properties":{` +
-		`"root":{"type":"string","description":"the container URI to sweep under"},` +
-		`"filter":{"type":"string","description":"comma-separated dimension=value predicates (AND-composed); empty matches every node under root"},` +
-		`"op":{"type":"object","required":["kind"],"description":"the op template applied to each match; do NOT set a uri here — each matched node's own URI is substituted","properties":{` +
-		`"kind":{"type":"string","enum":["put","patch","delete"],"description":"the per-match op (create is invalid in a sweep)"},` +
-		`"body":{"type":"string","description":"the put/patch body as a STRING, same encoding as ops[].body"},` +
-		`"type":{"type":"string"}}}}}}}`
 	describeNodeTypesSchema = `{"type":"object","properties":{}}`
 	readNodeSchema          = `{"type":"object","required":["uri"],` +
 		`"properties":{"uri":{"type":"string","description":"the node URI to read (a leaf returns its parsed fields + a raw-bytes link; a container returns its child listing, plus its own body when it has one)"},` +
@@ -206,16 +148,13 @@ const (
 
 // toolDefs is the V1 tool catalogue this server advertises: the read-only
 // discovery tools (describe_node_types / read_node / list_nodes) always, plus
-// the CUD write tools when a configured root can mutate. Names, schemas, and
+// mutate_nodes when a configured root can write. Names, schemas, and
 // permission annotations come from mcp_tool_perms (the single classifier
 // shared with the clown hook).
 func (t *Tools) toolDefs() []protocol.ToolV1 {
 	defs := readToolDefs()
-	if t.hasMutator() {
-		defs = append(defs, cudToolDefs()...)
-	}
-	if t.hasBulkMutator() {
-		defs = append(defs, bulkMutateToolDef())
+	if t.hasWriter() {
+		defs = append(defs, mutateNodesToolDef())
 	}
 	return defs
 }
@@ -235,10 +174,12 @@ func readToolDefs() []protocol.ToolV1 {
 				"a tag-declaring type's tag_set ({field, interpreter}: the dimension " +
 				"whose values ride each enriched entry's tags array, and the " +
 				"interpreter ordering them), " +
-				"and, for writable types, the body payload create_node/put_node " +
-				"accept, with a concrete example. Read-only; call it first to learn " +
-				"a type tag, body shape, and filterable dimensions before create_node " +
-				"or a filtered read_facets/list_nodes call. The type tags, facet " +
+				"and, for writable types, the body payload mutate_nodes' create and " +
+				"put ops accept, with a concrete example (serverAssignedIdentity " +
+				"marks a type the source names: create it with a +temp id). " +
+				"Read-only; call it first to learn a type tag, body shape, and " +
+				"filterable dimensions before mutate_nodes or a filtered " +
+				"read_facets/list_nodes call. The type tags, facet " +
 				"dimensions, and listing fields it reports are also the vocabulary for " +
 				"list_nodes' trellis query predicates (!type and field OP value).",
 			InputSchema: json.RawMessage(describeNodeTypesSchema),
@@ -279,7 +220,7 @@ func readToolDefs() []protocol.ToolV1 {
 				"calendar event's {component,event|task} JSON) plus a raw-bytes link; a " +
 				"container returns its child listing as a {nodes, version?} object " +
 				"(version is the container snapshot token, when the plugin tracks " +
-				"one). The read sibling of create/put/patch/delete_node.",
+				"one). The read sibling of mutate_nodes.",
 			InputSchema: json.RawMessage(readNodeSchema),
 			Annotations: annotationFor(mcp_tool_perms.ToolReadNode),
 		},
@@ -312,73 +253,6 @@ func readToolDefs() []protocol.ToolV1 {
 				"declares no facets.",
 			InputSchema: json.RawMessage(readFacetsSchema),
 			Annotations: annotationFor(mcp_tool_perms.ToolReadFacets),
-		},
-	}
-}
-
-// bulkMutateToolDef is the RFC 0017 multi-node write tool
-// (cutting-garden#191): the agent-facing surface that collapses N
-// single-node writes into one call.
-func bulkMutateToolDef() protocol.ToolV1 {
-	return protocol.ToolV1{
-		Name: mcp_tool_perms.ToolBulkMutate,
-		Description: "Apply MANY mutations in ONE call (RFC 0017): either an " +
-			"explicit changeset (ops: a list of create/put/patch/delete on " +
-			"distinct node URIs) or a predicate sweep (apply one op to every " +
-			"node under a container matching a filter). Best-effort by default — " +
-			"each node applies independently and the result reports applied / " +
-			"patchedNothing / failed per node, so a partial failure keeps the " +
-			"successes. Use this instead of N separate patch_node calls (e.g. " +
-			"tagging many stories at once). All targets must share one scheme. " +
-			"Omit atomicity for best-effort. Each body is a STRING — JSON-encode " +
-			"a JSON body into it. Example (ops changeset): " +
-			`{"ops":[{"kind":"patch","uri":"newsblur://stories/123","body":"{\"read\":true}"},{"kind":"delete","uri":"newsblur://stories/456"}]}` +
-			". Example (sweep — mark every unread story read): " +
-			`{"sweep":{"root":"newsblur://stories","filter":"read=unread","op":{"kind":"patch","body":"{\"read\":true}"}}}` +
-			" — the sweep op has no uri (each matched node's URI is substituted).",
-		InputSchema: json.RawMessage(bulkMutateSchema),
-		Annotations: annotationFor(mcp_tool_perms.ToolBulkMutate),
-	}
-}
-
-// cudToolDefs is the create/put/patch/delete write-tool catalogue.
-func cudToolDefs() []protocol.ToolV1 {
-	return []protocol.ToolV1{
-		{
-			Name: mcp_tool_perms.ToolCreateNode,
-			Description: "Create a new node (e.g. a calendar event or task) at a node URI. " +
-				"Strict: errors if the node already exists (use put_node to overwrite). " +
-				"For types describe_node_types marks serverAssignedIdentity, pass the " +
-				"CONTAINER uri instead — the source names the node and the result " +
-				"reports the created URI.",
-			InputSchema: json.RawMessage(createNodeSchema),
-			Annotations: annotationFor(mcp_tool_perms.ToolCreateNode),
-		},
-		{
-			Name: mcp_tool_perms.ToolPutNode,
-			Description: "Overwrite an existing node's body at a node URI (full replace). " +
-				"Strict: errors if the node does not exist (use create_node).",
-			InputSchema: json.RawMessage(putNodeSchema),
-			Annotations: annotationFor(mcp_tool_perms.ToolPutNode),
-		},
-		{
-			Name: mcp_tool_perms.ToolPatchNode,
-			Description: "Partially update an existing node: body is a JSON object " +
-				"containing only the fields to change; absent fields are left untouched. " +
-				"Use instead of put_node when you only want to change one field " +
-				"without reading and re-sending the entire object. On success the " +
-				"result names the fields that were actually applied — a field the " +
-				"node type does not accept is ignored rather than applied, and a " +
-				"patch that applies nothing is an error, not a silent no-op. Check " +
-				"describe_node_types for the fields a type accepts.",
-			InputSchema: json.RawMessage(patchNodeSchema),
-			Annotations: annotationFor(mcp_tool_perms.ToolPatchNode),
-		},
-		{
-			Name:        mcp_tool_perms.ToolDeleteNode,
-			Description: "Delete the node at a node URI.",
-			InputSchema: json.RawMessage(deleteNodeSchema),
-			Annotations: annotationFor(mcp_tool_perms.ToolDeleteNode),
 		},
 	}
 }
@@ -416,11 +290,27 @@ func (t *Tools) ListToolsV1(
 	return &protocol.ToolsListResultV1{Tools: t.toolDefs()}, nil
 }
 
+// emptyResultText stands in for an empty tool result. go-mcp's text block
+// omits an empty `text`, and a text block without one is invalid MCP that
+// clients reject — a node with an empty body read with content=body hit it.
+const emptyResultText = "(empty: the node has no content)"
+
+// callText runs one tool call and never returns an empty success text.
+func (t *Tools) callText(
+	ctx context.Context, name string, args json.RawMessage,
+) (string, error) {
+	msg, err := t.call(ctx, name, args)
+	if err == nil && msg == "" {
+		msg = emptyResultText
+	}
+	return msg, err
+}
+
 // CallTool dispatches a V0 tool call.
 func (t *Tools) CallTool(
 	ctx context.Context, name string, args json.RawMessage,
 ) (*protocol.ToolCallResult, error) {
-	msg, err := t.call(ctx, name, args)
+	msg, err := t.callText(ctx, name, args)
 	if err != nil {
 		return protocol.ErrorResult(err.Error()), nil
 	}
@@ -433,7 +323,7 @@ func (t *Tools) CallTool(
 func (t *Tools) CallToolV1(
 	ctx context.Context, name string, args json.RawMessage,
 ) (*protocol.ToolCallResultV1, error) {
-	msg, err := t.call(ctx, name, args)
+	msg, err := t.callText(ctx, name, args)
 	if err != nil {
 		return protocol.ErrorResultV1(err.Error()), nil
 	}
@@ -442,144 +332,16 @@ func (t *Tools) CallToolV1(
 	}, nil
 }
 
-// createChild routes a create to ContainerCreator.CreateChild when the
-// scheme's plugin both implements the capability and DECLARES the requested
-// type ServerAssignedIdentity (via DescribeBodies — the explicit contract of
-// cutting-garden#143). handled is false when either condition misses, and
-// the caller falls through to the CreateNode path; err is meaningful only
-// when handled.
-func (t *Tools) createChild(
-	ctx context.Context, uriStr, body, typ string,
-) (created string, handled bool, err error) {
-	if t.resolveCreator == nil || typ == "" {
-		return "", false, nil
-	}
-	container, creator, err := t.resolveCreator(uriStr)
-	if err != nil {
-		return "", false, nil
-	}
-
-	describer, ok := creator.(cutting_garden_plugins.BodyDescriber)
-	if !ok {
-		return "", false, nil
-	}
-	declared := false
-	for _, b := range describer.DescribeBodies() {
-		if b.Tag == typ && b.ServerAssignedIdentity {
-			declared = true
-			break
-		}
-	}
-	if !declared {
-		return "", false, nil
-	}
-
-	createdURL, err := creator.CreateChild(
-		ctx, container, strings.NewReader(body), typ,
-	)
-	if err != nil {
-		return "", true, err
-	}
-	if createdURL == nil {
-		return "", true, errors.ErrorWithStackf(
-			"scheme %q: CreateChild returned no created URI", container.Scheme,
-		)
-	}
-	return createdURL.String(), true, nil
-}
-
-// call performs one mutation and returns a human-readable success line. A
-// returned error is surfaced as an MCP tool error result (IsError), not a
-// transport failure: a mutation rejection (already-exists, not-found, a
-// server 4xx/5xx) is information for the agent, not a protocol fault.
+// call performs one tool call and returns its text result. A returned error
+// is surfaced as an MCP tool error result (IsError), not a transport
+// failure: a mutation rejection (already-exists, not-found, a server
+// 4xx/5xx) is information for the agent, not a protocol fault.
 func (t *Tools) call(
 	ctx context.Context, name string, args json.RawMessage,
 ) (string, error) {
 	switch name {
-	case mcp_tool_perms.ToolCreateNode:
-		var in struct {
-			URI  string `json:"uri"`
-			Body string `json:"body"`
-			Type string `json:"type"`
-		}
-		if err := json.Unmarshal(args, &in); err != nil {
-			return "", errors.Wrap(err)
-		}
-
-		// Server-assigned-identity types (cutting-garden#143): the uri is
-		// the CONTAINER, the source names the created node, and the result
-		// reports the URI it chose. Dispatch is by the plugin's own
-		// declaration, so caller-named and server-assigned types coexist
-		// on one scheme.
-		if created, handled, err := t.createChild(ctx, in.URI, in.Body, in.Type); handled {
-			if err != nil {
-				return "", err
-			}
-			return "created " + created, nil
-		}
-
-		u, m, err := t.resolve(in.URI)
-		if err != nil {
-			return "", err
-		}
-		if err := m.CreateNode(ctx, u, strings.NewReader(in.Body), in.Type); err != nil {
-			return "", err
-		}
-		return "created " + in.URI, nil
-
-	case mcp_tool_perms.ToolPutNode:
-		var in struct {
-			URI  string `json:"uri"`
-			Body string `json:"body"`
-		}
-		if err := json.Unmarshal(args, &in); err != nil {
-			return "", errors.Wrap(err)
-		}
-		u, m, err := t.resolve(in.URI)
-		if err != nil {
-			return "", err
-		}
-		if err := m.PutNode(ctx, u, strings.NewReader(in.Body)); err != nil {
-			return "", err
-		}
-		return "put " + in.URI, nil
-
-	case mcp_tool_perms.ToolPatchNode:
-		var in struct {
-			URI  string `json:"uri"`
-			Body string `json:"body"`
-		}
-		if err := json.Unmarshal(args, &in); err != nil {
-			return "", errors.Wrap(err)
-		}
-		u, m, err := t.resolve(in.URI)
-		if err != nil {
-			return "", err
-		}
-		applied, err := m.PatchNode(ctx, u, strings.NewReader(in.Body))
-		if err != nil {
-			return "", err
-		}
-		return patchOutcome(in.URI, applied)
-
-	case mcp_tool_perms.ToolDeleteNode:
-		var in struct {
-			URI string `json:"uri"`
-		}
-		if err := json.Unmarshal(args, &in); err != nil {
-			return "", errors.Wrap(err)
-		}
-		u, m, err := t.resolve(in.URI)
-		if err != nil {
-			return "", err
-		}
-		if err := m.DeleteNode(ctx, u); err != nil {
-			return "", err
-		}
-		return "deleted " + in.URI, nil
-
-	case mcp_tool_perms.ToolBulkMutate:
-		return t.callBulkMutate(ctx, args)
+	case mcp_tool_perms.ToolMutateNodes:
+		return t.callMutateNodes(ctx, args)
 
 	case mcp_tool_perms.ToolDescribeNodeTypes:
 		body, err := json.MarshalIndent(
@@ -719,210 +481,6 @@ func (t *Tools) call(
 	default:
 		return "", errors.ErrorWithStackf("unknown tool %q", name)
 	}
-}
-
-// patchOutcome turns NodeMutator.PatchNode's applied into the patch_node
-// tool result, and is the single place the framework decides what an
-// entirely-ignored patch means (cutting-garden#182). Plugins report the
-// fact; only this layer judges it, so the judgement is uniform across
-// every scheme instead of relitigated per plugin.
-//
-// An authoritative empty applied is an ERROR here: the caller named fields,
-// nothing was applied, and a "patched <uri>" success is precisely the false
-// signal that let cutting-garden#180 sit undetected — the caller had no
-// reason to re-read. A nil applied carries no information (the plugin does
-// not report applied fields), so it keeps the plain success message rather
-// than being guessed either way.
-func patchOutcome(uri string, applied []string) (string, error) {
-	if applied == nil {
-		return "patched " + uri, nil
-	}
-
-	if len(applied) == 0 {
-		return "", errors.BadRequestf(
-			"patch_node: nothing was applied to %s, so the node is"+
-				" unchanged — either the plugin recognized none of the"+
-				" fields in the body, or the node already held what they"+
-				" ask for (an idempotent re-apply). Read the node to tell"+
-				" which; describe_node_types lists the fields this node"+
-				" type accepts on patch.",
-			uri,
-		)
-	}
-
-	return fmt.Sprintf(
-		"patched %s (applied: %s)", uri, strings.Join(applied, ", "),
-	), nil
-}
-
-// callBulkMutate handles the bulk_mutate tool (RFC 0017): it builds the
-// domain BulkRequest from the ops/sweep JSON, resolves the ONE BulkMutator
-// plugin from the first targeted URI (a bulk call goes to a single
-// plugin), validates the shape, dispatches, and renders the per-node
-// result. atomicity defaults to best-effort at this tool layer (never in
-// the Go zero value, RFC 0017 §Atomicity).
-func (t *Tools) callBulkMutate(
-	ctx context.Context, args json.RawMessage,
-) (string, error) {
-	var in struct {
-		Atomicity string `json:"atomicity"`
-		Ops       []struct {
-			Kind string `json:"kind"`
-			URI  string `json:"uri"`
-			Body string `json:"body"`
-			Type string `json:"type"`
-		} `json:"ops"`
-		Sweep *struct {
-			Root   string `json:"root"`
-			Filter string `json:"filter"`
-			Op     struct {
-				Kind string `json:"kind"`
-				Body string `json:"body"`
-				Type string `json:"type"`
-			} `json:"op"`
-		} `json:"sweep"`
-	}
-	if err := json.Unmarshal(args, &in); err != nil {
-		return "", errors.Wrap(err)
-	}
-
-	atomicity := cutting_garden_plugins.BulkAtomicity(in.Atomicity)
-	if in.Atomicity == "" {
-		atomicity = cutting_garden_plugins.BulkBestEffort
-	}
-	req := cutting_garden_plugins.BulkRequest{Atomicity: atomicity}
-
-	// Build BOTH shapes when present — never branch on sweep first — so a
-	// request that (by caller bug) supplies ops AND sweep reaches
-	// Validate()'s "got both" rejection instead of silently dropping the ops
-	// and executing only the sweep.
-	if len(in.Ops) > 0 {
-		req.Ops = make([]cutting_garden_plugins.BulkOp, 0, len(in.Ops))
-		for i, op := range in.Ops {
-			uri, err := url.Parse(op.URI)
-			if err != nil {
-				return "", errors.BadRequestf(
-					"bulk_mutate: ops[%d] uri %q: %s", i, op.URI, err,
-				)
-			}
-			req.Ops = append(req.Ops, cutting_garden_plugins.BulkOp{
-				Kind: cutting_garden_plugins.BulkOpKind(op.Kind),
-				URI:  uri,
-				Body: []byte(op.Body),
-				Type: op.Type,
-			})
-		}
-	}
-
-	if in.Sweep != nil {
-		filter, err := cutting_garden_plugins.ParseFacetFilter(in.Sweep.Filter)
-		if err != nil {
-			return "", err
-		}
-		root, err := url.Parse(in.Sweep.Root)
-		if err != nil {
-			return "", errors.BadRequestf(
-				"bulk_mutate: sweep.root %q: %s", in.Sweep.Root, err,
-			)
-		}
-		req.Sweep = &cutting_garden_plugins.BulkSweep{
-			Root:   root,
-			Filter: filter,
-			Op: cutting_garden_plugins.BulkOp{
-				Kind: cutting_garden_plugins.BulkOpKind(in.Sweep.Op.Kind),
-				Body: []byte(in.Sweep.Op.Body),
-				Type: in.Sweep.Op.Type,
-			},
-		}
-	}
-
-	if err := req.Validate(); err != nil {
-		return "", err
-	}
-
-	// Validate guarantees exactly one of Ops/Sweep is set (Ops non-empty),
-	// so the single plugin a bulk call targets is unambiguous: the sweep
-	// root, else the first op's URI.
-	var resolveURI string
-	if req.Sweep != nil {
-		resolveURI = in.Sweep.Root
-	} else {
-		resolveURI = in.Ops[0].URI
-	}
-
-	_, mutator, err := t.resolveBulk(resolveURI)
-	if err != nil {
-		return "", err
-	}
-
-	// Validate the sweep's parsed filter against the plugin's declared facet
-	// schema before dispatch (cutting-garden#161, same rule as list_nodes /
-	// read_facets): an undeclared dimension or an out-of-domain value is a
-	// loud bad request rather than a sweep that silently matches nothing,
-	// and a date-kind predicate is prefix-armed (cutting-garden#230) so a
-	// coarse `date_due=2026-08` sweep actually narrows by containment.
-	if req.Sweep != nil {
-		if verr := cutting_garden_plugins.ValidateFilterFor(
-			req.Sweep.Filter, mutator,
-		); verr != nil {
-			return "", errors.BadRequestf("bulk_mutate: sweep filter: %s", verr)
-		}
-	}
-
-	result, err := mutator.BulkMutate(ctx, req)
-	if err != nil {
-		return "", err
-	}
-
-	return renderBulkResult(result), nil
-}
-
-// renderBulkResult projects a BulkResult to the tool's JSON: applied is
-// always present (an empty array when nothing applied); patchedNothing,
-// failed, and atomic are omitted when empty/false.
-func renderBulkResult(result cutting_garden_plugins.BulkResult) string {
-	type failureView struct {
-		URI string `json:"uri"`
-		Err string `json:"err"`
-	}
-
-	out := struct {
-		Applied        []string      `json:"applied"`
-		PatchedNothing []string      `json:"patchedNothing,omitempty"`
-		Failed         []failureView `json:"failed,omitempty"`
-		Atomic         bool          `json:"atomic,omitempty"`
-	}{
-		Applied:        nonNilURLStrings(result.AppliedNodes),
-		PatchedNothing: nonNilURLStrings(result.PatchedNothing),
-		Atomic:         result.Atomic,
-	}
-
-	for _, failure := range result.Failed {
-		view := failureView{Err: failure.Err}
-		if failure.URI != nil {
-			view.URI = failure.URI.String()
-		}
-		out.Failed = append(out.Failed, view)
-	}
-
-	body, err := json.MarshalIndent(out, "", "  ")
-	if err != nil {
-		return fmt.Sprintf("bulk_mutate: %d applied", len(out.Applied))
-	}
-	return string(body)
-}
-
-// nonNilURLStrings projects a []*url.URL to a non-nil []string of the
-// non-nil URLs' string forms, preserving the "applied is always a present
-// (possibly empty) array" contract renderBulkResult relies on.
-func nonNilURLStrings(uris []*url.URL) []string {
-	out := make([]string, 0, len(uris))
-	for _, uri := range uris {
-		if uri != nil {
-			out = append(out, uri.String())
-		}
-	}
-	return out
 }
 
 // filteredListingView is list_nodes(uri)'s output shape whenever a filter
@@ -1357,8 +915,8 @@ type typeSchema struct {
 // bodySchema is the create/update payload description for a writable type: the
 // accepted formats and a concrete example. A formal JSON Schema per type is a
 // future addition (cutting-garden FDR 0020). ServerAssignedIdentity marks a
-// container-create type (cutting-garden#143): create_node takes the CONTAINER
-// URI and the result reports the URI the source assigned.
+// container-create type (cutting-garden#143): mutate_nodes creates it with a
+// temp id in a container, and the result reports the URI the source assigned.
 type bodySchema struct {
 	Accepts                []string `json:"accepts"`
 	Example                any      `json:"example,omitempty"`

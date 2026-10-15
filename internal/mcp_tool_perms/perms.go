@@ -27,11 +27,10 @@ const (
 // clown `mcp__plugin_<plugin>__` prefix the hook strips before classifying.
 // Shared so the registration and the classification agree.
 const (
-	ToolCreateNode        = "create_node"
-	ToolPutNode           = "put_node"
-	ToolPatchNode         = "patch_node"
-	ToolDeleteNode        = "delete_node"
-	ToolBulkMutate        = "bulk_mutate"
+	// ToolMutateNodes is the one write tool (cutting-garden#315): it
+	// replaced create_node, put_node, patch_node, delete_node, and
+	// bulk_mutate.
+	ToolMutateNodes       = "mutate_nodes"
 	ToolDescribeNodeTypes = "describe_node_types"
 	ToolReadNode          = "read_node"
 	ToolListNodes         = "list_nodes"
@@ -43,13 +42,13 @@ const (
 )
 
 // Classify returns the permission class of a tool by its base name (no
-// plugin prefix), and whether the name is known. The CUD write tools are
+// plugin prefix), and whether the name is known. The write tool is
 // destructive; the read/list/schema tools are read-only; an unknown name is
 // unclassified (ok=false) so the caller applies its own default — the hook
 // falls through to normal prompting rather than inventing a decision.
 func Classify(toolName string) (Class, bool) {
 	switch toolName {
-	case ToolCreateNode, ToolPutNode, ToolPatchNode, ToolDeleteNode, ToolBulkMutate:
+	case ToolMutateNodes:
 		return ClassDestructive, true
 	case ToolDescribeNodeTypes, ToolReadNode, ToolListNodes, ToolReadFacets:
 		return ClassRead, true

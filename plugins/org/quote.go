@@ -121,14 +121,14 @@ func (Plugin) PutNode(context.Context, *url.URL, io.Reader) error { return errOn
 func (Plugin) DeleteNode(context.Context, *url.URL) error { return errOnlyPatch }
 
 var errOnlyPatch = errors.BadRequestf(
-	`org plugin: the only supported write is patch_node on a headline (FDR 0026)`)
+	`org plugin: the only supported write is a patch of a headline (FDR 0026)`)
 
 // DescribeBodies declares the headline's patch for describe_node_types.
 func (Plugin) DescribeBodies() []cutting_garden_plugins.NodeTypeBody {
 	return []cutting_garden_plugins.NodeTypeBody{{
 		Tag: typeHeadline,
 		Accepts: []string{
-			`application/json, patch_node only, any of: "title" (string), "state" (a TODO keyword of the ` +
+			`application/json, patch ops only, any of: "title" (string), "state" (a TODO keyword of the ` +
 				`file, or null), "priority" ("A".."Z" or null), "own_tags" (the headline's own tags, the ` +
 				`whole set), "scheduled" / "deadline" ("YYYY-MM-DD" with an optional " HH:MM", or null), ` +
 				`"quote" (true: also add the zz-agent_quoted tag). The body is never edited. Any edit ` +
