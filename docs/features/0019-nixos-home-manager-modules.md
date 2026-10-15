@@ -111,6 +111,20 @@ the Go structs (`internal/config_common`, `plugins/caldav`).
   it). The seam is mechanism-agnostic: a later switch to systemd
   `LoadCredential` wraps the same option.
 
+### Options (home-manager only)
+
+- `installPackage` (bool, default `true`) — whether `package` goes into
+  `home.packages`. Turn it off when the user environment already gets
+  cutting-garden (and its `cg` alias) elsewhere; config.toml is rendered
+  either way.
+
+The home-manager module defines `home.packages` and the config file
+unconditionally, each under its own `mkIf`. Choosing attribute names from
+`config` (`mkIf cfg.enable (… // optionalAttrs …)`) recurses infinitely inside
+a NixOS home-manager user, which is a freeform submodule.
+`checks.home-manager-module-eval` evaluates the module in a freeform module
+to pin this.
+
 ## Examples
 
 Workstation (home-manager):

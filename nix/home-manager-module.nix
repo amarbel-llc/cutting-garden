@@ -35,17 +35,33 @@ in
       defaultText = lib.literalExpression "cutting-garden.packages.\${system}.default";
       description = "The cutting-garden package to install into the user environment.";
     };
+
+    installPackage = mkOption {
+      type = types.bool;
+      default = true;
+      description = ''
+        Whether to put `package` into `home.packages`. Turn it off when the
+        user environment already gets cutting-garden (and its `cg` alias)
+        from elsewhere, to avoid a colliding `bin/cg`; the config file is
+        rendered either way.
+      '';
+    };
   }
   // shared.options;
 
-  config = mkIf cfg.enable (
-    {
-      home.packages = [ cfg.package ];
-    }
-    // lib.optionalAttrs (configFile != null) {
-      # Renders to $XDG_CONFIG_HOME/cutting-garden/config.toml — exactly where
-      # the binary's config loader reads it (RFC 0007 § File Location).
-      xdg.configFile."cutting-garden/config.toml".source = configFile;
-    }
-  );
+  # Every attribute is defined unconditionally with its condition inside
+  # (mkIf), never chosen with `optionalAttrs` over `config`: inside a NixOS
+  # home-manager user (a freeform submodule), attribute names that depend on
+  # `config` recurse infinitely.
+  config = {
+    home.packages = mkIf (cfg.enable && cfg.installPackage) [ cfg.package ];
+
+    # Renders to $XDG_CONFIG_HOME/cutting-garden/config.toml — exactly where
+    # the binary's config loader reads it (RFC 0007 § File Location). Omitted
+    # when there are no configured sections (a missing file is a valid empty
+    # config).
+    xdg.configFile."cutting-garden/config.toml" = mkIf (cfg.enable && configFile != null) {
+      source = configFile;
+    };
+  };
 }

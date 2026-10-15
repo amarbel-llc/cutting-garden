@@ -1394,6 +1394,63 @@
               touch "$out"
             '';
 
+        # Eval-check for the home-manager module inside a FREEFORM module,
+        # which is how a NixOS home-manager user evaluates it: a module whose
+        # top-level attribute names depend on `config` recurses infinitely
+        # there, because the freeform remainder needs every definition's
+        # names. No home-manager input is needed to reproduce that; stub
+        # `home.packages` / `xdg.configFile` options stand in for
+        # home-manager's. Forces the rendered file and the package list.
+        checks.home-manager-module-eval =
+          let
+            inherit (pkgs.lib) mkOption types;
+            evalHome =
+              settings:
+              (pkgs.lib.evalModules {
+                modules = [
+                  {
+                    freeformType = types.lazyAttrsOf types.raw;
+                    options.home.packages = mkOption {
+                      type = types.listOf types.package;
+                      default = [ ];
+                    };
+                    options.xdg.configFile = mkOption {
+                      type = types.attrsOf (types.submodule { options.source = mkOption { type = types.path; }; });
+                      default = { };
+                    };
+                    config._module.args.pkgs = pkgs;
+                  }
+                  self.homeManagerModules.default
+                  { programs.cutting-garden = settings; }
+                ];
+              }).config;
+            enabled = evalHome {
+              enable = true;
+              org.accounts = [
+                {
+                  name = "notes";
+                  url = "https://dav.example/orgzly/";
+                  todoKeywords = "TODO IN_PROGRESS | DONE CANCELLED";
+                }
+              ];
+            };
+            noPackage = evalHome {
+              enable = true;
+              installPackage = false;
+            };
+            disabled = evalHome { };
+          in
+          assert builtins.length enabled.home.packages == 1;
+          assert noPackage.home.packages == [ ];
+          assert disabled.home.packages == [ ];
+          assert !(disabled.xdg.configFile ? "cutting-garden/config.toml");
+          pkgs.runCommand "cutting-garden-home-manager-module-eval" { } ''
+            grep -q '^\[\[org.accounts\]\]$' ${enabled.xdg.configFile."cutting-garden/config.toml".source}
+            grep -q 'todo_keywords = "TODO IN_PROGRESS | DONE CANCELLED"' \
+              ${enabled.xdg.configFile."cutting-garden/config.toml".source}
+            touch "$out"
+          '';
+
         # Eval-check for cutting-garden#158's `traversalPlugins`/`plugins`
         # options (docs/features/0019 addendum): render a sample
         # `traversalPlugins` entry with a non-empty `extraConfig` and confirm
