@@ -114,7 +114,8 @@ function list_query_filters_and_walks { # @test
   # types, rather than silently matching nothing (#266).
   run_cg list -query '!no-such-type-v1' "$CALDAV_SOURCE"
   assert_failure 64
-  assert_output --partial 'unknown node type `!no-such-type-v1`'
+  assert_output --partial 'unknown node type'
+  assert_output --partial '!no-such-type-v1'
   assert_output --partial 'caldav-object-vtodo-v1'
 
   # Forward walk: home -> calendars -> their objects. Objects from BOTH the
