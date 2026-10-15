@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-07-19
 ---
 
@@ -56,7 +56,16 @@ calls `Search` once per (mode, query) over the query's anchor — the whole
 subtree it can reach — and answers each node's `_body*=` / `_body~=` from
 that set. A complete result decides a node both ways; an incomplete one
 only confirms a match, and a node outside it falls back to the leaf read.
-§6 (the wire binding) is not implemented yet.
+
+§6 (the wire binding) is implemented in `internal/traversal_serve`:
+`nodes.search`, the `search` / `search-regex` tokens and `-32001`. The Go
+serve side advertises both tokens for any `Searcher`, because a Go plugin
+cannot declare regex support ahead of time; it answers a declined regex
+request with `-32001`, which the host treats as "walk instead". The host
+adapter declines a mode the peer does not advertise without calling it.
+The test peer is a substring-only `Searcher`, and
+`TestWireSearchIndistinguishableFromLinked` holds the wire and linked
+answers equal.
 
 ## Requirements Language
 

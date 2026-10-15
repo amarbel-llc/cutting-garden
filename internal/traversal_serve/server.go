@@ -14,6 +14,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	stderrors "errors"
 	"fmt"
 	"io"
 	"net/url"
@@ -124,6 +125,7 @@ type server struct {
 	creator     cutting_garden_plugins.ContainerCreator
 	enriched    cutting_garden_plugins.EnrichedLister
 	bulkMutator cutting_garden_plugins.BulkMutator
+	searcher    cutting_garden_plugins.Searcher
 
 	// schemes indexes the plugin's advertised URI schemes for the
 	// nodes.list scheme gate (RFC 0013 §Traversal).
@@ -249,6 +251,14 @@ func newServer(cfg ServeConfig) (*server, error) {
 	if enriched, ok := cfg.Plugin.(cutting_garden_plugins.EnrichedLister); ok {
 		srv.enriched = enriched
 		capabilities = append(capabilities, CapFilteredList)
+	}
+
+	// A Go Searcher may still decline regex per request
+	// (ErrSearchModeUnsupported, answered as -32001), so both tokens are
+	// advertised and the host falls back to walking on that answer.
+	if searcher, ok := cfg.Plugin.(cutting_garden_plugins.Searcher); ok {
+		srv.searcher = searcher
+		capabilities = append(capabilities, CapSearch, CapSearchRegex)
 	}
 
 	if bulkMutator, ok := cfg.Plugin.(cutting_garden_plugins.BulkMutator); ok {
@@ -446,6 +456,12 @@ func (s *server) dispatch(
 		}
 		return s.handleNodeBulkMutate(ctx, params)
 
+	case MethodNodesSearch:
+		if s.searcher == nil {
+			return nil, methodNotAdvertised(method)
+		}
+		return s.handleNodesSearch(ctx, params)
+
 	default:
 		return nil, &RPCError{
 			Code:    CodeMethodNotFound,
@@ -552,6 +568,61 @@ func (s *server) handleNodesList(
 		result.Nodes[i] = NodeViewFrom(node)
 	}
 
+	return result, nil
+}
+
+// handleNodesSearch serves nodes.search (RFC 0016 §6): a malformed request
+// (unserved scheme, empty query, unknown mode) is invalid params; a mode
+// the plugin declines is -32001, which the host answers by walking.
+func (s *server) handleNodesSearch(
+	ctx context.Context, params json.RawMessage,
+) (any, error) {
+	var searchParams NodesSearchParams
+	if rpcErr := unmarshalParams(params, &searchParams); rpcErr != nil {
+		return nil, rpcErr
+	}
+	uri, rpcErr := parseURIParam(searchParams.URI)
+	if rpcErr != nil {
+		return nil, rpcErr
+	}
+	if _, ok := s.schemes[uri.Scheme]; !ok {
+		return nil, &RPCError{
+			Code:    CodeInvalidParams,
+			Message: fmt.Sprintf("scheme %q not served (schemes: %v)", uri.Scheme, s.init.Schemes),
+		}
+	}
+	if searchParams.Query == "" {
+		return nil, &RPCError{Code: CodeInvalidParams, Message: "nodes.search: empty query"}
+	}
+	mode := cutting_garden_plugins.SearchMode(searchParams.Mode)
+	if mode != cutting_garden_plugins.SearchSubstring && mode != cutting_garden_plugins.SearchRegex {
+		return nil, &RPCError{
+			Code:    CodeInvalidParams,
+			Message: fmt.Sprintf("nodes.search: unknown mode %q", searchParams.Mode),
+		}
+	}
+
+	found, err := s.searcher.Search(ctx, cutting_garden_plugins.SearchRequest{
+		Root:   uri,
+		Query:  searchParams.Query,
+		Mode:   mode,
+		Filter: FacetFilterFrom(searchParams.Filter),
+		Limit:  searchParams.Limit,
+	})
+	if stderrors.Is(err, cutting_garden_plugins.ErrSearchModeUnsupported) {
+		return nil, &RPCError{
+			Code:    CodeUnsupportedMode,
+			Message: fmt.Sprintf("nodes.search: mode %q is not supported", mode),
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	result := NodesSearchResult{Nodes: make([]NodeView, len(found.Nodes)), Complete: found.Complete}
+	for i, node := range found.Nodes {
+		result.Nodes[i] = NodeViewFrom(node)
+	}
 	return result, nil
 }
 

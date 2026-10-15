@@ -221,6 +221,13 @@ type NodesListParams = internal.NodesListParams
 // list.
 type NodesListResult = internal.NodesListResult
 
+// NodesSearchParams is the nodes.search request payload (RFC 0016 §6).
+type NodesSearchParams = internal.NodesSearchParams
+
+// NodesSearchResult is the nodes.search response. An absent complete
+// means false (partial); a result covering every match sends true.
+type NodesSearchResult = internal.NodesSearchResult
+
 // Peer is one side of an RFC 0013 session: a JSON-RPC peer over a byte
 // stream, framing exactly one message per newline-terminated line
 // (§Framing). Unlike capture_serve's datagram peer there is no fd
@@ -603,16 +610,31 @@ const (
 	CapRoots        = internal.CapRoots
 )
 
+// CapSearch gates nodes.search in substring mode, CapSearchRegex the
+// additional regex mode (RFC 0016 §6); search-regex implies search.
+const (
+	CapSearch      = internal.CapSearch
+	CapSearchRegex = internal.CapSearchRegex
+)
+
 // CodeAtomicUnsupported is node.bulk_mutate's own code (RFC 0017
 // §Wire binding): "atomicity": "atomic" was requested against a plugin
 // that cannot honor it for this request — the reject-never-downgrade
 // rule. Distinct from the sibling RFC 0016's -32001.
 const (
-	CodeAtomicUnsupported  = internal.CodeAtomicUnsupported
-	CodeInternalError      = internal.CodeInternalError
-	CodeInvalidConfig      = internal.CodeInvalidConfig
-	CodeInvalidParams      = internal.CodeInvalidParams
-	CodeMethodNotFound     = internal.CodeMethodNotFound
+	CodeAtomicUnsupported = internal.CodeAtomicUnsupported
+	CodeInternalError     = internal.CodeInternalError
+	CodeInvalidConfig     = internal.CodeInvalidConfig
+	CodeInvalidParams     = internal.CodeInvalidParams
+	CodeMethodNotFound    = internal.CodeMethodNotFound
+)
+
+// CodeUnsupportedMode is nodes.search's own code (RFC 0016 §6): the
+// requested match mode is one the plugin does not accelerate — the
+// wire form of ErrSearchModeUnsupported, which the host answers by
+// walking, not by failing the read.
+const (
+	CodeUnsupportedMode    = internal.CodeUnsupportedMode
 	CodeUnsupportedVersion = internal.CodeUnsupportedVersion
 )
 
@@ -645,8 +667,14 @@ const (
 	MethodNodePatch       = internal.MethodNodePatch
 	MethodNodePut         = internal.MethodNodePut
 	MethodNodesList       = internal.MethodNodesList
-	MethodRootsList       = internal.MethodRootsList
-	MethodShutdown        = internal.MethodShutdown
+)
+
+// MethodNodesSearch is Searcher.Search (RFC 0016 §6), gated on
+// CapSearch (and CapSearchRegex for "mode": "regex").
+const (
+	MethodNodesSearch = internal.MethodNodesSearch
+	MethodRootsList   = internal.MethodRootsList
+	MethodShutdown    = internal.MethodShutdown
 )
 
 // ProtocolCapture declares the plugin speaks the RFC 0008 capture

@@ -53,6 +53,9 @@ const (
 	MethodNodePatch       = "node.patch"
 	MethodNodeDelete      = "node.delete"
 	MethodNodeBulkMutate  = "node.bulk_mutate"
+	// MethodNodesSearch is Searcher.Search (RFC 0016 §6), gated on
+	// CapSearch (and CapSearchRegex for "mode": "regex").
+	MethodNodesSearch = "nodes.search"
 )
 
 // JSON-RPC error codes (RFC 0013 §Errors). The first two are RFC-defined
@@ -74,10 +77,15 @@ const (
 // host-side, not failure.
 const (
 	CodeUnsupportedVersion = -32000
-	CodeInvalidConfig      = -32002
-	CodeMethodNotFound     = -32601
-	CodeInvalidParams      = -32602
-	CodeInternalError      = -32603
+	// CodeUnsupportedMode is nodes.search's own code (RFC 0016 §6): the
+	// requested match mode is one the plugin does not accelerate — the
+	// wire form of ErrSearchModeUnsupported, which the host answers by
+	// walking, not by failing the read.
+	CodeUnsupportedMode = -32001
+	CodeInvalidConfig   = -32002
+	CodeMethodNotFound  = -32601
+	CodeInvalidParams   = -32602
+	CodeInternalError   = -32603
 	// CodeAtomicUnsupported is node.bulk_mutate's own code (RFC 0017
 	// §Wire binding): "atomicity": "atomic" was requested against a plugin
 	// that cannot honor it for this request — the reject-never-downgrade
@@ -122,7 +130,27 @@ const (
 	// (caldav has no multi-object transaction), so every atomic request is
 	// still rejected today.
 	CapBulkAtomic = "bulk-atomic"
+	// CapSearch gates nodes.search in substring mode, CapSearchRegex the
+	// additional regex mode (RFC 0016 §6); search-regex implies search.
+	CapSearch      = "search"
+	CapSearchRegex = "search-regex"
 )
+
+// NodesSearchParams is the nodes.search request payload (RFC 0016 §6).
+type NodesSearchParams struct {
+	URI    string          `json:"uri"`
+	Query  string          `json:"query"`
+	Mode   string          `json:"mode"`
+	Filter []PredicateView `json:"filter,omitempty"`
+	Limit  int             `json:"limit,omitempty"`
+}
+
+// NodesSearchResult is the nodes.search response. An absent complete
+// means false (partial); a result covering every match sends true.
+type NodesSearchResult struct {
+	Nodes    []NodeView `json:"nodes"`
+	Complete bool       `json:"complete,omitempty"`
+}
 
 // InitializeParams is the host→plugin initialize request payload
 // (RFC 0013 §Handshake).

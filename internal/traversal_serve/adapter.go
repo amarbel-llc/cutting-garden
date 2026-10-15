@@ -66,6 +66,7 @@ var (
 	_ cutting_garden_plugins.AtomicBulkMutator = (*WirePlugin)(nil)
 	_ cutting_garden_plugins.BodyDescriber     = (*WirePlugin)(nil)
 	_ cutting_garden_plugins.ContainerCreator  = (*WirePlugin)(nil)
+	_ cutting_garden_plugins.Searcher          = (*WirePlugin)(nil)
 	// The facet_writes amendment: declarations come from initialize, and
 	// both appliers build the host-defined node.patch shapes.
 	_ cutting_garden_plugins.FacetWriteDescriber    = (*WirePlugin)(nil)
@@ -655,6 +656,46 @@ func (w *WirePlugin) ListEnriched(
 	}
 
 	return nodes, true, nil
+}
+
+// Search is nodes.search (RFC 0016 §6). A plugin that does not advertise
+// the mode — search for substring, search-regex for regex — declines with
+// ErrSearchModeUnsupported and no wire call, as does a -32001 answer, so
+// the evaluator walks exactly as for a linked plugin without a Searcher.
+func (w *WirePlugin) Search(
+	ctx context.Context, req cutting_garden_plugins.SearchRequest,
+) (cutting_garden_plugins.SearchResult, error) {
+	need := CapSearch
+	if req.Mode == cutting_garden_plugins.SearchRegex {
+		need = CapSearchRegex
+	}
+	sess, advertised, err := w.liveSessionWithCap(need)
+	if err != nil {
+		return cutting_garden_plugins.SearchResult{}, err
+	}
+	if !advertised || !slices.Contains(sess.Init.Capabilities, CapSearch) {
+		return cutting_garden_plugins.SearchResult{}, cutting_garden_plugins.ErrSearchModeUnsupported
+	}
+
+	var result NodesSearchResult
+	err = w.call(ctx, sess, MethodNodesSearch, NodesSearchParams{
+		URI:    req.Root.String(),
+		Query:  req.Query,
+		Mode:   string(req.Mode),
+		Filter: PredicateViewsFrom(req.Filter),
+		Limit:  req.Limit,
+	}, &result)
+	if code, ok := CodeOf(err); ok && code == CodeUnsupportedMode {
+		return cutting_garden_plugins.SearchResult{}, cutting_garden_plugins.ErrSearchModeUnsupported
+	}
+	if err != nil {
+		return cutting_garden_plugins.SearchResult{}, err
+	}
+	nodes, err := w.nodesFrom(sess, result.Nodes)
+	if err != nil {
+		return cutting_garden_plugins.SearchResult{}, err
+	}
+	return cutting_garden_plugins.SearchResult{Nodes: nodes, Complete: result.Complete}, nil
 }
 
 // Roots is gated on CapRoots: unadvertised means (nil, nil) — the

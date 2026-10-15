@@ -10,6 +10,7 @@
 package traversal_serve_testpeer
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -450,6 +451,57 @@ func (p *TreePlugin) ListRoots(
 	}
 
 	return children, nil
+}
+
+// Search is the Searcher capability (RFC 0016), substring mode only, so a
+// regex request exercises the decline path (ErrSearchModeUnsupported, -32001
+// on the wire). It searches what ReadLeaf serves as Raw, over node's whole
+// subtree including node itself — the same text `_body` reads.
+func (p *TreePlugin) Search(
+	_ context.Context, req cutting_garden_plugins.SearchRequest,
+) (cutting_garden_plugins.SearchResult, error) {
+	if req.Mode == cutting_garden_plugins.SearchRegex {
+		return cutting_garden_plugins.SearchResult{}, cutting_garden_plugins.ErrSearchModeUnsupported
+	}
+	if req.Root == nil || req.Query == "" {
+		return cutting_garden_plugins.SearchResult{}, errors.BadRequestf("search needs a root and a query")
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	presentation := p.presentation()
+	result := cutting_garden_plugins.SearchResult{Complete: true}
+	var visit func(key string) error
+	visit = func(key string) error {
+		n, ok := p.nodes[key]
+		if !ok {
+			return nil
+		}
+		if bytes.Contains(n.raw, []byte(req.Query)) && req.Filter.Matches(n.facets) {
+			if req.Limit > 0 && len(result.Nodes) == req.Limit {
+				result.Complete = false
+				return nil
+			}
+			uri, err := url.Parse(key)
+			if err != nil {
+				return errors.Wrap(err)
+			}
+			result.Nodes = append(result.Nodes, presentation.ProjectFields(cutting_garden_plugins.Node{
+				URI: uri, Name: n.name, Type: n.typ, Facets: cloneFacets(n.facets),
+			}))
+		}
+		for _, child := range n.children {
+			if err := visit(child); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if err := visit(readKey(req.Root)); err != nil {
+		return cutting_garden_plugins.SearchResult{}, err
+	}
+	return result, nil
 }
 
 // ListEnriched is the EnrichedLister capability (cutting-garden#160), the
