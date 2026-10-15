@@ -84,6 +84,14 @@ run_cg() {
   run timeout --preserve-status 10s "$bin" "$@"
 }
 
+# run_cg_stdout is run_cg with stderr kept out of $output (it lands in
+# $stderr), for asserting a command's stdout exactly when it may also warn —
+# e.g. `list` reporting a date-windowed caldav listing as partial (#266).
+run_cg_stdout() {
+  local bin="${CG_BIN:-cutting-garden}"
+  run --separate-stderr timeout --preserve-status 10s "$bin" "$@"
+}
+
 # init_store creates a blob store at $1 (defaults to .default) with
 # encryption disabled — keeps the bats tmpdir-only test footprint
 # free of key material.

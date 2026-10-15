@@ -104,11 +104,18 @@ function list_query_filters_and_walks { # @test
   assert_output --partial 'Personal'
   assert_output --partial 'Work'
 
-  # A non-matching type predicate filters everything out.
-  run_cg list -query '!no-such-type-v1' "$CALDAV_SOURCE"
+  # A declared type that no child has filters everything out.
+  run_cg list -query '!caldav-object-vtodo-v1' "$CALDAV_SOURCE"
   assert_success
   refute_output --partial 'Personal'
   refute_output --partial 'Work'
+
+  # A type the plugin does not declare is refused, naming the declared
+  # types, rather than silently matching nothing (#266).
+  run_cg list -query '!no-such-type-v1' "$CALDAV_SOURCE"
+  assert_failure 64
+  assert_output --partial 'unknown node type `!no-such-type-v1`'
+  assert_output --partial 'caldav-object-vtodo-v1'
 
   # Forward walk: home -> calendars -> their objects. Objects from BOTH the
   # Personal (task1.ics) and Work (task3.ics) calendars appear, so the walk

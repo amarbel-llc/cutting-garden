@@ -205,7 +205,7 @@ EOF
   # The mesa plain form (TAB-separated, native tags slice 4): caldav declares
   # the categories tag dimension, so the TAGS column is present — empty (a
   # trailing TAB) for these untagged fixtures.
-  run_cg list -query 'status=completed' "$CAL"
+  run_cg_stdout list -query 'status=completed' "$CAL"
   assert_success
   assert_tab_table \
     "$(tab_row URI NAME TYPE TAGS)" \
@@ -213,7 +213,7 @@ EOF
 
   # The old uppercase spelling still matches — the FoldCase dimension folds
   # BOTH sides of the predicate (FDR 0025 case-fold matching rule).
-  run_cg list -query 'status=COMPLETED' "$CAL"
+  run_cg_stdout list -query 'status=COMPLETED' "$CAL"
   assert_success
   assert_tab_table \
     "$(tab_row URI NAME TYPE TAGS)" \
@@ -242,7 +242,7 @@ EOF
 
   # The live status query finds nothing — mesa's zero-row plain form renders
   # nothing at all (native tags slice 4).
-  run_cg list -query 'status=completed' "$CAL"
+  run_cg_stdout list -query 'status=completed' "$CAL"
   assert_success
   assert_output ''
 
@@ -268,7 +268,7 @@ organize: 1 change(s):
 organize: wrote 1 change(s)
 EOF
 
-  run_cg list -query 'status=completed' "$CAL"
+  run_cg_stdout list -query 'status=completed' "$CAL"
   assert_success
   assert_tab_table \
     "$(tab_row URI NAME TYPE TAGS)" \
@@ -303,13 +303,13 @@ function organize_apply_conflict_rejects { # @test
 	  task1.ics: base="" live="" (your edit moved it to "cancelled")
 	EOM
 
-  run_cg list -query 'status=completed' "$CAL"
+  run_cg_stdout list -query 'status=completed' "$CAL"
   assert_success
   assert_tab_table \
     "$(tab_row URI NAME TYPE TAGS)" \
     "$(tab_row caldav:http://127.0.0.1:24101/dav/cal/task1.ics task1.ics caldav-object-vtodo-v1 '')"
 
-  run_cg list -query 'status=cancelled' "$CAL"
+  run_cg_stdout list -query 'status=cancelled' "$CAL"
   assert_success
   assert_output ''
 
