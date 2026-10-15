@@ -4,13 +4,11 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
-	"encoding/json"
 	stderrors "errors"
 	"fmt"
 	"io"
 	"net/url"
 	"regexp"
-	"slices"
 	"time"
 
 	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
@@ -18,12 +16,14 @@ import (
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
-// The quote write (FDR 0026 D12, cutting-garden#309): the plugin's only
-// write. `patch_node <headline> {"quote": true}` makes a headline's
-// reference durable: the plugin mints its :ID: (the agent does not choose
-// it) and adds the own tag zz-agent_quoted, which never inherits. The
-// write takes a WebDAV LOCK (Fastmail Files ignores conditional headers,
-// #267): LOCK → GET → splice → PUT with the token → UNLOCK.
+// The quote write (FDR 0026 D12, cutting-garden#309):
+// `patch_node <headline> {"quote": true}` makes a headline's reference
+// durable: the plugin mints its :ID: (the agent does not choose it) and
+// adds the own tag zz-agent_quoted, which never inherits. It is one case
+// of a headline edit (edit.go), sharing its write path: a WebDAV LOCK
+// (Fastmail Files ignores conditional headers, #267), then LOCK → GET →
+// splice → PUT with the token → UNLOCK. This file holds that path's
+// shared pieces.
 
 const fieldQuote = "quote"
 
@@ -32,88 +32,6 @@ const fieldQuote = "quote"
 // A variable so tests can shorten it.
 var lockRetryDelays = []time.Duration{
 	1 * time.Second, 2 * time.Second, 3 * time.Second, 4 * time.Second, 5 * time.Second,
-}
-
-// PatchNode applies {"quote": true} to a headline. Other keys are
-// tolerated and not applied. A headline already quoted changes nothing,
-// so applied is empty.
-func (Plugin) PatchNode(ctx context.Context, uri *url.URL, body io.Reader) ([]string, error) {
-	var patch map[string]json.RawMessage
-	if err := json.NewDecoder(body).Decode(&patch); err != nil {
-		return nil, errors.BadRequestf("org plugin: patch body is not a JSON object: %s", err)
-	}
-	if len(patch) == 0 {
-		return nil, errors.BadRequestf("org plugin: empty patch body")
-	}
-	raw, ok := patch[fieldQuote]
-	if !ok {
-		return []string{}, nil
-	}
-	var quote bool
-	if err := json.Unmarshal(raw, &quote); err != nil {
-		return nil, errors.BadRequestf("org plugin: quote must be true, got %s", raw)
-	}
-	if !quote {
-		return nil, errors.BadRequestf("org plugin: quote must be true (unquoting is not supported)")
-	}
-
-	t, err := resolve(uri)
-	if err != nil {
-		return nil, err
-	}
-	if t.ref.kind != kindHeadline {
-		return nil, errors.BadRequestf("org plugin: only a headline can be quoted, not %q", uri.String())
-	}
-	changed, err := t.quote(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if !changed {
-		return []string{}, nil
-	}
-	return []string{fieldQuote}, nil
-}
-
-func (t target) quote(ctx context.Context) (changed bool, err error) {
-	token, err := t.lockWithRetry(ctx)
-	if err != nil {
-		return false, err
-	}
-	defer t.client.unlock(context.WithoutCancel(ctx), t.ref.path, token)
-
-	// Fresh read under the lock; the cache may be stale.
-	body, etag, err := t.client.get(ctx, t.ref.path)
-	if err != nil {
-		return false, err
-	}
-	pf := parseFile(t.acct, t.ref.path, etag, body)
-	n, ok := pf.find(t.ref)
-	if !ok {
-		return false, errors.BadRequestf(
-			"org plugin: no such headline in %s (renamed or moved?)", t.ref.path)
-	}
-	if n.h.Synthetic {
-		return false, errors.BadRequestf(
-			"org plugin: %s has no headlines; there is nothing to quote", t.ref.path)
-	}
-	updated, changed := spliceQuote(body, n.h, n.idShadowed())
-	if !changed {
-		return false, nil
-	}
-	defer resetCacheEntry(t.acct.Name, t.ref.path)
-	err = t.client.put(ctx, t.ref.path, updated, token)
-	var unknown outcomeUnknown
-	if stderrors.As(err, &unknown) {
-		// Still holding the lock, so a re-read settles it: if our bytes are
-		// there, the write landed.
-		if now, _, getErr := t.client.get(ctx, t.ref.path); getErr == nil && bytes.Equal(now, updated) {
-			return true, nil
-		}
-	}
-	if err != nil {
-		return false, err
-	}
-	return true, nil
 }
 
 // idShadowed reports a copy-pasted headline whose :ID: an earlier headline
@@ -145,53 +63,12 @@ func (t target) lockWithRetry(ctx context.Context) (string, error) {
 	}
 }
 
-// tagSuffixRe finds a headline line's trailing tag block.
+// tagSuffixRe finds a headline line's trailing tag block: the gap before
+// it, then the block.
 var tagSuffixRe = regexp.MustCompile(`([ \t]+)(:(?:[^\s:]+:)+)[ \t]*$`)
 
 // idLineRe matches a drawer's ID property line, value or not.
 var idLineRe = regexp.MustCompile(`(?i)^[ \t]*:ID:`)
-
-// spliceQuote gives h a fresh :ID: (when it has none, an empty one, or a
-// shadowed copy's) and the zz-agent_quoted own tag (when absent), touching
-// nothing else. New lines use the headline's own line ending. changed is
-// false when h already has both.
-func spliceQuote(src []byte, h *orgtext.Headline, idShadowed bool) (out []byte, changed bool) {
-	nl := "\n"
-	if h.LineSpan.End < len(src) && src[h.LineSpan.End] == '\r' {
-		nl = "\r\n"
-	}
-	out = append([]byte(nil), src...)
-
-	// The drawer edit sits after the headline line, so splice it first and
-	// the line's offsets stay valid.
-	if h.ID() == "" || idShadowed {
-		idLine := ":ID:       " + newUUID()
-		if h.DrawerSpan.Empty() {
-			ins := ":PROPERTIES:" + nl + idLine + nl + ":END:" + nl
-			at := h.DrawerSpan.Start
-			if at > 0 && src[at-1] != '\n' {
-				ins = nl + ins // the file ended without a newline
-			}
-			out = insertAt(out, at, []byte(ins))
-		} else {
-			out = spliceDrawerID(out, h.DrawerSpan, idLine, nl)
-		}
-		changed = true
-	}
-
-	if !slices.Contains(h.OwnTags, agentQuotedTag) {
-		line := string(src[h.LineSpan.Start:h.LineSpan.End])
-		var newLine string
-		if m := tagSuffixRe.FindStringSubmatchIndex(line); m != nil {
-			newLine = line[:m[5]] + agentQuotedTag + ":" + line[m[5]:]
-		} else {
-			newLine = line + " :" + agentQuotedTag + ":"
-		}
-		out = append(out[:h.LineSpan.Start:h.LineSpan.Start], append([]byte(newLine), out[h.LineSpan.End:]...)...)
-		changed = true
-	}
-	return out, changed
-}
 
 // spliceDrawerID replaces the drawer's existing :ID: line (empty or
 // shadowed) with idLine, or inserts idLine after `:PROPERTIES:` when there
@@ -233,28 +110,33 @@ func newUUID() string {
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
 
-// The rest of NodeMutator: quote is the only write (FDR 0026 D7/D8 defer
-// everything else).
+// The rest of NodeMutator: headlines are only patched (FDR 0026 slice 3a);
+// creating, replacing and deleting are not supported.
 func (Plugin) CreateNode(context.Context, *url.URL, io.Reader, string) error {
-	return errOnlyQuote
+	return errOnlyPatch
 }
 
-func (Plugin) PutNode(context.Context, *url.URL, io.Reader) error { return errOnlyQuote }
+func (Plugin) PutNode(context.Context, *url.URL, io.Reader) error { return errOnlyPatch }
 
-func (Plugin) DeleteNode(context.Context, *url.URL) error { return errOnlyQuote }
+func (Plugin) DeleteNode(context.Context, *url.URL) error { return errOnlyPatch }
 
-var errOnlyQuote = errors.BadRequestf(
-	`org plugin: the only supported write is patch_node {"quote": true} on a headline (FDR 0026 D12)`)
+var errOnlyPatch = errors.BadRequestf(
+	`org plugin: the only supported write is patch_node on a headline (FDR 0026)`)
 
-// DescribeBodies declares the headline's one write for describe_node_types.
+// DescribeBodies declares the headline's patch for describe_node_types.
 func (Plugin) DescribeBodies() []cutting_garden_plugins.NodeTypeBody {
 	return []cutting_garden_plugins.NodeTypeBody{{
 		Tag: typeHeadline,
 		Accepts: []string{
-			`application/json, patch_node only: {"quote": true} mints the headline's :ID: and adds the ` +
-				`zz-agent_quoted tag, making its ?id= URI durable; read the node again for the id`,
+			`application/json, patch_node only, any of: "title" (string), "state" (a TODO keyword of the ` +
+				`file, or null), "priority" ("A".."Z" or null), "own_tags" (the headline's own tags, the ` +
+				`whole set), "scheduled" / "deadline" ("YYYY-MM-DD" with an optional " HH:MM", or null), ` +
+				`"quote" (true: also add the zz-agent_quoted tag). The body is never edited. Any edit ` +
+				`mints the headline's :ID: when it has none, so read the node again for its ?id= URI; ` +
+				`entering or leaving a done state adds or removes CLOSED. A lost_to_concurrent_sync ` +
+				`error means another writer (an Orgzly sync) overwrote the edit: re-read and re-apply.`,
 		},
-		Example: map[string]any{fieldQuote: true},
+		Example: map[string]any{fieldPatchState: "DONE", fieldPatchScheduled: "2026-10-20"},
 	}}
 }
 

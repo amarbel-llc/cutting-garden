@@ -96,11 +96,28 @@ Taken 2026-10-14:
 - **D2, scope.** One base WebDAV URL per account. Every `*.org` file beneath
   it is exposed, and subdirectories become folder nodes. Other files are
   skipped by design.
-- **Deferred (D7, D8):** agent capture and any other writes, and the
-  conflict policy against Orgzly. Orgzly uploads unconditionally, and
-  Fastmail Files ignores conditional headers but enforces LOCK (#267).
-  Writes into files the user edits on the phone need a real-device test of
-  Orgzly's conflict behaviour first.
+- **Deferred (D7):** agent capture (creating headlines), body edits and
+  moves.
+
+Taken 2026-10-15, for metadata edits (slice 3):
+
+- **D7-B, edits.** `patch_node` on a headline sets `title`, `state`,
+  `priority`, `own_tags` (the whole own set), `scheduled` and `deadline`
+  (`YYYY-MM-DD` with an optional ` HH:MM`; `null` clears), alongside
+  `quote`. The body is never edited. Slice 3a is `patch_node`; slice 3b
+  declares the same fields to organize (facet writes, tag atoms).
+- **D8-C, conflict policy.** Edits land in files the user also edits in
+  Orgzly, which uploads without locking (#267). Each edit takes the quote's
+  LOCK path, then reads the file back after unlocking and again after 2 s.
+  If the edit is gone, the call fails with `lost_to_concurrent_sync` rather
+  than reporting success. This detects the race; it cannot prevent it. A
+  client that honours the lock is explored in #314 ("shears").
+- **D13, ids.** Any edit mints an `:ID:` when the headline has none (or a
+  shadowed copy's), without the `zz-agent_quoted` tag, so a retitled
+  headline keeps a durable `?id=` URI. A child's `?h=` path does change
+  when its parent is retitled.
+- **D14, CLOSED.** Entering a done keyword adds `CLOSED: [now]` to the
+  planning line (first, as org does); leaving one removes it.
 
 ## Facets
 
@@ -172,9 +189,10 @@ start with a step matching the anchor's children (a leading `->>` is not
 supported yet, #211), and a regex containing `(` is quoted:
 `[!cutting_garden-org-file-v1, !cutting_garden-org-folder-v1] ->>
 !cutting_garden-org-headline-v1 title~="(?i)leak"`.
-Slice 2 adds `NodeMutator` (only `PatchNode` with `{"quote": true}`;
-create/put/delete are bad requests) and `BodyDescriber` (so
-describe_node_types marks the headline writable and shows the body).
+Slice 2 adds `NodeMutator` (only `PatchNode`, first with `{"quote": true}`
+and from slice 3a with the metadata fields; create/put/delete are bad
+requests) and `BodyDescriber` (so describe_node_types marks the headline
+writable and lists the patch keys).
 `PatchNode` can only report applied field names, not a new URI, so the
 agent reads the node again: the old `?h=` URI still resolves, its fields
 now carry `id`, and later listings mint the `?id=` URI. A re-quote changes
@@ -199,7 +217,16 @@ server.
    empty one, is replaced rather than duplicated, and the splice keeps the
    headline's own line ending. The test server enforces LOCK and, like Fastmail Files,
    ignores conditional headers.
-3. Later: capture and edits (D7/D8), organize writes, local-dir/SFTP
+3. **Metadata edits.** 3a (landed): `patch_node` edits (D7-B, D8-C, D13,
+   D14), sharing the quote's write path. The headline line is rebuilt only
+   when its keyword, priority or title changes (a tags-only edit replaces
+   just the tag block, keeping the line's spacing) and must parse back to
+   exactly what was asked for, so a title cannot begin with a keyword or
+   end in `:tags:` where that would be ambiguous. Planning entries are
+   edited in place; a rescheduled date keeps its repeater and warning
+   cookies, and a new planning line is written unindented. 3b: organize
+   writes for the same fields.
+4. Later: capture (creating headlines), body edits and moves, local-dir/SFTP
    transports, archival capture (dodder FDR 0013's reference set).
 
 ## Prior art and links

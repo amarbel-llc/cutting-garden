@@ -50,6 +50,9 @@ func setup(t *testing.T) *orgtestserver.Server {
 	}
 	setConfiguredAccounts(accounts)
 	t.Cleanup(func() { setConfiguredAccounts(nil) })
+	savedDelay := readBackDelay
+	readBackDelay = 0
+	t.Cleanup(func() { readBackDelay = savedDelay })
 	return srv
 }
 

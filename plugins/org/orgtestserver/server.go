@@ -55,6 +55,8 @@ type Server struct {
 	locks  map[string]string // path → lock token
 	tokens int
 	counts map[string]int // method → authenticated requests served
+
+	staleUploads map[string][]byte // path → content uploaded right after its next UNLOCK
 }
 
 // Requests reports how many authenticated requests with this method the
@@ -103,7 +105,10 @@ func Start() *Server { return StartAt("") }
 // StartAt starts a server on addr ("host:port"), or an ephemeral loopback
 // port when addr is empty.
 func StartAt(addr string) *Server {
-	s := &Server{files: map[string]*file{}, locks: map[string]string{}, counts: map[string]int{}}
+	s := &Server{
+		files: map[string]*file{}, locks: map[string]string{},
+		counts: map[string]int{}, staleUploads: map[string][]byte{},
+	}
 	ts := httptest.NewUnstartedServer(http.HandlerFunc(s.serveHTTP))
 	if addr != "" {
 		l, err := net.Listen("tcp", addr)
@@ -238,7 +243,23 @@ func (s *Server) unlock(w http.ResponseWriter, r *http.Request, p string) {
 		return
 	}
 	delete(s.locks, p)
+	if replay, ok := s.staleUploads[p]; ok {
+		// An unlocking writer's file is overwritten by a stale copy, as an
+		// Orgzly sync that read the file earlier would do.
+		delete(s.staleUploads, p)
+		s.putLocked(p, replay)
+	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// UploadStaleOnUnlock arms a one-shot overwrite: the next UNLOCK of p is
+// followed at once by an unconditional upload of content, the way Orgzly
+// uploads a copy it read before another writer's change. Tests use it to
+// exercise the plugin's lost-update read-back.
+func (s *Server) UploadStaleOnUnlock(p string, content []byte) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.staleUploads[strings.Trim(p, "/")] = append([]byte(nil), content...)
 }
 
 func (s *Server) get(w http.ResponseWriter, p string) {

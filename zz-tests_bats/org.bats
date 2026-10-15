@@ -99,6 +99,26 @@ function org_mcp_quote_mints_a_durable_id { # @test
 	EOM
 }
 
+# Slice 3a (FDR 0026): a metadata edit under the same lock — entering a
+# done state adds CLOSED, the date lands in the planning line, and the edit
+# mints the durable :ID: (the write is read back before it is reported).
+function org_mcp_edit_state_and_schedule { # @test
+  mcp_drive org://test/ \
+    "$(tools_call 3 patch_node '{"uri":"org://test/_inbox.org?h=Call+the+plumber+about+the+leak","body":"{\"state\": \"DONE\", \"scheduled\": \"2026-10-20\"}"}')"
+  run mcp_result_text "$output" 3
+  assert_output --partial "(applied: state, scheduled)"
+
+  mcp_drive org://test/ "$(tools_call 4 read_node '{"uri":"org://test/_inbox.org?h=Call+the+plumber+about+the+leak"}')"
+  run jq -r '.fields.state, .fields.scheduled, (.fields.closed | test("^[0-9]{4}-")), .fields.id_synthetic' \
+    <<<"$(mcp_result_text "$output" 4 | sed '/^raw bytes:/d')"
+  assert_output - <<-'EOM'
+	DONE
+	2026-10-20
+	true
+	false
+	EOM
+}
+
 function org_unknown_headline_is_a_clear_error { # @test
   mcp_drive org://test/ "$(tools_call 3 read_node '{"uri":"org://test/_inbox.org?h=Renamed"}')"
   run mcp_result_text "$output" 3

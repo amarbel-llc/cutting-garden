@@ -30,7 +30,8 @@ optical, gphotos, jira; plus fastmail, a traversal-only plugin — JMAP mail
 traversal + facets, and writable thread tag sets for `organize` inbox
 triage, but no capture/restore/diff, FDR 0024; and org, a traversal
 plugin over a WebDAV folder of `.org` files — Orgzly's sync target — whose
-only write is a LOCK-guarded `{"quote": true}` patch, with its parser in
+only write is a LOCK-guarded headline patch (metadata fields and `quote`,
+read back afterwards to catch an Orgzly overwrite), with its parser in
 the `plugins/org/orgtext` leaf and an
 in-memory WebDAV test server in `plugins/org/orgtestserver`, FDR 0026),
 each living in `plugins/<scheme>/` and consuming the
