@@ -163,7 +163,8 @@ func ParseVEVENT(raw string) (*Event, error) {
 		case "ATTENDEE":
 			e.Attendees = append(e.Attendees, value)
 		case "CATEGORIES":
-			e.Categories = parseCategories(value)
+			// Several CATEGORIES lines accumulate (RFC 5545 §3.8.1.2).
+			e.Categories = append(e.Categories, parseCategories(value)...)
 		case "RRULE":
 			e.RRule = value
 		case "RECURRENCE-ID":

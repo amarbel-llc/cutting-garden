@@ -179,6 +179,29 @@ func TestPatchNode_PartialFieldChange(t *testing.T) {
 	}
 }
 
+// A patch that does not touch categories must keep every category, even
+// when the stored object spreads them over several CATEGORIES lines (as
+// Fastmail does): the write re-serializes the parsed object, so a parser
+// that kept only the last line silently dropped the rest.
+func TestPatchNode_KeepsCategoriesSpreadOverLines(t *testing.T) {
+	f, home := startFake(t)
+	f.seed("/dav/cal/multi.ics", "VTODO",
+		"BEGIN:VCALENDAR\nVERSION:2.0\nBEGIN:VTODO\nUID:multi\nSUMMARY:Call\n"+
+			"STATUS:NEEDS-ACTION\nCATEGORIES:etsy-layoff\nCATEGORIES:req-phone\n"+
+			"END:VTODO\nEND:VCALENDAR\n")
+	arg := objectArg(home, "/dav/cal/multi.ics")
+
+	if _, err := (Plugin{}).PatchNode(context.Background(), mustParseURL(t, arg),
+		strings.NewReader(`{"component":"VTODO","task":{"status":"COMPLETED"}}`)); err != nil {
+		t.Fatalf("PatchNode: %v", err)
+	}
+	got := f.resources["/dav/cal/multi.ics"]
+	if !strings.Contains(got, "STATUS:COMPLETED") ||
+		!strings.Contains(got, "etsy-layoff") || !strings.Contains(got, "req-phone") {
+		t.Errorf("patch lost a category or the status: %q", got)
+	}
+}
+
 // TestPatchNode_CategoriesFullSetReplacement pins the categories write end to end
 // (tags slice 2, RFC 0019): a categories patch REPLACES the object's CATEGORIES
 // with exactly the set sent (naive, no merge with the existing tags), and an empty

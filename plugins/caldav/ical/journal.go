@@ -94,7 +94,8 @@ func ParseVJOURNAL(raw string) (*Journal, error) {
 		case "DTSTART":
 			j.DtStart = value
 		case "CATEGORIES":
-			j.Categories = parseCategories(value)
+			// Several CATEGORIES lines accumulate (RFC 5545 §3.8.1.2).
+			j.Categories = append(j.Categories, parseCategories(value)...)
 		case "CREATED":
 			j.Created = value
 		case "LAST-MODIFIED":

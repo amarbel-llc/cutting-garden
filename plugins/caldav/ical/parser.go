@@ -181,7 +181,9 @@ func ParseVTODO(raw string) (*Task, error) {
 		case "LAST-MODIFIED":
 			t.LastModified = value
 		case "CATEGORIES":
-			t.Categories = parseCategories(value)
+			// A component MAY carry several CATEGORIES lines (RFC 5545
+			// §3.8.1.2); Fastmail stores one per category, so accumulate.
+			t.Categories = append(t.Categories, parseCategories(value)...)
 		case "PERCENT-COMPLETE":
 			if n, err := strconv.Atoi(value); err == nil {
 				t.PercentComplete = n
