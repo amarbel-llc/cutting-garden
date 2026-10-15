@@ -146,6 +146,43 @@ func TestReadLeaf_Headline(t *testing.T) {
 	}
 }
 
+// A walk that lists and reads every headline of a file confirms its ETag
+// once, not once per headline; after the freshness window it asks again,
+// and an Orgzly upload is then picked up.
+func TestFreshnessWindowSkipsRepeatPropfind(t *testing.T) {
+	srv := setup(t)
+	ctx := context.Background()
+	read := func(uri string) {
+		t.Helper()
+		if _, _, err := (Plugin{}).ReadLeaf(ctx, mustURL(t, uri)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	read("org://test/_inbox.org?h=Call+the+plumber")
+	if _, err := (Plugin{}).ListRoots(ctx, mustURL(t, "org://test/_inbox.org?id=abc-123")); err != nil {
+		t.Fatal(err)
+	}
+	read("org://test/_inbox.org?h=Dup&n=2")
+	if got := srv.Requests("PROPFIND"); got != 1 {
+		t.Errorf("PROPFIND within the window = %d, want 1", got)
+	}
+	if got := srv.Requests("GET"); got != 1 {
+		t.Errorf("GET = %d, want 1", got)
+	}
+
+	saved := freshnessWindow
+	freshnessWindow = 0
+	t.Cleanup(func() { freshnessWindow = saved })
+	srv.Put("_inbox.org", []byte("* Renamed by the phone\n"))
+	if _, _, err := (Plugin{}).ReadLeaf(ctx, mustURL(t, "org://test/_inbox.org?h=Renamed+by+the+phone")); err != nil {
+		t.Errorf("an expired window must re-check the ETag and see the upload: %v", err)
+	}
+	if got := srv.Requests("PROPFIND"); got != 2 {
+		t.Errorf("PROPFIND after the window = %d, want 2", got)
+	}
+}
+
 func TestReadLeaf_UnknownHeadlineIsBadRequest(t *testing.T) {
 	setup(t)
 	_, _, err := Plugin{}.ReadLeaf(context.Background(), mustURL(t, "org://test/_inbox.org?h=Renamed"))

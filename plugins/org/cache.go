@@ -22,6 +22,9 @@ type parsedFile struct {
 	modTime time.Time
 	file    *orgtext.File
 	top     []*hnode // top-level headlines (or the synthesized one)
+
+	// checked is when the server last confirmed etag; guarded by cacheMu.
+	checked time.Time
 }
 
 // hnode is one headline with its minted URI.
@@ -38,6 +41,27 @@ var (
 	cache   = map[string]*parsedFile{}
 )
 
+// freshnessWindow is how long a confirmed ETag is trusted without asking
+// the server again. One trellis walk lists and reads every headline of a
+// file; without the window each of those costs a Depth-0 PROPFIND. Orgzly
+// syncs every few minutes at best, so a few seconds of staleness is
+// invisible, and this process's own quote drops the entry it wrote.
+var freshnessWindow = 5 * time.Second
+
+func cacheKey(account, rel string) string { return account + "\x00" + rel }
+
+// freshCached returns the cached parse of rel when its ETag was confirmed
+// within freshnessWindow.
+func freshCached(account, rel string) (*parsedFile, bool) {
+	cacheMu.Lock()
+	defer cacheMu.Unlock()
+	pf := cache[cacheKey(account, rel)]
+	if pf == nil || time.Since(pf.checked) >= freshnessWindow {
+		return nil, false
+	}
+	return pf, true
+}
+
 func resetCache() {
 	cacheMu.Lock()
 	defer cacheMu.Unlock()
@@ -48,20 +72,23 @@ func resetCache() {
 func resetCacheEntry(account, rel string) {
 	cacheMu.Lock()
 	defer cacheMu.Unlock()
-	delete(cache, account+"\x00"+rel)
+	delete(cache, cacheKey(account, rel))
 }
 
-// loadFile returns rel parsed. knownETag, when non-empty (from a folder
-// PROPFIND), lets a cache hit skip the GET entirely.
+// loadFile returns rel parsed. knownETag, when non-empty (from a
+// PROPFIND), lets a cache hit skip the GET entirely; either way the entry
+// counts as freshly confirmed.
 func loadFile(ctx context.Context, c *davClient, a account, rel, knownETag string) (*parsedFile, error) {
-	key := a.Name + "\x00" + rel
+	key := cacheKey(a.Name, rel)
 	if knownETag != "" {
 		cacheMu.Lock()
 		hit := cache[key]
-		cacheMu.Unlock()
 		if hit != nil && hit.etag == knownETag {
+			hit.checked = time.Now()
+			cacheMu.Unlock()
 			return hit, nil
 		}
+		cacheMu.Unlock()
 	}
 	body, etag, err := c.get(ctx, rel)
 	if err != nil {
@@ -69,6 +96,7 @@ func loadFile(ctx context.Context, c *davClient, a account, rel, knownETag strin
 	}
 	pf := parseFile(a, rel, etag, body)
 	if etag != "" {
+		pf.checked = time.Now()
 		cacheMu.Lock()
 		cache[key] = pf
 		cacheMu.Unlock()

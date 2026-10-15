@@ -88,6 +88,11 @@ Taken 2026-10-14:
   folder finds changed files; only those are re-fetched and re-parsed, and
   a single file is checked with a Depth-0 PROPFIND before any GET. A file
   or headline's facet version is the file's ETag; a folder declines one.
+  A confirmed ETag is trusted for 5 s without asking again (2026-10-15):
+  a trellis walk with `_body~=` lists and reads every headline, and with a
+  PROPFIND each it took over two minutes on about 300 headlines. Orgzly
+  syncs every few minutes at best, so the staleness is invisible; a quote
+  drops the entry it wrote.
 - **D2, scope.** One base WebDAV URL per account. Every `*.org` file beneath
   it is exposed, and subdirectories become folder nodes. Other files are
   skipped by design.

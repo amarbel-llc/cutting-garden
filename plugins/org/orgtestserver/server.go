@@ -54,6 +54,15 @@ type Server struct {
 	writes int
 	locks  map[string]string // path → lock token
 	tokens int
+	counts map[string]int // method → authenticated requests served
+}
+
+// Requests reports how many authenticated requests with this method the
+// server has served: tests use it to pin how many round trips a read costs.
+func (s *Server) Requests(method string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.counts[method]
 }
 
 // Lock takes an exclusive lock on p as another writer would, returning
@@ -94,7 +103,7 @@ func Start() *Server { return StartAt("") }
 // StartAt starts a server on addr ("host:port"), or an ephemeral loopback
 // port when addr is empty.
 func StartAt(addr string) *Server {
-	s := &Server{files: map[string]*file{}, locks: map[string]string{}}
+	s := &Server{files: map[string]*file{}, locks: map[string]string{}, counts: map[string]int{}}
 	ts := httptest.NewUnstartedServer(http.HandlerFunc(s.serveHTTP))
 	if addr != "" {
 		l, err := net.Listen("tcp", addr)
@@ -168,6 +177,9 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
+	s.mu.Lock()
+	s.counts[r.Method]++
+	s.mu.Unlock()
 	p := strings.Trim(path.Clean("/"+r.URL.Path), "/")
 	switch r.Method {
 	case "PROPFIND":
