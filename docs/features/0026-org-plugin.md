@@ -200,7 +200,11 @@ nothing and reports nothing applied, which the mcp `patch_node` tool
 surfaces as "nothing applied". Slice 3b adds `FacetWriteDescriber`,
 `FacetWriteApplier`, `MembershipWriteApplier`, `FieldWriteApplier` and
 `FieldPresenter`, all derived from the unified declaration; creating
-headlines (`CreationDescriber`) is deferred.
+headlines (`CreationDescriber`) is deferred. The plugin is also the
+reference `Searcher` (RFC 0016): it searches exactly what `_body` reads (a
+file's bytes, a headline's whole subtree) from the parse cache, so a
+`_body*=` query over the account costs one PROPFIND per folder instead of
+one per headline.
 
 Slice 1 does not depend on the RFC 0020 organize grammar work. swift-plum
 verified on 2026-10-14 that it touches neither trellis_eval nor the MCP

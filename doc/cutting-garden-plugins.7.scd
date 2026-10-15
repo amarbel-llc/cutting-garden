@@ -113,6 +113,18 @@ you can count it, and stay silent when nothing was left out. caldav's event
 date window is the reference (cutting-garden#266). Wire plugins have no way
 to report this yet.
 
+# SEARCH WHAT _body READS
+
+A plugin that can find matching text faster than reading every leaf MAY
+implement *Searcher* (RFC 0016): *Search* returns every node under a root
+whose text contains a substring (and, optionally, matches an RE2 pattern).
+trellis calls it once per query for *_body\*=* / *_body~=* and answers each
+node from the result, so the searched text MUST be what *_body* reads for
+that node, with the same case sensitivity; otherwise a query's answer
+depends on whether the plugin searches. Return *ErrSearchModeUnsupported*
+for a mode you do not accelerate, and *complete: false* when the result may
+miss matches. org is the reference.
+
 # TOLERATE, BUT REPORT
 
 Tolerating input you do not understand is a forward-compatibility measure,

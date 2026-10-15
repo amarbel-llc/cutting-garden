@@ -47,6 +47,17 @@ surface that exposes search directly (deferred — the trellis evaluator is
 the only specified consumer); ranking, ordering, snippeting, or any
 relevance model.
 
+### Implementation status (2026-10-15)
+
+§1–§5 are implemented: the SDK types (`internal/cutting_garden_plugins`
+`search.go`, exported in `pkgs/`), the trellis evaluator's use of them,
+and the org plugin as the in-tree reference `Searcher`. The evaluator
+calls `Search` once per (mode, query) over the query's anchor — the whole
+subtree it can reach — and answers each node's `_body*=` / `_body~=` from
+that set. A complete result decides a node both ways; an incomplete one
+only confirms a match, and a node outside it falls back to the leaf read.
+§6 (the wire binding) is not implemented yet.
+
 ## Requirements Language
 
 The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",

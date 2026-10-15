@@ -671,6 +671,25 @@ type RootNamer = internal.RootNamer
 // in the aggregated listing.
 type RootProvider = internal.RootProvider
 
+// SearchMode selects the matching algorithm a search request evaluates
+// (RFC 0016 §1).
+type SearchMode = internal.SearchMode
+
+// SearchRequest is one search over a subtree (RFC 0016 §1).
+type SearchRequest = internal.SearchRequest
+
+// SearchResult is the set of matching nodes plus completeness (RFC 0016
+// §1, §4).
+type SearchResult = internal.SearchResult
+
+// Searcher is the OPTIONAL capability that returns every node in a
+// subtree whose searchable text matches a query, so the trellis
+// evaluator answers `_body*=` / `_body~=` without fetching every leaf
+// (RFC 0016). By default the searched text is exactly what `_body`
+// tests — a leaf's text body — so a search and the evaluator's walk agree
+// on which nodes match (§2). Probed by type assertion.
+type Searcher = internal.Searcher
+
 // SourceValidator is the OPTIONAL narrow capability (RFC 0005 §Source
 // validation) that lets a capture source be validated even when the
 // resolved plugin does not (also) satisfy the full CapturePlugin
@@ -838,6 +857,10 @@ var ErrAlreadyRegistered = internal.ErrAlreadyRegistered
 // returns it (or wraps it) so the reason is distinguishable from an
 // ordinary failure.
 var ErrBulkAtomicUnsupported = internal.ErrBulkAtomicUnsupported
+
+// ErrSearchModeUnsupported is what Search returns for a Mode the plugin
+// does not accelerate (RFC 0016 §5): the caller falls back to walking.
+var ErrSearchModeUnsupported = internal.ErrSearchModeUnsupported
 
 // ErrUnknownScheme is returned by registry.Resolve when the
 // scheme is not registered for the given direction.
@@ -1253,6 +1276,15 @@ const (
 // posture. Consumers MUST apply this default rather than propagating
 // the empty string.
 const MimeTypeDefault = internal.MimeTypeDefault
+
+// SearchRegex is an unanchored RE2 (Go regexp) match, as trellis's
+// `_body~=`. Optional: a plugin may return ErrSearchModeUnsupported.
+const SearchRegex = internal.SearchRegex
+
+// SearchSubstring is a plain, unanchored substring match: a node
+// matches when Query occurs anywhere in its searched text, as trellis's
+// `_body*=`. A Searcher MUST implement it.
+const SearchSubstring = internal.SearchSubstring
 
 // TagAdd adds a membership: the returned tag set includes whatever tag the
 // bucket edit implies, if not already present.

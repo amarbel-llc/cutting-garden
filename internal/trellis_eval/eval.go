@@ -159,6 +159,11 @@ type evaluator struct {
 	// regex memoizes compiled `~=` patterns so a walk compiles each pattern
 	// once rather than per candidate node. Populated lazily by regexFor.
 	regex map[string]*regexp.Regexp
+
+	// searcher is the plugin's Searcher (RFC 0016), nil when it has none;
+	// searches memoizes its answers per (mode, query) for one evaluation.
+	searcher cgp.Searcher
+	searches map[searchKey]searchHits
 }
 
 func newEvaluator(
@@ -170,6 +175,9 @@ func newEvaluator(
 	}
 	if lr, ok := lister.(cgp.LeafReader); ok {
 		ev.leaf = lr
+	}
+	if s, ok := lister.(cgp.Searcher); ok {
+		ev.searcher = s
 	}
 	if ud, ok := lister.(cgp.UnifiedDescriber); ok {
 		ev.unified = ud
@@ -831,6 +839,9 @@ func (ev *evaluator) matchScalar(got string, fp trellis.FieldPred) bool {
 func (ev *evaluator) matchBody(
 	ctx context.Context, n cgp.Node, fp trellis.FieldPred,
 ) (bool, error) {
+	if matched, decided, err := ev.searchBody(ctx, n, fp); err != nil || decided {
+		return matched, err
+	}
 	if ev.leaf == nil || n.URI == nil {
 		return false, nil
 	}

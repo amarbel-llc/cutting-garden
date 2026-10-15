@@ -99,6 +99,17 @@ func (t *terminalLister) ListRoots(ctx context.Context, node *url.URL) ([]cgp.No
 	return nodes, nil
 }
 
+// Search passes through to inner's Searcher (RFC 0016), so organize's
+// selection keeps the plugin's `_body` acceleration; without one it declines
+// every mode, which the evaluator answers by walking. Search results are
+// matched by URI only, so they need no `_terminal` annotation.
+func (t *terminalLister) Search(ctx context.Context, req cgp.SearchRequest) (cgp.SearchResult, error) {
+	if s, ok := t.inner.(cgp.Searcher); ok {
+		return s.Search(ctx, req)
+	}
+	return cgp.SearchResult{}, cgp.ErrSearchModeUnsupported
+}
+
 // ListEnriched delegates and annotates when inner serves an enriched listing;
 // otherwise it declines (ok=false) so the evaluator falls back to ListRoots
 // (which annotates too). A decline from inner (e.g. caldav at a calendar-home) is
