@@ -526,6 +526,17 @@ type NodeTypeUnifiedFields = internal.NodeTypeUnifiedFields
 // NopReporter is the no-op Stream.
 type NopReporter = internal.NopReporter
 
+// PartialListing records that a container's listing returned a bounded
+// subset of its children, and why — e.g. caldav lists a calendar's events
+// only within a date window (cutting-garden#176/#177). A listing carries no
+// completeness field of its own, so without this an empty or short result is
+// indistinguishable from "there is nothing more" (cutting-garden#266).
+type PartialListing = internal.PartialListing
+
+// PartialListings collects the PartialListing reports made during one host
+// operation. It is safe for concurrent use.
+type PartialListings = internal.PartialListings
+
 // Plugin is the cross-cutting identity every capture or restore
 // backend must declare. Schemes returns the URI schemes a plugin
 // handles; the empty string registers the plugin as the schemeless
@@ -1033,6 +1044,11 @@ var RegisteredConfigSections = internal.RegisteredConfigSections
 // a direction and via MustRegisterScheme appears exactly once.
 var RegisteredPlugins = internal.RegisteredPlugins
 
+// ReportPartialListing is called by a plugin while listing u when the listing
+// is a bounded subset of u's children. It is a no-op when the host collects
+// nothing, and a repeated report is recorded once.
+var ReportPartialListing = internal.ReportPartialListing
+
 // ReporterOrNop returns r, or a no-op Stream when r is nil.
 var ReporterOrNop = internal.ReporterOrNop
 
@@ -1138,6 +1154,11 @@ var ValidateFilterFor = internal.ValidateFilterFor
 // declaration with a unit test calling this (caldav does), catching the error
 // before any command runs.
 var ValidateUnifiedFieldSets = internal.ValidateUnifiedFieldSets
+
+// WithPartialListings returns a context that collects the partial-listing
+// reports plugins make while serving it, and the collector to read them from
+// afterwards. A host wraps the context of every listing it serves.
+var WithPartialListings = internal.WithPartialListings
 
 // BulkAtomic requires all-or-nothing completion. A plugin that cannot
 // honor it — for this request or at all — MUST reject the request with

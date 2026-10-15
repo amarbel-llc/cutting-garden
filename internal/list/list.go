@@ -293,6 +293,7 @@ func (cmd *List) runList(
 		return errors.Wrapf(err, "list %s", uriStr)
 	}
 
+	lctx, partial := cutting_garden_plugins.WithPartialListings(ctx)
 	var nodes []cutting_garden_plugins.Node
 	if cmd.Query != "" {
 		q, perr := trellis.Parse(cmd.Query)
@@ -300,7 +301,7 @@ func (cmd *List) runList(
 			return errors.BadRequestf("list %s --query: %s", uriStr, perr)
 		}
 		if nodes, err = trellis_eval.Evaluate(
-			ctx, q, u, lister, trellis_eval.WithTagsInterpreter(tagsOverride),
+			lctx, q, u, lister, trellis_eval.WithTagsInterpreter(tagsOverride),
 		); err != nil {
 			return errors.Wrapf(err, "list %s --query", uriStr)
 		}
@@ -310,11 +311,16 @@ func (cmd *List) runList(
 		// leaves empty (cutting-garden#212) — prefer the plugin's enriched
 		// listing exactly as organize's selection does. Espalier opts in even
 		// without a tag dimension: its trailer/atoms want the enriched fields.
-		if nodes, err = node_view.ListEnrichedChildren(ctx, lister, u); err != nil {
+		if nodes, err = node_view.ListEnrichedChildren(lctx, lister, u); err != nil {
 			return errors.Wrapf(err, "list %s", uriStr)
 		}
-	} else if nodes, err = lister.ListRoots(ctx, u); err != nil {
+	} else if nodes, err = lister.ListRoots(lctx, u); err != nil {
 		return errors.Wrapf(err, "list %s", uriStr)
+	}
+	// A bounded listing is not the whole container (cutting-garden#266):
+	// say so on stderr, leaving stdout's formats unchanged.
+	for _, p := range partial.All() {
+		fmt.Fprintf(os.Stderr, "cutting-garden: warning: listing of %s is partial: %s\n", p.URI, p.Reason)
 	}
 
 	switch cmd.Format {

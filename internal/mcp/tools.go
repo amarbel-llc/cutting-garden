@@ -162,7 +162,7 @@ const (
 		`"properties":{` +
 		`"uri":{"type":"string","description":"the node URI to create (e.g. caldav://host/cal/x.ics)"},` +
 		`"body":{"type":"string","description":"the object as raw iCalendar (.ics) or the {component,event|task} JSON resources/read returns"},` +
-		`"type":{"type":"string","description":"the node type tag, e.g. caldav-object-v1"}}}`
+		`"type":{"type":"string","description":"the node type tag, e.g. caldav-object-vtodo-v1"}}}`
 	putNodeSchema = `{"type":"object","required":["uri","body"],` +
 		`"properties":{` +
 		`"uri":{"type":"string","description":"the existing node URI to overwrite (full replace)"},` +
@@ -196,7 +196,7 @@ const (
 		`"limit":{"type":"integer","minimum":0,"description":"max number of child nodes to return (optional). A response SHORTER than limit means you have reached the end of the listing; a full-length response may or may not be the end — pass a larger offset to check."},` +
 		`"offset":{"type":"integer","minimum":0,"description":"number of child nodes to skip before applying limit (optional, default 0). An offset past the end yields an empty array, not an error."},` +
 		`"filter":{"type":"string","description":"optional comma-separated dimension=value predicates (AND-composed), e.g. \"due_band=overdue\" or \"status=CONFIRMED,year=2026\" — the SAME grammar and dimension keys as read_facets. Call describe_node_types first to see a type's declared facets: each dimension's key and, when closed=true, its complete valid values array (values); an open dimension (closed=false) accepts any value, discovered at enumeration. An undeclared dimension or an out-of-domain closed-dimension value is a REJECTED, actionable error naming what was wrong — never a silent empty/unfiltered result. When present the result is wrapped as {nodes, filterApplied, filterMode} instead of a bare array — filterApplied is false (filterMode \"none\") on the rare scheme with no way to filter, so the caller always knows whether the returned nodes are actually narrowed."},` +
-		`"query":{"type":"string","description":"optional trellis query (RFC 0014) evaluated with the uri as its anchor — the richer alternative to filter, for multi-LEVEL walks and richer predicates. Returns {query, nodes}: the nodes matched by the query's LAST step, each ENRICHED (facets + plugin fields inline) like the default listing. Mutually exclusive with filter; requires a uri. GRAMMAR — a path of STEPS joined by COMBINATORS. Combinators (between steps): \"->\" descend one level, \"<-\" reverse one level, \"->>\"/\"<<-\" transitive closure (one-or-more levels). A step is space-separated TERMS that must ALL match (AND); prefix a term with ^ to negate. Terms: (1) !type — the node's type tag, e.g. !caldav-object-v1; (2) field OP value — OP is one of = (equals) != (not) *= (contains) ^= (prefix) $= (suffix) < <= > >= (lexicographic; fixed-width dates like 20260131 sort correctly) ~= (RE2 regex); field is a declared facet dimension (matched cheaply) or any other field name (matched against the node's inline fields, else a leaf-body fetch); the pseudo-field _body matches the raw body text; (3) [a, b] — OR-alternatives, matches if it satisfies alternative a OR b; (4) [-> pred] — existential, true if some immediate child matches pred. QUOTING: a value or regex containing a reserved rune (space, ^, [, comma) must be quoted, e.g. summary~=\"query builder\". EXAMPLE: !caldav-calendar-v1 -> !caldav-object-v1 component=VTODO [summary~=bows, summary~=cake] walks calendars to their objects and keeps VTODOs whose summary matches either regex. DISCOVERY: call describe_node_types for each scheme's types, declared facet dimensions (and their closed value sets), and listing fields — the vocabulary for !type and field predicates. NOT YET SUPPORTED (rejected with a clear, actionable error, cutting-garden#211): typed edges -[pred]->, non-\":\" version sigils (+ . ?), object-identity terms (@digest), bare-tag terms, and the anchorless roots-as-nodes origin (a leading combinator)."},` +
+		`"query":{"type":"string","description":"optional trellis query (RFC 0014) evaluated with the uri as its anchor — the richer alternative to filter, for multi-LEVEL walks and richer predicates. Returns {query, nodes}: the nodes matched by the query's LAST step, each ENRICHED (facets + plugin fields inline) like the default listing. Mutually exclusive with filter; requires a uri. GRAMMAR — a path of STEPS joined by COMBINATORS. Combinators (between steps): \"->\" descend one level, \"<-\" reverse one level, \"->>\"/\"<<-\" transitive closure (one-or-more levels). A step is space-separated TERMS that must ALL match (AND); prefix a term with ^ to negate. Terms: (1) !type — the node's exact type tag, e.g. !caldav-object-vevent-v1 (a tag the plugin does not declare is rejected, naming the declared ones); (2) field OP value — OP is one of = (equals) != (not) *= (contains) ^= (prefix) $= (suffix) < <= > >= (lexicographic; fixed-width dates like 20260131 sort correctly) ~= (RE2 regex); field is a declared facet dimension (matched cheaply) or any other field name (matched against the node's inline fields, else a leaf-body fetch); the pseudo-field _body matches the raw body text; (3) [a, b] — OR-alternatives, matches if it satisfies alternative a OR b; (4) [-> pred] — existential, true if some immediate child matches pred. QUOTING: a value or regex containing a reserved rune (space, ^, [, comma) must be quoted, e.g. summary~=\"query builder\". EXAMPLE: !caldav-calendar-v1 -> !caldav-object-vtodo-v1 [summary~=bows, summary~=cake] walks calendars to their objects and keeps VTODOs whose summary matches either regex. DISCOVERY: call describe_node_types for each scheme's types, declared facet dimensions (and their closed value sets), and listing fields — the vocabulary for !type and field predicates. NOT YET SUPPORTED (rejected with a clear, actionable error, cutting-garden#211): typed edges -[pred]->, non-\":\" version sigils (+ . ?), object-identity terms (@digest), and the anchorless roots-as-nodes origin (a leading combinator)."},` +
 		`"bare":{"type":"boolean","description":"opt out of the default enrichment: true returns the cheap pre-enrichment shape {uri,name,type,container,mimeType} with no facets/fields, skipping any extra data-bearing fetch a plugin would otherwise perform (e.g. caldav skips its per-object body fetch, staying hrefs-only). Combining bare with filter still fetches whatever the filter requires; only the OUTPUT is stripped down. Default false: every entry carries its facets, any plugin-declared human-readable fields (e.g. summary/due/status), and — for a type declaring a tag set (see describe_node_types' tag_set) — its tags array, inline."}}}`
 	readFacetsSchema = `{"type":"object","required":["uri"],` +
 		`"properties":{` +
@@ -967,6 +967,9 @@ type queriedListingView struct {
 	// deduplicated by URI, enriched by default (bare strips to {uri,name,
 	// type,container,mimeType}).
 	Nodes []nodeView `json:"nodes"`
+	// listingVersion carries only the completeness fields here: a query
+	// that walked any partial listing is itself incomplete (#266).
+	listingVersion
 }
 
 // listNodesURI implements the list_nodes(uri) branch: the byte-for-byte
@@ -1072,10 +1075,12 @@ func (t *Tools) listNodesURI(
 		}
 	}
 
+	ctx, partial := cutting_garden_plugins.WithPartialListings(ctx)
 	nodes, mode, err := enrichedListing(ctx, lister, u, filter)
 	if err != nil {
 		return "", errors.Wrapf(err, "list %s (filtered)", uri)
 	}
+	prov.partial = partial.All()
 	var views []nodeView
 	if bare {
 		views = bareNodeViews(lister, nodes)
@@ -1125,6 +1130,7 @@ func (t *Tools) listNodesQuery(
 	// The [tags] interpreter override resolves a bare-tag term's dimension
 	// interpreter (RFC 0019 §4, #231 slice 3) — t.tagsOverride carries it
 	// from the startup config load (no per-call re-read).
+	ctx, partial := cutting_garden_plugins.WithPartialListings(ctx)
 	nodes, err := trellis_eval.Evaluate(
 		ctx, q, u, lister, trellis_eval.WithTagsInterpreter(t.tagsOverride),
 	)
@@ -1139,8 +1145,9 @@ func (t *Tools) listNodesQuery(
 	}
 	views = paginate(views, offset, limit)
 	body, err := json.MarshalIndent(queriedListingView{
-		Query: query,
-		Nodes: views,
+		Query:          query,
+		Nodes:          views,
+		listingVersion: completenessView(partial.All()),
 	}, "", "  ")
 	if err != nil {
 		return "", errors.Wrap(err)

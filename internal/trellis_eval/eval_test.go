@@ -9,6 +9,7 @@ import (
 
 	cgp "code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
 	"code.linenisgreat.com/cutting-garden/internal/trellis"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
 // fakeTree is an in-memory RootLister + LeafReader + FacetDescriber test
@@ -17,6 +18,7 @@ type fakeTree struct {
 	children map[string][]cgp.Node
 	leaves   map[string]cgp.LeafContent
 	facets   []cgp.NodeTypeFacets
+	types    []cgp.NodeType // nil: the calendar fixture's types
 }
 
 var (
@@ -28,7 +30,10 @@ var (
 func (*fakeTree) Schemes() []string { return []string{"fake"} }
 func (*fakeTree) TypeTag() string   { return "fake-v1" }
 
-func (*fakeTree) Types() []cgp.NodeType {
+func (f *fakeTree) Types() []cgp.NodeType {
+	if f.types != nil {
+		return f.types
+	}
 	return []cgp.NodeType{{Tag: "calendar-v1"}, {Tag: "event-v1"}, {Tag: "todo-v1"}}
 }
 
@@ -260,6 +265,9 @@ func TestEvaluate_Matches(t *testing.T) {
 func graphTree(t *testing.T) *fakeTree {
 	shared := node(t, "fake://g/shared", "shared-v1", nil)
 	return &fakeTree{
+		types: []cgp.NodeType{
+			{Tag: "group-v1"}, {Tag: "mid-v1"}, {Tag: "leaf-v1"}, {Tag: "shared-v1"},
+		},
 		children: map[string][]cgp.Node{
 			"fake://g/": {
 				node(t, "fake://g/a", "group-v1", nil),
@@ -358,6 +366,31 @@ func TestEvaluate_Rejects(t *testing.T) {
 			}
 			if _, err := Evaluate(context.Background(), q, mustURL(t, "fake://cal/"), tree); err == nil {
 				t.Errorf("query %q: expected a rejection, got nil error", query)
+			}
+		})
+	}
+}
+
+// TestEvaluate_UnknownTypeIsBadRequest pins cutting-garden#266: a `!type` the
+// plugin does not declare is refused, naming the declared types, rather than
+// silently matching nothing — wherever the term sits in the query.
+func TestEvaluate_UnknownTypeIsBadRequest(t *testing.T) {
+	tree := sampleTree(t)
+	for _, query := range []string{
+		"!calendar",
+		"!calendar-v1 -> [!event-v1, !journal-v1]",
+		"!calendar-v1 [-> !vevent-v1]",
+		"^!nope-v1",
+	} {
+		t.Run(query, func(t *testing.T) {
+			q, err := trellis.Parse(query)
+			if err != nil {
+				t.Fatalf("parse: %v", err)
+			}
+			_, err = Evaluate(context.Background(), q, mustURL(t, "fake://cal/"), tree)
+			if err == nil || !errors.Is400BadRequest(err) ||
+				!strings.Contains(err.Error(), "calendar-v1, event-v1, todo-v1") {
+				t.Errorf("err = %v, want a bad request listing the declared types", err)
 			}
 		})
 	}

@@ -98,6 +98,21 @@ your honest "no results" from your silent "I misunderstood the request,"
 that is a bug to fix, not a limitation to document. See RFC 0012 §6 for the
 filter-validation contract this precedent comes from.
 
+The same holds for trellis: a *!type* term naming a type the plugin does not
+declare is rejected, listing the declared types, instead of matching nothing
+(cutting-garden#266).
+
+# REPORT A BOUNDED LISTING
+
+If your listing of a container can return only part of its children - a
+date window, a server-side cap - call *ReportPartialListing(ctx, uri,
+reason)* while listing. The host turns it into *complete: false* plus a
+*partial* entry on the mcp listing and query outputs, and a stderr warning
+from *list*; a cached listing keeps the report. Say how much is missing when
+you can count it, and stay silent when nothing was left out. caldav's event
+date window is the reference (cutting-garden#266). Wire plugins have no way
+to report this yet.
+
 # TOLERATE, BUT REPORT
 
 Tolerating input you do not understand is a forward-compatibility measure,

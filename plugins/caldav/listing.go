@@ -183,7 +183,7 @@ func (c *client) enrichedCalendarNodes(
 	var nodes []cutting_garden_plugins.Node
 	for _, component := range capturedComponents {
 		if component == "VEVENT" {
-			items, err := c.expandedEventItems(ctx, calendarHref)
+			items, err := c.listedEventItems(ctx, calendarHref)
 			if err != nil {
 				return nil, err
 			}

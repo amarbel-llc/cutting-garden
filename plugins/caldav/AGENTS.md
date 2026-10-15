@@ -175,7 +175,10 @@ no server-side displayname resolution needed. Credentials still resolve through
   (`ListEnriched`) both surface a calendar's VEVENT objects through a
   single shared building block, `expandedEventItems`, which REPORTs a
   bounded default window (`expansionWindow`, `expand.go` — 1 day back /
-  30 days forward from now, no caller-supplied window yet; see #178)
+  30 days forward from now, no caller-supplied window yet; see #178;
+  `listedEventItems` counts the calendar's events with one unwindowed
+  hrefs-only REPORT and, when some fall outside, reports the listing as
+  partial via `ReportPartialListing`, #266)
   requesting server-side `<C:expand>` (confirmed live against Fastmail;
   `docs/plans/2026-07-20-caldav-recurrence-expansion-phase1.md`). A
   recurring VEVENT surfaces as several nodes — one per occurrence,

@@ -19,11 +19,13 @@ package caldav
 
 import (
 	"context"
+	"fmt"
 	"net/url"
 	"path"
 	"strings"
 	"time"
 
+	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
 	"code.linenisgreat.com/cutting-garden/plugins/caldav/ical"
 )
 
@@ -70,6 +72,45 @@ var expansionWindowNow = time.Now
 func expansionWindow() (start, end time.Time) {
 	now := expansionWindowNow()
 	return now.Add(-expansionWindowPast), now.Add(expansionWindowFuture)
+}
+
+// listedEventItems is expandedEventItems for a LISTING. When the window left
+// some of the calendar's events out, it reports that to the host as a
+// partial listing, so a caller does not mistake a short or empty result for
+// the whole calendar (cutting-garden#266). Counting the events costs one
+// hrefs-only REPORT with no window; a calendar whose events all fall inside
+// the window (or that has none, like a task list) reports nothing.
+func (c *client) listedEventItems(
+	ctx context.Context, calendarHref string,
+) ([]expandedEventItem, error) {
+	items, err := c.expandedEventItems(ctx, calendarHref)
+	if err != nil {
+		return nil, err
+	}
+	listed := map[string]struct{}{}
+	for _, item := range items {
+		listed[strings.TrimRight(serverPath(item.abs), "/")] = struct{}{}
+	}
+	start, end := expansionWindow()
+	window := fmt.Sprintf("%s to %s (1 day back, 30 days forward)",
+		start.UTC().Format(time.RFC3339), end.UTC().Format(time.RFC3339))
+	reason := ""
+	if all, err := c.listObjectHrefs(ctx, calendarHref, "VEVENT"); err != nil {
+		reason = "events listed only from " + window +
+			"; could not count the events outside it: " + err.Error()
+	} else if outside := len(all) - len(listed); outside > 0 {
+		reason = fmt.Sprintf("%d of %d events lie outside the listed window %s",
+			outside, len(all), window)
+	}
+	if reason != "" {
+		cutting_garden_plugins.ReportPartialListing(
+			ctx,
+			caldavURIForAbs(c.resolveHref(calendarHref)),
+			reason+"; read_facets counts every event, and a caller-chosen "+
+				"window is cutting-garden#178",
+		)
+	}
+	return items, nil
 }
 
 // recurrenceIDQueryKey is the URI query parameter naming a caldav object

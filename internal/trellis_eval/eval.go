@@ -95,6 +95,9 @@ func WithTagsInterpreter(override string) EvaluateOption {
 func (ev *evaluator) run(
 	ctx context.Context, steps []trellis.Step, combinators []trellis.Combinator,
 ) ([]cgp.Node, error) {
+	if err := checkDeclaredTypes(ev.lister, steps); err != nil {
+		return nil, err
+	}
 	current, err := ev.listEnriched(ctx, ev.anchor)
 	if err != nil {
 		return nil, errors.Wrap(err)

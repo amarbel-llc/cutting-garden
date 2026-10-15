@@ -276,6 +276,12 @@ type listingVersion struct {
 	Version           string `json:"version,omitempty"`
 	VersionComputedAt string `json:"versionComputedAt,omitempty"`
 	Freshness         string `json:"freshness,omitempty"`
+	// Complete is false, and Partial says which containers and why, when a
+	// plugin listed only a bounded subset of some container's children
+	// (cutting-garden#266) — e.g. caldav's event date window. Both are
+	// omitted for a complete listing.
+	Complete *bool                                   `json:"complete,omitempty"`
+	Partial  []cutting_garden_plugins.PartialListing `json:"partial,omitempty"`
 }
 
 // listingView is the shape of an enriched (unfiltered) child listing: the

@@ -136,7 +136,7 @@ func (c *client) objectNodes(
 	var nodes []cutting_garden_plugins.Node
 	for _, component := range capturedComponents {
 		if component == "VEVENT" {
-			items, err := c.expandedEventItems(ctx, calendarBase)
+			items, err := c.listedEventItems(ctx, calendarBase)
 			if err != nil {
 				return nil, err
 			}

@@ -45,6 +45,9 @@ type listingCacheEntry struct {
 	verifiedAt time.Time
 	dirty      bool
 	lastErr    string
+	// partial holds the plugin's partial-listing reports, so a cache hit
+	// still says the listing is bounded (cutting-garden#266).
+	partial []cutting_garden_plugins.PartialListing
 
 	// revalidateAfter is the volatile window (RFC 0012 §11.3), derived from
 	// which volatile facet dimensions are PRESENT across the cached nodes'
@@ -88,12 +91,13 @@ type listingProvenance struct {
 	version    string
 	computedAt time.Time
 	freshness  string
+	partial    []cutting_garden_plugins.PartialListing
 }
 
 // provenance projects an entry to its served snapshot identity.
 func (e *listingCacheEntry) provenance(now time.Time) listingProvenance {
 	if !e.hasToken {
-		return listingProvenance{}
+		return listingProvenance{partial: e.partial}
 	}
 
 	return listingProvenance{
@@ -101,23 +105,33 @@ func (e *listingCacheEntry) provenance(now time.Time) listingProvenance {
 		version:    e.token,
 		computedAt: e.computedAt,
 		freshness:  e.freshness(now),
+		partial:    e.partial,
 	}
 }
 
 // view projects the provenance to the wire-form listingVersion (RFC3339
-// timestamp); the zero (all-omitempty) value when no version is available,
-// so a listing whose plugin declares no FacetVersioner carries no version
-// fields at all.
+// timestamp). The version fields are empty (all-omitempty) when no version
+// is available, so a listing whose plugin declares no FacetVersioner
+// carries no version fields at all; the completeness fields are set only
+// for a partial listing.
 func (p listingProvenance) view() listingVersion {
-	if !p.hasVersion {
+	v := completenessView(p.partial)
+	if p.hasVersion {
+		v.Version = p.version
+		v.VersionComputedAt = p.computedAt.UTC().Format(time.RFC3339)
+		v.Freshness = p.freshness
+	}
+	return v
+}
+
+// completenessView marks a listing incomplete when any plugin reported it
+// partial; the zero value (fields omitted) otherwise.
+func completenessView(partial []cutting_garden_plugins.PartialListing) listingVersion {
+	if len(partial) == 0 {
 		return listingVersion{}
 	}
-
-	return listingVersion{
-		Version:           p.version,
-		VersionComputedAt: p.computedAt.UTC().Format(time.RFC3339),
-		Freshness:         p.freshness,
-	}
+	complete := false
+	return listingVersion{Complete: &complete, Partial: partial}
 }
 
 func newListingCache() *listingCache {
@@ -162,6 +176,7 @@ func (lc *listingCache) computeAndStore(
 ) ([]cutting_garden_plugins.Node, listingProvenance, error) {
 	token, hasToken := tokenFor(ctx, lister, u)
 
+	ctx, partial := cutting_garden_plugins.WithPartialListings(ctx)
 	nodes, _, err := enrichedListing(ctx, lister, u, nil)
 	if err != nil {
 		return nil, listingProvenance{}, err
@@ -169,6 +184,7 @@ func (lc *listingCache) computeAndStore(
 
 	now := lc.now()
 	entry := &listingCacheEntry{
+		partial:         partial.All(),
 		nodes:           nodes,
 		token:           token,
 		hasToken:        hasToken,

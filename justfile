@@ -835,6 +835,23 @@ debug-organize-fixture GROUP_BY='status=': debug-build-go debug-build-caldav-tes
     .tmp/cutting-garden organize -group-by '{{ GROUP_BY }}' "$cal"
     exec {SRV[1]}>&- || true
 
+# Run `cg list --query QUERY` against the caldav testserver's Personal
+# calendar — the repro loop for trellis predicates on caldav leaves, e.g.
+# `_body*=` (cutting-garden#266). READ-ONLY on the in-memory server.
+#
+# run a trellis query against the caldav testserver's Personal calendar
+[group('debug')]
+debug-caldav-query QUERY: debug-build-go debug-build-caldav-testserver
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cd "{{ justfile_directory() }}"
+    coproc SRV { .tmp/cutting-garden-caldav-testserver; }
+    read -r -u "${SRV[0]}" source_url _calpath
+    cal="${source_url%/dav/}/dav/cal/"
+    echo "# cg list -format json --query '{{ QUERY }}' $cal" >&2
+    .tmp/cutting-garden list -format json --query '{{ QUERY }}' "$cal"
+    exec {SRV[1]}>&- || true
+
 # Render the organize document for the fastmail testserver's Inbox (fastmail
 # tags slice 1) — the eyeball loop for zz-tests_bats/organize_fastmail.bats.
 # Builds the binary + cutting-garden-fastmail-testserver, starts the server (any

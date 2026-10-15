@@ -128,6 +128,39 @@ func TestObjectNodes_ExpandsRecurringEventIntoDistinctOccurrences(t *testing.T) 
 	}
 }
 
+// TestListing_ReportsEventsOutsideWindow pins cutting-garden#266: when the
+// date window leaves events out, both listing paths report the listing as
+// partial, with a count; when every event fits, nothing is reported.
+func TestListing_ReportsEventsOutsideWindow(t *testing.T) {
+	srv, arg := startExpandingFake(t)
+	node := mustParseURL(t, arg)
+
+	listReports := func() []cutting_garden_plugins.PartialListing {
+		t.Helper()
+		ctx, partial := cutting_garden_plugins.WithPartialListings(context.Background())
+		if _, err := (Plugin{}).ListRoots(ctx, node); err != nil {
+			t.Fatalf("ListRoots: %v", err)
+		}
+		if _, _, err := (Plugin{}).ListEnriched(ctx, node, nil); err != nil {
+			t.Fatalf("ListEnriched: %v", err)
+		}
+		return partial.All()
+	}
+
+	if got := listReports(); len(got) != 0 {
+		t.Fatalf("every event is inside the window, want no report: %+v", got)
+	}
+
+	srv.Seed("/dav/cal/old.ics", "VEVENT",
+		veventRecurring("old", "Long ago", "20250101T090000Z", ""))
+	got := listReports()
+	if len(got) != 1 ||
+		!strings.Contains(got[0].Reason, "1 of 3 events lie outside the listed window") ||
+		!strings.HasSuffix(got[0].URI, "/dav/cal/") {
+		t.Fatalf("want one report counting 1 of 3 events, got %+v", got)
+	}
+}
+
 // TestListEnriched_MatchesListRootsForExpandedEvents pins RFC 0012 §12.2
 // level-scoping for the new VEVENT expansion path specifically: the
 // enriched listing must address the EXACT SAME node set ListRoots does
