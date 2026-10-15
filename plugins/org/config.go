@@ -129,10 +129,22 @@ func (Plugin) RootNames(context.Context) (map[string]string, error) {
 // declared terminal values of the state facet. A file's own #+TODO done
 // words are not declared up front.
 func allDoneKeywords() []string {
+	return accountKeywords(func(k orgtext.Keywords) []string { return k.Done })
+}
+
+// allKeywords is the union of the accounts' keywords, active then done:
+// the state buckets organize pre-renders as move targets.
+func allKeywords() []string {
+	return accountKeywords(func(k orgtext.Keywords) []string {
+		return append(append([]string(nil), k.Active...), k.Done...)
+	})
+}
+
+func accountKeywords(pick func(orgtext.Keywords) []string) []string {
 	var out []string
 	seen := map[string]bool{}
 	for _, a := range configuredAccounts {
-		for _, k := range a.keywords.Done {
+		for _, k := range pick(a.keywords) {
 			if !seen[k] {
 				seen[k] = true
 				out = append(out, k)
@@ -140,7 +152,7 @@ func allDoneKeywords() []string {
 		}
 	}
 	if len(out) == 0 {
-		out = append(out, orgtext.DefaultKeywords.Done...)
+		out = append(out, pick(orgtext.DefaultKeywords)...)
 	}
 	return out
 }

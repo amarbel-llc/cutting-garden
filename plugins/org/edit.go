@@ -315,6 +315,8 @@ func applyEdit(
 
 	planning := parsePlanningLine(string(src[h.PlanningSpan.Start:h.PlanningSpan.End]))
 	planningBefore := planning.render()
+	// A rendered stamp equal to the current one is no change; the time a
+	// date-only value keeps makes that common for an unchanged day.
 	if e.scheduled != nil && planning.set("SCHEDULED", activeStamp(*e.scheduled, planning.get("SCHEDULED"))) {
 		applied = append(applied, fieldPatchScheduled)
 	}
@@ -532,9 +534,13 @@ func (p planningLine) render() string {
 // (-3d, --1w) cookies.
 var stampCookieRe = regexp.MustCompile(`(?:[.+]?\+|--?)\d+[hdwmy]`)
 
+// stampTimeRe finds a timestamp's time of day, or time range.
+var stampTimeRe = regexp.MustCompile(`\b\d{1,2}:\d{2}(?:-\d{1,2}:\d{2})?\b`)
+
 // activeStamp renders value ("YYYY-MM-DD" with an optional " HH:MM") as an
-// active org timestamp, carrying over old's repeater and warning cookies;
-// "" stays "" (clear).
+// active org timestamp, carrying over old's repeater and warning cookies,
+// and old's time of day when value gives none (so rescheduling to another
+// day keeps the time); "" stays "" (clear).
 func activeStamp(value, old string) string {
 	if value == "" {
 		return ""
@@ -544,6 +550,8 @@ func activeStamp(value, old string) string {
 	parts := []string{m[1], d.Format("Mon")}
 	if m[2] != "" {
 		parts = append(parts, m[2])
+	} else if t := stampTimeRe.FindString(old); t != "" {
+		parts = append(parts, t)
 	}
 	parts = append(parts, stampCookieRe.FindAllString(old, -1)...)
 	return "<" + strings.Join(parts, " ") + ">"

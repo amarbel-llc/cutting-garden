@@ -197,8 +197,10 @@ writable and lists the patch keys).
 agent reads the node again: the old `?h=` URI still resolves, its fields
 now carry `id`, and later listings mint the `?id=` URI. A re-quote changes
 nothing and reports nothing applied, which the mcp `patch_node` tool
-surfaces as "nothing applied". Everything organize needs for editing
-(`FacetWriteDescriber`, tag writes, `CreationDescriber`) is deferred.
+surfaces as "nothing applied". Slice 3b adds `FacetWriteDescriber`,
+`FacetWriteApplier`, `MembershipWriteApplier`, `FieldWriteApplier` and
+`FieldPresenter`, all derived from the unified declaration; creating
+headlines (`CreationDescriber`) is deferred.
 
 Slice 1 does not depend on the RFC 0020 organize grammar work. swift-plum
 verified on 2026-10-14 that it touches neither trellis_eval nor the MCP
@@ -224,8 +226,16 @@ server.
    exactly what was asked for, so a title cannot begin with a keyword or
    end in `:tags:` where that would be ambiguous. Planning entries are
    edited in place; a rescheduled date keeps its repeater and warning
-   cookies, and a new planning line is written unindented. 3b: organize
-   writes for the same fields.
+   cookies, and a new planning line is written unindented. 3b (landed):
+   organize writes for the same fields, declared once in the unified
+   codecs. State, priority and the dates are headings (a move writes them;
+   `none`, or the no-value section for a date, clears); priority and the
+   dates are also box atoms, the title is the writable trailer, and the
+   tag atoms write the own tags: organize hands over the new effective
+   set, and dropping an inherited tag is refused, naming it. A month or
+   year date bucket keeps the day of month (clamped) and the time of day.
+   Organize anchors the document at the file, because headlines are
+   addressed by query (`<file>.org?id=…`) rather than by path.
 4. Later: capture (creating headlines), body edits and moves, local-dir/SFTP
    transports, archival capture (dodder FDR 0013's reference set).
 

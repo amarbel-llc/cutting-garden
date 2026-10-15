@@ -175,8 +175,16 @@ func buildAndStoreFrom(
 	// single-calendar query, the home for a multi). Fall back to the arg when
 	// there is no common prefix (e.g. zero nodes).
 	anchor := commonURIPrefix(nodes)
-	if anchor == "" {
+	switch {
+	case anchor == "":
 		anchor = uriStr
+	case isProperPrefix(anchor, u.String()):
+		// A common prefix ABOVE the origin: apply re-runs `_query` against
+		// the anchor's children, so an anchor shallower than the origin
+		// would select a different level. It happens when children are
+		// addressed by query rather than by path (org headlines are
+		// `<file>.org?id=…`, whose path prefix trims back to the folder).
+		anchor = u.String()
 	}
 
 	zeroCounts := zeroCountValues(ctx, lister, u, spec)
@@ -725,6 +733,11 @@ func commonURIPrefix(nodes []cgp.Node) string {
 		return prefix[:i+1]
 	}
 	return ""
+}
+
+// isProperPrefix reports whether prefix is a strict prefix of s.
+func isProperPrefix(prefix, s string) bool {
+	return len(prefix) < len(s) && strings.HasPrefix(s, prefix)
 }
 
 // commonStringPrefix returns the longest byte-prefix shared by a and b.
