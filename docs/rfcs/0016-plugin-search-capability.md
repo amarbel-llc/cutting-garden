@@ -385,6 +385,14 @@ instead of a forced parity:
   §Reserved fields) that only `SearchWords` answers. It takes `=`, and a
   value list matches any of its words: `_words=["pelican", "heron"]`.
   Other operators are bad requests. `_body*=` keeps its exact meaning.
+  Because a query's first step filters the anchor's children, a plugin
+  that returns containers (a story) is searched from their parent (the
+  feed): a query anchored at one story sees only that story's leaves and
+  never matches the story itself.
+- **Errors.** A query the plugin's index cannot take (a phrase, a stop
+  word) is the caller's mistake: return a bad request (dewey
+  `errors.BadRequestf`, `-32602` on the wire), not a plain error, which
+  reads as a plugin failure (`-32603`).
 - **No fallback.** A plugin without word search — no `Searcher`, or
   `ErrSearchModeUnsupported` / `-32001` for `words` — makes a `_words`
   query a bad request naming the gap, never a silently different
