@@ -679,6 +679,9 @@ func (ev *evaluator) matchFieldPred(
 	if field == bodyField {
 		return ev.matchBody(ctx, n, fp)
 	}
+	if field == wordsField {
+		return ev.matchWords(ctx, n, fp)
+	}
 	if traits, ok := ev.facetTraits(n.Type, field); ok {
 		return ev.matchFacet(n.Facets[field], fp, traits), nil
 	}

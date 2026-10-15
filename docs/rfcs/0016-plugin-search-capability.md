@@ -63,9 +63,11 @@ serve side advertises both tokens for any `Searcher`, because a Go plugin
 cannot declare regex support ahead of time; it answers a declined regex
 request with `-32001`, which the host treats as "walk instead". The host
 adapter declines a mode the peer does not advertise without calling it.
-The test peer is a substring-only `Searcher`, and
+The test peer is a substring and words `Searcher` (no regex), and
 `TestWireSearchIndistinguishableFromLinked` holds the wire and linked
-answers equal.
+answers equal. §7 (word search, `_words`, `search-words`) is implemented
+the same day; org declines `words` (it has no word index), so `_words` is
+refused for org queries.
 
 ## Requirements Language
 
@@ -82,10 +84,12 @@ document are to be interpreted as described in RFC 2119.
 type SearchMode string
 
 const (
-    // SearchSubstring is a plain, non-regex substring match: a node
-    // matches when Query occurs anywhere in the searched text. Case
-    // sensitivity is plugin-defined; a plugin SHOULD document its choice
-    // (mirroring FacetValue.Key's normalization obligation, RFC 0012 §1).
+    // SearchSubstring is a plain, non-regex, EXACT-CASE substring match:
+    // a node matches when Query occurs anywhere in the searched text,
+    // byte for byte, exactly as trellis's `_body*=` walk decides it
+    // (§2). (Amended 2026-10-15: this previously left case sensitivity
+    // plugin-defined, which contradicted §2's parity rule. A looser
+    // match is SearchWords, §7.)
     SearchSubstring SearchMode = "substring"
     // SearchRegex is an RE2-compatible regular-expression match (Go
     // regexp syntax). See §2 for why RE2 specifically is pinned.
@@ -359,6 +363,38 @@ existing `-32000` (`unsupported-version`) and `-32002` (`invalid-config`)
 in the reserved application-error range those two already occupy
 (JSON-RPC's `-32000`..`-32099` server-error band); unlike those two it is
 scoped to `nodes.search`, not `initialize`.
+
+### 7. Word search (amendment, 2026-10-15)
+
+Most indexes a plugin already has — NewsBlur's word index, a CalDAV
+`SEARCH`, a database full-text index — tokenize, fold case and accents,
+skip markup and stop words, and index a whole object rather than each
+leaf. They cannot answer §2's exact substring, and so could never report
+a complete result. They get a second, explicitly different match class
+instead of a forced parity:
+
+- **`SearchWords` (`"mode": "words"`).** A node matches when its text
+  contains the query as a whole word, case-insensitively, **by the
+  plugin's own tokenizer**. The plugin MUST document that tokenizer: what
+  text it covers, how it folds case and accents, which words it does not
+  index (short words, stop words, numerals), and which nodes it returns.
+  It MAY return container nodes whose text it indexes (a story whose text
+  lives in content and original leaves). There is no walk to agree with:
+  the plugin's definition is the answer.
+- **trellis `_words`.** A reserved field (beside `_body`, RFC 0014
+  §Reserved fields) that only `SearchWords` answers. It takes `=`, and a
+  value list matches any of its words: `_words=["pelican", "heron"]`.
+  Other operators are bad requests. `_body*=` keeps its exact meaning.
+- **No fallback.** A plugin without word search — no `Searcher`, or
+  `ErrSearchModeUnsupported` / `-32001` for `words` — makes a `_words`
+  query a bad request naming the gap, never a silently different
+  framework approximation.
+- **Completeness.** A complete result is the answer. An incomplete one
+  (a stale index) cannot be topped up by walking, so the evaluator uses it
+  as it is and reports the query partial (`complete: false` with a
+  `partial` reason on the mcp outputs, a warning from `cg list`).
+- **Wire.** A third token, `search-words`, gates `"mode": "words"` on
+  `nodes.search`; it implies `search`.
 
 ## Non-Goals
 

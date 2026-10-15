@@ -41,6 +41,7 @@ func TestWireSearchIndistinguishableFromLinked(t *testing.T) {
 			Filter: cutting_garden_plugins.FacetFilter{{Dimension: "state", Value: "open"}},
 		},
 		{Root: root, Query: "body", Mode: cutting_garden_plugins.SearchSubstring, Limit: 1},
+		{Root: root, Query: "ALPHA", Mode: cutting_garden_plugins.SearchWords},
 	} {
 		want, err := linked.Search(ctx, req)
 		if err != nil {

@@ -3,6 +3,7 @@ package trellis_eval
 import (
 	"context"
 	stderrors "errors"
+	"fmt"
 
 	cgp "code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
 	"code.linenisgreat.com/cutting-garden/internal/trellis"
@@ -25,6 +26,7 @@ type searchHits struct {
 	uris        map[string]struct{}
 	complete    bool
 	unsupported bool
+	reported    bool // an incomplete words answer was reported partial
 }
 
 type searchKey struct {
@@ -71,6 +73,47 @@ func (ev *evaluator) searchBody(
 		allComplete = allComplete && hits.complete
 	}
 	return false, allComplete, nil
+}
+
+// wordsField is the reserved `_words` field (RFC 0016 §words): whole-word,
+// case-insensitive matching by the plugin's own tokenizer, answered only by
+// a plugin's words search. There is no walk to fall back to, so a plugin
+// without it makes the query a bad request, and an incomplete answer is
+// returned as it is with the query reported partial.
+const wordsField = "_words"
+
+func (ev *evaluator) matchWords(ctx context.Context, n cgp.Node, fp trellis.FieldPred) (bool, error) {
+	if fp.Op != trellis.FieldOpEq {
+		return false, errors.BadRequestf(
+			"trellis: `_words` takes `=` (a word, or a [list] of words, any of which matches), not %s",
+			fp.Op)
+	}
+	if ev.searcher == nil || ev.anchor == nil {
+		return false, errors.BadRequestf(
+			"trellis: `_words` needs a plugin that searches words; this one does not (use `_body*=`)")
+	}
+	uri := n.URIString()
+	for _, v := range fp.Values {
+		word := valueString(v)
+		hits, err := ev.searchFor(ctx, cgp.SearchWords, word)
+		if err != nil {
+			return false, err
+		}
+		if hits.unsupported {
+			return false, errors.BadRequestf(
+				"trellis: `_words` needs a plugin that searches words; this one does not (use `_body*=`)")
+		}
+		if !hits.complete && !hits.reported {
+			cgp.ReportPartialListing(ctx, ev.anchor, fmt.Sprintf(
+				"the plugin's word search for %q reported its result incomplete", word))
+			hits.reported = true
+			ev.searches[searchKey{cgp.SearchWords, word}] = hits
+		}
+		if _, ok := hits.uris[uri]; ok {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (ev *evaluator) searchFor(ctx context.Context, mode cgp.SearchMode, query string) (searchHits, error) {

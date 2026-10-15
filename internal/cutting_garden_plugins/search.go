@@ -11,13 +11,20 @@ import (
 type SearchMode string
 
 const (
-	// SearchSubstring is a plain, unanchored substring match: a node
-	// matches when Query occurs anywhere in its searched text, as trellis's
-	// `_body*=`. A Searcher MUST implement it.
+	// SearchSubstring is a plain, unanchored, EXACT-CASE substring match
+	// over the same raw text `_body` reads: a node matches exactly when
+	// trellis's `_body*=` walk would match it. A Searcher MUST implement it.
 	SearchSubstring SearchMode = "substring"
 	// SearchRegex is an unanchored RE2 (Go regexp) match, as trellis's
 	// `_body~=`. Optional: a plugin may return ErrSearchModeUnsupported.
 	SearchRegex SearchMode = "regex"
+	// SearchWords is a whole-word, case-insensitive match under the
+	// plugin's own documented tokenizer (which words it indexes, how it
+	// folds accents, what text and which nodes it covers) — trellis's
+	// `_words` field. Unlike the other modes it has no walk to agree with:
+	// the plugin's definition IS the answer, so a plugin MAY match
+	// containers whose text it indexes. Optional.
+	SearchWords SearchMode = "words"
 )
 
 // SearchRequest is one search over a subtree (RFC 0016 §1).

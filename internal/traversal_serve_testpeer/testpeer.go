@@ -22,6 +22,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"unicode"
 
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 
@@ -453,18 +454,31 @@ func (p *TreePlugin) ListRoots(
 	return children, nil
 }
 
-// Search is the Searcher capability (RFC 0016), substring mode only, so a
-// regex request exercises the decline path (ErrSearchModeUnsupported, -32001
-// on the wire). It searches what ReadLeaf serves as Raw, over node's whole
-// subtree including node itself — the same text `_body` reads.
+// Search is the Searcher capability (RFC 0016): substring and words modes,
+// not regex, so a regex request exercises the decline path
+// (ErrSearchModeUnsupported, -32001 on the wire). It searches what ReadLeaf
+// serves as Raw, over node's whole subtree including node itself — the same
+// text `_body` reads. Its documented word tokenizer: maximal runs of
+// letters and digits, lowercased.
 func (p *TreePlugin) Search(
 	_ context.Context, req cutting_garden_plugins.SearchRequest,
 ) (cutting_garden_plugins.SearchResult, error) {
-	if req.Mode == cutting_garden_plugins.SearchRegex {
-		return cutting_garden_plugins.SearchResult{}, cutting_garden_plugins.ErrSearchModeUnsupported
-	}
 	if req.Root == nil || req.Query == "" {
 		return cutting_garden_plugins.SearchResult{}, errors.BadRequestf("search needs a root and a query")
+	}
+	var match func([]byte) bool
+	switch req.Mode {
+	case cutting_garden_plugins.SearchSubstring:
+		match = func(raw []byte) bool { return bytes.Contains(raw, []byte(req.Query)) }
+	case cutting_garden_plugins.SearchWords:
+		word := strings.ToLower(req.Query)
+		match = func(raw []byte) bool {
+			return slices.Contains(strings.FieldsFunc(strings.ToLower(string(raw)), func(r rune) bool {
+				return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+			}), word)
+		}
+	default:
+		return cutting_garden_plugins.SearchResult{}, cutting_garden_plugins.ErrSearchModeUnsupported
 	}
 
 	p.mu.Lock()
@@ -478,7 +492,7 @@ func (p *TreePlugin) Search(
 		if !ok {
 			return nil
 		}
-		if bytes.Contains(n.raw, []byte(req.Query)) && req.Filter.Matches(n.facets) {
+		if match(n.raw) && req.Filter.Matches(n.facets) {
 			if req.Limit > 0 && len(result.Nodes) == req.Limit {
 				result.Complete = false
 				return nil

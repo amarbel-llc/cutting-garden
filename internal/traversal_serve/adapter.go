@@ -659,15 +659,19 @@ func (w *WirePlugin) ListEnriched(
 }
 
 // Search is nodes.search (RFC 0016 §6). A plugin that does not advertise
-// the mode — search for substring, search-regex for regex — declines with
+// the mode — search for substring, search-regex for regex, search-words
+// for words — declines with
 // ErrSearchModeUnsupported and no wire call, as does a -32001 answer, so
 // the evaluator walks exactly as for a linked plugin without a Searcher.
 func (w *WirePlugin) Search(
 	ctx context.Context, req cutting_garden_plugins.SearchRequest,
 ) (cutting_garden_plugins.SearchResult, error) {
 	need := CapSearch
-	if req.Mode == cutting_garden_plugins.SearchRegex {
+	switch req.Mode {
+	case cutting_garden_plugins.SearchRegex:
 		need = CapSearchRegex
+	case cutting_garden_plugins.SearchWords:
+		need = CapSearchWords
 	}
 	sess, advertised, err := w.liveSessionWithCap(need)
 	if err != nil {

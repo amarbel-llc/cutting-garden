@@ -253,12 +253,13 @@ func newServer(cfg ServeConfig) (*server, error) {
 		capabilities = append(capabilities, CapFilteredList)
 	}
 
-	// A Go Searcher may still decline regex per request
-	// (ErrSearchModeUnsupported, answered as -32001), so both tokens are
-	// advertised and the host falls back to walking on that answer.
+	// A Go Searcher declares no modes up front, so every mode token is
+	// advertised and a mode it declines per request
+	// (ErrSearchModeUnsupported) is answered -32001: the host walks for a
+	// declined regex and refuses a declined `_words`.
 	if searcher, ok := cfg.Plugin.(cutting_garden_plugins.Searcher); ok {
 		srv.searcher = searcher
-		capabilities = append(capabilities, CapSearch, CapSearchRegex)
+		capabilities = append(capabilities, CapSearch, CapSearchRegex, CapSearchWords)
 	}
 
 	if bulkMutator, ok := cfg.Plugin.(cutting_garden_plugins.BulkMutator); ok {
@@ -595,7 +596,10 @@ func (s *server) handleNodesSearch(
 		return nil, &RPCError{Code: CodeInvalidParams, Message: "nodes.search: empty query"}
 	}
 	mode := cutting_garden_plugins.SearchMode(searchParams.Mode)
-	if mode != cutting_garden_plugins.SearchSubstring && mode != cutting_garden_plugins.SearchRegex {
+	switch mode {
+	case cutting_garden_plugins.SearchSubstring, cutting_garden_plugins.SearchRegex,
+		cutting_garden_plugins.SearchWords:
+	default:
 		return nil, &RPCError{
 			Code:    CodeInvalidParams,
 			Message: fmt.Sprintf("nodes.search: unknown mode %q", searchParams.Mode),

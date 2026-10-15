@@ -125,6 +125,12 @@ depends on whether the plugin searches. Return *ErrSearchModeUnsupported*
 for a mode you do not accelerate, and *complete: false* when the result may
 miss matches. org is the reference.
 
+An index that tokenizes, folds case or skips markup cannot answer that
+exactly; it answers the *words* mode instead (RFC 0016 §7), which trellis
+reaches only through the *\_words* field. Document your tokenizer and the
+nodes you return (containers are allowed), since your definition is the
+answer.
+
 # TOLERATE, BUT REPORT
 
 Tolerating input you do not understand is a forward-compatibility measure,

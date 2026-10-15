@@ -38,6 +38,9 @@ func (Plugin) Search(
 				"org plugin: invalid search regex %q: %s", req.Query, err)
 		}
 		match = re.MatchString
+	case cutting_garden_plugins.SearchWords:
+		// No word index: `_words` is refused for org; use `_body*=`.
+		return cutting_garden_plugins.SearchResult{}, cutting_garden_plugins.ErrSearchModeUnsupported
 	default:
 		return cutting_garden_plugins.SearchResult{}, errors.BadRequestf(
 			"org plugin: unknown search mode %q", req.Mode)

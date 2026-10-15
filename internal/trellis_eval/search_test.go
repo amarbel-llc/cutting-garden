@@ -103,6 +103,66 @@ func TestSearch_ErrorFailsTheQuery(t *testing.T) {
 	}
 }
 
+func evalWords(t *testing.T, lister cgp.RootLister, query string) ([]string, []cgp.PartialListing, error) {
+	t.Helper()
+	q, err := trellis.Parse(query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, partial := cgp.WithPartialListings(context.Background())
+	nodes, err := Evaluate(ctx, q, mustURL(t, "fake://cal/personal/"), lister)
+	var uris []string
+	for _, n := range nodes {
+		uris = append(uris, n.URIString())
+	}
+	return uris, partial.All(), err
+}
+
+// `_words` is answered only by the plugin's words search: hits match, a
+// complete answer rules the rest out with no leaf read.
+func TestWords_AnsweredBySearch(t *testing.T) {
+	tree := &searchTree{fakeTree: sampleTree(t), hits: []string{"fake://cal/personal/t1"}, complete: true}
+	got, partial, err := evalWords(t, tree, `_words=["milk", "bread"]`)
+	if err != nil || !equalStrings(got, []string{"fake://cal/personal/t1"}) || len(partial) != 0 {
+		t.Errorf("got %v partial=%v err=%v", got, partial, err)
+	}
+	if tree.reads != 0 || tree.searches[0].Mode != cgp.SearchWords {
+		t.Errorf("reads=%d searches=%+v, want 0 reads and a words search", tree.reads, tree.searches)
+	}
+}
+
+// With no walk to top it up, an incomplete words answer is used as it is
+// and the query is reported partial.
+func TestWords_IncompleteIsReportedPartial(t *testing.T) {
+	tree := &searchTree{fakeTree: sampleTree(t), hits: []string{"fake://cal/personal/t1"}, complete: false}
+	got, partial, err := evalWords(t, tree, `_words=milk`)
+	if err != nil || !equalStrings(got, []string{"fake://cal/personal/t1"}) {
+		t.Fatalf("got %v err=%v", got, err)
+	}
+	if len(partial) != 1 || !strings.Contains(partial[0].Reason, `"milk"`) {
+		t.Errorf("partial = %+v, want one report naming the word", partial)
+	}
+}
+
+func TestWords_Refusals(t *testing.T) {
+	for name, c := range map[string]struct {
+		lister cgp.RootLister
+		query  string
+		want   string
+	}{
+		"no searcher":     {sampleTree(t), `_words=milk`, "does not"},
+		"mode declined":   {&searchTree{fakeTree: sampleTree(t), err: cgp.ErrSearchModeUnsupported}, `_words=milk`, "does not"},
+		"not an equality": {&searchTree{fakeTree: sampleTree(t), complete: true}, `_words*=mil`, "takes `=`"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, _, err := evalWords(t, c.lister, c.query)
+			if err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Errorf("err = %v, want it to mention %q", err, c.want)
+			}
+		})
+	}
+}
+
 // Operators search does not express (equality, prefix) never call it.
 func TestSearch_OnlyContainsAndRegexAreAccelerated(t *testing.T) {
 	tree := &searchTree{fakeTree: sampleTree(t), complete: true}

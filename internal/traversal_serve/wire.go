@@ -134,6 +134,9 @@ const (
 	// additional regex mode (RFC 0016 §6); search-regex implies search.
 	CapSearch      = "search"
 	CapSearchRegex = "search-regex"
+	// CapSearchWords gates "mode": "words" (trellis `_words`); it also
+	// implies search.
+	CapSearchWords = "search-words"
 )
 
 // NodesSearchParams is the nodes.search request payload (RFC 0016 §6).

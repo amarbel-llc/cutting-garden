@@ -617,6 +617,10 @@ const (
 	CapSearchRegex = internal.CapSearchRegex
 )
 
+// CapSearchWords gates "mode": "words" (trellis `_words`); it also
+// implies search.
+const CapSearchWords = internal.CapSearchWords
+
 // CodeAtomicUnsupported is node.bulk_mutate's own code (RFC 0017
 // §Wire binding): "atomicity": "atomic" was requested against a plugin
 // that cannot honor it for this request — the reject-never-downgrade
