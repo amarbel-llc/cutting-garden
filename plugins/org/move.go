@@ -200,27 +200,39 @@ func (t target) moveLocked(
 		edited[moved.SubtreeSpan.End:]...)
 
 	// The destination, as it will be once the subtree is lifted out of it.
+	// Within one file the target is resolved in the text as it is (a ?h=
+	// ordinal would shift once the subtree is gone), and the offset is then
+	// mapped past the removed span.
 	dstBase := srcWithout
+	var at, level int
+	var parentPath []string
 	if crossFile {
 		if dstBase, _, err = t.client.get(ctx, dstPath); err != nil {
 			return nil, want, err
 		}
-	} else if dest.ref.kind == kindHeadline {
-		// The destination must not be the headline or inside its subtree.
-		destNode, ok := parseFile(t.acct, srcPath, "", edited).find(dest.ref)
-		if !ok {
-			return nil, want, errors.BadRequestf("org plugin: no such headline %s", e.move.ref)
+		if at, level, parentPath, err = insertionPoint(t.acct, dstPath, dstBase, dest, e.move); err != nil {
+			return nil, want, err
 		}
-		if destNode.h.SubtreeSpan.Start >= moved.SubtreeSpan.Start &&
-			destNode.h.SubtreeSpan.Start < moved.SubtreeSpan.End {
-			return nil, want, errors.BadRequestf(
-				"org plugin: %s %s is the moved headline or inside its subtree", e.move.key, e.move.ref)
+	} else {
+		if dest.ref.kind == kindHeadline {
+			destNode, ok := parseFile(t.acct, srcPath, "", edited).find(dest.ref)
+			if !ok {
+				return nil, want, errors.BadRequestf("org plugin: no such headline %s", e.move.ref)
+			}
+			if destNode.h.SubtreeSpan.Start >= moved.SubtreeSpan.Start &&
+				destNode.h.SubtreeSpan.Start < moved.SubtreeSpan.End {
+				return nil, want, errors.BadRequestf(
+					"org plugin: %s %s is the moved headline or inside its subtree", e.move.key, e.move.ref)
+			}
 		}
-	}
-
-	at, level, parentPath, err := insertionPoint(t.acct, dstPath, dstBase, dest, e.move)
-	if err != nil {
-		return nil, want, err
+		if at, level, parentPath, err = insertionPoint(t.acct, srcPath, edited, dest, e.move); err != nil {
+			return nil, want, err
+		}
+		// A target outside the moved subtree never starts or ends strictly
+		// inside it, so an offset at or past its end shifts back by its length.
+		if at >= moved.SubtreeSpan.End {
+			at -= moved.SubtreeSpan.End - moved.SubtreeSpan.Start
+		}
 	}
 	block := relevel(subtree, moved, level)
 	if at == len(dstBase) && len(dstBase) > 0 && dstBase[len(dstBase)-1] != '\n' {
@@ -265,7 +277,8 @@ func (t target) moveLocked(
 		if err := t.putChecked(ctx, srcPath, srcWithout, tokens[srcPath]); err != nil {
 			return nil, want, errors.Wrapf(err,
 				"org plugin: the headline (:ID: %s) was written to %s, but removing it from %s failed; "+
-					"it is now in both files — delete the copy in %s, or retry the move", id, dstPath, srcPath, srcPath)
+					"it is now in both files — delete the copy in %s (retrying the move would add a second copy "+
+					"to %s)", id, dstPath, srcPath, srcPath, dstPath)
 		}
 	}
 	return applied, want, nil

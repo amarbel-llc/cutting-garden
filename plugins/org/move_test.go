@@ -81,6 +81,18 @@ func TestMove_WithinFile(t *testing.T) {
 	}
 }
 
+// A ?h= target's ordinal counts the moved headline when it shares the
+// title, so it is resolved before the subtree is lifted out.
+func TestMove_SameTitleOrdinal(t *testing.T) {
+	srv := setup(t)
+	srv.Put("d.org", []byte("* Foo\nmoved\n* Bar\n* Foo\nsecond\n* Foo\nthird\n"))
+	mustPatch(t, "org://test/d.org?h=Foo", `{"before": "h=Foo&n=3"}`, "before")
+	want := "* Bar\n* Foo\nsecond\n* Foo\n:PROPERTIES:\n:ID:       <uuid>\n:END:\nmoved\n* Foo\nthird\n"
+	if got := replaceUUID(string(srv.Content("d.org"))); got != want {
+		t.Errorf("got  %q\nwant %q", got, want)
+	}
+}
+
 func TestMove_AcrossFiles(t *testing.T) {
 	srv := setup(t)
 	srv.Put("m.org", []byte(moveOrg))

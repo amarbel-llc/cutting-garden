@@ -116,6 +116,10 @@ func spliceBody(src []byte, kws orgtext.Keywords, id, text, nl string) ([]byte, 
 	indent := commonIndent(textLines)
 
 	var b strings.Builder
+	if h.BodySpan.Start == len(src) && len(src) > 0 && src[len(src)-1] != '\n' {
+		// The headline's last line ends the file without a newline.
+		b.WriteString(nl)
+	}
 	for _, l := range drawers {
 		b.WriteString(l + nl)
 	}

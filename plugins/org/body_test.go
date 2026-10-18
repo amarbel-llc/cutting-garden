@@ -56,6 +56,13 @@ func TestEdit_Body(t *testing.T) {
 			"* DONE X\nCLOSED: <now>\n:PROPERTIES:\n:ID: b1\n:END:\nnew\n",
 		},
 		{
+			"a headline ending the file without a newline",
+			"* Y\n* X\n:PROPERTIES:\n:ID: b1\n:END:",
+			`{"body": "hello"}`,
+			[]string{"body"},
+			"* Y\n* X\n:PROPERTIES:\n:ID: b1\n:END:\nhello\n",
+		},
+		{
 			"CRLF is kept",
 			"* X\r\n:PROPERTIES:\r\n:ID: b1\r\n:END:\r\nold\r\n",
 			`{"body": "a\nb"}`,
