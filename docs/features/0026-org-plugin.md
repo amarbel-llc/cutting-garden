@@ -52,7 +52,8 @@ Taken 2026-10-14:
   on rename and fails as not-found, never as a closest match. This mirrors
   fastmail's `?thread=`; implement `NodeIDer`.
 - **D12, quote (Slice 2).** An agent makes a reference durable with a
-  dedicated `patch_node` body `{"quote": true}`. The plugin mints the `:ID:`
+  dedicated patch body `{"quote": true}` (a `mutate_nodes` patch op since
+  #315; `patch_node` before). The plugin mints the `:ID:`
   (a UUID the agent does not choose) and adds the own tag `zz-agent_quoted`.
   Quoting is idempotent, and a headline that already has an `:ID:` only
   gains the tag. The intent is deliberately narrow, which suits scoped agent
@@ -101,10 +102,11 @@ Taken 2026-10-14:
 
 Taken 2026-10-15, for metadata edits (slice 3):
 
-- **D7-B, edits.** `patch_node` on a headline sets `title`, `state`,
+- **D7-B, edits.** A patch on a headline (a `mutate_nodes` patch op, e.g.
+  id `_inbox.org?id=…` under the account anchor) sets `title`, `state`,
   `priority`, `own_tags` (the whole own set), `scheduled` and `deadline`
   (`YYYY-MM-DD` with an optional ` HH:MM`; `null` clears), alongside
-  `quote`. The body is never edited. Slice 3a is `patch_node`; slice 3b
+  `quote`. The body is never edited. Slice 3a is the patch; slice 3b
   declares the same fields to organize (facet writes, tag atoms).
 - **D8-C, conflict policy.** Edits land in files the user also edits in
   Orgzly, which uploads without locking (#267). Each edit takes the quote's
@@ -196,8 +198,9 @@ writable and lists the patch keys).
 `PatchNode` can only report applied field names, not a new URI, so the
 agent reads the node again: the old `?h=` URI still resolves, its fields
 now carry `id`, and later listings mint the `?id=` URI. A re-quote changes
-nothing and reports nothing applied, which the mcp `patch_node` tool
-surfaces as "nothing applied". Slice 3b adds `FacetWriteDescriber`,
+nothing and reports nothing applied, which the mcp `mutate_nodes` tool
+lists under `patched_nothing` (an error result when nothing else in the
+batch applied). Slice 3b adds `FacetWriteDescriber`,
 `FacetWriteApplier`, `MembershipWriteApplier`, `FieldWriteApplier` and
 `FieldPresenter`, all derived from the unified declaration; creating
 headlines (`CreationDescriber`) is deferred. The plugin is also the
@@ -222,8 +225,10 @@ server.
    landed; it never retries blindly. A copy-pasted duplicate `:ID:`, or an
    empty one, is replaced rather than duplicated, and the splice keeps the
    headline's own line ending. The test server enforces LOCK and, like Fastmail Files,
-   ignores conditional headers.
-3. **Metadata edits.** 3a (landed): `patch_node` edits (D7-B, D8-C, D13,
+   ignores conditional headers. Verified against a real device on
+   2026-10-18: a quoted headline kept its `:ID:` and `zz-agent_quoted` tag
+   through later Orgzly syncs of the same file, and Orgzly shows the tag.
+3. **Metadata edits.** 3a (landed): patch edits (D7-B, D8-C, D13,
    D14), sharing the quote's write path. The headline line is rebuilt only
    when its keyword, priority or title changes (a tags-only edit replaces
    just the tag block, keeping the line's spacing) and must parse back to
