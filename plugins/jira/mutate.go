@@ -20,8 +20,8 @@ var (
 
 // DescribeBodies is the schema-discovery half of jira's write capability
 // (the describe_node_types tool). It declares the issue leaf as writable and
-// ServerAssignedIdentity — Jira assigns the key, so the create_node tool
-// routes creation to CreateChild under a project rather than CreateNode. The
+// ServerAssignedIdentity — Jira assigns the key, so the mutate_nodes tool
+// creates it with a temp id (CreateChild under a project), never by id. The
 // Accepts line documents both payloads: the create body (issuetype/summary/
 // priority?/labels?) and the flat patch body (any of summary/priority/
 // labels/status).

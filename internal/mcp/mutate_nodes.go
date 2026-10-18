@@ -33,7 +33,7 @@ const mutateNodesSchema = `{"type":"object","required":["groups"],"properties":{
 	`"id":{"type":"string","description":"the node, as the id organize and list -format espalier print for it under the anchor (e.g. task1.ics, T1, _inbox.org?id=…), or a full URI under the anchor. On a create, a temp id (+name, +\"name\", or bare +) asks the source to name the node; later ops in the group address it as +name"},` +
 	`"in":{"type":"string","description":"temp-id creates only: the container to create in, as an id under the anchor or an earlier +name; default the anchor itself"},` +
 	`"body":{"type":"string","description":"the create/put/patch body as a STRING (omit for delete): JSON-encode a JSON body into it, or pass raw text for a raw-format type (caldav iCalendar). describe_node_types lists what each type accepts"},` +
-	`"type":{"type":"string","description":"creates only: the node type tag, e.g. caldav-object-vtodo-v1"}}}},` +
+	`"type":{"type":"string","description":"creates only: the node type tag, e.g. caldav-object-vtodo-v1; checked against describe_node_types (a type the source names, like a jira issue, needs a temp id)"}}}},` +
 	`"sweep":{"type":"object","required":["op"],"description":"apply one op to every node under the anchor that matches filter. Exactly ONE of ops or sweep.","properties":{` +
 	`"filter":{"type":"string","description":"comma-separated dimension=value predicates (AND-composed), as for list_nodes; empty matches every node under the anchor"},` +
 	`"op":{"type":"object","required":["kind"],"properties":{` +
@@ -250,6 +250,12 @@ func (g *mutateGroup) buildOp(
 		return op, errors.BadRequestf("mutate_nodes: ops[%d]: %s", i, err)
 	}
 
+	if op.Kind == cutting_garden_plugins.BulkCreate && op.Type != "" {
+		if err := g.checkCreateType(i, op.Type, isTemp); err != nil {
+			return op, err
+		}
+	}
+
 	switch {
 	case isTemp && !defined[key]:
 		if op.Kind != cutting_garden_plugins.BulkCreate {
@@ -288,6 +294,39 @@ func (g *mutateGroup) buildOp(
 	}
 
 	return op, nil
+}
+
+// checkCreateType refuses a create the plugin's describe_node_types says
+// cannot work, before anything is sent: a type it does not list as writable,
+// or a caller-chosen id for a type whose source assigns identity (jira's
+// issue keys) — that one needs a temp id. A plugin with no BodyDescriber
+// declares nothing, so its creates go through unchecked.
+func (g *mutateGroup) checkCreateType(i int, typeTag string, isTemp bool) error {
+	describer, ok := g.lister.(cutting_garden_plugins.BodyDescriber)
+	if !ok {
+		return nil
+	}
+
+	bodies := describer.DescribeBodies()
+	writable := make([]string, 0, len(bodies))
+	for _, body := range bodies {
+		if body.Tag != typeTag {
+			writable = append(writable, body.Tag)
+			continue
+		}
+		if body.ServerAssignedIdentity && !isTemp {
+			return errors.BadRequestf(
+				"mutate_nodes: ops[%d]: the source names %s nodes; create it"+
+					" with a temp id (+name) instead of an id", i, typeTag,
+			)
+		}
+		return nil
+	}
+
+	return errors.BadRequestf(
+		"mutate_nodes: ops[%d]: type %q is not creatable here (writable"+
+			" types: %s)", i, typeTag, strings.Join(writable, ", "),
+	)
 }
 
 // setContainer fills a temp-id create's container: the anchor by default,

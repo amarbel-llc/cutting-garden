@@ -578,6 +578,50 @@ func TestMutateNodes_FailedCreateFailsItsDependents(t *testing.T) {
 	}
 }
 
+// describingCreator declares its writable types, so mutate_nodes can check
+// a create's type against them before dispatch.
+type describingCreator struct{ *fakeCreator }
+
+func (describingCreator) DescribeBodies() []cutting_garden_plugins.NodeTypeBody {
+	return []cutting_garden_plugins.NodeTypeBody{
+		{Tag: "named-v1"},
+		{Tag: "assigned-v1", ServerAssignedIdentity: true},
+	}
+}
+
+// TestMutateNodes_CreateTypeChecked pins the pre-dispatch type check: a type
+// the plugin does not list as writable is refused, as is a caller-chosen id
+// for a type whose source names its nodes; nothing reaches the plugin.
+func TestMutateNodes_CreateTypeChecked(t *testing.T) {
+	for name, testCase := range map[string]struct {
+		op      string
+		refused bool
+	}{
+		"undescribed type":      {`{"kind":"create","id":"x.ics","type":"nope-v1","body":"b"}`, true},
+		"server-assigned by id": {`{"kind":"create","id":"x.ics","type":"assigned-v1","body":"b"}`, true},
+		"server-assigned temp":  {`{"kind":"create","id":"+t","type":"assigned-v1","body":"b"}`, false},
+		"named by id":           {`{"kind":"create","id":"x.ics","type":"named-v1","body":"b"}`, false},
+		"named by temp":         {`{"kind":"create","id":"+t","type":"named-v1","body":"b"}`, false},
+		"untyped":               {`{"kind":"create","id":"x.ics","body":"b"}`, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := describingCreator{&fakeCreator{}}
+			tools := newFakeTools(t, &c.fakeMutator, "faketest://h/")
+			tools.resolve = fakeMutatorResolve(c)
+			tools.resolveLister = fakeListerResolve(c)
+
+			res := callMutate(t, tools, `"ops":[`+testCase.op+`]`)
+			if res.IsError != testCase.refused {
+				t.Fatalf("IsError = %v, want %v: %+v", res.IsError, testCase.refused, res.Content)
+			}
+			dispatched := len(c.created) + len(c.childrenOf)
+			if testCase.refused && dispatched != 0 {
+				t.Errorf("a refused create reached the plugin")
+			}
+		})
+	}
+}
+
 func TestMutateNodes_NonMutatorAnchorIsToolError(t *testing.T) {
 	tools := newFakeTools(t, &fakeMutator{}, "faketest://h/")
 	res, err := tools.CallTool(context.Background(), "mutate_nodes",
