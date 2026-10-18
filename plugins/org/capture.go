@@ -20,7 +20,8 @@ import (
 // last child). The body is a JSON object with a required "title" and any
 // of the patch keys "state", "priority", "own_tags", "scheduled",
 // "deadline" and "body". The plugin mints the :ID: (so the create returns
-// a durable ?id= URI), stamps :CREATED: with the current time, and adds the
+// a durable ?id= URI), stamps :CREATED: with the current time in the
+// account's timezone, and adds the
 // own tag zz-agent_captured, which, like zz-agent_quoted, never inherits.
 // The write takes the edit path: LOCK → GET → insert → PUT → UNLOCK, then
 // the read-back now and after readBackDelay (D8-C).
@@ -53,7 +54,7 @@ func (Plugin) CreateChild(
 		return nil, errors.BadRequestf(
 			"org plugin: a headline is created in a file or under a headline, not in %q", container)
 	}
-	return t.capture(ctx, title, e, time.Now())
+	return t.capture(ctx, title, e, t.acct.now())
 }
 
 // parseCapture reads a create body: the edit keys plus a required title.

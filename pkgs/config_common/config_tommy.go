@@ -192,6 +192,12 @@ func DecodeAccount(input []byte) (*AccountDocument, error) {
 			_vTodoKeywords.MarkConsumed()
 		}
 	}
+	if _vTimezone, _ok := model.Get("timezone"); _ok && _vTimezone.Kind == cst.VLeaf {
+		if _x, _xok := cst.ExtractString(_vTimezone.Leaf); _xok {
+			d.data.Timezone = _x
+			_vTimezone.MarkConsumed()
+		}
+	}
 	return d, nil
 }
 
@@ -251,6 +257,13 @@ func (d *AccountDocument) Encode() ([]byte, error) {
 		}
 	} else {
 		cst.DeleteValue(d.cstDoc.Root(), "todo_keywords")
+	}
+	if d.data.Timezone != "" {
+		if err := cst.SetAny(d.cstDoc.Root(), "timezone", d.data.Timezone); err != nil {
+			return nil, fmt.Errorf("%w", err)
+		}
+	} else {
+		cst.DeleteValue(d.cstDoc.Root(), "timezone")
 	}
 	return d.cstDoc.Bytes(), nil
 }
@@ -327,6 +340,12 @@ func DecodeAccountInto(data *Account, sub *cst.Value) error {
 			_vTodoKeywords.MarkConsumed()
 		}
 	}
+	if _vTimezone, _ok := sub.Get("timezone"); _ok && _vTimezone.Kind == cst.VLeaf {
+		if _x, _xok := cst.ExtractString(_vTimezone.Leaf); _xok {
+			data.Timezone = _x
+			_vTimezone.MarkConsumed()
+		}
+	}
 	return nil
 }
 
@@ -382,6 +401,13 @@ func EncodeAccountFrom(data *Account, doc *document.Document, container *cst.Nod
 		}
 	} else {
 		cst.DeleteValue(container, "todo_keywords")
+	}
+	if data.Timezone != "" {
+		if err := cst.SetAny(container, "timezone", data.Timezone); err != nil {
+			return fmt.Errorf("%w", err)
+		}
+	} else {
+		cst.DeleteValue(container, "timezone")
 	}
 	return nil
 }
@@ -467,6 +493,12 @@ func DecodeAccountsSection(input []byte) (*AccountsSectionDocument, error) {
 					_vAccountsTodoKeywords.MarkConsumed()
 				}
 			}
+			if _vAccountsTimezone, _ok := _eAccounts.Get("timezone"); _ok && _vAccountsTimezone.Kind == cst.VLeaf {
+				if _x, _xok := cst.ExtractString(_vAccountsTimezone.Leaf); _xok {
+					d.data.Accounts[i].Timezone = _x
+					_vAccountsTimezone.MarkConsumed()
+				}
+			}
 		}
 	}
 	if _eaAccounts, _eaok := model.Get("accounts"); _eaok && _eaAccounts.IsEmptyArray() {
@@ -540,6 +572,13 @@ func (d *AccountsSectionDocument) Encode() ([]byte, error) {
 				}
 			} else {
 				cst.DeleteValue(container, "todo_keywords")
+			}
+			if d.data.Accounts[i].Timezone != "" {
+				if err := cst.SetAny(container, "timezone", d.data.Accounts[i].Timezone); err != nil {
+					return nil, fmt.Errorf("%w", err)
+				}
+			} else {
+				cst.DeleteValue(container, "timezone")
 			}
 		}
 	}
@@ -624,6 +663,12 @@ func DecodeAccountsSectionInto(data *AccountsSection, sub *cst.Value) error {
 					_vAccountsTodoKeywords.MarkConsumed()
 				}
 			}
+			if _vAccountsTimezone, _ok := _eAccounts.Get("timezone"); _ok && _vAccountsTimezone.Kind == cst.VLeaf {
+				if _x, _xok := cst.ExtractString(_vAccountsTimezone.Leaf); _xok {
+					data.Accounts[i].Timezone = _x
+					_vAccountsTimezone.MarkConsumed()
+				}
+			}
 		}
 	}
 	if _eaAccounts, _eaok := sub.Get("accounts"); _eaok && _eaAccounts.IsEmptyArray() {
@@ -695,6 +740,13 @@ func EncodeAccountsSectionFrom(data *AccountsSection, doc *document.Document, co
 				}
 			} else {
 				cst.DeleteValue(container, "todo_keywords")
+			}
+			if data.Accounts[i].Timezone != "" {
+				if err := cst.SetAny(container, "timezone", data.Accounts[i].Timezone); err != nil {
+					return fmt.Errorf("%w", err)
+				}
+			} else {
+				cst.DeleteValue(container, "timezone")
 			}
 		}
 	}

@@ -57,6 +57,11 @@ type Root struct {
 // app settings, not in the files, so the account declares them, and a
 // file's own #+TODO line overrides. Other plugins ignore it.
 //
+// Timezone is the org plugin's IANA time zone (e.g. "America/New_York")
+// for the timestamps it writes — :CREATED: on capture, CLOSED on a done
+// state — so they read as the user's local time in Orgzly; empty means the
+// host's zone. Other plugins ignore it.
+//
 //go:generate tommy generate
 type Account struct {
 	Root
@@ -66,6 +71,7 @@ type Account struct {
 	PasswordKey    string `toml:"password_key,omitempty"`
 	SessionURL     string `toml:"session_url,omitempty"`
 	TodoKeywords   string `toml:"todo_keywords,omitempty"`
+	Timezone       string `toml:"timezone,omitempty"`
 }
 
 // AccountsSection is the TOML shape of an account-bearing plugin's

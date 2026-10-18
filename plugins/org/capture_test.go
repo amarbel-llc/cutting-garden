@@ -5,6 +5,9 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
+
+	"code.linenisgreat.com/cutting-garden/pkgs/config_common"
 )
 
 var createdStampRe = regexp.MustCompile(`:CREATED:  \[\d{4}-\d{2}-\d{2} [A-Z][a-z]{2} \d{2}:\d{2}\]`)
@@ -95,6 +98,49 @@ func TestCapture_TagNotInherited(t *testing.T) {
 	n, err := Plugin{}.ListRoots(context.Background(), mustURL(t, parent))
 	if err != nil || len(n) != 1 || n[0].URIString() != child {
 		t.Fatalf("parent's children = %v, %v; want [%s]", n, err, child)
+	}
+}
+
+// The :CREATED: stamp is in the account's timezone, not the host's.
+func TestCapture_StampsInAccountTimezone(t *testing.T) {
+	srv := setup(t)
+	srv.Put("c.org", []byte(""))
+	loc, err := time.LoadLocation("Pacific/Kiritimati") // UTC+14: never the host's day and hour
+	if err != nil {
+		t.Fatal(err)
+	}
+	configuredAccounts[0].loc = loc
+
+	before := time.Now().In(loc)
+	if _, err := create(t, "org://test/c.org", `{"title": "Zoned"}`); err != nil {
+		t.Fatal(err)
+	}
+	after := time.Now().In(loc)
+	got := string(srv.Content("c.org"))
+	stamp := func(at time.Time) string { return ":CREATED:  [" + at.Format("2006-01-02 Mon 15:04") + "]" }
+	if !strings.Contains(got, stamp(before)) && !strings.Contains(got, stamp(after)) {
+		t.Errorf("want %s in the account's zone, got:\n%s", stamp(before), got)
+	}
+}
+
+func TestValidateAccounts_Timezone(t *testing.T) {
+	base := config_common.Account{
+		Root: config_common.Root{Name: "z", URL: "https://example.com/org/"}, PasswordSource: "env", PasswordKey: "X",
+	}
+	zoned := base
+	zoned.Timezone = "America/New_York"
+	accounts, err := validateAccounts([]config_common.Account{zoned})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := accounts[0].now().Location().String(); got != "America/New_York" {
+		t.Errorf("now() location = %q", got)
+	}
+	bad := base
+	bad.Timezone = "Mars/Olympus"
+	if _, err := validateAccounts([]config_common.Account{bad}); err == nil ||
+		!strings.Contains(err.Error(), "timezone") {
+		t.Errorf("an unknown zone must be a config error, got %v", err)
 	}
 }
 

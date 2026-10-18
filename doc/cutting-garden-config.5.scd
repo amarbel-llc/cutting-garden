@@ -218,7 +218,7 @@ such as the one Orgzly syncs through Fastmail Files. Its *url* is the WebDAV
 folder's absolute http(s) URL, and the account's root is *org://<name>/*;
 every *\*.org* file beneath the folder is exposed, subfolders included.
 Credentials use the shared *username* / *password_source* / *password_key*
-keys. One extra key applies:
+keys. Two extra keys apply:
 
 *todo_keywords*
 	String. OPTIONAL. The default TODO keyword sequence, in org's
@@ -226,6 +226,12 @@ keys. One extra key applies:
 	*"TODO | DONE"*). A file's own *#+TODO* line overrides it for that file.
 	It exists because Orgzly keeps its keywords in app settings, not in the
 	files. Other plugins ignore it.
+
+*timezone*
+	String. OPTIONAL. The IANA time zone (e.g. *"America/New_York"*) of the
+	timestamps the plugin writes: *:CREATED:* on a captured headline and
+	*CLOSED* on entering a done state. Default: the host's zone. An unknown
+	zone is a config error. Other plugins ignore it.
 
 ```
 [[org.accounts]]
@@ -235,6 +241,7 @@ username = "you@example.com"
 password_source = "piggy"
 password_key = "cutting-garden/fastmail-files"
 todo_keywords = "TODO NEXT | DONE CANCELLED"
+timezone = "America/New_York"
 ```
 
 # THE [TAGS] OVERRIDE

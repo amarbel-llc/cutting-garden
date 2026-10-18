@@ -79,6 +79,16 @@ let
           ignore it.
         '';
       };
+      timezone = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        example = "America/New_York";
+        description = ''
+          org only: the IANA time zone of the timestamps the plugin writes
+          (`:CREATED:`, `CLOSED`; TOML `timezone`); null means the host's
+          zone. Other plugins ignore it.
+        '';
+      };
     };
   };
 
@@ -320,6 +330,7 @@ in
           password_key = a.passwordKey or null;
           session_url = a.sessionUrl or null;
           todo_keywords = a.todoKeywords or null;
+          timezone = a.timezone or null;
         };
 
       renderStanza =

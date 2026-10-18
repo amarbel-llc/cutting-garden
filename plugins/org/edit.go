@@ -192,9 +192,9 @@ func (Plugin) PatchNode(ctx context.Context, uri *url.URL, body io.Reader) ([]st
 		return nil, errors.BadRequestf("org plugin: only a headline can be edited, not %q", uri.String())
 	}
 	if e.move != nil {
-		return t.editAndMove(ctx, e, time.Now())
+		return t.editAndMove(ctx, e, t.acct.now())
 	}
-	return t.edit(ctx, e, time.Now())
+	return t.edit(ctx, e, t.acct.now())
 }
 
 // editResult is what the read-back checks for.

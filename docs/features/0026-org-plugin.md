@@ -150,7 +150,7 @@ Google Doc "org plugin: body edits, by example (FDR 0026 D7)"):
   headline at its end) or a headline (its last child). The body is JSON: a
   required `title` plus any of the D7-B/D7-C keys. The plugin mints the
   `:ID:` (the create returns the `?id=` URI), stamps `:CREATED:  [now]`
-  (the host's local time), and adds the own tag `zz-agent_captured`, which,
+  (in the account's `timezone`, else the host's), and adds the own tag `zz-agent_captured`, which,
   like `zz-agent_quoted`, never inherits. Creating at a caller-chosen URI is
   refused (the headline type is `ServerAssignedIdentity`). Same write path
   and read-back as edits.
@@ -159,7 +159,8 @@ Round-trip tested against Orgzly on 2026-10-18 in the dedicated notebook
 `zz-tests-cutting_garden.org` (and `_mirror.org` for the cross-file move):
 a metadata edit, a body edit, a same-file move, a move to `_mirror.org`
 and back (carrying a child added in Orgzly meanwhile) each showed in Orgzly
-and survived Orgzly's next whole-file upload. Orgzly writes a blank line
+and survived Orgzly's next whole-file upload, as did two captures (one
+top-level, one child) the same day. Orgzly writes a blank line
 between a property drawer and the body text; a later agent body edit drops
 it and Orgzly restores it, a cosmetic flip-flop only.
 
@@ -180,6 +181,12 @@ An `[org]` section claimed through `MustRegisterConfigSection`. Each account:
     password_source = "piggy"
     password_key = "cutting-garden/fastmail-files"
     todo_keywords = "TODO NEXT | DONE CANCELLED"
+    timezone = "America/New_York"
+
+`timezone` (2026-10-18) is the IANA zone of the timestamps the plugin
+writes (`:CREATED:` on capture, `CLOSED` on a done state), so they read as
+the user's local time in Orgzly; the server (krone) runs on UTC. Empty
+means the host's zone; the plugin embeds the zone database.
 
 `url` is the WebDAV folder (it names the server); the account's root is
 `org://<name>/`. `todo_keywords` is a field on the shared

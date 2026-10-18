@@ -3,6 +3,8 @@ package org
 import (
 	"context"
 	"net/url"
+	"time"
+	_ "time/tzdata" // timezone resolves even on a host without a zoneinfo database
 
 	"code.linenisgreat.com/cutting-garden/pkgs/config_common"
 	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
@@ -20,6 +22,7 @@ import (
 //	password_source = "piggy"
 //	password_key = "…"
 //	todo_keywords = "TODO NEXT | DONE CANCELLED"           # D3; optional
+//	timezone = "America/New_York"                          # optional
 //
 // Unlike fastmail, url names the server: the WebDAV base folder (D2). The
 // account's org:// root is org://<name>/.
@@ -45,6 +48,15 @@ type account struct {
 	config_common.Account
 	base     *url.URL // the WebDAV folder, path ending in "/"
 	keywords orgtext.Keywords
+	loc      *time.Location // for the timestamps the plugin writes
+}
+
+// now is the current time in the account's zone.
+func (a account) now() time.Time {
+	if a.loc == nil {
+		return time.Now()
+	}
+	return time.Now().In(a.loc)
 }
 
 func validateAccounts(raw []config_common.Account) ([]account, error) {
@@ -75,10 +87,17 @@ func validateAccounts(raw []config_common.Account) ([]account, error) {
 			}
 		}
 
+		loc := time.Local
+		if a.Timezone != "" {
+			if loc, err = time.LoadLocation(a.Timezone); err != nil {
+				return nil, errors.BadRequestf("org.accounts[%q]: timezone %q: %s", a.Name, a.Timezone, err)
+			}
+		}
+
 		if err := a.ValidatePassword(); err != nil {
 			return nil, errors.BadRequestf("org.accounts[%q]: %s", a.Name, err)
 		}
-		out = append(out, account{Account: a, base: base, keywords: keywords})
+		out = append(out, account{Account: a, base: base, keywords: keywords, loc: loc})
 	}
 	return out, nil
 }
