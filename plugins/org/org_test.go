@@ -259,6 +259,9 @@ func TestRelativeNodeID(t *testing.T) {
 	if got, ok := (Plugin{}).ResolveNodeID("_inbox.org", "org://test/"); ok {
 		t.Errorf("a file id resolved through the plugin to %q; it takes the default", got)
 	}
+	if got, ok := (Plugin{}).ResolveNodeID("other.org", "org://test/_inbox.org"); ok {
+		t.Errorf("a non-headline id under a file anchor resolved to %q", got)
+	}
 }
 
 func TestClassifyURI_Errors(t *testing.T) {

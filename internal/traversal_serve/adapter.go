@@ -1205,7 +1205,7 @@ func (w *WirePlugin) BulkMutate(
 
 func usesTempIDs(req cutting_garden_plugins.BulkRequest) bool {
 	for _, op := range req.Ops {
-		if op.TempID != "" || op.Ref != "" {
+		if op.TempID != "" || op.Ref != "" || op.InRef != "" {
 			return true
 		}
 	}

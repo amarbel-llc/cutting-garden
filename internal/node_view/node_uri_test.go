@@ -72,6 +72,7 @@ func TestNodeURIFor_Refusals(t *testing.T) {
 	for name, testCase := range map[string]struct{ anchor, nodeID string }{
 		"empty id":          {"cal://host/cal/", ""},
 		"outside anchor":    {"cal://host/cal/", "cal://host/other/x.ics"},
+		"the anchor itself": {"cal://host/cal/", "cal://host/cal/"},
 		"schemeless anchor": {"host/cal/", "x.ics"},
 	} {
 		t.Run(name, func(t *testing.T) {

@@ -57,7 +57,10 @@ func (p Plugin) ResolveNodeID(id, anchor string) (string, bool) {
 	default:
 		file, query = anchorPath, id
 	}
-	if query == "" {
+	// A headline is addressed by id= or h=; anything else (a file name, a
+	// typo) is not a headline id.
+	if values, err := url.ParseQuery(query); err != nil ||
+		(values.Get("id") == "" && values.Get("h") == "") {
 		return "", false
 	}
 	resolved := (&url.URL{

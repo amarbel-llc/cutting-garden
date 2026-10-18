@@ -33,7 +33,9 @@ func NodeURIFor(
 	}
 
 	if full, err := url.Parse(id); err == nil && full.Scheme == a.Scheme {
-		if RelativeIDFor(lister, id, anchor) == id {
+		// Strictly under: the anchor itself shortens to "" and is refused,
+		// so a batch cannot delete the container it is anchored at.
+		if rel := RelativeIDFor(lister, id, anchor); rel == id || rel == "" {
 			return nil, errors.BadRequestf(
 				"node %q is not under the anchor %q", id, anchor,
 			)
