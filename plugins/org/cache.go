@@ -107,7 +107,7 @@ func loadFile(ctx context.Context, c *davClient, a account, rel, knownETag strin
 func parseFile(a account, rel, etag string, body []byte) *parsedFile {
 	f := orgtext.Parse(body, orgtext.Options{
 		Keywords:  a.keywords,
-		NoInherit: []string{agentQuotedTag},
+		NoInherit: []string{agentQuotedTag, agentCapturedTag},
 	})
 	pf := &parsedFile{rel: rel, etag: etag, file: f}
 	heads := f.Headlines

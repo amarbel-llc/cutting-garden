@@ -97,8 +97,8 @@ Taken 2026-10-14:
 - **D2, scope.** One base WebDAV URL per account. Every `*.org` file beneath
   it is exposed, and subdirectories become folder nodes. Other files are
   skipped by design.
-- **Deferred (D7):** agent capture (creating headlines); body edits and
-  moves were taken 2026-10-18 (below).
+- **D7, agent writes:** metadata edits (D7-B), body edits (D7-C), moves
+  (D7-D) and capture (D7-E) were taken 2026-10-15 and 2026-10-18 (below).
 
 Taken 2026-10-15, for metadata edits (slice 3):
 
@@ -145,6 +145,23 @@ Google Doc "org plugin: body edits, by example (FDR 0026 D7)"):
   across files; a lost cross-file move quotes the moved text back in the
   error. Metadata and body keys in the same patch apply first. A keyword the
   destination file does not define is refused.
+- **D7-E, capture.** A headline is created through `ContainerCreator`: a
+  `mutate_nodes` create with a temp id and `in` set to a file (a level-1
+  headline at its end) or a headline (its last child). The body is JSON: a
+  required `title` plus any of the D7-B/D7-C keys. The plugin mints the
+  `:ID:` (the create returns the `?id=` URI), stamps `:CREATED:  [now]`
+  (the host's local time), and adds the own tag `zz-agent_captured`, which,
+  like `zz-agent_quoted`, never inherits. Creating at a caller-chosen URI is
+  refused (the headline type is `ServerAssignedIdentity`). Same write path
+  and read-back as edits.
+
+Round-trip tested against Orgzly on 2026-10-18 in the dedicated notebook
+`zz-tests-cutting_garden.org` (and `_mirror.org` for the cross-file move):
+a metadata edit, a body edit, a same-file move, a move to `_mirror.org`
+and back (carrying a child added in Orgzly meanwhile) each showed in Orgzly
+and survived Orgzly's next whole-file upload. Orgzly writes a blank line
+between a property drawer and the body text; a later agent body edit drops
+it and Orgzly restores it, a cosmetic flip-flop only.
 
 ## Facets
 
@@ -217,8 +234,9 @@ supported yet, #211), and a regex containing `(` is quoted:
 `[!cutting_garden-org-file-v1, !cutting_garden-org-folder-v1] ->>
 !cutting_garden-org-headline-v1 title~="(?i)leak"`.
 Slice 2 adds `NodeMutator` (only `PatchNode`, first with `{"quote": true}`
-and from slice 3a with the metadata fields; create/put/delete are bad
-requests) and `BodyDescriber` (so describe_node_types marks the headline
+and from slice 3a with the metadata fields, from slice 4 with `body` and the
+move keys; create/put/delete are bad requests; slice 5 adds
+`ContainerCreator` for capture) and `BodyDescriber` (so describe_node_types marks the headline
 writable and lists the patch keys).
 `PatchNode` can only report applied field names, not a new URI, so the
 agent reads the node again: the old `?h=` URI still resolves, its fields
@@ -270,13 +288,11 @@ server.
    year date bucket keeps the day of month (clamped) and the time of day.
    Organize anchors the document at the file, because headlines are
    addressed by query (`<file>.org?id=…`) rather than by path.
-4. **Body edits and moves** (D7-C, D7-D), as patch keys on the same write
-   path. Round-trip tested against Orgzly in a dedicated notebook,
-   `zz-tests-cutting_garden.org`.
-5. Later: capture (creating headlines: at a file's end or as a last child,
-   minting `:ID:`, a `:CREATED:` stamp and a provenance tag, decided
-   2026-10-18), local-dir/SFTP transports, archival capture (dodder FDR
-   0013's reference set).
+4. **Body edits and moves** (D7-C, D7-D, landed), as patch keys on the
+   same write path; round-trip tested.
+5. **Capture** (D7-E): `CreateChild` on a file or headline.
+6. Later: creation through organize (`CreationDescriber`), local-dir/SFTP
+   transports, archival capture (dodder FDR 0013's reference set).
 
 ## Prior art and links
 

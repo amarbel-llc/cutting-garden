@@ -119,6 +119,33 @@ function org_mcp_edit_state_and_schedule { # @test
 	EOM
 }
 
+# Capture (FDR 0026 D7-E): a temp-id create in a file appends a level-1
+# headline with a minted :ID:, :CREATED: and zz-agent_captured; a later op
+# in the batch addresses it by the temp id, and the result maps it to the
+# ?id= the plugin chose.
+function org_mcp_capture_with_temp_id { # @test
+  mcp_drive org://test/ \
+    "$(tools_call 3 mutate_nodes '{"groups":[{"anchor":"org://test/","ops":[{"kind":"create","id":"+n","in":"_inbox.org","body":"{\"title\": \"Captured by an agent\"}"},{"kind":"patch","id":"+n","body":"{\"state\": \"TODO\"}"}]}]}')"
+  result="$(mcp_result_text "$output" 3)"
+  run jq -r '.groups[0].created[0] | .temp_id, (.id | test("^_inbox.org[?]id=[0-9a-f-]{36}$"))' <<<"$result"
+  assert_output - <<-'EOM'
+	+n
+	true
+	EOM
+
+  uri="$(jq -r '.groups[0].created[0].uri' <<<"$result")"
+  mcp_drive org://test/ "$(tools_call 4 read_node "{\"uri\":\"$uri\"}")"
+  run jq -r '.fields.title, .fields.state, .fields.level, (.fields.own_tags | join(" ")), (.properties.CREATED | test("^\\[[0-9]{4}-"))' \
+    <<<"$(mcp_result_text "$output" 4 | sed '/^raw bytes:/d')"
+  assert_output - <<-'EOM'
+	Captured by an agent
+	TODO
+	1
+	zz-agent_captured
+	true
+	EOM
+}
+
 function org_unknown_headline_is_a_clear_error { # @test
   mcp_drive org://test/ "$(tools_call 3 read_node '{"uri":"org://test/_inbox.org?h=Renamed"}')"
   run mcp_result_text "$output" 3

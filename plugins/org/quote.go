@@ -110,8 +110,9 @@ func newUUID() string {
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
 
-// The rest of NodeMutator: headlines are only patched (FDR 0026 slice 3a);
-// creating, replacing and deleting are not supported.
+// The rest of NodeMutator: headlines are patched, and created only through
+// ContainerCreator (capture.go), since the plugin mints the :ID: a caller
+// would otherwise have to name; replacing and deleting are not supported.
 func (Plugin) CreateNode(context.Context, *url.URL, io.Reader, string) error {
 	return errOnlyPatch
 }
@@ -121,7 +122,8 @@ func (Plugin) PutNode(context.Context, *url.URL, io.Reader) error { return errOn
 func (Plugin) DeleteNode(context.Context, *url.URL) error { return errOnlyPatch }
 
 var errOnlyPatch = errors.BadRequestf(
-	`org plugin: the only supported write is a patch of a headline (FDR 0026)`)
+	`org plugin: a headline is patched, or created with a temp id in a file or headline ` +
+		`(FDR 0026); replacing, deleting and creating at a chosen URI are not supported`)
 
 // DescribeBodies declares the headline's patch for describe_node_types.
 func (Plugin) DescribeBodies() []cutting_garden_plugins.NodeTypeBody {
@@ -142,8 +144,13 @@ func (Plugin) DescribeBodies() []cutting_garden_plugins.NodeTypeBody {
 				`mints the headline's :ID: when it has none, so read the node again for its ?id= URI; ` +
 				`entering or leaving a done state adds or removes CLOSED. A lost_to_concurrent_sync ` +
 				`error means another writer (an Orgzly sync) overwrote the edit: re-read and re-apply.`,
+			`application/json, create ops (a temp id, with "in" = a file for a level-1 headline at ` +
+				`its end, or a headline for its last child): a required "title" plus any of "state", ` +
+				`"priority", "own_tags", "scheduled", "deadline", "body" as above. The plugin mints the ` +
+				`:ID:, stamps :CREATED: and adds the tag zz-agent_captured; the result gives the ?id= URI.`,
 		},
-		Example: map[string]any{fieldPatchState: "DONE", fieldPatchScheduled: "2026-10-20"},
+		Example:                map[string]any{fieldPatchState: "DONE", fieldPatchScheduled: "2026-10-20"},
+		ServerAssignedIdentity: true,
 	}}
 }
 
