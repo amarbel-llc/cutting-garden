@@ -16,9 +16,9 @@ import (
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
-// Metadata edits (FDR 0026 slice 3a): patch_node on a headline sets its
-// title, state, priority, own tags, scheduled and deadline — never its
-// body. Every edit goes through the quote's write path (LOCK → fresh GET →
+// Headline edits (FDR 0026 slice 3a, D7): a patch on a headline sets its
+// title, state, priority, own tags, scheduled and deadline, and its own
+// text (body.go). Every edit goes through the quote's write path (LOCK → fresh GET →
 // splice → PUT with the token → UNLOCK, #267), mints an :ID: when the
 // headline has none so its reference survives a retitle, and adds or
 // removes CLOSED when the state enters or leaves a done keyword. Orgzly
@@ -49,12 +49,14 @@ type headlineEdit struct {
 	ownTags   *[]string
 	scheduled *string // "" or "YYYY-MM-DD" with an optional " HH:MM"
 	deadline  *string
+	body      *string       // the own text, as read_node returns it (body.go)
+	move      *headlineMove // move.go
 	quote     bool
 }
 
 func (e headlineEdit) empty() bool {
 	return e.title == nil && e.state == nil && e.priority == nil && e.ownTags == nil &&
-		e.scheduled == nil && e.deadline == nil && !e.quote
+		e.scheduled == nil && e.deadline == nil && e.body == nil && e.move == nil && !e.quote
 }
 
 var (
@@ -101,6 +103,18 @@ func parseEdit(body io.Reader) (headlineEdit, error) {
 		return e, err
 	}
 	if e.deadline, err = clearableString(patch, fieldPatchDeadline, dateValueRe); err != nil {
+		return e, err
+	}
+	if raw, ok := patch[fieldPatchBody]; ok {
+		body := ""
+		if string(raw) != "null" {
+			if err := json.Unmarshal(raw, &body); err != nil {
+				return e, errors.BadRequestf("org plugin: body must be a string or null, got %s", raw)
+			}
+		}
+		e.body = &body
+	}
+	if e.move, err = parseMove(patch); err != nil {
 		return e, err
 	}
 	if raw, ok := patch[fieldPatchOwnTags]; ok {
@@ -177,6 +191,9 @@ func (Plugin) PatchNode(ctx context.Context, uri *url.URL, body io.Reader) ([]st
 	if t.ref.kind != kindHeadline {
 		return nil, errors.BadRequestf("org plugin: only a headline can be edited, not %q", uri.String())
 	}
+	if e.move != nil {
+		return t.editAndMove(ctx, e, time.Now())
+	}
 	return t.edit(ctx, e, time.Now())
 }
 
@@ -189,6 +206,7 @@ type editResult struct {
 	ownTags []string
 	sched   string // day, "" when none
 	dead    string
+	body    *string // checked only when the edit set it
 }
 
 func (t target) edit(ctx context.Context, e headlineEdit, now time.Time) ([]string, error) {
@@ -267,7 +285,8 @@ func (t target) verifyEdit(ctx context.Context, want editResult) error {
 	n, ok := pf.find(nodeRef{account: t.ref.account, kind: kindHeadline, path: t.ref.path, id: want.id})
 	if ok && n.h.Keyword == want.keyword && n.h.Priority == want.pri && n.h.Title == want.title &&
 		slices.Equal(n.h.OwnTags, want.ownTags) &&
-		n.h.Planning.Scheduled == want.sched && n.h.Planning.Deadline == want.dead {
+		n.h.Planning.Scheduled == want.sched && n.h.Planning.Deadline == want.dead &&
+		(want.body == nil || n.h.Body == *want.body) {
 		return nil
 	}
 	return errors.ErrorWithStackf(
@@ -331,13 +350,23 @@ func applyEdit(
 		planning.set("CLOSED", closed)
 	}
 
+	var newBody *string
+	if e.body != nil {
+		if b := normalizeBody(*e.body); b != h.Body {
+			newBody = &b
+			applied = append(applied, fieldPatchBody)
+		}
+	}
+
 	needID := h.ID() == "" || n.idShadowed()
 	quoted := e.quote && (needID || !slices.Contains(h.OwnTags, agentQuotedTag))
 	if quoted {
 		applied = append(applied, fieldQuote)
 	}
-	if len(applied) == 0 {
-		return src, applied, want, nil
+	// A move finds the headline again by its :ID:, so it mints one even
+	// when nothing else changes.
+	if len(applied) == 0 && !(e.move != nil && needID) {
+		return src, applied, editResult{id: h.ID()}, nil
 	}
 
 	// Check the new headline line parses back to exactly what was asked
@@ -395,9 +424,16 @@ func applyEdit(
 	out = append(out[:h.LineSpan.Start:h.LineSpan.Start],
 		append([]byte(line), out[h.LineSpan.End:]...)...)
 
+	// The body goes last, found again by the :ID: the splices above settled.
+	if newBody != nil {
+		if out, err = spliceBody(out, kws, id, *newBody, nl); err != nil {
+			return nil, nil, want, err
+		}
+	}
+
 	want = editResult{
 		id: id, keyword: keyword, pri: pri, title: title, ownTags: ownTags,
-		sched: planning.day("SCHEDULED"), dead: planning.day("DEADLINE"),
+		sched: planning.day("SCHEDULED"), dead: planning.day("DEADLINE"), body: newBody,
 	}
 	return out, applied, want, nil
 }

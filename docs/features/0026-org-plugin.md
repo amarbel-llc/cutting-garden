@@ -97,8 +97,8 @@ Taken 2026-10-14:
 - **D2, scope.** One base WebDAV URL per account. Every `*.org` file beneath
   it is exposed, and subdirectories become folder nodes. Other files are
   skipped by design.
-- **Deferred (D7):** agent capture (creating headlines), body edits and
-  moves.
+- **Deferred (D7):** agent capture (creating headlines); body edits and
+  moves were taken 2026-10-18 (below).
 
 Taken 2026-10-15, for metadata edits (slice 3):
 
@@ -106,7 +106,7 @@ Taken 2026-10-15, for metadata edits (slice 3):
   id `_inbox.org?id=…` under the account anchor) sets `title`, `state`,
   `priority`, `own_tags` (the whole own set), `scheduled` and `deadline`
   (`YYYY-MM-DD` with an optional ` HH:MM`; `null` clears), alongside
-  `quote`. The body is never edited. Slice 3a is the patch; slice 3b
+  `quote`. The body was left alone until D7-C. Slice 3a is the patch; slice 3b
   declares the same fields to organize (facet writes, tag atoms).
 - **D8-C, conflict policy.** Edits land in files the user also edits in
   Orgzly, which uploads without locking (#267). Each edit takes the quote's
@@ -120,6 +120,31 @@ Taken 2026-10-15, for metadata edits (slice 3):
   when its parent is retitled.
 - **D14, CLOSED.** Entering a done keyword adds `CLOSED: [now]` to the
   planning line (first, as org does); leaving one removes it.
+
+Taken 2026-10-18, for body edits and moves (slice 4; examples in the
+Google Doc "org plugin: body edits, by example (FDR 0026 D7)"):
+
+- **D7-C, body.** The `body` patch key replaces the headline's own text,
+  exactly what `read_node` returns as `body`; `null` clears it. Drawers in
+  the body (`:LOGBOOK:` and the like) are kept byte for byte, gathered above
+  the text (where Orgzly writes them), so a drawer between two paragraphs
+  moves above both. The planning line, the property drawer and the children
+  are untouched. The text keeps the old text's indentation and must read
+  back exactly as sent: a line that would start a headline, a drawer, or a
+  `#+TODO` / `#+FILETAGS` line is refused, not escaped.
+- **D7-D, moves.** One of the patch keys `parent`, `before` or `after`
+  moves a headline with its subtree. `parent` is a headline (last child) or
+  a file (level 1, at its end); `before` / `after` a sibling headline, at
+  its level. A reference is a full `org://` URI, a path from the account
+  root (`notes.org?id=…`), or a bare `id=…` / `h=…` in the same file. The
+  subtree's levels shift to fit; own tags travel, inherited ones are the new
+  place's. Moves may cross files: both files are locked (in path order), the
+  destination is written first and the source second, so a failure between
+  them leaves the headline in both files (reported as such) rather than in
+  neither. The read-back (D8-C) checks the destination, and the source
+  across files; a lost cross-file move quotes the moved text back in the
+  error. Metadata and body keys in the same patch apply first. A keyword the
+  destination file does not define is refused.
 
 ## Facets
 
@@ -245,8 +270,13 @@ server.
    year date bucket keeps the day of month (clamped) and the time of day.
    Organize anchors the document at the file, because headlines are
    addressed by query (`<file>.org?id=…`) rather than by path.
-4. Later: capture (creating headlines), body edits and moves, local-dir/SFTP
-   transports, archival capture (dodder FDR 0013's reference set).
+4. **Body edits and moves** (D7-C, D7-D), as patch keys on the same write
+   path. Round-trip tested against Orgzly in a dedicated notebook,
+   `zz-tests-cutting_garden.org`.
+5. Later: capture (creating headlines: at a file's end or as a last child,
+   minting `:ID:`, a `:CREATED:` stamp and a provenance tag, decided
+   2026-10-18), local-dir/SFTP transports, archival capture (dodder FDR
+   0013's reference set).
 
 ## Prior art and links
 

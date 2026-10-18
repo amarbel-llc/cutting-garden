@@ -131,7 +131,14 @@ func (Plugin) DescribeBodies() []cutting_garden_plugins.NodeTypeBody {
 			`application/json, patch ops only, any of: "title" (string), "state" (a TODO keyword of the ` +
 				`file, or null), "priority" ("A".."Z" or null), "own_tags" (the headline's own tags, the ` +
 				`whole set), "scheduled" / "deadline" ("YYYY-MM-DD" with an optional " HH:MM", or null), ` +
-				`"quote" (true: also add the zz-agent_quoted tag). The body is never edited. Any edit ` +
+				`"body" (the headline's own text, as read_node returns it; drawers such as :LOGBOOK: ` +
+				`and the children are kept; null clears), one of "parent" / "before" / "after" (moves ` +
+				`the headline with its subtree: parent = a headline, as its last child, or a file, as ` +
+				`a level-1 headline at its end; before/after = a sibling headline; given as a full ` +
+				`org:// URI, a path from the account root like "notes.org?id=…", or a bare "id=…" in ` +
+				`the same file; a move may cross files and changes the URI's file part), ` +
+				`"quote" (true: also add the zz-agent_quoted ` +
+				`tag). Any edit ` +
 				`mints the headline's :ID: when it has none, so read the node again for its ?id= URI; ` +
 				`entering or leaving a done state adds or removes CLOSED. A lost_to_concurrent_sync ` +
 				`error means another writer (an Orgzly sync) overwrote the edit: re-read and re-apply.`,

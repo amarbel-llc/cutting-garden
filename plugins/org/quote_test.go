@@ -195,7 +195,7 @@ func TestQuote_Refusals(t *testing.T) {
 		t.Error("quote=false is a bad request")
 	}
 	applied, err := (Plugin{}).PatchNode(context.Background(), mustURL(t, "org://test/_inbox.org?h=Dup"),
-		strings.NewReader(`{"body": "x"}`))
+		strings.NewReader(`{"color": "x"}`))
 	if err != nil || applied == nil || len(applied) != 0 {
 		t.Errorf("an unknown key is tolerated and not applied: %v %v", applied, err)
 	}
