@@ -44,7 +44,11 @@ func runServerOnce(t *testing.T, requests ...string) map[int64]rpcResponse {
 
 	srv, err := server.New(
 		transport.NewStdio(in, &out),
-		server.Options{ServerName: serverName, Resources: provider},
+		server.Options{
+			ServerName:        serverName,
+			Resources:         provider,
+			PreferV1Providers: true,
+		},
 	)
 	if err != nil {
 		t.Fatalf("server.New: %v", err)
@@ -97,8 +101,9 @@ func TestServer_ResourcesListRoundTrip(t *testing.T) {
 	if err := json.Unmarshal(resp.Result, &result); err != nil {
 		t.Fatalf("decode result %s: %v", resp.Result, err)
 	}
-	if len(result.Resources) != 2 {
-		t.Fatalf("got %d resources, want 2: %+v", len(result.Resources), result.Resources)
+	// The roots themselves, not their two calendar children (#326).
+	if len(result.Resources) != 1 || result.Resources[0].URI != "faketest://h/" {
+		t.Fatalf("got %+v, want the single faketest://h/ root", result.Resources)
 	}
 }
 

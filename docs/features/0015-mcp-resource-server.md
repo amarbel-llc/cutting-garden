@@ -60,7 +60,7 @@ by `internal/mcp/Resources`, a `go-mcp` `server.ResourceProvider`:
 
 | MCP method | Mapping |
 |---|---|
-| `resources/list` | The immediate children of every root — one `ListRoots(root)` call each. The roots are the configured/intrinsic entry points; their children are the discoverable resources. |
+| `resources/list` | The roots themselves — the configured/intrinsic entry points — as container resources (name, listing mimetype), paginated by an opaque offset cursor (page size 200). Never their children: a root such as `newsblur://stories` has tens of thousands, and this call sits on every client's reconnect path (#326). Clients descend with `resources/read` or `list_nodes`. |
 | `resources/read <uri>` | `ListRoots(uri)` rendered as a JSON array of node views (`uri`, `name`, `type`, `container`, `mimeType`). A client descends a container lazily by reading successively deeper URIs. A childless URI whose plugin implements `LeafReader` instead reads as the object's **structured JSON body** (the parsed fields), not an empty array (#85). |
 | `resources/templates/list` | Empty — cutting-garden resources are enumerated, not URI-template parameterized. |
 
@@ -135,8 +135,8 @@ working-directory tree as MCP resources out of the box.
 
     # serve every configured/intrinsic root (the common case)
     $ cutting-garden mcp
-    #   resources/list → the working directory's entries + each CalDAV
-    #     account's calendars
+    #   resources/list → the working directory root + each CalDAV
+    #     account root (descend with resources/read or list_nodes)
     #   resources/read caldav://dav.host/dav/me/work/   (a container)
     #     → [ {"uri":"caldav://dav.host/dav/me/work/event1.ics",
     #          "name":"event1.ics","type":"caldav-object-vevent-v1",
@@ -187,9 +187,11 @@ working-directory tree as MCP resources out of the box.
   schemes (file `application/octet-stream`, gphotos media) would need their
   own `LeafReader` and a base64 `blob` rather than a `text` rendering;
   deferred. Tracked at #85.
-- **Pagination / huge trees.** An endpoint with thousands of children
-  returns one enormous `resources/list`. The `go-mcp` V1 cursor exists;
-  wiring it is deferred. Tracked at #86.
+- **Pagination / huge trees.** `resources/list` lists roots only and
+  paginates them via the `go-mcp` V1 cursor (#326); a huge container's own
+  children are paged with `list_nodes` limit/offset (#86). The cursor error
+  for a malformed cursor surfaces as a JSON-RPC internal error, since go-mcp
+  maps every provider error to that code.
 - **Change notifications.** `notifications/resources/list_changed` is not
   emitted; the tree is re-read per request. Tracked at #87.
 

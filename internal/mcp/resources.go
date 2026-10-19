@@ -3,9 +3,10 @@ package mcp
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"net/url"
+	"strconv"
 	"time"
 
 	"code.linenisgreat.com/cutting-garden/internal/capture_plugin"
@@ -51,7 +52,8 @@ type resolveFunc func(uriStr string) (
 // resource and `ListRoots` backs `resources/list` and `resources/read`.
 //
 // It is configured with a set of root endpoint URIs. `resources/list`
-// enumerates the immediate children of those roots; `resources/read`
+// enumerates those roots themselves, paginated (never their children —
+// cutting-garden#326); `resources/read`
 // drills one level deeper into any container URI — the same lazy,
 // one-level-per-call traversal the `list` command and capture share. A
 // read of a childless URI offers the leaf object's structured body when
@@ -85,9 +87,15 @@ type Resources struct {
 	// (design G12, native tags slice 2). Empty (the test-harness default)
 	// falls back to each field's declared default, then naive.
 	tagsOverride string
+	// rootLabels maps a root URI to a friendlier display name than the
+	// URL-derived default (cutting-garden#120); wired at server startup.
+	rootLabels map[string]string
 }
 
-var _ server.ResourceProvider = (*Resources)(nil)
+var (
+	_ server.ResourceProvider   = (*Resources)(nil)
+	_ server.ResourceProviderV1 = (*Resources)(nil)
+)
 
 // newResources builds a provider over the given root endpoints, wired to
 // the real plugin registry. writer is the optional blob sink for raw leaf
@@ -124,29 +132,112 @@ func (r *Resources) startFacetMaintenance(ctx context.Context) {
 	r.facets.maintain(ctx, r.resolve, facetRefreshInterval)
 }
 
-// ListResources enumerates the immediate children of every configured
-// root and returns them as MCP resources. This is the `ListRoots →
-// resources/list` mapping: the roots are the givens, and the children
-// under them are the discoverable resources. A resolution or traversal
-// failure on any root is surfaced (the listing is not silently partial).
-func (r *Resources) ListResources(
-	ctx context.Context,
-) ([]protocol.Resource, error) {
-	var out []protocol.Resource
+// resourcesPageSize bounds one resources/list page (cutting-garden#326).
+// Roots are few, so in practice the first page is the whole list; the bound
+// exists so the response stays small however many roots a config declares.
+// 200 entries is a few tens of KB — one cheap reply — and large enough that
+// a client which never follows nextCursor (a proxy that does not forward
+// cursors) still sees every realistic root.
+const resourcesPageSize = 200
+
+// rootResources renders the configured roots as MCP resources, in their
+// stable configured order: each root is a container entry point, carrying
+// the same name, container flag and listing mimetype list_nodes gives it.
+// A root's children are deliberately NOT listed here — a root such as
+// newsblur://stories has tens of thousands of them, and resources/list is on
+// every client's reconnect path (cutting-garden#326). Clients descend with
+// resources/read or list_nodes.
+func (r *Resources) rootResources() []protocol.ResourceV1 {
+	out := make([]protocol.ResourceV1, 0, len(r.roots))
 	for _, root := range r.roots {
-		_, lister, err := r.resolve(root.String())
-		if err != nil {
-			return nil, errors.Wrapf(err, "resolve root %s", root)
-		}
-		nodes, err := lister.ListRoots(ctx, root)
-		if err != nil {
-			return nil, errors.Wrapf(err, "list roots under %s", root)
-		}
-		for _, n := range nodes {
-			out = append(out, nodeToResource(lister, n))
-		}
+		out = append(out, protocol.ResourceV1{
+			URI:         root.String(),
+			Name:        r.rootDisplayLabel(root),
+			Description: "container root; read it (or list_nodes) to descend",
+			MimeType:    mimeListing,
+		})
+	}
+	return out
+}
+
+// rootDisplayLabel is the root's name as list_nodes shows it: the
+// plugin-supplied friendly label when present, else the URL-derived one.
+func (r *Resources) rootDisplayLabel(u *url.URL) string {
+	if label, ok := r.rootLabels[u.String()]; ok && label != "" {
+		return label
+	}
+	return rootLabel(u)
+}
+
+// ListResources is the unpaginated resources/list: every configured root
+// (not their children — see rootResources). Retained for the V0 provider
+// interface; the server prefers ListResourcesV1.
+func (r *Resources) ListResources(
+	context.Context,
+) ([]protocol.Resource, error) {
+	v1 := r.rootResources()
+	out := make([]protocol.Resource, 0, len(v1))
+	for _, res := range v1 {
+		out = append(out, protocol.Resource{
+			URI:         res.URI,
+			Name:        res.Name,
+			Description: res.Description,
+			MimeType:    res.MimeType,
+		})
 	}
 	return out, nil
+}
+
+// ListResourcesV1 is resources/list with MCP cursor pagination: one page of
+// at most resourcesPageSize roots, plus nextCursor when more remain. The
+// cursor is an opaque (base64) offset into the stable root order, so pages
+// never overlap. A malformed cursor is an invalid-params error.
+func (r *Resources) ListResourcesV1(
+	_ context.Context,
+	cursor string,
+) (*protocol.ResourcesListResultV1, error) {
+	all := r.rootResources()
+	offset, err := decodeResourceCursor(cursor)
+	if err != nil {
+		return nil, err
+	}
+	if offset > len(all) {
+		return nil, errors.BadRequestf("invalid resources/list cursor")
+	}
+	end := min(offset+resourcesPageSize, len(all))
+	result := &protocol.ResourcesListResultV1{Resources: all[offset:end]}
+	if end < len(all) {
+		result.NextCursor = encodeResourceCursor(end)
+	}
+	return result, nil
+}
+
+// ListResourceTemplatesV1 returns no templates, as ListResourceTemplates.
+func (r *Resources) ListResourceTemplatesV1(
+	context.Context, string,
+) (*protocol.ResourceTemplatesListResultV1, error) {
+	return &protocol.ResourceTemplatesListResultV1{
+		ResourceTemplates: []protocol.ResourceTemplateV1{},
+	}, nil
+}
+
+func encodeResourceCursor(offset int) string {
+	return base64.RawURLEncoding.EncodeToString([]byte(strconv.Itoa(offset)))
+}
+
+// decodeResourceCursor maps a cursor back to an offset; "" is the first page.
+func decodeResourceCursor(cursor string) (int, error) {
+	if cursor == "" {
+		return 0, nil
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(cursor)
+	if err == nil {
+		var offset int
+		if offset, err = strconv.Atoi(string(raw)); err == nil && offset >= 0 {
+			return offset, nil
+		}
+	}
+	return 0, errors.BadRequestf("invalid resources/list cursor")
 }
 
 // content selector values (RFC 0018 §7.3): what a read returns for a node
@@ -723,40 +814,4 @@ func enrichedNodeView(
 		v.Tags = presentTags(n)
 	}
 	return v
-}
-
-// nodeToResource maps a traversal Node onto an MCP resource. A container
-// advertises the JSON listing mimetype (reading it yields children); a
-// leaf advertises its declared body mimetype (NodeType.MimeType, leaf
-// default application/octet-stream) — what the object's bytes are, even
-// though resources/read does not fetch them yet (#85).
-func nodeToResource(
-	lister cutting_garden_plugins.RootLister,
-	n cutting_garden_plugins.Node,
-) protocol.Resource {
-	nt, _ := cutting_garden_plugins.NodeTypeFor(lister, n.Type)
-	res := protocol.Resource{
-		URI:         n.URIString(),
-		Name:        n.Name,
-		Description: describe(nt.Container, n.Type),
-	}
-	if nt.Container {
-		res.MimeType = mimeListing
-	} else {
-		res.MimeType = nt.BodyMimeType()
-	}
-	return res
-}
-
-// describe renders a short, human-readable resource description from the
-// node's kind and type tag.
-func describe(container bool, tag string) string {
-	kind := "object"
-	if container {
-		kind = "container"
-	}
-	if tag == "" {
-		return kind
-	}
-	return fmt.Sprintf("%s node (type %s)", kind, tag)
 }

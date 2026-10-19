@@ -424,9 +424,10 @@ func (t *Tools) call(
 		// No uri: the configured roots themselves are the browse entry points
 		// (a root is a container you descend into), mirroring the `list`
 		// command's no-arg listing. This deliberately differs from
-		// resources/list, which returns the roots' children: when a root is
-		// itself a calendar (a per-calendar account), listing its children
-		// flattens every event into the entry-point listing (circus#29). A
+		// a listing of the roots' children: when a root is itself a calendar
+		// (a per-calendar account), listing its children flattens every event
+		// into the entry-point listing (circus#29); resources/list shares
+		// this rule since cutting-garden#326. A
 		// uri lists that container's children (= reading the container, which
 		// yields its child listing). Roots are plugin entry points, not
 		// data-bearing nodes, so enrichment/filtering do not apply here; bare

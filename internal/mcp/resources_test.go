@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/url"
 	"strings"
@@ -96,9 +97,29 @@ func newFakeResources(t *testing.T, rootStrs ...string) *Resources {
 	}
 }
 
-func TestListResources_ChildrenOfRoots(t *testing.T) {
+// resources/list is the roots themselves, never their children
+// (cutting-garden#326): faketest://h/ has two calendar children, and none of
+// them may appear at the top level.
+func TestListResources_RootsOnly(t *testing.T) {
 	r := newFakeResources(t, "faketest://h/")
+	r.rootLabels = map[string]string{"faketest://h/": "Fake Home"}
 
+	res, err := r.ListResources(context.Background())
+	if err != nil {
+		t.Fatalf("ListResources: %v", err)
+	}
+	if len(res) != 1 {
+		t.Fatalf("got %d resources, want the 1 root: %+v", len(res), res)
+	}
+	got := res[0]
+	if got.URI != "faketest://h/" || got.Name != "Fake Home" ||
+		got.MimeType != mimeListing {
+		t.Errorf("root resource = %+v, want uri faketest://h/, label name, listing mimetype", got)
+	}
+}
+
+func TestListResources_MultipleRoots(t *testing.T) {
+	r := newFakeResources(t, "faketest://a/", "faketest://b/")
 	res, err := r.ListResources(context.Background())
 	if err != nil {
 		t.Fatalf("ListResources: %v", err)
@@ -106,40 +127,54 @@ func TestListResources_ChildrenOfRoots(t *testing.T) {
 	if len(res) != 2 {
 		t.Fatalf("got %d resources, want 2: %+v", len(res), res)
 	}
-
-	byURI := map[string]string{} // uri -> mimetype
-	for _, x := range res {
-		byURI[x.URI] = x.MimeType
-	}
-	for _, uri := range []string{"faketest://h/work", "faketest://h/personal"} {
-		mime, ok := byURI[uri]
-		if !ok {
-			t.Errorf("missing resource %q in %+v", uri, res)
-			continue
-		}
-		// Both children are containers → advertise the listing mimetype.
-		if mime != mimeListing {
-			t.Errorf("resource %q mimetype = %q, want %q", uri, mime, mimeListing)
-		}
-	}
 }
 
-func TestListResources_MultipleRoots(t *testing.T) {
-	// Two endpoints, two children each → four resources.
-	r := newFakeResources(t, "faketest://a/", "faketest://b/")
-	res, err := r.ListResources(context.Background())
+// A config with more roots than one page returns a bounded first page with a
+// cursor, and the next page continues without overlap or gap.
+func TestListResourcesV1_PaginatesWithoutOverlap(t *testing.T) {
+	total := resourcesPageSize + 50
+	roots := make([]string, total)
+	for i := range roots {
+		roots[i] = fmt.Sprintf("faketest://h%04d/", i)
+	}
+	r := newFakeResources(t, roots...)
+
+	first, err := r.ListResourcesV1(context.Background(), "")
 	if err != nil {
-		t.Fatalf("ListResources: %v", err)
+		t.Fatalf("first page: %v", err)
 	}
-	if len(res) != 4 {
-		t.Fatalf("got %d resources, want 4: %+v", len(res), res)
+	if len(first.Resources) != resourcesPageSize || first.NextCursor == "" {
+		t.Fatalf("first page = %d resources, cursor %q; want %d and a cursor",
+			len(first.Resources), first.NextCursor, resourcesPageSize)
+	}
+
+	second, err := r.ListResourcesV1(context.Background(), first.NextCursor)
+	if err != nil {
+		t.Fatalf("second page: %v", err)
+	}
+	if len(second.Resources) != 50 || second.NextCursor != "" {
+		t.Fatalf("second page = %d resources, cursor %q; want 50 and none",
+			len(second.Resources), second.NextCursor)
+	}
+
+	seen := map[string]bool{}
+	for _, res := range append(first.Resources, second.Resources...) {
+		if seen[res.URI] {
+			t.Errorf("resource %q appears on two pages", res.URI)
+		}
+		seen[res.URI] = true
+	}
+	if len(seen) != total {
+		t.Errorf("pages cover %d roots, want %d", len(seen), total)
 	}
 }
 
-func TestListResources_ResolveErrorSurfaces(t *testing.T) {
-	r := newFakeResources(t, "bogus://h/")
-	if _, err := r.ListResources(context.Background()); err == nil {
-		t.Fatal("ListResources on unresolvable root: want error, got nil")
+func TestListResourcesV1_MalformedCursorRejected(t *testing.T) {
+	r := newFakeResources(t, "faketest://h/")
+	for _, cursor := range []string{"not base64!", "bm90LWEtbnVtYmVy", encodeResourceCursor(99)} {
+		if _, err := r.ListResourcesV1(context.Background(), cursor); err == nil {
+			t.Errorf("cursor %q: want error, got nil", cursor)
+		}
 	}
 }
 
@@ -346,30 +381,5 @@ func TestListResourceTemplates_Empty(t *testing.T) {
 	}
 	if len(tmpls) != 0 {
 		t.Errorf("got %d templates, want 0", len(tmpls))
-	}
-}
-
-func TestNodeToResource_LeafAdvertisesBodyMimeType(t *testing.T) {
-	mk := func(typ string) cutting_garden_plugins.Node {
-		return cutting_garden_plugins.Node{
-			URI:  &url.URL{Scheme: "faketest", Host: "h", Path: "/x"},
-			Name: "x",
-			Type: typ,
-		}
-	}
-
-	// A declared leaf carries its declared mimetype.
-	if got := nodeToResource(fakeLister{}, mk("test-object-v1")).MimeType; got != "text/calendar" {
-		t.Errorf("declared leaf mimetype = %q, want text/calendar", got)
-	}
-	// An unknown tag is a leaf of unspecified mimetype → the contract
-	// default, never an invented container.
-	if got := nodeToResource(fakeLister{}, mk("no-such-tag-v1")).MimeType; got != cutting_garden_plugins.MimeTypeDefault {
-		t.Errorf("unknown-tag leaf mimetype = %q, want %q",
-			got, cutting_garden_plugins.MimeTypeDefault)
-	}
-	// A container keeps the listing mimetype, not a body type.
-	if got := nodeToResource(fakeLister{}, mk("test-calendar-v1")).MimeType; got != mimeListing {
-		t.Errorf("container mimetype = %q, want %q", got, mimeListing)
 	}
 }

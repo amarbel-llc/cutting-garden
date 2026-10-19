@@ -168,11 +168,10 @@ circus#29). They make the tree browsable there — `list_nodes()` for the
 entry points, `list_nodes(uri)` to descend, `read_node(uri)` to read a leaf
 — so a human can discover the node URI the write tools need. `list_nodes()`
 with no uri surfaces the configured **roots themselves** (each a container
-to descend into), mirroring the `list` command's no-arg listing. This
-deliberately differs from `resources/list`, which returns the roots'
-*children*: when a root is itself a calendar (a per-calendar account),
-listing its children would flatten every event into the entry-point listing
-(circus#29). `read_node` and `list_nodes(uri)` are thin
+to descend into), mirroring the `list` command's no-arg listing.
+`resources/list` now does the same (#326); it used to return the roots'
+*children*, which for a per-calendar account flattened every event into the
+entry-point listing (circus#29) and for `newsblur://stories` every story. `read_node` and `list_nodes(uri)` are thin
 wrappers over the `Resources.ReadResource` handler; the no-uri `list_nodes`
 renders the roots directly (no plugin call). All read-only ⇒ `allow`.
 

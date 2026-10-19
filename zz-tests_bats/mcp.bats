@@ -112,12 +112,26 @@ function mcp_describe_node_types { # @test
 }
 
 # list_nodes (browse) surfaces the configured ROOTS as the entry points — a
-# root is a container you descend into, NOT its flattened children (that is
-# resources/list; a per-calendar root would otherwise dump every event into
-# the entry-point listing, circus#29). Descending the root yields its calendars,
+# root is a container you descend into, NOT its flattened children (a
+# per-calendar root would otherwise dump every event into the entry-point
+# listing, circus#29; resources/list follows the same rule, #326). Descending the root yields its calendars,
 # then read_node returns a seeded object's parsed fields — the read half of
 # the claude.ai-UI surface (circus#29), wrapping the RootLister traversal as
 # tools.
+# resources/list is the configured roots themselves, never their children
+# (cutting-garden#326): the one caldav root, with no calendars or events,
+# and no nextCursor for a single-page list.
+function mcp_resources_list_is_roots_only { # @test
+  mcp_drive "$CALDAV_SOURCE" \
+    '{"jsonrpc":"2.0","id":3,"method":"resources/list"}'
+  echo "$output" | jq -e 'select(.id==3)
+    | (.result.resources | length==1)
+      and (.result.resources[0].uri | contains("/dav/"))
+      and (.result.resources[0].mimeType == "application/json")
+      and (.result | has("nextCursor") | not)' >/dev/null ||
+    fail "resources/list is not the single caldav root: $output"
+}
+
 function mcp_browse_and_read { # @test
   # No uri: the configured root itself, as a single container entry point
   # (mirrors `list` with no arg) — not the calendar/objects one level down.

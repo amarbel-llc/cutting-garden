@@ -48,6 +48,16 @@ disagree about what a node's children are, because both look like valid
 responses. See RFC 0012 §12.2 for the full requirement and the
 calendar-home example this generalizes from.
 
+# MCP RESOURCE LISTING
+
+The *cutting-garden mcp*(1) server's *resources/list* is the configured
+ROOTS only, paginated by an opaque cursor (200 per page) - never their
+children, whatever the plugin. A root can have tens of thousands of
+children (a newsblur story list), and *resources/list* sits on every
+client's reconnect path. A plugin therefore needs no listing-size
+machinery of its own for this call; clients descend with *resources/read*
+or the *list_nodes* tool, which return one level of *ListRoots* per call.
+
 # FAULT ISOLATION
 
 A wire plugin's bring-up failure - it fails to spawn, crashes before it

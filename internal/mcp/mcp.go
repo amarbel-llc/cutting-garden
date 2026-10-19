@@ -16,8 +16,9 @@
 // transport — so it is launched by a client, not run interactively. It
 // advertises resource and tool capabilities:
 //
-//   - resources/list — the immediate children of every root (one
-//     ListRoots call per root).
+//   - resources/list — the roots themselves, paginated by cursor (never
+//     their children: a root like newsblur://stories has tens of thousands,
+//     cutting-garden#326); descend with resources/read or list_nodes.
 //   - resources/read — the immediate children of the read URI, letting a
 //     client descend a container lazily, one level per read; a childless
 //     leaf instead reads as the object's parsed fields (#85).
@@ -77,8 +78,9 @@ const serverName = "cutting-garden"
 // traversal model so a client knows reads descend rather than fetch
 // bytes.
 const instructions = "Resources are the capturable trees of cutting-garden " +
-	"plugin endpoints. resources/list returns each endpoint's immediate " +
-	"children; reading a container resource returns a {nodes, version?} " +
+	"plugin endpoints. resources/list returns the configured ROOTS only " +
+	"(paginated by cursor), never their children; descend with " +
+	"resources/read or list_nodes. Reading a container resource returns a {nodes, version?} " +
 	"object — its children under nodes, plus a version snapshot token " +
 	"(when the plugin tracks one) you can compare across two reads of the " +
 	"SAME container to tell whether they saw the same underlying data — so " +
@@ -184,8 +186,9 @@ func (*MCP) GetDescription() command.Description {
 		Short: "serve traversable plugin endpoints over the Model Context Protocol",
 		Long: "Runs a Model Context Protocol server (newline-delimited " +
 			"JSON-RPC over stdin/stdout) that exposes the capturable tree of " +
-			"each endpoint URI as MCP resources. resources/list returns every " +
-			"endpoint's immediate children; reading a container resource " +
+			"each endpoint URI as MCP resources. resources/list returns the " +
+			"configured roots themselves, paginated by cursor and never their " +
+			"children (a root can have tens of thousands); reading a container resource " +
 			"returns that node's children, so a client descends lazily one " +
 			"level per read \\(em the same RootLister traversal `list` and " +
 			"capture share. Reading a leaf object returns its parsed fields " +
@@ -222,10 +225,11 @@ func (cmd *MCP) Run(req command.Request) {
 	tools.tagsOverride = cfg.Tags.Interpreter
 	// cutting-garden#120: a friendlier root label (e.g. a calendar-scoped
 	// caldav account's DAV displayname) than the default URL-derived one,
-	// for the no-uri list_nodes listing only — resources/list never
-	// renders roots as a listing (it returns their children), so it needs
-	// no equivalent wiring.
+	// for the roots listings (no-uri list_nodes and resources/list).
 	tools.rootLabels = rootLabels
+	// resources/list is the roots themselves (cutting-garden#326), so it
+	// labels them the same way the no-uri list_nodes listing does.
+	provider.rootLabels = rootLabels
 
 	// Warm the facet cache with the configured roots and keep summaries
 	// fresh in the background (RFC 0012 §11.2); ends with ctx.
