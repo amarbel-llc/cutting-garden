@@ -1,5 +1,7 @@
 #! /usr/bin/env bats
 
+# shellcheck disable=SC2016  # the expected output carries a literal `$` (currency)
+
 # The ynab plugin's read lane (FDR 0027 slice 1c, cutting-garden#328): cg list
 # and cg mcp over the `test` account, backed by the in-memory YNAB server seeded
 # with its deterministic fixture (see lib/ynab.bash). Every test starts a fresh
