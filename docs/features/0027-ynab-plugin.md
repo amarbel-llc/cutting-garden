@@ -1,8 +1,11 @@
 ---
-status: proposed
+status: experimental
 date: 2026-10-20
 promotion-criteria: |
-  Promote to `experimental` once slice 1 lands: `plugins/ynab/` reads a real
+  PROMOTED to `experimental` 2026-10-20: slice 1 landed (cutting-garden
+  5be3473) and the first live read-only check passed on krone's MCP origin
+  (see Slicing, "Live check").
+  Criterion, as written: promote to `experimental` once slice 1 lands: `plugins/ynab/` reads a real
   YNAB budget over the REST API, declares the node types below, and
   `cg list`/`cg mcp` traverse `account -> budget -> accounts / categories /
   transactions` with the read-only facets rolling up and drilling down, pinned
@@ -236,6 +239,17 @@ therefore does not implement `FacetVersioner`, and the framework's TTL applies.
   amount without `amount_formatted` is shown as plain units, never raw
   milliunits. The cache evicts expired entries on each put and finds a leaf by
   a by-id index; its scope is passed to `newClient` in one place.
+- **Live check (2026-10-20, krone's MCP origin, cutting-garden 5be3473):**
+  `ynab://budget/` listed 9 budgets (live and archived) and one month of the
+  last-used budget summarized 147 transactions in a single request; the
+  per-dimension totals agreed with each other (account, cleared, approved and
+  transfer each sum to 147). Two API requests in all. The summary reported
+  `complete: false` solely because the open `payee` dimension was capped at 20,
+  which a busy month always hits; the other dimensions were exact. The
+  contract cannot say "one dimension is partial" (cutting-garden#171), so the
+  plugin keeps the honest whole-summary flag. This closes the FDR's
+  "reads a real YNAB budget" criterion; "testing" still wants a live dry run
+  compared against the synthetic fixture.
 - **Not built:** `FacetVersioner` (above); a live check against a real budget;
   facet counts that roll up across a budget (each count is per
   transaction-bearing node); the subtransaction legs as nodes.
