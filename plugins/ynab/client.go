@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"code.linenisgreat.com/cutting-garden/pkgs/config_common"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
@@ -17,6 +18,11 @@ import (
 // context still aborts in-flight requests earlier; this is the upper bound for
 // an unresponsive server.
 const requestTimeout = 30 * time.Second
+
+// maxResponseBytes bounds one response body. A year of a busy budget's
+// transactions is a few megabytes; this is generous headroom, not a limit
+// anyone should meet, and it keeps a misbehaving server from exhausting memory.
+const maxResponseBytes = 64 << 20
 
 // budgetsPath is the budgets collection's path under the API base. YNAB's
 // current docs call budgets "plans" (`/plans`), but `/budgets` was observed
@@ -85,9 +91,14 @@ func (c *client) get(ctx context.Context, path string, query url.Values, out any
 	}
 	defer errors.DeferredCloser(&err, resp.Body)
 
-	data, err := io.ReadAll(resp.Body)
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
 	if err != nil {
 		return errors.Wrap(err)
+	}
+	if len(data) > maxResponseBytes {
+		return errors.ErrorWithStackf(
+			"ynab plugin: GET %s: response exceeds %d bytes; narrow the window", path, maxResponseBytes,
+		)
 	}
 	switch resp.StatusCode {
 	case http.StatusOK:
@@ -119,10 +130,15 @@ func (c *client) get(ctx context.Context, path string, query url.Values, out any
 func snippet(b []byte) string {
 	const max = 256
 	s := strings.TrimSpace(string(b))
-	if len(s) > max {
-		return s[:max] + "…"
+	if len(s) <= max {
+		return s
 	}
-	return s
+	// Cut on a rune boundary so a multi-byte character is never split.
+	cut := max
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + "…"
 }
 
 // --- typed reads (one request each) ---

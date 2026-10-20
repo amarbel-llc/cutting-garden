@@ -36,6 +36,9 @@ func TestValidate_Accepts(t *testing.T) {
 		plainAccount("personal", "ynab://personal/"),
 		plainAccount("work", "ynab://work/"),
 		withSessionURL(plainAccount("test", "ynab://test/"), "http://127.0.0.1:43114/v1"),
+		withSessionURL(plainAccount("local", "ynab://local/"), "http://localhost:43114/v1"),
+		withSessionURL(plainAccount("v6", "ynab://v6/"), "http://[::1]:43114/v1"),
+		withSessionURL(plainAccount("mirror", "ynab://mirror/"), "https://proxy.example/v1"),
 	}}
 	if err := cfg.Validate(); err != nil {
 		t.Errorf("Validate: %v", err)
@@ -56,6 +59,9 @@ func TestValidate_Rejects(t *testing.T) {
 		}},
 		"non-http session_url": {Accounts: []config_common.Account{
 			withSessionURL(plainAccount("x", "ynab://x/"), "ftp://host/v1"),
+		}},
+		"plaintext http to a non-loopback host": {Accounts: []config_common.Account{
+			withSessionURL(plainAccount("x", "ynab://x/"), "http://example.com/v1"),
 		}},
 	}
 	for name, cfg := range cases {

@@ -170,7 +170,23 @@ session cost one delta request, not one per node. `FacetVersioner` reports the
   name lookup. The plugin now satisfies the SDK root interfaces and surfaces
   in no-argument roots. Every listing re-fetches (no cache yet); the
   `server_knowledge` delta cache is slice 1c.
+- **Slice 1b review fixes (`/code-review high`, 2026-10-20):** a split's leg
+  on the per-category endpoint (a *hybrid* row with its own id and a
+  `parent_transaction_id`) now addresses the readable parent transaction;
+  a duplicate category-group name is minted as the group's id *segment* (its
+  `?id=` slot belongs to the category below it); a budget listing confirms the
+  budget exists (one request for a name, none for an id or alias); a budget
+  named like an alias (`default`, `last-used`) or an id is minted by id;
+  `session_url` over plaintext http is refused unless the host is loopback
+  (the bearer token goes to it on every request); error excerpts cut on a rune
+  boundary and response bodies are capped at 64 MiB.
 - **Slice 1c:** facets and the date-window pushdown, then a bats lane.
+  **Request economy is a 1c requirement, not a nicety:** reading one
+  transaction under a *named* budget costs two requests (budget list, then the
+  transaction) and a named account drill-down three, so a consumer that reads
+  each listed transaction spends `2N` of the 200-per-hour budget. The 1c cache
+  (the budget list, accounts and category tree, per process, revalidated with
+  `server_knowledge`) must make a leaf read after a listing cost one request.
 - Amounts are the account's currency; the plugin does not convert.
 
 ## More Information

@@ -85,6 +85,16 @@ type Transaction struct {
 	// Subtransactions is always serialized (an empty array for a plain
 	// transaction), matching the live API.
 	Subtransactions []any `json:"subtransactions"`
+
+	// Type and ParentTransactionID mark a HYBRID row: the live per-category
+	// endpoint returns a split's leg as its own row (Type "subtransaction",
+	// the leg's own ID, the real transaction in ParentTransactionID).
+	Type                string  `json:"type,omitempty"`
+	ParentTransactionID *string `json:"parent_transaction_id,omitempty"`
+	// HybridOnly seeds a row that ONLY the per-category endpoint serves, as
+	// the live API does for a split's leg; it never appears in the budget-wide
+	// or per-account listings, nor as a readable transaction.
+	HybridOnly bool `json:"-"`
 }
 
 // Server is a running in-memory YNAB test server.
@@ -219,11 +229,13 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	case len(rest) == 1 && rest[0] == "categories":
 		s.serveCategories(w, budgetID)
 	case len(rest) == 1 && rest[0] == "transactions":
-		s.serveTransactions(w, r, budgetID, func(Transaction) bool { return true })
+		s.serveTransactions(w, r, budgetID, func(t Transaction) bool { return !t.HybridOnly })
 	case len(rest) == 2 && rest[0] == "transactions":
 		s.serveTransaction(w, budgetID, rest[1])
 	case len(rest) == 3 && rest[0] == "accounts" && rest[2] == "transactions":
-		s.serveTransactions(w, r, budgetID, func(t Transaction) bool { return t.AccountID == rest[1] })
+		s.serveTransactions(w, r, budgetID, func(t Transaction) bool {
+			return !t.HybridOnly && t.AccountID == rest[1]
+		})
 	case len(rest) == 3 && rest[0] == "categories" && rest[2] == "transactions":
 		s.serveTransactions(w, r, budgetID, func(t Transaction) bool {
 			return t.CategoryID != nil && *t.CategoryID == rest[1]
@@ -328,7 +340,7 @@ func (s *Server) serveTransactions(
 
 func (s *Server) serveTransaction(w http.ResponseWriter, budgetID, id string) {
 	for _, t := range s.transactions {
-		if t.BudgetID == budgetID && t.ID == id {
+		if t.BudgetID == budgetID && t.ID == id && !t.HybridOnly {
 			writeData(w, map[string]any{"transaction": t})
 			return
 		}

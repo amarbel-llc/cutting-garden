@@ -93,6 +93,16 @@ func dupNames(names []string) map[string]bool {
 	return dups
 }
 
+// repeatedNames is dupNames over any sibling items: the names that more than
+// one item carries.
+func repeatedNames[T any](items []T, nameOf func(T) string) map[string]bool {
+	names := make([]string, len(items))
+	for i, it := range items {
+		names[i] = nameOf(it)
+	}
+	return dupNames(names)
+}
+
 // resolveBudgetID maps the URI's budget segment to a YNAB budget id: an alias
 // or an id passes through, anything else is a name looked up in the budget
 // list. When two budgets share a name, listing mints the budget ID as the

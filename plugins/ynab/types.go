@@ -78,6 +78,13 @@ type Transaction struct {
 	DebtTransactionType   *string          `json:"debt_transaction_type"`
 	Deleted               bool             `json:"deleted"`
 	Subtransactions       []SubTransaction `json:"subtransactions"`
+
+	// Type and ParentTransactionID are set only on the HYBRID rows the
+	// per-category endpoint returns: there a split's leg is its own row with
+	// Type "subtransaction", its own id, and the real transaction's id in
+	// ParentTransactionID. Plain endpoints leave both empty.
+	Type                string  `json:"type,omitempty"`
+	ParentTransactionID *string `json:"parent_transaction_id,omitempty"`
 }
 
 // Response envelopes: every success body is {"data": {...}}.

@@ -87,6 +87,11 @@ func (Plugin) ListRoots(
 		return budgetNodes(ctx, c, ref)
 	}
 	if ref.kind == kindBudget {
+		// Confirm the budget exists so a mistyped or ambiguous name fails
+		// here, not one level down. An id or alias costs no request.
+		if _, err := resolveBudgetID(ctx, c, ref); err != nil {
+			return nil, err
+		}
 		return sectionNodes(ref), nil
 	}
 	if ref.kind == kindTransaction {
@@ -140,15 +145,13 @@ func budgetNodes(
 	if err != nil {
 		return nil, err
 	}
-	names := make([]string, len(budgets))
-	for i, b := range budgets {
-		names[i] = b.Name
-	}
-	dups := dupNames(names)
+	dups := repeatedNames(budgets, func(b Budget) string { return b.Name })
 	nodes := make([]cutting_garden_plugins.Node, 0, len(budgets))
 	for _, b := range budgets {
+		// The id is the segment when the name is shared, or when it would be
+		// mistaken for an alias or an id on the way back in.
 		segment := b.Name
-		if dups[b.Name] {
+		if dups[b.Name] || budgetAliases[b.Name] || isUUID(b.Name) {
 			segment = b.ID
 		}
 		nodes = append(nodes, cutting_garden_plugins.Node{
@@ -182,11 +185,7 @@ func accountNodes(
 		return nil, err
 	}
 	accounts = liveAccounts(accounts)
-	names := make([]string, len(accounts))
-	for i, a := range accounts {
-		names[i] = a.Name
-	}
-	dups := dupNames(names)
+	dups := repeatedNames(accounts, func(a Account) string { return a.Name })
 	nodes := make([]cutting_garden_plugins.Node, 0, len(accounts))
 	for _, a := range accounts {
 		id := ""
@@ -210,19 +209,18 @@ func categoryGroupNodes(
 		return nil, err
 	}
 	groups = liveGroups(groups)
-	names := make([]string, len(groups))
-	for i, g := range groups {
-		names[i] = g.Name
-	}
-	dups := dupNames(names)
+	dups := repeatedNames(groups, func(g CategoryGroup) string { return g.Name })
 	nodes := make([]cutting_garden_plugins.Node, 0, len(groups))
 	for _, g := range groups {
-		id := ""
+		// A shared group name is minted as the group's id SEGMENT, not an
+		// `?id=` tiebreak: the category URIs below it reuse the segment, and
+		// their own `?id=` slot belongs to the category.
+		segment := g.Name
 		if dups[g.Name] {
-			id = g.ID
+			segment = g.ID
 		}
 		nodes = append(nodes, cutting_garden_plugins.Node{
-			URI:  categoryGroupURI(ref.account, ref.budget, g.Name, id),
+			URI:  categoryGroupURI(ref.account, ref.budget, segment, ""),
 			Name: g.Name,
 			Type: typeCategoryGroup,
 		})
@@ -233,11 +231,7 @@ func categoryGroupNodes(
 // categoryNodes lists a group's categories from the group already in hand.
 func categoryNodes(ref nodeRef, group CategoryGroup) []cutting_garden_plugins.Node {
 	categories := liveCategories(group.Categories)
-	names := make([]string, len(categories))
-	for i, c := range categories {
-		names[i] = c.Name
-	}
-	dups := dupNames(names)
+	dups := repeatedNames(categories, func(c Category) string { return c.Name })
 	nodes := make([]cutting_garden_plugins.Node, 0, len(categories))
 	for _, c := range categories {
 		id := ""
@@ -267,9 +261,16 @@ func transactionNodes(
 		if t.Deleted {
 			continue
 		}
+		// The per-category endpoint returns a split's leg as its own row
+		// (Type "subtransaction") whose id is NOT readable as a transaction;
+		// address the real parent transaction instead and say it is a leg.
+		id, name := t.ID, transactionName(t)
+		if t.Type == "subtransaction" && t.ParentTransactionID != nil {
+			id, name = *t.ParentTransactionID, name+" (split)"
+		}
 		nodes = append(nodes, cutting_garden_plugins.Node{
-			URI:  transactionURI(ref.account, ref.budget, t.ID),
-			Name: transactionName(t),
+			URI:  transactionURI(ref.account, ref.budget, id),
+			Name: name,
 			Type: typeTransaction,
 		})
 	}

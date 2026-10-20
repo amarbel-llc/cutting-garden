@@ -225,7 +225,9 @@ plugin is read-only.
 	String. OPTIONAL. An absolute http(s) URL replacing the API base for this
 	one account, for a test harness standing in for YNAB. Unlike fastmail's
 	*session_url* it is a base URL (e.g. *http://127.0.0.1:43114/v1*), not a
-	session endpoint.
+	session endpoint. Because the access token is sent to it on every request,
+	plaintext *http* is accepted only for a loopback host (*localhost*,
+	*127.0.0.1*, *::1*); any other host must use *https*.
 
 ```
 [[ynab.accounts]]

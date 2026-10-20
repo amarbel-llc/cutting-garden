@@ -2,6 +2,7 @@ package ynab
 
 import (
 	"context"
+	"net"
 	"net/url"
 
 	"code.linenisgreat.com/cutting-garden/pkgs/config_common"
@@ -91,6 +92,15 @@ func (c AccountsConfig) Validate() error {
 					acct.Name, acct.SessionURL,
 				)
 			}
+			// The bearer token goes to this URL on every request, so plaintext
+			// http is allowed only to a loopback host (the test server).
+			if s.Scheme == "http" && !isLoopbackHost(s.Hostname()) {
+				return errors.BadRequestf(
+					"ynab.accounts[%q]: session_url %q is plaintext http to a non-loopback "+
+						"host; the access token would be sent unencrypted (use https)",
+					acct.Name, acct.SessionURL,
+				)
+			}
 		}
 
 		if err := acct.ValidatePassword(); err != nil {
@@ -98,6 +108,15 @@ func (c AccountsConfig) Validate() error {
 		}
 	}
 	return nil
+}
+
+// isLoopbackHost reports whether host is localhost or a loopback IP literal.
+func isLoopbackHost(host string) bool {
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // configuredAccounts holds the ynab accounts injected from the config at

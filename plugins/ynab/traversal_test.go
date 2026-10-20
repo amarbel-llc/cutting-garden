@@ -115,14 +115,121 @@ func TestListRoots_AccountRootListsBudgetsInOneRequest(t *testing.T) {
 	}
 }
 
-func TestListRoots_BudgetListsItsSectionsWithoutARequest(t *testing.T) {
+func TestListRoots_BudgetListsItsSections(t *testing.T) {
 	srv := newFixture(t)
 	nodes := list(t, "ynab://personal/Consolidated/")
 	if got, want := nodeNames(nodes), []string{"accounts", "categories", "transactions"}; !slices.Equal(got, want) {
 		t.Errorf("sections = %v, want %v", got, want)
 	}
-	if n := srv.Requests(); n != 0 {
-		t.Errorf("section listing cost %d requests, want 0", n)
+	// A name costs one request (the budget list) to prove the budget exists;
+	// an alias or an id costs none.
+	if n := srv.Requests(); n != 1 {
+		t.Errorf("section listing by name cost %d requests, want 1", n)
+	}
+	before := srv.Requests()
+	list(t, "ynab://personal/last-used/")
+	list(t, "ynab://personal/"+uuidBudget+"/")
+	if n := srv.Requests() - before; n != 0 {
+		t.Errorf("section listing by alias/id cost %d requests, want 0", n)
+	}
+}
+
+// A budget that does not exist (or whose name is ambiguous) fails at the
+// budget level, not one level down.
+func TestListRoots_BudgetListingRejectsUnknownAndAmbiguousNames(t *testing.T) {
+	srv := newFixture(t)
+	_, err := (Plugin{}).ListRoots(context.Background(), mustParseURL(t, "ynab://personal/Nonesuch/"))
+	if err == nil || !errors.Is400BadRequest(err) {
+		t.Errorf("unknown budget: want a 400, got %v", err)
+	}
+	srv.AddBudget(ynabtestserver.Budget{ID: "b3", Name: "Consolidated"})
+	_, err = (Plugin{}).ListRoots(context.Background(), mustParseURL(t, "ynab://personal/Consolidated/"))
+	if err == nil || !errors.Is400BadRequest(err) || !strings.Contains(err.Error(), "?id=") {
+		t.Errorf("ambiguous budget: want a 400 naming ?id=, got %v", err)
+	}
+	if got := nodeNames(list(t, "ynab://personal/Consolidated/?id=b3")); len(got) != 3 {
+		t.Errorf("?id= tiebreak at the budget level: sections = %v", got)
+	}
+}
+
+// A budget whose name collides with an API alias is minted by id, or the name
+// would resolve to the account's default budget instead.
+func TestListRoots_BudgetNamedLikeAnAliasIsMintedByID(t *testing.T) {
+	srv := newFixture(t)
+	srv.AddBudget(ynabtestserver.Budget{ID: "b4", Name: "default"})
+	srv.AddBudget(ynabtestserver.Budget{ID: "b5", Name: uuidBudget})
+	uris := nodeURIs(list(t, "ynab://personal/"))
+	for _, want := range []string{"ynab://personal/b4/", "ynab://personal/b5/"} {
+		if !slices.Contains(uris, want) {
+			t.Errorf("budget URIs %v missing %q", uris, want)
+		}
+	}
+	for _, bad := range []string{"ynab://personal/default/", "ynab://personal/" + uuidBudget + "/"} {
+		if slices.Contains(uris, bad) {
+			t.Errorf("budget URIs %v contain the alias-shaped %q", uris, bad)
+		}
+	}
+}
+
+// The per-category endpoint returns a split's leg as a hybrid row with its
+// own id; the node must address the readable PARENT transaction.
+func TestListRoots_CategoryTransactionsAddressTheParentOfASplitLeg(t *testing.T) {
+	srv := newFixture(t)
+	srv.AddTransaction(ynabtestserver.Transaction{
+		BudgetID: "b1", ID: "leg1", Date: "2026-10-19", Amount: -3000, AmountFormatted: "-$3.00",
+		AccountID: "a1", AccountName: "Checking", PayeeName: str("Warehouse"),
+		CategoryID: str("c2"), CategoryName: str("Dining Out"),
+		Type: "subtransaction", ParentTransactionID: str("split1"), HybridOnly: true,
+	})
+	srv.AddTransaction(ynabtestserver.Transaction{
+		BudgetID: "b1", ID: "split1", Date: "2026-10-19", Amount: -9000, AmountFormatted: "-$9.00",
+		AccountID: "a1", AccountName: "Checking", PayeeName: str("Warehouse"),
+		CategoryName: str("Split"),
+	})
+
+	nodes := list(t, "ynab://personal/Consolidated/categories/Food/Dining%20Out/")
+	uris := nodeURIs(nodes)
+	want := "ynab://personal/Consolidated/transactions/split1"
+	if !slices.Contains(uris, want) {
+		t.Fatalf("category transactions %v do not address the parent %q", uris, want)
+	}
+	if slices.Contains(uris, "ynab://personal/Consolidated/transactions/leg1") {
+		t.Errorf("category transactions mint the unreadable leg id: %v", uris)
+	}
+	i := slices.Index(uris, want)
+	if !strings.HasSuffix(nodes[i].Name, "(split)") {
+		t.Errorf("leg node name %q does not say it is a split leg", nodes[i].Name)
+	}
+	if _, ok, err := (Plugin{}).ReadLeaf(context.Background(), mustParseURL(t, want)); err != nil || !ok {
+		t.Errorf("the parent URI must be readable: ok=%v err=%v", ok, err)
+	}
+}
+
+// Two category groups sharing a name: every URI the plugin mints must list.
+func TestListRoots_DuplicateCategoryGroupNamesStayNavigable(t *testing.T) {
+	srv := newFixture(t)
+	srv.AddCategoryGroup(ynabtestserver.CategoryGroup{BudgetID: "b1", ID: "g3", Name: "Food"})
+	srv.AddCategory(ynabtestserver.Category{BudgetID: "b1", GroupID: "g3", ID: "c9", Name: "Snacks"})
+
+	groups := list(t, "ynab://personal/Consolidated/categories/")
+	uris := nodeURIs(groups)
+	for _, want := range []string{
+		"ynab://personal/Consolidated/categories/g1/",
+		"ynab://personal/Consolidated/categories/g3/",
+		"ynab://personal/Consolidated/categories/Bills/",
+	} {
+		if !slices.Contains(uris, want) {
+			t.Errorf("group URIs %v missing %q", uris, want)
+		}
+	}
+	for _, g := range groups {
+		for _, c := range list(t, g.URI.String()) {
+			// Following the minted category URI must not hit an ambiguity error.
+			list(t, c.URI.String())
+		}
+	}
+	if got := nodeNames(list(t, "ynab://personal/Consolidated/categories/g3/")); !slices.Equal(got, []string{"Snacks"}) {
+		t.Errorf("second Food group categories = %v", got)
 	}
 }
 
