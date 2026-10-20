@@ -2,7 +2,6 @@ package fastmail
 
 import (
 	"context"
-	"net"
 	"net/url"
 
 	"code.linenisgreat.com/cutting-garden/pkgs/config_common"
@@ -44,9 +43,12 @@ func decodeConfigSection(sub *cst.Value) error {
 // name. The bearer token is resolved from the account's PasswordEnv (e.g.
 // `FASTMAIL_API_TOKEN`); the secret itself never lives in the config file.
 // An optional `session_url` replaces the fixed JMAP Session endpoint (the
-// bats lane's in-memory testserver; see sessionURLFor).
+// bats lane's in-memory testserver; see sessionURLFor); it is validated by
+// config_common.Account.ValidateSessionURL, which refuses plaintext http to a
+// non-loopback host because the token travels to it.
+//
 // Registered with the SDK's config-section registry as the `[fastmail]`
-// table (init below), so accounts arrive as `[[fastmail.accounts]]`. The
+// table (init above), so accounts arrive as `[[fastmail.accounts]]`. The
 // TOML codec is config_common.AccountsSection's (see decodeConfigSection);
 // this type carries the fastmail-specific validation.
 type AccountsConfig struct {
@@ -97,25 +99,11 @@ func (c AccountsConfig) Validate() error {
 			)
 		}
 
-		if acct.SessionURL != "" {
-			s, err := url.Parse(acct.SessionURL)
-			if err != nil || (s.Scheme != "http" && s.Scheme != "https") || s.Host == "" {
-				return errors.BadRequestf(
-					"fastmail.accounts[%q]: session_url %q is not an absolute http(s) URL",
-					acct.Name, acct.SessionURL,
-				)
-			}
-			// The bearer token goes to this URL on every request, so plaintext
-			// http is allowed only to a loopback host (the in-memory test
-			// server); anything else must use https (cutting-garden#332,
-			// matching the ynab plugin).
-			if s.Scheme == "http" && !isLoopbackHost(s.Hostname()) {
-				return errors.BadRequestf(
-					"fastmail.accounts[%q]: session_url %q is plaintext http to a non-loopback "+
-						"host; the access token would be sent unencrypted (use https)",
-					acct.Name, acct.SessionURL,
-				)
-			}
+		// The bearer token goes to session_url on every request, so plaintext
+		// http is allowed only to a loopback host (cutting-garden#332). The rule
+		// is config_common's, shared with the ynab plugin.
+		if err := acct.ValidateSessionURL(); err != nil {
+			return errors.BadRequestf("fastmail.accounts[%q]: %s", acct.Name, err)
 		}
 
 		if err := acct.ValidatePassword(); err != nil {
@@ -125,18 +113,6 @@ func (c AccountsConfig) Validate() error {
 		}
 	}
 	return nil
-}
-
-// isLoopbackHost reports whether host is localhost or a loopback IP literal.
-// plugins/ynab carries the same eight lines; neither plugin may import the
-// other and the shared config_common facade is generated, so a one-line
-// duplicate is cheaper than a codegen round for a helper this small.
-func isLoopbackHost(host string) bool {
-	if host == "localhost" {
-		return true
-	}
-	ip := net.ParseIP(host)
-	return ip != nil && ip.IsLoopback()
 }
 
 // configuredAccounts holds the fastmail accounts injected from the

@@ -12,6 +12,8 @@ package config_common
 import (
 	"bytes"
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"os/exec"
 	"strings"
@@ -121,6 +123,60 @@ func (a Account) ValidatePassword() error {
 		)
 	}
 	return nil
+}
+
+// ValidateSessionURL checks the SessionURL override when set. A plugin sends
+// its access token to that URL on every request, so it must be an absolute
+// http(s) URL with a hostname, and plaintext http is accepted only for a
+// loopback host (the in-memory test servers); anything else must use https.
+// An empty SessionURL is valid: the plugin's fixed default applies. Like
+// ValidatePassword, a plugin calls it from its per-account loop and wraps the
+// error with its own "<scheme>.accounts[%q]: %s" context. It is the ONE
+// implementation of the rule, so the plugins that take the override cannot
+// drift apart on what they let a token travel to (cutting-garden#332).
+//
+// The URL is echoed without its userinfo, so a credential pasted into the
+// value never reaches stderr or a log through this error.
+func (a Account) ValidateSessionURL() error {
+	if a.SessionURL == "" {
+		return nil
+	}
+	u, err := url.Parse(a.SessionURL)
+	if err != nil {
+		return fmt.Errorf("session_url is not an absolute http(s) URL (it does not parse)")
+	}
+	shown := withoutUserinfo(u)
+	// Hostname, not Host: "https://:8443/x" has a non-empty Host (":8443") and
+	// no hostname to dial.
+	if (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" {
+		return fmt.Errorf("session_url %q is not an absolute http(s) URL", shown)
+	}
+	if u.Scheme == "http" && !isLoopbackHost(u.Hostname()) {
+		return fmt.Errorf(
+			"session_url %q is plaintext http to a non-loopback host; "+
+				"the access token would be sent unencrypted (use https)",
+			shown,
+		)
+	}
+	return nil
+}
+
+// withoutUserinfo renders u with any userinfo dropped.
+func withoutUserinfo(u *url.URL) string {
+	stripped := *u
+	stripped.User = nil
+	return stripped.String()
+}
+
+// isLoopbackHost reports whether host is localhost (any case, with or without
+// the trailing root dot) or a loopback IP literal. A lookalike such as
+// "localhost.evil.example" and the unspecified address 0.0.0.0 are not.
+func isLoopbackHost(host string) bool {
+	if strings.EqualFold(strings.TrimSuffix(host, "."), "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // Password resolves the account's password: PasswordEnv (legacy) or

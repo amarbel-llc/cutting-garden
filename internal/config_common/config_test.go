@@ -91,6 +91,72 @@ func TestAccount_ValidatePassword_UnknownSource(t *testing.T) {
 	}
 }
 
+func accountWithSessionURL(raw string) Account {
+	return Account{SessionURL: raw}
+}
+
+func TestAccount_ValidateSessionURL_Accepts(t *testing.T) {
+	for _, raw := range []string{
+		"", // unset: the plugin's fixed default applies
+		"https://api.example/v1",
+		"https://jmap.proxy.example:8443/session",
+		"https://api.example", // https to a non-loopback host is the normal case
+		"http://127.0.0.1:43113/jmap/session",
+		"http://localhost:43113/v1",
+		"http://LOCALHOST:43113/v1",
+		"http://localhost.:43113/v1", // trailing root dot
+		"http://[::1]:43113/v1",
+	} {
+		if err := accountWithSessionURL(raw).ValidateSessionURL(); err != nil {
+			t.Errorf("ValidateSessionURL(%q) = %v, want ok", raw, err)
+		}
+	}
+}
+
+func TestAccount_ValidateSessionURL_Rejects(t *testing.T) {
+	for _, raw := range []string{
+		"/relative/path",
+		"ftp://host/x",
+		"http://",
+		"http://:8080/x",  // a port but no hostname
+		"https://:8443/x", // ditto, under https
+		// Plaintext http to anything that is not loopback: the token would
+		// travel unencrypted.
+		"http://example.com/x",
+		"http://192.0.2.7/x",
+		"http://10.0.0.5/x",
+		"http://0.0.0.0/x", // unspecified, not loopback
+		// Bypass shapes that LOOK loopback.
+		"http://127.0.0.1@evil.example/x", // 127.0.0.1 is userinfo; the host is evil.example
+		"http://localhost.evil.example/x", // a subdomain of someone else's domain
+		"http://127.0.0.1.evil.example/x", // ditto
+		"http://localhost@evil.example/x", // userinfo again
+		"http://127.1.2.3.example.test/x", // not an IP literal
+	} {
+		if err := accountWithSessionURL(raw).ValidateSessionURL(); err == nil {
+			t.Errorf("ValidateSessionURL(%q) = nil, want an error", raw)
+		}
+	}
+}
+
+// A credential pasted into the value must never be echoed back in the error.
+func TestAccount_ValidateSessionURL_ErrorOmitsUserinfo(t *testing.T) {
+	for _, raw := range []string{
+		"http://alice:s3cr3t@example.com/x", // plaintext to a non-loopback host
+		"ftp://alice:s3cr3t@example.com/x",  // wrong scheme
+	} {
+		err := accountWithSessionURL(raw).ValidateSessionURL()
+		if err == nil {
+			t.Fatalf("ValidateSessionURL(%q) = nil, want an error", raw)
+		}
+		for _, leaked := range []string{"s3cr3t", "alice"} {
+			if strings.Contains(err.Error(), leaked) {
+				t.Errorf("error for %q leaks %q: %v", raw, leaked, err)
+			}
+		}
+	}
+}
+
 func TestAccount_Password_Empty(t *testing.T) {
 	got, err := (Account{}).Password()
 	if err != nil || got != "" {
