@@ -270,6 +270,16 @@ func (c *client) transaction(ctx context.Context, budgetID, id string) (Transact
 	return r.Data.Transaction, nil
 }
 
+// freshTransaction reads one transaction from the server, bypassing the
+// freshness cache: the write path validates against it.
+func (c *client) freshTransaction(ctx context.Context, budgetID, id string) (Transaction, error) {
+	var r transactionResponse
+	if err := c.get(ctx, budgetPath(budgetID)+"/transactions/"+url.PathEscape(id), nil, &r); err != nil {
+		return Transaction{}, err
+	}
+	return r.Data.Transaction, nil
+}
+
 // patchTransactions updates transactions in one request (YNAB's bulk
 // `PATCH /budgets/{id}/transactions`, partial updates by id) and returns the
 // transactions as YNAB saved them. Each entry is a map carrying the
@@ -284,10 +294,12 @@ func (c *client) patchTransactions(
 ) ([]Transaction, error) {
 	var r saveTransactionsResponse
 	body := map[string]any{"transactions": entries}
+	// Invalidate whatever the outcome: a timeout or a torn response may follow
+	// a write YNAB did apply, and the cache must not outlive that doubt.
+	defer cacheInvalidateTransactions(c.scope, budgetID)
 	if err := c.do(ctx, http.MethodPatch, budgetPath(budgetID)+"/transactions", nil, body, &r); err != nil {
 		return nil, err
 	}
-	cacheInvalidateTransactions(c.scope, budgetID)
 	saved := r.Data.Transactions
 	if len(saved) == 0 && r.Data.Transaction != nil {
 		saved = []Transaction{*r.Data.Transaction}

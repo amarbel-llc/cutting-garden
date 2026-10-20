@@ -21,8 +21,8 @@ Tracks cutting-garden#328 (read path) and #331 (categorize/memo/cleared writes).
 
 A YNAB (You Need A Budget) budget is a small relational tree (budgets,
 accounts, category groups, categories, transactions) that cutting-garden
-cannot browse. The plugin makes a YNAB account a read-only `list` / `mcp` /
-trellis substrate, so questions like "what did I spend per category last
+cannot browse. The plugin makes a YNAB account a `list` / `mcp` /
+trellis substrate (read-only apart from the three writable fields, see Writes), so questions like "what did I spend per category last
 month" or "which transactions are uncleared" run through the same facet and
 query surfaces as caldav, fastmail and jira.
 
@@ -31,8 +31,8 @@ query surfaces as caldav, fastmail and jira.
 ### Scope and API
 
 The plugin speaks YNAB's REST API (`https://api.ynab.com/v1`) with a personal
-access token as a bearer credential. Slice 1 is **read-only**: no writes, no
-capture/restore/diff. Wire facts, checked 2026-10-20 against api.ynab.com and
+access token as a bearer credential. Slice 1 was **read-only**; slice 2 (Writes)
+adds three transaction fields. There is no capture/restore/diff. Wire facts, checked 2026-10-20 against api.ynab.com and
 the published OpenAPI spec (ynab-sdk-js `open_api_spec.yaml`):
 
 - YNAB's current docs rename budgets to **plans** (`/plans/{plan_id}`), but the
@@ -118,7 +118,7 @@ Hyphenated and horizontally versioned (FDR 0018):
 | `category-v1` | container | budgeted, activity, balance for the current month; its transactions |
 | `transaction-v1` | leaf | the transaction as JSON (amount in milliunits and formatted, payee, memo, cleared, approved, flag) |
 
-### Facets (all read-only)
+### Facets (`category` and `cleared` writable, see Writes)
 
 On `transaction-v1`, declared once through the unified field-codec model
 (FDR 0025, `unified.go`) and derived into the facet surface: `date` (the ISO
@@ -172,7 +172,14 @@ and sends one bulk `PATCH /budgets/{id}/transactions` (partial update by id).
 - `cleared` is `cleared` or `uncleared`. Setting `reconciled`, or changing a
   reconciled transaction, is refused: reconciliation is a deliberate act in YNAB.
 - `memo` is at most 200 characters; `null` clears it.
-- Split parents (their categories live on the legs) and transfers are refused.
+- Split parents (detected by their legs; their categories live there) and
+  transfers are refused. Transfers to off-budget accounts, which YNAB does
+  categorize, are refused too (conservative).
+- Hidden and deleted categories are never a write target. A bare name shared by
+  two groups is refused as ambiguous; an organize heading carries only the bare
+  name, so such categories need a direct patch with `Group/Category` or the id.
+- The transaction is read fresh from the server before the write (the guards
+  must not see a cached copy); the memo cap of 200 characters is checked locally.
 - A patch that changes nothing sends no request and applies nothing; an unknown
   key costs no request. The response is checked against what was asked, and the
   budget's cached transactions are invalidated after a write.

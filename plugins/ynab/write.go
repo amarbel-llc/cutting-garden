@@ -106,7 +106,9 @@ func (Plugin) PatchNode(
 	if err != nil {
 		return nil, err
 	}
-	current, err := c.transaction(ctx, budgetID, ref.txnID)
+	// The guards (reconciled, split, already-as-requested) must see the
+	// transaction as it is now, not as a listing cached up to a minute ago.
+	current, err := c.freshTransaction(ctx, budgetID, ref.txnID)
 	if err != nil {
 		return nil, err
 	}
@@ -348,10 +350,10 @@ func (p patchPlan) verify(saved []Transaction, id string) error {
 	return nil
 }
 
-// isSplit reports whether a transaction is a split parent.
+// isSplit reports whether a transaction is a split parent. Only its legs say
+// so: the "Split" category name is user data (a plain category may carry it).
 func isSplit(t Transaction) bool {
-	return len(t.Subtransactions) > 0 ||
-		(t.CategoryName != nil && *t.CategoryName == "Split")
+	return len(t.Subtransactions) > 0
 }
 
 // sameMemo compares two memos, treating nil and the empty string as the same
@@ -381,8 +383,16 @@ func resolveCategoryRef(ctx context.Context, c *client, budgetID, ref string) (C
 		cat   Category
 	}
 	var all []candidate
+	// Hidden groups and categories are retired by the user: they neither
+	// receive a write nor make a live name ambiguous.
 	for _, g := range liveGroups(groups) {
+		if g.Hidden {
+			continue
+		}
 		for _, cat := range liveCategories(g.Categories) {
+			if cat.Hidden {
+				continue
+			}
 			all = append(all, candidate{g.Name, cat})
 		}
 	}

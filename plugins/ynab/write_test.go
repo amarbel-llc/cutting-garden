@@ -266,15 +266,15 @@ func TestPatchNode_InvalidatesTheCacheSoReadsSeeTheWrite(t *testing.T) {
 	}
 }
 
-// Request economy: patching a transaction a listing just showed costs the
-// category lookup and the write, nothing else.
-func TestPatchNode_AfterAListingCostsTwoRequests(t *testing.T) {
+// Request economy: patching costs a fresh read of the transaction (the guards
+// must not trust a cached listing), the category lookup and the write.
+func TestPatchNode_AfterAListingCostsThreeRequests(t *testing.T) {
 	srv := newFixture(t)
 	list(t, txnPrefix)
 	before := srv.Requests()
 	mustPatch(t, "t2", `{"category":"Rent"}`)
-	if n := srv.Requests() - before; n != 2 {
-		t.Errorf("patching a listed transaction cost %d requests, want 2 (category tree + write)", n)
+	if n := srv.Requests() - before; n != 3 {
+		t.Errorf("patching a listed transaction cost %d requests, want 3 (fresh read + category tree + write)", n)
 	}
 }
 
