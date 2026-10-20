@@ -161,8 +161,15 @@ session cost one delta request, not one per node. `FacetVersioner` reports the
   and minting, `Roots`/`RootLabels`/`RootNames`; no network. The plugin is
   registered but does not yet satisfy the SDK's root interfaces (they embed
   `RootLister`), so it does not surface in no-argument roots.
-- **Slice 1b:** the REST client, an in-memory testserver
-  (`cmd/cutting-garden-ynab-testserver`), `ListRoots` traversal, leaf read.
+- **Slice 1b (landed):** the REST client (`client.go`), an in-memory
+  testserver (`plugins/ynab/ynabtestserver`; a `cmd/` binary for a bats lane
+  is slice 1c), `ListRoots` traversal for every node kind, name/id resolution
+  with `?id=` tiebreaks, and the transaction leaf read. Pinned by Go tests that
+  also assert the request economy: an account-root listing costs one request,
+  a budget's section listing none, and a budget id or `last-used` skips the
+  name lookup. The plugin now satisfies the SDK root interfaces and surfaces
+  in no-argument roots. Every listing re-fetches (no cache yet); the
+  `server_knowledge` delta cache is slice 1c.
 - **Slice 1c:** facets and the date-window pushdown, then a bats lane.
 - Amounts are the account's currency; the plugin does not convert.
 

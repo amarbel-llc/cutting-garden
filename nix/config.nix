@@ -65,8 +65,9 @@ let
         type = types.nullOr types.str;
         default = null;
         description = ''
-          fastmail only: replaces the fixed JMAP Session endpoint (TOML
-          `session_url`). Other plugins ignore it.
+          fastmail and ynab only (TOML `session_url`): replaces the fixed
+          JMAP Session endpoint (fastmail) or the API base URL (ynab). Other
+          plugins ignore it.
         '';
       };
       todoKeywords = mkOption {
@@ -234,6 +235,11 @@ in
       Fastmail Files); the account's root is `org://<name>/` (FDR 0026).
     '';
 
+    ynab.accounts = accountsOption "ynab" ''
+      `url` is `ynab://<name>/` (the host slot names the account); the YNAB
+      personal access token comes from the credential fields (FDR 0027).
+    '';
+
     traversalPlugins = mkOption {
       type = types.listOf pluginStanza;
       default = [ ];
@@ -319,6 +325,7 @@ in
         caldav = cfg.caldav.accounts or [ ];
         fastmail = cfg.fastmail.accounts or [ ];
         org = cfg.org.accounts or [ ];
+        ynab = cfg.ynab.accounts or [ ];
       };
       renderAccount =
         a:

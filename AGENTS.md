@@ -35,7 +35,12 @@ overwrite: a headline patch (metadata fields, `body`, `quote`, and moves
 via `parent`/`before`/`after`, across files too) and capture (a temp-id
 create in a file or under a headline), with its parser in
 the `plugins/org/orgtext` leaf and an
-in-memory WebDAV test server in `plugins/org/orgtestserver`, FDR 0026),
+in-memory WebDAV test server in `plugins/org/orgtestserver`, FDR 0026;
+and ynab, a read-only traversal plugin over the YNAB REST API — budgets,
+accounts, category groups, categories and transactions, a transaction
+listing defaulting to a 30-day `since_date` window because YNAB has no
+paging — with an in-memory test server in `plugins/ynab/ynabtestserver`,
+FDR 0027, facets still to come),
 each living in `plugins/<scheme>/` and consuming the
 public plugin SDK (`pkgs/`, RFC 0009) exactly as an out-of-tree plugin
 would — none import `internal/` (the no-inversion guard,

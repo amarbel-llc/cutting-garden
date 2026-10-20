@@ -1,0 +1,291 @@
+package ynab
+
+import (
+	"context"
+	"fmt"
+	"net/url"
+	"strings"
+	"time"
+
+	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
+)
+
+const (
+	// typeBudget is a YNAB budget — a container of the three sections.
+	typeBudget = "cutting_garden-ynab-budget-v1"
+	// typeSection is one of a budget's three listing containers
+	// (accounts/, categories/, transactions/).
+	typeSection = "cutting_garden-ynab-section-v1"
+	// typeAccount is a budget account — a container of its transactions.
+	typeAccount = "cutting_garden-ynab-account-v1"
+	// typeCategoryGroup is a category group — a container of its categories.
+	typeCategoryGroup = "cutting_garden-ynab-category_group-v1"
+	// typeCategory is a category — a container of its transactions.
+	typeCategory = "cutting_garden-ynab-category-v1"
+	// typeTransaction is one transaction — a leaf whose body is its JSON.
+	typeTransaction = "cutting_garden-ynab-transaction-v1"
+)
+
+// mimeJSON is the content type of a transaction leaf's body.
+const mimeJSON = "application/json"
+
+// defaultWindowDays is how far back an unbounded transaction listing looks.
+// YNAB has no paging, only date bounds (its own default is one year), so the
+// plugin's pages are date windows and the default is deliberately short
+// (FDR 0027 §Paging).
+const defaultWindowDays = 30
+
+// now is the clock, a package var solely so tests can pin the window.
+var now = time.Now
+
+// defaultSince is the since_date of the default window, YYYY-MM-DD in UTC
+// (YNAB dates are UTC).
+func defaultSince() string {
+	return now().UTC().AddDate(0, 0, -defaultWindowDays).Format("2006-01-02")
+}
+
+// Types declares the node types the ynab tree is built from. Tags are
+// hyphenated and horizontally versioned (FDR 0018).
+func (Plugin) Types() []cutting_garden_plugins.NodeType {
+	return []cutting_garden_plugins.NodeType{
+		{Tag: typeBudget, Container: true},
+		{Tag: typeSection, Container: true},
+		{Tag: typeAccount, Container: true},
+		{Tag: typeCategoryGroup, Container: true},
+		{Tag: typeCategory, Container: true},
+		{Tag: typeTransaction, Container: false, MimeType: mimeJSON},
+	}
+}
+
+// ListRoots returns the immediate children of node:
+//
+//   - account root → the account's budgets (archived ones included).
+//   - budget → its three sections.
+//   - accounts/ → the budget's accounts; categories/ → its category groups;
+//     transactions/ → its transactions in the default window.
+//   - account → that account's transactions in the default window.
+//   - category group → its categories; category → its transactions in the
+//     default window.
+//   - transaction → none (a leaf).
+func (Plugin) ListRoots(
+	ctx context.Context, node *url.URL,
+) ([]cutting_garden_plugins.Node, error) {
+	if node == nil {
+		return nil, errors.ErrorWithStackf("ynab plugin: ListRoots requires a node URI")
+	}
+	ref, err := classifyURI(node)
+	if err != nil {
+		return nil, err
+	}
+	c, err := resolveClient(ref)
+	if err != nil {
+		return nil, err
+	}
+
+	if ref.kind == kindAccountRoot {
+		return budgetNodes(ctx, c, ref)
+	}
+	if ref.kind == kindBudget {
+		return sectionNodes(ref), nil
+	}
+	if ref.kind == kindTransaction {
+		return nil, nil
+	}
+
+	budgetID, err := resolveBudgetID(ctx, c, ref)
+	if err != nil {
+		return nil, err
+	}
+	switch ref.kind {
+	case kindAccounts:
+		return accountNodes(ctx, c, ref, budgetID)
+	case kindCategories:
+		return categoryGroupNodes(ctx, c, ref, budgetID)
+	case kindTransactions:
+		return transactionNodes(ctx, c, ref, budgetID, "")
+	case kindAccount:
+		account, err := resolveAccount(ctx, c, budgetID, ref)
+		if err != nil {
+			return nil, err
+		}
+		return transactionNodes(ctx, c, ref, budgetID, "accounts/"+url.PathEscape(account.ID))
+	case kindCategoryGroup:
+		group, err := resolveCategoryGroup(ctx, c, budgetID, ref)
+		if err != nil {
+			return nil, err
+		}
+		return categoryNodes(ref, group), nil
+	case kindCategory:
+		group, err := resolveCategoryGroup(ctx, c, budgetID, ref)
+		if err != nil {
+			return nil, err
+		}
+		category, err := resolveCategory(group, ref)
+		if err != nil {
+			return nil, err
+		}
+		return transactionNodes(ctx, c, ref, budgetID, "categories/"+url.PathEscape(category.ID))
+	}
+	return nil, nil
+}
+
+// budgetNodes lists the account's budgets. Two budgets sharing a name are
+// minted with their id as the path segment, since a deeper URI has no room
+// for an `?id=` tiebreak on the budget.
+func budgetNodes(
+	ctx context.Context, c *client, ref nodeRef,
+) ([]cutting_garden_plugins.Node, error) {
+	budgets, err := c.budgets(ctx)
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, len(budgets))
+	for i, b := range budgets {
+		names[i] = b.Name
+	}
+	dups := dupNames(names)
+	nodes := make([]cutting_garden_plugins.Node, 0, len(budgets))
+	for _, b := range budgets {
+		segment := b.Name
+		if dups[b.Name] {
+			segment = b.ID
+		}
+		nodes = append(nodes, cutting_garden_plugins.Node{
+			URI:  budgetURI(ref.account, segment),
+			Name: b.Name,
+			Type: typeBudget,
+		})
+	}
+	return nodes, nil
+}
+
+// sectionNodes is a budget's three fixed listing containers.
+func sectionNodes(ref nodeRef) []cutting_garden_plugins.Node {
+	sections := []string{sectionAccounts, sectionCategories, sectionTransactions}
+	nodes := make([]cutting_garden_plugins.Node, 0, len(sections))
+	for _, s := range sections {
+		nodes = append(nodes, cutting_garden_plugins.Node{
+			URI:  sectionURI(ref.account, ref.budget, s),
+			Name: s,
+			Type: typeSection,
+		})
+	}
+	return nodes
+}
+
+func accountNodes(
+	ctx context.Context, c *client, ref nodeRef, budgetID string,
+) ([]cutting_garden_plugins.Node, error) {
+	accounts, err := c.accounts(ctx, budgetID)
+	if err != nil {
+		return nil, err
+	}
+	accounts = liveAccounts(accounts)
+	names := make([]string, len(accounts))
+	for i, a := range accounts {
+		names[i] = a.Name
+	}
+	dups := dupNames(names)
+	nodes := make([]cutting_garden_plugins.Node, 0, len(accounts))
+	for _, a := range accounts {
+		id := ""
+		if dups[a.Name] {
+			id = a.ID
+		}
+		nodes = append(nodes, cutting_garden_plugins.Node{
+			URI:  accountNodeURI(ref.account, ref.budget, a.Name, id),
+			Name: a.Name,
+			Type: typeAccount,
+		})
+	}
+	return nodes, nil
+}
+
+func categoryGroupNodes(
+	ctx context.Context, c *client, ref nodeRef, budgetID string,
+) ([]cutting_garden_plugins.Node, error) {
+	groups, err := c.categoryGroups(ctx, budgetID)
+	if err != nil {
+		return nil, err
+	}
+	groups = liveGroups(groups)
+	names := make([]string, len(groups))
+	for i, g := range groups {
+		names[i] = g.Name
+	}
+	dups := dupNames(names)
+	nodes := make([]cutting_garden_plugins.Node, 0, len(groups))
+	for _, g := range groups {
+		id := ""
+		if dups[g.Name] {
+			id = g.ID
+		}
+		nodes = append(nodes, cutting_garden_plugins.Node{
+			URI:  categoryGroupURI(ref.account, ref.budget, g.Name, id),
+			Name: g.Name,
+			Type: typeCategoryGroup,
+		})
+	}
+	return nodes, nil
+}
+
+// categoryNodes lists a group's categories from the group already in hand.
+func categoryNodes(ref nodeRef, group CategoryGroup) []cutting_garden_plugins.Node {
+	categories := liveCategories(group.Categories)
+	names := make([]string, len(categories))
+	for i, c := range categories {
+		names[i] = c.Name
+	}
+	dups := dupNames(names)
+	nodes := make([]cutting_garden_plugins.Node, 0, len(categories))
+	for _, c := range categories {
+		id := ""
+		if dups[c.Name] {
+			id = c.ID
+		}
+		nodes = append(nodes, cutting_garden_plugins.Node{
+			URI:  categoryURI(ref.account, ref.budget, ref.group, c.Name, id),
+			Name: c.Name,
+			Type: typeCategory,
+		})
+	}
+	return nodes
+}
+
+// transactionNodes lists transactions in the default window. scope is "" for
+// the whole budget, or the per-account / per-category endpoint path.
+func transactionNodes(
+	ctx context.Context, c *client, ref nodeRef, budgetID, scope string,
+) ([]cutting_garden_plugins.Node, error) {
+	txns, err := c.transactions(ctx, budgetID, scope, defaultSince(), "")
+	if err != nil {
+		return nil, err
+	}
+	nodes := make([]cutting_garden_plugins.Node, 0, len(txns))
+	for _, t := range txns {
+		if t.Deleted {
+			continue
+		}
+		nodes = append(nodes, cutting_garden_plugins.Node{
+			URI:  transactionURI(ref.account, ref.budget, t.ID),
+			Name: transactionName(t),
+			Type: typeTransaction,
+		})
+	}
+	return nodes, nil
+}
+
+// transactionName is a transaction's display label: date, payee, amount.
+func transactionName(t Transaction) string {
+	parts := []string{t.Date}
+	if t.PayeeName != nil && *t.PayeeName != "" {
+		parts = append(parts, *t.PayeeName)
+	}
+	if t.AmountFormatted != "" {
+		parts = append(parts, t.AmountFormatted)
+	} else {
+		parts = append(parts, fmt.Sprintf("%d", t.Amount))
+	}
+	return strings.Join(parts, " ")
+}

@@ -14,6 +14,7 @@ package ynab
 import (
 	"net/url"
 
+	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
@@ -56,8 +57,15 @@ func (Plugin) Validate(u *url.URL, raw string) error {
 	return nil
 }
 
-// Interface conformance is deliberately NOT asserted yet (FDR 0027 slice 1a).
-// The SDK's RootProvider / RootLabeler / RootNamer all embed RootLister, so
-// the plugin does not satisfy them — and no-argument roots do not surface it —
-// until the client and traversal land (slice 1b). Roots, RootLabels and
-// RootNames are implemented and tested in config.go ahead of that.
+// Interface conformance: the read capability set (FDR 0027 slice 1b). The
+// SDK's RootProvider / RootLabeler / RootNamer embed RootLister, so they are
+// satisfied only now that traversal (traversal.go) exists. Facets, listing
+// fields and the unified field declaration land in slice 1c; capture /
+// restore / diff are deliberately absent.
+var (
+	_ cutting_garden_plugins.RootLister   = (*Plugin)(nil)
+	_ cutting_garden_plugins.RootProvider = (*Plugin)(nil)
+	_ cutting_garden_plugins.RootLabeler  = (*Plugin)(nil)
+	_ cutting_garden_plugins.RootNamer    = (*Plugin)(nil)
+	_ cutting_garden_plugins.LeafReader   = (*Plugin)(nil)
+)

@@ -201,7 +201,8 @@ plugin therefore fetches the JMAP Session object from
 	Session endpoint for this one account; every later JMAP call follows the
 	*apiUrl* the session it returns advertises. It exists so a test harness
 	(the bats *organize_fastmail* lane's in-memory JMAP server) can stand in
-	for Fastmail. Other account-bearing plugins (*[caldav]*, *[jira]*), whose
+	for Fastmail. *[ynab]* reads the same key as an API base URL (next
+	section). Other account-bearing plugins (*[caldav]*, *[jira]*), whose
 	*url* already names the server, ignore it.
 
 ```
@@ -209,6 +210,29 @@ plugin therefore fetches the JMAP Session object from
 name = "test"
 url = "fastmail://test/"
 session_url = "http://127.0.0.1:43113/jmap/session"
+```
+
+# THE YNAB ACCOUNTS
+
+A *[[ynab.accounts]]* entry (FDR 0027) names a YNAB personal access token. Its
+*url* is *ynab://<name>/*: the host slot names the ACCOUNT, not a server,
+because the YNAB API host is fixed (*https://api.ynab.com/v1*). The token comes
+from the shared *password_env* or *password_source* / *password_key* keys; the
+secret never lives in the file. The account's root lists its budgets. The
+plugin is read-only.
+
+*session_url*
+	String. OPTIONAL. An absolute http(s) URL replacing the API base for this
+	one account, for a test harness standing in for YNAB. Unlike fastmail's
+	*session_url* it is a base URL (e.g. *http://127.0.0.1:43114/v1*), not a
+	session endpoint.
+
+```
+[[ynab.accounts]]
+name = "personal"
+url = "ynab://personal/"
+password_source = "piggy"
+password_key = "cutting-garden/ynab"
 ```
 
 # THE ORG ACCOUNTS
