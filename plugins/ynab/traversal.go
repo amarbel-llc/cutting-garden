@@ -107,32 +107,57 @@ func (Plugin) ListRoots(
 		return accountNodes(ctx, c, ref, budgetID)
 	case kindCategories:
 		return categoryGroupNodes(ctx, c, ref, budgetID)
-	case kindTransactions:
-		return transactionNodes(ctx, c, ref, budgetID, "")
-	case kindAccount:
-		account, err := resolveAccount(ctx, c, budgetID, ref)
+	case kindTransactions, kindAccount, kindCategory:
+		scope, err := transactionScope(ctx, c, budgetID, ref)
 		if err != nil {
 			return nil, err
 		}
-		return transactionNodes(ctx, c, ref, budgetID, "accounts/"+url.PathEscape(account.ID))
+		return transactionNodes(ctx, c, ref, budgetID, scope, defaultSince(), "", nil)
 	case kindCategoryGroup:
 		group, err := resolveCategoryGroup(ctx, c, budgetID, ref)
 		if err != nil {
 			return nil, err
 		}
 		return categoryNodes(ref, group), nil
+	}
+	return nil, nil
+}
+
+// bearsTransactions reports whether a node kind lists transactions: the
+// budget-wide section, one account, or one category. Only these have the
+// transaction facets and the date window.
+func bearsTransactions(kind nodeKind) bool {
+	return kind == kindTransactions || kind == kindAccount || kind == kindCategory
+}
+
+// transactionScope resolves which YNAB transactions endpoint a
+// transaction-bearing node reads: "" for the budget-wide listing, else the
+// per-account or per-category path, which serves a drill-down in one request
+// instead of filtering the whole budget.
+func transactionScope(
+	ctx context.Context, c *client, budgetID string, ref nodeRef,
+) (string, error) {
+	switch ref.kind {
+	case kindTransactions:
+		return "", nil
+	case kindAccount:
+		account, err := resolveAccount(ctx, c, budgetID, ref)
+		if err != nil {
+			return "", err
+		}
+		return "accounts/" + url.PathEscape(account.ID), nil
 	case kindCategory:
 		group, err := resolveCategoryGroup(ctx, c, budgetID, ref)
 		if err != nil {
-			return nil, err
+			return "", err
 		}
 		category, err := resolveCategory(group, ref)
 		if err != nil {
-			return nil, err
+			return "", err
 		}
-		return transactionNodes(ctx, c, ref, budgetID, "categories/"+url.PathEscape(category.ID))
+		return "categories/" + url.PathEscape(category.ID), nil
 	}
-	return nil, nil
+	return "", errors.ErrorWithStackf("ynab plugin: %d is not a transaction-bearing node", ref.kind)
 }
 
 // budgetNodes lists the account's budgets. Two budgets sharing a name are
@@ -247,31 +272,48 @@ func categoryNodes(ref nodeRef, group CategoryGroup) []cutting_garden_plugins.No
 	return nodes
 }
 
-// transactionNodes lists transactions in the default window. scope is "" for
-// the whole budget, or the per-account / per-category endpoint path.
+// transactionNodes lists the transactions in [since, until] as leaf nodes
+// carrying their Facets and listing Fields (all derived from the rows already
+// in hand: no per-node fetch, RFC 0012's cheapness rule), keeping only those
+// that satisfy filter (nil keeps all). scope is "" for the whole budget, or
+// the per-account / per-category endpoint path.
 func transactionNodes(
-	ctx context.Context, c *client, ref nodeRef, budgetID, scope string,
+	ctx context.Context, c *client, ref nodeRef, budgetID, scope, since, until string,
+	filter cutting_garden_plugins.FacetFilter,
 ) ([]cutting_garden_plugins.Node, error) {
-	txns, err := c.transactions(ctx, budgetID, scope, defaultSince(), "")
+	txns, err := c.transactions(ctx, budgetID, scope, since, until)
 	if err != nil {
 		return nil, err
 	}
 	nodes := make([]cutting_garden_plugins.Node, 0, len(txns))
+	seen := make(map[string]bool, len(txns))
 	for _, t := range txns {
 		if t.Deleted {
+			continue
+		}
+		facets := transactionFacets(t)
+		if !filter.Matches(facets) {
 			continue
 		}
 		// The per-category endpoint returns a split's leg as its own row
 		// (Type "subtransaction") whose id is NOT readable as a transaction;
 		// address the real parent transaction instead and say it is a leg.
+		// Two legs of one split in the same category share that parent, so a
+		// listing keeps the first (the counting path still counts each leg).
 		id, name := t.ID, transactionName(t)
 		if t.Type == "subtransaction" && t.ParentTransactionID != nil {
 			id, name = *t.ParentTransactionID, name+" (split)"
 		}
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
 		nodes = append(nodes, cutting_garden_plugins.Node{
-			URI:  transactionURI(ref.account, ref.budget, id),
-			Name: name,
-			Type: typeTransaction,
+			URI:    transactionURI(ref.account, ref.budget, id),
+			Name:   name,
+			Type:   typeTransaction,
+			Facets: facets,
+			Fields: transactionFields(t),
 		})
 	}
 	return nodes, nil

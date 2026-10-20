@@ -68,4 +68,15 @@ var (
 	_ cutting_garden_plugins.RootLabeler  = (*Plugin)(nil)
 	_ cutting_garden_plugins.RootNamer    = (*Plugin)(nil)
 	_ cutting_garden_plugins.LeafReader   = (*Plugin)(nil)
+
+	// The facet surface (slice 1c-2): the declaration derives from the unified
+	// field model (unified.go); counting and enrichment push the date window
+	// down to the server (window.go). FacetVersioner is deliberately absent —
+	// YNAB has no single cheap change token (a delta request costs a request
+	// and a rate-limit unit), so the framework falls back to its TTL.
+	_ cutting_garden_plugins.FacetDescriber         = (*Plugin)(nil)
+	_ cutting_garden_plugins.FacetCounter           = (*Plugin)(nil)
+	_ cutting_garden_plugins.EnrichedLister         = (*Plugin)(nil)
+	_ cutting_garden_plugins.ListingFieldsDescriber = (*Plugin)(nil)
+	_ cutting_garden_plugins.UnifiedDescriber       = (*Plugin)(nil)
 )
