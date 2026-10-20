@@ -590,6 +590,18 @@
           meta.mainProgram = "cutting-garden-org-testserver";
         };
 
+        # cutting-garden-ynab-testserver is a test-only in-memory YNAB REST
+        # server (plugins/ynab/ynabtestserver as a standalone binary, seeded
+        # with its deterministic fixture) that backs the bats ynab lane
+        # (zz-tests_bats/ynab.bats via lib/ynab.bash): the hermetic stand-in for
+        # api.ynab.com (FDR 0027, cutting-garden#328). Built as its own
+        # derivation and NOT shipped.
+        cuttingGardenYnabTestServer = buildCuttingGardenGo {
+          pname = "cutting-garden-ynab-testserver";
+          subPackages = [ "cmd/cutting-garden-ynab-testserver" ];
+          meta.mainProgram = "cutting-garden-ynab-testserver";
+        };
+
         # cutting-garden-test-capture-serve is the RFC 0008 test plugin
         # (internal/capture_serve_testpeer as a standalone binary): a
         # deterministic capture-serve peer backing the bats bring-up
@@ -849,6 +861,11 @@
             base = cuttingGardenOrgTestServer;
             name = "cutting-garden-org-testserver";
           };
+          # The test YNAB REST server backing zz-tests_bats/ynab.bats.
+          CG_TEST_YNAB = {
+            base = cuttingGardenYnabTestServer;
+            name = "cutting-garden-ynab-testserver";
+          };
           # The RFC 0008 test peer backing zz-tests_bats/capture_serve.bats.
           CG_TEST_CAPTURE_SERVE = {
             base = cuttingGardenTestCaptureServe;
@@ -982,6 +999,10 @@
           # The test-only WebDAV server (bats CG_TEST_ORG), exposed so
           # `nix build .#cutting-garden-org-testserver` checks it alone.
           cutting-garden-org-testserver = cuttingGardenOrgTestServer;
+
+          # The test-only YNAB REST server (bats CG_TEST_YNAB), exposed so
+          # `nix build .#cutting-garden-ynab-testserver` checks it alone.
+          cutting-garden-ynab-testserver = cuttingGardenYnabTestServer;
 
           # The store-pinned `conformist --staged --exit-zero-on-fix` hook from
           # the CODEGEN eval (formatters + tommy + dagnabit-facade lanes, no

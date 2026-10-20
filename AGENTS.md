@@ -39,8 +39,11 @@ in-memory WebDAV test server in `plugins/org/orgtestserver`, FDR 0026;
 and ynab, a read-only traversal plugin over the YNAB REST API — budgets,
 accounts, category groups, categories and transactions, a transaction
 listing defaulting to a 30-day `since_date` window because YNAB has no
-paging — with an in-memory test server in `plugins/ynab/ynabtestserver`,
-FDR 0027, facets still to come),
+paging, a `date=` filter pushed down to `since_date`/`until_date`, and a
+60s freshness cache against its 200-requests/hour limit — with an
+in-memory test server in `plugins/ynab/ynabtestserver`
+(`cmd/cutting-garden-ynab-testserver`, the `zz-tests_bats/ynab.bats`
+lane), FDR 0027),
 each living in `plugins/<scheme>/` and consuming the
 public plugin SDK (`pkgs/`, RFC 0009) exactly as an out-of-tree plugin
 would — none import `internal/` (the no-inversion guard,

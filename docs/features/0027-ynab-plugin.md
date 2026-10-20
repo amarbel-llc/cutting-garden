@@ -117,11 +117,20 @@ Hyphenated and horizontally versioned (FDR 0018):
 
 ### Facets (all read-only)
 
-On `transaction-v1`: `month` (date, coarsens by prefix), `account`, `category`,
-`payee` (labelled, open, top-N capped), `cleared` (closed: cleared / uncleared /
-reconciled), `approved` (yes/no), `flag` (the colour), `transfer` (yes/no, from
-`transfer_account_id`, so transfers can be excluded from spending queries) and
-`amount_band` (numeric bucket of the absolute amount). Counts roll up per budget.
+On `transaction-v1`, declared once through the unified field-codec model
+(FDR 0025, `unified.go`) and derived into the facet surface: `date` (the ISO
+day, so `date=(month)` coarsens by prefix), `account`, `category` (the name;
+`Split` for a split parent, `uncategorized` for none), `payee` (open and
+high-cardinality, capped at the top 20), `cleared` (closed: cleared /
+uncleared / reconciled), `approved` (yes/no), `flag` (the colour, absent when
+unflagged), `transfer` (yes/no, from `transfer_account_id`, so transfers can be
+excluded from spending queries) and `amount_band` (closed numeric bucket of the
+ABSOLUTE amount in whole units: `under_10`, `10_to_50`, `50_to_200`,
+`200_to_1000`, `1000_and_over`). Listing fields: date, account, category,
+payee, cleared, amount (formatted) and memo. Facets are declared and counted
+only on the three transaction-bearing nodes (the budget-wide section, one
+account, one category); a budget, section, group or leaf reports ok=false and
+the framework falls back.
 
 ### Paging: a date window, pushed down from the filter
 
@@ -129,8 +138,9 @@ YNAB has no paging, only date bounds, so the plugin's "pages" are **date
 windows**. A transaction listing defaults to the last 30 days
 (`since_date = today - 30d`, the API's own default being a year, which is too
 heavy for a first listing). A caller pages by naming a window, not a cursor:
-a `date` or `month` filter (`--filter month=2026-07`, or the trellis
-equivalent) is pushed down to `since_date`/`until_date`, so each month is one
+a `date` filter at year, month or day grain (`--filter date=2026-07`, or the
+trellis equivalent; several date predicates intersect) is pushed down to
+`since_date`/`until_date`, so each month is one
 request and older history is reachable page by page. A summary computed over
 the default window reports `complete: false` and says which window it covers;
 a month filter reports `complete: true` for that month. The per-account,
@@ -142,10 +152,23 @@ session unless revalidated.
 
 ### Caching and rate limit
 
-One budget read is cached per process and revalidated with
-`last_knowledge_of_server`, so repeated facet counts and drill-downs inside a
-session cost one delta request, not one per node. `FacetVersioner` reports the
-`server_knowledge` value as the snapshot token.
+As built (`cache.go`): the budget list, a budget's accounts and category tree,
+and each transaction window are served from memory for a **60-second
+freshness window**, keyed by config account plus API base. A transaction that
+appears in any fresh cached listing of its budget is read from it, so reading
+what a listing just showed costs **no** request even when the budget is
+addressed by name; one the listing did not cover costs one fetch, then none.
+
+This is a heuristic with a staleness cost: data edited in the YNAB app is
+invisible for up to a minute. The right boundary is one host call, which needs
+the SDK convention proposed in cutting-garden#311 (the org plugin has the same
+trade-off); this plugin moves to it when it exists.
+
+The first design revalidated with `last_knowledge_of_server` and published the
+`server_knowledge` value as a `FacetVersioner` token. It was dropped: a delta
+request still spends a rate-limit unit per revalidation, which is the cost the
+cache exists to avoid, and YNAB offers no cheaper change token. The plugin
+therefore does not implement `FacetVersioner`, and the framework's TTL applies.
 
 ## Limitations
 
@@ -154,6 +177,7 @@ session cost one delta request, not one per node. `FacetVersioner` reports the
 - Split transactions surface as one node with a `subtransactions` array; the
   parent's category is `Split`, so category facets count the parent once under
   `Split`, not the legs.
+- Amounts are the account's currency; the plugin does not convert.
 
 ## Slicing
 
@@ -180,14 +204,28 @@ session cost one delta request, not one per node. `FacetVersioner` reports the
   `session_url` over plaintext http is refused unless the host is loopback
   (the bearer token goes to it on every request); error excerpts cut on a rune
   boundary and response bodies are capped at 64 MiB.
-- **Slice 1c:** facets and the date-window pushdown, then a bats lane.
-  **Request economy is a 1c requirement, not a nicety:** reading one
-  transaction under a *named* budget costs two requests (budget list, then the
-  transaction) and a named account drill-down three, so a consumer that reads
-  each listed transaction spends `2N` of the 200-per-hour budget. The 1c cache
-  (the budget list, accounts and category tree, per process, revalidated with
-  `server_knowledge`) must make a leaf read after a listing cost one request.
-- Amounts are the account's currency; the plugin does not convert.
+- **Slice 1c-1 (landed): the cache.** Reading one transaction under a named
+  budget used to cost two requests and a named account drill-down three, so a
+  consumer reading each listed transaction spent `2N` of the 200-per-hour
+  budget. A leaf read after a listing now costs none; pinned by Go tests for
+  repeat listings, listed and unlisted leaf reads, expiry at the window edge,
+  and stale-then-fresh behaviour.
+- **Slice 1c-2 (landed): facets and the date-window pushdown.** The unified
+  field declaration, `DescribeFacets`, listing fields, `ListEnriched` and
+  `FacetCounts`, with a `date` predicate pushed down to
+  `since_date`/`until_date` (`window.go`). A default-window summary reports
+  complete=false; an explicit window is complete for that span unless the
+  `payee` cap dropped values. Two legs of one split in the same category list
+  as one node (their shared parent) but count twice.
+- **Slice 1c-3 (landed): the harness.** `cmd/cutting-garden-ynab-testserver`
+  (the fixture in `ynabtestserver/fixture.go`, fixed 2026 dates so vectors never
+  drift with the clock), `zz-tests_bats/lib/ynab.bash` and
+  `zz-tests_bats/ynab.bats` (13 cases over the real binary: roots, sections,
+  drill-downs, the month and year pushdown, completeness, a rejected token), and
+  the `flake.nix` wiring (`CG_TEST_YNAB`).
+- **Not built:** `FacetVersioner` (above); a live check against a real budget;
+  facet counts that roll up across a budget (each count is per
+  transaction-bearing node); the subtransaction legs as nodes.
 
 ## More Information
 
