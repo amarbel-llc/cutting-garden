@@ -114,6 +114,9 @@ type Server struct {
 	// until_date, simulating a server that does not honour a bound, so a test
 	// can prove the plugin re-checks the window itself.
 	ignoreDates bool
+	// ignoreWrites makes the bulk update answer success without applying.
+	ignoreWrites bool
+	writes       int
 }
 
 // IgnoreDateBounds makes the transaction endpoints return rows regardless of
@@ -214,8 +217,8 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnauthorized, "401", "not_authorized", "Unauthorized")
 		return
 	}
-	if r.Method != http.MethodGet {
-		writeError(w, http.StatusMethodNotAllowed, "405", "method_not_allowed", "read-only server")
+	if r.Method != http.MethodGet && r.Method != http.MethodPatch {
+		writeError(w, http.StatusMethodNotAllowed, "405", "method_not_allowed", "method not supported")
 		return
 	}
 
@@ -235,6 +238,14 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rest := segs[2:]
+	if r.Method == http.MethodPatch {
+		if len(rest) == 1 && rest[0] == "transactions" {
+			s.patchTransactions(w, r, budgetID)
+			return
+		}
+		writeError(w, http.StatusMethodNotAllowed, "405", "method_not_allowed", "PATCH is only served on /transactions")
+		return
+	}
 	switch {
 	case len(rest) == 1 && rest[0] == "accounts":
 		s.serveAccounts(w, budgetID)
@@ -358,6 +369,130 @@ func (s *Server) serveTransaction(w http.ResponseWriter, budgetID, id string) {
 		}
 	}
 	writeError(w, http.StatusNotFound, "404.2", "resource_not_found", "transaction not found")
+}
+
+// patchTransactions serves the bulk update (`PATCH /budgets/{id}/transactions`):
+// partial updates by id of category_id, memo and cleared, validated as a whole
+// before any is applied (an unknown transaction or category, or a bad cleared
+// value, fails the request and changes nothing), answering with the saved
+// transactions. With IgnoreWrites set it answers success without applying.
+func (s *Server) patchTransactions(w http.ResponseWriter, r *http.Request, budgetID string) {
+	var req struct {
+		Transactions []map[string]any `json:"transactions"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.Transactions) == 0 {
+		writeError(w, http.StatusBadRequest, "400", "bad_request", "a non-empty transactions array is required")
+		return
+	}
+
+	type update struct {
+		index int
+		set   map[string]any
+	}
+	var updates []update
+	for _, entry := range req.Transactions {
+		id, _ := entry["id"].(string)
+		index := -1
+		for i, t := range s.transactions {
+			if t.BudgetID == budgetID && t.ID == id && !t.HybridOnly {
+				index = i
+				break
+			}
+		}
+		if index < 0 {
+			writeError(w, http.StatusNotFound, "404.2", "resource_not_found", "transaction not found: "+id)
+			return
+		}
+		if v, ok := entry["category_id"]; ok && v != nil {
+			cid, _ := v.(string)
+			if _, found := s.categoryName(budgetID, cid); !found {
+				writeError(w, http.StatusBadRequest, "400", "bad_request", "unknown category_id: "+cid)
+				return
+			}
+		}
+		if v, ok := entry["cleared"]; ok {
+			cleared, _ := v.(string)
+			if cleared != "cleared" && cleared != "uncleared" && cleared != "reconciled" {
+				writeError(w, http.StatusBadRequest, "400", "bad_request", "invalid cleared: "+cleared)
+				return
+			}
+		}
+		updates = append(updates, update{index, entry})
+	}
+
+	saved := make([]Transaction, 0, len(updates))
+	ids := make([]string, 0, len(updates))
+	for _, u := range updates {
+		t := &s.transactions[u.index]
+		if !s.ignoreWrites {
+			if v, ok := u.set["category_id"]; ok {
+				if v == nil {
+					t.CategoryID, t.CategoryName = nil, nil
+				} else {
+					cid := v.(string)
+					name, _ := s.categoryName(budgetID, cid)
+					t.CategoryID, t.CategoryName = &cid, &name
+				}
+			}
+			if v, ok := u.set["memo"]; ok {
+				if v == nil {
+					t.Memo = nil
+				} else {
+					memo := v.(string)
+					t.Memo = &memo
+				}
+			}
+			if v, ok := u.set["cleared"]; ok {
+				t.Cleared = v.(string)
+			}
+		}
+		saved = append(saved, *t)
+		ids = append(ids, t.ID)
+	}
+	s.writes++
+	writeData(w, map[string]any{
+		"transaction_ids":  ids,
+		"transactions":     saved,
+		"server_knowledge": 2,
+	})
+}
+
+// categoryName finds a seeded category's name in a budget.
+func (s *Server) categoryName(budgetID, id string) (string, bool) {
+	for _, c := range s.categories {
+		if c.BudgetID == budgetID && c.ID == id {
+			return c.Name, true
+		}
+	}
+	return "", false
+}
+
+// IgnoreWrites makes the bulk update answer success WITHOUT applying anything
+// (a server that does not honour a write), so a test can prove the plugin
+// checks the response instead of trusting the status.
+func (s *Server) IgnoreWrites(ignore bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ignoreWrites = ignore
+}
+
+// Writes is the number of bulk updates served so far.
+func (s *Server) Writes() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.writes
+}
+
+// TransactionByID returns a seeded transaction as the server now holds it.
+func (s *Server) TransactionByID(budgetID, id string) (Transaction, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, t := range s.transactions {
+		if t.BudgetID == budgetID && t.ID == id {
+			return t, true
+		}
+	}
+	return Transaction{}, false
 }
 
 func writeData(w http.ResponseWriter, data any) {

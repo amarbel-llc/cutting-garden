@@ -44,13 +44,40 @@ type nodeRef struct {
 	category    string
 	txnID       string
 	id          string
+	// date is the optional `?date=` window (a year, month or day) on a
+	// transaction-bearing node: the URI-addressable counterpart of a `date`
+	// filter, for consumers that select by URI and cannot push a filter down
+	// (organize's anchor). It bounds the transactions the node lists.
+	date string
 }
 
 // classifyURI parses and classifies a `ynab://` URI. It rejects an unknown
-// scheme, an empty account, an unknown section or an over-long path as bad
-// requests (errors.Is400BadRequest true) — CALLER mistakes. It does NOT check
-// that the account is configured (that needs package state).
+// scheme, an empty account, an unknown section, an over-long path or a
+// malformed or misplaced `?date=` as bad requests (errors.Is400BadRequest
+// true) — CALLER mistakes. It does NOT check that the account is configured
+// (that needs package state).
 func classifyURI(u *url.URL) (nodeRef, error) {
+	ref, err := classifyPath(u)
+	if err != nil {
+		return nodeRef{}, err
+	}
+	if date := u.Query().Get("date"); date != "" {
+		if !bearsTransactions(ref.kind) {
+			return nodeRef{}, errors.BadRequestf(
+				"ynab plugin: ?date= only applies to a transactions, account or category node; %q is not one",
+				u.String(),
+			)
+		}
+		if _, _, err := dateBucketBounds(date); err != nil {
+			return nodeRef{}, err
+		}
+		ref.date = date
+	}
+	return ref, nil
+}
+
+// classifyPath classifies the path (and the `?id=` tiebreak) of a `ynab://` URI.
+func classifyPath(u *url.URL) (nodeRef, error) {
 	if u.Scheme != schemeYNAB {
 		return nodeRef{}, errors.BadRequestf(
 			"ynab plugin: unsupported scheme %q in %q", u.Scheme, u.String(),

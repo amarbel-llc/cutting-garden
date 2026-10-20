@@ -11,6 +11,7 @@
 
 setup() {
   load "$(dirname "$BATS_TEST_FILE")/lib/common.bash"
+  load "$(dirname "$BATS_TEST_FILE")/lib/vectors.bash"
   load "$(dirname "$BATS_TEST_FILE")/lib/ynab.bash"
   load "$(dirname "$BATS_TEST_FILE")/lib/mcp.bash"
   export output
@@ -143,6 +144,130 @@ function ynab_mcp_read_node_returns_the_transaction { # @test
   run jq -r '[.id, .amount, .cleared, .category_name, .payee_name] | @tsv' \
     <<<"$(mcp_result_text "$output" 3 | sed '/^raw bytes:/d')"
   assert_output "$(printf 't-0702\t-12340\tcleared\tDining Out\tCorner Cafe')"
+}
+
+# Slice 2 (cutting-garden#331): the write path through the real binary. One
+# mutate_nodes patch re-categorizes a transaction and sets its memo, and the
+# next read, from a fresh process, sees both.
+function ynab_mcp_patch_recategorizes_a_transaction { # @test
+  mcp_drive ynab://test/ "$(tools_call 3 mutate_nodes '{"groups":[{"anchor":"ynab://test/Household/transactions/","ops":[{"kind":"patch","id":"t-0702","body":"{\"category\":\"Groceries\",\"memo\":\"moved by bats\"}"}]}]}')"
+  run jq -r '.groups[0].applied | join(",")' <<<"$(mcp_result_text "$output" 3)"
+  assert_output t-0702
+
+  ynab_mcp_list ynab://test/Household/transactions/ date=2026-07-02
+  run jq -c '.nodes[0] | [.facets.category, .fields.category, .fields.memo]' <<<"$(mcp_result_text "$output" 3)"
+  assert_output '[["Groceries"],"Groceries","moved by bats"]'
+}
+
+# A reconciled transaction's cleared state is locked: the patch is refused and
+# nothing changes.
+function ynab_mcp_patch_refuses_a_reconciled_cleared_change { # @test
+  mcp_drive ynab://test/ "$(tools_call 3 mutate_nodes '{"groups":[{"anchor":"ynab://test/Household/transactions/","ops":[{"kind":"patch","id":"t-0612","body":"{\"cleared\":\"uncleared\"}"}]}]}')"
+  assert_equal "$(mcp_is_error "$output" 3)" "true"
+  text="$(mcp_result_text "$output" 3)"
+  [[ $text == *reconciled* ]] || fail "the refusal does not say the transaction is reconciled: $text"
+
+  ynab_mcp_list ynab://test/Household/transactions/ date=2026-06-12
+  run jq -r '.nodes[0].facets.cleared[0]' <<<"$(mcp_result_text "$output" 3)"
+  assert_output reconciled
+}
+
+# A bare category name shared by no other category is enough; one that matches
+# nothing is refused, not guessed.
+function ynab_mcp_patch_refuses_an_unknown_category { # @test
+  mcp_drive ynab://test/ "$(tools_call 3 mutate_nodes '{"groups":[{"anchor":"ynab://test/Household/transactions/","ops":[{"kind":"patch","id":"t-0702","body":"{\"category\":\"Nonesuch\"}"}]}]}')"
+  assert_equal "$(mcp_is_error "$output" 3)" "true"
+  text="$(mcp_result_text "$output" 3)"
+  [[ $text == *"no category named"* ]] || fail "unknown category not refused by name: $text"
+
+  ynab_mcp_list ynab://test/Household/transactions/ date=2026-07-02
+  run jq -r '.nodes[0].facets.category[0]' <<<"$(mcp_result_text "$output" 3)"
+  assert_output "Dining Out"
+}
+
+# organize anchors at a URI, so the month is addressed as `?date=` on the
+# anchor (a `date=` query predicate is not pushed down on that path).
+generate_month() {
+  run_cg organize -group-by category= 'ynab://test/Household/transactions/?date=2026-07'
+  assert_success
+  assert_vector - <<-'EOM'
+	---
+	% generated: `cg organize '"ynab://test/Household/transactions/?date=2026-07"' category=`
+	- _base = @blake2b256-f3s50c6zyf5q5r63scgurucvc8593fc4cvv0e8sgdfhm2s8dvzqql84m8y
+	- _anchor = ynab://test/Household/transactions/?date=2026-07
+	- _type = !cutting_garden-ynab-transaction-v1
+	! organize-base-v1
+	---
+
+	# category=
+
+	## ="Dining Out"
+
+	- [t-0702] 2026-07-02 Corner Cafe -$12.34
+
+	## =Groceries
+
+	- [t-0709] 2026-07-09 Grocer -$61.05
+
+	## =Rent
+
+	- [t-0731] 2026-07-31 Landlord -$900.00
+
+	## =uncategorized
+
+	- [t-0715] 2026-07-15 Paycheck $2,500.00
+	EOM
+}
+
+function ynab_organize_groups_a_month_by_category { # @test
+  generate_month
+}
+
+# Moving a line under another category heading re-categorizes the transaction
+# in YNAB; the read-back goes through cg itself.
+function ynab_organize_apply_recategorizes_by_moving_a_line { # @test
+  generate_month
+  local edited="$BATS_TEST_TMPDIR/edited.txt"
+  cat >"$edited" <<-'EOM'
+	---
+	% generated: `cg organize '"ynab://test/Household/transactions/?date=2026-07"' category=`
+	- _base = @blake2b256-f3s50c6zyf5q5r63scgurucvc8593fc4cvv0e8sgdfhm2s8dvzqql84m8y
+	- _anchor = ynab://test/Household/transactions/?date=2026-07
+	- _type = !cutting_garden-ynab-transaction-v1
+	! organize-base-v1
+	---
+
+	# category=
+
+	## ="Dining Out"
+
+	## =Groceries
+
+	- [t-0702] 2026-07-02 Corner Cafe -$12.34
+	- [t-0709] 2026-07-09 Grocer -$61.05
+
+	## =Rent
+
+	- [t-0731] 2026-07-31 Landlord -$900.00
+
+	## =uncategorized
+
+	- [t-0715] 2026-07-15 Paycheck $2,500.00
+	EOM
+
+  run_cg organize -apply "$edited" -commit
+  assert_success
+  assert_vector - <<'EOF'
+organize: 1 change(s):
+
+  - [t-0702 category=[-"Dining Out"-]{+Groceries+}] 2026-07-02 Corner Cafe -$12.34
+
+organize: wrote 1 change(s)
+EOF
+
+  ynab_mcp_list ynab://test/Household/transactions/ date=2026-07-02
+  run jq -r '.nodes[0].facets.category[0]' <<<"$(mcp_result_text "$output" 3)"
+  assert_output Groceries
 }
 
 function ynab_a_rejected_token_names_the_token { # @test

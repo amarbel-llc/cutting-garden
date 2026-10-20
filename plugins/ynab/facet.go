@@ -171,7 +171,7 @@ func (Plugin) FacetCounts(
 	if err != nil {
 		return cutting_garden_plugins.FacetResult{}, false, err
 	}
-	window, err := windowFromFilter(filter)
+	window, err := windowFor(ref, filter)
 	if err != nil {
 		return cutting_garden_plugins.FacetResult{}, false, err
 	}

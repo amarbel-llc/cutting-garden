@@ -93,7 +93,7 @@ func (Plugin) ListEnriched(
 	if err != nil {
 		return nil, false, err
 	}
-	window, err := windowFromFilter(filter)
+	window, err := windowFor(ref, filter)
 	if err != nil {
 		return nil, false, err
 	}

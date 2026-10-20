@@ -215,6 +215,15 @@ func TestWindowFromFilter(t *testing.T) {
 	if err != nil || w.explicit {
 		t.Errorf("a cleared predicate changed the window: %+v, %v", w, err)
 	}
+	// A URI window intersects the filter's predicates.
+	w, err = windowFor(nodeRef{date: "2026"}, dateFilter("2026-07"))
+	if err != nil || w.since != "2026-07-01" || w.until != "2026-07-31" || !w.explicit {
+		t.Errorf("uri 2026 ∩ filter 2026-07 = %+v, %v", w, err)
+	}
+	w, err = windowFor(nodeRef{date: "2026-07"}, nil)
+	if err != nil || w.since != "2026-07-01" || w.until != "2026-07-31" {
+		t.Errorf("uri 2026-07 = %+v, %v", w, err)
+	}
 	if _, err := windowFromFilter(dateFilter("yesterday")); err == nil || !errors.Is400BadRequest(err) {
 		t.Errorf("a malformed date predicate must be a 400, got %v", err)
 	}

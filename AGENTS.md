@@ -36,7 +36,9 @@ via `parent`/`before`/`after`, across files too) and capture (a temp-id
 create in a file or under a headline), with its parser in
 the `plugins/org/orgtext` leaf and an
 in-memory WebDAV test server in `plugins/org/orgtestserver`, FDR 0026;
-and ynab, a read-only traversal plugin over the YNAB REST API — budgets,
+and ynab, a traversal plugin over the YNAB REST API (writable only for a
+transaction's category, cleared state and memo; a `?date=` URI query bounds a
+transaction-bearing node's window, which is how organize anchors on a month) — budgets,
 accounts, category groups, categories and transactions, a transaction
 listing defaulting to a 30-day `since_date` window because YNAB has no
 paging, a `date=` filter pushed down to `since_date`/`until_date`, and a

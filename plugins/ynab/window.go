@@ -65,6 +65,19 @@ func windowFromFilter(filter cutting_garden_plugins.FacetFilter) (dateWindow, er
 	return w, nil
 }
 
+// windowFor is the request window of a listing or count of ref under filter:
+// the node's own `?date=` window intersected with the filter's date
+// predicates (all AND-composed), or the default window with neither.
+func windowFor(ref nodeRef, filter cutting_garden_plugins.FacetFilter) (dateWindow, error) {
+	if ref.date == "" {
+		return windowFromFilter(filter)
+	}
+	combined := make(cutting_garden_plugins.FacetFilter, 0, len(filter)+1)
+	combined = append(combined, cutting_garden_plugins.FacetPredicate{Dimension: facetDate, Value: ref.date})
+	combined = append(combined, filter...)
+	return windowFromFilter(combined)
+}
+
 // withoutDate drops the date predicates from filter. The window already
 // enforced them exactly (the server did the narrowing), and an unvalidated
 // predicate would otherwise compare a day key for equality rather than by

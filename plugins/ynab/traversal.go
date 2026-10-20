@@ -119,7 +119,11 @@ func (Plugin) ListRoots(
 		if err != nil {
 			return nil, err
 		}
-		return transactionNodes(ctx, c, ref, budgetID, scope, dateWindow{since: defaultSince()}, nil)
+		window, err := windowFor(ref, nil)
+		if err != nil {
+			return nil, err
+		}
+		return transactionNodes(ctx, c, ref, budgetID, scope, window, nil)
 	case kindCategoryGroup:
 		group, err := resolveCategoryGroup(ctx, c, budgetID, ref)
 		if err != nil {

@@ -121,6 +121,27 @@ func cacheFindTransaction(scope, budget, id string) (Transaction, bool) {
 	return e.value.(Transaction), true
 }
 
+// cacheInvalidateTransactions drops every cached transaction listing and
+// single read of one budget, and its by-id index rows, after a write: the
+// listings were fetched before the change and would serve it stale. Accounts
+// and the category tree are untouched (a transaction write moves no account
+// or category definition).
+func cacheInvalidateTransactions(scope, budget string) {
+	cacheMu.Lock()
+	defer cacheMu.Unlock()
+	for k := range cacheEntries {
+		if k.scope == scope && k.budget == budget &&
+			(k.kind == cacheTransactions || k.kind == cacheTransaction) {
+			delete(cacheEntries, k)
+		}
+	}
+	for k := range txnIndex {
+		if k.scope == scope && k.budget == budget {
+			delete(txnIndex, k)
+		}
+	}
+}
+
 // cacheReset empties the cache. Production code never calls it (entries expire
 // by age); tests use it between fixtures and after mutating a test server.
 func cacheReset() {

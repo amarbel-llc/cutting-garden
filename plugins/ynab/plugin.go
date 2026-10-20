@@ -1,8 +1,9 @@
 // Package ynab is cutting-garden's YNAB (You Need A Budget) traversal and
 // facet plugin (FDR 0027). Registered for the `ynab` URI scheme, it makes a
-// YNAB account a read-only `list` / `mcp` / trellis substrate over the YNAB
-// REST API: its budgets, their accounts, category groups, categories and
-// transactions.
+// YNAB account a `list` / `mcp` / trellis substrate over the YNAB REST API:
+// its budgets, their accounts, category groups, categories and transactions.
+// It is read-only except for a transaction's category, cleared state and memo
+// (write.go).
 //
 // Like fastmail it is a scheme-only plugin: it implements none of
 // capture/restore/diff and registers via MustRegisterScheme (init.go). The
@@ -27,7 +28,7 @@ const schemeYNAB = "ynab"
 // another plugin's namespace.
 const typeTagCaptureReceipt = "cutting_garden-capture_receipt-ynab-v1"
 
-// Plugin is the read-only YNAB traversal and facet backend. It is a
+// Plugin is the YNAB traversal, facet and transaction-patch backend. It is a
 // zero-size value: all account config lives in package state
 // (configuredAccounts, see config.go).
 type Plugin struct{}
@@ -79,4 +80,10 @@ var (
 	_ cutting_garden_plugins.EnrichedLister         = (*Plugin)(nil)
 	_ cutting_garden_plugins.ListingFieldsDescriber = (*Plugin)(nil)
 	_ cutting_garden_plugins.UnifiedDescriber       = (*Plugin)(nil)
+
+	// The write path (slice 2, cutting-garden#331): PatchNode on a transaction
+	// (write.go) and the facet writes organize routes to it (facet_write.go).
+	_ cutting_garden_plugins.NodeMutator         = (*Plugin)(nil)
+	_ cutting_garden_plugins.FacetWriteDescriber = (*Plugin)(nil)
+	_ cutting_garden_plugins.FacetWriteApplier   = (*Plugin)(nil)
 )

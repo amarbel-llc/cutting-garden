@@ -113,6 +113,16 @@ type transactionsResponse struct {
 	} `json:"data"`
 }
 
+// saveTransactionsResponse is the body of a bulk update: the saved
+// transactions (and their ids), as YNAB now holds them.
+type saveTransactionsResponse struct {
+	Data struct {
+		TransactionIDs []string      `json:"transaction_ids"`
+		Transactions   []Transaction `json:"transactions"`
+		Transaction    *Transaction  `json:"transaction"`
+	} `json:"data"`
+}
+
 type transactionResponse struct {
 	Data struct {
 		Transaction Transaction `json:"transaction"`

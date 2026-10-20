@@ -1,6 +1,7 @@
 package ynab
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -31,7 +32,7 @@ const maxResponseBytes = 64 << 20
 const budgetsPath = "/budgets"
 
 // client is a minimal YNAB REST client: a base URL, a bearer token and an
-// http.Client. Every call is a GET (slice 1 is read-only), and every call
+// http.Client. Every call but the transaction PATCH is a GET, and every call
 // costs one request against YNAB's 200-per-hour token limit, so callers fetch
 // the most specific resource they can (FDR 0027 §Caching and rate limit).
 type client struct {
@@ -77,26 +78,47 @@ func clientFor(acct config_common.Account) (*client, error) {
 }
 
 // get issues GET base+path with query and decodes the success body into out.
-// A non-200 status becomes a classified error: 404 is a caller mistake (a
-// budget or object that does not exist), 401/403 point at the token, 429 names
-// the rate limit; anything else is a plugin failure.
-func (c *client) get(ctx context.Context, path string, query url.Values, out any) (err error) {
+func (c *client) get(ctx context.Context, path string, query url.Values, out any) error {
+	return c.do(ctx, http.MethodGet, path, query, nil, out)
+}
+
+// do issues method base+path with query and, for a non-nil body, a JSON
+// request body, and decodes the success body into out. Any 2xx is success (the
+// published spec lists a 209 for the bulk update, which is surely a typo for
+// 200, but the plugin does not depend on which). A failure status becomes a
+// classified error: 404 and 400 are caller mistakes (an object that does not
+// exist, a value YNAB refuses), 401/403 point at the token, 429 names the rate
+// limit; anything else is a plugin failure.
+func (c *client) do(
+	ctx context.Context, method, path string, query url.Values, body, out any,
+) (err error) {
 	target := c.base + path
 	if len(query) > 0 {
 		target += "?" + query.Encode()
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
+	var reader io.Reader
+	if body != nil {
+		encoded, merr := json.Marshal(body)
+		if merr != nil {
+			return errors.Wrapf(merr, "ynab plugin: marshal %s %s body", method, path)
+		}
+		reader = bytes.NewReader(encoded)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, target, reader)
 	if err != nil {
 		return errors.Wrap(err)
 	}
 	req.Header.Set("Accept", "application/json")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	if c.token != "" {
 		req.Header.Set("Authorization", "Bearer "+c.token)
 	}
 
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return errors.Wrapf(err, "ynab plugin: GET %s", path)
+		return errors.Wrapf(err, "ynab plugin: %s %s", method, path)
 	}
 	defer errors.DeferredCloser(&err, resp.Body)
 
@@ -106,31 +128,36 @@ func (c *client) get(ctx context.Context, path string, query url.Values, out any
 	}
 	if len(data) > maxResponseBytes {
 		return errors.ErrorWithStackf(
-			"ynab plugin: GET %s: response exceeds %d bytes; narrow the window", path, maxResponseBytes,
+			"ynab plugin: %s %s: response exceeds %d bytes; narrow the window", method, path, maxResponseBytes,
 		)
 	}
-	switch resp.StatusCode {
-	case http.StatusOK:
+	switch {
+	case resp.StatusCode >= 200 && resp.StatusCode < 300:
+		if out == nil {
+			return nil
+		}
 		if err := json.Unmarshal(data, out); err != nil {
-			return errors.Wrapf(err, "ynab plugin: parse GET %s response", path)
+			return errors.Wrapf(err, "ynab plugin: parse %s %s response", method, path)
 		}
 		return nil
-	case http.StatusNotFound:
-		return errors.BadRequestf("ynab plugin: GET %s: not found: %s", path, snippet(data))
-	case http.StatusUnauthorized, http.StatusForbidden:
+	case resp.StatusCode == http.StatusNotFound:
+		return errors.BadRequestf("ynab plugin: %s %s: not found: %s", method, path, snippet(data))
+	case resp.StatusCode == http.StatusBadRequest:
+		return errors.BadRequestf("ynab plugin: %s %s: refused by YNAB: %s", method, path, snippet(data))
+	case resp.StatusCode == http.StatusUnauthorized, resp.StatusCode == http.StatusForbidden:
 		return errors.ErrorWithStackf(
-			"ynab plugin: GET %s: status %d: the access token was rejected "+
+			"ynab plugin: %s %s: status %d: the access token was rejected "+
 				"(check the account's password_env / password_key): %s",
-			path, resp.StatusCode, snippet(data),
+			method, path, resp.StatusCode, snippet(data),
 		)
-	case http.StatusTooManyRequests:
+	case resp.StatusCode == http.StatusTooManyRequests:
 		return errors.ErrorWithStackf(
-			"ynab plugin: GET %s: rate limited (YNAB allows 200 requests per hour "+
-				"per token); wait and retry: %s", path, snippet(data),
+			"ynab plugin: %s %s: rate limited (YNAB allows 200 requests per hour "+
+				"per token); wait and retry: %s", method, path, snippet(data),
 		)
 	default:
 		return errors.ErrorWithStackf(
-			"ynab plugin: GET %s: status %d: %s", path, resp.StatusCode, snippet(data),
+			"ynab plugin: %s %s: status %d: %s", method, path, resp.StatusCode, snippet(data),
 		)
 	}
 }
@@ -241,6 +268,31 @@ func (c *client) transaction(ctx context.Context, budgetID, id string) (Transact
 	}
 	cachePut(cacheKey{scope: c.scope, kind: cacheTransaction, budget: budgetID, detail: id}, r.Data.Transaction)
 	return r.Data.Transaction, nil
+}
+
+// patchTransactions updates transactions in one request (YNAB's bulk
+// `PATCH /budgets/{id}/transactions`, partial updates by id) and returns the
+// transactions as YNAB saved them. Each entry is a map carrying the
+// transaction's "id" plus only the fields to change; an explicit nil value is
+// sent as JSON null (clearing a memo), an absent key leaves the field alone.
+//
+// It is the plugin's ONLY write call. It invalidates the budget's cached
+// transactions on success: a listing cached before the write would otherwise
+// keep serving the old category for up to a minute (cache.go).
+func (c *client) patchTransactions(
+	ctx context.Context, budgetID string, entries []map[string]any,
+) ([]Transaction, error) {
+	var r saveTransactionsResponse
+	body := map[string]any{"transactions": entries}
+	if err := c.do(ctx, http.MethodPatch, budgetPath(budgetID)+"/transactions", nil, body, &r); err != nil {
+		return nil, err
+	}
+	cacheInvalidateTransactions(c.scope, budgetID)
+	saved := r.Data.Transactions
+	if len(saved) == 0 && r.Data.Transaction != nil {
+		saved = []Transaction{*r.Data.Transaction}
+	}
+	return saved, nil
 }
 
 // budgetPath is the API path of one budget; the id is escaped as a segment.

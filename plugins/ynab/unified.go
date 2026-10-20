@@ -12,8 +12,8 @@ import (
 // (facet.go DescribeFacets) derives from it. The listing-field schema
 // (listing.go DescribeListingFields) stays hand-written, as in the other
 // plugins, and TestDescribeListingFields_ConsistentWithUnified pins it to this
-// declaration. Nothing is Writable: slice 1 is read-only (categorize writes are
-// cutting-garden#331).
+// declaration. Only category and cleared are Writable (memo is a write the
+// patch path takes but no facet dimension models; cutting-garden#331).
 //
 // Deliberately NOT derived: the facet COUNTING path (transactionFacets), which
 // computes the bucket values from the raw rows — the day key, the band, the
@@ -66,7 +66,14 @@ var unifiedFieldSets = sync.OnceValue(func() []cutting_garden_plugins.NodeTypeUn
 				Key: facetDate, Label: "Date", Kind: cutting_garden_plugins.FieldDate, Groupable: true,
 			}},
 			grouped(facetAccount, "Account"),
-			grouped(facetCategory, "Category"),
+			// category is WRITABLE: moving a transaction under another category
+			// heading re-categorizes it (facet_write.go, write.go). It is an
+			// open domain, so organize cannot pre-render a heading per category;
+			// the caller names the target.
+			cutting_garden_plugins.IdentityCodec{Field: cutting_garden_plugins.UnifiedField{
+				Key: facetCategory, Label: "Category", Kind: cutting_garden_plugins.FieldCategorical,
+				Groupable: true, Writable: true,
+			}},
 			grouped(facetPayee, "Payee"),
 			cutting_garden_plugins.IdentityCodec{Field: cutting_garden_plugins.UnifiedField{
 				Key: facetCleared, Label: "Cleared", Kind: cutting_garden_plugins.FieldCategorical,
@@ -74,6 +81,11 @@ var unifiedFieldSets = sync.OnceValue(func() []cutting_garden_plugins.NodeTypeUn
 				Values: []cutting_garden_plugins.FieldValue{
 					{Value: clearedCleared}, {Value: clearedUncleared}, {Value: clearedReconciled},
 				},
+				// Writable, but only between cleared and uncleared: reconciled is
+				// a deliberate act in YNAB itself and stays read-only, so it is
+				// in Values (it can be filtered on) but not in the move targets.
+				Writable:    true,
+				WriteValues: []string{clearedCleared, clearedUncleared},
 			}},
 			facetOnly(cutting_garden_plugins.UnifiedField{
 				Key: facetApproved, Label: "Approved",

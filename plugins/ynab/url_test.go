@@ -38,6 +38,14 @@ func TestClassifyURI_Kinds(t *testing.T) {
 			nodeRef{kind: kindAccount, budget: "Consolidated", accountName: "Checking", id: "acct-1"},
 		},
 		{"ynab://personal/last-used/", nodeRef{kind: kindBudget, budget: "last-used"}},
+		{
+			"ynab://personal/Consolidated/transactions/?date=2026-07",
+			nodeRef{kind: kindTransactions, budget: "Consolidated", date: "2026-07"},
+		},
+		{
+			"ynab://personal/Consolidated/accounts/Checking/?id=a1&date=2026",
+			nodeRef{kind: kindAccount, budget: "Consolidated", accountName: "Checking", id: "a1", date: "2026"},
+		},
 	}
 	for _, tc := range cases {
 		got, err := classifyURI(mustParseURL(t, tc.raw))
@@ -55,12 +63,15 @@ func TestClassifyURI_Kinds(t *testing.T) {
 
 func TestClassifyURI_Rejections(t *testing.T) {
 	for _, raw := range []string{
-		"caldav://personal/",                      // wrong scheme
-		"ynab:///Consolidated/",                   // empty account
-		"ynab://personal/B/payees/",               // unknown section
-		"ynab://personal/B/accounts/A/extra/",     // too deep under accounts
-		"ynab://personal/B/categories/G/C/extra/", // too deep under categories
-		"ynab://personal/B/transactions/t1/extra", // too deep under transactions
+		"caldav://personal/",                             // wrong scheme
+		"ynab:///Consolidated/",                          // empty account
+		"ynab://personal/B/payees/",                      // unknown section
+		"ynab://personal/B/accounts/A/extra/",            // too deep under accounts
+		"ynab://personal/B/categories/G/C/extra/",        // too deep under categories
+		"ynab://personal/B/transactions/t1/extra",        // too deep under transactions
+		"ynab://personal/B/transactions/?date=yesterday", // malformed window
+		"ynab://personal/B/categories/?date=2026",        // window on a node with no transactions
+		"ynab://personal/B/?date=2026",                   // window on a budget
 	} {
 		_, err := classifyURI(mustParseURL(t, raw))
 		if err == nil {

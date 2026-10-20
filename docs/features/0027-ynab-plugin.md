@@ -15,7 +15,7 @@ promotion-criteria: |
 
 # YNAB plugin
 
-Tracks cutting-garden#328. Categorize writes are a separate follow-up issue.
+Tracks cutting-garden#328 (read path) and #331 (categorize/memo/cleared writes).
 
 ## Problem Statement
 
@@ -153,6 +153,37 @@ Because each window is a separate request against a 200/hour budget, windows
 are cached per process (below) and a window fetch is never repeated inside a
 session unless revalidated.
 
+A node URI can carry the window itself: `?date=2026`, `?date=2026-07` or
+`?date=2026-07-15` on a transactions, account or category URI. It is the
+counterpart of the `date` filter for consumers that select by URI and cannot
+push a filter down: `organize`'s anchor (`ynab://acct/Budget/transactions/?date=2026-07`)
+is one, because a `date=` query predicate on an organize selection is not
+pushed to the plugin. It intersects any `date` filter. A malformed value, or one
+on a node with no transactions, is a 400.
+
+### Writes (slice 2, cutting-garden#331)
+
+`PatchNode` on a transaction accepts exactly `category`, `cleared` and `memo`
+and sends one bulk `PATCH /budgets/{id}/transactions` (partial update by id).
+
+- `category` is a category id, `Group/Category`, or a bare name that is unique
+  across the budget; an unknown or ambiguous name is refused with the
+  candidates, never guessed. `null`, empty and non-string values are refused.
+- `cleared` is `cleared` or `uncleared`. Setting `reconciled`, or changing a
+  reconciled transaction, is refused: reconciliation is a deliberate act in YNAB.
+- `memo` is at most 200 characters; `null` clears it.
+- Split parents (their categories live on the legs) and transfers are refused.
+- A patch that changes nothing sends no request and applies nothing; an unknown
+  key costs no request. The response is checked against what was asked, and the
+  budget's cached transactions are invalidated after a write.
+
+Organize drives the same path through the derived facet writes: moving a line
+under another `category=` heading re-categorizes the transaction, a `cleared=`
+heading changes its cleared state, and the `uncategorized` bucket is not a
+valid target. Pinned by `write_test.go` and, through the real binary,
+`zz-tests_bats/ynab.bats` (a patch, two refusals, an organize round trip).
+No live write has been run against a real budget.
+
 ### Caching and rate limit
 
 As built (`cache.go`): the budget list, a budget's accounts and category tree,
@@ -175,7 +206,10 @@ therefore does not implement `FacetVersioner`, and the framework's TTL applies.
 
 ## Limitations
 
-- Read-only. Re-categorizing transactions is a follow-up issue.
+- Writes are limited to three fields on a plain transaction (see Writes).
+  Creating, replacing and deleting nodes are refused, and `BulkMutator` is not
+  implemented: an organize that moves N lines sends N `PATCH` requests against
+  the 200/hour limit.
 - Scheduled transactions, payees, months and goals are not nodes in slice 1.
 - Split transactions surface as one node with a `subtransactions` array; the
   parent's category is `Split`, so category facets count the parent once under
