@@ -175,18 +175,22 @@ func (Plugin) FacetCounts(
 	if err != nil {
 		return cutting_garden_plugins.FacetResult{}, false, err
 	}
+	summary := cutting_garden_plugins.FacetSummary{}
+	if window.empty() {
+		// Contradictory date predicates: nothing can match, and that is a
+		// complete answer. No request is sent.
+		return cutting_garden_plugins.FacetResult{Summary: summary, Complete: true}, true, nil
+	}
 	txns, err := c.transactions(ctx, budgetID, scope, window.since, window.until)
 	if err != nil {
 		return cutting_garden_plugins.FacetResult{}, false, err
 	}
 
+	// The same set the listing shows (visibleTransactions), so a summary
+	// always totals the nodes ListEnriched returns for the same filter.
 	rest := withoutDate(filter)
-	summary := cutting_garden_plugins.FacetSummary{}
-	for _, t := range txns {
-		if t.Deleted {
-			continue
-		}
-		facets := transactionFacets(t)
+	for _, v := range visibleTransactions(txns, window) {
+		facets := transactionFacets(v.row)
 		if !rest.Matches(facets) {
 			continue
 		}

@@ -386,9 +386,9 @@ func TestListEnriched_OtherNodeKindsFallBack(t *testing.T) {
 	}
 }
 
-// Two legs of one split in the same category share a parent: the listing keeps
-// one node, the counting path still counts each leg.
-func TestListing_TwoSplitLegsInOneCategoryListOnceButCountTwice(t *testing.T) {
+// Two legs of one split in the same category share a parent: they are ONE node
+// in both the listing and the summary.
+func TestListing_TwoSplitLegsInOneCategoryAreOneNodeEverywhere(t *testing.T) {
 	srv := newFixture(t)
 	for _, id := range []string{"legA", "legB"} {
 		srv.AddTransaction(ynabtestserver.Transaction{
@@ -409,8 +409,13 @@ func TestListing_TwoSplitLegsInOneCategoryListOnceButCountTwice(t *testing.T) {
 	if parents != 1 {
 		t.Errorf("the split parent was listed %d times, want 1", parents)
 	}
+	// The summary totals exactly the nodes the listing shows (RFC 0012 §12.2):
+	// t1 plus the split once, not once per leg.
 	res := counts(t, raw, dateFilter("2026-10"))
-	if got := res.Summary[facetCategory]["Dining Out"]; got != 3 {
-		t.Errorf("Dining Out count = %d, want 3 (t1 + two legs)", got)
+	if got := res.Summary[facetCategory]["Dining Out"]; got != 2 {
+		t.Errorf("Dining Out count = %d, want 2 (t1 + the split once)", got)
+	}
+	if listed := len(enriched(t, raw, dateFilter("2026-10"))); int64(listed) != res.Summary[facetCategory]["Dining Out"] {
+		t.Errorf("listing shows %d nodes but the summary counts %d", listed, res.Summary[facetCategory]["Dining Out"])
 	}
 }

@@ -37,6 +37,11 @@ type cacheKey struct {
 	detail string
 }
 
+// txnKey addresses one transaction in the by-id index.
+type txnKey struct {
+	scope, budget, id string
+}
+
 type cacheEntry struct {
 	at    time.Time
 	value any
@@ -45,6 +50,10 @@ type cacheEntry struct {
 var (
 	cacheMu      sync.Mutex
 	cacheEntries = map[cacheKey]cacheEntry{}
+	// txnIndex maps a transaction id to its row in the freshest cached
+	// listing that carried it, so a leaf read is a map lookup rather than a
+	// scan of every cached window.
+	txnIndex = map[txnKey]cacheEntry{}
 )
 
 // cacheGet returns a still-fresh entry's value.
@@ -58,37 +67,58 @@ func cacheGet(key cacheKey) (any, bool) {
 	return e.value, true
 }
 
+// cachePut stores a value and evicts everything that has expired, so a
+// long-lived process (cg mcp, serve) holds only what is still fresh: the
+// default window's key changes every day, and month and year drill-downs add
+// more, each retaining a whole transaction slice.
 func cachePut(key cacheKey, value any) {
 	cacheMu.Lock()
 	defer cacheMu.Unlock()
-	cacheEntries[key] = cacheEntry{at: now(), value: value}
+	t := now()
+	evictExpiredLocked(t)
+	cacheEntries[key] = cacheEntry{at: t, value: value}
+
+	switch key.kind {
+	case cacheTransactions:
+		for _, tx := range value.([]Transaction) {
+			// Hybrid rows (a split's leg) are skipped: their id is not the
+			// transaction's, and it is not readable as one.
+			if tx.Type == "" {
+				txnIndex[txnKey{key.scope, key.budget, tx.ID}] = cacheEntry{at: t, value: tx}
+			}
+		}
+	case cacheTransaction:
+		tx := value.(Transaction)
+		txnIndex[txnKey{key.scope, key.budget, tx.ID}] = cacheEntry{at: t, value: tx}
+	}
 }
 
-// cacheFindTransaction looks for transaction id in any still-fresh cached
-// transaction listing of one budget, so a leaf read after a listing costs no
-// request. Hybrid rows (a split's leg) are skipped: their id is not the
-// transaction's.
+// evictExpiredLocked drops every entry older than the freshness window. The
+// caller holds cacheMu.
+func evictExpiredLocked(t time.Time) {
+	for k, e := range cacheEntries {
+		if t.Sub(e.at) >= freshnessWindow {
+			delete(cacheEntries, k)
+		}
+	}
+	for k, e := range txnIndex {
+		if t.Sub(e.at) >= freshnessWindow {
+			delete(txnIndex, k)
+		}
+	}
+}
+
+// cacheFindTransaction looks for transaction id in a still-fresh cached
+// listing (or single read) of one budget, so a leaf read after a listing costs
+// no request.
 func cacheFindTransaction(scope, budget, id string) (Transaction, bool) {
 	cacheMu.Lock()
 	defer cacheMu.Unlock()
-	for key, e := range cacheEntries {
-		if key.scope != scope || key.budget != budget || now().Sub(e.at) >= freshnessWindow {
-			continue
-		}
-		switch key.kind {
-		case cacheTransactions:
-			for _, t := range e.value.([]Transaction) {
-				if t.ID == id && t.Type == "" {
-					return t, true
-				}
-			}
-		case cacheTransaction:
-			if t := e.value.(Transaction); t.ID == id {
-				return t, true
-			}
-		}
+	e, ok := txnIndex[txnKey{scope, budget, id}]
+	if !ok || now().Sub(e.at) >= freshnessWindow {
+		return Transaction{}, false
 	}
-	return Transaction{}, false
+	return e.value.(Transaction), true
 }
 
 // cacheReset empties the cache. Production code never calls it (entries expire
@@ -97,4 +127,5 @@ func cacheReset() {
 	cacheMu.Lock()
 	defer cacheMu.Unlock()
 	cacheEntries = map[cacheKey]cacheEntry{}
+	txnIndex = map[txnKey]cacheEntry{}
 }

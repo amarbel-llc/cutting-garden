@@ -77,30 +77,21 @@ func pick[T any](
 	)
 }
 
-// dupNames returns the set of names that occur more than once in names — the
-// siblings whose minted URI must carry an id tiebreak.
-func dupNames(names []string) map[string]bool {
-	seen := make(map[string]int, len(names))
-	for _, n := range names {
-		seen[n]++
+// repeatedNames returns the set of names that more than one sibling item
+// carries — the siblings whose minted URI must carry an id (a tiebreak, or the
+// id as the segment).
+func repeatedNames[T any](items []T, nameOf func(T) string) map[string]bool {
+	count := make(map[string]int, len(items))
+	for _, it := range items {
+		count[nameOf(it)]++
 	}
 	dups := map[string]bool{}
-	for n, count := range seen {
-		if count > 1 {
-			dups[n] = true
+	for name, n := range count {
+		if n > 1 {
+			dups[name] = true
 		}
 	}
 	return dups
-}
-
-// repeatedNames is dupNames over any sibling items: the names that more than
-// one item carries.
-func repeatedNames[T any](items []T, nameOf func(T) string) map[string]bool {
-	names := make([]string, len(items))
-	for i, it := range items {
-		names[i] = nameOf(it)
-	}
-	return dupNames(names)
 }
 
 // resolveBudgetID maps the URI's budget segment to a YNAB budget id: an alias

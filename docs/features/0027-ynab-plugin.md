@@ -223,6 +223,19 @@ therefore does not implement `FacetVersioner`, and the framework's TTL applies.
   `zz-tests_bats/ynab.bats` (13 cases over the real binary: roots, sections,
   drill-downs, the month and year pushdown, completeness, a rejected token), and
   the `flake.nix` wiring (`CG_TEST_YNAB`).
+- **Slice 1c review fixes (`/code-review high`, 2026-10-20):** the listing and
+  the counting path now share ONE set (`visibleTransactions`), so a summary
+  always totals the nodes the listing shows: rows are re-checked against the
+  window locally (the date predicate is dropped once pushed down, so a server
+  that ignored a bound could not make a month's summary cover later months while
+  claiming completeness), a split's legs in one category are one node in both,
+  and a hybrid leg with no parent id is skipped (its own id is unreadable). A
+  contradictory window (`date=2026` plus `date=2025-12`) is a complete, empty
+  answer with no request. A budget chosen by `?id=` mints its sections under the
+  id. The `category` listing field says `uncategorized` like the facet; an
+  amount without `amount_formatted` is shown as plain units, never raw
+  milliunits. The cache evicts expired entries on each put and finds a leaf by
+  a by-id index; its scope is passed to `newClient` in one place.
 - **Not built:** `FacetVersioner` (above); a live check against a real budget;
   facet counts that roll up across a budget (each count is per
   transaction-bearing node); the subtransaction legs as nodes.

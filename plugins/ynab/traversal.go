@@ -89,10 +89,17 @@ func (Plugin) ListRoots(
 	if ref.kind == kindBudget {
 		// Confirm the budget exists so a mistyped or ambiguous name fails
 		// here, not one level down. An id or alias costs no request.
-		if _, err := resolveBudgetID(ctx, c, ref); err != nil {
+		budgetID, err := resolveBudgetID(ctx, c, ref)
+		if err != nil {
 			return nil, err
 		}
-		return sectionNodes(ref), nil
+		// A budget disambiguated by `?id=` has no room for that query on its
+		// children, so they are minted under the resolved id as the segment.
+		segment := ref.budget
+		if ref.id != "" {
+			segment = budgetID
+		}
+		return sectionNodes(ref, segment), nil
 	}
 	if ref.kind == kindTransaction {
 		return nil, nil
@@ -112,7 +119,7 @@ func (Plugin) ListRoots(
 		if err != nil {
 			return nil, err
 		}
-		return transactionNodes(ctx, c, ref, budgetID, scope, defaultSince(), "", nil)
+		return transactionNodes(ctx, c, ref, budgetID, scope, dateWindow{since: defaultSince()}, nil)
 	case kindCategoryGroup:
 		group, err := resolveCategoryGroup(ctx, c, budgetID, ref)
 		if err != nil {
@@ -188,13 +195,14 @@ func budgetNodes(
 	return nodes, nil
 }
 
-// sectionNodes is a budget's three fixed listing containers.
-func sectionNodes(ref nodeRef) []cutting_garden_plugins.Node {
+// sectionNodes is a budget's three fixed listing containers, minted under
+// budget (the name or id segment the children are addressed by).
+func sectionNodes(ref nodeRef, budget string) []cutting_garden_plugins.Node {
 	sections := []string{sectionAccounts, sectionCategories, sectionTransactions}
 	nodes := make([]cutting_garden_plugins.Node, 0, len(sections))
 	for _, s := range sections {
 		nodes = append(nodes, cutting_garden_plugins.Node{
-			URI:  sectionURI(ref.account, ref.budget, s),
+			URI:  sectionURI(ref.account, budget, s),
 			Name: s,
 			Type: typeSection,
 		})
@@ -278,45 +286,73 @@ func categoryNodes(ref nodeRef, group CategoryGroup) []cutting_garden_plugins.No
 // that satisfy filter (nil keeps all). scope is "" for the whole budget, or
 // the per-account / per-category endpoint path.
 func transactionNodes(
-	ctx context.Context, c *client, ref nodeRef, budgetID, scope, since, until string,
-	filter cutting_garden_plugins.FacetFilter,
+	ctx context.Context, c *client, ref nodeRef, budgetID, scope string,
+	window dateWindow, filter cutting_garden_plugins.FacetFilter,
 ) ([]cutting_garden_plugins.Node, error) {
-	txns, err := c.transactions(ctx, budgetID, scope, since, until)
+	if window.empty() {
+		return nil, nil
+	}
+	txns, err := c.transactions(ctx, budgetID, scope, window.since, window.until)
 	if err != nil {
 		return nil, err
 	}
-	nodes := make([]cutting_garden_plugins.Node, 0, len(txns))
-	seen := make(map[string]bool, len(txns))
-	for _, t := range txns {
-		if t.Deleted {
-			continue
-		}
-		facets := transactionFacets(t)
+	visible := visibleTransactions(txns, window)
+	nodes := make([]cutting_garden_plugins.Node, 0, len(visible))
+	for _, v := range visible {
+		facets := transactionFacets(v.row)
 		if !filter.Matches(facets) {
 			continue
 		}
-		// The per-category endpoint returns a split's leg as its own row
-		// (Type "subtransaction") whose id is NOT readable as a transaction;
-		// address the real parent transaction instead and say it is a leg.
-		// Two legs of one split in the same category share that parent, so a
-		// listing keeps the first (the counting path still counts each leg).
+		nodes = append(nodes, cutting_garden_plugins.Node{
+			URI:    transactionURI(ref.account, ref.budget, v.id),
+			Name:   v.name,
+			Type:   typeTransaction,
+			Facets: facets,
+			Fields: transactionFields(v.row),
+		})
+	}
+	return nodes, nil
+}
+
+// visibleTransaction is one transaction as a node sees it: the id it is
+// addressed by, its display name, and the row its facets derive from.
+type visibleTransaction struct {
+	id, name string
+	row      Transaction
+}
+
+// visibleTransactions is THE set both the listing and the counting path
+// describe (RFC 0012 §12.2), so a summary always totals what the listing shows:
+// rows inside the window (re-checked locally, since the date predicate is
+// dropped once pushed down), not deleted, addressable, and one per node.
+//
+// The per-category endpoint returns a split's leg as its own row (Type
+// "subtransaction") whose id is NOT readable as a transaction, so a leg is
+// addressed by its real parent and labelled as a split leg; two legs of one
+// split in the same category share that parent and are ONE node. A leg whose
+// parent is missing cannot be addressed at all and is skipped. The first row
+// wins, so a split's facet values come from its first leg in the category.
+func visibleTransactions(txns []Transaction, window dateWindow) []visibleTransaction {
+	out := make([]visibleTransaction, 0, len(txns))
+	seen := make(map[string]bool, len(txns))
+	for _, t := range txns {
+		if t.Deleted || !window.contains(t.Date) {
+			continue
+		}
 		id, name := t.ID, transactionName(t)
-		if t.Type == "subtransaction" && t.ParentTransactionID != nil {
+		if t.Type == "subtransaction" {
+			if t.ParentTransactionID == nil || *t.ParentTransactionID == "" {
+				continue
+			}
 			id, name = *t.ParentTransactionID, name+" (split)"
 		}
 		if seen[id] {
 			continue
 		}
 		seen[id] = true
-		nodes = append(nodes, cutting_garden_plugins.Node{
-			URI:    transactionURI(ref.account, ref.budget, id),
-			Name:   name,
-			Type:   typeTransaction,
-			Facets: facets,
-			Fields: transactionFields(t),
-		})
+		out = append(out, visibleTransaction{id: id, name: name, row: t})
 	}
-	return nodes, nil
+	return out
 }
 
 // transactionName is a transaction's display label: date, payee, amount.
@@ -325,10 +361,32 @@ func transactionName(t Transaction) string {
 	if t.PayeeName != nil && *t.PayeeName != "" {
 		parts = append(parts, *t.PayeeName)
 	}
-	if t.AmountFormatted != "" {
-		parts = append(parts, t.AmountFormatted)
-	} else {
-		parts = append(parts, fmt.Sprintf("%d", t.Amount))
-	}
+	parts = append(parts, amountLabel(t))
 	return strings.Join(parts, " ")
+}
+
+// amountLabel is a transaction's amount as shown: YNAB's own formatted string
+// (in the budget's currency format) when the response carries one, else the
+// milliunits as plain units. It never shows raw milliunits, which next to
+// formatted rows would read as a thousandfold error.
+func amountLabel(t Transaction) string {
+	if t.AmountFormatted != "" {
+		return t.AmountFormatted
+	}
+	return formatMilliunits(t.Amount)
+}
+
+// formatMilliunits renders a milliunit amount as units with two decimals, or
+// three when the amount has a sub-cent part ("-12340" → "-12.34", "1" →
+// "0.001"). It carries no currency symbol: the response did not say which.
+func formatMilliunits(m int64) string {
+	sign := ""
+	if m < 0 {
+		sign, m = "-", -m
+	}
+	whole, frac := m/1000, m%1000
+	if frac%10 == 0 {
+		return fmt.Sprintf("%s%d.%02d", sign, whole, frac/10)
+	}
+	return fmt.Sprintf("%s%d.%03d", sign, whole, frac)
 }

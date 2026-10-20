@@ -110,6 +110,18 @@ type Server struct {
 	transactions []Transaction
 
 	requests int
+	// ignoreDates makes the transaction endpoints disregard since_date and
+	// until_date, simulating a server that does not honour a bound, so a test
+	// can prove the plugin re-checks the window itself.
+	ignoreDates bool
+}
+
+// IgnoreDateBounds makes the transaction endpoints return rows regardless of
+// since_date / until_date (a misbehaving-server simulation).
+func (s *Server) IgnoreDateBounds(ignore bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ignoreDates = ignore
 }
 
 // Start launches a server that requires the given bearer token (empty
@@ -327,10 +339,10 @@ func (s *Server) serveTransactions(
 		if t.BudgetID != budgetID || !keep(t) {
 			continue
 		}
-		if since != "" && t.Date < since {
+		if !s.ignoreDates && since != "" && t.Date < since {
 			continue
 		}
-		if until != "" && t.Date > until {
+		if !s.ignoreDates && until != "" && t.Date > until {
 			continue
 		}
 		out = append(out, t)

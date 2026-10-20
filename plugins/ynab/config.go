@@ -138,23 +138,26 @@ func (Plugin) Roots(context.Context) ([]*url.URL, error) {
 	return roots, nil
 }
 
-// RootLabels labels each account root with the account name. Pure: no network.
+// RootLabels labels each account root with the account name (its display
+// label: the account has no server-side name to fetch). Pure: no network.
 func (Plugin) RootLabels(context.Context) (map[string]string, error) {
-	labels := make(map[string]string, len(configuredAccounts))
-	for _, acct := range configuredAccounts {
-		labels[accountRootURI(acct.Name).String()] = acct.Name
-	}
-	return labels, nil
+	return rootNames(), nil
 }
 
 // RootNames reports each configured account's `name` against its root URI
 // (RFC 0020 §3.4). No I/O.
 func (Plugin) RootNames(context.Context) (map[string]string, error) {
+	return rootNames(), nil
+}
+
+// rootNames keys each configured account's name by its root URI. Both
+// RootLabels and RootNames are this map: a ynab account's label IS its name.
+func rootNames() map[string]string {
 	names := make(map[string]string, len(configuredAccounts))
 	for _, acct := range configuredAccounts {
 		names[accountRootURI(acct.Name).String()] = acct.Name
 	}
-	return names, nil
+	return names
 }
 
 // accountByName returns the configured account whose Name equals name.

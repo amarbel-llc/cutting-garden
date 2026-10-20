@@ -2,7 +2,6 @@ package ynab
 
 import (
 	"context"
-	"fmt"
 	"net/url"
 
 	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
@@ -42,18 +41,18 @@ func transactionFields(t Transaction) map[string]any {
 	}
 	put(facetDate, t.Date)
 	put(facetAccount, t.AccountName)
-	if t.CategoryName != nil {
-		put(facetCategory, *t.CategoryName)
+	// The same value the category facet groups under, so a table's Category
+	// column and the summary never disagree about an uncategorized row.
+	category := valueUncategorized
+	if t.CategoryName != nil && *t.CategoryName != "" {
+		category = *t.CategoryName
 	}
+	put(facetCategory, category)
 	if t.PayeeName != nil {
 		put(facetPayee, *t.PayeeName)
 	}
 	put(facetCleared, t.Cleared)
-	if t.AmountFormatted != "" {
-		put(listingAmount, t.AmountFormatted)
-	} else {
-		put(listingAmount, fmt.Sprintf("%d", t.Amount))
-	}
+	put(listingAmount, amountLabel(t))
 	if t.Memo != nil {
 		put(listingMemo, *t.Memo)
 	}
@@ -98,9 +97,7 @@ func (Plugin) ListEnriched(
 	if err != nil {
 		return nil, false, err
 	}
-	nodes, err := transactionNodes(
-		ctx, c, ref, budgetID, scope, window.since, window.until, withoutDate(filter),
-	)
+	nodes, err := transactionNodes(ctx, c, ref, budgetID, scope, window, withoutDate(filter))
 	if err != nil {
 		return nil, false, err
 	}

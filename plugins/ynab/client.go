@@ -44,13 +44,15 @@ type client struct {
 	scope string
 }
 
-func newClient(base, token string) *client {
-	base = strings.TrimRight(base, "/")
+// newClient builds a client for base and token whose cache entries live under
+// scope; clientFor is the one production caller and passes the account plus
+// the base, so the isolation the cache promises is defined in one place.
+func newClient(base, token, scope string) *client {
 	return &client{
-		base:  base,
+		base:  strings.TrimRight(base, "/"),
 		token: token,
 		http:  &http.Client{Timeout: requestTimeout},
-		scope: base,
+		scope: scope,
 	}
 }
 
@@ -70,9 +72,8 @@ func clientFor(acct config_common.Account) (*client, error) {
 	if err != nil {
 		return nil, errors.Wrapf(err, "ynab plugin: account %q", acct.Name)
 	}
-	c := newClient(apiBaseFor(acct), token)
-	c.scope = acct.Name + "|" + c.base
-	return c, nil
+	base := apiBaseFor(acct)
+	return newClient(base, token, acct.Name+"|"+strings.TrimRight(base, "/")), nil
 }
 
 // get issues GET base+path with query and decodes the success body into out.

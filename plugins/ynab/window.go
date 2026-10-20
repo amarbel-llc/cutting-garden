@@ -19,6 +19,24 @@ type dateWindow struct {
 	explicit bool
 }
 
+// empty reports a contradictory window (since after until, as from
+// `date=2026` plus `date=2025-12`): nothing can match, so no request is sent.
+func (w dateWindow) empty() bool {
+	return w.until != "" && w.since > w.until
+}
+
+// contains reports whether a YYYY-MM-DD date falls inside the window. The
+// server is asked for exactly this window, but the plugin re-checks every row
+// it gets back: the pushed-down date predicate is dropped from the filter, so
+// without this a server that ignored a bound would make a month's summary
+// cover the following months while reporting itself complete.
+func (w dateWindow) contains(date string) bool {
+	if date < w.since {
+		return false
+	}
+	return w.until == "" || date <= w.until
+}
+
 // windowFromFilter derives the request window from filter's date predicates:
 // `date=2026` is the year, `date=2026-07` the month, `date=2026-07-15` the
 // day. Several date predicates intersect, as the filter's predicates are
