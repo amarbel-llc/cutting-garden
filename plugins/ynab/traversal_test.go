@@ -34,6 +34,8 @@ func str(s string) *string { return &s }
 func newFixture(t *testing.T) *ynabtestserver.Server {
 	t.Helper()
 	t.Setenv(testTokenEnv, testToken)
+	cacheReset()
+	t.Cleanup(cacheReset)
 	srv := ynabtestserver.Start(testToken)
 	t.Cleanup(srv.Close)
 
@@ -143,6 +145,7 @@ func TestListRoots_BudgetListingRejectsUnknownAndAmbiguousNames(t *testing.T) {
 		t.Errorf("unknown budget: want a 400, got %v", err)
 	}
 	srv.AddBudget(ynabtestserver.Budget{ID: "b3", Name: "Consolidated"})
+	cacheReset() // the budget list the first call cached predates b3
 	_, err = (Plugin{}).ListRoots(context.Background(), mustParseURL(t, "ynab://personal/Consolidated/"))
 	if err == nil || !errors.Is400BadRequest(err) || !strings.Contains(err.Error(), "?id=") {
 		t.Errorf("ambiguous budget: want a 400 naming ?id=, got %v", err)

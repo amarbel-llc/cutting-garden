@@ -38,13 +38,19 @@ type client struct {
 	base  string
 	token string
 	http  *http.Client
+	// scope keys this client's entries in the freshness cache (cache.go):
+	// the config account plus the API base, so two accounts, or a test server
+	// and the real API, never share an entry.
+	scope string
 }
 
 func newClient(base, token string) *client {
+	base = strings.TrimRight(base, "/")
 	return &client{
-		base:  strings.TrimRight(base, "/"),
+		base:  base,
 		token: token,
 		http:  &http.Client{Timeout: requestTimeout},
+		scope: base,
 	}
 }
 
@@ -64,7 +70,9 @@ func clientFor(acct config_common.Account) (*client, error) {
 	if err != nil {
 		return nil, errors.Wrapf(err, "ynab plugin: account %q", acct.Name)
 	}
-	return newClient(apiBaseFor(acct), token), nil
+	c := newClient(apiBaseFor(acct), token)
+	c.scope = acct.Name + "|" + c.base
+	return c, nil
 }
 
 // get issues GET base+path with query and decodes the success body into out.
@@ -141,29 +149,47 @@ func snippet(b []byte) string {
 	return s[:cut] + "…"
 }
 
-// --- typed reads (one request each) ---
+// --- typed reads (one request each on a cache miss; see cache.go) ---
+//
+// Cached slices are shared between callers and MUST NOT be mutated; the
+// live* helpers and every caller here build new slices instead.
 
 func (c *client) budgets(ctx context.Context) ([]Budget, error) {
+	key := cacheKey{scope: c.scope, kind: cacheBudgets}
+	if v, ok := cacheGet(key); ok {
+		return v.([]Budget), nil
+	}
 	var r budgetsResponse
 	if err := c.get(ctx, budgetsPath, nil, &r); err != nil {
 		return nil, err
 	}
+	cachePut(key, r.Data.Budgets)
 	return r.Data.Budgets, nil
 }
 
 func (c *client) accounts(ctx context.Context, budgetID string) ([]Account, error) {
+	key := cacheKey{scope: c.scope, kind: cacheAccounts, budget: budgetID}
+	if v, ok := cacheGet(key); ok {
+		return v.([]Account), nil
+	}
 	var r accountsResponse
 	if err := c.get(ctx, budgetPath(budgetID)+"/accounts", nil, &r); err != nil {
 		return nil, err
 	}
+	cachePut(key, r.Data.Accounts)
 	return r.Data.Accounts, nil
 }
 
 func (c *client) categoryGroups(ctx context.Context, budgetID string) ([]CategoryGroup, error) {
+	key := cacheKey{scope: c.scope, kind: cacheCategories, budget: budgetID}
+	if v, ok := cacheGet(key); ok {
+		return v.([]CategoryGroup), nil
+	}
 	var r categoriesResponse
 	if err := c.get(ctx, budgetPath(budgetID)+"/categories", nil, &r); err != nil {
 		return nil, err
 	}
+	cachePut(key, r.Data.CategoryGroups)
 	return r.Data.CategoryGroups, nil
 }
 
@@ -179,6 +205,13 @@ func (c *client) transactions(
 		path += "/" + scope
 	}
 	path += "/transactions"
+	key := cacheKey{
+		scope: c.scope, kind: cacheTransactions, budget: budgetID,
+		detail: scope + "|" + since + "|" + until,
+	}
+	if v, ok := cacheGet(key); ok {
+		return v.([]Transaction), nil
+	}
 	q := url.Values{}
 	if since != "" {
 		q.Set("since_date", since)
@@ -190,14 +223,22 @@ func (c *client) transactions(
 	if err := c.get(ctx, path, q, &r); err != nil {
 		return nil, err
 	}
+	cachePut(key, r.Data.Transactions)
 	return r.Data.Transactions, nil
 }
 
+// transaction reads one transaction. A transaction already in a fresh cached
+// listing of the budget is served from it, so reading what a listing just
+// showed costs no request.
 func (c *client) transaction(ctx context.Context, budgetID, id string) (Transaction, error) {
+	if t, ok := cacheFindTransaction(c.scope, budgetID, id); ok {
+		return t, nil
+	}
 	var r transactionResponse
 	if err := c.get(ctx, budgetPath(budgetID)+"/transactions/"+url.PathEscape(id), nil, &r); err != nil {
 		return Transaction{}, err
 	}
+	cachePut(cacheKey{scope: c.scope, kind: cacheTransaction, budget: budgetID, detail: id}, r.Data.Transaction)
 	return r.Data.Transaction, nil
 }
 
