@@ -201,7 +201,9 @@ plugin therefore fetches the JMAP Session object from
 	Session endpoint for this one account; every later JMAP call follows the
 	*apiUrl* the session it returns advertises. It exists so a test harness
 	(the bats *organize_fastmail* lane's in-memory JMAP server) can stand in
-	for Fastmail. *[ynab]* reads the same key as an API base URL (next
+	for Fastmail. The access token is sent to this URL on every request, so
+	plaintext *http* is accepted only for a loopback host (*localhost*,
+	*127.0.0.1*, *::1*); any other host must use *https*. *[ynab]* reads the same key as an API base URL (next
 	section). Other account-bearing plugins (*[caldav]*, *[jira]*), whose
 	*url* already names the server, ignore it.
 

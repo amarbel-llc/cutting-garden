@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"code.linenisgreat.com/cutting-garden/pkgs/config_common"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
 func account(name, rawURL string) config_common.Account {
@@ -21,6 +22,9 @@ func TestValidate_Accepts(t *testing.T) {
 		account("personal", "fastmail://personal/"),
 		account("work", "fastmail://work/"),
 		withSessionURL(account("test", "fastmail://test/"), "http://127.0.0.1:43113/jmap/session"),
+		withSessionURL(account("local", "fastmail://local/"), "http://localhost:43113/jmap/session"),
+		withSessionURL(account("v6", "fastmail://v6/"), "http://[::1]:43113/jmap/session"),
+		withSessionURL(account("proxy", "fastmail://proxy/"), "https://jmap.proxy.example/session"),
 	}}
 	if err := cfg.Validate(); err != nil {
 		t.Errorf("Validate: %v", err)
@@ -42,10 +46,22 @@ func TestValidate_Rejects(t *testing.T) {
 		"non-http session_url": {Accounts: []config_common.Account{
 			withSessionURL(account("x", "fastmail://x/"), "ftp://host/jmap/session"),
 		}},
+		// The bearer token goes to this URL on every request (#332).
+		"plaintext http to a non-loopback host": {Accounts: []config_common.Account{
+			withSessionURL(account("x", "fastmail://x/"), "http://example.com/jmap/session"),
+		}},
+		"plaintext http to a non-loopback IP": {Accounts: []config_common.Account{
+			withSessionURL(account("x", "fastmail://x/"), "http://192.0.2.7/jmap/session"),
+		}},
 	}
 	for name, cfg := range cases {
-		if err := cfg.Validate(); err == nil {
+		err := cfg.Validate()
+		if err == nil {
 			t.Errorf("Validate(%s) = nil, want error", name)
+			continue
+		}
+		if !errors.Is400BadRequest(err) {
+			t.Errorf("Validate(%s): want EX_USAGE (400 bad request), got %v", name, err)
 		}
 	}
 }
