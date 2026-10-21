@@ -217,6 +217,20 @@ func (Plugin) FacetCounts(
 	}, true, nil
 }
 
+// RefusesFacetFold says the framework fold must not take over where
+// FacetCounts declined (cutting_garden_plugins.FacetFoldRefuser). Every node
+// that does not list transactions is declined above (the account root, a
+// budget, its accounts/categories/payees sections, a category group, a single
+// transaction or payee), and the fold would walk those subtrees through
+// ListRoots: descending every account and category container fetches its
+// transactions, one request each, from the 200-per-hour budget — on a timer,
+// since the host warms and refreshes the roots' summaries without a read. So a
+// declined node stays "no facet summary available", with no request.
+func (Plugin) RefusesFacetFold(node *url.URL) bool {
+	ref, err := classifyURI(node)
+	return err != nil || !bearsTransactions(ref.kind)
+}
+
 // liftFacets folds one transaction's facet values into summary: +1 per
 // (dimension, value key). The per-node "lift" of RFC 0012 §3.
 func liftFacets(

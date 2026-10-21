@@ -227,6 +227,17 @@ type FacetDimension = internal.FacetDimension
 // RFC 0012 §6.
 type FacetFilter = internal.FacetFilter
 
+// FacetFoldRefuser is the OPTIONAL capability of a plugin whose FacetCounts
+// declines (ok == false) for some nodes where the framework fold must NOT
+// take over: the fold would descend the subtree through ListRoots, which for a
+// rate-limited or per-call-priced backend costs far more than the summary is
+// worth (ynab's budget and account roots: every account's transactions are
+// fetched). RFC 0012 §4 hands a declined node to the fold; this is the
+// plugin's way to say "no summary here, and do not walk" for exactly those
+// nodes, restoring the plain "no facet summary available" answer with no
+// ListRoots call. A plugin that does not implement it keeps the §4 behavior.
+type FacetFoldRefuser = internal.FacetFoldRefuser
+
 // FacetGap says why one dimension of a FacetResult is not exhaustive (RFC 0012
 // §5.1).
 type FacetGap = internal.FacetGap

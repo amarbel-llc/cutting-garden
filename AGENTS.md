@@ -84,7 +84,10 @@ fold (`FoldFacets` via `ResolveFacetCounts`, RFC 0012 §4.2): it lifts
 `Node.Facets` from every descendant through `ListRoots`, bounded at
 `FacetFoldVisitLimit` visited nodes and `FacetFoldListLimit` `ListRoots` calls
 and marked incomplete past either; the summarized node's own facets are not
-counted. A summary that is partial for just one capped dimension says
+counted. A plugin whose fold would be ruinous (ynab: every account and category
+container fetches its transactions, and the host warms and refreshes root
+summaries on a timer) implements `FacetFoldRefuser`, so its declined nodes stay
+"no facet summary available" with no `ListRoots` call. A summary that is partial for just one capped dimension says
 which (`FacetResult.Incomplete`, RFC 0012 §5.1; ynab's payee, fastmail's
 sender) instead of marking the whole summary partial. Both, with
 no URI, aggregate every plugin's **roots** (the `RootProvider` capability)

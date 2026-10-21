@@ -16,6 +16,24 @@ const (
 	FacetFoldListLimit  = 200
 )
 
+// FacetFoldRefuser is the OPTIONAL capability of a plugin whose FacetCounts
+// declines (ok == false) for some nodes where the framework fold must NOT
+// take over: the fold would descend the subtree through ListRoots, which for a
+// rate-limited or per-call-priced backend costs far more than the summary is
+// worth (ynab's budget and account roots: every account's transactions are
+// fetched). RFC 0012 §4 hands a declined node to the fold; this is the
+// plugin's way to say "no summary here, and do not walk" for exactly those
+// nodes, restoring the plain "no facet summary available" answer with no
+// ListRoots call. A plugin that does not implement it keeps the §4 behavior.
+type FacetFoldRefuser interface {
+	RootLister
+
+	// RefusesFacetFold reports whether the framework fold must not run for
+	// node after FacetCounts has declined it. It is a pure, request-free
+	// classification of the URI; node MUST be non-nil.
+	RefusesFacetFold(node *url.URL) bool
+}
+
 // CanSummarizeFacets reports whether the framework can produce a facet
 // summary for lister's nodes at all: either the plugin may answer one-shot
 // (FacetCounter) or it declares a schema the framework fold can read
@@ -43,6 +61,9 @@ func ResolveFacetCounts(
 		if err != nil || ok {
 			return result, ok, err
 		}
+	}
+	if refuser, isRefuser := lister.(FacetFoldRefuser); isRefuser && refuser.RefusesFacetFold(node) {
+		return FacetResult{}, false, nil
 	}
 	return FoldFacets(ctx, lister, node, filter)
 }

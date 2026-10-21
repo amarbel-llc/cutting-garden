@@ -94,7 +94,12 @@ See RFC 0012 §4 for the rule and §4.2 for the fold's exact shape
 and is bounded - 10000 visited nodes and 200 *ListRoots* calls (*FacetFoldVisitLimit*,
 *FacetFoldListLimit*); past either the result is *Complete* false. Each
 *ListRoots* call may be a network round trip, so put your facets on the nodes
-you already list, never behind a per-node fetch.
+you already list, never behind a per-node fetch. If the fold would cost more
+than it is worth on the nodes you decline (every container's listing is a paid
+request, and the host summarizes your roots at startup and on a timer, with no
+user read), implement *FacetFoldRefuser*: *RefusesFacetFold(node)* true makes
+the declined node answer "no facet summary" with no *ListRoots* call. ynab does
+this for every node that does not list transactions.
 
 This rule is bounded to declining WHOLESALE: returning *ok == false* so
 the whole request falls through to a framework fallback. Omitting a single

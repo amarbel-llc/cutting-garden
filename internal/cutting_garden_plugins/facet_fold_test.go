@@ -275,6 +275,36 @@ func TestResolveFacetCounts_DeclineFallsBackToFold(t *testing.T) {
 	}
 }
 
+// refusingCounterLister is a decliner that forbids the fold for some nodes.
+type refusingCounterLister struct {
+	*countingCounterLister
+	refuse map[string]bool
+}
+
+func (r *refusingCounterLister) RefusesFacetFold(node *url.URL) bool {
+	return r.refuse[node.String()]
+}
+
+func TestResolveFacetCounts_ARefusedFoldDeclinesWithoutWalking(t *testing.T) {
+	c := &refusingCounterLister{
+		countingCounterLister: &countingCounterLister{foldLister: newFoldTree(), ok: false},
+		refuse:                map[string]bool{"fold://t/": true},
+	}
+	_, ok, err := ResolveFacetCounts(context.Background(), c, mustParse(t, "fold://t/"), nil)
+	if err != nil || ok {
+		t.Fatalf("ResolveFacetCounts = ok %v, err %v; want a clean decline", ok, err)
+	}
+	if c.listCalls != 0 {
+		t.Errorf("a refused fold made %d ListRoots calls, want 0", c.listCalls)
+	}
+
+	// A node the refuser does not name still folds.
+	_, ok, err = ResolveFacetCounts(context.Background(), c, mustParse(t, "fold://t/d/"), nil)
+	if err != nil || !ok {
+		t.Fatalf("an unrefused node: ok %v, err %v; want the fold's summary", ok, err)
+	}
+}
+
 func TestCanSummarizeFacets(t *testing.T) {
 	if !CanSummarizeFacets(newFoldTree()) {
 		t.Error("a FacetDescriber can be folded")
