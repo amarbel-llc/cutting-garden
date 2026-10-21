@@ -225,7 +225,9 @@ func (Plugin) FacetCounts(
 // ListRoots: descending every account and category container fetches its
 // transactions, one request each, from the 200-per-hour budget — on a timer,
 // since the host warms and refreshes the roots' summaries without a read. So a
-// declined node stays "no facet summary available", with no request.
+// declined node stays "no facet summary available", with no request. This
+// mirrors FacetCounts' decline test (a node that does not bear transactions);
+// change them together.
 func (Plugin) RefusesFacetFold(node *url.URL) bool {
 	ref, err := classifyURI(node)
 	return err != nil || !bearsTransactions(ref.kind)

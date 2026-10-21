@@ -26,8 +26,6 @@ const (
 // nodes, restoring the plain "no facet summary available" answer with no
 // ListRoots call. A plugin that does not implement it keeps the §4 behavior.
 type FacetFoldRefuser interface {
-	RootLister
-
 	// RefusesFacetFold reports whether the framework fold must not run for
 	// node after FacetCounts has declined it. It is a pure, request-free
 	// classification of the URI; node MUST be non-nil.

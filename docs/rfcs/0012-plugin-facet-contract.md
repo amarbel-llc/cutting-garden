@@ -312,6 +312,14 @@ as follows, and a conformant consumer MUST observe the result:
    and 200 `ListRoots` calls (§8). A plugin that needs a container's own
    facets counted implements `FacetCounter`.
 
+   *Refusing the fold (cutting-garden).* A plugin whose declined nodes would
+   cost paid requests to fold (every container listing is a billed API call,
+   and the host summarizes the configured roots at startup and on a timer, with
+   no read to prompt it) MAY implement the optional `FacetFoldRefuser`
+   (`RefusesFacetFold(node) bool`). When `FacetCounts` declines a node it
+   refuses, the framework does NOT fold and reports no summary for it.
+   In-process only for now; a wire plugin cannot declare it.
+
 The framework fold is the path for genuinely incremental (level-at-a-time)
 plugins. A plugin that can answer in one operation SHOULD implement
 `FacetCounter` rather than rely on the fold, because re-walking a subtree the
