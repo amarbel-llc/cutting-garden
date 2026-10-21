@@ -42,6 +42,13 @@ func (Plugin) ReadLeaf(
 		if err != nil {
 			return cutting_garden_plugins.LeafContent{}, false, err
 		}
+		// A deleted payee is not listed and cannot be renamed, so it is not
+		// readable either (the by-id endpoint still returns it).
+		if payee.Deleted {
+			return cutting_garden_plugins.LeafContent{}, false, errors.BadRequestf(
+				"ynab plugin: no payee with id %q", ref.payeeID,
+			)
+		}
 		body = payee
 	} else {
 		txn, err := c.transaction(ctx, budgetID, ref.txnID)

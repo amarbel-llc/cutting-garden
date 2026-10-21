@@ -12,10 +12,10 @@ import (
 )
 
 const (
-	// typeBudget is a YNAB budget — a container of the three sections.
+	// typeBudget is a YNAB budget — a container of the four sections.
 	typeBudget = "cutting_garden-ynab-budget-v1"
-	// typeSection is one of a budget's three listing containers
-	// (accounts/, categories/, transactions/).
+	// typeSection is one of a budget's four listing containers
+	// (accounts/, categories/, transactions/, payees/).
 	typeSection = "cutting_garden-ynab-section-v1"
 	// typeAccount is a budget account — a container of its transactions.
 	typeAccount = "cutting_garden-ynab-account-v1"

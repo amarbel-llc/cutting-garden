@@ -248,6 +248,10 @@ sends one `PATCH /budgets/{id}/payees/{payee_id}` (`{"payee": {"name": …}}`).
   not changed: its payee is the other account, and repointing it would break the
   transfer. A transaction cannot be left without a payee, so `null`, empty and
   non-string values are refused.
+- The target is resolved from a payee list read fresh (a cleanup runs alongside
+  YNAB's own UI, where merges happen, so a payee merged away or made a moment ago
+  must not be resolved from a cached list). A repoint therefore costs three
+  requests: the transaction, the payee list and the write.
 - It rides the same single bulk request as the other fields, and a reconciled
   transaction's payee is not locked (only its cleared state is).
 
@@ -282,7 +286,8 @@ therefore does not implement `FacetVersioner`, and the framework's TTL applies.
   memo, payee) and a payee's name (see Writes and Payees). Creating, replacing
   and deleting nodes are refused, and `BulkMutator` is not implemented: an
   organize that moves N lines sends N transaction `PATCH` requests, each
-  preceded by a fresh read of its transaction, against the 200/hour limit.
+  preceded by a fresh read of its transaction (and, for a payee move, a fresh
+  payee list), against the 200/hour limit; cutting-garden#334.
 - Payees cannot be merged, created or deleted from here (YNAB's API has no
   merge). Renaming a payee onto a name another holds is refused.
 - Scheduled transactions, months and goals are not nodes.

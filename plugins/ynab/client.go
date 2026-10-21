@@ -265,7 +265,8 @@ func (c *client) payee(ctx context.Context, budgetID, id string) (Payee, error) 
 }
 
 // renamePayee renames one payee (`PATCH /budgets/{id}/payees/{payee_id}`) and
-// returns the payee as YNAB saved it. It is the plugin's ONLY payee write. It
+// returns the payee as YNAB saved it. It is the plugin's only payee write (the
+// other write is patchTransactions). It
 // invalidates the budget's cached payees and transactions whatever the outcome:
 // transactions carry the payee's name, and a timeout may follow a rename YNAB
 // did apply.
@@ -348,7 +349,8 @@ func (c *client) freshTransaction(ctx context.Context, budgetID, id string) (Tra
 // transaction's "id" plus only the fields to change; an explicit nil value is
 // sent as JSON null (clearing a memo), an absent key leaves the field alone.
 //
-// It is the plugin's ONLY write call. It invalidates the budget's cached
+// It is the plugin's only TRANSACTION write (renamePayee is the only payee
+// write; the two are its whole write surface). It invalidates the budget's cached
 // transactions on success: a listing cached before the write would otherwise
 // keep serving the old category for up to a minute (cache.go).
 func (c *client) patchTransactions(

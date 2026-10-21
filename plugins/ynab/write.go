@@ -431,11 +431,19 @@ func deref(s *string) string {
 // the opposite of tidying them. A name shared by two payees is refused with the
 // ids, and a transfer payee is refused outright: pointing a transaction at one
 // is how YNAB represents a transfer, which is not a payee change.
+//
+// The payee list is read fresh, like the transaction it is checked against: a
+// cleanup is done alongside YNAB's own UI (merges happen there), so a payee
+// merged away or created a moment ago must not be resolved from a list cached
+// before. Matching is exact on id or name; the rename guard's case-insensitive
+// collision check (payee_write.go) is deliberately stricter.
 func resolvePayeeRef(ctx context.Context, c *client, budgetID, ref string) (Payee, error) {
-	payees, err := c.payees(ctx, budgetID)
+	payees, err := c.freshPayees(ctx, budgetID)
 	if err != nil {
 		return Payee{}, err
 	}
+	// What was just read is at least as fresh as anything cached.
+	cachePut(cacheKey{scope: c.scope, kind: cachePayees, budget: budgetID}, payees)
 	var byID, byName []Payee
 	for _, p := range livePayees(payees) {
 		switch {

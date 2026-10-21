@@ -380,6 +380,35 @@ func TestPatchNode_PayeeRefusals(t *testing.T) {
 	}
 }
 
+// The target payee is resolved from a fresh list, not the one cached by an
+// earlier listing: a payee made in YNAB's own UI a moment ago must resolve, and
+// the repoint costs the transaction read, the payee list and the write.
+func TestPatchNode_PayeeIsResolvedFreshNotFromACachedListing(t *testing.T) {
+	srv := newFixture(t)
+	list(t, payeePrefix) // caches the payee list
+	srv.AddPayee(ynabtestserver.Payee{BudgetID: "b1", ID: "p-new", Name: "Made In YNAB"})
+
+	before := srv.Requests()
+	if got := mustPatch(t, "t2", `{"payee":"Made In YNAB"}`); !slices.Equal(got, []string{"payee"}) {
+		t.Fatalf("applied = %v; a payee created after the listing was not resolved", got)
+	}
+	if n := srv.Requests() - before; n != 3 {
+		t.Errorf("repointing a listed transaction cost %d requests, want 3 (fresh read + fresh payees + write)", n)
+	}
+}
+
+// A deleted payee is not listed or renamable, and it is not readable either,
+// although YNAB's by-id endpoint still returns it.
+func TestReadLeaf_ADeletedPayeeIsNotReadable(t *testing.T) {
+	srv := newFixture(t)
+	srv.AddPayee(ynabtestserver.Payee{BudgetID: "b1", ID: "p-gone", Name: "Gone Cafe", Deleted: true})
+	cacheReset()
+	_, ok, err := (Plugin{}).ReadLeaf(context.Background(), mustParseURL(t, payeePrefix+"p-gone"))
+	if err == nil || !errors.Is400BadRequest(err) || ok {
+		t.Errorf("ReadLeaf(deleted payee) = ok %v, err %v; want a 400", ok, err)
+	}
+}
+
 func TestPatchNode_AlreadyThatPayeeWritesNothing(t *testing.T) {
 	srv := newFixture(t)
 	applied := mustPatch(t, "t1", `{"payee":"Corner Cafe"}`)
