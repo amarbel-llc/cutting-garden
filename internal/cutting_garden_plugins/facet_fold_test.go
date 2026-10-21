@@ -182,6 +182,33 @@ func TestFoldFacets_ListBoundMarksResultPartial(t *testing.T) {
 	}
 }
 
+func TestFoldFacets_CycleIsWalkedOnce(t *testing.T) {
+	l := &foldLister{dims: foldDims, tree: map[string][]Node{
+		"fold://t/": {
+			foldNode("fold://t/a", "item", kind("x")),
+			foldNode("fold://t/loop/", "dir", nil),
+		},
+		"fold://t/loop/": {
+			foldNode("fold://t/loop/b", "item", kind("x")),
+			foldNode("fold://t/", "dir", nil), // back to the start
+			foldNode("fold://t/loop/", "dir", nil),
+		},
+	}}
+	result, _, err := FoldFacets(context.Background(), l, mustParse(t, "fold://t/"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := result.Summary["kind"]["x"]; got != 2 {
+		t.Errorf("counted %d, want 2 (a, loop/b once each)", got)
+	}
+	if l.listCalls != 2 {
+		t.Errorf("ListRoots calls = %d, want 2 (each container once)", l.listCalls)
+	}
+	if !result.IsComplete() {
+		t.Error("a cycle that was cut short deliberately is still a complete walk")
+	}
+}
+
 func TestFoldFacets_VisitBoundMarksResultPartial(t *testing.T) {
 	children := make([]Node, FacetFoldVisitLimit+3)
 	for i := range children {

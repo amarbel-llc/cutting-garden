@@ -85,6 +85,7 @@ func FoldFacets(
 		filter:   filter,
 		declared: declared,
 		summary:  FacetSummary{},
+		walked:   map[string]bool{},
 	}
 	if err := fold.walk(ctx, node); err != nil {
 		return FacetResult{}, false, err
@@ -97,12 +98,20 @@ type facetFold struct {
 	filter    FacetFilter
 	declared  map[string]bool
 	summary   FacetSummary
+	walked    map[string]bool
 	visited   int
 	listed    int
 	truncated bool
 }
 
 func (f *facetFold) walk(ctx context.Context, node *url.URL) error {
+	// A container reachable twice (an alias, a symlink or bookmark loop) is
+	// walked once: a second walk would double-count its children and burn the
+	// list budget on a cycle.
+	if f.walked[node.String()] {
+		return nil
+	}
+	f.walked[node.String()] = true
 	if f.listed >= FacetFoldListLimit {
 		f.truncated = true
 		return nil
