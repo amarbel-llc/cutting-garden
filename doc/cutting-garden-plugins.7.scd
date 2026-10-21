@@ -166,7 +166,11 @@ tool call, an mcp resource read, one *list* invocation each run inside
 *UnconfirmForThisCall(ctx, key)* after your own write so a later read in the
 same call sees it. Namespace the key by plugin and account. Outside a scope
 (a test, a caller that never marked one) nothing is confirmed, so every load
-revalidates: the safe default. org is the reference (cutting-garden#311). A
+revalidates: the safe default, and *InCallScope(ctx)* tells you which case you
+are in. The host marks mcp tool calls, mcp resource reads and *list* today;
+*organize*, the wire server handlers and the facet/listing cache refresh loops
+do not yet, so a walk there revalidates per node. A scope must not outlive its
+call: never hand a scoped context to a long-lived goroutine. org is the reference (cutting-garden#311). A
 cache that exists to spend a rate limit across calls (ynab) keeps its own
 window instead, and a wire plugin has no call identity to key on yet (it would
 need one in RFC 0013).

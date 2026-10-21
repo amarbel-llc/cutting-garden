@@ -257,6 +257,11 @@ func (t target) moveLocked(
 		subtree: block,
 	}
 
+	// Every write path below drops the cache entry and the call's confirmation,
+	// including the edit-only one: a later read in the same call must see it.
+	defer resetCacheEntry(ctx, t.acct.Name, srcPath)
+	defer resetCacheEntry(ctx, t.acct.Name, dstPath)
+
 	if !crossFile && bytes.Equal(dstOut, edited) {
 		// Already there: only the edit (if any) is written.
 		if len(applied) > 0 {
@@ -268,8 +273,6 @@ func (t target) moveLocked(
 	}
 	applied = append(applied, e.move.key)
 
-	defer resetCacheEntry(ctx, t.acct.Name, srcPath)
-	defer resetCacheEntry(ctx, t.acct.Name, dstPath)
 	if err := t.putChecked(ctx, dstPath, dstOut, tokens[dstPath]); err != nil {
 		return nil, want, err
 	}
