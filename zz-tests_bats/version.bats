@@ -48,8 +48,6 @@ function mcp_server_info_version_carries_the_build_commit { # @test
   # cutting-garden#343: a client (moxy, the Krone connector) sees only
   # serverInfo.version, so it must carry the same "<version>+<commit>" the
   # `version` subcommand prints, or a deploy cannot be confirmed from outside.
-  load "$(dirname "$BATS_TEST_FILE")/lib/mcp.bash"
-
   run_cg version
   assert_success
   local want

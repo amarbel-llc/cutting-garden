@@ -1635,7 +1635,8 @@ debug-ytdlp-seek-probe URL='https://youtu.be/aqz-KE-bpKQ':
 # serverInfo, verifying serverInfo.version is a populated string — the
 # fix for the client Zod error "serverInfo.version: expected string,
 # received undefined". Uses the nix-built binary (result/bin) so the
-# ldflag-burnt version shows; a `go build` binary would report "dev".
+# ldflag-burnt <version>+<commit> shows; a `go build` binary would report
+# "dev+unknown".
 # Agent debug dev-loop for the MCP serverInfo wiring.
 #
 # probe the MCP server's initialize handshake and print serverInfo
