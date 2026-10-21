@@ -244,10 +244,10 @@ func (cmd *MCP) Run(req command.Request) {
 			// ServerVersion is REQUIRED: the MCP initialize response's
 			// serverInfo.version is a non-optional string in the client's
 			// schema. Omitting it makes clients reject the handshake
-			// ("expected string, received undefined"). buildinfo.Version is
-			// the ldflag-burnt release version ("dev" on bare builds —
-			// still a valid non-empty string).
-			ServerVersion:     buildinfo.Version,
+			// ("expected string, received undefined"). It carries the full
+			// build identity (serverVersion), so a client that sees only this
+			// string can tell which commit is running (cutting-garden#343).
+			ServerVersion:     serverVersion(),
 			Instructions:      instructions,
 			Resources:         provider,
 			Tools:             tools,
@@ -266,6 +266,15 @@ func (cmd *MCP) Run(req command.Request) {
 		!errors.Is(runErr, context.Canceled) {
 		errors.ContextCancelWithError(ctx, errors.Wrap(runErr))
 	}
+}
+
+// serverVersion is the version the server reports in its initialize
+// serverInfo: the same "<version>+<commit>" the `version` subcommand prints
+// (internal/buildinfo). A dirty build carries "-dirty" on the commit and an
+// unstamped one "dev+unknown", so the string never names a commit that is not
+// the one running.
+func serverVersion() string {
+	return buildinfo.String()
 }
 
 // mcpRoots resolves the endpoints the server exposes. With explicit

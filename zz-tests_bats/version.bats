@@ -44,6 +44,28 @@ function version_matches_source_of_truth { # @test
   refute [ "$got_version" = "dev" ]
 }
 
+function mcp_server_info_version_carries_the_build_commit { # @test
+  # cutting-garden#343: a client (moxy, the Krone connector) sees only
+  # serverInfo.version, so it must carry the same "<version>+<commit>" the
+  # `version` subcommand prints, or a deploy cannot be confirmed from outside.
+  load "$(dirname "$BATS_TEST_FILE")/lib/mcp.bash"
+
+  run_cg version
+  assert_success
+  local want
+  want="$(echo "$output" | awk '{print $2}')"
+
+  local reqfile="$BATS_TEST_TMPDIR/mcp_req.jsonl"
+  echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"bats","version":"0"}}}' >"$reqfile"
+  run --separate-stderr timeout --preserve-status 10s "${CG_BIN:-cutting-garden}" mcp <"$reqfile"
+  assert_success
+
+  local got
+  got="$(echo "$output" | jq -r 'select(.id==1) | .result.serverInfo.version')"
+  assert_equal "$got" "$want"
+  [[ $got =~ ^[^+]+\+[^+]+$ ]] || fail "serverInfo.version $got is not <version>+<commit>"
+}
+
 function version_rejects_trailing_arguments { # @test
   run_cg version extra
   # EX_USAGE for trailing positional args.
