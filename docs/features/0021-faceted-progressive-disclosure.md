@@ -231,7 +231,7 @@ Free-text search is **not** a facet; it is a search index, a separate thing.
 | Lever | Current | Rationale | Change signal |
 |---|---|---|---|
 | summary scope | whole subtree of the container read | disclosure wants "everything under here" | clients re-aggregate across reads because subtree scope is wrong |
-| fold bound | bounded (FDR 0014's huge-tree guardrail), result marked partial when hit | an incremental fold must not walk unbounded | real lazy trees exceed it and a one-shot path is impractical for that plugin |
+| fold bound | bounded (10000 visited nodes, 200 `ListRoots` calls; FDR 0014's huge-tree guardrail), result marked partial when hit | an incremental fold must not walk unbounded | real lazy trees exceed it and a one-shot path is impractical for that plugin |
 | numeric bucket granularity | plugin-supplied, default year | year is the coarse axis most data wants first | users consistently need month/day |
 | top-N values per dimension | capped with "(+N more)"; labels resolved only for shown rows | one big dimension (history by domain) must not dwarf output, and label lookups must not run over hidden rows | clients consistently need the full distribution |
 

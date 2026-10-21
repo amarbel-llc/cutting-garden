@@ -253,10 +253,10 @@ type FacetPredicate = internal.FacetPredicate
 type FacetResult = internal.FacetResult
 
 // FacetSummary is the aggregate of all dimensions over a node set, keyed by
-// FacetDimension.Key. See RFC 0012 §3. The commutative, associative merge that
-// hoists leaf summaries into a container summary (RFC 0012 §3–§4.2) arrives
-// with the framework-fold consumer; the one-shot FacetCounter path builds its
-// summary directly, so no merge helper is published yet.
+// FacetDimension.Key. See RFC 0012 §3. Both the one-shot FacetCounter path and
+// the framework fold (FoldFacets, RFC 0012 §4.2) build their summary by
+// summing per-(dimension, key) counts directly, so no merge helper is
+// published.
 type FacetSummary = internal.FacetSummary
 
 // FacetValue is one node's membership in one bucket of one dimension — the
@@ -828,6 +828,12 @@ var BulkBestEffortOps = internal.BulkBestEffortOps
 // A read may degrade a decline to an unfiltered listing; a write may not.
 var BulkBestEffortSweep = internal.BulkBestEffortSweep
 
+// CanSummarizeFacets reports whether the framework can produce a facet
+// summary for lister's nodes at all: either the plugin may answer one-shot
+// (FacetCounter) or it declares a schema the framework fold can read
+// (FacetDescriber). A plugin with neither has no facets to summarize.
+var CanSummarizeFacets = internal.CanSummarizeFacets
+
 // ConfirmForThisCall records that key was just confirmed against its source, so
 // ConfirmedThisCall reports true for the rest of the call. A no-op outside a
 // call scope.
@@ -912,6 +918,22 @@ var ErrUnknownScheme = internal.ErrUnknownScheme
 // key (organize's group-by spelling resolution) share this lookup instead of
 // duplicating the loop.
 var FindFacetDimension = internal.FindFacetDimension
+
+// FoldFacets is the framework fold (RFC 0012 §4.2): it hoists Node.Facets up
+// from node's descendants through ListRoots. Each descendant that matches
+// filter adds its lift (one to every bucket of every declared dimension it
+// carries) to the summary; the walk descends through every container whether
+// or not the container itself matches. node's own facets are not part of the
+// result (the framework holds only its URI, not its Node). Dimension keys the
+// plugin did not declare are ignored (RFC 0012 §2). The walk visits at most
+// FacetFoldVisitLimit descendants and makes at most FacetFoldListLimit
+// ListRoots calls; beyond either it stops and the result is marked
+// Complete == false (§8). A ListRoots error aborts the fold (§9).
+//
+// ok is false when the lister declares no dimension at all (no FacetDescriber,
+// or one with an empty schema): with nothing declared nothing can be counted,
+// and no walk is made.
+var FoldFacets = internal.FoldFacets
 
 // InCallScope reports whether ctx is inside a host call scope.
 var InCallScope = internal.InCallScope
@@ -1124,6 +1146,12 @@ var ResolveCapture = internal.ResolveCapture
 // ResolveDiff is the diff-direction analogue of ResolveCapture.
 var ResolveDiff = internal.ResolveDiff
 
+// ResolveFacetCounts is the one place the framework computes a node's hoisted
+// summary (RFC 0012 §4): the plugin's one-shot FacetCounts when it implements
+// it and answers ok, otherwise the framework fold over ListRoots. ok is false
+// only when neither path can summarize the node. An error aborts the read.
+var ResolveFacetCounts = internal.ResolveFacetCounts
+
 // ResolveNodeTypeByURI answers RFC 0018's URI→type question locally, with
 // no plugin round trip: it matches uri against the URITemplate of each type
 // lister declares, and returns the winning type and its captured bindings.
@@ -1268,7 +1296,11 @@ const FacetContainerBreakdownLimit = internal.FacetContainerBreakdownLimit
 // day key, so consumers coarsen by TruncateDateKey with no calendar
 // knowledge, and filters prefix-match by validated shape (see
 // FacetFilter.Validate). Introduced for cutting-garden#230.
-const FacetDate = internal.FacetDate
+const (
+	FacetDate           = internal.FacetDate
+	FacetFoldListLimit  = internal.FacetFoldListLimit
+	FacetFoldVisitLimit = internal.FacetFoldVisitLimit
+)
 
 // FacetLabelled is an opaque stable key whose human name is resolved out
 // of band via FacetLabeler (a feed id, an account id).

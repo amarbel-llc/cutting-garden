@@ -105,8 +105,7 @@ func (fc *facetCache) serve(
 	uri string,
 	u *url.URL,
 ) (*facetView, error) {
-	counter, isCounter := lister.(cutting_garden_plugins.FacetCounter)
-	if !isCounter {
+	if !cutting_garden_plugins.CanSummarizeFacets(lister) {
 		return nil, nil
 	}
 
@@ -119,7 +118,7 @@ func (fc *facetCache) serve(
 	}
 	fc.mu.Unlock()
 
-	return fc.computeAndStore(ctx, lister, counter, uri, u)
+	return fc.computeAndStore(ctx, lister, uri, u)
 }
 
 // computeAndStore is the first-touch path: fetch the change token
@@ -129,13 +128,12 @@ func (fc *facetCache) serve(
 func (fc *facetCache) computeAndStore(
 	ctx context.Context,
 	lister cutting_garden_plugins.RootLister,
-	counter cutting_garden_plugins.FacetCounter,
 	uri string,
 	u *url.URL,
 ) (*facetView, error) {
 	token, hasToken := tokenFor(ctx, lister, u)
 
-	result, ok, err := counter.FacetCounts(ctx, u, nil)
+	result, ok, err := cutting_garden_plugins.ResolveFacetCounts(ctx, lister, u, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -305,8 +303,7 @@ func (fc *facetCache) refreshOne(
 		fc.markError(uri, err)
 		return
 	}
-	counter, isCounter := lister.(cutting_garden_plugins.FacetCounter)
-	if !isCounter {
+	if !cutting_garden_plugins.CanSummarizeFacets(lister) {
 		fc.drop(uri)
 		return
 	}
@@ -338,7 +335,7 @@ func (fc *facetCache) refreshOne(
 	// Token moved, TTL lapsed, or volatile window lapsed: recompute and
 	// replace.
 	token, hasToken := tokenFor(ctx, lister, u)
-	result, ok, err := counter.FacetCounts(ctx, u, nil)
+	result, ok, err := cutting_garden_plugins.ResolveFacetCounts(ctx, lister, u, nil)
 	if err != nil {
 		fc.markError(uri, err)
 		return

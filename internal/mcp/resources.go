@@ -636,11 +636,11 @@ func (r *Resources) ReadFacets(
 	if err != nil {
 		return nil, errors.Wrapf(err, "read facets %s", uri)
 	}
-	counter, ok := lister.(cutting_garden_plugins.FacetCounter)
-	if !ok {
+	if !cutting_garden_plugins.CanSummarizeFacets(lister) {
 		return nil, errors.ErrorWithStackf(
 			"read_facets %s: facets are not available for scheme %q "+
-				"(plugin does not implement FacetCounter)", uri, u.Scheme,
+				"(plugin implements neither FacetCounter nor FacetDescriber)",
+			uri, u.Scheme,
 		)
 	}
 
@@ -667,7 +667,7 @@ func (r *Resources) ReadFacets(
 		return view, nil
 	}
 
-	result, ok, err := counter.FacetCounts(ctx, u, filter)
+	result, ok, err := cutting_garden_plugins.ResolveFacetCounts(ctx, lister, u, filter)
 	if err != nil {
 		return nil, errors.Wrapf(err, "read facets %s (filtered)", uri)
 	}

@@ -78,7 +78,13 @@ framework computes over a node type's children, surfaced by `list --facets`,
 the `mcp` container read's `facets` block, the `mcp` `read_facets` tool (the
 tools-only-client path resources/read cannot reach, cutting-garden#151), and
 `describe_node_types`; caldav is the reference (`FacetDescriber` + a one-shot
-`FacetCounter`). A summary that is partial for just one capped dimension says
+`FacetCounter`). A plugin that declares facets but implements no `FacetCounter`
+(or whose `FacetCounts` answers `ok == false`) is summarized by the framework
+fold (`FoldFacets` via `ResolveFacetCounts`, RFC 0012 §4.2): it lifts
+`Node.Facets` from every descendant through `ListRoots`, bounded at
+`FacetFoldVisitLimit` visited nodes and `FacetFoldListLimit` `ListRoots` calls
+and marked incomplete past either; the summarized node's own facets are not
+counted. A summary that is partial for just one capped dimension says
 which (`FacetResult.Incomplete`, RFC 0012 §5.1; ynab's payee, fastmail's
 sender) instead of marking the whole summary partial. Both, with
 no URI, aggregate every plugin's **roots** (the `RootProvider` capability)

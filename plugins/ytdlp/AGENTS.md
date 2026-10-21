@@ -44,8 +44,8 @@ Deferral.
   (open numeric-bucket, populated only when yt-dlp's flat-mode
   `upload_date` is present — see FDR 0004's Implementation Note),
   `duration_band` (closed short/medium/long). `FacetCounts` is a
-  one-shot fold over `probeFlatPlaylist`'s own output rather than a
-  framework fold, because no framework-fold consumer exists yet.
+  one-shot fold over `probeFlatPlaylist`'s own output, which RFC 0012 §4.1
+  prefers over leaving the work to the framework fold (`FoldFacets`).
 - `Plugin.ScanForDiff` (`diff.go`) — lightweight freshness probe:
   fetch only the `.info.json` via `--skip-download`, hash it, compare
   to the receipt's info.json blob-id. Match → re-emit receipt

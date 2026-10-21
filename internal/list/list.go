@@ -495,8 +495,7 @@ func (cmd *List) runFacets(ctx errors.Context, uriStr string) error {
 		return err
 	}
 
-	counter, ok := lister.(cutting_garden_plugins.FacetCounter)
-	if !ok {
+	if !cutting_garden_plugins.CanSummarizeFacets(lister) {
 		return errors.ErrorWithStackf(
 			"list --facets %s: plugin does not support facets", uriStr,
 		)
@@ -519,7 +518,9 @@ func (cmd *List) runFacets(ctx errors.Context, uriStr string) error {
 	}
 
 	// One cg invocation is one call scope (cutting-garden#311).
-	result, ok, err := counter.FacetCounts(cutting_garden_plugins.WithCallScope(ctx), u, filter)
+	result, ok, err := cutting_garden_plugins.ResolveFacetCounts(
+		cutting_garden_plugins.WithCallScope(ctx), lister, u, filter,
+	)
 	if err != nil {
 		return errors.Wrapf(err, "list --facets %s", uriStr)
 	}

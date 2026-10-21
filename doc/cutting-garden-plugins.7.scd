@@ -88,8 +88,13 @@ cost bounded?" is a question you can answer even over an opaque backend;
 "is the fold cheaper than me?" is not. Reason in magnitudes (requests,
 bytes), not complexity classes: "one sweep" and "62 paginated requests of
 full bodies per recompute" are the same class and very different decisions.
-See RFC 0012 §4 for the rule and §4.2 for the fold's exact shape and when
-the framework bounds or refuses it (cutting-garden#171).
+See RFC 0012 §4 for the rule and §4.2 for the fold's exact shape
+(cutting-garden#171). The fold lifts *Node.Facets* of every descendant
+(never the summarized node's own), ignores a dimension you did not declare,
+and is bounded - 10000 visited nodes and 200 *ListRoots* calls (*FacetFoldVisitLimit*,
+*FacetFoldListLimit*); past either the result is *Complete* false. Each
+*ListRoots* call may be a network round trip, so put your facets on the nodes
+you already list, never behind a per-node fetch.
 
 This rule is bounded to declining WHOLESALE: returning *ok == false* so
 the whole request falls through to a framework fallback. Omitting a single

@@ -142,10 +142,10 @@ type FacetDescriber interface {
 type FacetHistogram map[string]int64
 
 // FacetSummary is the aggregate of all dimensions over a node set, keyed by
-// FacetDimension.Key. See RFC 0012 §3. The commutative, associative merge that
-// hoists leaf summaries into a container summary (RFC 0012 §3–§4.2) arrives
-// with the framework-fold consumer; the one-shot FacetCounter path builds its
-// summary directly, so no merge helper is published yet.
+// FacetDimension.Key. See RFC 0012 §3. Both the one-shot FacetCounter path and
+// the framework fold (FoldFacets, RFC 0012 §4.2) build their summary by
+// summing per-(dimension, key) counts directly, so no merge helper is
+// published.
 type FacetSummary map[string]FacetHistogram
 
 // FacetResult is a hoisted summary plus whether it covers the whole subtree.

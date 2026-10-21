@@ -306,6 +306,12 @@ as follows, and a conformant consumer MUST observe the result:
    alongside its descendants' (a window faceted by its own state as well as
    its tabs by domain). A childless leaf contributes only its own lift.
 
+   *cutting-garden's fold* receives only the summarized node's URI, not its
+   `Node` (which its parent's listing carries), so it omits that one node's own
+   lift and counts its descendants; it bounds the walk at 10000 visited nodes
+   and 200 `ListRoots` calls (§8). A plugin that needs a container's own
+   facets counted implements `FacetCounter`.
+
 The framework fold is the path for genuinely incremental (level-at-a-time)
 plugins. A plugin that can answer in one operation SHOULD implement
 `FacetCounter` rather than rely on the fold, because re-walking a subtree the
