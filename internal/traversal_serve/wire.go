@@ -307,7 +307,7 @@ type FacetCountsResult struct {
 	// (present but capped) and a short reason. A dimension absent from this
 	// map is exact. Omitted when the plugin makes no per-dimension
 	// distinction, which is the normal case.
-	Incomplete map[string]FacetGapView `json:"incomplete,omitempty"`
+	Incomplete map[string]cutting_garden_plugins.FacetGap `json:"incomplete,omitempty"`
 	// ByContainer is the RFC 0012 §13 per-child-container breakdown of
 	// the matching set (cutting-garden#173): which immediate child
 	// containers contributed how many of Summary's matches. Absent when
@@ -322,47 +322,6 @@ type FacetCountsResult struct {
 	// non-empty containers contributed (RFC 0012 §13); it says nothing
 	// about whether Summary is complete.
 	ByContainerTruncated bool `json:"by_container_truncated,omitempty"`
-}
-
-// FacetGapView is the wire form of cutting_garden_plugins.FacetGap (RFC 0012
-// §5.1): why one dimension of a summary is not exhaustive.
-type FacetGapView struct {
-	// Declined is true when the dimension is absent from Summary by the
-	// plugin's choice; false (omitted) when it is present but partial.
-	Declined bool `json:"declined,omitempty"`
-	// Reason is a short human-readable cause.
-	Reason string `json:"reason,omitempty"`
-}
-
-// FacetGapViewsFrom projects a result's per-dimension gaps onto the wire,
-// preserving nil-ness so an absent map stays an absent key.
-func FacetGapViewsFrom(
-	gaps map[string]cutting_garden_plugins.FacetGap,
-) map[string]FacetGapView {
-	if len(gaps) == 0 {
-		return nil
-	}
-	views := make(map[string]FacetGapView, len(gaps))
-	for dimension, gap := range gaps {
-		views[dimension] = FacetGapView{Declined: gap.Declined, Reason: gap.Reason}
-	}
-	return views
-}
-
-// ToFacetGaps is the inverse of FacetGapViewsFrom.
-func ToFacetGaps(
-	views map[string]FacetGapView,
-) map[string]cutting_garden_plugins.FacetGap {
-	if len(views) == 0 {
-		return nil
-	}
-	gaps := make(map[string]cutting_garden_plugins.FacetGap, len(views))
-	for dimension, view := range views {
-		gaps[dimension] = cutting_garden_plugins.FacetGap{
-			Declined: view.Declined, Reason: view.Reason,
-		}
-	}
-	return gaps
 }
 
 // FacetContainerBreakdownView is the wire form of

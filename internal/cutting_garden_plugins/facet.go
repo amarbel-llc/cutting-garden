@@ -226,6 +226,37 @@ func (r FacetResult) IsComplete() bool {
 	return r.Complete && len(r.Incomplete) == 0
 }
 
+// Normalized returns r read the way RFC 0012 §5.1 requires of the framework,
+// applied ONCE where a result enters it (the mcp and list consumers, and both
+// sides of the wire) so no reader has to remember the rules:
+//
+//   - a result that names a gap is not complete as a whole, whatever Complete
+//     was set to;
+//   - a gap marked Declined whose dimension is nonetheless present in Summary
+//     is read as partial, not declined: the histogram is there, so it is shown
+//     and flagged rather than contradicted;
+//   - an empty Incomplete map is nil, so "no gaps" has one shape.
+//
+// It does not mutate r, and it never drops data: it only makes the result
+// more conservative. It cannot check that a gap's key is a declared dimension
+// (a result does not carry the schema); that stays the plugin's obligation.
+func (r FacetResult) Normalized() FacetResult {
+	if len(r.Incomplete) == 0 {
+		r.Incomplete = nil
+		return r
+	}
+	gaps := make(map[string]FacetGap, len(r.Incomplete))
+	for dimension, gap := range r.Incomplete {
+		if _, present := r.Summary[dimension]; gap.Declined && present {
+			gap.Declined = false
+		}
+		gaps[dimension] = gap
+	}
+	r.Incomplete = gaps
+	r.Complete = false
+	return r
+}
+
 // IncompleteDimensions returns the keys of r.Incomplete sorted, for stable
 // output.
 func (r FacetResult) IncompleteDimensions() []string {

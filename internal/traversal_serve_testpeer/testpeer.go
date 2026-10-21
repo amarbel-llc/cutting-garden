@@ -788,6 +788,9 @@ func (p *TreePlugin) foldSubtree(
 	return matched
 }
 
+// FacetVersion is the test peer's change token: a generation counter bumped on
+// every mutation of the tree. Blind spots (RFC 0012 §11.1): none; the tree is
+// only ever changed through this peer.
 func (p *TreePlugin) FacetVersion(
 	_ context.Context, node *url.URL,
 ) (token string, ok bool, err error) {

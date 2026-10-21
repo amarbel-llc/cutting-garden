@@ -104,7 +104,11 @@ func dayBucketOf(receivedAt string) (key string, order int64) {
 // mailbox nodes only (a thread's facets live on the mailbox that lists it);
 // account-root / thread / email / raw nodes report ok=false so the
 // framework falls back. Complete is false when the thread page hit
-// threadQueryLimit or the open `from` dimension was capped at fromTopN.
+// threadQueryLimit or the open `from` dimension was capped at fromTopN. When
+// only `from` was capped, Incomplete names it ("top N of M senders"). When the
+// thread page itself was truncated, EVERY dimension is partial, so Incomplete is
+// nil — and a capped `from` is then not reported separately (its "M" would be
+// the sender count of a truncated page, which no consumer should trust).
 func (Plugin) FacetCounts(
 	ctx context.Context,
 	node *url.URL,

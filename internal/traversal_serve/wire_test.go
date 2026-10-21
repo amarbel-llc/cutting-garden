@@ -629,10 +629,10 @@ func TestFacetCountsResultEncoding(t *testing.T) {
 	raw, err = json.Marshal(FacetCountsResult{
 		OK:      true,
 		Summary: summary,
-		Incomplete: FacetGapViewsFrom(map[string]cutting_garden_plugins.FacetGap{
+		Incomplete: map[string]cutting_garden_plugins.FacetGap{
 			"state": {Reason: "top 1 of 2"},
 			"label": {Declined: true, Reason: "too expensive"},
-		}),
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -645,11 +645,8 @@ func TestFacetCountsResultEncoding(t *testing.T) {
 		"state": {Reason: "top 1 of 2"},
 		"label": {Declined: true, Reason: "too expensive"},
 	}
-	if got := ToFacetGaps(gapped.Incomplete); !reflect.DeepEqual(got, want) {
-		t.Errorf("gaps round trip = %+v, want %+v", got, want)
-	}
-	if FacetGapViewsFrom(nil) != nil || ToFacetGaps(nil) != nil {
-		t.Error("an absent gap map must stay absent across the projection")
+	if !reflect.DeepEqual(gapped.Incomplete, want) {
+		t.Errorf("gaps round trip = %+v, want %+v", gapped.Incomplete, want)
 	}
 }
 

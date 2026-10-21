@@ -844,10 +844,10 @@ func (w *WirePlugin) FacetCounts(
 		result.Summary = cutting_garden_plugins.FacetSummary{}
 	}
 	// Per-dimension gaps (RFC 0012 §5.1, cutting-garden#171). The host does not
-	// trust a peer to have kept Complete false alongside them: a result that
-	// names a gap is not complete as a whole, and is read that way.
-	result.Incomplete = ToFacetGaps(wireResult.Incomplete)
-	result.Complete = wireResult.Complete && len(result.Incomplete) == 0
+	// trust a peer to have kept them consistent with Complete or Summary: the
+	// result is normalized before it is returned (below).
+	result.Incomplete = wireResult.Incomplete
+	result.Complete = wireResult.Complete
 
 	// The RFC 0012 §13 invariants (only Count > 0 entries; capped at
 	// FacetContainerBreakdownLimit) are the PLUGIN's obligations, but the
@@ -871,12 +871,13 @@ func (w *WirePlugin) FacetCounts(
 			truncated
 	}
 
-	return result, true, nil
+	return result.Normalized(), true, nil
 }
 
 // FacetVersion is gated on CapFacetVersion: unadvertised means
 // ok=false — no token, the framework's cache falls back to its TTL —
-// with no wire call.
+// with no wire call. The token is the peer's, so documenting its blind spots
+// (RFC 0012 §11.1) is the peer's job, not this proxy's.
 func (w *WirePlugin) FacetVersion(
 	ctx context.Context, node *url.URL,
 ) (token string, ok bool, err error) {

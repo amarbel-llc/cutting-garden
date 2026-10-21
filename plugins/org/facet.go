@@ -299,9 +299,13 @@ func (a *facetAccumulator) result() cutting_garden_plugins.FacetResult {
 // FacetVersion is the file's ETag for a file or headline. A folder has
 // no cheap aggregate token, so it declines.
 //
-// Blind spots (RFC 0012 §11.1): none known for a file or headline, because a
-// headline's facets derive from the content of its own file, which the ETag
-// covers whole. Like any ETag token it trusts the server: one that did not
+// Blind spots (RFC 0012 §11.1): none known for a file or headline. Every org
+// facet (state, tags including filetags and ancestors' tags, priority,
+// scheduled, deadline, closed, file) derives from the content of the headline's
+// own file, which the ETag covers whole; the `*_band` dimensions also depend on
+// the clock, which §11.3's revalidation window handles, not this token. A
+// headline moved to another file changes both files' ETags. Like any ETag
+// token it trusts the server: one that did not
 // change the ETag when the content changed would serve stale summaries until
 // the framework TTL, and the plugin cannot detect that.
 func (Plugin) FacetVersion(ctx context.Context, node *url.URL) (string, bool, error) {

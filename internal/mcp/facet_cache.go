@@ -145,7 +145,10 @@ func (fc *facetCache) computeAndStore(
 
 	now := fc.now()
 	entry := &facetCacheEntry{
-		result:          result,
+		// Normalized once, where the result enters the framework (RFC 0012
+		// §5.1): a gap makes the summary incomplete, and a "declined" gap whose
+		// dimension is present is read as partial.
+		result:          result.Normalized(),
 		token:           token,
 		hasToken:        hasToken,
 		computedAt:      now,
@@ -223,7 +226,7 @@ func tokenFor(
 func (fc *facetCache) viewLocked(e *facetCacheEntry) *facetView {
 	view := &facetView{
 		Facets:               e.result.Summary,
-		Complete:             e.result.IsComplete(),
+		Complete:             e.result.Complete,
 		Incomplete:           e.result.Incomplete,
 		ByContainer:          e.result.ByContainer,
 		ByContainerTruncated: e.result.ByContainerTruncated,
@@ -347,7 +350,7 @@ func (fc *facetCache) refreshOne(
 	now := fc.now()
 	fc.mu.Lock()
 	fc.entries[uri] = &facetCacheEntry{
-		result:          result,
+		result:          result.Normalized(),
 		token:           token,
 		hasToken:        hasToken,
 		computedAt:      now,

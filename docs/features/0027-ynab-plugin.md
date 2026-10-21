@@ -409,9 +409,9 @@ therefore does not implement `FacetVersioner`, and the framework's TTL applies.
   §5.1): with an explicit date window the summary reports `complete: false`
   AND `incomplete: {"payee": {"reason": "top 20 of N payees"}}`, so every
   other dimension reads as exact. Under the default window the whole summary
-  is partial for a reason that is not payee's, so no gap is pinned on it. This closes the FDR's
-  "reads a real YNAB budget" criterion; "testing" still wants a live dry run
-  compared against the synthetic fixture.
+  is partial for a reason that is not payee's, so no gap is pinned on it.
+  That live check closes the FDR's "reads a real YNAB budget" criterion;
+  "testing" still wants a live dry run compared against the synthetic fixture.
 - **Not built:** `FacetVersioner` (above); a live check against a real budget;
   facet counts that roll up across a budget (each count is per
   transaction-bearing node); the subtransaction legs as nodes.

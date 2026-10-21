@@ -674,9 +674,10 @@ func (r *Resources) ReadFacets(
 			"read_facets %s: no facet summary available at this node", uri,
 		)
 	}
+	result = result.Normalized() // RFC 0012 §5.1, once, where the result enters
 	view := &facetView{
 		Facets:               result.Summary,
-		Complete:             result.IsComplete(),
+		Complete:             result.Complete,
 		Incomplete:           result.Incomplete,
 		ByContainer:          result.ByContainer,
 		ByContainerTruncated: result.ByContainerTruncated,

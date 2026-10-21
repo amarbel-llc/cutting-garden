@@ -524,6 +524,7 @@ func (cmd *List) runFacets(ctx errors.Context, uriStr string) error {
 			"list --facets %s: no facet summary available at this node", uriStr,
 		)
 	}
+	result = result.Normalized() // RFC 0012 §5.1, once, where the result enters
 
 	if cmd.Format == formatJSON {
 		return writeFacetsJSON(cmd.output, result)
@@ -618,7 +619,7 @@ func writeFacetsJSON(w io.Writer, result cutting_garden_plugins.FacetResult) err
 	enc := json.NewEncoder(w)
 	if err := enc.Encode(facetView{
 		Facets:     result.Summary,
-		Complete:   result.IsComplete(),
+		Complete:   result.Complete,
 		Incomplete: result.Incomplete,
 	}); err != nil {
 		return errors.Wrap(err)
