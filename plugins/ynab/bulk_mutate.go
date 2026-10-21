@@ -3,7 +3,6 @@ package ynab
 import (
 	"bytes"
 	"context"
-	"sync"
 
 	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
@@ -15,8 +14,10 @@ var _ cutting_garden_plugins.BulkMutator = (*Plugin)(nil)
 // Its point is the request budget: YNAB allows 200 requests an hour per token,
 // and N single patches cost about three requests EACH (a fresh read of the
 // transaction, the payee or category lookup, the write). A changeset of N
-// transaction patches costs a handful, however large N is: one fresh read of the
-// targets, one payee list when any op names a payee, and ONE bulk PATCH.
+// transaction patches costs a handful: one fresh listing that serves the
+// targets (client.go freshTransactionsByID; a read by id only for a target older
+// than the listing's window), the category tree when an op names a category, one
+// payee list when any op names a payee, and ONE bulk PATCH.
 //
 // It is the same write as PatchNode, not a looser one. Every op is parsed and
 // planned by the single-patch machinery against a FRESH read of its transaction,
@@ -32,8 +33,13 @@ var _ cutting_garden_plugins.BulkMutator = (*Plugin)(nil)
 //     silent downgrade waiting to happen.
 //   - Only transaction patches batch. A payee rename is one request each in the
 //     API and goes through PatchNode; create, put and delete are refused there.
-//   - Two ops on one transaction in a request are refused (the second is a
-//     BulkFailure): the bulk update has no defined order for the same id.
+//
+// Several patches of one transaction are merged into one entry, as applying them
+// one after another would have done; two that set the same field to different
+// values conflict, and the later one is a BulkFailure (the bulk update has no
+// defined order for one id). The same transaction named through two spellings of
+// its budget (a name and an id) is caught the same way, after the budget is
+// resolved, so it can never be written by two requests.
 //
 // A request that fails as a whole fails every op in that batch (one HTTP call);
 // ops in another budget's batch are unaffected.
@@ -82,8 +88,8 @@ func (p Plugin) bulkSweep(
 	return p.bulkOps(ctx, ops), nil
 }
 
-// bulkKey identifies the YNAB budget an op writes to; ops sharing one are
-// batched into one request.
+// bulkKey identifies the budget an op's URI names, as spelled; ops sharing one
+// are resolved and batched together.
 type bulkKey struct{ account, budget string }
 
 // bulkMember is one transaction patch queued for its budget's batch.
@@ -93,25 +99,24 @@ type bulkMember struct {
 	patch transactionPatch
 }
 
-// bulkGroup is the transaction patches destined for one budget.
+// bulkGroup is the transaction patches destined for one spelling of a budget.
 type bulkGroup struct {
 	ref     nodeRef // any member's ref: it names the account and budget
 	members []bulkMember
+}
+
+// bulkFailure builds a failure for op, keeping the URI and the temp-id Ref the
+// caller addressed it by so every failure can be matched back to its op.
+func bulkFailure(op cutting_garden_plugins.BulkOp, err error) cutting_garden_plugins.BulkFailure {
+	return cutting_garden_plugins.BulkFailure{URI: op.URI, Ref: op.Ref, Err: err.Error()}
 }
 
 func (p Plugin) bulkOps(
 	ctx context.Context, ops []cutting_garden_plugins.BulkOp,
 ) cutting_garden_plugins.BulkResult {
 	var result cutting_garden_plugins.BulkResult
-	fail := func(op cutting_garden_plugins.BulkOp, err error) {
-		result.Failed = append(result.Failed, cutting_garden_plugins.BulkFailure{
-			URI: op.URI, Ref: op.Ref, Err: err.Error(),
-		})
-	}
-
 	groups := map[bulkKey]*bulkGroup{}
 	var order []bulkKey
-	seen := map[string]bool{}
 
 	for _, op := range ops {
 		// Anything that is not a patch of a transaction node (a payee rename, a
@@ -123,7 +128,7 @@ func (p Plugin) bulkOps(
 		}
 		ref, err := classifyURI(op.URI)
 		if err != nil {
-			fail(op, err)
+			result.Failed = append(result.Failed, bulkFailure(op, err))
 			continue
 		}
 		if ref.kind != kindTransaction {
@@ -132,7 +137,7 @@ func (p Plugin) bulkOps(
 		}
 		patch, err := parseTransactionPatch(bytes.NewReader(op.Body))
 		if err != nil {
-			fail(op, err)
+			result.Failed = append(result.Failed, bulkFailure(op, err))
 			continue
 		}
 		if len(patch.recognized) == 0 {
@@ -141,16 +146,6 @@ func (p Plugin) bulkOps(
 			continue
 		}
 		key := bulkKey{ref.account, ref.budget}
-		once := key.account + "\x00" + key.budget + "\x00" + ref.txnID
-		if seen[once] {
-			fail(op, errors.BadRequestf(
-				"ynab plugin: transaction %q is patched twice in one bulk request; "+
-					"the bulk update has no defined order for one id, so send one patch "+
-					"carrying every field", ref.txnID,
-			))
-			continue
-		}
-		seen[once] = true
 		group, ok := groups[key]
 		if !ok {
 			group = &bulkGroup{ref: ref}
@@ -160,8 +155,12 @@ func (p Plugin) bulkOps(
 		group.members = append(group.members, bulkMember{op: op, txnID: ref.txnID, patch: patch})
 	}
 
+	// claimed records every transaction a group has taken, by the RESOLVED
+	// budget, so one budget spelled two ways cannot have a transaction written by
+	// two requests.
+	claimed := map[string]bool{}
 	for _, key := range order {
-		applyBulkGroup(ctx, groups[key], &result)
+		applyBulkGroup(ctx, groups[key], claimed, &result)
 	}
 	return result
 }
@@ -170,19 +169,16 @@ func (p Plugin) bulkOps(
 // transactions, sends ONE bulk update for those that change something, and
 // checks each saved transaction against what its op asked for.
 func applyBulkGroup(
-	ctx context.Context, group *bulkGroup, result *cutting_garden_plugins.BulkResult,
+	ctx context.Context, group *bulkGroup, claimed map[string]bool,
+	result *cutting_garden_plugins.BulkResult,
 ) {
+	failOne := func(m bulkMember, err error) {
+		result.Failed = append(result.Failed, bulkFailure(m.op, err))
+	}
 	failAll := func(err error) {
 		for _, m := range group.members {
-			result.Failed = append(result.Failed, cutting_garden_plugins.BulkFailure{
-				URI: m.op.URI, Err: err.Error(),
-			})
+			failOne(m, err)
 		}
-	}
-	failOne := func(m bulkMember, err error) {
-		result.Failed = append(result.Failed, cutting_garden_plugins.BulkFailure{
-			URI: m.op.URI, Err: err.Error(),
-		})
 	}
 
 	c, err := resolveClient(group.ref)
@@ -196,8 +192,27 @@ func applyBulkGroup(
 		return
 	}
 
-	ids := make([]string, len(group.members))
-	for i, m := range group.members {
+	members := mergeMembers(group.members, failOne)
+	live := members[:0:0]
+	for _, m := range members {
+		key := group.ref.account + "\x00" + budgetID + "\x00" + m.txnID
+		if claimed[key] {
+			failOne(m, errors.BadRequestf(
+				"ynab plugin: transaction %q is patched twice in one bulk request "+
+					"(through two spellings of its budget); the bulk update has no defined "+
+					"order for one id, so send one patch carrying every field", m.txnID,
+			))
+			continue
+		}
+		claimed[key] = true
+		live = append(live, m)
+	}
+	if len(live) == 0 {
+		return
+	}
+
+	ids := make([]string, len(live))
+	for i, m := range live {
 		ids[i] = m.txnID
 	}
 	rows, readErrs := c.freshTransactionsByID(ctx, budgetID, ids)
@@ -211,7 +226,7 @@ func applyBulkGroup(
 		batch   []planned
 		entries []map[string]any
 	)
-	for _, m := range group.members {
+	for _, m := range live {
 		if err, bad := readErrs[m.txnID]; bad {
 			failOne(m, err)
 			continue
@@ -248,16 +263,111 @@ func applyBulkGroup(
 	}
 }
 
+// mergeMembers folds the patches of one transaction into the first of them, in
+// request order, so a caller that sends a field per op gets what sequential
+// patches would have done. A later patch that sets a field the merged patch
+// already holds to a DIFFERENT value conflicts and is reported through fail,
+// leaving the transaction with what was merged so far. The result keeps the
+// order of each transaction's first appearance.
+func mergeMembers(
+	members []bulkMember, fail func(bulkMember, error),
+) []bulkMember {
+	var merged []bulkMember
+	index := map[string]int{}
+	for _, m := range members {
+		i, seen := index[m.txnID]
+		if !seen {
+			index[m.txnID] = len(merged)
+			merged = append(merged, m)
+			continue
+		}
+		combined, err := mergePatches(merged[i].patch, m.patch)
+		if err != nil {
+			fail(m, err)
+			continue
+		}
+		merged[i].patch = combined
+	}
+	return merged
+}
+
+// mergePatches combines two patches of one transaction. A field set by both to
+// different values is a conflict; equal values, or a field only one sets, merge.
+func mergePatches(a, b transactionPatch) (transactionPatch, error) {
+	conflict := func(field string) error {
+		return errors.BadRequestf(
+			"ynab plugin: the same transaction is patched twice in one bulk request with "+
+				"different %s values; send one patch carrying the value you want", field,
+		)
+	}
+	out := a
+	if b.hasCategory {
+		if a.hasCategory && a.category != b.category {
+			return a, conflict("category")
+		}
+		out.hasCategory, out.category = true, b.category
+	}
+	if b.hasCleared {
+		if a.hasCleared && a.cleared != b.cleared {
+			return a, conflict("cleared")
+		}
+		out.hasCleared, out.cleared = true, b.cleared
+	}
+	if b.hasMemo {
+		if a.hasMemo && !sameMemoValue(a.memo, b.memo) {
+			return a, conflict("memo")
+		}
+		out.hasMemo, out.memo = true, b.memo
+	}
+	if b.hasPayee {
+		if a.hasPayee && a.payee != b.payee {
+			return a, conflict("payee")
+		}
+		out.hasPayee, out.payee = true, b.payee
+	}
+	out.recognized = out.recognizedFields()
+	return out, nil
+}
+
+// recognizedFields lists the fields the patch sets, in transactionPatchFields'
+// order, so the applied report stays deterministic after a merge.
+func (p transactionPatch) recognizedFields() []string {
+	has := map[string]bool{
+		"category": p.hasCategory, "cleared": p.hasCleared, "memo": p.hasMemo, "payee": p.hasPayee,
+	}
+	out := make([]string, 0, len(transactionPatchFields))
+	for _, field := range transactionPatchFields {
+		if has[field] {
+			out = append(out, field)
+		}
+	}
+	return out
+}
+
+// sameMemoValue compares two memo patch values exactly: unlike sameMemo, which
+// treats nil and "" alike because YNAB returns either for no memo, a patch of
+// null (clear it) and a patch of "" are different requests.
+func sameMemoValue(a, b *string) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return *a == *b
+}
+
 // memoPayeeLister makes a payeeLister read once and serve the same list to every
-// op of a batch.
+// op of a batch. A failed first read is served to the rest of the batch too: the
+// batch does not retry, and each op reports the same cause.
 func memoPayeeLister(inner payeeLister) payeeLister {
 	var (
-		once sync.Once
+		done bool
 		list []Payee
 		err  error
 	)
 	return func(ctx context.Context) ([]Payee, error) {
-		once.Do(func() { list, err = inner(ctx) })
+		if !done {
+			list, err = inner(ctx)
+			done = true
+		}
 		return list, err
 	}
 }

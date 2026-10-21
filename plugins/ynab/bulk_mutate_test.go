@@ -152,9 +152,9 @@ func TestBulkMutate_NoOpsAreReportedAndWriteNothing(t *testing.T) {
 	}
 }
 
-// Two patches of one transaction in a request are refused, not merged or
-// ordered by guess.
-func TestBulkMutate_TheSameTransactionTwiceIsRefused(t *testing.T) {
+// Two patches of one transaction that set the same field to different values
+// conflict: the later one is refused rather than ordered by guess.
+func TestBulkMutate_ConflictingPatchesOfOneTransactionAreRefused(t *testing.T) {
 	srv := newFixture(t)
 	result := bulk(t,
 		patchOp(t, txnPrefix+"t1", `{"memo":"first"}`),
@@ -165,6 +165,94 @@ func TestBulkMutate_TheSameTransactionTwiceIsRefused(t *testing.T) {
 	}
 	if saved, _ := srv.TransactionByID("b1", "t1"); *saved.Memo != "first" {
 		t.Errorf("memo = %q, want the first patch", *saved.Memo)
+	}
+}
+
+// Patches of one transaction that set DIFFERENT fields merge into one entry, as
+// applying them one after another would have: a client that sends a field per
+// op loses nothing.
+func TestBulkMutate_PatchesOfOneTransactionMerge(t *testing.T) {
+	srv := newFixture(t)
+	result := bulk(t,
+		patchOp(t, txnPrefix+"t1", `{"category":"Rent"}`),
+		patchOp(t, txnPrefix+"t1", `{"memo":"merged"}`),
+		patchOp(t, txnPrefix+"t1", `{"memo":"merged"}`), // an equal repeat is not a conflict
+	)
+	if got := lastSegments(result.AppliedNodes); !slices.Equal(got, []string{"t1"}) || len(result.Failed) != 0 {
+		t.Fatalf("applied %v failed %v, want t1 once and no failures", got, result.Failed)
+	}
+	saved, _ := srv.TransactionByID("b1", "t1")
+	if *saved.CategoryID != "c3" || saved.Memo == nil || *saved.Memo != "merged" {
+		t.Errorf("t1 = category %v memo %v, want c3 and merged", *saved.CategoryID, saved.Memo)
+	}
+	if srv.Writes() != 1 {
+		t.Errorf("writes = %d, want 1", srv.Writes())
+	}
+}
+
+// A clear (null) and an empty string are different requests, so they conflict.
+func TestBulkMutate_ANullMemoAndAnEmptyMemoConflict(t *testing.T) {
+	newFixture(t)
+	result := bulk(t,
+		patchOp(t, txnPrefix+"t1", `{"memo":null}`),
+		patchOp(t, txnPrefix+"t1", `{"memo":""}`),
+	)
+	if len(result.Failed) != 1 {
+		t.Errorf("failed = %v, want the second patch to conflict", result.Failed)
+	}
+}
+
+// One budget spelled two ways (its name and its id) is still one budget: the
+// same transaction cannot be written by two requests through them.
+func TestBulkMutate_TheSameTransactionThroughTwoBudgetSpellingsIsRefused(t *testing.T) {
+	srv := newFixture(t)
+	result := bulk(t,
+		patchOp(t, txnPrefix+"t1", `{"memo":"by name"}`),
+		patchOp(t, "ynab://personal/b1/transactions/t1", `{"memo":"by id"}`),
+	)
+	if len(result.AppliedNodes) != 1 || len(result.Failed) != 1 {
+		t.Fatalf("applied %v failed %v, want one of each", result.AppliedNodes, result.Failed)
+	}
+	if srv.Writes() != 1 {
+		t.Errorf("writes = %d, want 1: two requests wrote one transaction", srv.Writes())
+	}
+	if saved, _ := srv.TransactionByID("b1", "t1"); *saved.Memo != "by name" {
+		t.Errorf("memo = %q, want the first spelling's", *saved.Memo)
+	}
+}
+
+// A changeset on a cold cache (a fresh process, or a minute after the last
+// listing) does not read its targets one by one: with enough targets it spends
+// one request on a listing. Budget list + listing + write.
+func TestBulkMutate_ColdCacheStillBatchesTheRead(t *testing.T) {
+	srv := newFixture(t)
+	result := bulk(t,
+		patchOp(t, txnPrefix+"t1", `{"memo":"a"}`),
+		patchOp(t, txnPrefix+"t2", `{"memo":"b"}`),
+		patchOp(t, txnPrefix+"t4", `{"memo":"c"}`),
+	)
+	if len(result.AppliedNodes) != 3 || len(result.Failed) != 0 {
+		t.Fatalf("applied %v failed %v, want 3 applied", result.AppliedNodes, result.Failed)
+	}
+	if n := srv.Requests(); n != 3 {
+		t.Errorf("a cold 3-patch changeset cost %d requests, want 3 (budgets + fresh listing + write)", n)
+	}
+}
+
+// A target older than the listing's window is a straggler read by id: the cost
+// is one request for it, not one for every target.
+func TestBulkMutate_AnOldTargetIsReadByIDAlone(t *testing.T) {
+	srv := newFixture(t)
+	result := bulk(t,
+		patchOp(t, txnPrefix+"t1", `{"memo":"a"}`),
+		patchOp(t, txnPrefix+"t2", `{"memo":"b"}`),
+		patchOp(t, txnPrefix+"t3", `{"memo":"old"}`), // 2026-08-01: outside the default window
+	)
+	if len(result.AppliedNodes) != 3 || len(result.Failed) != 0 {
+		t.Fatalf("applied %v failed %v, want 3 applied", result.AppliedNodes, result.Failed)
+	}
+	if n := srv.Requests(); n != 4 {
+		t.Errorf("cost %d requests, want 4 (budgets + listing + t3 by id + write)", n)
 	}
 }
 

@@ -343,30 +343,46 @@ func (c *client) freshTransaction(ctx context.Context, budgetID, id string) (Tra
 	return r.Data.Transaction, nil
 }
 
+// freshWindowDays bounds how far back freshTransactionsByID will download a
+// listing to serve a batch: YNAB's own default window, a year. A target older
+// than that is read by id rather than dragging a multi-year history into memory
+// for the sake of one row.
+const freshWindowDays = 365
+
+// bulkListingMinTargets is how many targets make one fresh listing cheaper than
+// reading each by id. Below it (and with fewer than two targets known to be
+// cached) the targets are simply read by id.
+const bulkListingMinTargets = 3
+
 // freshTransactionsByID reads the given transactions from the server, bypassing
-// the freshness cache, for a bulk write's guards. When at least two of them are
-// in a still-fresh cached view, that view only tells it WHERE to look: one fresh
-// budget-wide listing since the earliest of their dates serves them all in a
-// single request, and the guards see the listing's rows, never the cached ones.
-// A transaction the listing does not return (its date moved before the window,
-// or it was not cached to begin with) is read by id. The result maps an id to
-// its row, or to the error reading it raised.
+// the freshness cache, for a bulk write's guards. Reading each by id would cost
+// one request per target, which is exactly what a bulk write exists to avoid, so
+// when there are enough targets it spends ONE request on a fresh budget-wide
+// listing instead and serves every target it contains from that. The window is
+// the default 30 days, widened back (never past freshWindowDays) to the oldest
+// target a still-fresh cached view knows the date of; the cached view only
+// chooses WHERE to look, and the guards always see the listing's rows, never the
+// cached ones. A target the listing does not return (older than the window, or
+// not there) is read by id, so the cost is one request plus one per straggler,
+// not one per target. The result maps an id to its row, or to the error reading
+// it raised.
 func (c *client) freshTransactionsByID(
 	ctx context.Context, budgetID string, ids []string,
 ) (map[string]Transaction, map[string]error) {
 	rows := make(map[string]Transaction, len(ids))
 	errs := map[string]error{}
 
-	since, known := "", 0
+	floor := now().UTC().AddDate(0, 0, -freshWindowDays).Format("2006-01-02")
+	since, known := defaultSince(), 0
 	for _, id := range ids {
 		if t, ok := cacheFindTransaction(c.scope, budgetID, id); ok {
 			known++
-			if since == "" || t.Date < since {
+			if t.Date >= floor && t.Date < since {
 				since = t.Date
 			}
 		}
 	}
-	if known >= 2 {
+	if known >= 2 || len(ids) >= bulkListingMinTargets {
 		wanted := make(map[string]bool, len(ids))
 		for _, id := range ids {
 			wanted[id] = true
@@ -376,8 +392,7 @@ func (c *client) freshTransactionsByID(
 		// A failed listing is not fatal: every id falls through to a read by id.
 		if err := c.get(ctx, budgetPath(budgetID)+"/transactions", q, &r); err == nil {
 			for _, t := range r.Data.Transactions {
-				// A hybrid row (a split's leg) is not the transaction itself.
-				if wanted[t.ID] && t.Type == "" {
+				if wanted[t.ID] {
 					rows[t.ID] = t
 				}
 			}

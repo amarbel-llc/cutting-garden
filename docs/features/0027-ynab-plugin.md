@@ -263,9 +263,9 @@ no transactions in the selection. An empty bucket is not a valid target.
 ### Bulk writes (#334)
 
 The plugin is a best-effort `BulkMutator` (RFC 0017), so a `mutate_nodes`
-changeset of N transaction patches costs a handful of requests however large N
-is, where N single patches cost about three EACH: one fresh read of the targets,
-the category tree when an op names a category, one payee list when any op names a
+changeset of N transaction patches costs a handful of requests, where N single
+patches cost about three EACH: one fresh listing that serves the targets, the
+category tree when an op names a category, one payee list when any op names a
 payee, and ONE bulk `PATCH`. It is the same write as `PatchNode`, not a looser
 one: every op is parsed and planned by the single-patch machinery against a
 FRESH read of its transaction, so each keeps its guards (reconciled, split,
@@ -274,16 +274,23 @@ op is a `failed` entry and the others still go ahead; a patch that changes
 nothing is `patched-nothing`; a patch whose effect the saved transaction does not
 show is a failure.
 
-- The targets are read fresh in one request when at least two of them are in a
-  cached view (the cached dates only choose the window: one budget-wide listing
-  since the earliest, whose rows, not the cached ones, feed the guards). A target
-  the listing does not return is read by id.
+- The targets are read fresh with ONE budget-wide listing, not one request each,
+  when there are at least three of them or two are in a still-fresh cached view.
+  The window is the default 30 days, widened back to the oldest cached target's
+  date but never past a year (YNAB's own default); the cached dates only choose
+  the window, and the rows that feed the guards are the listing's, never the
+  cached ones. A target the listing does not return (older, or absent) is read by
+  id, so the cost is one request plus one per straggler. With fewer than three
+  uncached targets they are simply read by id.
 - Atomic requests are rejected (`ErrBulkAtomicUnsupported`): YNAB documents no
   all-or-nothing guarantee for the bulk update.
-- Two ops on one transaction in a request are refused; the bulk update has no
-  defined order for one id. A payee rename is one request each in the API and goes
-  through `PatchNode` inside the changeset. Create, put and delete are refused per
-  op.
+- Several patches of one transaction merge into one entry, as sequential patches
+  would; two that set the same field to different values conflict and the later
+  one fails (the bulk update has no defined order for one id). The same
+  transaction reached through two spellings of its budget (a name and an id) is
+  caught after the budget is resolved, so it can never be written by two
+  requests. A payee rename is one request each in the API and goes through
+  `PatchNode` inside the changeset. Create, put and delete are refused per op.
 - A request that fails as a whole fails every op of that budget's batch.
 - A sweep resolves its matches with the plugin's own `ListEnriched` and batches
   the template over them, and is refused (never widened) where the enriched
