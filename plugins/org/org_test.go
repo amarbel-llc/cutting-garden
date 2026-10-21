@@ -149,40 +149,81 @@ func TestReadLeaf_Headline(t *testing.T) {
 	}
 }
 
-// A walk that lists and reads every headline of a file confirms its ETag
-// once, not once per headline; after the freshness window it asks again,
-// and an Orgzly upload is then picked up.
-func TestFreshnessWindowSkipsRepeatPropfind(t *testing.T) {
+// A walk that lists and reads every headline of a file confirms its ETag once
+// PER CALL, not once per headline (cutting-garden#311). The boundary is the host
+// call, not a clock: the next call asks again and an Orgzly upload is picked up
+// at once, however recently the last call ran.
+func TestPerCallConfirmationSkipsRepeatPropfind(t *testing.T) {
 	srv := setup(t)
-	ctx := context.Background()
-	read := func(uri string) {
+	read := func(ctx context.Context, uri string) {
 		t.Helper()
 		if _, _, err := (Plugin{}).ReadLeaf(ctx, mustURL(t, uri)); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	read("org://test/_inbox.org?h=Call+the+plumber")
-	if _, err := (Plugin{}).ListRoots(ctx, mustURL(t, "org://test/_inbox.org?id=abc-123")); err != nil {
+	call := cutting_garden_plugins.WithCallScope(context.Background())
+	read(call, "org://test/_inbox.org?h=Call+the+plumber")
+	if _, err := (Plugin{}).ListRoots(call, mustURL(t, "org://test/_inbox.org?id=abc-123")); err != nil {
 		t.Fatal(err)
 	}
-	read("org://test/_inbox.org?h=Dup&n=2")
+	read(call, "org://test/_inbox.org?h=Dup&n=2")
 	if got := srv.Requests("PROPFIND"); got != 1 {
-		t.Errorf("PROPFIND within the window = %d, want 1", got)
+		t.Errorf("PROPFIND within one call = %d, want 1", got)
 	}
 	if got := srv.Requests("GET"); got != 1 {
 		t.Errorf("GET = %d, want 1", got)
 	}
 
-	saved := freshnessWindow
-	freshnessWindow = 0
-	t.Cleanup(func() { freshnessWindow = saved })
+	// The next call, immediately after, confirms again and sees the upload: no
+	// time window carries the old confirmation across.
 	srv.Put("_inbox.org", []byte("* Renamed by the phone\n"))
-	if _, _, err := (Plugin{}).ReadLeaf(ctx, mustURL(t, "org://test/_inbox.org?h=Renamed+by+the+phone")); err != nil {
-		t.Errorf("an expired window must re-check the ETag and see the upload: %v", err)
+	next := cutting_garden_plugins.WithCallScope(context.Background())
+	read(next, "org://test/_inbox.org?h=Renamed+by+the+phone")
+	if got := srv.Requests("PROPFIND"); got != 2 {
+		t.Errorf("PROPFIND in the next call = %d, want 2", got)
+	}
+}
+
+// Outside a call scope nothing is confirmed, so every load asks the server: the
+// safe default for a caller that has not marked a call.
+func TestWithoutACallScopeEveryLoadConfirms(t *testing.T) {
+	srv := setup(t)
+	ctx := context.Background()
+	for _, uri := range []string{
+		"org://test/_inbox.org?h=Call+the+plumber",
+		"org://test/_inbox.org?h=Dup&n=2",
+	} {
+		if _, _, err := (Plugin{}).ReadLeaf(ctx, mustURL(t, uri)); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if got := srv.Requests("PROPFIND"); got != 2 {
-		t.Errorf("PROPFIND after the window = %d, want 2", got)
+		t.Errorf("PROPFIND without a scope = %d, want one per load (2)", got)
+	}
+}
+
+// This process's own write withdraws the call's confirmation, so a read after
+// it in the same call sees what was written, not the parse from before.
+func TestAWriteWithdrawsTheCallsConfirmation(t *testing.T) {
+	srv := setup(t)
+	call := cutting_garden_plugins.WithCallScope(context.Background())
+	if _, _, err := (Plugin{}).ReadLeaf(call, mustURL(t, "org://test/_inbox.org?h=Call+the+plumber")); err != nil {
+		t.Fatal(err)
+	}
+	if !cutting_garden_plugins.ConfirmedThisCall(call, confirmKey("test", "_inbox.org")) {
+		t.Fatal("the load did not confirm the file for this call")
+	}
+	resetCacheEntry(call, "test", "_inbox.org")
+	if cutting_garden_plugins.ConfirmedThisCall(call, confirmKey("test", "_inbox.org")) {
+		t.Error("resetCacheEntry left the confirmation standing after a write")
+	}
+	before := srv.Requests("PROPFIND")
+	if _, _, err := (Plugin{}).ReadLeaf(call, mustURL(t, "org://test/_inbox.org?h=Call+the+plumber")); err != nil {
+		t.Fatal(err)
+	}
+	if srv.Requests("PROPFIND") != before+1 {
+		t.Error("a read after a write in the same call must confirm the ETag again")
 	}
 }
 

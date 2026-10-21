@@ -828,6 +828,17 @@ var BulkBestEffortOps = internal.BulkBestEffortOps
 // A read may degrade a decline to an unfiltered listing; a write may not.
 var BulkBestEffortSweep = internal.BulkBestEffortSweep
 
+// ConfirmForThisCall records that key was just confirmed against its source, so
+// ConfirmedThisCall reports true for the rest of the call. A no-op outside a
+// call scope.
+var ConfirmForThisCall = internal.ConfirmForThisCall
+
+// ConfirmedThisCall reports whether key was confirmed during the current call.
+// It is always false outside a call scope. Keys are plugin-chosen and SHOULD be
+// prefixed with the plugin's scheme and the account, so two plugins (or two
+// accounts) never confirm each other's entries.
+var ConfirmedThisCall = internal.ConfirmedThisCall
+
 // DateBucketMatches reports whether a bucket key falls inside a (coarser or
 // equal) date bucket: key equals the bucket, or extends it at a `-` boundary —
 // "2026-08" contains "2026-08-15" but never a hypothetical "2026-081". This is
@@ -901,6 +912,9 @@ var ErrUnknownScheme = internal.ErrUnknownScheme
 // key (organize's group-by spelling resolution) share this lookup instead of
 // duplicating the loop.
 var FindFacetDimension = internal.FindFacetDimension
+
+// InCallScope reports whether ctx is inside a host call scope.
+var InCallScope = internal.InCallScope
 
 // LookupTagInterpreter resolves a registered interpreter by name (RFC 0019 §3).
 // ok is false for an unregistered name; a consumer MUST NOT fall back to a
@@ -1166,6 +1180,11 @@ var StringsOf = internal.StringsOf
 // truncation. A key already at or coarser than the granularity is unchanged.
 var TruncateDateKey = internal.TruncateDateKey
 
+// UnconfirmForThisCall withdraws a confirmation: a plugin calls it after its OWN
+// write to the entry, which the confirmation no longer describes. A no-op
+// outside a call scope.
+var UnconfirmForThisCall = internal.UnconfirmForThisCall
+
 // ValidateCreations cross-checks creation declarations against the plugin's
 // declared node types: every Tag and ContainerType MUST be a declared type,
 // the container type MUST be a container, and a type is declared creatable at
@@ -1205,6 +1224,12 @@ var ValidateFilterFor = internal.ValidateFilterFor
 // declaration with a unit test calling this (caldav does), catching the error
 // before any command runs.
 var ValidateUnifiedFieldSets = internal.ValidateUnifiedFieldSets
+
+// WithCallScope returns a context that marks one host call. It is idempotent: a
+// context already inside a call scope is returned unchanged, so a nested host
+// layer (a tool that reads a resource) can wrap defensively without shortening
+// the outer call's scope.
+var WithCallScope = internal.WithCallScope
 
 // WithPartialListings returns a context that collects the partial-listing
 // reports plugins make while serving it, and the collector to read them from

@@ -293,7 +293,10 @@ func (cmd *List) runList(
 		return errors.Wrapf(err, "list %s", uriStr)
 	}
 
-	lctx, partial := cutting_garden_plugins.WithPartialListings(ctx)
+	// One cg invocation is one call scope (cutting-garden#311).
+	lctx, partial := cutting_garden_plugins.WithPartialListings(
+		cutting_garden_plugins.WithCallScope(ctx),
+	)
 	var nodes []cutting_garden_plugins.Node
 	if cmd.Query != "" {
 		q, perr := trellis.Parse(cmd.Query)
@@ -515,7 +518,8 @@ func (cmd *List) runFacets(ctx errors.Context, uriStr string) error {
 		return errors.Wrapf(verr, "list --facets %s (filtered)", uriStr)
 	}
 
-	result, ok, err := counter.FacetCounts(ctx, u, filter)
+	// One cg invocation is one call scope (cutting-garden#311).
+	result, ok, err := counter.FacetCounts(cutting_garden_plugins.WithCallScope(ctx), u, filter)
 	if err != nil {
 		return errors.Wrapf(err, "list --facets %s", uriStr)
 	}

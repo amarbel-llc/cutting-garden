@@ -311,9 +311,14 @@ what a listing just showed costs **no** request even when the budget is
 addressed by name; one the listing did not cover costs one fetch, then none.
 
 This is a heuristic with a staleness cost: data edited in the YNAB app is
-invisible for up to a minute. The right boundary is one host call, which needs
-the SDK convention proposed in cutting-garden#311 (the org plugin has the same
-trade-off); this plugin moves to it when it exists.
+invisible for up to a minute. The per-call scope of cutting-garden#311
+(`WithCallScope`) does NOT replace it here, deliberately: it bounds in-walk
+dedupe (the org plugin's case, where a walk re-validates one file per
+headline), but this cache exists for YNAB's 200-requests/hour limit, which is
+spent across calls — a model issuing five reads in a row would pay five
+listings with a per-call boundary. The org plugin therefore moved to the call
+scope and this plugin keeps its window. The call scope stops at the process: an
+out-of-process wire plugin would need a call id in RFC 0013 to use it.
 
 The first design revalidated with `last_knowledge_of_server` and published the
 `server_knowledge` value as a `FacetVersioner` token. It was dropped: a delta

@@ -153,6 +153,24 @@ you can count it, and stay silent when nothing was left out. caldav's event
 date window is the reference (cutting-garden#266). Wire plugins have no way
 to report this yet.
 
+# CONFIRM FRESHNESS ONCE PER CALL
+
+A trellis walk lists a container and then reads each child, so a plugin that
+revalidates a remote resource on every load (an ETag PROPFIND per headline)
+pays for it once per child. Do not buy that back with a clock window: it
+serves stale data to the NEXT call. The host marks a call instead - an mcp
+tool call, an mcp resource read, one *list* invocation each run inside
+*WithCallScope(ctx)* - and you record "revalidated" there:
+*ConfirmedThisCall(ctx, key)* to skip the check,
+*ConfirmForThisCall(ctx, key)* after a successful one, and
+*UnconfirmForThisCall(ctx, key)* after your own write so a later read in the
+same call sees it. Namespace the key by plugin and account. Outside a scope
+(a test, a caller that never marked one) nothing is confirmed, so every load
+revalidates: the safe default. org is the reference (cutting-garden#311). A
+cache that exists to spend a rate limit across calls (ynab) keeps its own
+window instead, and a wire plugin has no call identity to key on yet (it would
+need one in RFC 0013).
+
 # SEARCH WHAT \_body READS
 
 A plugin that can find matching text faster than reading every leaf MAY

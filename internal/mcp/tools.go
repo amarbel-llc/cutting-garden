@@ -299,6 +299,10 @@ const emptyResultText = "(empty: the node has no content)"
 func (t *Tools) callText(
 	ctx context.Context, name string, args json.RawMessage,
 ) (string, error) {
+	// One tool call is one call scope (cutting-garden#311): a plugin that
+	// confirms a cached entry against its source may trust that for the rest of
+	// this call, and must confirm again on the next.
+	ctx = cutting_garden_plugins.WithCallScope(ctx)
 	msg, err := t.call(ctx, name, args)
 	if err == nil && msg == "" {
 		msg = emptyResultText

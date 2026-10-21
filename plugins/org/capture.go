@@ -170,7 +170,7 @@ func (t target) captureLocked(
 		sched: h.Planning.Scheduled, dead: h.Planning.Deadline, body: &h.Body,
 	}
 
-	defer resetCacheEntry(t.acct.Name, t.ref.path)
+	defer resetCacheEntry(ctx, t.acct.Name, t.ref.path)
 	if err := t.putChecked(ctx, t.ref.path, out, token); err != nil {
 		return "", want, err
 	}

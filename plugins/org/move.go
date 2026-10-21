@@ -268,8 +268,8 @@ func (t target) moveLocked(
 	}
 	applied = append(applied, e.move.key)
 
-	defer resetCacheEntry(t.acct.Name, srcPath)
-	defer resetCacheEntry(t.acct.Name, dstPath)
+	defer resetCacheEntry(ctx, t.acct.Name, srcPath)
+	defer resetCacheEntry(ctx, t.acct.Name, dstPath)
 	if err := t.putChecked(ctx, dstPath, dstOut, tokens[dstPath]); err != nil {
 		return nil, want, err
 	}

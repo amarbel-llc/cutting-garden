@@ -89,11 +89,16 @@ Taken 2026-10-14:
   folder finds changed files; only those are re-fetched and re-parsed, and
   a single file is checked with a Depth-0 PROPFIND before any GET. A file
   or headline's facet version is the file's ETag; a folder declines one.
-  A confirmed ETag is trusted for 5 s without asking again (2026-10-15):
-  a trellis walk with `_body~=` lists and reads every headline, and with a
-  PROPFIND each it took over two minutes on about 300 headlines. Orgzly
-  syncs every few minutes at best, so the staleness is invisible; a quote
-  drops the entry it wrote.
+  A confirmed ETag is trusted for the rest of the **host call**, not for a
+  clock interval (cutting-garden#311; this replaced a 5 s window of
+  2026-10-15): a trellis walk with `_body~=` lists and reads every headline,
+  and with a PROPFIND each it took over two minutes on about 300 headlines.
+  The host marks a call with `WithCallScope` (mcp tool calls and resource
+  reads, one `cg list` invocation) and the plugin records its confirmation
+  there (`ConfirmForThisCall`), so the next call asks again and an Orgzly
+  upload shows at once. Outside a call scope nothing is confirmed and every
+  load revalidates. A write withdraws the file's confirmation
+  (`UnconfirmForThisCall`) so a later read in the same call sees it.
 - **D2, scope.** One base WebDAV URL per account. Every `*.org` file beneath
   it is exposed, and subdirectories become folder nodes. Other files are
   skipped by design.

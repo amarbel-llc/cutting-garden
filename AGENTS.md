@@ -44,7 +44,10 @@ accounts, category groups, categories, transactions and payees, a transaction
 listing defaulting to a 30-day `since_date` window because YNAB has no
 paging, a `date=` filter (or a `?date=` URI query, which is how organize
 anchors on a month) pushed down to `since_date`/`until_date`, and a
-60s freshness cache against its 200-requests/hour limit — with an
+60s freshness cache against its 200-requests/hour limit (a cross-call
+rate-limit cache, so it stays a clock window rather than moving to the per-call
+`WithCallScope` the org plugin uses to confirm an ETag once per host call,
+cutting-garden#311) — with an
 in-memory test server in `plugins/ynab/ynabtestserver`
 (`cmd/cutting-garden-ynab-testserver`, the `zz-tests_bats/ynab.bats`
 lane), FDR 0027),

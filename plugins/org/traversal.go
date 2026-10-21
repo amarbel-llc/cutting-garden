@@ -38,10 +38,11 @@ func resolve(u *url.URL) (target, error) {
 
 // file loads the target's file (for a file or headline ref). A Depth-0
 // PROPFIND fetches the current ETag first, so an unchanged file is served
-// from the parse cache without a GET (D9) — unless the ETag was confirmed
-// within freshnessWindow, when even the PROPFIND is skipped.
+// from the parse cache without a GET (D9) — unless the ETag was already
+// confirmed during this host call (cutting-garden#311), when even the PROPFIND
+// is skipped.
 func (t target) file(ctx context.Context) (*parsedFile, error) {
-	if pf, ok := freshCached(t.acct.Name, t.ref.path); ok {
+	if pf, ok := freshCached(ctx, t.acct.Name, t.ref.path); ok {
 		return pf, nil
 	}
 	etag := ""

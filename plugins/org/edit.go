@@ -258,7 +258,7 @@ func (t target) editLocked(
 	if err != nil || len(applied) == 0 {
 		return applied, want, err
 	}
-	defer resetCacheEntry(t.acct.Name, t.ref.path)
+	defer resetCacheEntry(ctx, t.acct.Name, t.ref.path)
 	err = t.client.put(ctx, t.ref.path, updated, token)
 	var unknown outcomeUnknown
 	if stderrors.As(err, &unknown) {

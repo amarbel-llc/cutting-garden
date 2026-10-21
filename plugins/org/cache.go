@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
 	"code.linenisgreat.com/cutting-garden/plugins/org/orgtext"
 )
 
@@ -22,9 +23,6 @@ type parsedFile struct {
 	modTime time.Time
 	file    *orgtext.File
 	top     []*hnode // top-level headlines (or the synthesized one)
-
-	// checked is when the server last confirmed etag; guarded by cacheMu.
-	checked time.Time
 }
 
 // hnode is one headline with its minted URI.
@@ -41,25 +39,27 @@ var (
 	cache   = map[string]*parsedFile{}
 )
 
-// freshnessWindow is how long a confirmed ETag is trusted without asking
-// the server again. One trellis walk lists and reads every headline of a
-// file; without the window each of those costs a Depth-0 PROPFIND. Orgzly
-// syncs every few minutes at best, so a few seconds of staleness is
-// invisible, and this process's own quote drops the entry it wrote.
-var freshnessWindow = 5 * time.Second
-
 func cacheKey(account, rel string) string { return account + "\x00" + rel }
 
+// confirmKey names a file's ETag confirmation in the host call's scope.
+func confirmKey(account, rel string) string { return "org\x00" + account + "\x00" + rel }
+
 // freshCached returns the cached parse of rel when its ETag was confirmed
-// within freshnessWindow.
-func freshCached(account, rel string) (*parsedFile, bool) {
+// against the server during THIS host call (cutting-garden#311). One trellis
+// walk lists and reads every headline of a file; without this each of those
+// costs a Depth-0 PROPFIND. The boundary is the call, not a clock: the walk's
+// caller sees one coherent snapshot of the file, and the next call confirms the
+// ETag again, so staleness never crosses a call (it replaces a 5 s window that
+// could serve data stale across separate calls). Outside a call scope (a test, a
+// direct caller) nothing is confirmed, so every load asks the server.
+func freshCached(ctx context.Context, account, rel string) (*parsedFile, bool) {
+	if !cutting_garden_plugins.ConfirmedThisCall(ctx, confirmKey(account, rel)) {
+		return nil, false
+	}
 	cacheMu.Lock()
 	defer cacheMu.Unlock()
 	pf := cache[cacheKey(account, rel)]
-	if pf == nil || time.Since(pf.checked) >= freshnessWindow {
-		return nil, false
-	}
-	return pf, true
+	return pf, pf != nil
 }
 
 func resetCache() {
@@ -68,8 +68,10 @@ func resetCache() {
 	cache = map[string]*parsedFile{}
 }
 
-// resetCacheEntry drops one file after this process wrote it.
-func resetCacheEntry(account, rel string) {
+// resetCacheEntry drops one file after this process wrote it, and withdraws
+// the call's confirmation of it: the write changed what the ETag described.
+func resetCacheEntry(ctx context.Context, account, rel string) {
+	cutting_garden_plugins.UnconfirmForThisCall(ctx, confirmKey(account, rel))
 	cacheMu.Lock()
 	defer cacheMu.Unlock()
 	delete(cache, cacheKey(account, rel))
@@ -84,8 +86,9 @@ func loadFile(ctx context.Context, c *davClient, a account, rel, knownETag strin
 		cacheMu.Lock()
 		hit := cache[key]
 		if hit != nil && hit.etag == knownETag {
-			hit.checked = time.Now()
 			cacheMu.Unlock()
+			// The server just reported this ETag: confirmed for this call.
+			cutting_garden_plugins.ConfirmForThisCall(ctx, confirmKey(a.Name, rel))
 			return hit, nil
 		}
 		cacheMu.Unlock()
@@ -96,10 +99,11 @@ func loadFile(ctx context.Context, c *davClient, a account, rel, knownETag strin
 	}
 	pf := parseFile(a, rel, etag, body)
 	if etag != "" {
-		pf.checked = time.Now()
 		cacheMu.Lock()
 		cache[key] = pf
 		cacheMu.Unlock()
+		// Fetched just now, so confirmed for this call.
+		cutting_garden_plugins.ConfirmForThisCall(ctx, confirmKey(a.Name, rel))
 	}
 	return pf, nil
 }
