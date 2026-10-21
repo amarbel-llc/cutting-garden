@@ -201,6 +201,20 @@ function ynab_mcp_patch_refuses_an_unknown_category { # @test
   assert_output "Dining Out"
 }
 
+# A changeset of several transaction patches in one mutate_nodes call reaches the
+# plugin's BulkMutator (cutting-garden#334): each op lands, and the read-back
+# from a fresh process sees every one.
+function ynab_mcp_bulk_patches_land_together { # @test
+  mcp_drive ynab://test/ "$(tools_call 3 mutate_nodes '{"groups":[{"anchor":"ynab://test/Household/transactions/","ops":[{"kind":"patch","id":"t-0702","body":"{\"memo\":\"bulk one\"}"},{"kind":"patch","id":"t-0709","body":"{\"category\":\"Rent\",\"memo\":\"bulk two\"}"}]}]}')"
+  run jq -r '.groups[0].applied | join(",")' <<<"$(mcp_result_text "$output" 3)"
+  assert_output t-0702,t-0709
+
+  ynab_mcp_list ynab://test/Household/transactions/ date=2026-07
+  run jq -r '.nodes | map(select(.name | test("Corner Cafe|Grocer")) | [.fields.memo, .fields.category] | @tsv) | .[]' \
+    <<<"$(mcp_result_text "$output" 3)"
+  assert_output "$(printf 'bulk one\tDining Out\nbulk two\tRent')"
+}
+
 # Payees (cutting-garden#333). A payee reads as its JSON, and a transaction
 # can be repointed to ANOTHER EXISTING payee by name; the read-back goes through
 # cg itself.

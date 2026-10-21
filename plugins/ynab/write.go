@@ -127,7 +127,7 @@ func (Plugin) PatchNode(
 	if err != nil {
 		return nil, err
 	}
-	plan, err := planTransactionPatch(ctx, c, budgetID, current, patch)
+	plan, err := planTransactionPatch(ctx, c, budgetID, current, patch, freshPayeeLister(c, budgetID))
 	if err != nil {
 		return nil, err
 	}
@@ -285,6 +285,7 @@ type patchPlan struct {
 // that changes nothing sends nothing.
 func planTransactionPatch(
 	ctx context.Context, c *client, budgetID string, current Transaction, patch transactionPatch,
+	payees payeeLister,
 ) (patchPlan, error) {
 	plan := patchPlan{entry: map[string]any{"id": current.ID}}
 	if current.Deleted {
@@ -350,7 +351,7 @@ func planTransactionPatch(
 					"and is not changed here", current.ID,
 			)
 		}
-		payee, err := resolvePayeeRef(ctx, c, budgetID, patch.payee)
+		payee, err := resolvePayeeRef(ctx, payees, patch.payee)
 		if err != nil {
 			return plan, err
 		}
@@ -425,6 +426,25 @@ func deref(s *string) string {
 	return *s
 }
 
+// payeeLister supplies the budget's payees to resolvePayeeRef. A single patch
+// reads them fresh each time; a bulk patch reads them fresh once for the whole
+// batch (bulk_mutate.go), so N repoints cost one list, not N.
+type payeeLister func(ctx context.Context) ([]Payee, error)
+
+// freshPayeeLister reads the budget's payees from the server on every call,
+// bypassing the freshness cache, and refreshes the cache with what it read
+// (which is at least as fresh as anything already there).
+func freshPayeeLister(c *client, budgetID string) payeeLister {
+	return func(ctx context.Context) ([]Payee, error) {
+		payees, err := c.freshPayees(ctx, budgetID)
+		if err != nil {
+			return nil, err
+		}
+		cachePut(cacheKey{scope: c.scope, kind: cachePayees, budget: budgetID}, payees)
+		return payees, nil
+	}
+}
+
 // resolvePayeeRef finds the existing payee a patch names, by id or by exact
 // name. It never creates one: sent a `payee_name` that matches nothing, YNAB
 // would mint a new payee, so a typo in a bulk edit would quietly fork a payee —
@@ -437,15 +457,13 @@ func deref(s *string) string {
 // merged away or created a moment ago must not be resolved from a list cached
 // before. Matching is exact on id or name; the rename guard's case-insensitive
 // collision check (payee_write.go) is deliberately stricter.
-func resolvePayeeRef(ctx context.Context, c *client, budgetID, ref string) (Payee, error) {
-	payees, err := c.freshPayees(ctx, budgetID)
+func resolvePayeeRef(ctx context.Context, payees payeeLister, ref string) (Payee, error) {
+	list, err := payees(ctx)
 	if err != nil {
 		return Payee{}, err
 	}
-	// What was just read is at least as fresh as anything cached.
-	cachePut(cacheKey{scope: c.scope, kind: cachePayees, budget: budgetID}, payees)
 	var byID, byName []Payee
-	for _, p := range livePayees(payees) {
+	for _, p := range livePayees(list) {
 		switch {
 		case p.ID == ref:
 			byID = append(byID, p)

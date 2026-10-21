@@ -343,6 +343,60 @@ func (c *client) freshTransaction(ctx context.Context, budgetID, id string) (Tra
 	return r.Data.Transaction, nil
 }
 
+// freshTransactionsByID reads the given transactions from the server, bypassing
+// the freshness cache, for a bulk write's guards. When at least two of them are
+// in a still-fresh cached view, that view only tells it WHERE to look: one fresh
+// budget-wide listing since the earliest of their dates serves them all in a
+// single request, and the guards see the listing's rows, never the cached ones.
+// A transaction the listing does not return (its date moved before the window,
+// or it was not cached to begin with) is read by id. The result maps an id to
+// its row, or to the error reading it raised.
+func (c *client) freshTransactionsByID(
+	ctx context.Context, budgetID string, ids []string,
+) (map[string]Transaction, map[string]error) {
+	rows := make(map[string]Transaction, len(ids))
+	errs := map[string]error{}
+
+	since, known := "", 0
+	for _, id := range ids {
+		if t, ok := cacheFindTransaction(c.scope, budgetID, id); ok {
+			known++
+			if since == "" || t.Date < since {
+				since = t.Date
+			}
+		}
+	}
+	if known >= 2 {
+		wanted := make(map[string]bool, len(ids))
+		for _, id := range ids {
+			wanted[id] = true
+		}
+		var r transactionsResponse
+		q := url.Values{"since_date": {since}}
+		// A failed listing is not fatal: every id falls through to a read by id.
+		if err := c.get(ctx, budgetPath(budgetID)+"/transactions", q, &r); err == nil {
+			for _, t := range r.Data.Transactions {
+				// A hybrid row (a split's leg) is not the transaction itself.
+				if wanted[t.ID] && t.Type == "" {
+					rows[t.ID] = t
+				}
+			}
+		}
+	}
+	for _, id := range ids {
+		if _, ok := rows[id]; ok {
+			continue
+		}
+		t, err := c.freshTransaction(ctx, budgetID, id)
+		if err != nil {
+			errs[id] = err
+			continue
+		}
+		rows[id] = t
+	}
+	return rows, errs
+}
+
 // patchTransactions updates transactions in one request (YNAB's bulk
 // `PATCH /budgets/{id}/transactions`, partial updates by id) and returns the
 // transactions as YNAB saved them. Each entry is a map carrying the

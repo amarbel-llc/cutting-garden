@@ -592,6 +592,19 @@ func (s *Server) Writes() int {
 	return s.writes
 }
 
+// SetCleared changes a seeded transaction's cleared state behind the plugin's
+// back (as reconciling in YNAB's own UI would), so a test can prove the write
+// guards read the transaction fresh instead of trusting a cached listing.
+func (s *Server) SetCleared(budgetID, id, cleared string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.transactions {
+		if t := &s.transactions[i]; t.BudgetID == budgetID && t.ID == id {
+			t.Cleared = cleared
+		}
+	}
+}
+
 // PayeeByID returns a seeded payee as the server now holds it.
 func (s *Server) PayeeByID(budgetID, id string) (Payee, bool) {
 	s.mu.Lock()

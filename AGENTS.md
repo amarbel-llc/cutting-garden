@@ -38,7 +38,8 @@ the `plugins/org/orgtext` leaf and an
 in-memory WebDAV test server in `plugins/org/orgtestserver`, FDR 0026;
 and ynab, a traversal plugin over the YNAB REST API, writable only for a
 transaction's category, cleared state, memo and payee (an existing one; it
-never creates payees) and a payee's name (never a merge) — budgets,
+never creates payees) and a payee's name (never a merge), with a best-effort
+`BulkMutator` that batches transaction patches into one request — budgets,
 accounts, category groups, categories, transactions and payees, a transaction
 listing defaulting to a 30-day `since_date` window because YNAB has no
 paging, a `date=` filter (or a `?date=` URI query, which is how organize

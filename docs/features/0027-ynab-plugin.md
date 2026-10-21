@@ -260,6 +260,39 @@ repoints the transaction, which makes "fold the redundant payee into its twin" o
 organize pass. The twin's heading has to be written into the document when it has
 no transactions in the selection. An empty bucket is not a valid target.
 
+### Bulk writes (#334)
+
+The plugin is a best-effort `BulkMutator` (RFC 0017), so a `mutate_nodes`
+changeset of N transaction patches costs a handful of requests however large N
+is, where N single patches cost about three EACH: one fresh read of the targets,
+the category tree when an op names a category, one payee list when any op names a
+payee, and ONE bulk `PATCH`. It is the same write as `PatchNode`, not a looser
+one: every op is parsed and planned by the single-patch machinery against a
+FRESH read of its transaction, so each keeps its guards (reconciled, split,
+transfer, unknown or ambiguous category or payee) and its own outcome. A refused
+op is a `failed` entry and the others still go ahead; a patch that changes
+nothing is `patched-nothing`; a patch whose effect the saved transaction does not
+show is a failure.
+
+- The targets are read fresh in one request when at least two of them are in a
+  cached view (the cached dates only choose the window: one budget-wide listing
+  since the earliest, whose rows, not the cached ones, feed the guards). A target
+  the listing does not return is read by id.
+- Atomic requests are rejected (`ErrBulkAtomicUnsupported`): YNAB documents no
+  all-or-nothing guarantee for the bulk update.
+- Two ops on one transaction in a request are refused; the bulk update has no
+  defined order for one id. A payee rename is one request each in the API and goes
+  through `PatchNode` inside the changeset. Create, put and delete are refused per
+  op.
+- A request that fails as a whole fails every op of that budget's batch.
+- A sweep resolves its matches with the plugin's own `ListEnriched` and batches
+  the template over them, and is refused (never widened) where the enriched
+  listing declines.
+
+This helps `mutate_nodes` callers only. `organize` applies each move with its own
+`PatchNode` and does not use `BulkMutate` (cutting-garden#339), so an organize
+pass still pays the per-patch cost until that lands.
+
 ### Caching and rate limit
 
 As built (`cache.go`): the budget list, a budget's accounts and category tree,
@@ -284,10 +317,12 @@ therefore does not implement `FacetVersioner`, and the framework's TTL applies.
 
 - Writes are limited to four fields on a plain transaction (category, cleared,
   memo, payee) and a payee's name (see Writes and Payees). Creating, replacing
-  and deleting nodes are refused, and `BulkMutator` is not implemented: an
-  organize that moves N lines sends N transaction `PATCH` requests, each
-  preceded by a fresh read of its transaction (and, for a payee move, a fresh
-  payee list), against the 200/hour limit; cutting-garden#334.
+  and deleting nodes are refused. `mutate_nodes` batches transaction patches
+  through the plugin's `BulkMutator` (see Bulk writes), but an organize that
+  moves N lines still sends N transaction `PATCH` requests, each preceded by a
+  fresh read of its transaction (and, for a payee move, a fresh payee list),
+  against the 200/hour limit, because organize does not use `BulkMutate`
+  (cutting-garden#339).
 - Payees cannot be merged, created or deleted from here (YNAB's API has no
   merge). Renaming a payee onto a name another holds is refused.
 - Scheduled transactions, months and goals are not nodes.
