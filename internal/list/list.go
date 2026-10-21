@@ -549,8 +549,27 @@ func writeFacetsText(w io.Writer, result cutting_garden_plugins.FacetResult) err
 	if err := tw.Flush(); err != nil {
 		return errors.Wrap(err)
 	}
-	if !result.Complete {
+	switch {
+	case result.IsComplete():
+	case len(result.Incomplete) == 0:
 		buf.WriteString("(partial — summary does not cover the whole subtree)\n")
+	default:
+		// The plugin named the dimensions that are not exhaustive (RFC 0012
+		// §5.1): say which, and that every other row is exact.
+		parts := make([]string, 0, len(result.Incomplete))
+		for _, dim := range result.IncompleteDimensions() {
+			gap := result.Incomplete[dim]
+			state := "partial"
+			if gap.Declined {
+				state = "declined"
+			}
+			part := dim + ": " + state
+			if gap.Reason != "" {
+				part += " (" + gap.Reason + ")"
+			}
+			parts = append(parts, part)
+		}
+		buf.WriteString("(partial — " + strings.Join(parts, "; ") + "; other dimensions are exact)\n")
 	}
 
 	if _, err := io.WriteString(w, buf.String()); err != nil {
@@ -589,14 +608,18 @@ func formatHistogram(hist cutting_garden_plugins.FacetHistogram) string {
 type facetView struct {
 	Facets   cutting_garden_plugins.FacetSummary `json:"facets"`
 	Complete bool                                `json:"complete"`
+	// Incomplete names the dimensions that are not exhaustive when the plugin
+	// could attribute a false Complete to dimensions (RFC 0012 §5.1).
+	Incomplete map[string]cutting_garden_plugins.FacetGap `json:"incomplete,omitempty"`
 }
 
 // writeFacetsJSON emits the summary as a single JSON object for jq.
 func writeFacetsJSON(w io.Writer, result cutting_garden_plugins.FacetResult) error {
 	enc := json.NewEncoder(w)
 	if err := enc.Encode(facetView{
-		Facets:   result.Summary,
-		Complete: result.Complete,
+		Facets:     result.Summary,
+		Complete:   result.IsComplete(),
+		Incomplete: result.Incomplete,
 	}); err != nil {
 		return errors.Wrap(err)
 	}

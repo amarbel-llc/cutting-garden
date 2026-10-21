@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/url"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -427,6 +428,56 @@ func TestWirePluginFacetBreakdownNormalizedAtBoundary(t *testing.T) {
 		if entry.Count <= 0 {
 			t.Errorf("zero-count entry survived normalization: %+v", entry)
 		}
+	}
+}
+
+// TestWirePluginFacetCountsCarriesPerDimensionGaps pins RFC 0012 §5.1
+// (cutting-garden#171) across the wire: the dimensions a plugin names as
+// incomplete, each partial or declined with its reason, arrive on the host's
+// FacetResult exactly as a linked plugin would have returned them, and the
+// summary is not read as complete.
+func TestWirePluginFacetCountsCarriesPerDimensionGaps(t *testing.T) {
+	gaps := map[string]cutting_garden_plugins.FacetGap{
+		"state": {Reason: "top 1 of 2 states"},
+		"label": {Declined: true, Reason: "too many repositories to sweep"},
+	}
+	plugin := &fakeFullPlugin{facetIncomplete: gaps}
+	adapter, _ := newTestWirePlugin(t, memSpec(), fullPluginConfig(plugin))
+
+	result, ok, err := adapter.FacetCounts(
+		context.Background(), mustParseURL(t, fakeRootURI), nil,
+	)
+	if err != nil || !ok {
+		t.Fatalf("FacetCounts = ok %t, err %v", ok, err)
+	}
+	if !reflect.DeepEqual(result.Incomplete, gaps) {
+		t.Errorf("Incomplete = %+v, want %+v", result.Incomplete, gaps)
+	}
+	if result.Complete || result.IsComplete() {
+		t.Error("a result with per-dimension gaps must not be complete")
+	}
+}
+
+// A plugin that names gaps but leaves Complete true is read conservatively on
+// the wire: the server sends the summary as not complete, so a consumer that
+// has never heard of Incomplete still does not take it for exhaustive.
+func TestWirePluginFacetCountsGapsOverrideAClaimedComplete(t *testing.T) {
+	plugin := &fakeFullPlugin{
+		facetIncomplete: map[string]cutting_garden_plugins.FacetGap{
+			"state": {Reason: "capped"},
+		},
+		facetClaimsCompleteDespiteGaps: true,
+	}
+	adapter, _ := newTestWirePlugin(t, memSpec(), fullPluginConfig(plugin))
+
+	result, ok, err := adapter.FacetCounts(
+		context.Background(), mustParseURL(t, fakeRootURI), nil,
+	)
+	if err != nil || !ok {
+		t.Fatalf("FacetCounts = ok %t, err %v", ok, err)
+	}
+	if result.Complete {
+		t.Error("Complete = true alongside Incomplete; the host must read it as partial")
 	}
 }
 

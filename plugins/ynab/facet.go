@@ -2,6 +2,7 @@ package ynab
 
 import (
 	"context"
+	"fmt"
 	"net/url"
 	"sort"
 	"time"
@@ -198,10 +199,22 @@ func (Plugin) FacetCounts(
 	}
 
 	complete := window.explicit
-	if capHistogram(summary[facetPayee], payeeTopN) {
+	var incomplete map[string]cutting_garden_plugins.FacetGap
+	if total, dropped := capHistogram(summary[facetPayee], payeeTopN); dropped {
 		complete = false
+		// With an explicit window every other dimension is exact, so say which
+		// one is not (RFC 0012 §5.1, cutting-garden#171). Under the default
+		// window the whole summary is partial for a reason that is not a
+		// dimension's, so the gap cannot be pinned on payee alone.
+		if window.explicit {
+			incomplete = map[string]cutting_garden_plugins.FacetGap{
+				facetPayee: {Reason: fmt.Sprintf("top %d of %d payees", payeeTopN, total)},
+			}
+		}
 	}
-	return cutting_garden_plugins.FacetResult{Summary: summary, Complete: complete}, true, nil
+	return cutting_garden_plugins.FacetResult{
+		Summary: summary, Complete: complete, Incomplete: incomplete,
+	}, true, nil
 }
 
 // liftFacets folds one transaction's facet values into summary: +1 per
@@ -224,11 +237,12 @@ func liftFacets(
 
 // capHistogram keeps only the top-n buckets of hist by descending count (ties
 // broken by ascending key for determinism), deleting the rest in place. It
-// reports whether any bucket was dropped. A nil or already-small histogram is
-// left untouched.
-func capHistogram(hist cutting_garden_plugins.FacetHistogram, n int) bool {
-	if len(hist) <= n {
-		return false
+// reports how many buckets the histogram held before the cap and whether any
+// was dropped. A nil or already-small histogram is left untouched.
+func capHistogram(hist cutting_garden_plugins.FacetHistogram, n int) (total int, dropped bool) {
+	total = len(hist)
+	if total <= n {
+		return total, false
 	}
 	type kv struct {
 		key   string
@@ -247,5 +261,5 @@ func capHistogram(hist cutting_garden_plugins.FacetHistogram, n int) bool {
 	for _, e := range entries[n:] {
 		delete(hist, e.key)
 	}
-	return true
+	return total, true
 }

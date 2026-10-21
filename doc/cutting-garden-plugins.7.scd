@@ -80,11 +80,18 @@ returning *ok == false* falls back to the plain, unenriched listing. Both
 fallbacks are correct and safe to rely on - but they are not free. The fold
 re-walks a subtree your plugin may already be able to summarize directly in
 one call (an atomic listing, an in-memory index, a backend *GROUP BY*),
-which is strictly more work than answering once. Before defaulting to
-decline, compare its cost against the fold it triggers - see RFC 0012 §4.2
-for the fold's exact shape and when the framework bounds or refuses it.
+which is strictly more work than answering once - and may cost MORE than the
+computation you declined to do. So a plugin MUST NOT decline wholesale
+merely because its own computation is expensive; it SHOULD decline only when
+the fold is cheaper, or when it cannot bound its own cost at all. "Is my own
+cost bounded?" is a question you can answer even over an opaque backend;
+"is the fold cheaper than me?" is not. Reason in magnitudes (requests,
+bytes), not complexity classes: "one sweep" and "62 paginated requests of
+full bodies per recompute" are the same class and very different decisions.
+See RFC 0012 §4 for the rule and §4.2 for the fold's exact shape and when
+the framework bounds or refuses it (cutting-garden#171).
 
-This guidance is bounded to declining WHOLESALE: returning *ok == false* so
+This rule is bounded to declining WHOLESALE: returning *ok == false* so
 the whole request falls through to a framework fallback. Omitting a single
 dimension from a summary you otherwise serve as *ok: true* is a different
 thing, and it is possible today - a dimension simply can be absent from
@@ -92,7 +99,30 @@ what you emit. That triggers no fallback at all: nothing re-walks
 anything, so there is no fold to weigh the omission against. The cost
 instead falls entirely on the CONSUMER, who loses the ability to ask that
 one question; weigh an omitted dimension against that lost question, not
-against a fold that was never going to run.
+against a fold that was never going to run. But do not omit SILENTLY: say so
+with *FacetResult.Incomplete* (next section).
+
+# NAME THE PARTIAL DIMENSION
+
+*FacetResult.Complete* is one bool for the whole summary. If you serve several
+cheap, exact dimensions beside one capped or expensive one, set
+*FacetResult.Incomplete* (RFC 0012 §5.1) to say which: a map from the declared
+dimension key to a *FacetGap* - *Declined* true when the dimension is absent
+from the summary by your choice, false when it is present but partial (capped
+at the top N) - and a short *Reason* ("top 20 of 31 payees"). Every dimension
+you do not name is then read as exact, which is the whole point, so populate it
+ONLY when you can name every dimension that is not exhaustive. If the summary
+is partial for a reason that is not one dimension's (a truncated page the
+dimensions were folded over, a default window that does not reach back through
+history), leave it nil and set *Complete* false: a consumer then treats any
+dimension as possibly partial. Keep *Complete* false whenever *Incomplete* is
+non-empty; consumers read completeness as *IsComplete()*, and a host reads a
+peer's result that names a gap as not complete whatever it claimed.
+
+A plugin that implements *FacetVersioner* MUST also document the blind spots of
+its change token - the facet-relevant changes it does not move on - so a
+consumer reasoning about staleness need not assume the token is total (RFC 0012
+§11.1).
 
 # NO SILENT EMPTIES
 

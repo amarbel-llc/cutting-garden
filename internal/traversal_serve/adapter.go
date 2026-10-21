@@ -843,7 +843,11 @@ func (w *WirePlugin) FacetCounts(
 	if result.Summary == nil {
 		result.Summary = cutting_garden_plugins.FacetSummary{}
 	}
-	result.Complete = wireResult.Complete
+	// Per-dimension gaps (RFC 0012 §5.1, cutting-garden#171). The host does not
+	// trust a peer to have kept Complete false alongside them: a result that
+	// names a gap is not complete as a whole, and is read that way.
+	result.Incomplete = ToFacetGaps(wireResult.Incomplete)
+	result.Complete = wireResult.Complete && len(result.Incomplete) == 0
 
 	// The RFC 0012 §13 invariants (only Count > 0 entries; capped at
 	// FacetContainerBreakdownLimit) are the PLUGIN's obligations, but the

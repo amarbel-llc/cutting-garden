@@ -227,6 +227,10 @@ type FacetDimension = internal.FacetDimension
 // RFC 0012 §6.
 type FacetFilter = internal.FacetFilter
 
+// FacetGap says why one dimension of a FacetResult is not exhaustive (RFC 0012
+// §5.1).
+type FacetGap = internal.FacetGap
+
 // FacetHistogram is one dimension's aggregate: a count per value Key.
 // See RFC 0012 §3.
 type FacetHistogram = internal.FacetHistogram

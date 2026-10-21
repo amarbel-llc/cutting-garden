@@ -157,7 +157,28 @@ type FacetResult struct {
 	// subtree — a backend cap (e.g. browser history returns at most N), a
 	// sampled index, or an internal bound. Consumers MUST surface a false
 	// Complete as a partial result and MUST NOT present it as exhaustive.
+	//
+	// Complete is a statement about the WHOLE summary. When Incomplete is
+	// non-empty it MUST be false (see Incomplete), and a consumer that does not
+	// know about Incomplete is then still told, conservatively, that the
+	// summary as a whole is not exhaustive.
 	Complete bool
+	// Incomplete is an OPTIONAL per-dimension refinement of a false Complete
+	// (RFC 0012 §5.1, cutting-garden#171): it names the dimensions that are NOT
+	// exhaustive and why, which says by omission that every other dimension in
+	// Summary IS exact. Without it a plugin serving several cheap, exact
+	// dimensions beside one capped or expensive one has only two moves, and both
+	// misreport: mark the whole summary partial (defaming the exact dimensions)
+	// or leave the capped dimension out (indistinguishable from "does not apply
+	// here").
+	//
+	// Keys are declared dimension keys. A plugin populates it ONLY when it can
+	// name EVERY dimension that is not exhaustive; if the summary is partial
+	// for a reason it cannot attribute to dimensions, it leaves Incomplete nil
+	// and Complete false, and a consumer MUST then treat any dimension as
+	// possibly partial. nil is the honest, normal value for a plugin with no
+	// per-dimension distinction. Use IsComplete for the consumer-side reading.
+	Incomplete map[string]FacetGap
 	// ByContainer is an OPTIONAL per-child-container breakdown of the
 	// matching set Summary aggregates: how many of the (possibly
 	// filter-narrowed) nodes counted in Summary live under which immediate
@@ -180,6 +201,40 @@ type FacetResult struct {
 	// whole result (a truncated ByContainer says nothing about whether
 	// Summary itself is complete).
 	ByContainerTruncated bool
+}
+
+// FacetGap says why one dimension of a FacetResult is not exhaustive (RFC 0012
+// §5.1).
+type FacetGap struct {
+	// Declined is true when the dimension is ABSENT from Summary because the
+	// plugin chose not to compute it (too expensive here); false when it is
+	// PRESENT but partial (capped at the top N, sampled). A declined dimension
+	// MUST NOT appear in Summary, and a partial one SHOULD, so a consumer can
+	// still use what was counted.
+	Declined bool `json:"declined,omitempty"`
+	// Reason is a short human-readable cause ("top 20 of 31 payees", "too
+	// many repositories to sweep"). SHOULD be set: a bare gap tells a consumer
+	// that, not what to do about it.
+	Reason string `json:"reason,omitempty"`
+}
+
+// IsComplete reports whether every dimension of r is exhaustive: Complete, with
+// no per-dimension gap. It is the reading a consumer uses for "is any of this
+// partial?", so a result that sets Incomplete but forgets to clear Complete is
+// still reported partial rather than trusted.
+func (r FacetResult) IsComplete() bool {
+	return r.Complete && len(r.Incomplete) == 0
+}
+
+// IncompleteDimensions returns the keys of r.Incomplete sorted, for stable
+// output.
+func (r FacetResult) IncompleteDimensions() []string {
+	keys := make([]string, 0, len(r.Incomplete))
+	for key := range r.Incomplete {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // FacetContainerBreakdown is one immediate child container's contribution

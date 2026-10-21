@@ -537,6 +537,12 @@ func (r *Resources) rawBlobLink(
 type facetView struct {
 	Facets   cutting_garden_plugins.FacetSummary `json:"facets"`
 	Complete bool                                `json:"complete"`
+	// Incomplete, present only when Complete is false for a reason the plugin
+	// could attribute to dimensions (RFC 0012 §5.1, cutting-garden#171), names
+	// the dimensions that are NOT exhaustive and why. Every dimension of Facets
+	// it does not name is exact; with Complete false and no Incomplete, any
+	// dimension may be partial.
+	Incomplete map[string]cutting_garden_plugins.FacetGap `json:"incomplete,omitempty"`
 	// ByContainer is the OPTIONAL per-child-container breakdown of Facets
 	// (RFC 0012 §13, cutting-garden#170): which immediate child container
 	// of the summarized node each matching node lives under, so a caller
@@ -670,7 +676,8 @@ func (r *Resources) ReadFacets(
 	}
 	view := &facetView{
 		Facets:               result.Summary,
-		Complete:             result.Complete,
+		Complete:             result.IsComplete(),
+		Incomplete:           result.Incomplete,
 		ByContainer:          result.ByContainer,
 		ByContainerTruncated: result.ByContainerTruncated,
 		ComputedAt:           time.Now().UTC().Format(time.RFC3339),

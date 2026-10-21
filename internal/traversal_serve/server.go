@@ -720,9 +720,12 @@ func (s *server) handleFacetCounts(
 	}
 
 	return FacetCountsResult{
-		OK:       true,
-		Summary:  facetResult.Summary,
-		Complete: facetResult.Complete,
+		OK:      true,
+		Summary: facetResult.Summary,
+		// A result that names per-dimension gaps is not complete as a whole,
+		// whatever the plugin set: send the conservative reading (RFC 0012 §5.1).
+		Complete:   facetResult.IsComplete(),
+		Incomplete: FacetGapViewsFrom(facetResult.Incomplete),
 		ByContainer: FacetContainerBreakdownViewsFrom(
 			facetResult.ByContainer,
 		),

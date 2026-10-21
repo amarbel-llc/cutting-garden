@@ -620,6 +620,37 @@ func TestFacetCountsResultEncoding(t *testing.T) {
 		!reflect.DeepEqual(decoded.Summary, summary) {
 		t.Errorf("round trip = %#v", decoded)
 	}
+
+	// Per-dimension gaps (RFC 0012 §5.1) are absent unless a plugin names one,
+	// and round-trip with declined/reason when it does.
+	if strings.Contains(string(raw), "incomplete") {
+		t.Errorf("json = %s, want no incomplete key without gaps", raw)
+	}
+	raw, err = json.Marshal(FacetCountsResult{
+		OK:      true,
+		Summary: summary,
+		Incomplete: FacetGapViewsFrom(map[string]cutting_garden_plugins.FacetGap{
+			"state": {Reason: "top 1 of 2"},
+			"label": {Declined: true, Reason: "too expensive"},
+		}),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var gapped FacetCountsResult
+	if err = json.Unmarshal(raw, &gapped); err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]cutting_garden_plugins.FacetGap{
+		"state": {Reason: "top 1 of 2"},
+		"label": {Declined: true, Reason: "too expensive"},
+	}
+	if got := ToFacetGaps(gapped.Incomplete); !reflect.DeepEqual(got, want) {
+		t.Errorf("gaps round trip = %+v, want %+v", got, want)
+	}
+	if FacetGapViewsFrom(nil) != nil || ToFacetGaps(nil) != nil {
+		t.Error("an absent gap map must stay absent across the projection")
+	}
 }
 
 func TestFacetVersionResultDecline(t *testing.T) {

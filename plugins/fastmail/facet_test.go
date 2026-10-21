@@ -146,4 +146,13 @@ func TestFacetCounts_FromTopNCap(t *testing.T) {
 	if res.Complete {
 		t.Error("Complete=true after from cap, want false")
 	}
+	// The thread page was complete, so the gap is `from` alone (RFC 0012 §5.1,
+	// cutting-garden#171): every other dimension is exact.
+	if got := res.IncompleteDimensions(); len(got) != 1 || got[0] != facetFrom {
+		t.Fatalf("incomplete dimensions = %v, want [%s]", got, facetFrom)
+	}
+	want := fmt.Sprintf("top %d of %d senders", fromTopN, fromTopN+5)
+	if gap := res.Incomplete[facetFrom]; gap.Declined || gap.Reason != want {
+		t.Errorf("from gap = %+v, want partial, %q", gap, want)
+	}
 }

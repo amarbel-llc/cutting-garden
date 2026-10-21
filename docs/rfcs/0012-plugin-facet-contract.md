@@ -314,6 +314,26 @@ plugin could summarize directly is strictly more work.
 Because the fold visits descendants, the framework MUST bound it (§8) and MUST
 NOT fold an unbounded subtree when the plugin offers no `FacetCounter`.
 
+**Declining is not free (cutting-garden#171).** `ok == false` is an honest
+opt-out, but it is not a free one: it hands the work to the framework fold,
+which re-walks the subtree and may cost strictly MORE than the computation the
+plugin declined to do (a forge plugin that declined a label histogram as
+"expensive" caused a fold of every repository's listing plus every issue, where
+one owner-scoped sweep would have been cheaper). So, for a WHOLESALE decline:
+
+- a plugin MUST NOT decline merely because its own computation is expensive;
+- it SHOULD decline only when the fold is cheaper, or when it cannot bound its
+  own cost at all.
+
+The rule is stated this way because it is actionable without estimating the
+fold: "is my own cost bounded?" is a question every plugin can answer about
+itself, even over an opaque backend, while "is the fold cheaper than me?" is not.
+Reason in magnitudes, not complexity classes — "one owner-scoped sweep" and "62
+paginated requests of full bodies per recompute" are the same class and very
+different decisions. The rule does NOT govern omitting a single dimension from a
+summary served `ok == true` (§5.1): no fold runs there, and the cost of the
+omission falls on the consumer.
+
 ### 5. `FacetCounter` — a one-shot subtree summary
 
 ```go
@@ -325,6 +345,9 @@ type FacetResult struct {
     // index, or an internal bound. Consumers MUST surface a false Complete as
     // a partial result and MUST NOT present it as exhaustive.
     Complete bool
+    // Incomplete, OPTIONAL (§5.1), narrows a false Complete to the dimensions
+    // that are not exhaustive. nil is the normal value.
+    Incomplete map[string]FacetGap
 }
 
 // FacetCounter returns a node's hoisted summary in one operation, without the
@@ -350,6 +373,63 @@ as authoritative (§4.1) and MUST pass any active filter through to it. Every
 dimension key in the result MUST be declared (§2). The framework-fold path
 (§4.2) likewise yields a `FacetResult`; its `Complete` is false when the fold
 bound (§8) is hit.
+
+#### 5.1 Per-dimension incompleteness (`FacetResult.Incomplete`)
+
+`Complete` is one bool for the WHOLE summary. A plugin that serves several
+cheap, exact dimensions beside one capped or expensive one therefore has only
+two moves, and both misreport: mark the whole summary `Complete: false`, which
+misrepresents the exact dimensions as partial; or leave the capped dimension
+out, which a consumer cannot tell from "this dimension does not apply here" —
+the same ambiguity class #161 closed for filters (an empty result
+indistinguishable from a typo), reintroduced one layer up. `Incomplete` lets a
+plugin say which:
+
+```go
+// FacetGap says why one dimension is not exhaustive.
+type FacetGap struct {
+    // Declined: the dimension is ABSENT from Summary by the plugin's choice.
+    // false: it is PRESENT but partial (capped at the top N, sampled).
+    Declined bool
+    // Reason is a short human-readable cause ("top 20 of 31 payees").
+    Reason string
+}
+```
+
+- **Keys** are declared dimension keys (§2). A `Declined` dimension MUST NOT
+  appear in `Summary`; a partial one SHOULD, so a consumer can still use what
+  was counted. `Reason` SHOULD be set.
+- **Meaning by omission.** When `Incomplete` is non-empty, every dimension of
+  `Summary` it does NOT name is exhaustive. That is the information the field
+  adds. A plugin MUST populate it only when it can name EVERY dimension that is
+  not exhaustive.
+- **When it cannot.** If the summary is partial for a reason that is not a
+  dimension's — a truncated page the open dimensions were folded over, a default
+  window that does not reach back through history — `Incomplete` stays nil and
+  `Complete` is false, and a consumer MUST treat any dimension as possibly
+  partial. (ynab and fastmail pin a cap on one dimension only when the rest of
+  the summary is otherwise complete.)
+- **`Complete` and `Incomplete` agree.** When `Incomplete` is non-empty,
+  `Complete` MUST be false, so a consumer that has never heard of the field is
+  still told the summary is not exhaustive. A consumer MUST therefore read
+  completeness as `Complete && len(Incomplete) == 0` (`FacetResult.IsComplete`),
+  and a host MUST NOT trust a peer to have kept them consistent: a result that
+  names a gap is not complete as a whole.
+- **Wholesale decline vs. omission.** The cost rule on declining (§4) is
+  about `ok == false`, which hands the work to the framework fold. A
+  `Declined` dimension in an `ok == true` summary triggers no fold and no
+  fallback; its cost is borne entirely by the consumer, who loses the ability
+  to ask that question. Weigh computing it against that, not against a fold.
+
+**Binding.** `read_facets` and the container read's facet block surface it as
+`incomplete` (`{"payee": {"reason": "top 20 of 31 payees"}}`, `omitempty`)
+beside `complete`, on both the memoized and the filtered path, exactly as
+`byContainer` is surfaced (§13); `list --facets` names the dimensions in its
+partial marker and carries `incomplete` in its JSON. On the wire (RFC 0013) it
+is the `incomplete` member of the `facets.counts` result, keyed by dimension
+with `declined` and `reason`. **Compatibility.** Additive per § Compatibility:
+the zero value (nil) reproduces prior behavior, and a consumer that does not
+know it simply never sees the key.
 
 ### 6. Filtering — a conjunction of equality predicates
 
@@ -558,7 +638,12 @@ once-per-change cost instead of a per-read cost (#133's cost coupling).
 
   A spuriously-changing token is safe (extra recomputation); a token that
   fails to change on real change serves stale summaries until the next
-  recompute — the plugin owns that tradeoff and SHOULD document it.
+  recompute — the plugin owns that tradeoff, and a plugin that implements
+  `FacetVersioner` MUST document the blind spots of its token: the facet-relevant
+  changes it is known not to move on (a label rename that bumps no item's
+  `updated_at`, say), so a consumer reasoning about staleness does not have to
+  assume the token is total. A token that is total says so. An undocumented token
+  is read as total, which is exactly the assumption that bites.
 
 #### 11.2 Serving and refresh
 
@@ -1208,6 +1293,7 @@ is the reference implementer).
 | §3/§4.2, fold = merge of lifts incl. container's own | `list.bats` | a container's `--facets` counts equal a manual count of its leaves plus the container's own values |
 | §4.1, one-shot is authoritative | `mcp.bats` | a `FacetCounter` node returns counts without the framework enumerating children |
 | §5, partial marked | `list.bats` | a capped/bounded summary reports `Complete == false` and is shown partial |
+| §5.1, per-dimension gaps | `ynab.bats`, unit tests | a capped dimension in an otherwise exact summary is named under `incomplete`, `complete` stays false, and the unnamed dimensions are exact; a summary partial for a reason that is not one dimension's names none |
 | §6, conjunctive filter | `list.bats` | two `--filter` predicates narrow the listing and summary to their AND; a repeated/unknown dimension errors |
 | §3/§8, closed-domain zeros & suppression | `list.bats` | a closed dimension shows a `0` value and is not suppressed; an open constant dimension is suppressed |
 | §7/§9, label failure non-fatal | `mcp.bats` | a labelled dimension with a failing resolver renders keys and the read still succeeds |

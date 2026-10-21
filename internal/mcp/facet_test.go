@@ -447,6 +447,106 @@ func TestResourcesReadFacets_FilteredPathPropagatesByContainer(t *testing.T) {
 	}
 }
 
+// gappedFacetLister is fakeFacetLister whose summary names one dimension as
+// partial (RFC 0012 §5.1, cutting-garden#171) while still claiming Complete —
+// the non-conformant shape a consumer must read conservatively.
+type gappedFacetLister struct{ fakeFacetLister }
+
+func (g gappedFacetLister) FacetCounts(
+	ctx context.Context, node *url.URL, filter cutting_garden_plugins.FacetFilter,
+) (cutting_garden_plugins.FacetResult, bool, error) {
+	result, ok, err := g.fakeFacetLister.FacetCounts(ctx, node, filter)
+	if err != nil || !ok {
+		return result, ok, err
+	}
+	result.Complete = true
+	result.Incomplete = map[string]cutting_garden_plugins.FacetGap{
+		"status": {Reason: "capped at 2 statuses"},
+	}
+	return result, true, nil
+}
+
+func newGappedFacetResources(t *testing.T, rootStrs ...string) *Resources {
+	t.Helper()
+	r := newFakeResources(t, rootStrs...)
+	r.resolve = func(uriStr string) (*url.URL, cutting_garden_plugins.RootLister, error) {
+		u, _, err := fakeResolve(uriStr)
+		if err != nil {
+			return nil, nil, err
+		}
+		return u, gappedFacetLister{}, nil
+	}
+	return r
+}
+
+// TestFacetViews_CarryPerDimensionGaps pins RFC 0012 §5.1's mcp binding on all
+// three paths a facet summary is served by: the container read's facets block,
+// the read_facets nil-filter (memoized) path, and its filtered (direct)
+// path. Each reports the summary as NOT complete, names the dimension and why
+// under `incomplete`, and says nothing about the dimensions it does not name.
+func TestFacetViews_CarryPerDimensionGaps(t *testing.T) {
+	r := newGappedFacetResources(t, "faketest://h/")
+	ctx := context.Background()
+
+	check := func(t *testing.T, name string, view facetView) {
+		t.Helper()
+		if view.Complete {
+			t.Errorf("%s: complete = true, want false (a gap was named)", name)
+		}
+		gap, ok := view.Incomplete["status"]
+		if !ok || len(view.Incomplete) != 1 {
+			t.Fatalf("%s: incomplete = %+v, want exactly status", name, view.Incomplete)
+		}
+		if gap.Declined || gap.Reason != "capped at 2 statuses" {
+			t.Errorf("%s: status gap = %+v, want partial with the reason", name, gap)
+		}
+	}
+
+	block, err := r.ReadResource(ctx, "faketest://h/work")
+	if err != nil {
+		t.Fatalf("ReadResource: %v", err)
+	}
+	check(t, "container block", facetBlockOf(t, block.Contents))
+
+	memoized, err := r.ReadFacets(ctx, "faketest://h/work", nil)
+	if err != nil {
+		t.Fatalf("ReadFacets(nil): %v", err)
+	}
+	check(t, "memoized path", *memoized)
+
+	filtered, err := r.ReadFacets(ctx, "faketest://h/work",
+		cutting_garden_plugins.FacetFilter{{Dimension: "status", Value: "CONFIRMED"}})
+	if err != nil {
+		t.Fatalf("ReadFacets(filter): %v", err)
+	}
+	check(t, "filtered path", *filtered)
+
+	raw, err := json.Marshal(filtered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), `"incomplete":{"status":{"reason":"capped at 2 statuses"}}`) {
+		t.Errorf("wire form = %s, want the lowerCamel incomplete map", raw)
+	}
+}
+
+// A result with no gaps carries no incomplete key at all, so every existing
+// consumer's output is byte-for-byte what it was.
+func TestFacetViews_NoGapsMeansNoIncompleteKey(t *testing.T) {
+	r := newFakeFacetResources(t, "faketest://h/")
+	view, err := r.ReadFacets(context.Background(), "faketest://h/work", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(view)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "incomplete") {
+		t.Errorf("wire form = %s, want no incomplete key", raw)
+	}
+}
+
 // TestResourcesReadFacets_NonFacetCounterErrors pins the "facets unavailable
 // for this scheme" error path: a plugin with no FacetCounter capability.
 func TestResourcesReadFacets_NonFacetCounterErrors(t *testing.T) {

@@ -324,6 +324,40 @@ func TestFacetCounts_CapsThePayeeDimensionAndSaysSo(t *testing.T) {
 	if res.Complete {
 		t.Error("a capped payee dimension must mark the summary incomplete")
 	}
+	// The gap is pinned on payee alone (RFC 0012 §5.1, cutting-garden#171): the
+	// explicit month is exact for every other dimension, and a consumer can read
+	// that off the result instead of distrusting the whole summary.
+	if got := res.IncompleteDimensions(); !slices.Equal(got, []string{facetPayee}) {
+		t.Fatalf("incomplete dimensions = %v, want [payee]", got)
+	}
+	gap := res.Incomplete[facetPayee]
+	if gap.Declined || gap.Reason != fmt.Sprintf("top %d of %d payees", payeeTopN, payeeTopN+7) {
+		t.Errorf("payee gap = %+v, want partial, %q", gap, fmt.Sprintf("top %d of %d payees", payeeTopN, payeeTopN+7))
+	}
+	if res.IsComplete() {
+		t.Error("IsComplete must be false when a dimension is incomplete")
+	}
+}
+
+// Under the default window the whole summary is partial because it does not
+// reach back through history, which is not a dimension's gap: attributing it to
+// payee alone would tell a consumer the other dimensions cover the history.
+func TestFacetCounts_DefaultWindowDoesNotPinTheGapOnPayee(t *testing.T) {
+	srv := newFixture(t)
+	for i := 0; i < payeeTopN+5; i++ {
+		srv.AddTransaction(ynabtestserver.Transaction{
+			BudgetID: "b1", ID: fmt.Sprintf("p%02d", i), Date: "2026-10-05", Amount: -1000,
+			AccountID: "a1", AccountName: "Checking", PayeeName: str(fmt.Sprintf("Payee %02d", i)),
+		})
+	}
+	cacheReset()
+	res := counts(t, "ynab://personal/Consolidated/transactions/", nil)
+	if res.Complete || res.IsComplete() {
+		t.Error("a default-window summary is partial")
+	}
+	if len(res.Incomplete) != 0 {
+		t.Errorf("incomplete = %v, want none: the whole summary is partial, not one dimension", res.Incomplete)
+	}
 }
 
 func TestListRoots_TransactionNodesCarryFacetsAndFields(t *testing.T) {

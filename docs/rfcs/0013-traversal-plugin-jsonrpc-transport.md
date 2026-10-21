@@ -440,6 +440,7 @@ surface, exactly as the Go contract reserves non-nil `err`.
 
 `facets.counts` params `{ "uri": string, "filter": FacetFilter? }` →
 result `{ "ok": bool, "summary": FacetSummary?, "complete": bool?,
+"incomplete": { "<dimension>": { "declined": bool?, "reason": string? } }?,
 "by_container": [ContainerBreakdown]?, "by_container_truncated":
 bool? }`.
 `ok: false` means "I do not summarize this node; fall back to the
@@ -465,6 +466,21 @@ reporting a summary that covers the whole subtree MUST send
 `"complete": true` explicitly. (Absent-means-partial matches the
 conservative default and lets a false value be omitted; receivers MUST
 NOT read absence as exhaustive.)
+
+`incomplete` is RFC 0012 §5.1's per-dimension refinement of a false
+`complete` (cutting-garden#171): it names the dimensions of `summary` that
+are NOT exhaustive, each `{ "declined": bool?, "reason": string? }` —
+`declined: true` when the dimension is absent from `summary` by the
+plugin's choice, absent (false) when it is present but partial (capped) —
+so every dimension it does not name is exact. Absent means "no
+per-dimension distinction", which is the normal case, and a peer predating
+the field is simply a peer without it. A plugin MUST send `complete`
+false whenever `incomplete` is non-empty, and the host does NOT extend
+trust: a result carrying both `"complete": true` and a non-empty
+`incomplete` is read as not complete. A plugin populates `incomplete` only
+when it can name EVERY dimension that is not exhaustive; a summary that is
+partial for a reason that is not a dimension's (a truncated page the
+dimensions were folded over) sends `complete` false and no `incomplete`.
 
 `by_container` is RFC 0012 §13's per-child-container breakdown
 (cutting-garden#173): each entry `{ "uri": string, "name": string?,

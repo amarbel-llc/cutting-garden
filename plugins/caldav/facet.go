@@ -210,6 +210,11 @@ func (Plugin) FacetCounts(
 // so any calendar changing (or appearing/disappearing) moves the token.
 // ok == false when the server advertises no ctag anywhere — the framework
 // then falls back to its TTL.
+//
+// Blind spot (RFC 0012 §11.1): the token is only as good as the server's ctag.
+// It trusts the server to bump it on every member change; a server that does
+// not (the ctag is a calendarserver extension, not core CalDAV) serves stale
+// summaries until the framework TTL. Nothing the plugin does can detect that.
 func (Plugin) FacetVersion(
 	ctx context.Context, node *url.URL,
 ) (string, bool, error) {

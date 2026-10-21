@@ -76,6 +76,10 @@ type FacetCountsResult = internal.FacetCountsResult
 // (RFC 0012 §3, forge organize F3).
 type FacetDimensionView = internal.FacetDimensionView
 
+// FacetGapView is the wire form of cutting_garden_plugins.FacetGap (RFC 0012
+// §5.1): why one dimension of a summary is not exhaustive.
+type FacetGapView = internal.FacetGapView
+
 // FacetValueView is the wire form of cutting_garden_plugins.FacetValue
 // (RFC 0013 §Wire encodings): Order is omitted when 0 ("no hint").
 type FacetValueView = internal.FacetValueView
@@ -397,6 +401,10 @@ var FacetDimensionViewFrom = internal.FacetDimensionViewFrom
 // accepts everything.
 var FacetFilterFrom = internal.FacetFilterFrom
 
+// FacetGapViewsFrom projects a result's per-dimension gaps onto the wire,
+// preserving nil-ness so an absent map stays an absent key.
+var FacetGapViewsFrom = internal.FacetGapViewsFrom
+
 // FacetValueViewFrom projects one facet value onto the wire.
 var FacetValueViewFrom = internal.FacetValueViewFrom
 
@@ -522,6 +530,9 @@ var Serve = internal.Serve
 // ToFacetContainerBreakdowns is the inverse of
 // FacetContainerBreakdownViewsFrom.
 var ToFacetContainerBreakdowns = internal.ToFacetContainerBreakdowns
+
+// ToFacetGaps is the inverse of FacetGapViewsFrom.
+var ToFacetGaps = internal.ToFacetGaps
 
 // ValidateCreationDeclaration is the host's bring-up check of the `creatable`
 // members of an initialize result's node_types entries (exported for the

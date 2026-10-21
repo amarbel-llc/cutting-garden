@@ -223,7 +223,8 @@ func tokenFor(
 func (fc *facetCache) viewLocked(e *facetCacheEntry) *facetView {
 	view := &facetView{
 		Facets:               e.result.Summary,
-		Complete:             e.result.Complete,
+		Complete:             e.result.IsComplete(),
+		Incomplete:           e.result.Incomplete,
 		ByContainer:          e.result.ByContainer,
 		ByContainerTruncated: e.result.ByContainerTruncated,
 		ComputedAt:           e.computedAt.UTC().Format(time.RFC3339),

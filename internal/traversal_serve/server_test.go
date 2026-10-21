@@ -52,6 +52,12 @@ type fakeFullPlugin struct {
 	// non-nil summary (the caldav-for-a-task-free-calendar shape), to drive
 	// the empty-vs-nil wire normalization (cutting-garden#192).
 	emptyFacetSummary bool
+	// facetIncomplete is returned as FacetResult.Incomplete (RFC 0012 §5.1),
+	// and Complete is true unless it is set — except that
+	// facetClaimsCompleteDespiteGaps keeps Complete true alongside it, the
+	// non-conformant shape the host must read conservatively.
+	facetIncomplete                map[string]cutting_garden_plugins.FacetGap
+	facetClaimsCompleteDespiteGaps bool
 }
 
 var (
@@ -202,7 +208,8 @@ func (p *fakeFullPlugin) FacetCounts(
 		Summary: cutting_garden_plugins.FacetSummary{
 			"state": {"open": 1, "closed": 1},
 		},
-		Complete: true,
+		Complete:   len(p.facetIncomplete) == 0 || p.facetClaimsCompleteDespiteGaps,
+		Incomplete: p.facetIncomplete,
 		// facetBreakdown is returned RAW — deliberately not passed
 		// through SortAndLimitContainerBreakdown — so tests can hand the
 		// wire a NON-conformant breakdown and observe the host-side

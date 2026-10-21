@@ -2,6 +2,7 @@ package fastmail
 
 import (
 	"context"
+	"fmt"
 	"net/url"
 	"sort"
 	"time"
@@ -145,20 +146,40 @@ func (Plugin) FacetCounts(
 		liftFacets(summary, facets)
 	}
 
-	complete := total <= int64(threadQueryLimit)
-	if capHistogram(summary[facetFrom], fromTopN) {
+	pageComplete := total <= int64(threadQueryLimit)
+	complete := pageComplete
+	var incomplete map[string]cutting_garden_plugins.FacetGap
+	if senders, dropped := capHistogram(summary[facetFrom], fromTopN); dropped {
 		complete = false
+		// When the thread page was complete every other dimension is exact, so
+		// say which one is not (RFC 0012 §5.1, cutting-garden#171). When the page
+		// itself was truncated every dimension is partial, and pinning the gap on
+		// `from` would tell a consumer the rest cover the whole mailbox.
+		if pageComplete {
+			incomplete = map[string]cutting_garden_plugins.FacetGap{
+				facetFrom: {Reason: fmt.Sprintf("top %d of %d senders", fromTopN, senders)},
+			}
+		}
 	}
 
-	return cutting_garden_plugins.FacetResult{Summary: summary, Complete: complete}, true, nil
+	return cutting_garden_plugins.FacetResult{
+		Summary: summary, Complete: complete, Incomplete: incomplete,
+	}, true, nil
 }
 
 // FacetVersion is the fastmail change token (RFC 0012 §11): the
 // account-global Email type state (RFC 8620 §1.5), which moves on ANY email
-// change — new, deleted, or a keyword/mailbox mutation — so it never misses
-// a facet-relevant change. One Email/get with no ids, strictly cheaper than
-// FacetCounts. It applies to mailbox nodes, mirroring FacetCounts; other
-// kinds report ok=false so the framework falls back to a TTL.
+// change — new, deleted, or a keyword/mailbox mutation. One Email/get with no
+// ids, strictly cheaper than FacetCounts. It applies to mailbox nodes,
+// mirroring FacetCounts; other kinds report ok=false so the framework falls
+// back to a TTL.
+//
+// Blind spot (RFC 0012 §11.1, cutting-garden#340, suspected and not yet
+// verified): a thread's `tags` facet joins its mailbox ids to the mailbox
+// tree's label names, and renaming or moving a mailbox changes the Mailbox
+// object, whose state is separate from the Email state. Such a change would
+// alter the presented tags without moving this token, and a memoized summary
+// would be served stale until the framework TTL.
 func (Plugin) FacetVersion(
 	ctx context.Context, node *url.URL,
 ) (string, bool, error) {
@@ -229,11 +250,13 @@ func liftFacets(
 
 // capHistogram keeps only the top-n buckets of hist by descending count
 // (ties broken by ascending key for determinism), deleting the rest in
-// place. It reports whether any bucket was dropped — the caller marks the
-// result partial. A nil or already-small histogram is left untouched.
-func capHistogram(hist cutting_garden_plugins.FacetHistogram, n int) bool {
-	if len(hist) <= n {
-		return false
+// place. It reports how many buckets the histogram held before the cap and
+// whether any was dropped — the caller marks the result partial. A nil or
+// already-small histogram is left untouched.
+func capHistogram(hist cutting_garden_plugins.FacetHistogram, n int) (total int, dropped bool) {
+	total = len(hist)
+	if total <= n {
+		return total, false
 	}
 	type kv struct {
 		key   string
@@ -252,7 +275,7 @@ func capHistogram(hist cutting_garden_plugins.FacetHistogram, n int) bool {
 	for _, e := range entries[n:] {
 		delete(hist, e.key)
 	}
-	return true
+	return total, true
 }
 
 // sortedKeys returns a set's keys in sorted order (stable multi-value

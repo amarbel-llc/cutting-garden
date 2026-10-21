@@ -136,7 +136,8 @@ On `transaction-v1`, declared once through the unified field-codec model
 (FDR 0025, `unified.go`) and derived into the facet surface: `date` (the ISO
 day, so `date=(month)` coarsens by prefix), `account`, `category` (the name;
 `Split` for a split parent, `uncategorized` for none), `payee` (open and
-high-cardinality, capped at the top 20), `cleared` (closed: cleared /
+high-cardinality, capped at the top 20, which a summary under an explicit
+date window reports as the one partial dimension), `cleared` (closed: cleared /
 uncleared / reconciled), `approved` (yes/no), `flag` (the colour, absent when
 unflagged), `transfer` (yes/no, from `transfer_account_id`, so transfers can be
 excluded from spending queries) and `amount_band` (closed numeric bucket of the
@@ -403,8 +404,12 @@ therefore does not implement `FacetVersioner`, and the framework's TTL applies.
   transfer each sum to 147). Two API requests in all. The summary reported
   `complete: false` solely because the open `payee` dimension was capped at 20,
   which a busy month always hits; the other dimensions were exact. The
-  contract cannot say "one dimension is partial" (cutting-garden#171), so the
-  plugin keeps the honest whole-summary flag. This closes the FDR's
+  contract could not then say "one dimension is partial", so the plugin kept
+  the honest whole-summary flag; it now does (cutting-garden#171, RFC 0012
+  §5.1): with an explicit date window the summary reports `complete: false`
+  AND `incomplete: {"payee": {"reason": "top 20 of N payees"}}`, so every
+  other dimension reads as exact. Under the default window the whole summary
+  is partial for a reason that is not payee's, so no gap is pinned on it. This closes the FDR's
   "reads a real YNAB budget" criterion; "testing" still wants a live dry run
   compared against the synthetic fixture.
 - **Not built:** `FacetVersioner` (above); a live check against a real budget;
