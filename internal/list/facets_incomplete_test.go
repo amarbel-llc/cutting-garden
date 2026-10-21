@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
+	"code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
 )
 
 func facetResultWithGaps(complete bool, gaps map[string]cutting_garden_plugins.FacetGap) cutting_garden_plugins.FacetResult {
