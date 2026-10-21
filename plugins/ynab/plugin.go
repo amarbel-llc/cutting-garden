@@ -1,9 +1,9 @@
 // Package ynab is cutting-garden's YNAB (You Need A Budget) traversal and
 // facet plugin (FDR 0027). Registered for the `ynab` URI scheme, it makes a
 // YNAB account a `list` / `mcp` / trellis substrate over the YNAB REST API:
-// its budgets, their accounts, category groups, categories and transactions.
-// It is read-only except for a transaction's category, cleared state and memo
-// (write.go).
+// its budgets, their accounts, category groups, categories, transactions and
+// payees. It is read-only except for a transaction's category, cleared state,
+// memo and payee (write.go) and a payee's name (payee_write.go).
 //
 // Like fastmail it is a scheme-only plugin: it implements none of
 // capture/restore/diff and registers via MustRegisterScheme (init.go). The

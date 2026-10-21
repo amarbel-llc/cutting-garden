@@ -10,19 +10,19 @@ import (
 
 // DescribeFacetWrites declares how each facet dimension maps to a write
 // (RFC 0012 §Write mapping, FDR 0023) — DERIVED from the unified declaration
-// (FDR 0025): `category` and `cleared` are write:one onto their own fields,
-// and every other grouping dimension is an explicit write:none so an organize
-// edit to one fails loudly. `cleared` offers only cleared and uncleared as
-// move targets (reconciled is read-only, see write.go).
+// (FDR 0025): `category`, `cleared` and `payee` are write:one onto their own
+// fields, and every other grouping dimension is an explicit write:none so an
+// organize edit to one fails loudly. `cleared` offers only cleared and
+// uncleared as move targets (reconciled is read-only, see write.go).
 func (Plugin) DescribeFacetWrites() []cutting_garden_plugins.NodeTypeFacetWrites {
 	return cutting_garden_plugins.DeriveNodeTypeFacetWrites(unifiedFieldSets())
 }
 
 // BuildFacetWritePatch builds the PatchNode body that moves a transaction into
-// toBucket of a writable dimension, so organize re-categorizes by moving a
-// line under another category heading. The body is the same shape PatchNode
-// takes from a caller directly; the writes happen in PatchNode, which owns the
-// safety checks. An empty toBucket is a clear, and neither dimension is
+// toBucket of a writable dimension, so organize re-categorizes (or repoints a
+// payee) by moving a line under another heading. The body is the same shape
+// PatchNode takes from a caller directly; the writes happen in PatchNode, which
+// owns the safety checks. An empty toBucket is a clear, and no dimension is
 // clearable.
 func (Plugin) BuildFacetWritePatch(
 	_ context.Context,
@@ -45,6 +45,14 @@ func (Plugin) BuildFacetWritePatch(
 				writeCleared, writeUncleared)
 		}
 		return json.Marshal(map[string]string{facetCleared: toBucket})
+	case facetPayee:
+		if toBucket == "" {
+			return nil, errors.BadRequestf(
+				"ynab plugin: a transaction cannot be moved to no payee; " +
+					"move it under the payee it should have",
+			)
+		}
+		return json.Marshal(map[string]string{facetPayee: toBucket})
 	}
 	return nil, errors.BadRequestf("ynab plugin: dimension %q is not writable", write.DimensionKey)
 }

@@ -40,6 +40,19 @@ type CategoryGroup struct {
 	Categories []Category `json:"categories"`
 }
 
+// Payee is one payee of a budget. A payee that is the target of a transfer
+// carries the account it transfers to; YNAB creates and owns those.
+type Payee struct {
+	ID                string  `json:"id"`
+	Name              string  `json:"name"`
+	TransferAccountID *string `json:"transfer_account_id,omitempty"`
+	Deleted           bool    `json:"deleted"`
+}
+
+// isTransfer reports whether a payee is a transfer payee: the stand-in YNAB
+// keeps for "the other account" of a transfer, not a counterparty.
+func (p Payee) isTransfer() bool { return p.TransferAccountID != nil }
+
 // SubTransaction is one leg of a split transaction.
 type SubTransaction struct {
 	ID                    string  `json:"id"`
@@ -120,6 +133,18 @@ type saveTransactionsResponse struct {
 		TransactionIDs []string      `json:"transaction_ids"`
 		Transactions   []Transaction `json:"transactions"`
 		Transaction    *Transaction  `json:"transaction"`
+	} `json:"data"`
+}
+
+type payeesResponse struct {
+	Data struct {
+		Payees []Payee `json:"payees"`
+	} `json:"data"`
+}
+
+type payeeResponse struct {
+	Data struct {
+		Payee Payee `json:"payee"`
 	} `json:"data"`
 }
 

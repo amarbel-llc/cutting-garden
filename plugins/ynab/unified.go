@@ -12,8 +12,8 @@ import (
 // (facet.go DescribeFacets) derives from it. The listing-field schema
 // (listing.go DescribeListingFields) stays hand-written, as in the other
 // plugins, and TestDescribeListingFields_ConsistentWithUnified pins it to this
-// declaration. Only category and cleared are Writable (memo is a write the
-// patch path takes but no facet dimension models; cutting-garden#331).
+// declaration. Only category, cleared and payee are Writable (memo is a write
+// the patch path takes but no facet dimension models; cutting-garden#331, #333).
 //
 // Deliberately NOT derived: the facet COUNTING path (transactionFacets), which
 // computes the bucket values from the raw rows — the day key, the band, the
@@ -41,8 +41,8 @@ var unifiedFieldSets = sync.OnceValue(func() []cutting_garden_plugins.NodeTypeUn
 			Key: key, Label: label, Kind: cutting_garden_plugins.FieldText,
 		}}
 	}
-	// grouped is a stored string that is also its own facet value (account,
-	// category, payee): the presented value IS the bucket key.
+	// grouped is a stored string that is also its own facet value (account):
+	// the presented value IS the bucket key.
 	grouped := func(key, label string) cutting_garden_plugins.IdentityCodec {
 		return cutting_garden_plugins.IdentityCodec{Field: cutting_garden_plugins.UnifiedField{
 			Key: key, Label: label, Kind: cutting_garden_plugins.FieldCategorical, Groupable: true,
@@ -74,7 +74,14 @@ var unifiedFieldSets = sync.OnceValue(func() []cutting_garden_plugins.NodeTypeUn
 				Key: facetCategory, Label: "Category", Kind: cutting_garden_plugins.FieldCategorical,
 				Groupable: true, Writable: true,
 			}},
-			grouped(facetPayee, "Payee"),
+			// payee is WRITABLE like category: moving a line under another payee
+			// heading repoints the transaction to that EXISTING payee. It is an
+			// open domain too, and a heading can only name a payee that exists
+			// (write.go resolvePayeeRef), never mint one.
+			cutting_garden_plugins.IdentityCodec{Field: cutting_garden_plugins.UnifiedField{
+				Key: facetPayee, Label: "Payee", Kind: cutting_garden_plugins.FieldCategorical,
+				Groupable: true, Writable: true,
+			}},
 			cutting_garden_plugins.IdentityCodec{Field: cutting_garden_plugins.UnifiedField{
 				Key: facetCleared, Label: "Cleared", Kind: cutting_garden_plugins.FieldCategorical,
 				Groupable: true,

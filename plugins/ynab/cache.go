@@ -24,6 +24,7 @@ const (
 	cacheCategories   cacheKind = "categories"
 	cacheTransactions cacheKind = "transactions"
 	cacheTransaction  cacheKind = "transaction"
+	cachePayees       cacheKind = "payees"
 )
 
 // cacheKey identifies one fetched resource. scope is the client's
@@ -140,6 +141,17 @@ func cacheInvalidateTransactions(scope, budget string) {
 			delete(txnIndex, k)
 		}
 	}
+}
+
+// cacheInvalidatePayeesAndTransactions drops one budget's cached payee list and
+// every cached transaction view of it, after a payee rename: the transactions
+// carry the payee's name, so a listing cached before the rename would keep
+// showing the old one.
+func cacheInvalidatePayeesAndTransactions(scope, budget string) {
+	cacheInvalidateTransactions(scope, budget)
+	cacheMu.Lock()
+	defer cacheMu.Unlock()
+	delete(cacheEntries, cacheKey{scope: scope, kind: cachePayees, budget: budget})
 }
 
 // cacheReset empties the cache. Production code never calls it (entries expire

@@ -65,7 +65,9 @@ func TestClassifyURI_Rejections(t *testing.T) {
 	for _, raw := range []string{
 		"caldav://personal/",                             // wrong scheme
 		"ynab:///Consolidated/",                          // empty account
-		"ynab://personal/B/payees/",                      // unknown section
+		"ynab://personal/B/scheduled/",                   // unknown section
+		"ynab://personal/B/payees/p1/extra",              // too deep under payees
+		"ynab://personal/B/payees/?date=2026",            // window on a node with no transactions
 		"ynab://personal/B/accounts/A/extra/",            // too deep under accounts
 		"ynab://personal/B/categories/G/C/extra/",        // too deep under categories
 		"ynab://personal/B/transactions/t1/extra",        // too deep under transactions

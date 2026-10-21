@@ -145,7 +145,7 @@ func TestPatchNode_AlreadyAsRequestedWritesNothing(t *testing.T) {
 // A body naming nothing recognized costs no request at all, and reports honestly.
 func TestPatchNode_UnrecognizedKeysOnlyCostNothing(t *testing.T) {
 	srv := newFixture(t)
-	applied := mustPatch(t, "t2", `{"payee":"Someone Else","amount":1}`)
+	applied := mustPatch(t, "t2", `{"flag":"red","amount":1}`)
 	if applied == nil || len(applied) != 0 {
 		t.Errorf("applied = %#v, want a non-nil empty slice", applied)
 	}
@@ -278,7 +278,7 @@ func TestPatchNode_AfterAListingCostsThreeRequests(t *testing.T) {
 	}
 }
 
-func TestDescribeFacetWrites_CategoryAndClearedAreTheOnlyWritableDimensions(t *testing.T) {
+func TestDescribeFacetWrites_CategoryClearedAndPayeeAreTheOnlyWritableDimensions(t *testing.T) {
 	writes := (Plugin{}).DescribeFacetWrites()
 	if err := cutting_garden_plugins.ValidateFacetWrites((Plugin{}).DescribeFacets(), writes); err != nil {
 		t.Fatalf("write mappings do not cross-check against the facets: %v", err)
@@ -291,12 +291,12 @@ func TestDescribeFacetWrites_CategoryAndClearedAreTheOnlyWritableDimensions(t *t
 			}
 		}
 	}
-	for _, key := range []string{facetCategory, facetCleared} {
+	for _, key := range []string{facetCategory, facetCleared, facetPayee} {
 		if byKey[key].Mode != cutting_garden_plugins.FacetWriteOne || byKey[key].Field != key {
 			t.Errorf("%s write = %+v, want write:one onto its own field", key, byKey[key])
 		}
 	}
-	for _, key := range []string{facetDate, facetAccount, facetPayee, facetApproved, facetFlag, facetTransfer, facetAmountBand} {
+	for _, key := range []string{facetDate, facetAccount, facetApproved, facetFlag, facetTransfer, facetAmountBand} {
 		if byKey[key].Mode != cutting_garden_plugins.FacetWriteNone {
 			t.Errorf("%s must be an explicit write:none, got %+v", key, byKey[key])
 		}
@@ -318,10 +318,14 @@ func TestBuildFacetWritePatch(t *testing.T) {
 	if got, err := build(facetCleared, "uncleared"); err != nil || string(got) != `{"cleared":"uncleared"}` {
 		t.Errorf("cleared body = %s, %v", got, err)
 	}
+	if got, err := build(facetPayee, "Corner Cafe"); err != nil || string(got) != `{"payee":"Corner Cafe"}` {
+		t.Errorf("payee body = %s, %v", got, err)
+	}
 	for name, tc := range map[string]struct{ dim, bucket string }{
 		"the synthetic uncategorized bucket": {facetCategory, valueUncategorized},
 		"clearing the category":              {facetCategory, ""},
 		"clearing cleared":                   {facetCleared, ""},
+		"clearing the payee":                 {facetPayee, ""},
 		"a read-only dimension":              {facetAccount, "Savings"},
 	} {
 		if _, err := build(tc.dim, tc.bucket); err == nil || !errors.Is400BadRequest(err) {

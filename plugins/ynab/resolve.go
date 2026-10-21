@@ -162,6 +162,16 @@ func liveAccounts(in []Account) []Account {
 	return out
 }
 
+func livePayees(in []Payee) []Payee {
+	out := make([]Payee, 0, len(in))
+	for _, p := range in {
+		if !p.Deleted {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
 func liveGroups(in []CategoryGroup) []CategoryGroup {
 	out := make([]CategoryGroup, 0, len(in))
 	for _, g := range in {

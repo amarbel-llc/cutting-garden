@@ -221,6 +221,68 @@ func (c *client) categoryGroups(ctx context.Context, budgetID string) ([]Categor
 	return r.Data.CategoryGroups, nil
 }
 
+// payees lists a budget's payees (deleted ones included: the full list is what
+// the API returns without a delta request, and callers filter with livePayees).
+func (c *client) payees(ctx context.Context, budgetID string) ([]Payee, error) {
+	key := cacheKey{scope: c.scope, kind: cachePayees, budget: budgetID}
+	if v, ok := cacheGet(key); ok {
+		return v.([]Payee), nil
+	}
+	payees, err := c.freshPayees(ctx, budgetID)
+	if err != nil {
+		return nil, err
+	}
+	cachePut(key, payees)
+	return payees, nil
+}
+
+// freshPayees lists a budget's payees from the server, bypassing the freshness
+// cache: the payee write guards (a rename colliding with another payee, a
+// transfer payee) validate against it.
+func (c *client) freshPayees(ctx context.Context, budgetID string) ([]Payee, error) {
+	var r payeesResponse
+	if err := c.get(ctx, budgetPath(budgetID)+"/payees", nil, &r); err != nil {
+		return nil, err
+	}
+	return r.Data.Payees, nil
+}
+
+// payee reads one payee: from a fresh cached list when there is one, else with a
+// request for that payee alone.
+func (c *client) payee(ctx context.Context, budgetID, id string) (Payee, error) {
+	if v, ok := cacheGet(cacheKey{scope: c.scope, kind: cachePayees, budget: budgetID}); ok {
+		for _, p := range v.([]Payee) {
+			if p.ID == id {
+				return p, nil
+			}
+		}
+	}
+	var r payeeResponse
+	if err := c.get(ctx, budgetPath(budgetID)+"/payees/"+url.PathEscape(id), nil, &r); err != nil {
+		return Payee{}, err
+	}
+	return r.Data.Payee, nil
+}
+
+// renamePayee renames one payee (`PATCH /budgets/{id}/payees/{payee_id}`) and
+// returns the payee as YNAB saved it. It is the plugin's ONLY payee write. It
+// invalidates the budget's cached payees and transactions whatever the outcome:
+// transactions carry the payee's name, and a timeout may follow a rename YNAB
+// did apply.
+func (c *client) renamePayee(ctx context.Context, budgetID, id, name string) (Payee, error) {
+	defer cacheInvalidatePayeesAndTransactions(c.scope, budgetID)
+	var r struct {
+		Data struct {
+			Payee Payee `json:"payee"`
+		} `json:"data"`
+	}
+	body := map[string]any{"payee": map[string]any{"name": name}}
+	if err := c.do(ctx, http.MethodPatch, budgetPath(budgetID)+"/payees/"+url.PathEscape(id), nil, body, &r); err != nil {
+		return Payee{}, err
+	}
+	return r.Data.Payee, nil
+}
+
 // transactions lists a budget's transactions in the window [since, until]
 // (YYYY-MM-DD; until may be empty). scope is "" for the whole budget,
 // "accounts/<id>" or "categories/<id>" for the per-parent endpoints, which

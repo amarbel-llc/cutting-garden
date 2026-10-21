@@ -1,7 +1,8 @@
 // Package ynabtestserver is a minimal in-memory YNAB REST server for the ynab
 // plugin's tests (and any future bats lane). It answers the read endpoints the
-// plugin calls — budgets, a budget's accounts, categories and transactions
-// (whole budget, per account, per category, and one by id) — under the same
+// plugin calls — budgets, a budget's accounts, categories, payees and
+// transactions (whole budget, per account, per category, and one by id), plus
+// the two writes (the transaction bulk update and the payee rename) — under the same
 // `/v1/budgets/...` paths the live API still serves, with the same `data`
 // wrapper, `server_knowledge` field and error body, and it enforces the bearer
 // token and counts requests so a test can pin the plugin's rate-limit economy
@@ -63,6 +64,16 @@ type Category struct {
 	Deleted  bool   `json:"deleted"`
 }
 
+// Payee is one seeded payee of a budget. A transfer payee carries the account
+// it transfers to.
+type Payee struct {
+	BudgetID          string  `json:"-"`
+	ID                string  `json:"id"`
+	Name              string  `json:"name"`
+	TransferAccountID *string `json:"transfer_account_id"`
+	Deleted           bool    `json:"deleted"`
+}
+
 // Transaction is one seeded transaction. Amount is signed milliunits; Date is
 // YYYY-MM-DD.
 type Transaction struct {
@@ -77,6 +88,7 @@ type Transaction struct {
 	FlagColor         *string `json:"flag_color"`
 	AccountID         string  `json:"account_id"`
 	AccountName       string  `json:"account_name"`
+	PayeeID           *string `json:"payee_id"`
 	PayeeName         *string `json:"payee_name"`
 	CategoryID        *string `json:"category_id"`
 	CategoryName      *string `json:"category_name"`
@@ -107,6 +119,7 @@ type Server struct {
 	accounts     []Account
 	groups       []CategoryGroup
 	categories   []Category
+	payees       []Payee
 	transactions []Transaction
 
 	requests int
@@ -197,6 +210,13 @@ func (s *Server) AddCategory(c Category) {
 	s.categories = append(s.categories, c)
 }
 
+// AddPayee seeds a payee.
+func (s *Server) AddPayee(p Payee) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.payees = append(s.payees, p)
+}
+
 // AddTransaction seeds a transaction.
 func (s *Server) AddTransaction(t Transaction) {
 	s.mu.Lock()
@@ -243,10 +263,19 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 			s.patchTransactions(w, r, budgetID)
 			return
 		}
-		writeError(w, http.StatusMethodNotAllowed, "405", "method_not_allowed", "PATCH is only served on /transactions")
+		if len(rest) == 2 && rest[0] == "payees" {
+			s.patchPayee(w, r, budgetID, rest[1])
+			return
+		}
+		writeError(w, http.StatusMethodNotAllowed, "405", "method_not_allowed",
+			"PATCH is only served on /transactions and /payees/{id}")
 		return
 	}
 	switch {
+	case len(rest) == 1 && rest[0] == "payees":
+		s.servePayees(w, budgetID)
+	case len(rest) == 2 && rest[0] == "payees":
+		s.servePayee(w, budgetID, rest[1])
 	case len(rest) == 1 && rest[0] == "accounts":
 		s.serveAccounts(w, budgetID)
 	case len(rest) == 1 && rest[0] == "categories":
@@ -336,6 +365,74 @@ func (s *Server) serveCategories(w http.ResponseWriter, budgetID string) {
 	writeData(w, map[string]any{"category_groups": out, "server_knowledge": 1})
 }
 
+func (s *Server) servePayees(w http.ResponseWriter, budgetID string) {
+	out := []Payee{}
+	for _, p := range s.payees {
+		if p.BudgetID == budgetID {
+			out = append(out, p)
+		}
+	}
+	writeData(w, map[string]any{"payees": out, "server_knowledge": 1})
+}
+
+func (s *Server) servePayee(w http.ResponseWriter, budgetID, id string) {
+	for _, p := range s.payees {
+		if p.BudgetID == budgetID && p.ID == id {
+			writeData(w, map[string]any{"payee": p})
+			return
+		}
+	}
+	writeError(w, http.StatusNotFound, "404.2", "resource_not_found", "payee not found")
+}
+
+// patchPayee serves the payee rename (`PATCH /budgets/{id}/payees/{payee_id}`
+// with {"payee":{"name":…}}) and answers with the saved payee. The real API's
+// behaviour for a name another payee holds is undocumented, so this server does
+// NOT model a merge: it renames, and a test that needs the plugin to refuse a
+// collision asserts no write reached it. With IgnoreWrites set it answers
+// success without applying.
+func (s *Server) patchPayee(w http.ResponseWriter, r *http.Request, budgetID, id string) {
+	var req struct {
+		Payee struct {
+			Name string `json:"name"`
+		} `json:"payee"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Payee.Name == "" {
+		writeError(w, http.StatusBadRequest, "400", "bad_request", "a payee with a name is required")
+		return
+	}
+	for i := range s.payees {
+		p := &s.payees[i]
+		if p.BudgetID != budgetID || p.ID != id {
+			continue
+		}
+		if !s.ignoreWrites {
+			p.Name = req.Payee.Name
+			// Transactions carry their payee's name; keep them in step as YNAB does.
+			for j := range s.transactions {
+				if t := &s.transactions[j]; t.BudgetID == budgetID && t.PayeeID != nil && *t.PayeeID == id {
+					name := p.Name
+					t.PayeeName = &name
+				}
+			}
+		}
+		s.writes++
+		writeData(w, map[string]any{"payee": *p, "server_knowledge": 2})
+		return
+	}
+	writeError(w, http.StatusNotFound, "404.2", "resource_not_found", "payee not found")
+}
+
+// payeeName finds a seeded payee's name in a budget.
+func (s *Server) payeeName(budgetID, id string) (string, bool) {
+	for _, p := range s.payees {
+		if p.BudgetID == budgetID && p.ID == id && !p.Deleted {
+			return p.Name, true
+		}
+	}
+	return "", false
+}
+
 // serveTransactions honors since_date (default: one year of history is NOT
 // modeled — an omitted since_date returns everything) and until_date, as the
 // live API does, and the keep predicate for the per-account / per-category
@@ -410,6 +507,13 @@ func (s *Server) patchTransactions(w http.ResponseWriter, r *http.Request, budge
 				return
 			}
 		}
+		if v, ok := entry["payee_id"]; ok && v != nil {
+			pid, _ := v.(string)
+			if _, found := s.payeeName(budgetID, pid); !found {
+				writeError(w, http.StatusBadRequest, "400", "bad_request", "unknown payee_id: "+pid)
+				return
+			}
+		}
 		if v, ok := entry["cleared"]; ok {
 			cleared, _ := v.(string)
 			if cleared != "cleared" && cleared != "uncleared" && cleared != "reconciled" {
@@ -444,6 +548,11 @@ func (s *Server) patchTransactions(w http.ResponseWriter, r *http.Request, budge
 			}
 			if v, ok := u.set["cleared"]; ok {
 				t.Cleared = v.(string)
+			}
+			if v, ok := u.set["payee_id"]; ok && v != nil {
+				pid := v.(string)
+				name, _ := s.payeeName(budgetID, pid)
+				t.PayeeID, t.PayeeName = &pid, &name
 			}
 		}
 		saved = append(saved, *t)
@@ -481,6 +590,32 @@ func (s *Server) Writes() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.writes
+}
+
+// PayeeByID returns a seeded payee as the server now holds it.
+func (s *Server) PayeeByID(budgetID, id string) (Payee, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, p := range s.payees {
+		if p.BudgetID == budgetID && p.ID == id {
+			return p, true
+		}
+	}
+	return Payee{}, false
+}
+
+// PayeeCount is how many payees (deleted ones included) a budget holds, so a
+// test can prove a write minted none.
+func (s *Server) PayeeCount(budgetID string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := 0
+	for _, p := range s.payees {
+		if p.BudgetID == budgetID {
+			n++
+		}
+	}
+	return n
 }
 
 // TransactionByID returns a seeded transaction as the server now holds it.

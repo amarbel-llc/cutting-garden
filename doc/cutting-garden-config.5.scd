@@ -221,7 +221,8 @@ A *[[ynab.accounts]]* entry (FDR 0027) names a YNAB personal access token. Its
 because the YNAB API host is fixed (*https://api.ynab.com/v1*). The token comes
 from the shared *password_env* or *password_source* / *password_key* keys; the
 secret never lives in the file. The account's root lists its budgets. The
-plugin writes only a transaction's category, cleared state and memo.
+plugin writes only a transaction's category, cleared state, memo and payee
+(an existing payee) and a payee's name; it never creates or merges payees.
 
 *session_url*
 	String. OPTIONAL. An absolute http(s) URL replacing the API base for this

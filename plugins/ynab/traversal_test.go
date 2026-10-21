@@ -28,9 +28,11 @@ func str(s string) *string { return &s }
 //	Consolidated (b1)            Archive (b2)
 //	  accounts: Checking, Savings
 //	  categories: Food{Groceries, Dining Out}, Bills{Rent}
-//	  transactions: t1 10-18 Checking/Dining Out, t2 10-01 Checking/Groceries,
-//	                t3 08-01 Checking/Rent (outside the window),
-//	                t4 10-10 Savings/uncategorized
+//	  payees: p1 Corner Cafe, p2 Grocer, p3 Landlord, p4 Corner Cafe Downtown
+//	          (unused), p5 "Transfer : Savings" (a transfer payee, to a2)
+//	  transactions: t1 10-18 Checking/Dining Out (p1), t2 10-01 Checking/Groceries (p2),
+//	                t3 08-01 Checking/Rent (p3, outside the window),
+//	                t4 10-10 Savings/uncategorized (no payee)
 func newFixture(t *testing.T) *ynabtestserver.Server {
 	t.Helper()
 	t.Setenv(testTokenEnv, testToken)
@@ -56,20 +58,25 @@ func newFixture(t *testing.T) *ynabtestserver.Server {
 	srv.AddCategory(ynabtestserver.Category{BudgetID: "b1", GroupID: "g1", ID: "c1", Name: "Groceries"})
 	srv.AddCategory(ynabtestserver.Category{BudgetID: "b1", GroupID: "g1", ID: "c2", Name: "Dining Out"})
 	srv.AddCategory(ynabtestserver.Category{BudgetID: "b1", GroupID: "g2", ID: "c3", Name: "Rent"})
+	srv.AddPayee(ynabtestserver.Payee{BudgetID: "b1", ID: "p1", Name: "Corner Cafe"})
+	srv.AddPayee(ynabtestserver.Payee{BudgetID: "b1", ID: "p2", Name: "Grocer"})
+	srv.AddPayee(ynabtestserver.Payee{BudgetID: "b1", ID: "p3", Name: "Landlord"})
+	srv.AddPayee(ynabtestserver.Payee{BudgetID: "b1", ID: "p4", Name: "Corner Cafe Downtown"})
+	srv.AddPayee(ynabtestserver.Payee{BudgetID: "b1", ID: "p5", Name: "Transfer : Savings", TransferAccountID: str("a2")})
 	srv.AddTransaction(ynabtestserver.Transaction{
 		BudgetID: "b1", ID: "t1", Date: "2026-10-18", Amount: -12340, AmountFormatted: "-$12.34",
 		Cleared: "cleared", AccountID: "a1", AccountName: "Checking",
-		PayeeName: str("Corner Cafe"), CategoryID: str("c2"), CategoryName: str("Dining Out"),
+		PayeeID: str("p1"), PayeeName: str("Corner Cafe"), CategoryID: str("c2"), CategoryName: str("Dining Out"),
 	})
 	srv.AddTransaction(ynabtestserver.Transaction{
 		BudgetID: "b1", ID: "t2", Date: "2026-10-01", Amount: -45000, AmountFormatted: "-$45.00",
 		Cleared: "uncleared", AccountID: "a1", AccountName: "Checking",
-		PayeeName: str("Grocer"), CategoryID: str("c1"), CategoryName: str("Groceries"),
+		PayeeID: str("p2"), PayeeName: str("Grocer"), CategoryID: str("c1"), CategoryName: str("Groceries"),
 	})
 	srv.AddTransaction(ynabtestserver.Transaction{
 		BudgetID: "b1", ID: "t3", Date: "2026-08-01", Amount: -900000, AmountFormatted: "-$900.00",
 		Cleared: "reconciled", AccountID: "a1", AccountName: "Checking",
-		PayeeName: str("Landlord"), CategoryID: str("c3"), CategoryName: str("Rent"),
+		PayeeID: str("p3"), PayeeName: str("Landlord"), CategoryID: str("c3"), CategoryName: str("Rent"),
 	})
 	srv.AddTransaction(ynabtestserver.Transaction{
 		BudgetID: "b1", ID: "t4", Date: "2026-10-10", Amount: 100000, AmountFormatted: "$100.00",
@@ -120,7 +127,7 @@ func TestListRoots_AccountRootListsBudgetsInOneRequest(t *testing.T) {
 func TestListRoots_BudgetListsItsSections(t *testing.T) {
 	srv := newFixture(t)
 	nodes := list(t, "ynab://personal/Consolidated/")
-	if got, want := nodeNames(nodes), []string{"accounts", "categories", "transactions"}; !slices.Equal(got, want) {
+	if got, want := nodeNames(nodes), []string{"accounts", "categories", "transactions", "payees"}; !slices.Equal(got, want) {
 		t.Errorf("sections = %v, want %v", got, want)
 	}
 	// A name costs one request (the budget list) to prove the budget exists;
@@ -150,7 +157,7 @@ func TestListRoots_BudgetListingRejectsUnknownAndAmbiguousNames(t *testing.T) {
 	if err == nil || !errors.Is400BadRequest(err) || !strings.Contains(err.Error(), "?id=") {
 		t.Errorf("ambiguous budget: want a 400 naming ?id=, got %v", err)
 	}
-	if got := nodeNames(list(t, "ynab://personal/Consolidated/?id=b3")); len(got) != 3 {
+	if got := nodeNames(list(t, "ynab://personal/Consolidated/?id=b3")); len(got) != 4 {
 		t.Errorf("?id= tiebreak at the budget level: sections = %v", got)
 	}
 }

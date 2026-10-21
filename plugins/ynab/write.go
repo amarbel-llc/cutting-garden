@@ -13,24 +13,30 @@ import (
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
-// The write path (FDR 0027 slice 2, cutting-garden#331). Slice 1 was
-// read-only; this adds ONE write, on transaction nodes: change a transaction's
-// category, memo or cleared state. This is real money data, so the plugin
-// refuses what is irreversible or ambiguous before sending anything, sends one
-// request, and checks the response reflects what it asked for.
+// The write path (FDR 0027 slice 2, cutting-garden#331; payees, #333). Slice 1
+// was read-only; this adds two writes: on a transaction node, change its
+// category, memo, cleared state or payee; on a payee node, rename it (see
+// payee_write.go). This is real money data, so the plugin refuses what is
+// irreversible or ambiguous before sending anything, sends one request, and
+// checks the response reflects what it asked for.
 //
 // What it will not do, and why:
 //   - change a SPLIT parent's category: its category is its legs', and YNAB
 //     rejects (or ignores) a category on a split;
 //   - categorize a TRANSFER: a transfer between budget accounts has no category;
+//   - repoint a TRANSFER's payee, or point any transaction at a TRANSFER payee:
+//     the payee of a transfer is the other account, and changing it would turn a
+//     transaction into a transfer or break one;
+//   - create a payee: a transaction's payee must already exist (YNAB would
+//     otherwise create one from any unmatched name, so a typo would mint a payee);
 //   - touch the cleared state of a RECONCILED transaction, or set `reconciled`:
 //     reconciling is a deliberate act in YNAB's own UI and unreconciling alters
 //     a locked balance;
-//   - create, replace or delete a transaction: not offered, by design.
+//   - create, replace or delete a transaction or a payee: not offered, by design.
 
-// transactionPatchFields are the PatchNode keys this plugin recognizes, sorted
-// so the `applied` report is deterministic.
-var transactionPatchFields = []string{"category", "cleared", "memo"}
+// transactionPatchFields are the PatchNode keys this plugin recognizes on a
+// transaction, sorted so the `applied` report is deterministic.
+var transactionPatchFields = []string{"category", "cleared", "memo", "payee"}
 
 // maxMemoRunes is YNAB's documented memo limit.
 const maxMemoRunes = 200
@@ -55,16 +61,21 @@ type transactionPatch struct {
 
 	hasCleared bool
 	cleared    string
+
+	hasPayee bool
+	payee    string // an existing payee's name or id
 }
 
-// PatchNode changes a transaction's category, memo and/or cleared state in
-// ONE bulk-update request (YNAB's `PATCH /budgets/{id}/transactions`):
+// PatchNode changes a transaction's category, memo, cleared state and/or payee
+// in ONE bulk-update request (YNAB's `PATCH /budgets/{id}/transactions`), or
+// renames a payee (payee_write.go) when node is a payee:
 //
 //	{"category": "Dining Out"}            a bare name, when it is unique
 //	{"category": "Food/Dining Out"}       Group/Category, when the name repeats
 //	{"category": "<category id>"}         an id
 //	{"memo": "dinner with the group"}     {"memo": null} clears it (max 200)
 //	{"cleared": "cleared"}                "cleared" or "uncleared" only
+//	{"payee": "Corner Cafe"}              an EXISTING payee's name, or its id
 //
 // applied lists the keys that CHANGED. A body naming nothing recognized, and a
 // body whose values already match the transaction, apply nothing, send no
@@ -83,10 +94,14 @@ func (Plugin) PatchNode(
 	if err != nil {
 		return nil, err
 	}
+	if ref.kind == kindPayee {
+		return patchPayee(ctx, ref, body)
+	}
 	if ref.kind != kindTransaction {
 		return nil, errors.BadRequestf(
-			"ynab plugin: only transaction nodes are patchable; %q is not one\n"+
-				"hint: pass `ynab://<account>/<budget>/transactions/<id>`", node,
+			"ynab plugin: only transaction and payee nodes are patchable; %q is not one\n"+
+				"hint: pass `ynab://<account>/<budget>/transactions/<id>` or "+
+				"`ynab://<account>/<budget>/payees/<id>`", node,
 		)
 	}
 
@@ -135,23 +150,25 @@ func (Plugin) PatchNode(
 func (Plugin) CreateNode(_ context.Context, _ *url.URL, _ io.Reader, _ string) error {
 	return errors.BadRequestf(
 		"ynab plugin: CreateNode is not supported — transactions are imported or " +
-			"entered in YNAB; use patch to change a category, memo or cleared state",
+			"entered in YNAB, and payees are created there too; use patch to change " +
+			"a transaction's category, memo, cleared state or payee, or a payee's name",
 	)
 }
 
-// PutNode is unsupported: a transaction has no wholesale-replaceable body here.
+// PutNode is unsupported: a transaction or payee has no wholesale-replaceable
+// body here.
 func (Plugin) PutNode(_ context.Context, _ *url.URL, _ io.Reader) error {
 	return errors.BadRequestf(
 		"ynab plugin: PutNode (full replace) is not supported — use patch to " +
-			"change a category, memo or cleared state",
+			"change a transaction's category, memo, cleared state or payee, or a payee's name",
 	)
 }
 
-// DeleteNode is unsupported: deleting a transaction is irreversible and out of
-// scope for a categorization tool.
+// DeleteNode is unsupported: deleting a transaction or a payee is irreversible
+// and out of scope for a categorization tool.
 func (Plugin) DeleteNode(_ context.Context, _ *url.URL) error {
 	return errors.BadRequestf(
-		"ynab plugin: DeleteNode is not supported — delete a transaction in YNAB itself",
+		"ynab plugin: DeleteNode is not supported — delete a transaction or payee in YNAB itself",
 	)
 }
 
@@ -222,6 +239,19 @@ func parseTransactionPatch(body io.Reader) (transactionPatch, error) {
 		}
 		patch.hasCleared, patch.cleared = true, cleared
 	}
+	if rawPayee, ok := fields["payee"]; ok {
+		payee, err := stringField("payee", rawPayee)
+		if err != nil {
+			return patch, err
+		}
+		if strings.TrimSpace(payee) == "" {
+			return patch, errors.BadRequestf(
+				"ynab plugin: patch field \"payee\" must not be empty\n" +
+					"hint: a transaction cannot be left without a payee once it has one",
+			)
+		}
+		patch.hasPayee, patch.payee = true, payee
+	}
 	return patch, nil
 }
 
@@ -246,6 +276,7 @@ type patchPlan struct {
 	wantCategoryID *string
 	wantMemo       **string // non-nil when the memo is part of the write
 	wantCleared    string
+	wantPayeeID    *string
 }
 
 // planTransactionPatch checks a patch against the transaction as it stands and
@@ -310,8 +341,28 @@ func planTransactionPatch(
 		}
 	}
 
+	if patch.hasPayee {
+		// A transfer's payee is the other account; repointing it would break the
+		// transfer, so it is refused whatever the target.
+		if current.TransferAccountID != nil {
+			return plan, errors.BadRequestf(
+				"ynab plugin: transaction %q is a transfer; its payee is the other account "+
+					"and is not changed here", current.ID,
+			)
+		}
+		payee, err := resolvePayeeRef(ctx, c, budgetID, patch.payee)
+		if err != nil {
+			return plan, err
+		}
+		if current.PayeeID == nil || *current.PayeeID != payee.ID {
+			plan.entry["payee_id"] = payee.ID
+			plan.wantPayeeID = &payee.ID
+			plan.changed = append(plan.changed, "payee")
+		}
+	}
+
 	// changed was appended in transactionPatchFields' order (category, cleared,
-	// memo), so the applied report is already deterministic.
+	// memo, payee), so the applied report is already deterministic.
 	return plan, nil
 }
 
@@ -347,6 +398,11 @@ func (p patchPlan) verify(saved []Transaction, id string) error {
 			"ynab plugin: the memo write to transaction %q was not reflected in YNAB's response", id,
 		)
 	}
+	if p.wantPayeeID != nil && (got.PayeeID == nil || *got.PayeeID != *p.wantPayeeID) {
+		return errors.ErrorWithStackf(
+			"ynab plugin: the payee write to transaction %q was not reflected in YNAB's response", id,
+		)
+	}
 	return nil
 }
 
@@ -367,6 +423,55 @@ func deref(s *string) string {
 		return ""
 	}
 	return *s
+}
+
+// resolvePayeeRef finds the existing payee a patch names, by id or by exact
+// name. It never creates one: sent a `payee_name` that matches nothing, YNAB
+// would mint a new payee, so a typo in a bulk edit would quietly fork a payee —
+// the opposite of tidying them. A name shared by two payees is refused with the
+// ids, and a transfer payee is refused outright: pointing a transaction at one
+// is how YNAB represents a transfer, which is not a payee change.
+func resolvePayeeRef(ctx context.Context, c *client, budgetID, ref string) (Payee, error) {
+	payees, err := c.payees(ctx, budgetID)
+	if err != nil {
+		return Payee{}, err
+	}
+	var byID, byName []Payee
+	for _, p := range livePayees(payees) {
+		switch {
+		case p.ID == ref:
+			byID = append(byID, p)
+		case p.Name == ref:
+			byName = append(byName, p)
+		}
+	}
+	matches := byID
+	if len(matches) == 0 {
+		matches = byName
+	}
+	switch len(matches) {
+	case 0:
+		return Payee{}, errors.BadRequestf(
+			"ynab plugin: no payee named %q\nhint: this plugin does not create payees; "+
+				"create it in YNAB first, or list ynab://<account>/<budget>/payees/", ref,
+		)
+	case 1:
+		if matches[0].isTransfer() {
+			return Payee{}, errors.BadRequestf(
+				"ynab plugin: %q is a transfer payee (the other side of a transfer between "+
+					"accounts), not a counterparty; enter transfers in YNAB", matches[0].Name,
+			)
+		}
+		return matches[0], nil
+	}
+	ids := make([]string, len(matches))
+	for i, p := range matches {
+		ids[i] = p.ID
+	}
+	return Payee{}, errors.BadRequestf(
+		"ynab plugin: %d payees are named %q; use the id (candidates: %s)",
+		len(matches), ref, strings.Join(ids, ", "),
+	)
 }
 
 // resolveCategoryRef finds the live category a patch names: an id, a

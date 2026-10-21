@@ -25,6 +25,8 @@ const (
 	typeCategory = "cutting_garden-ynab-category-v1"
 	// typeTransaction is one transaction — a leaf whose body is its JSON.
 	typeTransaction = "cutting_garden-ynab-transaction-v1"
+	// typePayee is one payee — a leaf whose body is its JSON, renamable by patch.
+	typePayee = "cutting_garden-ynab-payee-v1"
 )
 
 // mimeJSON is the content type of a transaction leaf's body.
@@ -55,19 +57,21 @@ func (Plugin) Types() []cutting_garden_plugins.NodeType {
 		{Tag: typeCategoryGroup, Container: true},
 		{Tag: typeCategory, Container: true},
 		{Tag: typeTransaction, Container: false, MimeType: mimeJSON},
+		{Tag: typePayee, Container: false, MimeType: mimeJSON},
 	}
 }
 
 // ListRoots returns the immediate children of node:
 //
 //   - account root → the account's budgets (archived ones included).
-//   - budget → its three sections.
+//   - budget → its four sections.
 //   - accounts/ → the budget's accounts; categories/ → its category groups;
-//     transactions/ → its transactions in the default window.
+//     transactions/ → its transactions in the default window; payees/ → its
+//     payees.
 //   - account → that account's transactions in the default window.
 //   - category group → its categories; category → its transactions in the
 //     default window.
-//   - transaction → none (a leaf).
+//   - transaction, payee → none (a leaf).
 func (Plugin) ListRoots(
 	ctx context.Context, node *url.URL,
 ) ([]cutting_garden_plugins.Node, error) {
@@ -101,7 +105,7 @@ func (Plugin) ListRoots(
 		}
 		return sectionNodes(ref, segment), nil
 	}
-	if ref.kind == kindTransaction {
+	if ref.kind == kindTransaction || ref.kind == kindPayee {
 		return nil, nil
 	}
 
@@ -112,6 +116,8 @@ func (Plugin) ListRoots(
 	switch ref.kind {
 	case kindAccounts:
 		return accountNodes(ctx, c, ref, budgetID)
+	case kindPayees:
+		return payeeNodes(ctx, c, ref, budgetID)
 	case kindCategories:
 		return categoryGroupNodes(ctx, c, ref, budgetID)
 	case kindTransactions, kindAccount, kindCategory:
@@ -199,10 +205,10 @@ func budgetNodes(
 	return nodes, nil
 }
 
-// sectionNodes is a budget's three fixed listing containers, minted under
+// sectionNodes is a budget's four fixed listing containers, minted under
 // budget (the name or id segment the children are addressed by).
 func sectionNodes(ref nodeRef, budget string) []cutting_garden_plugins.Node {
-	sections := []string{sectionAccounts, sectionCategories, sectionTransactions}
+	sections := []string{sectionAccounts, sectionCategories, sectionTransactions, sectionPayees}
 	nodes := make([]cutting_garden_plugins.Node, 0, len(sections))
 	for _, s := range sections {
 		nodes = append(nodes, cutting_garden_plugins.Node{
@@ -212,6 +218,29 @@ func sectionNodes(ref nodeRef, budget string) []cutting_garden_plugins.Node {
 		})
 	}
 	return nodes
+}
+
+// payeeNodes lists the budget's live payees as leaves, in the order the API
+// returns them. Each is addressed by its id (the last segment), not its name:
+// payee names are free text that renaming changes, and the URI of a node a
+// rename was just applied to must stay valid.
+func payeeNodes(
+	ctx context.Context, c *client, ref nodeRef, budgetID string,
+) ([]cutting_garden_plugins.Node, error) {
+	payees, err := c.payees(ctx, budgetID)
+	if err != nil {
+		return nil, err
+	}
+	payees = livePayees(payees)
+	nodes := make([]cutting_garden_plugins.Node, 0, len(payees))
+	for _, p := range payees {
+		nodes = append(nodes, cutting_garden_plugins.Node{
+			URI:  payeeURI(ref.account, ref.budget, p.ID),
+			Name: p.Name,
+			Type: typePayee,
+		})
+	}
+	return nodes, nil
 }
 
 func accountNodes(

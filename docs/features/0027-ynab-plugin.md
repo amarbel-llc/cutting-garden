@@ -15,14 +15,17 @@ promotion-criteria: |
 
 # YNAB plugin
 
-Tracks cutting-garden#328 (read path) and #331 (categorize/memo/cleared writes).
+Tracks cutting-garden#328 (read path), #331 (categorize/memo/cleared writes)
+and #333 (payees: a `payees/` section, rename, and repointing a transaction's
+payee).
 
 ## Problem Statement
 
 A YNAB (You Need A Budget) budget is a small relational tree (budgets,
 accounts, category groups, categories, transactions) that cutting-garden
 cannot browse. The plugin makes a YNAB account a `list` / `mcp` /
-trellis substrate (read-only apart from the three writable fields, see Writes), so questions like "what did I spend per category last
+trellis substrate (read-only apart from a transaction's category, cleared state,
+memo and payee, and a payee's name; see Writes), so questions like "what did I spend per category last
 month" or "which transactions are uncleared" run through the same facet and
 query surfaces as caldav, fastmail and jira.
 
@@ -32,7 +35,8 @@ query surfaces as caldav, fastmail and jira.
 
 The plugin speaks YNAB's REST API (`https://api.ynab.com/v1`) with a personal
 access token as a bearer credential. Slice 1 was **read-only**; slice 2 (Writes)
-adds three transaction fields. There is no capture/restore/diff. Wire facts, checked 2026-10-20 against api.ynab.com and
+adds three transaction fields, and #333 a fourth (payee) plus the payee rename.
+There is no capture/restore/diff. Wire facts, checked 2026-10-20 against api.ynab.com and
 the published OpenAPI spec (ynab-sdk-js `open_api_spec.yaml`):
 
 - YNAB's current docs rename budgets to **plans** (`/plans/{plan_id}`), but the
@@ -101,10 +105,14 @@ testserver.
     ynab://personal/<budget>/accounts/<account>   one account
     ynab://personal/<budget>/categories/<group>/<category>
     ynab://personal/<budget>/transactions/<id>    one transaction (leaf, JSON)
+    ynab://personal/<budget>/payees/<id>          one payee (leaf, JSON); payees/ lists them
 
 `<budget>`, `<account>`, `<group>` and `<category>` are name segments; a name
 that is not unique under its parent is disambiguated by the YNAB id as a
-`?id=` query (the fastmail precedent: classification stays network-free).
+`?id=` query (the fastmail precedent: classification stays network-free). A
+payee is addressed by its **id**, not its name: payee names are free text, often
+repeated, and a rename changes them, so the URI of a payee just renamed must
+stay valid. Its node name is the payee's name.
 
 ### Node types
 
@@ -112,13 +120,17 @@ Hyphenated and horizontally versioned (FDR 0018):
 
 | Tag (`cutting_garden-ynab-...`) | Kind | Holds |
 |---|---|---|
-| `budget-v1` | container | budget attributes (id, name, currency, last_modified) + `accounts/`, `categories/`, `transactions/` |
+| `budget-v1` | container | budget attributes (id, name, currency, last_modified) + `accounts/`, `categories/`, `transactions/`, `payees/` |
 | `account-v1` | container | type, balance, cleared balance, closed; its transactions |
 | `category-group-v1` | container | group attributes; its categories |
 | `category-v1` | container | budgeted, activity, balance for the current month; its transactions |
 | `transaction-v1` | leaf | the transaction as JSON (amount in milliunits and formatted, payee, memo, cleared, approved, flag) |
+| `payee-v1` | leaf | the payee as JSON (id, name, `transfer_account_id` for a transfer payee, deleted); renamable |
 
-### Facets (`category` and `cleared` writable, see Writes)
+A payee node carries no facets or listing fields: a listing is a flat list of
+names, and the payee dimension on transactions is what groups by payee.
+
+### Facets (`category`, `cleared` and `payee` writable, see Writes)
 
 On `transaction-v1`, declared once through the unified field-codec model
 (FDR 0025, `unified.go`) and derived into the facet surface: `date` (the ISO
@@ -189,7 +201,60 @@ under another `category=` heading re-categorizes the transaction, a `cleared=`
 heading changes its cleared state, and the `uncategorized` bucket is not a
 valid target. Pinned by `write_test.go` and, through the real binary,
 `zz-tests_bats/ynab.bats` (a patch, two refusals, an organize round trip).
-No live write has been run against a real budget.
+
+**Live check (2026-10-21, krone, cutting-garden d63ffa2).** One memo, one
+category and one cleared-state patch were each applied to a real, unreconciled
+transaction, read back, and restored to the original value (the restored
+transaction's raw bytes matched the originals). That settles that a personal
+access token accepts writes.
+
+### Payees (#333)
+
+Payees are the second thing the plugin can write, and the first design point is
+what YNAB's API does and does not offer (read from the changelog and ynab-sdk-js
+2026-10-21): payees can be **listed, read, created and renamed**; a transaction
+update takes a `payee_id`. There is **no merge**, and it is not documented what a
+rename onto an existing payee's name does. So the plugin renames and repoints,
+and never merges or creates.
+
+**The `payees/` section.** A budget's live payees, each a `payee-v1` leaf
+addressed by id. Transfer payees (the stand-ins YNAB keeps for "the other
+account" of a transfer, `transfer_account_id` set) are listed and readable but
+read-only.
+
+**Renaming a payee.** `PatchNode` on a payee node accepts exactly `name` and
+sends one `PATCH /budgets/{id}/payees/{payee_id}` (`{"payee": {"name": …}}`).
+
+- An empty or blank name, a non-string, or a transfer payee is refused.
+- A name another live payee already holds (compared case-insensitively and
+  trimmed) is refused with that payee named, and the refusal says merging is
+  done in YNAB. Since a rename onto a held name might or might not merge, the
+  plugin does not ask. A deleted payee does not hold its name; a case-only
+  change to a payee's OWN name is allowed.
+- The payee list is read fresh before the write (the guards must see names as
+  they are now), so a rename costs two requests: the list and the write. The
+  response is checked for the new name. A rename that changes nothing sends
+  nothing. The budget's cached payees AND transactions are invalidated after it,
+  because transactions carry their payee's name.
+
+**Repointing a transaction's payee.** `PatchNode` on a transaction also accepts
+`payee`, the name or id of an EXISTING payee, sent as `payee_id`.
+
+- It is never sent as a `payee_name`: for a name that matches nothing, YNAB
+  creates a payee, so a typo in a bulk edit would fork one. An unknown name is
+  refused ("this plugin does not create payees"); a name two payees share is
+  refused with their ids.
+- A transfer payee is refused as a target, and a transfer transaction's payee is
+  not changed: its payee is the other account, and repointing it would break the
+  transfer. A transaction cannot be left without a payee, so `null`, empty and
+  non-string values are refused.
+- It rides the same single bulk request as the other fields, and a reconciled
+  transaction's payee is not locked (only its cleared state is).
+
+`payee` is also a writable facet: moving a line under another `payee=` heading
+repoints the transaction, which makes "fold the redundant payee into its twin" one
+organize pass. The twin's heading has to be written into the document when it has
+no transactions in the selection. An empty bucket is not a valid target.
 
 ### Caching and rate limit
 
@@ -213,11 +278,14 @@ therefore does not implement `FacetVersioner`, and the framework's TTL applies.
 
 ## Limitations
 
-- Writes are limited to three fields on a plain transaction (see Writes).
-  Creating, replacing and deleting nodes are refused, and `BulkMutator` is not
-  implemented: an organize that moves N lines sends N `PATCH` requests against
-  the 200/hour limit.
-- Scheduled transactions, payees, months and goals are not nodes in slice 1.
+- Writes are limited to four fields on a plain transaction (category, cleared,
+  memo, payee) and a payee's name (see Writes and Payees). Creating, replacing
+  and deleting nodes are refused, and `BulkMutator` is not implemented: an
+  organize that moves N lines sends N transaction `PATCH` requests, each
+  preceded by a fresh read of its transaction, against the 200/hour limit.
+- Payees cannot be merged, created or deleted from here (YNAB's API has no
+  merge). Renaming a payee onto a name another holds is refused.
+- Scheduled transactions, months and goals are not nodes.
 - Split transactions surface as one node with a `subtransactions` array; the
   parent's category is `Split`, so category facets count the parent once under
   `Split`, not the legs.
@@ -264,9 +332,10 @@ therefore does not implement `FacetVersioner`, and the framework's TTL applies.
 - **Slice 1c-3 (landed): the harness.** `cmd/cutting-garden-ynab-testserver`
   (the fixture in `ynabtestserver/fixture.go`, fixed 2026 dates so vectors never
   drift with the clock), `zz-tests_bats/lib/ynab.bash` and
-  `zz-tests_bats/ynab.bats` (13 cases over the real binary: roots, sections,
-  drill-downs, the month and year pushdown, completeness, a rejected token), and
-  the `flake.nix` wiring (`CG_TEST_YNAB`).
+  `zz-tests_bats/ynab.bats` (13 cases over the real binary then: roots,
+  sections, drill-downs, the month and year pushdown, completeness, a rejected
+  token; 26 now, with the write and payee lanes), and the `flake.nix` wiring
+  (`CG_TEST_YNAB`).
 - **Slice 1c review fixes (`/code-review high`, 2026-10-20):** the listing and
   the counting path now share ONE set (`visibleTransactions`), so a summary
   always totals the nodes the listing shows: rows are re-checked against the

@@ -12,6 +12,9 @@ const Token = "test-token"
 //	Household (b-household)             Archive (b-archive, empty)
 //	  accounts:   Checking, Savings
 //	  categories: Food{Groceries, Dining Out}, Bills{Rent}
+//	  payees:     Grocer, Landlord, Corner Cafe, The Corner Cafe (unused: the
+//	              redundant twin a payee cleanup merges toward), Paycheck, and
+//	              the two transfer payees "Transfer : Savings" / "Transfer : Checking"
 //	  transactions, in server order:
 //	    06-03 Grocer       -54.20  Checking  Groceries  cleared
 //	    06-12 Landlord    -900.00  Checking  Rent       reconciled
@@ -35,11 +38,23 @@ func SeedFixture(s *Server) {
 	s.AddCategory(Category{BudgetID: "b-household", GroupID: "g-bills", ID: "c-rent", Name: "Rent"})
 
 	str := func(v string) *string { return &v }
+
+	payeeIDs := map[string]string{
+		"Grocer": "p-grocer", "Landlord": "p-landlord", "Corner Cafe": "p-cafe",
+		"The Corner Cafe": "p-cafe-twin", "Paycheck": "p-paycheck",
+		"Transfer : Savings": "p-xfer-sav", "Transfer : Checking": "p-xfer-chk",
+	}
+	for _, name := range []string{"Grocer", "Landlord", "Corner Cafe", "The Corner Cafe", "Paycheck"} {
+		s.AddPayee(Payee{BudgetID: "b-household", ID: payeeIDs[name], Name: name})
+	}
+	s.AddPayee(Payee{BudgetID: "b-household", ID: "p-xfer-sav", Name: "Transfer : Savings", TransferAccountID: str("a-sav")})
+	s.AddPayee(Payee{BudgetID: "b-household", ID: "p-xfer-chk", Name: "Transfer : Checking", TransferAccountID: str("a-chk")})
+
 	txn := func(id, date string, amount int64, formatted, cleared, account, accountName, payee string) Transaction {
 		return Transaction{
 			BudgetID: "b-household", ID: id, Date: date, Amount: amount, AmountFormatted: formatted,
 			Cleared: cleared, Approved: true, AccountID: account, AccountName: accountName,
-			PayeeName: str(payee),
+			PayeeID: str(payeeIDs[payee]), PayeeName: str(payee),
 		}
 	}
 	categorize := func(t Transaction, id, name string) Transaction {

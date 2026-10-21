@@ -44,6 +44,22 @@ function ynab_list_budget_shows_its_sections { # @test
 	accounts
 	categories
 	transactions
+	payees
+	EOM
+}
+
+function ynab_list_payees_by_id { # @test
+  run_cg list -format json ynab://test/Household/payees/
+  assert_success
+  run jq -c '[.uri, .name, .type]' <<<"$output"
+  assert_output - <<-'EOM'
+	["ynab://test/Household/payees/p-grocer","Grocer","cutting_garden-ynab-payee-v1"]
+	["ynab://test/Household/payees/p-landlord","Landlord","cutting_garden-ynab-payee-v1"]
+	["ynab://test/Household/payees/p-cafe","Corner Cafe","cutting_garden-ynab-payee-v1"]
+	["ynab://test/Household/payees/p-cafe-twin","The Corner Cafe","cutting_garden-ynab-payee-v1"]
+	["ynab://test/Household/payees/p-paycheck","Paycheck","cutting_garden-ynab-payee-v1"]
+	["ynab://test/Household/payees/p-xfer-sav","Transfer : Savings","cutting_garden-ynab-payee-v1"]
+	["ynab://test/Household/payees/p-xfer-chk","Transfer : Checking","cutting_garden-ynab-payee-v1"]
 	EOM
 }
 
@@ -185,6 +201,65 @@ function ynab_mcp_patch_refuses_an_unknown_category { # @test
   assert_output "Dining Out"
 }
 
+# Payees (cutting-garden#333). A payee reads as its JSON, and a transaction
+# can be repointed to ANOTHER EXISTING payee by name; the read-back goes through
+# cg itself.
+function ynab_mcp_read_node_returns_a_payee { # @test
+  mcp_drive ynab://test/ "$(tools_call 3 read_node '{"uri":"ynab://test/Household/payees/p-cafe-twin"}')"
+  run jq -r '[.id, .name] | @tsv' <<<"$(mcp_result_text "$output" 3 | sed '/^raw bytes:/d')"
+  assert_output "$(printf 'p-cafe-twin\tThe Corner Cafe')"
+}
+
+function ynab_mcp_patch_repoints_a_transactions_payee { # @test
+  mcp_drive ynab://test/ "$(tools_call 3 mutate_nodes '{"groups":[{"anchor":"ynab://test/Household/transactions/","ops":[{"kind":"patch","id":"t-0702","body":"{\"payee\":\"The Corner Cafe\"}"}]}]}')"
+  run jq -r '.groups[0].applied | join(",")' <<<"$(mcp_result_text "$output" 3)"
+  assert_output t-0702
+
+  ynab_mcp_list ynab://test/Household/transactions/ date=2026-07-02
+  run jq -c '.nodes[0] | [.facets.payee, .fields.payee, .name]' <<<"$(mcp_result_text "$output" 3)"
+  assert_output '[["The Corner Cafe"],"The Corner Cafe","2026-07-02 The Corner Cafe -$12.34"]'
+}
+
+# A payee name that exists nowhere is refused, never created: YNAB would mint a
+# payee from an unmatched name, so a typo would fork one.
+function ynab_mcp_patch_refuses_an_unknown_payee { # @test
+  mcp_drive ynab://test/ "$(tools_call 3 mutate_nodes '{"groups":[{"anchor":"ynab://test/Household/transactions/","ops":[{"kind":"patch","id":"t-0702","body":"{\"payee\":\"Corner Cafee\"}"}]}]}')"
+  assert_equal "$(mcp_is_error "$output" 3)" "true"
+  text="$(mcp_result_text "$output" 3)"
+  [[ $text == *"no payee named"* ]] || fail "unknown payee not refused by name: $text"
+
+  run_cg list -format json ynab://test/Household/payees/
+  assert_success
+  run jq -s 'length' <<<"$output"
+  assert_output 7
+}
+
+# Renaming is the other payee write. The payee keeps its URI (it is addressed by
+# id), and its transactions read under the new name.
+function ynab_mcp_rename_a_payee { # @test
+  mcp_drive ynab://test/ "$(tools_call 3 mutate_nodes '{"groups":[{"anchor":"ynab://test/Household/payees/","ops":[{"kind":"patch","id":"p-cafe-twin","body":"{\"name\":\"Corner Cafe (Downtown)\"}"}]}]}')"
+  run jq -r '.groups[0].applied | join(",")' <<<"$(mcp_result_text "$output" 3)"
+  assert_output p-cafe-twin
+
+  run_cg list -format json ynab://test/Household/payees/
+  assert_success
+  run jq -r 'select(.uri | endswith("/p-cafe-twin")) | .name' <<<"$output"
+  assert_output "Corner Cafe (Downtown)"
+}
+
+# A rename onto a name another payee holds is refused: what YNAB does with it
+# is undocumented, so the plugin never asks.
+function ynab_mcp_rename_refuses_a_name_another_payee_holds { # @test
+  mcp_drive ynab://test/ "$(tools_call 3 mutate_nodes '{"groups":[{"anchor":"ynab://test/Household/payees/","ops":[{"kind":"patch","id":"p-cafe-twin","body":"{\"name\":\"Corner Cafe\"}"}]}]}')"
+  assert_equal "$(mcp_is_error "$output" 3)" "true"
+  text="$(mcp_result_text "$output" 3)"
+  [[ $text == *"would collide"* ]] || fail "the collision is not named: $text"
+
+  run_cg list -format json ynab://test/Household/payees/
+  run jq -r 'select(.uri | endswith("/p-cafe-twin")) | .name' <<<"$output"
+  assert_output "The Corner Cafe"
+}
+
 # organize anchors at a URI, so the month is addressed as `?date=` on the
 # anchor (a `date=` query predicate is not pushed down on that path).
 generate_month() {
@@ -268,6 +343,95 @@ EOF
   ynab_mcp_list ynab://test/Household/transactions/ date=2026-07-02
   run jq -r '.nodes[0].facets.category[0]' <<<"$(mcp_result_text "$output" 3)"
   assert_output Groceries
+}
+
+# The payee cleanup in one organize pass: group a month by payee, drag a line
+# under another payee's heading, apply.
+generate_month_by_payee() {
+  run_cg organize -group-by payee= 'ynab://test/Household/transactions/?date=2026-07'
+  assert_success
+  assert_vector - <<-'EOM'
+	---
+	% generated: `cg organize '"ynab://test/Household/transactions/?date=2026-07"' payee=`
+	- _base = @blake2b256-9469xht5748ynt7n8lk53ld4esde3rfpym0rj0g7xq4348c5a44sc3rhfx
+	- _anchor = ynab://test/Household/transactions/?date=2026-07
+	- _type = !cutting_garden-ynab-transaction-v1
+	! organize-base-v1
+	---
+
+	# payee=
+
+	## ="Corner Cafe"
+
+	- [t-0702] 2026-07-02 Corner Cafe -$12.34
+
+	## =Grocer
+
+	- [t-0709] 2026-07-09 Grocer -$61.05
+
+	## =Landlord
+
+	- [t-0731] 2026-07-31 Landlord -$900.00
+
+	## =Paycheck
+
+	- [t-0715] 2026-07-15 Paycheck $2,500.00
+	EOM
+}
+
+function ynab_organize_groups_a_month_by_payee { # @test
+  generate_month_by_payee
+}
+
+# Moving a line under another payee's heading repoints the transaction to that
+# existing payee: the redundant "Corner Cafe" line joins its twin. The twin has
+# no transactions in the month, so the edit adds its heading.
+function ynab_organize_apply_repoints_the_payee_by_moving_a_line { # @test
+  generate_month_by_payee
+  local edited="$BATS_TEST_TMPDIR/edited.txt"
+  cat >"$edited" <<-'EOM'
+	---
+	% generated: `cg organize '"ynab://test/Household/transactions/?date=2026-07"' payee=`
+	- _base = @blake2b256-9469xht5748ynt7n8lk53ld4esde3rfpym0rj0g7xq4348c5a44sc3rhfx
+	- _anchor = ynab://test/Household/transactions/?date=2026-07
+	- _type = !cutting_garden-ynab-transaction-v1
+	! organize-base-v1
+	---
+
+	# payee=
+
+	## ="Corner Cafe"
+
+	## ="The Corner Cafe"
+
+	- [t-0702] 2026-07-02 Corner Cafe -$12.34
+
+	## =Grocer
+
+	- [t-0709] 2026-07-09 Grocer -$61.05
+
+	## =Landlord
+
+	- [t-0731] 2026-07-31 Landlord -$900.00
+
+	## =Paycheck
+
+	- [t-0715] 2026-07-15 Paycheck $2,500.00
+	EOM
+
+  run_cg organize -apply "$edited" -commit
+  assert_success
+  assert_vector - <<'EOF'
+organize: 1 change(s):
+
+  - [t-0702 payee=[-"Corner Cafe"-]{+"The Corner Cafe"+}] 2026-07-02 Corner Cafe -$12.34
+
+organize: wrote 1 change(s)
+EOF
+
+  ynab_mcp_list ynab://test/Household/transactions/ date=2026-07-02
+  run jq -r '.nodes[0].facets.payee[0]' <<<"$(mcp_result_text "$output" 3)"
+  assert_output "The Corner Cafe"
 }
 
 function ynab_a_rejected_token_names_the_token { # @test

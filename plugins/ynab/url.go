@@ -22,6 +22,8 @@ const (
 	kindCategoryGroup                 // ynab://acct/<budget>/categories/<group>
 	kindCategory                      // ynab://acct/<budget>/categories/<group>/<category>
 	kindTransaction                   // ynab://acct/<budget>/transactions/<id>
+	kindPayees                        // ynab://acct/<budget>/payees/
+	kindPayee                         // ynab://acct/<budget>/payees/<id>
 )
 
 // Section segment names under a budget.
@@ -29,6 +31,7 @@ const (
 	sectionAccounts     = "accounts"
 	sectionCategories   = "categories"
 	sectionTransactions = "transactions"
+	sectionPayees       = "payees"
 )
 
 // nodeRef is a classified `ynab://` URI: the config account (the URI's host
@@ -43,6 +46,7 @@ type nodeRef struct {
 	group       string
 	category    string
 	txnID       string
+	payeeID     string // the payee's id: a payee is addressed by id so a rename keeps its URI
 	id          string
 	// date is the optional `?date=` window (a year, month or day) on a
 	// transaction-bearing node: the URI-addressable counterpart of a `date`
@@ -138,9 +142,18 @@ func classifyPath(u *url.URL) (nodeRef, error) {
 		default:
 			return bad("too many path segments under transactions/")
 		}
+	case sectionPayees:
+		switch len(rest) {
+		case 0:
+			ref.kind = kindPayees
+		case 1:
+			ref.kind, ref.payeeID = kindPayee, rest[0]
+		default:
+			return bad("too many path segments under payees/")
+		}
 	default:
 		return bad("unknown section " + `"` + section + `"` +
-			" (want accounts, categories or transactions)")
+			" (want accounts, categories, transactions or payees)")
 	}
 	return ref, nil
 }
@@ -217,4 +230,8 @@ func categoryURI(account, budget, group, category, id string) *url.URL {
 
 func transactionURI(account, budget, txnID string) *url.URL {
 	return mintURI(account, []string{budget, sectionTransactions, txnID}, false, "")
+}
+
+func payeeURI(account, budget, payeeID string) *url.URL {
+	return mintURI(account, []string{budget, sectionPayees, payeeID}, false, "")
 }

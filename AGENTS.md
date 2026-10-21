@@ -37,8 +37,9 @@ create in a file or under a headline), with its parser in
 the `plugins/org/orgtext` leaf and an
 in-memory WebDAV test server in `plugins/org/orgtestserver`, FDR 0026;
 and ynab, a traversal plugin over the YNAB REST API, writable only for a
-transaction's category, cleared state and memo — budgets,
-accounts, category groups, categories and transactions, a transaction
+transaction's category, cleared state, memo and payee (an existing one; it
+never creates payees) and a payee's name (never a merge) — budgets,
+accounts, category groups, categories, transactions and payees, a transaction
 listing defaulting to a 30-day `since_date` window because YNAB has no
 paging, a `date=` filter (or a `?date=` URI query, which is how organize
 anchors on a month) pushed down to `since_date`/`until_date`, and a
