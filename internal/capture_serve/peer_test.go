@@ -238,7 +238,7 @@ func TestPeer_BlobRoundTrip_FDDigestIdentity(t *testing.T) {
 
 		var fin BlobFinishResult
 		err = plugin.Call(
-			ctx, MethodBlobFinish, BlobFinishParams{Blob: begin.Blob}, &fin,
+			ctx, MethodBlobFinish, BlobFinishParams(begin), &fin,
 		)
 		if err != nil {
 			t.Fatalf("blob %d finish: %v", i, err)
