@@ -170,7 +170,12 @@ func (Plugin) DescribeBodies() []cutting_garden_plugins.NodeTypeBody {
 			`application/json, create ops (a temp id, with "in" = a file for a level-1 headline at ` +
 				`its end, or a headline for its last child): a required "title" plus any of "state", ` +
 				`"priority", "own_tags", "scheduled", "deadline", "body" as above. The plugin mints the ` +
-				`:ID:, stamps :CREATED: and adds the tag zz-agent_captured; the result gives the ?id= URI.`,
+				`:ID:, stamps a :CREATED: property (the current time) and adds the own tag ` +
+				`zz-agent_captured (capture provenance: it never inherits, and tag searches find ` +
+				`what an agent created); the result gives the ?id= URI. There is no opt-out at ` +
+				`create time; to drop the tag, patch the new headline with "own_tags" (the whole ` +
+				`set) without it. To restructure existing headlines into a parent, patch them with ` +
+				`"parent" instead of creating copies: a move adds neither the tag nor :CREATED:.`,
 		},
 		Example:                map[string]any{fieldPatchState: "DONE", fieldPatchScheduled: "2026-10-20"},
 		ServerAssignedIdentity: true,

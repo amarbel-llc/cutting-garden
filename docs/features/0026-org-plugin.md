@@ -166,7 +166,12 @@ Google Doc "org plugin: body edits, by example (FDR 0026 D7)"):
   (in the account's `timezone`, else the host's), and adds the own tag `zz-agent_captured`, which,
   like `zz-agent_quoted`, never inherits. Creating at a caller-chosen URI is
   refused (the headline type is `ServerAssignedIdentity`). Same write path
-  and read-back as edits.
+  and read-back as edits. The tag is capture provenance, so a create has no
+  opt-out (anything that finds agent-created headlines by it would break
+  if callers could omit it, #358); a caller who does not want it patches
+  `own_tags` afterwards, and existing headlines are restructured with the
+  D7-D moves, which add neither the tag nor `:CREATED:`. The schema
+  (`describe_node_types`) states all of this.
 
 Taken 2026-11-02, for the file's preamble (cutting-garden#357):
 
