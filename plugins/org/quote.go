@@ -125,9 +125,24 @@ var errOnlyPatch = errors.BadRequestf(
 	`org plugin: a headline is patched, or created with a temp id in a file or headline ` +
 		`(FDR 0026); replacing, deleting and creating at a chosen URI are not supported`)
 
-// DescribeBodies declares the headline's patch for describe_node_types.
+// DescribeBodies declares the headline's and the file's patch for
+// describe_node_types.
 func (Plugin) DescribeBodies() []cutting_garden_plugins.NodeTypeBody {
 	return []cutting_garden_plugins.NodeTypeBody{{
+		Tag: typeFile,
+		Accepts: []string{
+			`application/json, patch ops only: "body" (string, or null to clear) replaces the file's ` +
+				`preamble — the text before the first headline — verbatim, as read_node returns it in ` +
+				`"body" (lines joined by "\n", the last line's terminator dropped, so "a\n" holds a ` +
+				`trailing blank line). The file's #+TODO, #+SEQ_TODO, #+TYP_TODO and #+FILETAGS lines are ` +
+				`not part of the body: they are kept, written above it, and a body holding one is ` +
+				`refused (so is a body with a line that starts a headline). Other #+KEYWORD: lines ` +
+				`(#+TITLE …), comments and free text are the body. Headlines and everything below the ` +
+				`first one are untouched. A lost_to_concurrent_sync error means another writer (an ` +
+				`Orgzly sync) overwrote the edit: re-read and re-apply.`,
+		},
+		Example: map[string]any{fieldPatchBody: "# How the tag families work\n# Each top-level headline is a family."},
+	}, {
 		Tag: typeHeadline,
 		Accepts: []string{
 			`application/json, patch ops only, any of: "title" (string), "state" (a TODO keyword of the ` +

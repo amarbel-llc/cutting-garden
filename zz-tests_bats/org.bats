@@ -119,6 +119,29 @@ function org_mcp_edit_state_and_schedule { # @test
 	EOM
 }
 
+# The file node's preamble (cutting-garden#357): a body patch on a file
+# replaces the text before the first headline; #+FILETAGS stays and the
+# headlines are untouched. read_node on the file returns the new text.
+function org_mcp_edit_file_preamble { # @test
+  mcp_drive org://test/ \
+    "$(tools_call 3 mutate_nodes '{"groups":[{"anchor":"org://test/","ops":[{"kind":"patch","id":"_inbox.org","body":"{\"body\": \"# Conventions\\n# second line\"}"}]}]}')"
+  run jq -r '.groups[0].applied | join(",")' <<<"$(mcp_result_text "$output" 3)"
+  assert_output "_inbox.org"
+
+  mcp_drive org://test/ "$(tools_call 4 read_node '{"uri":"org://test/_inbox.org"}')"
+  run jq -r '.body | .body, (.filetags | join(" "))' \
+    <<<"$(mcp_result_text "$output" 4 | sed '/^raw bytes:/d')"
+  assert_output - <<-'EOM'
+	# Conventions
+	# second line
+	zz-inbox
+	EOM
+
+  run_cg list -format json org://test/_inbox.org
+  run jq -r '.uri' <<<"$output"
+  assert_line --index 0 "org://test/_inbox.org?h=Call+the+plumber+about+the+leak"
+}
+
 # Capture (FDR 0026 D7-E): a temp-id create in a file appends a level-1
 # headline with a minted :ID:, :CREATED: and zz-agent_captured; a later op
 # in the batch addresses it by the temp id, and the result maps it to the

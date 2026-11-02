@@ -21,12 +21,15 @@ type headlineContent struct {
 	Warnings   []orgtext.Warning `json:"warnings,omitempty"`
 }
 
-// fileContent is read_node's structured view of a file.
+// fileContent is read_node's structured view of a file. Body is its
+// preamble: the text before the first headline, without the file's #+TODO /
+// #+FILETAGS lines (preamble.go).
 type fileContent struct {
 	File      string            `json:"file"`
 	Keywords  orgtext.Keywords  `json:"todo_keywords"`
 	FileTags  []string          `json:"filetags"`
 	Headlines int               `json:"headlines"`
+	Body      string            `json:"body"`
 	Warnings  []orgtext.Warning `json:"warnings,omitempty"`
 }
 
@@ -54,6 +57,7 @@ func (Plugin) ReadLeaf(ctx context.Context, node *url.URL) (cutting_garden_plugi
 				Keywords:  pf.file.Keywords,
 				FileTags:  nonNil(pf.file.FileTags),
 				Headlines: count,
+				Body:      pf.file.Preamble().Body,
 				Warnings:  pf.file.Warnings,
 			},
 			Raw:         pf.file.Bytes(),

@@ -160,6 +160,27 @@ Google Doc "org plugin: body edits, by example (FDR 0026 D7)"):
   refused (the headline type is `ServerAssignedIdentity`). Same write path
   and read-back as edits.
 
+Taken 2026-11-02, for the file's preamble (cutting-garden#357):
+
+- **D7-F, preamble.** A patch on a file node with `body` replaces the text
+  before the first headline; `read_node` on the file returns that text as
+  `body` beside its metadata and child listing. `body` is the only key a file
+  accepts (any other is refused, not ignored); `null` clears. The file's
+  settings — `#+TODO`, `#+SEQ_TODO`, `#+TYP_TODO`, `#+FILETAGS` outside a
+  block — are not part of `body`: they are kept, written back above the text
+  (so a setting that sat below a comment moves up), and a body holding one is
+  refused, as is a body that would start a headline or open a `#+BEGIN_`
+  block that swallows the headlines below. Other `#+KEYWORD:` lines
+  (`#+TITLE`), comments, free text and blank lines are the body, verbatim.
+  `body` is the preamble's lines joined by `\n` with the last line's
+  terminator dropped (`"a\n"` is a line and a blank line), so a body read from
+  `read_node` and patched back is no change (no write, nothing applied); line
+  endings read as `\n` and are written as the file's own (CRLF kept).
+  Everything from the first headline on is untouched byte for byte. Same
+  write path and read-back as edits (D8-C); a lost update reports
+  `lost_to_concurrent_sync`. The file type is declared writable in
+  `describe_node_types`; organize has no file-level fields, so it is unaffected.
+
 Round-trip tested against Orgzly on 2026-10-18 in the dedicated notebook
 `zz-tests-cutting_garden.org` (and `_mirror.org` for the cross-file move):
 a metadata edit, a body edit, a same-file move, a move to `_mirror.org`

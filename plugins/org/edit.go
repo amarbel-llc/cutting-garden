@@ -188,8 +188,12 @@ func (Plugin) PatchNode(ctx context.Context, uri *url.URL, body io.Reader) ([]st
 	if err != nil {
 		return nil, err
 	}
-	if t.ref.kind != kindHeadline {
-		return nil, errors.BadRequestf("org plugin: only a headline can be edited, not %q", uri.String())
+	switch t.ref.kind {
+	case kindFile:
+		return t.patchPreamble(ctx, e)
+	case kindHeadline:
+	default:
+		return nil, errors.BadRequestf("org plugin: only a headline or a file can be edited, not %q", uri.String())
 	}
 	if e.move != nil {
 		return t.editAndMove(ctx, e, t.acct.now())
@@ -214,20 +218,28 @@ func (t target) edit(ctx context.Context, e headlineEdit, now time.Time) ([]stri
 	if err != nil || len(applied) == 0 {
 		return applied, err
 	}
-	if err := t.verifyEdit(ctx, want); err != nil {
+	if err := readBackTwice(ctx, func() error { return t.verifyEdit(ctx, want) }); err != nil {
 		return nil, err
+	}
+	return applied, nil
+}
+
+// readBackTwice runs verify now and again after readBackDelay; an error from
+// either is a lost update. A caller that gives up waiting keeps the first
+// check's verdict.
+func readBackTwice(ctx context.Context, verify func() error) error {
+	if err := verify(); err != nil {
+		return err
 	}
 	if readBackDelay > 0 {
 		select {
 		case <-ctx.Done():
-			return applied, nil // written and checked once; the caller gave up waiting
+			return nil // written and checked once; the caller gave up waiting
 		case <-time.After(readBackDelay):
 		}
-		if err := t.verifyEdit(ctx, want); err != nil {
-			return nil, err
-		}
+		return verify()
 	}
-	return applied, nil
+	return nil
 }
 
 func (t target) editLocked(
