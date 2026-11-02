@@ -19,8 +19,9 @@ func (Plugin) DescribeBodies() []cutting_garden_plugins.NodeTypeBody {
 			"application/json (the {component, event|task|journal} object read_node returns). On create its uid is " +
 				"optional: a temp-id create mints one and returns the new URI, an explicit-id create takes the id " +
 				"without its .ics as the uid, and a VTODO with no status gets NEEDS-ACTION",
-			"patch ops take {component, event|task|journal: {field: value}} and change only the fields named; " +
-				"null clears a field. Patchable: VTODO summary, description, status, dtstart, dtstart_tzid, " +
+			"patch ops take {component, event|task|journal: {field: value}} or just a bare {field: value} object " +
+				"(its component is the node's; the example above is the read shape, not a patch) and change only " +
+				"the fields named; null clears a field. Patchable: VTODO summary, description, status, dtstart, dtstart_tzid, " +
 				"due, due_tzid, location, priority, categories, parent_uid; VEVENT summary, description, status, " +
 				"dtstart, dtstart_tzid, dtend, dtend_tzid, location, categories; VJOURNAL summary, description, " +
 				"status, dtstart, categories. A field outside that set is tolerated but not in the applied list",

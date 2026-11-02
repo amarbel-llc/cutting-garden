@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"maps"
 	"net/url"
@@ -104,8 +105,11 @@ type objectPatchBody struct {
 }
 
 // PatchNode partially updates an existing CalDAV object at the node URI. The
-// body MUST be objectView JSON (raw iCalendar is rejected — it cannot express
-// "absent field = unchanged"). Only the fields present in the JSON are written;
+// body MUST be JSON (raw iCalendar is rejected — it cannot express "absent
+// field = unchanged"): the wrapped objectView form {"component":"VTODO",
+// "task":{…}}, or a bare field object {…} whose component is the node's (one
+// GET to learn it; the wrapped form needs none when it names nothing
+// recognized). Only the fields present in the JSON are written;
 // absent fields are left untouched. Unknown fields are tolerated, but they are
 // NOT reported in applied, so the caller can tell what actually landed
 // (cutting-garden#182). An empty or whitespace-only body is a bad-request
@@ -137,6 +141,16 @@ func (Plugin) PatchNode(
 		return nil, errors.BadRequestf("caldav plugin: PatchNode body must be objectView JSON; got empty body")
 	}
 
+	var top map[string]json.RawMessage
+	if err := json.Unmarshal(trimmed, &top); err != nil {
+		return nil, errors.BadRequestf("caldav plugin: invalid patch JSON: %s", err)
+	}
+	// No top-level `component`: a bare field object, whose component is the
+	// stored object's.
+	if _, wrapped := top["component"]; !wrapped {
+		return patchBare(ctx, node, top)
+	}
+
 	var patch objectPatchBody
 	if err := json.Unmarshal(trimmed, &patch); err != nil {
 		return nil, errors.BadRequestf("caldav plugin: invalid patch JSON: %s", err)
@@ -152,10 +166,8 @@ func (Plugin) PatchNode(
 	case "VJOURNAL":
 		fields, supported = patch.Journal, journalPatchFields
 	default:
-		return nil, errors.BadRequestf(
-			"caldav plugin: patch JSON has unknown component %q (want VEVENT, VTODO, or VJOURNAL)",
-			patch.Component,
-		)
+		return nil, badPatchShape(fmt.Sprintf(
+			"the patch has unknown component %q (want VEVENT, VTODO, or VJOURNAL)", patch.Component))
 	}
 
 	// Which of the named fields this component actually recognizes is
@@ -166,68 +178,137 @@ func (Plugin) PatchNode(
 		return applied, nil
 	}
 
+	c, href, currentView, err := fetchPatchTarget(ctx, node)
+	if err != nil {
+		return nil, err
+	}
+	if err := storePatched(ctx, c, href, node, patch.Component, currentView, fields); err != nil {
+		return nil, err
+	}
+	return applied, nil
+}
+
+// patchBare patches with a bare field object (`{"categories":["a"]}`): no
+// `component` wrapper, since the node already names its component. That needs
+// the stored object, so a bare body costs one GET even when it names nothing
+// recognized — the wrapped form keeps its no-fetch shortcut. Everything else is
+// the wrapped form's: unknown fields are tolerated and left out of applied,
+// null clears, and a body naming nothing recognized stores nothing.
+func patchBare(
+	ctx context.Context, node *url.URL, fields map[string]json.RawMessage,
+) ([]string, error) {
+	// A section object without its `component` is a half-written wrapper, not
+	// a field named "task": say so rather than ignore it.
+	for _, section := range []string{"event", "task", "journal"} {
+		if _, ok := fields[section]; ok {
+			return nil, badPatchShape(fmt.Sprintf(
+				"the %q section needs a top-level \"component\" beside it", section))
+		}
+	}
+	if len(fields) == 0 {
+		return []string{}, nil
+	}
+
+	c, href, currentView, err := fetchPatchTarget(ctx, node)
+	if err != nil {
+		return nil, err
+	}
+	var supported []string
+	switch currentView.Component {
+	case "VEVENT":
+		supported = eventPatchFields
+	case "VTODO":
+		supported = taskPatchFields
+	case "VJOURNAL":
+		supported = journalPatchFields
+	}
+	applied := cutting_garden_plugins.RecognizedPatchFields(fields, supported)
+	if len(applied) == 0 {
+		return applied, nil
+	}
+	if err := storePatched(ctx, c, href, node, currentView.Component, currentView, fields); err != nil {
+		return nil, err
+	}
+	return applied, nil
+}
+
+// badPatchShape is a malformed patch body's rejection: what is wrong, then the
+// two accepted shapes.
+func badPatchShape(problem string) error {
+	return errors.BadRequestf(
+		"caldav plugin: %s. A patch is the wrapped form "+
+			`{"component":"VTODO","task":{"summary":"..."}} (event or journal for those `+
+			"components) or a bare field object {\"summary\":\"...\"} whose component is the "+
+			"node's; describe_node_types lists the patchable fields (its example is the read "+
+			"shape, not a patch)",
+		problem,
+	)
+}
+
+// fetchPatchTarget reads and parses the object a patch addresses.
+func fetchPatchTarget(
+	ctx context.Context, node *url.URL,
+) (*client, string, objectView, error) {
 	c, href, err := clientForNode(node)
 	if err != nil {
-		return nil, err
+		return nil, "", objectView{}, err
 	}
-
 	currentBody, err := c.getResource(ctx, href)
 	if err != nil {
-		return nil, err
+		return nil, "", objectView{}, err
 	}
-
 	currentView, ok := parseObjectView(currentBody)
 	if !ok {
-		return nil, errors.ErrorWithStackf(
+		return nil, "", objectView{}, errors.ErrorWithStackf(
 			"caldav plugin: node at %s is not a recognized CalDAV object (VEVENT/VTODO/VJOURNAL)",
 			node,
 		)
 	}
+	return c, href, currentView, nil
+}
+
+// storePatched overlays fields onto the component of the fetched object and
+// PUTs the result back. A caller-declared component that is not the node's is
+// their mistake to fix.
+func storePatched(
+	ctx context.Context, c *client, href string, node *url.URL,
+	component string, currentView objectView, fields map[string]json.RawMessage,
+) error {
+	mismatch := func() error {
+		return errors.BadRequestf(
+			"caldav plugin: PatchNode component mismatch: requested %s but node at %s is %s",
+			component, node, currentView.Component,
+		)
+	}
 
 	var newBody string
-	switch patch.Component {
+	switch component {
 	case "VEVENT":
 		if currentView.Event == nil {
-			// The caller declared a component that does not match the node
-			// they addressed — their mistake to fix (cutting-garden#187).
-			return nil, errors.BadRequestf(
-				"caldav plugin: PatchNode component mismatch: requested VEVENT but node at %s is %s",
-				node, currentView.Component,
-			)
+			return mismatch()
 		}
 		if err := applyPatch(eventPatchTargets(currentView.Event), fields); err != nil {
-			return nil, err
+			return err
 		}
 		newBody = ical.EventToIcal(currentView.Event)
 	case "VTODO":
 		if currentView.Task == nil {
-			return nil, errors.BadRequestf(
-				"caldav plugin: PatchNode component mismatch: requested VTODO but node at %s is %s",
-				node, currentView.Component,
-			)
+			return mismatch()
 		}
 		if err := applyPatch(taskPatchTargets(currentView.Task), fields); err != nil {
-			return nil, err
+			return err
 		}
 		newBody = ical.TaskToIcal(currentView.Task)
 	case "VJOURNAL":
 		if currentView.Journal == nil {
-			return nil, errors.BadRequestf(
-				"caldav plugin: PatchNode component mismatch: requested VJOURNAL but node at %s is %s",
-				node, currentView.Component,
-			)
+			return mismatch()
 		}
 		if err := applyPatch(journalPatchTargets(currentView.Journal), fields); err != nil {
-			return nil, err
+			return err
 		}
 		newBody = ical.JournalToIcal(currentView.Journal)
 	}
-
-	if err := c.updateResource(ctx, href, newBody); err != nil {
-		return nil, err
-	}
-
-	return applied, nil
+	return c.updateResource(ctx, href, newBody)
 }
 
 // The *PatchTargets functions are the SINGLE declaration of what each
