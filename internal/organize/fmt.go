@@ -30,9 +30,12 @@ import (
 // renderCanonical(parse(file)) == the stored base blob's bytes: the same
 // data-plane projection `_base` content-addresses, so equality IMPLIES the
 // state in which apply would find zero edits — conservatively: fmt also
-// refuses provenance/`%`-comment or envelope churn apply would ignore —
-// while benign formatting noise (extra blank lines, a deeper heading root)
-// re-renders canonically and passes. The edit-preserving v2 (carry pending
+// refuses provenance or envelope churn apply would ignore — while benign
+// formatting noise (extra blank lines, a deeper heading root) re-renders
+// canonically and passes. A body `%` comment line is inert to apply and the
+// base, but regeneration would silently drop it, so fmt-organize refuses a
+// document holding any (refuseBodyComments, before anything else is read).
+// The edit-preserving v2 (carry pending
 // edits forward,
 // re-place object lines) is cutting-garden#252. Like generate,
 // fmt-organize never emits empty (reset) headings.
@@ -65,8 +68,11 @@ func (*FmtOrganize) GetDescription() command.Description {
 			"config defaults are not re-consulted. If the body no longer " +
 			"matches its pinned base — the document has unapplied edits — " +
 			"fmt-organize refuses (exit 64) rather than regenerate over " +
-			"them; apply or discard the edits first. An edit-preserving v2 " +
-			"is tracked at cutting-garden#252. See the native tags design " +
+			"them; apply or discard the edits first. It also refuses a " +
+			"document holding body `% note` comment lines (exit 64, naming " +
+			"them), since regeneration cannot carry them forward yet. An " +
+			"edit-preserving v2 is tracked at cutting-garden#252. See the " +
+			"native tags design " +
 			"(G4), RFC 0015.",
 	}
 }
@@ -142,6 +148,9 @@ func (cmd *FmtOrganize) run(
 
 	doc, err := parseDocument(original)
 	if err != nil {
+		return err
+	}
+	if err := refuseBodyComments(path, doc); err != nil {
 		return err
 	}
 	spec, err := doc.groupedSpec()

@@ -41,9 +41,25 @@ module.exports = grammar({
     source_file: $ => seq(optional($.metadata), repeat($._body_line)),
 
     _body_line: $ =>
-      choice($.heading, $.heading_reset, $.object_line, $.blank_line),
+      choice(
+        $.heading,
+        $.heading_reset,
+        $.object_line,
+        $.body_comment,
+        $.blank_line,
+      ),
 
     blank_line: $ => '\n',
+
+    // An inert body comment (RFC 0015 §`%` / `%:` lines): `%` alone or `%`
+    // followed by a blank and free text, anywhere no box is open. It is
+    // stripped before the base and applies no behavior. The text token must
+    // START with a blank, so `%foo` and `%:x` are not comments (the organize
+    // reader rejects them too). Distinct from the envelope's `comment_line`,
+    // which the shared metadata module defines.
+    body_comment: $ =>
+      seq('%', optional(field('text', $.body_comment_text)), '\n'),
+    body_comment_text: $ => token(/[ \t][^\n]*/),
 
     // A heading ladder line: a `#+` marker then one heading term — a type
     // (`!<type>`, spelling 1), a dimension (`<dim>=`, optionally qualified
@@ -130,14 +146,15 @@ module.exports = grammar({
       ),
     _group_by_spec: $ => choice($.qualifier, $.tag_name),
 
-    // An espalier object line: `- [box] description` (or `%` for a
-    // virtual/inferred-type object, preserved from dodder). A box may WRAP
+    // An espalier object line: `- [box] description`. (The `%` virtual-object
+    // prefix of RFC 0015 is reserved but unimplemented: a `% ` body line is a
+    // comment, `body_comment`.) A box may WRAP
     // (cutting-garden#261, RFC 0015 §Object lines): its interior spans lines
     // through `_box_space` (overridden below), and its description continues
     // on each following `description_continuation` line.
     object_line: $ =>
       seq(
-        field('prefix', choice('-', '%')),
+        field('prefix', '-'),
         ' ',
         $.box,
         optional(seq(' ', field('description', $.description))),
@@ -146,8 +163,8 @@ module.exports = grammar({
       ),
     description: $ => token(/[^\n]+/),
     // A description continuation line: one starting (after optional blanks)
-    // with none of `-` (always a new box), `#` (a heading), `%` (reserved as
-    // an object-line prefix) — or an escaped `\X` line (any non-blank X:
+    // with none of `-` (always a new box), `#` (a heading), `%` (a comment,
+    // never a continuation) — or an escaped `\X` line (any non-blank X:
     // `\-`, `\#`, `\%`, `\\`) that continues the description with the
     // backslash stripped. A blank line ends the span.
     description_continuation: $ =>

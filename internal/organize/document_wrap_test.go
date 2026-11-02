@@ -225,10 +225,13 @@ func TestParseWrap_MultiLineQuotedValueStillJoins(t *testing.T) {
 }
 
 // TestParseWrap_PercentLineNeverContinues pins that a `%`-led line is never
-// a description continuation (the grammar keeps `%` as a virtual-object
-// prefix); `\%` is its escaped continuation.
+// a description continuation: `% 5 percent` is an inert comment that ends the
+// span, and `\%` is the escaped continuation.
 func TestParseWrap_PercentLineNeverContinues(t *testing.T) {
-	assertBodyRejected(t, "\n- [a.ics] Grew\n% 5 percent\n", "body line 2", "a `%` line is not a description continuation")
+	assertSameDocument(t,
+		"\n- [a.ics] Grew\n% 5 percent\n",
+		"\n- [a.ics] Grew\n",
+	)
 	assertSameDocument(t,
 		"\n- [a.ics] Grew\n\\% 5 percent\n",
 		"\n- [a.ics] Grew % 5 percent\n",

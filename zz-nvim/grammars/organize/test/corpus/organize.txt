@@ -760,11 +760,70 @@ an open box interior never swallows a `- [` new-box line (cutting-garden#261)
 ----------------------------------------
 
 ========================================
-a `%` line is not a description continuation (cutting-garden#261)
-:error
+a `% ` body line is an inert comment, never a description continuation: it ends the span
 ========================================
+% a note to myself
 - [a.ics] Grew
 % 5 percent
+
+# work
+
+% note under a heading
+- [b.ics] B
+%
+% trailing note
+
+----------------------------------------
+
+(source_file
+  (body_comment
+    (body_comment_text))
+  (object_line
+    (box
+      (box_object_id))
+    (description))
+  (body_comment
+    (body_comment_text))
+  (blank_line)
+  (heading
+    (heading_marker)
+    (heading_tag
+      (tag_name)))
+  (blank_line)
+  (body_comment
+    (body_comment_text))
+  (object_line
+    (box
+      (box_object_id))
+    (description))
+  (body_comment)
+  (body_comment
+    (body_comment_text)))
+
+========================================
+a `% [` body line is a comment, not a virtual object line
+========================================
+% [a.ics] not an object
+
+----------------------------------------
+
+(source_file
+  (body_comment
+    (body_comment_text)))
+
+========================================
+a `%` glued to text is not a comment
+:error
+========================================
+%foo
+
+----------------------------------------
+
+========================================
+a `%:` directive is not a body comment
+:error
+========================================
+%:dry-run = true
 
 ----------------------------------------
 

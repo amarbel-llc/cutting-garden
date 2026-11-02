@@ -89,6 +89,13 @@ revised: |
     effective query, then the group-by, shell-quoted where needed — so every
     document's provenance line, and with it its `_base` digest, changed. The
     envelope fields (`_anchor`, `_query`, `_type`) are unchanged.
+  2026-11-02 — body `%` COMMENTS (cutting-garden#369): a bare `% note` line
+    is an inert comment anywhere in the body outside an open box, including
+    directly under a box line, where it ends the description span. This
+    overturns the wrap rule's "a `%` line MUST be rejected": only `%`-glued
+    text, `%:` and a `%` inside an open box interior still reject. A body
+    comment never reaches the base; `fmt-organize` refuses a document that
+    holds one. The virtual-object `%` prefix is reserved but unimplemented.
 ---
 
 # The organize document dialect
@@ -551,7 +558,18 @@ document is, so a document generated with or without them has the same base.
 Two shapes, distinguished by the character *adjacent* to `%`:
 
 - `% <prose>` (bare `%`, then a space) — **inert**: provenance and human notes
-  (`% generated: cg organize :z`). Carries no behavior, ever.
+  (`% generated: cg organize :z`). Carries no behavior, ever. In the
+  envelope it is the provenance comment; in the BODY it is a note-to-self
+  legal on any line outside an open box (before the first box, between
+  boxes, under a heading, directly under a box line — where it ends the
+  description span — or trailing). A bare `%`, or `%` then a tab, is the
+  same. A body comment is dropped at parse and never reaches the base, so
+  a document with or without it plans the same edits; a `%` line inside an
+  open box interior, and a `%` glued to text (`%foo`) or to a colon in the
+  body (`%:x`, the directive form, not yet read from the body), MUST be
+  rejected. `fmt-organize` regenerates the body from live data and cannot
+  carry body comments forward, so it MUST refuse a document holding any
+  (naming their count and physical lines) rather than strip them.
 - `%:<directive> [= value]` (colon adjacent to `%`) — a **semantic directive**.
   This RETRACTS the prior rule that `%` comments "MUST NOT carry behavior": a
   `%:` line is behavior-bearing by construction, a bare `%` line is not. The
@@ -643,8 +661,10 @@ fields, and a field shadowing a harness-reserved name is a type error.
 ### Object lines
 
 `- ` followed by an espalier literal (box interior) and description
-trailer, per RFC 0014's isometry. `%` object-line prefix (virtual /
-inferred type) preserved from dodder. `%`-marked atoms inside the box
+trailer, per RFC 0014's isometry. The `%` object-line prefix (virtual /
+inferred type, from dodder) is reserved but unimplemented: a body line
+starting `% ` is a comment (§`%` / `%:` lines), never an object line, and
+the organize grammar admits no `%`-prefixed object line. `%`-marked atoms inside the box
 (computed tags, derived fields) are display-only; editing them is an
 error. (As of native tags slice 2 nothing emits them and the trellis box
 grammar has no `%` production — `%` is a reserved rune — so a `%`-marked
@@ -675,9 +695,10 @@ several physical lines, in two spans with different continuation rules:
   open until a blank line, a heading line, or a new object line closes it.
   A line whose first non-blank rune is `-` ALWAYS starts a new object line;
   one whose first non-blank rune is `#` is a heading; one whose first
-  non-blank rune is `%` is NEVER a continuation (`%` is reserved as an
-  object-line prefix) and MUST be rejected. Any other non-blank line
-  continues the description. A line beginning `\` followed by a non-blank
+  non-blank rune is `%` is NEVER a continuation: a bare `%`, or `%` then a
+  space or tab, is an inert comment (§`%` / `%:` lines) that closes the
+  span; any other `%` line (`%foo`, `%:x`) MUST be rejected. Any other
+  non-blank line continues the description. A line beginning `\` followed by a non-blank
   rune X is an escaped continuation: the backslash is stripped and the
   rest (X onward) continues the description literally — so `\-`, `\#`,
   `\%` let a continued description begin with `-`, `#`, `%`, and `\\`

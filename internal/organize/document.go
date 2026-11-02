@@ -3,6 +3,7 @@ package organize
 import (
 	"bytes"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"code.linenisgreat.com/cutting-garden/internal/cgconfig"
@@ -225,6 +226,34 @@ type document struct {
 	Ungrouped []objectLine
 	// Sections is the heading ladder in render order.
 	Sections []section
+	// CommentLines are the physical body line numbers of the inert `% ` comment
+	// lines the parser dropped. They are never rendered and never reach the
+	// base; fmt-organize reads them to refuse a regeneration that would lose them.
+	CommentLines []int
+}
+
+// refuseBodyComments is fmt-organize's guard: regenerating a document rewrites
+// its body from live data, which cannot carry a body `%` comment forward, so a
+// document holding any is refused (naming the count and lines) rather than
+// silently stripped.
+func refuseBodyComments(path string, doc document) error {
+	if len(doc.CommentLines) == 0 {
+		return nil
+	}
+	lines := make([]string, len(doc.CommentLines))
+	for i, n := range doc.CommentLines {
+		lines[i] = strconv.Itoa(n)
+	}
+	noun, where := "lines", "body lines "
+	if len(lines) == 1 {
+		noun, where = "line", "body line "
+	}
+	return errors.BadRequestf(
+		"fmt-organize: %s: document has %d body `%%` comment %s (%s%s); regeneration "+
+			"cannot carry them forward yet — delete the comment "+
+			"lines, or edit the document by hand",
+		path, len(lines), noun, where, strings.Join(lines, ", "),
+	)
 }
 
 // --- term classification -----------------------------------------------------
@@ -530,10 +559,14 @@ func splitEnvelope(text string) (
 // and after the closing `]` the box's DESCRIPTION span stays open — a line
 // starting with none of `-`, `#`, `%` continues it, as does a `\X` escaped
 // line (any non-blank X; backslash stripped, so `\-`, `\#`, `\%`, `\\`). A
-// line-leading `-` always opens a new box; a blank line or heading closes the
-// span; a `%` line is never a continuation (the grammar reserves it as an
-// object-line prefix). An escaped line with no open span is a bad request.
-// Error line numbers are physical body lines.
+// line-leading `-` always opens a new box; a blank line, heading or comment
+// closes the span; a `%` line is never a continuation. A comment (`% note`, a
+// bare `%`, or `%` then a tab; RFC 0015 §`%` / `%:` lines) is inert wherever
+// no box is open: it is dropped, its physical line recorded in
+// document.CommentLines, and never rendered or hashed into the base. Any other
+// `%` line (`%foo`, `%:x`) is a bad request, as is a `%` line inside an open
+// box. An escaped line with no open span is a bad request. Error line numbers
+// are physical body lines.
 func parseBody(doc *document, body string) error {
 	lines := strings.Split(body, "\n")
 	root := rootHeadingDepth(lines)
@@ -583,10 +616,15 @@ func parseBody(doc *document, body string) error {
 			i = last
 			described = &ln
 
+		case isBodyComment(line):
+			closeDescription()
+			doc.CommentLines = append(doc.CommentLines, i+1)
+
 		case strings.HasPrefix(line, "%"):
 			return errors.BadRequestf(
-				"organize: body line %d: unrecognized %q: a `%%` line is not a description continuation "+
-					"(`%%` is reserved as an object-line prefix; escape a continuation as `\\%%`)",
+				"organize: body line %d: unrecognized %q: a `%%` line is a comment only as `%% note` "+
+					"(`%%` then a space); it is never a description continuation "+
+					"(escape a continuation as `\\%%`)",
 				i+1, line,
 			)
 
@@ -616,6 +654,13 @@ func parseBody(doc *document, body string) error {
 	}
 	closeDescription()
 	return nil
+}
+
+// isBodyComment reports whether a trimmed body line is an inert comment: a bare
+// `%`, or `%` followed by a space or tab (RFC 0015 §`%` / `%:` lines). `%:` and
+// `%`-glued text are not comments.
+func isBodyComment(line string) bool {
+	return line == "%" || strings.HasPrefix(line, "% ") || strings.HasPrefix(line, "%\t")
 }
 
 // parseWrappedBox parses the box opening on lines[start] (a trimmed line

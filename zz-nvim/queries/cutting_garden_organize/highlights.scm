@@ -61,7 +61,8 @@
 
 ; --- object lines ---
 (object_line "-" @punctuation.special)
-(object_line "%" @comment)
+(body_comment "%" @comment)
+(body_comment text: (body_comment_text) @comment)
 (object_line description: (description) @string)
 (object_line continuation: (description_continuation) @string)
 
