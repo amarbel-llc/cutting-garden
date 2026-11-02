@@ -155,8 +155,16 @@ func (Plugin) DescribeBodies() []cutting_garden_plugins.NodeTypeBody {
 				`org:// URI, a path from the account root like "notes.org?id=…", or a bare "id=…" in ` +
 				`the same file; a move may cross files and changes the URI's file part), ` +
 				`"quote" (true: also add the zz-agent_quoted ` +
-				`tag). Any edit ` +
-				`mints the headline's :ID: when it has none, so read the node again for its ?id= URI; ` +
+				`tag). Moves reparent and re-level (a move needs no create-and-delete): ` +
+				`{"parent": "id=<uuid>"} makes the headline that headline's last child, its subtree ` +
+				`following and re-leveled; {"parent": "notes.org"} makes it a level-1 headline at the ` +
+				`end of that file (promote); {"after": "id=<sibling>"} places it next to a headline at ` +
+				`that headline's level, so naming a shallower or deeper one promotes or demotes it. Any ` +
+				`edit mints the headline's :ID: when it has none. A ?h=<title> URI keeps resolving while ` +
+				`the outline path is unchanged, but a "title" edit or a move changes the path, so the ` +
+				`old ?h= URI then stops resolving: read the node or list its new parent for its ?id= ` +
+				`URI (the patch result does not return it), and address a headline you will rename or ` +
+				`move by ?id=; ` +
 				`entering or leaving a done state adds or removes CLOSED. A lost_to_concurrent_sync ` +
 				`error means another writer (an Orgzly sync) overwrote the edit: re-read and re-apply.`,
 			`application/json, create ops (a temp id, with "in" = a file for a level-1 headline at ` +

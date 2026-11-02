@@ -149,7 +149,15 @@ Google Doc "org plugin: body edits, by example (FDR 0026 D7)"):
   neither. The read-back (D8-C) checks the destination, and the source
   across files; a lost cross-file move quotes the moved text back in the
   error. Metadata and body keys in the same patch apply first. A keyword the
-  destination file does not define is refused.
+  destination file does not define is refused. Promote and demote are moves:
+  `{"parent": "notes.org"}` makes a headline level 1; `{"after": "id=…"}`
+  names a headline of the target level to land next to it. Worked example,
+  turning a body's bullets into children without create-and-delete: create
+  each child under the headline (D7-E), or move existing headlines in with
+  `{"parent": "id=<uuid>"}`. The patch result lists applied keys, not URIs
+  (#359): after a `title` edit or a move the old `?h=` URI no longer
+  resolves (an edit that only mints the `:ID:` leaves it resolving), so
+  address a headline you will rename or move by `?id=`.
 - **D7-E, capture.** A headline is created through `ContainerCreator`: a
   `mutate_nodes` create with a temp id and `in` set to a file (a level-1
   headline at its end) or a headline (its last child). The body is JSON: a
