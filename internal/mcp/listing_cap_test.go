@@ -125,7 +125,7 @@ func TestListNodesQuery_CapsAndSaysSo(t *testing.T) {
 	if err != nil || res.IsError {
 		t.Fatalf("err=%v res=%+v", err, res)
 	}
-	if !strings.Contains(res.Content[0].Text, `"truncated": true`) {
+	if !strings.Contains(res.Content[0].Text, `"truncated":true`) {
 		t.Errorf("query path not capped: %.200s", res.Content[0].Text)
 	}
 }

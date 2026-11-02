@@ -481,7 +481,7 @@ func (t *Tools) call(
 				})
 			}
 			views = paginate(views, in.Offset, in.Limit)
-			body, err := json.MarshalIndent(views, "", "  ")
+			body, err := json.Marshal(views)
 			if err != nil {
 				return "", errors.Wrap(err)
 			}
@@ -630,7 +630,7 @@ func (t *Tools) listNodesURI(
 			views = append(views, bareNodeView(lister, n))
 		}
 		views = paginate(views, offset, limit)
-		body, err := json.MarshalIndent(views, "", "  ")
+		body, err := json.Marshal(views)
 		if err != nil {
 			return "", errors.Wrap(err)
 		}
@@ -687,14 +687,14 @@ func (t *Tools) listNodesURI(
 		return "", errors.Wrapf(err, "list %s (filtered)", uri)
 	}
 	views, trailer := capViews(views, offset, limit, listingByteCap)
-	body, err := json.MarshalIndent(filteredListingView{
+	body, err := json.Marshal(filteredListingView{
 		Nodes:             views,
 		listingTruncation: trailer,
 		listingVersion:    prov.view(),
 		Filter:            filterString(filter),
 		FilterApplied:     mode != filterModeNone,
 		FilterMode:        mode,
-	}, "", "  ")
+	})
 	if err != nil {
 		return "", errors.Wrap(err)
 	}
@@ -749,12 +749,12 @@ func (t *Tools) listNodesQuery(
 		return "", errors.Wrapf(err, "list_nodes %s (query)", uri)
 	}
 	views, trailer := capViews(views, offset, limit, listingByteCap)
-	body, err := json.MarshalIndent(queriedListingView{
+	body, err := json.Marshal(queriedListingView{
 		Query:             query,
 		Nodes:             views,
 		listingTruncation: trailer,
 		listingVersion:    completenessView(partial.All()),
-	}, "", "  ")
+	})
 	if err != nil {
 		return "", errors.Wrap(err)
 	}
@@ -800,7 +800,7 @@ func paginateListingText(text string, offset, limit int) (string, error) {
 		return text, nil
 	}
 	wrapper.Nodes = paginate(wrapper.Nodes, offset, limit)
-	body, err := json.MarshalIndent(wrapper, "", "  ")
+	body, err := json.Marshal(wrapper)
 	if err != nil {
 		return "", errors.Wrap(err)
 	}

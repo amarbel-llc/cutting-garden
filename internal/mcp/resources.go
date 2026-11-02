@@ -401,10 +401,10 @@ func (r *Resources) renderNodeViews(
 	if err != nil {
 		return "", err
 	}
-	body, err := json.MarshalIndent(listingView{
+	body, err := json.Marshal(listingView{
 		Nodes:          views,
 		listingVersion: prov.view(),
-	}, "", "  ")
+	})
 	if err != nil {
 		return "", errors.Wrap(err)
 	}

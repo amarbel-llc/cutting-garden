@@ -8,8 +8,8 @@ import (
 // listingByteCap bounds the node bytes of a filtered or queried list_nodes
 // result when the caller gave no limit. 60,000 B is about
 // 15,000 tokens at ~4 B/token, safely under the ~25,000-token result limits
-// of the MCP clients this serves. For scale: 230 caldav VTODOs enriched and
-// indented measured 187,572 B (about 815 B each), so the cap keeps roughly 70
+// of the MCP clients this serves. For scale: 230 caldav VTODOs enriched
+// measured 118,341 B compact (about 515 B each), so the cap keeps roughly 115
 // of them and says how many more there are. The wrapper's own fields add a
 // small constant on top. The unfiltered default path (#86) is not capped.
 const listingByteCap = 60_000
@@ -25,14 +25,14 @@ type listingTruncation struct {
 	Hint      string `json:"hint,omitempty"`
 }
 
-// nodeCost is the bytes a node adds to the indented output: its own indented
-// JSON plus the separating comma and newline.
+// nodeCost is the bytes a node adds to the compact output: its own JSON plus
+// the separating comma.
 func nodeCost(v nodeView) int {
-	b, err := json.MarshalIndent(v, "    ", "  ")
+	b, err := json.Marshal(v)
 	if err != nil {
 		return 0
 	}
-	return len(b) + 2
+	return len(b) + 1
 }
 
 // capViews applies offset and limit to views, and — only when limit is 0, the
