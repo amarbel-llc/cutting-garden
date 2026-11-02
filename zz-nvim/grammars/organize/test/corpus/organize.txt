@@ -1124,6 +1124,86 @@ temp-id boxes create objects: `+id`, a quoted `+"id"`, a bare `+` (forge organiz
     (description)))
 
 ========================================
+a multi-line run of comments directly above a box line is all comments
+========================================
+% syntax highlighting for comments has inconsistent behavior. the following
+% lines should be comments until the `-` line
+% identifiers with characters requiring escaping that are quoted should be
+% elided by default too, they're still classified as identifiers
+- ["id=099a0056-34de-48fe-9d4b-786723568b15"] priority
+
+----------------------------------------
+
+(source_file
+  (body_comment
+    (body_comment_text))
+  (body_comment
+    (body_comment_text))
+  (body_comment
+    (body_comment_text))
+  (body_comment
+    (body_comment_text))
+  (object_line
+    (box
+      (box_object_id_quoted))
+    (description)))
+
+========================================
+headings are headings whatever they end in or are followed by: a letter, punctuation, a dot, a blank line, a box
+========================================
+# zz-agent_captured
+
+- [a.ics] A
+# status=
+- [b.ics] B
+## =done.
+- [c.ics] C
+# done.
+- [d.ics] D
+# a-b
+
+----------------------------------------
+
+(source_file
+  (heading
+    (heading_marker)
+    (heading_tag
+      (tag_name)))
+  (blank_line)
+  (object_line
+    (box
+      (box_object_id))
+    (description))
+  (heading
+    (heading_marker)
+    (heading_dimension
+      (dim_name)))
+  (object_line
+    (box
+      (box_object_id))
+    (description))
+  (heading
+    (heading_marker)
+    (heading_value
+      (heading_value_text)))
+  (object_line
+    (box
+      (box_object_id))
+    (description))
+  (heading
+    (heading_marker)
+    (heading_tag
+      (tag_name)))
+  (object_line
+    (box
+      (box_object_id))
+    (description))
+  (heading
+    (heading_marker)
+    (heading_tag
+      (tag_name))))
+
+========================================
 a quoted object id: an id with reserved runes (an org headline's `id=<uuid>`) is quoted and still an id
 ========================================
 - ["id=099a0056-34de-48fe-9d4b-786723568b15"] priority

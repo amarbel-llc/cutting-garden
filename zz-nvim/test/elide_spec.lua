@@ -391,6 +391,64 @@ local steps = {
     cutting_garden.setup({ elide = { mode = 'box' } })
   end,
 
+  -- highlighting: every heading and every `%` comment line draws with a style
+  -- of its own, whatever the heading ends in or what follows it
+  function()
+    vim.cmd.enew()
+    vim.api.nvim_buf_set_lines(0, 0, -1, false, {
+      '% a note',
+      '% the next line is a comment too',
+      '% and so is this one',
+      '- [x.ics] Box',
+      '',
+      '# zz-agent_captured',
+      '- [y.ics] A',
+      '# status=',
+      '- [z.ics] B',
+      '# done.',
+      '',
+      '- [w.ics] C',
+      '',
+      '# zz-agent_captured',
+      '',
+      '% a note under the heading',
+      '- ["id=099a0056-34de-48fe-9d4b-786723568b15"] priority',
+      '',
+    })
+    vim.bo.filetype = 'cutting-garden-organize'
+    keys('18G')
+  end,
+  function()
+    -- a cell past the end of every line carries the Normal attribute
+    local plain = vim.fn.screenattr(1, vim.o.columns)
+    local function styled(row, col, what)
+      report(
+        vim.fn.screenattr(row, col) ~= plain,
+        what .. ' is highlighted',
+        { ('row %d col %d has the Normal attribute'):format(row, col) }
+      )
+    end
+    local function same(row_a, col_a, row_b, col_b, what)
+      report(
+        vim.fn.screenattr(row_a, col_a) == vim.fn.screenattr(row_b, col_b),
+        what,
+        { ('row %d col %d vs row %d col %d differ'):format(row_a, col_a, row_b, col_b) }
+      )
+    end
+    styled(1, 1, 'a comment marker')
+    styled(1, 4, 'a comment text')
+    styled(2, 4, 'the second comment line text')
+    styled(3, 4, 'the third comment line text')
+    same(1, 4, 2, 4, 'comment lines 1 and 2 share a style')
+    same(2, 4, 3, 4, 'comment lines 2 and 3 share a style')
+    styled(6, 1, 'a heading marker')
+    styled(6, 3, 'a heading ending in a letter')
+    styled(8, 3, 'a heading ending in punctuation (=)')
+    styled(10, 3, 'a heading whose name ends in a dot')
+    styled(14, 3, 'a heading followed by a comment line and a quoted-id box')
+    styled(16, 3, 'a comment line under a heading')
+  end,
+
   -- invalid levers are rejected
   function()
     report(
