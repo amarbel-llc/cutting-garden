@@ -9,17 +9,13 @@ import (
 )
 
 // A rejected create or put body names what is accepted, the likely cause when
-// it is known, and where the example lives.
+// it is known, and where the example lives. (A JSON create body with no uid is
+// no longer rejected: its uid is minted, see create_uid_test.go.)
 func TestCreateChild_RejectionNamesTheAcceptedFormats(t *testing.T) {
 	cases := []struct {
 		name, body string
 		want       []string
 	}{
-		{
-			"object JSON without a uid",
-			`{"component":"VTODO","task":{"summary":"x"}}`,
-			[]string{"VTODO missing UID", "raw iCalendar", `\,`, `\;`, `\n`, "describe_node_types"},
-		},
 		{
 			"raw iCalendar without a uid",
 			"BEGIN:VCALENDAR\nBEGIN:VTODO\nSUMMARY:x\nEND:VTODO\nEND:VCALENDAR\n",

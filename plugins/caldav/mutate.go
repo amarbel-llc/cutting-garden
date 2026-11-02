@@ -10,6 +10,7 @@ import (
 	"path"
 	"reflect"
 	"slices"
+	"strings"
 
 	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
 	"code.linenisgreat.com/cutting-garden/plugins/caldav/ical"
@@ -56,7 +57,11 @@ func (Plugin) CreateNode(
 	if err != nil {
 		return err
 	}
-	icalData, err := normalizeObjectBody(body)
+	// The object's name is its identity: a JSON body without a uid takes the
+	// resource name (`<uid>.ics`, as restore and CreateChild name objects).
+	icalData, err := normalizeCreateBody(body, func() (string, error) {
+		return uidFromHref(href), nil
+	})
 	if err != nil {
 		return err
 	}
@@ -454,17 +459,91 @@ func normalizeObjectBody(r io.Reader) (string, error) {
 
 // badObjectBody is the rejection of a create or put body: the parser's
 // reason, then the two accepted formats and where the example is. The
-// reason is the real cause (JSON that carries no uid serializes to iCalendar
-// that fails to parse), so a caller does not retry the wrong fix.
+// reason is the real cause, so a caller does not retry the wrong fix. A raw
+// iCalendar body with no UID is the one case with its own hint: the caller's
+// text is never rewritten, but the JSON form gets a UID minted.
 func badObjectBody(cause error) error {
+	hint := ""
+	if strings.HasSuffix(cause.Error(), "missing UID") {
+		hint = ". A raw iCalendar body needs its own UID: line; the JSON form gets a UID " +
+			"minted when it has none"
+	}
 	return errors.BadRequestf(
-		"caldav plugin: the body is not an acceptable object (%s). Send raw iCalendar text "+
+		"caldav plugin: the body is not an acceptable object (%s)%s. Send raw iCalendar text "+
 			"(BEGIN:VCALENDAR … one VTODO, VEVENT or VJOURNAL with a UID; escape commas as \\, "+
 			"semicolons as \\; and write newlines inside a value as \\n) or the {component, "+
-			"task|event|journal} JSON read_node returns, with its uid set; describe_node_types "+
-			"shows an example for each type",
-		cause,
+			"task|event|journal} JSON read_node returns (its uid is optional on create); "+
+			"describe_node_types shows an example for each type",
+		cause, hint,
 	)
+}
+
+// normalizeCreateBody is normalizeObjectBody for a CREATE. A JSON body gets
+// what a create may omit: a uid (taken from uid(), the new object's name) and,
+// for a VTODO, the NEEDS-ACTION status an organize create also gives. The
+// result is parsed back before it is returned, so an object that cannot be
+// read is never stored. Raw iCalendar is the caller's text and is validated
+// as it stands: without its own UID line it is an error.
+func normalizeCreateBody(r io.Reader, uid func() (string, error)) (string, error) {
+	raw, err := io.ReadAll(r)
+	if err != nil {
+		return "", errors.Wrap(err)
+	}
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 {
+		return "", errors.BadRequestf("caldav plugin: empty object body")
+	}
+
+	if trimmed[0] != '{' {
+		s := string(raw)
+		if _, err := parseObjectViewErr(s); err != nil {
+			return "", badObjectBody(err)
+		}
+		return s, nil
+	}
+
+	var view objectView
+	if err := json.Unmarshal(trimmed, &view); err != nil {
+		return "", errors.BadRequestf("caldav plugin: invalid object JSON: %s", err)
+	}
+	if err := fillCreateDefaults(&view, uid); err != nil {
+		return "", err
+	}
+	data, err := icalFromView(view)
+	if err != nil {
+		return "", err
+	}
+	if _, err := parseObjectViewErr(data); err != nil {
+		return "", badObjectBody(err)
+	}
+	return data, nil
+}
+
+// fillCreateDefaults gives a JSON create body the fields it may leave out.
+func fillCreateDefaults(view *objectView, uid func() (string, error)) error {
+	var uidField *string
+	switch {
+	case view.Task != nil:
+		uidField = &view.Task.UID
+		if view.Task.Status == "" {
+			view.Task.Status = "NEEDS-ACTION"
+		}
+	case view.Event != nil:
+		uidField = &view.Event.UID
+	case view.Journal != nil:
+		uidField = &view.Journal.UID
+	default:
+		return nil // icalFromView names the missing component
+	}
+	if *uidField != "" {
+		return nil
+	}
+	minted, err := uid()
+	if err != nil {
+		return err
+	}
+	*uidField = minted
+	return nil
 }
 
 // icalFromObjectView serializes an objectView JSON body to iCalendar,
@@ -474,6 +553,11 @@ func icalFromObjectView(data []byte) (string, error) {
 	if err := json.Unmarshal(data, &v); err != nil {
 		return "", errors.BadRequestf("caldav plugin: invalid object JSON: %s", err)
 	}
+	return icalFromView(v)
+}
+
+// icalFromView serializes a parsed objectView, dispatching on its component.
+func icalFromView(v objectView) (string, error) {
 	switch v.Component {
 	case "VEVENT":
 		if v.Event == nil {

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -309,7 +310,7 @@ func (Plugin) createChild(
 		)
 	}
 
-	icalData, err := normalizeObjectBody(body)
+	icalData, err := normalizeCreateBody(body, mintUID)
 	if err != nil {
 		return nil, false, err
 	}
@@ -359,6 +360,16 @@ func (Plugin) createChild(
 		return nil, false, errors.BadRequestf("%s", exists.Error())
 	}
 	return nil, false, err
+}
+
+// uidFromHref is an object's name without its `.ics` suffix, unescaped: the
+// UID an object created at that href takes when its body carries none.
+func uidFromHref(href string) string {
+	name := path.Base(href)
+	if unescaped, err := url.PathUnescape(name); err == nil {
+		name = unescaped
+	}
+	return strings.TrimSuffix(name, ".ics")
 }
 
 // uidOfView reads the parsed object's UID, whichever component it is.
