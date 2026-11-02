@@ -8,6 +8,7 @@ import (
 	"maps"
 	"net/url"
 	"path"
+	"reflect"
 	"slices"
 
 	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
@@ -107,10 +108,12 @@ type objectPatchBody struct {
 // PUT, reporting that as a non-nil empty applied rather than a bare success.
 //
 // Supported patch fields: VEVENT — summary, description, status, dtstart,
-// dtend, location, categories; VTODO — summary, description, status, dtstart,
-// due, location, priority, categories; VJOURNAL — summary, description, status,
+// dtstart_tzid, dtend, dtend_tzid, location, categories; VTODO — summary,
+// description, status, dtstart, dtstart_tzid, due, due_tzid, location,
+// priority, categories, parent_uid; VJOURNAL — summary, description, status,
 // dtstart, categories. The categories field is the []string CATEGORIES tag set
 // (tags slice 2, RFC 0019): a full-set replacement, cleared by an empty array.
+// JSON null clears any field.
 func (Plugin) PatchNode(
 	ctx context.Context,
 	node *url.URL,
@@ -236,26 +239,31 @@ func (Plugin) PatchNode(
 
 func eventPatchTargets(e *ical.Event) map[string]any {
 	return map[string]any{
-		"summary":     &e.Summary,
-		"description": &e.Description,
-		"status":      &e.Status,
-		"dtstart":     &e.DtStart,
-		"dtend":       &e.DtEnd,
-		"location":    &e.Location,
-		"categories":  &e.Categories,
+		"summary":      &e.Summary,
+		"description":  &e.Description,
+		"status":       &e.Status,
+		"dtstart":      &e.DtStart,
+		"dtstart_tzid": &e.DtStartTZID,
+		"dtend":        &e.DtEnd,
+		"dtend_tzid":   &e.DtEndTZID,
+		"location":     &e.Location,
+		"categories":   &e.Categories,
 	}
 }
 
 func taskPatchTargets(t *ical.Task) map[string]any {
 	return map[string]any{
-		"summary":     &t.Summary,
-		"description": &t.Description,
-		"status":      &t.Status,
-		"dtstart":     &t.DtStart,
-		"due":         &t.Due,
-		"location":    &t.Location,
-		"priority":    &t.Priority,
-		"categories":  &t.Categories,
+		"summary":      &t.Summary,
+		"description":  &t.Description,
+		"status":       &t.Status,
+		"dtstart":      &t.DtStart,
+		"dtstart_tzid": &t.DtStartTZID,
+		"due":          &t.Due,
+		"due_tzid":     &t.DueTZID,
+		"location":     &t.Location,
+		"priority":     &t.Priority,
+		"categories":   &t.Categories,
+		"parent_uid":   &t.ParentUID,
 	}
 }
 
@@ -295,6 +303,13 @@ func applyPatch(
 	for key, raw := range fields {
 		target, ok := targets[key]
 		if !ok {
+			continue
+		}
+		// JSON null CLEARS the field. encoding/json would leave a string or
+		// int destination untouched on null, so the clear is explicit — a
+		// null reported as applied must change the stored object.
+		if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) {
+			reflect.ValueOf(target).Elem().SetZero()
 			continue
 		}
 		if err := json.Unmarshal(raw, target); err != nil {
