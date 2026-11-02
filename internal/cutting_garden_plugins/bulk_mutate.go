@@ -49,7 +49,8 @@ type BulkOp struct {
 	// Body carries the create/put/patch payload — NodeMutator's io.Reader
 	// body, materialized to bytes because a BulkRequest holds many ops as
 	// data (a stream is single-use, and an atomic request MAY validate
-	// every op before applying any). Unused for BulkDelete.
+	// every op before applying any). A BulkDelete normally has none; a body on
+	// one reaches NodeDeleterWith, and a source without it refuses the op.
 	Body []byte
 	// Type is a NodeType.Tag, meaningful only for Kind == BulkCreate
 	// (identical to NodeMutator.CreateNode's typ parameter).

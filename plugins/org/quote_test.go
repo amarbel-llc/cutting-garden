@@ -199,7 +199,8 @@ func TestQuote_Refusals(t *testing.T) {
 	if err != nil || applied == nil || len(applied) != 0 {
 		t.Errorf("an unknown key is tolerated and not applied: %v %v", applied, err)
 	}
-	if err := (Plugin{}).DeleteNode(context.Background(), mustURL(t, "org://test/_inbox.org?h=Dup")); err == nil {
-		t.Error("delete is not supported")
+	if err := (Plugin{}).PutNode(context.Background(), mustURL(t, "org://test/_inbox.org?h=Dup"),
+		strings.NewReader(`{"title": "x"}`)); err == nil {
+		t.Error("replacing is not supported")
 	}
 }

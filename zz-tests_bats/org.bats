@@ -142,6 +142,33 @@ function org_mcp_edit_file_preamble { # @test
   assert_line --index 0 "org://test/_inbox.org?h=Call+the+plumber+about+the+leak"
 }
 
+# Delete (FDR 0026 D7-G, #361): a leaf goes with no body; a headline with
+# children is refused, naming the count, until the op body says subtree.
+function org_mcp_delete_headline { # @test
+  mcp_drive org://test/ \
+    "$(tools_call 3 mutate_nodes '{"groups":[{"anchor":"org://test/","ops":[{"kind":"delete","id":"_inbox.org?h=Call+the+plumber+about+the+leak"}]}]}')"
+  run jq -r '.groups[0].applied | join(",")' <<<"$(mcp_result_text "$output" 3)"
+  assert_output "_inbox.org?h=Call+the+plumber+about+the+leak"
+
+  mcp_drive org://test/ \
+    "$(tools_call 4 mutate_nodes '{"groups":[{"anchor":"org://test/","ops":[{"kind":"delete","id":"_inbox.org?id=3f9c1e2a-7b44-4c1e-9a0d-2f1f6c0b8e11"}]}]}')"
+  run mcp_result_text "$output" 4
+  assert_output --partial "1 descendant headline"
+  assert_output --partial 'subtree'
+
+  mcp_drive org://test/ \
+    "$(tools_call 5 mutate_nodes '{"groups":[{"anchor":"org://test/","ops":[{"kind":"delete","id":"_inbox.org?id=3f9c1e2a-7b44-4c1e-9a0d-2f1f6c0b8e11","body":"{\"subtree\": true}"}]}]}')"
+  run jq -r '.groups[0].applied | length' <<<"$(mcp_result_text "$output" 5)"
+  assert_output "1"
+
+  run_cg list -format json org://test/_inbox.org
+  run jq -r '.uri' <<<"$output"
+  assert_output - <<-'EOM'
+	org://test/_inbox.org?h=Idea%3A+expose+CLOSED+dates
+	org://test/_inbox.org?h=Renew+passport
+	EOM
+}
+
 # Capture (FDR 0026 D7-E): a temp-id create in a file appends a level-1
 # headline with a minted :ID:, :CREATED: and zz-agent_captured; a later op
 # in the batch addresses it by the temp id, and the result maps it to the

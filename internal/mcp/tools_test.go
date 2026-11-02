@@ -187,11 +187,28 @@ func TestMutateNodes_BulkChangeset(t *testing.T) {
 	if string(bm.gotReq.Ops[0].Body) != `{"x":1}` {
 		t.Errorf("op body = %q", bm.gotReq.Ops[0].Body)
 	}
-	if bm.gotReq.Ops[1].Body != nil {
-		t.Errorf("delete carried a body: %q", bm.gotReq.Ops[1].Body)
+	if len(bm.gotReq.Ops[1].Body) != 0 {
+		t.Errorf("a delete given no body carried one: %q", bm.gotReq.Ops[1].Body)
 	}
 	if !strings.Contains(res.Content[0].Text, `"a.ics"`) {
 		t.Errorf("result does not report the caller's id: %q", res.Content[0].Text)
+	}
+}
+
+// A delete op's body reaches the dispatch (a source whose delete takes
+// options reads it; one that does not refuses it there), in an ops list and
+// in a sweep template alike.
+func TestMutateNodes_DeleteBodyIsKept(t *testing.T) {
+	bm := &fakeBulkMutator{}
+	tools := newFakeTools(t, &fakeMutator{}, "faketest://h/")
+	tools.resolveBulk = fakeBulkResolve(bm)
+
+	res := callMutate(t, tools, `"ops":[{"kind":"delete","id":"a.ics","body":"{\"subtree\":true}"}]`)
+	if res.IsError {
+		t.Fatalf("mutate_nodes errored: %+v", res.Content)
+	}
+	if got := string(bm.gotReq.Ops[0].Body); got != `{"subtree":true}` {
+		t.Errorf("delete op body = %q", got)
 	}
 }
 

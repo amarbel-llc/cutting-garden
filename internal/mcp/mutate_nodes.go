@@ -32,7 +32,7 @@ const mutateNodesSchema = `{"type":"object","required":["groups"],"properties":{
 	`"kind":{"type":"string","enum":["create","put","patch","delete"]},` +
 	`"id":{"type":"string","description":"the node, as the id organize and list -format espalier print for it under the anchor (e.g. task1.ics, T1, _inbox.org?id=…), or a full URI under the anchor. On a create, a temp id (+name, +\"name\", or bare +) asks the source to name the node; later ops in the group address it as +name"},` +
 	`"in":{"type":"string","description":"temp-id creates only: the container to create in, as an id under the anchor or an earlier +name; default the anchor itself"},` +
-	`"body":{"type":"string","description":"the create/put/patch body as a STRING (omit for delete): JSON-encode a JSON body into it, or pass raw text for a raw-format type (caldav iCalendar). describe_node_types lists what each type accepts"},` +
+	`"body":{"type":"string","description":"the create/put/patch body as a STRING (omit for delete, unless describe_node_types says the type's delete takes options, e.g. org's {\"subtree\": true}; a source whose delete takes none refuses a body): JSON-encode a JSON body into it, or pass raw text for a raw-format type (caldav iCalendar). describe_node_types lists what each type accepts"},` +
 	`"type":{"type":"string","description":"creates only: the node type tag, e.g. caldav-object-vtodo-v1; checked against describe_node_types (a type the source names, like a jira issue, needs a temp id)"}}}},` +
 	`"sweep":{"type":"object","required":["op"],"description":"apply one op to every node under the anchor that matches filter. Exactly ONE of ops or sweep.","properties":{` +
 	`"filter":{"type":"string","description":"comma-separated dimension=value predicates (AND-composed), as for list_nodes; empty matches every node under the anchor"},` +
@@ -241,9 +241,7 @@ func (g *mutateGroup) buildOp(
 		Kind: cutting_garden_plugins.BulkOpKind(in.Kind),
 		Type: in.Type,
 	}
-	if in.Kind != string(cutting_garden_plugins.BulkDelete) {
-		op.Body = []byte(in.Body)
-	}
+	op.Body = []byte(in.Body)
 
 	key, isTemp, err := tempKey(i, in.ID)
 	if err != nil {

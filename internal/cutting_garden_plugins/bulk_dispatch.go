@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/url"
 
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
@@ -61,7 +62,7 @@ func ApplyBulkOp(
 		// none landed; only an authoritative empty one is patchedNothing.
 		patchedNothing = err == nil && applied != nil && len(applied) == 0
 	case BulkDelete:
-		err = nm.DeleteNode(ctx, op.URI)
+		err = applyDelete(ctx, nm, op)
 	default:
 		err = errors.BadRequestf("bulk_mutate: unknown op kind %q", op.Kind)
 	}
@@ -77,6 +78,30 @@ func ApplyBulkOp(
 	default:
 		result.AppliedNodes = append(result.AppliedNodes, op.URI)
 	}
+}
+
+// NodeDeleterWith is the optional delete that takes options: a source whose
+// delete has a knob (org's {"subtree": true}) implements it beside
+// NodeMutator.DeleteNode, and says in its describe_node_types text what the
+// body means. It is asserted structurally: a plugin implements the method
+// without importing this type.
+type NodeDeleterWith interface {
+	DeleteNodeWith(ctx context.Context, uri *url.URL, body io.Reader) error
+}
+
+// applyDelete runs a delete op. With no body it is NodeMutator.DeleteNode,
+// as always. A body goes to NodeDeleterWith; a source without one refuses it
+// rather than dropping the options a caller sent (a delete with a body used
+// to run without it).
+func applyDelete(ctx context.Context, nm NodeMutator, op BulkOp) error {
+	if len(op.Body) == 0 {
+		return nm.DeleteNode(ctx, op.URI)
+	}
+	d, ok := nm.(NodeDeleterWith)
+	if !ok {
+		return errors.BadRequestf("this source's delete takes no body")
+	}
+	return d.DeleteNodeWith(ctx, op.URI, bytes.NewReader(op.Body))
 }
 
 // applyTempCreate runs a server-assigned create: the container is In, or the

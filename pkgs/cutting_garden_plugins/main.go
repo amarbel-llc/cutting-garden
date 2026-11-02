@@ -441,6 +441,13 @@ type MembershipWriteApplier = internal.MembershipWriteApplier
 // tree, as returned by ListRoots.
 type Node = internal.Node
 
+// NodeDeleterWith is the optional delete that takes options: a source whose
+// delete has a knob (org's {"subtree": true}) implements it beside
+// NodeMutator.DeleteNode, and says in its describe_node_types text what the
+// body means. It is asserted structurally: a plugin implements the method
+// without importing this type.
+type NodeDeleterWith = internal.NodeDeleterWith
+
 // NodeIDResolver is the OPTIONAL inverse of NodeIDer: it turns an
 // anchor-relative id back into the node URI, so a caller that holds only an
 // id (the mutate_nodes MCP tool, cutting-garden#315) can address the node

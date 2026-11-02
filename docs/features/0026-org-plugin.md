@@ -194,6 +194,27 @@ Taken 2026-11-02, for the file's preamble (cutting-garden#357):
   `lost_to_concurrent_sync`. The file type is declared writable in
   `describe_node_types`; organize has no file-level fields, so it is unaffected.
 
+Taken 2026-11-02, for deleting a headline (cutting-garden#361, operator
+rulings):
+
+- **D7-G, delete.** A `mutate_nodes` delete op removes a headline: addressed
+  by any URI a patch accepts (`?id=` or `?h=`; an unresolvable `?h=` fails
+  with the "renamed or moved" error and deletes nothing). With no body it
+  removes a headline that has no children and refuses one that has, naming
+  how many descendants it would take; the op body `{"subtree": true}` removes
+  the whole subtree. Files and folders are not deletable. The write is the
+  edit path's: LOCK, fresh GET, splice (the headline's `SubtreeSpan`, nothing
+  else changes), PUT with the token, UNLOCK, then a read-back now and after
+  the delay; a headline that is back reports `lost_to_concurrent_sync`. No
+  `:ID:` or version precondition. The result is the plain `applied` list (a
+  richer shape waits for the shared result shape, #320). Plumbing: a delete
+  op used to drop its body; it is now kept, and goes to an optional
+  `DeleteNodeWith(ctx, uri, body)` (`cutting_garden_plugins.NodeDeleterWith`,
+  asserted structurally, so a plugin implements it without importing it) that
+  org implements. A source without
+  it now refuses a delete op that carries a body ("this source's delete takes
+  no body"), in an ops list and in a sweep alike, instead of dropping it.
+
 Round-trip tested against Orgzly on 2026-10-18 in the dedicated notebook
 `zz-tests-cutting_garden.org` (and `_mirror.org` for the cross-file move):
 a metadata edit, a body edit, a same-file move, a move to `_mirror.org`
@@ -281,7 +302,8 @@ supported yet, #211), and a regex containing `(` is quoted:
 !cutting_garden-org-headline-v1 title~="(?i)leak"`.
 Slice 2 adds `NodeMutator` (only `PatchNode`, first with `{"quote": true}`
 and from slice 3a with the metadata fields, from slice 4 with `body` and the
-move keys; create/put/delete are bad requests; slice 5 adds
+move keys; create/put are bad requests, and delete (D7-G) removes a
+headline; slice 5 adds
 `ContainerCreator` for capture) and `BodyDescriber` (so describe_node_types marks the headline
 writable and lists the patch keys).
 `PatchNode` can only report applied field names, not a new URI, so the

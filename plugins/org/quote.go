@@ -112,18 +112,17 @@ func newUUID() string {
 
 // The rest of NodeMutator: headlines are patched, and created only through
 // ContainerCreator (capture.go), since the plugin mints the :ID: a caller
-// would otherwise have to name; replacing and deleting are not supported.
+// would otherwise have to name; replacing is not supported, and a headline is
+// deleted through DeleteNode / DeleteNodeWith (delete.go).
 func (Plugin) CreateNode(context.Context, *url.URL, io.Reader, string) error {
 	return errOnlyPatch
 }
 
 func (Plugin) PutNode(context.Context, *url.URL, io.Reader) error { return errOnlyPatch }
 
-func (Plugin) DeleteNode(context.Context, *url.URL) error { return errOnlyPatch }
-
 var errOnlyPatch = errors.BadRequestf(
 	`org plugin: a headline is patched, or created with a temp id in a file or headline ` +
-		`(FDR 0026); replacing, deleting and creating at a chosen URI are not supported`)
+		`(FDR 0026), or deleted; replacing and creating at a chosen URI are not supported`)
 
 // DescribeBodies declares the headline's and the file's patch for
 // describe_node_types.
@@ -176,6 +175,14 @@ func (Plugin) DescribeBodies() []cutting_garden_plugins.NodeTypeBody {
 				`create time; to drop the tag, patch the new headline with "own_tags" (the whole ` +
 				`set) without it. To restructure existing headlines into a parent, patch them with ` +
 				`"parent" instead of creating copies: a move adds neither the tag nor :CREATED:.`,
+			`application/json, delete ops (no body, or {"subtree": true}): a delete with no body removes ` +
+				`a headline that has no children and is refused, naming its descendant count, when it has ` +
+				`any; the op body {"subtree": true} deletes the headline with all its descendants. The ` +
+				`headline is addressed by any URI a patch accepts (?id= or ?h=; an unresolvable ?h= fails ` +
+				`with "renamed or moved" and deletes nothing). Example op: {"kind": "delete", "id": ` +
+				`"notes.org?id=<uuid>", "body": "{\"subtree\": true}"}. A lost_to_concurrent_sync error ` +
+				`means another writer (an Orgzly sync) brought the headline back: re-read and re-apply. ` +
+				`Files and folders cannot be deleted.`,
 		},
 		Example:                map[string]any{fieldPatchState: "DONE", fieldPatchScheduled: "2026-10-20"},
 		ServerAssignedIdentity: true,

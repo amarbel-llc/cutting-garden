@@ -34,7 +34,9 @@ writes are LOCK-guarded and read back afterwards to catch an Orgzly
 overwrite: a headline patch (metadata fields, `body`, `quote`, and moves
 via `parent`/`before`/`after`, across files too), a file's preamble (a
 `body` patch on the file node: the text above the first headline, with its
-`#+TODO`/`#+FILETAGS` lines kept apart) and capture (a temp-id
+`#+TODO`/`#+FILETAGS` lines kept apart), a headline delete (a leaf; a delete
+op body `{"subtree": true}` takes its subtree, through the optional
+`NodeDeleterWith`) and capture (a temp-id
 create in a file or under a headline), with its parser in
 the `plugins/org/orgtext` leaf and an
 in-memory WebDAV test server in `plugins/org/orgtestserver`, FDR 0026;
