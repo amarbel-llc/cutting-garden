@@ -2,6 +2,7 @@ package caldav
 
 import (
 	"context"
+	"fmt"
 	"net/url"
 	"strings"
 
@@ -157,26 +158,33 @@ func (c *client) readOccurrenceLeaf(
 // is none of VEVENT / VTODO / VJOURNAL, or fails to parse — the caller
 // treats that as "not a readable leaf".
 func parseObjectView(body string) (objectView, bool) {
+	v, err := parseObjectViewErr(body)
+	return v, err == nil
+}
+
+// parseObjectViewErr is parseObjectView with the reason: the parser's error
+// (e.g. "VTODO missing UID"), or one saying no component was found.
+func parseObjectViewErr(body string) (objectView, error) {
 	switch {
 	case strings.Contains(body, "BEGIN:VEVENT"):
 		e, err := ical.ParseVEVENT(body)
 		if err != nil {
-			return objectView{}, false
+			return objectView{}, err
 		}
-		return objectView{Component: "VEVENT", Event: e}, true
+		return objectView{Component: "VEVENT", Event: e}, nil
 	case strings.Contains(body, "BEGIN:VTODO"):
 		t, err := ical.ParseVTODO(body)
 		if err != nil {
-			return objectView{}, false
+			return objectView{}, err
 		}
-		return objectView{Component: "VTODO", Task: t}, true
+		return objectView{Component: "VTODO", Task: t}, nil
 	case strings.Contains(body, "BEGIN:VJOURNAL"):
 		j, err := ical.ParseVJOURNAL(body)
 		if err != nil {
-			return objectView{}, false
+			return objectView{}, err
 		}
-		return objectView{Component: "VJOURNAL", Journal: j}, true
+		return objectView{Component: "VJOURNAL", Journal: j}, nil
 	default:
-		return objectView{}, false
+		return objectView{}, fmt.Errorf("no VEVENT, VTODO or VJOURNAL found")
 	}
 }

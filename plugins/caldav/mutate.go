@@ -378,13 +378,25 @@ func normalizeObjectBody(r io.Reader) (string, error) {
 
 	// Otherwise treat it as iCalendar; validate it is a single VEVENT/VTODO.
 	s := string(raw)
-	if _, ok := parseObjectView(s); !ok {
-		return "", errors.BadRequestf(
-			"caldav plugin: body is neither valid iCalendar (a VEVENT, VTODO, or VJOURNAL) " +
-				"nor an object JSON ({\"component\":…})",
-		)
+	if _, err := parseObjectViewErr(s); err != nil {
+		return "", badObjectBody(err)
 	}
 	return s, nil
+}
+
+// badObjectBody is the rejection of a create or put body: the parser's
+// reason, then the two accepted formats and where the example is. The
+// reason is the real cause (JSON that carries no uid serializes to iCalendar
+// that fails to parse), so a caller does not retry the wrong fix.
+func badObjectBody(cause error) error {
+	return errors.BadRequestf(
+		"caldav plugin: the body is not an acceptable object (%s). Send raw iCalendar text "+
+			"(BEGIN:VCALENDAR … one VTODO, VEVENT or VJOURNAL with a UID; escape commas as \\, "+
+			"semicolons as \\; and write newlines inside a value as \\n) or the {component, "+
+			"task|event|journal} JSON read_node returns, with its uid set; describe_node_types "+
+			"shows an example for each type",
+		cause,
+	)
 }
 
 // icalFromObjectView serializes an objectView JSON body to iCalendar,

@@ -16,8 +16,9 @@ var _ cutting_garden_plugins.BodyDescriber = (*Plugin)(nil)
 func (Plugin) DescribeBodies() []cutting_garden_plugins.NodeTypeBody {
 	accepts := func(kind string) []string {
 		return []string{
-			"application/json (the {component, event|task|journal} object resources/read returns)",
-			"text/calendar (a raw iCalendar " + kind + ")",
+			"application/json (the {component, event|task|journal} object read_node returns; its uid is required)",
+			"text/calendar (a raw iCalendar " + kind + " with a UID; escape commas as \\, semicolons as \\; " +
+				"and write newlines inside a value as \\n)",
 		}
 	}
 	return []cutting_garden_plugins.NodeTypeBody{

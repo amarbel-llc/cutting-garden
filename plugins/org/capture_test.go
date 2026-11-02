@@ -149,6 +149,9 @@ func TestCapture_Refusals(t *testing.T) {
 	srv.Put("c.org", []byte("* A\n"))
 	for _, c := range []struct{ container, body, wantErr string }{
 		{"org://test/c.org", `{"state": "TODO"}`, `needs a "title"`},
+		{"org://test/c.org", `{"state": "TODO"}`, "describe_node_types"},
+		{"org://test/c.org", `title: x`, `{"title": "…", "body": "…"}`},
+		{"org://test/c.org", `title: x`, "describe_node_types"},
 		{"org://test/c.org", `{"title": "TODO sneaky"}`, "would not read back"},
 		{"org://test/c.org", `{"title": "x", "quote": true}`, "not a create key"},
 		{"org://test/c.org", `{"title": "x", "parent": "c.org"}`, "not a create key"},

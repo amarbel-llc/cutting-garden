@@ -61,7 +61,9 @@ func (Plugin) CreateChild(
 func parseCapture(raw []byte) (headlineEdit, string, error) {
 	var keys map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &keys); err != nil {
-		return headlineEdit{}, "", errors.BadRequestf("org plugin: create body is not a JSON object: %s", err)
+		return headlineEdit{}, "", errors.BadRequestf(
+			`org plugin: create body is not a JSON object: %s (send {"title": "…", "body": "…"} with "in" naming `+
+				`the file or headline; describe_node_types shows the keys)`, err)
 	}
 	for _, key := range []string{fieldQuote, fieldPatchParent, fieldPatchBefore, fieldPatchAfter} {
 		if _, ok := keys[key]; ok {
@@ -71,7 +73,9 @@ func parseCapture(raw []byte) (headlineEdit, string, error) {
 		}
 	}
 	if _, ok := keys[fieldPatchTitle]; !ok {
-		return headlineEdit{}, "", errors.BadRequestf(`org plugin: a new headline needs a "title"`)
+		return headlineEdit{}, "", errors.BadRequestf(
+			`org plugin: a new headline needs a "title" (send {"title": "…"} plus any optional keys; ` +
+				`describe_node_types lists them)`)
 	}
 	e, err := parseEdit(bytes.NewReader(raw))
 	if err != nil {

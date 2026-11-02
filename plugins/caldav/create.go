@@ -313,9 +313,9 @@ func (Plugin) createChild(
 	if err != nil {
 		return nil, false, err
 	}
-	view, ok := parseObjectView(icalData)
-	if !ok {
-		return nil, false, errors.BadRequestf("caldav plugin: create body is not a VTODO, VEVENT or VJOURNAL")
+	view, err := parseObjectViewErr(icalData)
+	if err != nil {
+		return nil, false, badObjectBody(err)
 	}
 	if got := objectType(view.Component); got != typ {
 		return nil, false, errors.BadRequestf(
