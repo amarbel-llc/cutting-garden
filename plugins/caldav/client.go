@@ -636,13 +636,14 @@ func (c *client) updateResource(ctx context.Context, href, icalData string) erro
 }
 
 // deleteResource removes the resource at href (NodeMutator.DeleteNode). A
-// 404 is reported as an error: deleting a nonexistent node is a failure the
-// caller surfaces, matching the strict create/update posture.
-func (c *client) deleteResource(ctx context.Context, href string) (err error) {
+// 404 is reported as an error, with notFound set so a caller that wants
+// "already gone" can tell it from another failure: deleting a nonexistent node
+// is a failure the caller surfaces, matching the strict create/update posture.
+func (c *client) deleteResource(ctx context.Context, href string) (notFound bool, err error) {
 	url := c.resolveHref(href)
 	resp, err := c.do(ctx, "DELETE", url, "", "", -1)
 	if err != nil {
-		return errors.Wrapf(err, "DELETE %s", url)
+		return false, errors.Wrapf(err, "DELETE %s", url)
 	}
 	defer errors.DeferredCloser(&err, resp.Body)
 
@@ -650,11 +651,11 @@ func (c *client) deleteResource(ctx context.Context, href string) (err error) {
 		resp.StatusCode != http.StatusNoContent &&
 		resp.StatusCode != http.StatusAccepted {
 		body, _ := io.ReadAll(resp.Body)
-		return errors.ErrorWithStackf(
+		return resp.StatusCode == http.StatusNotFound, errors.ErrorWithStackf(
 			"DELETE %s: status %d: %s", url, resp.StatusCode, snippet(body),
 		)
 	}
-	return nil
+	return false, nil
 }
 
 // getResource fetches a single resource's verbatim text/calendar body by

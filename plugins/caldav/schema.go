@@ -19,6 +19,9 @@ func (Plugin) DescribeBodies() []cutting_garden_plugins.NodeTypeBody {
 			"application/json (the {component, event|task|journal} object read_node returns; its uid is required)",
 			"text/calendar (a raw iCalendar " + kind + " with a UID; escape commas as \\, semicolons as \\; " +
 				"and write newlines inside a value as \\n)",
+			"delete ops take no body. The result names the deleted object by its summary " +
+				"(one extra GET before the DELETE; if that GET fails the delete still goes ahead and " +
+				"the name is the filename); an object that is not there is status not_found",
 		}
 	}
 	return []cutting_garden_plugins.NodeTypeBody{

@@ -7,6 +7,7 @@ import (
 	"io"
 	"maps"
 	"net/url"
+	"path"
 	"slices"
 
 	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
@@ -312,7 +313,59 @@ func (Plugin) DeleteNode(ctx context.Context, node *url.URL) error {
 	if err != nil {
 		return err
 	}
-	return c.deleteResource(ctx, href)
+	_, err = c.deleteResource(ctx, href)
+	return err
+}
+
+// DeleteNodeDetail is DeleteNode that also names what it removed and tells a
+// missing object from another failure (NotFound, with the error). The name is
+// the object's summary, read with one GET before the DELETE; that GET is best
+// effort — if it fails or the body does not parse the delete still goes ahead
+// and the name is the object's filename. A delete takes no body here.
+func (Plugin) DeleteNodeDetail(
+	ctx context.Context, node *url.URL, body io.Reader,
+) (cutting_garden_plugins.DeleteDetail, error) {
+	if node == nil {
+		return cutting_garden_plugins.DeleteDetail{}, errors.ErrorWithStackf(
+			"caldav plugin: DeleteNode requires a node URI")
+	}
+	if body != nil {
+		if raw, _ := io.ReadAll(body); len(bytes.TrimSpace(raw)) > 0 {
+			return cutting_garden_plugins.DeleteDetail{}, errors.BadRequestf(
+				"this source's delete takes no body")
+		}
+	}
+	c, href, err := clientForNode(node)
+	if err != nil {
+		return cutting_garden_plugins.DeleteDetail{}, err
+	}
+	detail := cutting_garden_plugins.DeleteDetail{Name: path.Base(href)}
+	if text, getErr := c.getResource(ctx, href); getErr == nil {
+		if summary := objectSummary(text); summary != "" {
+			detail.Name = summary
+		}
+	}
+	notFound, err := c.deleteResource(ctx, href)
+	detail.NotFound = notFound
+	return detail, err
+}
+
+// objectSummary is the SUMMARY of a VEVENT/VTODO/VJOURNAL body, "" when it
+// does not parse.
+func objectSummary(body string) string {
+	view, err := parseObjectViewErr(body)
+	if err != nil {
+		return ""
+	}
+	switch {
+	case view.Task != nil:
+		return view.Task.Summary
+	case view.Event != nil:
+		return view.Event.Summary
+	case view.Journal != nil:
+		return view.Journal.Summary
+	}
+	return ""
 }
 
 // clientForNode resolves a caldav node URI to a credentialed client and the

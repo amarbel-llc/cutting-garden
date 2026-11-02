@@ -32,6 +32,9 @@ type fakeCalDAV struct {
 	// ctag, when non-empty, is emitted as the collection's
 	// calendarserver-namespace getctag — the FacetVersion token source.
 	ctag string
+	// failGet makes every GET of an object answer 500 — for the delete that
+	// reads a summary best-effort before it removes the object.
+	failGet bool
 }
 
 func newFakeCalDAV() *fakeCalDAV {
@@ -76,6 +79,10 @@ func (f *fakeCalDAV) handler() http.Handler {
 		case "REPORT":
 			f.report(w, r)
 		case "GET":
+			if f.failGet {
+				http.Error(w, "boom", http.StatusInternalServerError)
+				return
+			}
 			body, ok := f.resources[r.URL.Path]
 			if !ok {
 				http.Error(w, "not found", http.StatusNotFound)
