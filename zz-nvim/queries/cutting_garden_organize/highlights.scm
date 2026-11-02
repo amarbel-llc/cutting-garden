@@ -69,6 +69,7 @@
 ; --- espalier box interior ---
 (box ["[" "]"] @punctuation.bracket)
 (box id: (box_object_id) @variable)
+(box id: (box_object_id_quoted) @variable)
 (box_type "!" @punctuation.special)
 (box_type name: (box_ident) @type)
 (box_tag name: (box_ident) @tag)

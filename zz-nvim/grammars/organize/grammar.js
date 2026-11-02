@@ -178,11 +178,21 @@ module.exports = grammar({
     // in the id slot (forge organize F8, RFC 0015 §Creation): `+<id>`,
     // `+"<id with reserved runes>"`, or a bare `+` names an object organize
     // CREATES. The `+` is never a real id's first rune (box_object_id starts
-    // alphanumeric), so the two id forms never compete.
+    // alphanumeric), so the two id forms never compete. A real id with
+    // reserved runes (an org headline's `id=<uuid>`) is QUOTED
+    // (`box_object_id_quoted`, the box's string rule): still an id, so the
+    // box parses clean and eliding treats it like a plain one.
     box: $ =>
       seq(
         '[',
-        field('id', choice($.box_object_id, $.box_temp_id)),
+        field(
+          'id',
+          choice(
+            $.box_object_id,
+            alias($.box_quoted, $.box_object_id_quoted),
+            $.box_temp_id,
+          ),
+        ),
         repeat(seq($._box_space, $._box_item)),
         optional($._box_space),
         ']',

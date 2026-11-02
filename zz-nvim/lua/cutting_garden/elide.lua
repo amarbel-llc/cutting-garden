@@ -39,6 +39,7 @@ local MODES = { box = true, metadata = true, off = true }
 -- `box_computed_tag` (`%name`, a display-only derived tag) — stay visible.
 local METADATA_ATOMS = {
   box_object_id = true,
+  box_object_id_quoted = true,
   box_temp_id = true,
   box_type = true,
   box_field = true,

@@ -354,6 +354,43 @@ local steps = {
     )
   end,
 
+  -- a quoted identifier (`["id=<uuid>"]`, how org headlines are addressed) is
+  -- an id like any other: elided in box mode, collapsed with the other
+  -- metadata in metadata mode, tags kept
+  function()
+    vim.cmd.enew()
+    vim.api.nvim_buf_set_lines(0, 0, -1, false, {
+      '- ["id=099a0056-34de-48fe-9d4b-786723568b15"] priority',
+      '- ["id=aaaa" work] Tagged',
+      '- [x.ics] Plain',
+      '',
+    })
+    vim.bo.filetype = 'cutting-garden-organize'
+    report(
+      not vim.treesitter.get_parser(0):parse()[1]:root():has_error(),
+      'a quoted box id parses without errors'
+    )
+    keys('4G')
+  end,
+  function()
+    expect_screen('box: a quoted id box is elided like a plain one', {
+      '- […] priority',
+      '- […] Tagged',
+      '- […] Plain',
+      '',
+      '~',
+    })
+    cutting_garden.setup({ elide = { mode = 'metadata' } })
+    expect_screen('metadata: a quoted id collapses with the metadata; tags stay', {
+      '- […] priority',
+      '- [… work] Tagged',
+      '- […] Plain',
+      '',
+      '~',
+    })
+    cutting_garden.setup({ elide = { mode = 'box' } })
+  end,
+
   -- invalid levers are rejected
   function()
     report(

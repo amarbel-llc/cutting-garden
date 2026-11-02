@@ -1122,3 +1122,31 @@ temp-id boxes create objects: `+id`, a quoted `+"id"`, a bare `+` (forge organiz
     (box
       (box_temp_id))
     (description)))
+
+========================================
+a quoted object id: an id with reserved runes (an org headline's `id=<uuid>`) is quoted and still an id
+========================================
+- ["id=099a0056-34de-48fe-9d4b-786723568b15"] priority
+- ["id=aaaa" work date_due=2026-09-01] Tagged
+- [x.ics] Plain
+
+----------------------------------------
+
+(source_file
+  (object_line
+    (box
+      (box_object_id_quoted))
+    (description))
+  (object_line
+    (box
+      (box_object_id_quoted)
+      (box_tag
+        (box_ident))
+      (box_field
+        (box_ident)
+        (box_bare_value)))
+    (description))
+  (object_line
+    (box
+      (box_object_id))
+    (description)))

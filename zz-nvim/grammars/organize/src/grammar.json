@@ -858,6 +858,15 @@
                 "name": "box_object_id"
               },
               {
+                "type": "ALIAS",
+                "content": {
+                  "type": "SYMBOL",
+                  "name": "box_quoted"
+                },
+                "named": true,
+                "value": "box_object_id_quoted"
+              },
+              {
                 "type": "SYMBOL",
                 "name": "box_temp_id"
               }
