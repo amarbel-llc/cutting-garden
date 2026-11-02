@@ -96,6 +96,16 @@ revised: |
     text, `%:` and a `%` inside an open box interior still reject. A body
     comment never reaches the base; `fmt-organize` refuses a document that
     holds one. The virtual-object `%` prefix is reserved but unimplemented.
+  2026-11-02 — the envelope `%` provenance note LEAVES the base
+    (cutting-garden#373): the 2026-10-05 entry's "and with it its `_base`
+    digest" described the code at the time, which hashed the provenance line
+    contrary to §`%` / `%:` lines; the base blob is now the data plane only, so
+    a document generated with, without, or with a different provenance note has
+    the same base and the same `_base` digest. Every newly generated digest
+    changes once. A base stored earlier still carries the line and stays
+    readable; `fmt-organize` compares the parsed, re-canonicalized forms, so
+    a document pinned to such a blob is not refused as edited. Each line of a
+    multi-line provenance note renders as its own `%` comment.
 ---
 
 # The organize document dialect

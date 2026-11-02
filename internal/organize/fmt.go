@@ -27,8 +27,10 @@ import (
 // v1 REFUSES when the body differs from its pinned base — "doc has
 // unapplied edits; apply or discard first" (exit 64) — so a pending edit is
 // never silently regenerated over. The clean-body predicate is
-// renderCanonical(parse(file)) == the stored base blob's bytes: the same
-// data-plane projection `_base` content-addresses, so equality IMPLIES the
+// renderCanonical(parse(file)) == renderCanonical(parse(stored base blob)):
+// the same data-plane projection `_base` content-addresses (re-canonicalizing
+// the blob keeps a base stored before the provenance note left it matching),
+// so equality IMPLIES the
 // state in which apply would find zero edits — conservatively: fmt also
 // refuses provenance or envelope churn apply would ignore — while benign
 // formatting noise (extra blank lines, a deeper heading root) re-renders
@@ -177,8 +179,8 @@ func (cmd *FmtOrganize) run(
 	}
 
 	// The G4 v1 clean-body gate: the document's data-plane projection
-	// (renderCanonical — the exact bytes `_base` content-addresses) must equal
-	// the pinned base blob byte for byte — equality implies apply would see
+	// (renderCanonical — the bytes `_base` content-addresses) must equal the
+	// pinned base blob's own canonical form (bodyMatchesBase) — equality implies apply would see
 	// zero edits (the gate is stricter: comment/envelope churn refuses too).
 	// Checked BEFORE any network touch, so refusing is cheap and works offline.
 	store := command_components.MakeBlobStoreEnv(ctx).GetDefaultBlobStore()
@@ -186,7 +188,11 @@ func (cmd *FmtOrganize) run(
 	if err != nil {
 		return errors.Wrapf(err, "fmt-organize: %s", path)
 	}
-	if renderCanonical(doc) != baseBody {
+	clean, err := bodyMatchesBase(doc, baseBody)
+	if err != nil {
+		return errors.Wrapf(err, "fmt-organize: %s", path)
+	}
+	if !clean {
 		return errors.BadRequestf(
 			"fmt-organize: %s: doc has unapplied edits; apply or discard first "+
 				"(the body no longer matches its pinned `- _base` — write the edits "+

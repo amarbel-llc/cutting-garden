@@ -379,7 +379,9 @@ func render(doc document) string {
 	var b strings.Builder
 	b.WriteString(hyphence.Boundary + "\n")
 	if doc.Provenance != "" {
-		fmt.Fprintf(&b, "%% %s\n", doc.Provenance)
+		for _, line := range strings.Split(doc.Provenance, "\n") {
+			fmt.Fprintf(&b, "%% %s\n", line)
+		}
 	}
 	if doc.BaseDigest != "" {
 		fmt.Fprintf(&b, "- %s = @%s\n", fieldBase, doc.BaseDigest)
@@ -412,12 +414,27 @@ func render(doc document) string {
 	return b.String()
 }
 
-// renderCanonical renders the base form (no `_base` pin): the exact bytes hashed
-// and stored as the organize-base-v1 blob. The emitted document is this plus the
-// `- _base` line, so the pin names a digest computed without it (RFC 0015 §250).
+// renderCanonical renders the base form (no `_base` pin, no `%` provenance
+// comment): the exact bytes hashed and stored as the organize-base-v1 blob. The
+// emitted document is this plus the `- _base` line and the provenance note, so
+// the pin names a digest computed without either (RFC 0015 §250, §`%` / `%:`
+// lines: the operational plane never perturbs the base).
 func renderCanonical(doc document) string {
 	doc.BaseDigest = ""
+	doc.Provenance = ""
 	return render(doc)
+}
+
+// bodyMatchesBase reports whether doc's data plane equals the stored base
+// blob. The blob is parsed and re-canonicalized rather than compared byte for
+// byte, so a blob stored before the provenance comment left the base (it still
+// carries the `%` line) matches a document whose body is unchanged.
+func bodyMatchesBase(doc document, baseBody string) (bool, error) {
+	base, err := parseDocument(baseBody)
+	if err != nil {
+		return false, errors.Wrapf(err, "parse pinned base blob")
+	}
+	return renderCanonical(doc) == renderCanonical(base), nil
 }
 
 // writeBody emits the heading-ladder body: the ungrouped lines, then each section
