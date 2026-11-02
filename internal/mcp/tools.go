@@ -214,7 +214,15 @@ func readToolDefs() []protocol.ToolV1 {
 				"response shorter than limit signals the end. To keep a large " +
 				"listing small without losing what you triage by, pass fields " +
 				"(e.g. [\"summary\",\"priority\",\"status\"]): the listing keeps " +
-				"uri/name/type plus only those fields, facets or tags.",
+				"uri/name/type plus only those fields, facets or tags. SIZE CAP: a " +
+				"filtered or queried listing with no limit is capped at about " +
+				"60,000 bytes of nodes (at least one node); when cut it carries " +
+				"truncated:true, shown, total (the true match count) and a hint, " +
+				"e.g. {\"nodes\":[…],\"truncated\":true,\"shown\":73,\"total\":230," +
+				"\"hint\":\"157 more not shown …: pass limit and offset=73 …\"}. " +
+				"An explicit limit turns the cap off. The unfiltered listing of a " +
+				"container (no filter, query or fields) is NOT capped: pass limit, " +
+				"or call read_facets first to see the size.",
 			InputSchema: json.RawMessage(listNodesSchema),
 			Annotations: annotationFor(mcp_tool_perms.ToolListNodes),
 		},
@@ -516,6 +524,8 @@ func (t *Tools) call(
 // continuity with the pre-#160 shape and with resources/read's listing.
 type filteredListingView struct {
 	Nodes []nodeView `json:"nodes"`
+	// listingTruncation says when the byte cap cut Nodes short (#363).
+	listingTruncation
 	// listingVersion carries the container snapshot token when the plugin is
 	// a FacetVersioner (cutting-garden#203), so a filtered listing is
 	// comparable across calls exactly like the unfiltered one.
@@ -549,6 +559,8 @@ type queriedListingView struct {
 	// deduplicated by URI, enriched by default (bare strips to {uri,name,
 	// type,container,mimeType}).
 	Nodes []nodeView `json:"nodes"`
+	// listingTruncation says when the byte cap cut Nodes short (#363).
+	listingTruncation
 	// listingVersion carries only the completeness fields here: a query
 	// that walked any partial listing is itself incomplete (#266).
 	listingVersion
@@ -674,13 +686,14 @@ func (t *Tools) listNodesURI(
 	} else if views, err = enrichedNodeViews(lister, nodes, t.tagsOverride); err != nil {
 		return "", errors.Wrapf(err, "list %s (filtered)", uri)
 	}
-	views = paginate(views, offset, limit)
+	views, trailer := capViews(views, offset, limit, listingByteCap)
 	body, err := json.MarshalIndent(filteredListingView{
-		Nodes:          views,
-		listingVersion: prov.view(),
-		Filter:         filterString(filter),
-		FilterApplied:  mode != filterModeNone,
-		FilterMode:     mode,
+		Nodes:             views,
+		listingTruncation: trailer,
+		listingVersion:    prov.view(),
+		Filter:            filterString(filter),
+		FilterApplied:     mode != filterModeNone,
+		FilterMode:        mode,
 	}, "", "  ")
 	if err != nil {
 		return "", errors.Wrap(err)
@@ -735,11 +748,12 @@ func (t *Tools) listNodesQuery(
 	} else if views, err = enrichedNodeViews(lister, nodes, t.tagsOverride); err != nil {
 		return "", errors.Wrapf(err, "list_nodes %s (query)", uri)
 	}
-	views = paginate(views, offset, limit)
+	views, trailer := capViews(views, offset, limit, listingByteCap)
 	body, err := json.MarshalIndent(queriedListingView{
-		Query:          query,
-		Nodes:          views,
-		listingVersion: completenessView(partial.All()),
+		Query:             query,
+		Nodes:             views,
+		listingTruncation: trailer,
+		listingVersion:    completenessView(partial.All()),
 	}, "", "  ")
 	if err != nil {
 		return "", errors.Wrap(err)
