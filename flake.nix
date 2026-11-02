@@ -1289,6 +1289,7 @@
               mkdir -p "$HOME"
               nvim --version | head -n 1
               CG_NVIM_PLUGIN=${cuttingGardenNvim} \
+                CG_NVIM_SOLARIZED8=${pkgs.vimPlugins.vim-solarized8} \
                 CG_NVIM_FIXTURE="$src/fixtures/cg-organize-elide.txt" \
                 nvim --clean --headless -c "luafile $src/elide_spec.lua"
               touch "$out"

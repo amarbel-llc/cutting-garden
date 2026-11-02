@@ -139,6 +139,49 @@ local function show_conceal_probe()
   vim.cmd([[syntax match CgProbe /secret/ conceal cchar=X]])
 end
 
+local HEADING_LINES = {
+  '# zz-agent_captured',
+  '',
+  '## =done',
+  '# status=',
+  '# !caldav-object-vtodo-v1',
+  '# "quoted tag"',
+  '',
+  '- [x.ics] Box',
+}
+
+-- A step that applies a colorscheme, then shows the heading document in a
+-- fresh organize buffer (the next step reads the screen once nvim has drawn).
+local function heading_scheme_setup(_, apply_scheme)
+  return function()
+    apply_scheme()
+    vim.cmd.enew()
+    vim.api.nvim_buf_set_lines(0, 0, -1, false, HEADING_LINES)
+    vim.bo.filetype = 'cutting-garden-organize'
+    keys('8G')
+  end
+end
+
+-- A step asserting every heading kind's text draws with a style of its own
+-- (not the Normal attribute) under the scheme set up just before.
+local function heading_scheme_check(scheme)
+  return function()
+    local plain = vim.fn.screenattr(1, vim.o.columns)
+    local function styled(row, col, what)
+      report(
+        vim.fn.screenattr(row, col) ~= plain,
+        ('%s: %s is highlighted'):format(scheme, what),
+        { ('row %d col %d has the Normal attribute'):format(row, col) }
+      )
+    end
+    styled(1, 3, 'a tag heading')
+    styled(3, 5, 'a value heading')
+    styled(4, 3, 'a dimension heading name')
+    styled(5, 4, 'a type heading name')
+    styled(6, 4, 'a quoted tag heading')
+  end
+end
+
 local steps = {
   function()
     vim.cmd.edit(vim.fn.fnameescape(fixture))
@@ -460,6 +503,31 @@ local steps = {
       'a multi-character elide.char is rejected'
     )
   end,
+
+  -- heading text under real and minimal colorschemes. Last, because switching
+  -- colorschemes and emptying groups cannot be undone.
+  heading_scheme_setup('solarized8 (dark)', function()
+    vim.o.termguicolors = true
+    vim.o.background = 'dark'
+    vim.opt.runtimepath:append(assert(os.getenv('CG_NVIM_SOLARIZED8'), 'CG_NVIM_SOLARIZED8 unset'))
+    vim.cmd('colorscheme solarized8')
+  end),
+  heading_scheme_check('solarized8 (dark)'),
+  heading_scheme_setup('solarized8 (light)', function()
+    vim.o.background = 'light'
+    vim.cmd('colorscheme solarized8')
+  end),
+  heading_scheme_check('solarized8 (light)'),
+  -- a minimal colorscheme: the semantic captures a heading's text uses carry
+  -- no style at all (an empty definition, which nvim treats as defined, so the
+  -- built-in default links do not come back)
+  heading_scheme_setup('minimal', function()
+    vim.cmd('highlight clear')
+    for _, group in ipairs({ '@tag', '@constant', '@property', '@type', '@operator' }) do
+      vim.api.nvim_set_hl(0, group, {})
+    end
+  end),
+  heading_scheme_check('minimal (@tag/@constant/@property/@type/@operator empty)'),
 }
 
 local function run(index)

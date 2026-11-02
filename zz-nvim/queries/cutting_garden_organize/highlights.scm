@@ -50,13 +50,22 @@
 ; --- heading ladder: `# !type` / `# dim=` / `## =value` / `# tag` / `#` ---
 (heading marker: (heading_marker) @markup.heading.marker)
 (heading_reset marker: (heading_marker) @markup.heading.marker)
+; Heading TEXT is additionally `@markup.heading`, listed BEFORE its semantic
+; capture so a scheme that styles `@tag` / `@property` / `@constant` / `@type`
+; keeps those colours (the later capture wins a conflicting attribute) while a
+; scheme that styles none of them still draws the text as a heading.
 (heading_type "!" @punctuation.special)
+(heading_type name: (heading_type_name) @markup.heading)
 (heading_type name: (heading_type_name) @type)
+(heading_dimension name: (dim_name) @markup.heading)
 (heading_dimension name: (dim_name) @property)
 (heading_dimension "=" @operator)
 (heading_value "=" @operator)
+(heading_value value: (heading_value_text) @markup.heading)
 (heading_value value: (heading_value_text) @constant)
+(heading_tag name: (tag_name) @markup.heading)
 (heading_tag name: (tag_name) @tag)
+(heading_tag name: (heading_tag_quoted) @markup.heading)
 (heading_tag name: (heading_tag_quoted) @tag)
 
 ; --- object lines ---
