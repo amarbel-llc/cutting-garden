@@ -96,12 +96,18 @@ query field:
 - A binding line MUST have the form `- <name> < <target>`, spaced as hyphence
   specifies for the binding operator.
 - `<name>` MUST be a bare identifier (hyphence's `Ident`), MUST NOT begin with
-  the type sigil, and MUST be unique within the document.
+  the type sigil, MUST NOT contain `:` (a bound name is told from a URI target
+  by the absence of `:`, §2.7), and MUST be unique within the document. `Ident`
+  admits `/` and an interior `.`, so the names of §3.2 are bare-legal; a name
+  MUST NOT end in `.`, which hyphence reads as a term-final sigil.
 - A generator MUST emit binding lines first among the envelope's `-` lines,
   ahead of `_base` and every other reserved field, in the order of §4.2. A
   parser MUST accept them in any position (hyphence RFC 0001: line order
-  carries no meaning). The order among bindings is this document's rule and
-  carries no meaning.
+  carries no meaning). Among bindings, a generator MUST emit generated
+  bindings first and each alias (§2.7) after the binding it targets; a parser
+  MUST reject an alias whose target is not defined by an earlier binding line.
+  Apart from that dependency order, the order among bindings carries no
+  meaning.
 - Binding lines and query fields are data-plane lines: they are part of the
   canonical document and therefore content-addressed by `_base`.
 
@@ -109,7 +115,8 @@ query field:
 
 - The target MUST be the resolved URI of the root's container, not a
   configuration alias, so that a stored document does not change meaning when
-  configuration changes.
+  configuration changes. An alias (§2.7) is the one exception: its target is a
+  bound name.
 - The target is one term. A generator MUST emit it bare when the URI is a legal
   bare identifier under hyphence's content grammar, and as a quoted string
   otherwise; a parser MUST accept either. (A URI containing a reserved rune —
@@ -127,6 +134,10 @@ query field:
 - A binding with no query field selects the container's immediate children.
 - A query field whose `<name>` is not bound in the same document MUST be
   rejected, naming the line.
+- `<name>` is everything after the first `/` of the field name, since a bound
+  name may itself contain `/` (§3.2). A query field whose `<name>` is an alias
+  MUST be rejected, naming the line: an alias carries its target's selection
+  (§2.7).
 - The default terminal exclusion (RFC 0015, `_terminal=no`) is composed per
   root from that root's own plugin and MUST be echoed into its query field,
   exactly as the single-anchor form echoes it into `_query`.
@@ -149,11 +160,45 @@ query field.
 
 #### 2.6 Bindings are immutable in an edited document
 
-The bindings of an edited document MUST equal the bindings of its pinned base,
-name for name and target for target. Apply MUST refuse a document whose
-bindings differ, naming each differing binding. (Renaming a bound name is a
-tooling operation, §10, not an edit.) Query fields follow the rules RFC 0015
-gives `_query`.
+The generated bindings (every binding that is not an alias, §2.7) of an edited
+document MUST equal those of its pinned base, name for name and target for
+target. Apply MUST refuse a document whose generated bindings differ, naming
+each differing binding. The reason is that rebinding a name to a different
+target would silently move every object typed with it to another container.
+(Renaming a generated bound name is a tooling operation, §10, not an edit.)
+Aliases follow §2.7. Query fields follow the rules RFC 0015 gives `_query`.
+
+#### 2.7 Aliases
+
+An alias is an extra binding whose target is another binding's name instead of
+a URI, so a human editor can shorten a long name locally:
+
+```
+- cg < forge/cutting-garden/issues
+```
+
+- An alias target MUST be a bound name, defined by an earlier binding line:
+  either a generated binding or an earlier alias, so aliases chain to any
+  depth. Because a bound name MUST NOT contain `:` (§2.1) and a URI always does,
+  the two target forms are distinguishable. A cycle or a dangling target MUST be
+  refused, naming the line.
+- A type written with an alias denotes the same root as one written with its
+  target; the alias adds a spelling and no root, and carries no query field of
+  its own.
+- An alias MUST NOT take a name the document already resolves as something
+  else: a plugin node type tag (used in the document or registered in the
+  binary) or a tag on a selected object. Apply MUST refuse such an alias while
+  reading the envelope, naming the alias line and the lines that use the name.
+- An edited document MAY add, remove, rename or retarget an alias. A retargeted
+  alias re-types every box written with it, and each re-type is governed by
+  §8: a move when the roots share a plugin node type, planned into the preview
+  and confirmation like any other change, a refusal otherwise. Removing an
+  alias that another alias targets MUST be refused, naming both, unless the
+  dependent alias is rewritten in the same edit.
+- `fmt-organize` MUST keep each box's type name as written. A box created by
+  generation uses the generated name.
+- A generator does not emit aliases today; deriving them automatically is
+  future work (§10).
 
 ### 3. Bound names
 
@@ -162,7 +207,8 @@ gives `_query`.
 A type term `!<ident>` — in a box, a `# !type` heading, or a selection
 expression — resolves as follows:
 
-1. If `<ident>` is a bound name in scope, the term denotes that bound type.
+1. If `<ident>` is a bound name in scope, the term denotes that bound type. An
+   alias resolves through its chain to the generated binding it ends at (§2.7).
 2. Otherwise it denotes the plugin node type with that tag.
 3. If it is neither, it MUST be a bad request naming the term.
 
@@ -179,18 +225,37 @@ When a generator must name a root:
 
 1. If the container is a configured account root (RFC 0007), the name is that
    account's `name`.
-2. Otherwise the container lies below a configured account, and the name is
-   derived from the account name and the container. The exact derivation is an
-   open question (§11).
+2. Otherwise, if the container lies below a configured account, the name is
+   `<account>/<sub-path>`, where `<sub-path>` is the container's path relative
+   to the account's root URL, without a trailing `/`. The name is spelled the
+   same on the command line (§4.2) and in the document; a document shortens it
+   locally with an alias (§2.7).
+3. Otherwise (a root selected by literal URI that matches no account), the name
+   is `<scheme>-<host>`: the URI's scheme, `-`, and its host, with a port
+   appended after a further `-` and a trailing `.` on the host dropped;
+   userinfo is not part of the host. A URI with no host is named by its scheme
+   alone. (An IPv6 literal host is an open question, §11.) Names from steps 1
+   and 2 are assigned before any step-3 name (§3.3), so a configured account's
+   name is never displaced by a derived one.
+
+An account name MUST NOT contain `/` (it separates the sub-path) or `:` (a
+bound name is distinguished from a URI by the absence of `:`). Both MUST be
+rejected when the configuration is validated. A derived name MUST NOT contain
+`:` or `/`.
 
 #### 3.3 Collisions
 
 A generator MUST disambiguate a derived name by appending a decimal suffix,
 starting at `1` (`task`, `task1`, `task2`), whenever the name equals any of:
 
-- another bound name already assigned in the document (in the order of §4.2);
+- another bound name already assigned in the document — names from §3.2
+  steps 1 and 2 first, then step-3 names, each group in the order of §4.2;
 - a plugin node type tag registered in the running binary;
 - a tag present on any selected object.
+
+Bindings are fixed once they are in a document (§2.6), so this order only
+decides the names given at first generation and never changes an existing
+document.
 
 A tag equal to a bound name that is introduced by editing the document cannot
 be seen at generate time. Apply MUST treat a bare box term equal to a bound
@@ -206,7 +271,18 @@ uses such a name MUST be refused as ambiguous, naming both accounts.
 A plugin reports these names through the optional `RootNamer` capability
 (RFC 0007 § The Root-Namer Capability). Only linked plugins can implement
 it today: the traversal wire carries no token for it, so an out-of-process
-plugin's roots have no name until RFC 0013 gains one.
+plugin's roots have no name until RFC 0013 gains one (cutting-garden#301).
+That change is decided: a wire plugin's own root configuration (smith: its
+`[[roots]]` stanzas) takes an optional `name`; the name rides beside each root
+in the `roots.list` result, in a shape RFC 0013 fixes; and the plugin derives a
+default when `name` is unset.
+
+**Sub-path resolution.** A type term `!<account>/<sub-path>` denotes the
+container whose URL is the account's root URL with `<sub-path>` appended; a
+trailing `/` on the term is dropped. A generator MUST refuse a sub-path that
+does not resolve to an existing container, naming the term. A later optional
+plugin capability may override this join for a substrate whose URLs are not
+path-shaped; none is specified here.
 
 ### 4. Selection
 
@@ -232,6 +308,10 @@ cg organize <expression> [group-by]
   form stays usable. An argument that contains whitespace MUST parse as a
   trellis expression; a reserved rune in its origin MUST be quoted
   (`'"caldav://h/me@example.com/" -> status=needs-action'`).
+- Two limits of the trellis grammar apply: an expression cannot begin with a
+  combinator (the anchorless origin is cutting-garden#211), and a value
+  containing a reserved rune MUST be quoted — including `(`, which a regular
+  expression often carries.
 
 #### 4.2 Bound types in an expression
 
@@ -361,6 +441,8 @@ is specified here.
   (cutting-garden#216); the second positional argument is a stopgap.
 - Roots-as-nodes (FDR 0022) is compatible with this document: a root node is
   one more origin a selection can begin with.
+- A generator MAY in future derive aliases automatically for ergonomics (short
+  names for long `<account>/<sub-path>` bindings, §2.7).
 - Whether a binding target may be a configuration alias instead of a resolved
   URI (shorter, and keeps account identifiers out of the document) is to be
   revisited at the single-anchor cutover (Compatibility).
@@ -375,9 +457,15 @@ is specified here.
    single-term target, the form RFC 0003 already records as shipped. If
    RFC 0004 fixes an order among bindings, canonical bytes — and so `_base`
    digests — would change. Tracked as hyphence#16, which asks that source
-   order be pinned.
-2. **Derivation below an account** (§3.2 step 2): the exact name derived from
-   an account name plus a container.
+   order be pinned. Aliases (§2.7) add further asks there: name-valued targets
+   (names exclude `:`), references to earlier bindings only, a canonical order
+   that is topological (today's canonicalization is a stable sort on prefix
+   alone, which a sort by name would break), and duplicate names invalid.
+2. **Derived-name edge cases** (§3.2 step 3): the name of a root whose host is
+   an IPv6 literal (`:` is excluded from names and `[` `]` are reserved), and
+   whether §3.3's bare decimal suffix needs a joiner when the name already ends
+   in digits (`caldav-127.0.0.1-24116` followed by `caldav-127.0.0.1-241161`
+   is what two testserver calendars would get today).
 3. **Placement of objects outside the grouping** (§6): before the grouping's
    headings, or after them following an empty-heading reset.
 4. **Per-container values in a shared bucket.** Forge milestones and labels are
@@ -429,6 +517,9 @@ repository's binary-injection convention.
 | §2.3, query field | organize multi-root | Per-name query; unbound name rejected |
 | §2.4, one node type per root | organize multi-root | Mixed-type container refused |
 | §2.6, bindings immutable | organize multi-root | Edited binding refused at apply |
+| §2.7, alias rules | organize multi-root | Chained alias resolves; retarget plans one move per box; cycle, dangling target, name in use, and removing a targeted alias refused |
+| §3.2 / §3.4, sub-path names | organize bound names | `!account/sub-path` resolves; unresolvable sub-path refused; `/` or `:` in an account name rejected |
+| §3.3, derived-name collisions | organize bound names | Two URI-selected roots with one host get suffixes in argument order |
 | §5.2, id-first resolution | organize multi-root | Unique id without type; clashing ids need type |
 | §5.3, creation container | organize multi-root | Temp-id box created in its type's container |
 | §6, outside-the-grouping placement | organize multi-plugin | Type lacking the dimension rendered outside the headings; move refused |
