@@ -169,6 +169,17 @@ function org_mcp_delete_headline { # @test
 	EOM
 }
 
+# Per-op outcomes (#320, #359, #362): a patch by ?h= reports its fields and the
+# ?id= address the edit minted; a delete reports the headline's name; a delete
+# of a headline that is not there is not_found (and also failed).
+function org_mcp_mutate_reports_outcomes { # @test
+  mcp_drive org://test/ \
+    "$(tools_call 3 mutate_nodes '{"groups":[{"anchor":"org://test/","ops":[{"kind":"patch","id":"_inbox.org?h=Call+the+plumber+about+the+leak","body":"{\"state\": \"DONE\"}"},{"kind":"delete","id":"_inbox.org?h=Idea%3A+expose+CLOSED+dates"},{"kind":"delete","id":"_inbox.org?h=Nope"}]}]}')"
+  run jq -c '.groups[0].outcomes | map({id, status, fields, name, new_id: ((.uri // "") | test("^org://test/_inbox.org[?]id="))})' \
+    <<<"$(mcp_result_text "$output" 3)"
+  assert_output '[{"id":"_inbox.org?h=Call+the+plumber+about+the+leak","status":"applied","fields":["state"],"name":null,"new_id":true},{"id":"_inbox.org?h=Idea%3A+expose+CLOSED+dates","status":"deleted","fields":null,"name":"Idea: expose CLOSED dates","new_id":false},{"id":"_inbox.org?h=Nope","status":"not_found","fields":null,"name":null,"new_id":false}]'
+}
+
 # Capture (FDR 0026 D7-E): a temp-id create in a file appends a level-1
 # headline with a minted :ID:, :CREATED: and zz-agent_captured; a later op
 # in the batch addresses it by the temp id, and the result maps it to the

@@ -115,29 +115,33 @@ type movedHeadline struct {
 	subtree    string // the moved text, quoted back if a cross-file move is lost
 }
 
-func (t target) editAndMove(ctx context.Context, e headlineEdit, now time.Time) ([]string, error) {
+// editAndMove applies a headline edit with a move and returns the keys
+// applied, the file the headline is in afterwards and its :ID:.
+func (t target) editAndMove(
+	ctx context.Context, e headlineEdit, now time.Time,
+) (applied []string, path, id string, err error) {
 	dest, err := t.resolveMoveRef(e.move)
 	if err != nil {
-		return nil, err
+		return nil, "", "", err
 	}
 	applied, want, err := t.moveLocked(ctx, e, dest, now)
 	if err != nil || len(applied) == 0 {
-		return applied, err
+		return applied, want.path, want.fields.id, err
 	}
 	if err := t.verifyMove(ctx, want); err != nil {
-		return nil, err
+		return nil, "", "", err
 	}
 	if readBackDelay > 0 {
 		select {
 		case <-ctx.Done():
-			return applied, nil
+			return applied, want.path, want.fields.id, nil
 		case <-time.After(readBackDelay):
 		}
 		if err := t.verifyMove(ctx, want); err != nil {
-			return nil, err
+			return nil, "", "", err
 		}
 	}
-	return applied, nil
+	return applied, want.path, want.fields.id, nil
 }
 
 func (t target) moveLocked(

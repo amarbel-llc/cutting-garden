@@ -51,7 +51,15 @@ func mutateNodesToolDef() protocol.ToolV1 {
 			"prints under the anchor (or a full URI under it). Best-effort by " +
 			"default: the result lists applied, patched_nothing (accepted, " +
 			"nothing changed), failed (with the error), and created (temp id → " +
-			"URI) per id. Bodies are STRINGS — JSON-encode a JSON body. A " +
+			"URI) per id, plus outcomes, present when the source reports " +
+			"per-op detail (otherwise read applied/failed): one entry per op " +
+			"in your ids with " +
+			"status (applied, patched_nothing, failed, deleted, not_found — " +
+			"prefer it to the lists: a deleted node is also in applied, a " +
+			"not_found one also in failed), fields (the patch keys that took), " +
+			"uri (the node's address afterwards, only when it changed: an org " +
+			"headline edited by ?h= is then addressed by ?id=) and name (a " +
+			"deleted node's name). Bodies are STRINGS — JSON-encode a JSON body. A " +
 			"patch body holds only the fields to change; describe_node_types " +
 			"lists the fields each type accepts. Example: " +
 			`{"groups":[{"anchor":"caldav://host/cal/","ops":[{"kind":"create","id":"+t","type":"caldav-object-vtodo-v1","body":"{\"summary\":\"call\"}"},{"kind":"patch","id":"+t","body":"{\"priority\":1}"},{"kind":"delete","id":"old.ics"}]}]}` +
@@ -91,12 +99,27 @@ type mutateCreatedView struct {
 	URI    string `json:"uri"`
 }
 
+// mutateOutcomeView is one op's outcome in the caller's id: status is the
+// canonical reading (applied, patched_nothing, failed, deleted, not_found; a
+// deleted node is also in applied, a not_found one also in failed). fields are
+// the keys a patch applied; uri is the node's address afterwards, present
+// only when it changed; name is a deleted node's name.
+type mutateOutcomeView struct {
+	ID     string   `json:"id"`
+	Status string   `json:"status"`
+	Fields []string `json:"fields,omitempty"`
+	URI    string   `json:"uri,omitempty"`
+	Name   string   `json:"name,omitempty"`
+	Error  string   `json:"error,omitempty"`
+}
+
 type mutateGroupView struct {
 	Anchor         string              `json:"anchor"`
 	Applied        []string            `json:"applied"`
 	PatchedNothing []string            `json:"patched_nothing,omitempty"`
 	Failed         []mutateFailureView `json:"failed,omitempty"`
 	Created        []mutateCreatedView `json:"created,omitempty"`
+	Outcomes       []mutateOutcomeView `json:"outcomes,omitempty"`
 	Atomic         bool                `json:"atomic,omitempty"`
 	// Complete and Partial mark a sweep whose enumeration a plugin reported
 	// bounded — the same signal list_nodes carries (cutting-garden#266).
@@ -484,7 +507,36 @@ func (g *mutateGroup) render(
 		})
 	}
 
+	view.Outcomes = g.outcomes(result)
+
 	return view
+}
+
+// outcomes is the per-op detail the plugin reported, one entry per op in
+// request order; nil — and so no outcomes key — when it reported none, in
+// which case the four lists above are all there is (rebuilding a status-only
+// entry per id from them would only repeat them).
+func (g *mutateGroup) outcomes(result cutting_garden_plugins.BulkResult) []mutateOutcomeView {
+	var out []mutateOutcomeView
+	for _, o := range result.Outcomes {
+		v := mutateOutcomeView{
+			Status: string(o.Status), Fields: o.Fields, Name: o.Name, Error: o.Err,
+		}
+		if o.NewURI != nil {
+			v.URI = o.NewURI.String()
+		}
+		switch {
+		case o.URI != nil:
+			v.ID = g.id(o.URI)
+		case o.Ref != "":
+			v.ID = g.spelling[o.Ref]
+			if v.ID == "" {
+				v.ID = o.Ref
+			}
+		}
+		out = append(out, v)
+	}
+	return out
 }
 
 func (g *mutateGroup) id(uri *url.URL) string {

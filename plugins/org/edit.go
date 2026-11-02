@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
 	"code.linenisgreat.com/cutting-garden/plugins/org/orgtext"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
@@ -176,29 +177,53 @@ func uniqueInOrder(xs []string) []string {
 }
 
 // PatchNode applies an edit to a headline.
-func (Plugin) PatchNode(ctx context.Context, uri *url.URL, body io.Reader) ([]string, error) {
+func (p Plugin) PatchNode(ctx context.Context, uri *url.URL, body io.Reader) ([]string, error) {
+	d, err := p.PatchNodeDetail(ctx, uri, body)
+	return d.Applied, err
+}
+
+// PatchNodeDetail is PatchNode that also reports the headline's address
+// afterwards: an edit mints its :ID:, a rename changes its outline path and a
+// move can change its file, so the ?h= URI the caller used may no longer
+// resolve. NewURI is the ?id= URI, set only when something was applied.
+func (Plugin) PatchNodeDetail(
+	ctx context.Context, uri *url.URL, body io.Reader,
+) (cutting_garden_plugins.PatchDetail, error) {
 	e, err := parseEdit(body)
 	if err != nil {
-		return nil, err
+		return cutting_garden_plugins.PatchDetail{}, err
 	}
 	if e.empty() {
-		return []string{}, nil
+		return cutting_garden_plugins.PatchDetail{Applied: []string{}}, nil
 	}
 	t, err := resolve(uri)
 	if err != nil {
-		return nil, err
+		return cutting_garden_plugins.PatchDetail{}, err
 	}
 	switch t.ref.kind {
 	case kindFile:
-		return t.patchPreamble(ctx, e)
+		applied, err := t.patchPreamble(ctx, e)
+		return cutting_garden_plugins.PatchDetail{Applied: applied}, err
 	case kindHeadline:
 	default:
-		return nil, errors.BadRequestf("org plugin: only a headline or a file can be edited, not %q", uri.String())
+		return cutting_garden_plugins.PatchDetail{}, errors.BadRequestf(
+			"org plugin: only a headline or a file can be edited, not %q", uri.String())
 	}
+	var (
+		applied  []string
+		path, id string
+	)
 	if e.move != nil {
-		return t.editAndMove(ctx, e, t.acct.now())
+		applied, path, id, err = t.editAndMove(ctx, e, t.acct.now())
+	} else {
+		applied, id, err = t.edit(ctx, e, t.acct.now())
+		path = t.ref.path
 	}
-	return t.edit(ctx, e, t.acct.now())
+	detail := cutting_garden_plugins.PatchDetail{Applied: applied}
+	if err == nil && len(applied) > 0 && id != "" {
+		detail.NewURI = headlineURI(t.acct.Name, path, id, nil, 1)
+	}
+	return detail, err
 }
 
 // editResult is what the read-back checks for.
@@ -213,15 +238,17 @@ type editResult struct {
 	body    *string // checked only when the edit set it
 }
 
-func (t target) edit(ctx context.Context, e headlineEdit, now time.Time) ([]string, error) {
+// edit applies a headline edit and returns the keys applied and the
+// headline's :ID: (the durable address).
+func (t target) edit(ctx context.Context, e headlineEdit, now time.Time) ([]string, string, error) {
 	applied, want, err := t.editLocked(ctx, e, now)
 	if err != nil || len(applied) == 0 {
-		return applied, err
+		return applied, want.id, err
 	}
 	if err := readBackTwice(ctx, func() error { return t.verifyEdit(ctx, want) }); err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	return applied, nil
+	return applied, want.id, nil
 }
 
 // readBackTwice runs verify now and again after readBackDelay; an error from

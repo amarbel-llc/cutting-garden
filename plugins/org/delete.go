@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 
+	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
 	"code.linenisgreat.com/cutting-garden/plugins/org/orgtext"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
@@ -28,25 +29,37 @@ func (p Plugin) DeleteNode(ctx context.Context, node *url.URL) error {
 }
 
 // DeleteNodeWith is a delete whose op body carries options: {"subtree": bool}.
-func (Plugin) DeleteNodeWith(ctx context.Context, node *url.URL, body io.Reader) error {
+func (p Plugin) DeleteNodeWith(ctx context.Context, node *url.URL, body io.Reader) error {
+	_, err := p.DeleteNodeDetail(ctx, node, body)
+	return err
+}
+
+// DeleteNodeDetail is DeleteNodeWith that also names the headline it removed
+// and tells a headline that is not there (an unresolvable ?id= or ?h=) from
+// any other failure: NotFound is set with the error.
+func (Plugin) DeleteNodeDetail(
+	ctx context.Context, node *url.URL, body io.Reader,
+) (cutting_garden_plugins.DeleteDetail, error) {
 	subtree, err := parseDeleteOptions(body)
 	if err != nil {
-		return err
+		return cutting_garden_plugins.DeleteDetail{}, err
 	}
 	t, err := resolve(node)
 	if err != nil {
-		return err
+		return cutting_garden_plugins.DeleteDetail{}, err
 	}
 	if t.ref.kind != kindHeadline {
-		return errors.BadRequestf(
+		return cutting_garden_plugins.DeleteDetail{}, errors.BadRequestf(
 			"org plugin: only a headline can be deleted, not %q (a file or folder is not deletable here)",
 			node.String())
 	}
-	want, err := t.deleteLocked(ctx, subtree)
+	want, notFound, err := t.deleteLocked(ctx, subtree)
 	if err != nil {
-		return err
+		return cutting_garden_plugins.DeleteDetail{NotFound: notFound}, err
 	}
-	return readBackTwice(ctx, func() error { return t.verifyDeleted(ctx, want) })
+	detail := cutting_garden_plugins.DeleteDetail{Name: want.title}
+	err = readBackTwice(ctx, func() error { return t.verifyDeleted(ctx, want) })
+	return detail, err
 }
 
 func parseDeleteOptions(body io.Reader) (subtree bool, err error) {
@@ -76,36 +89,42 @@ func parseDeleteOptions(body io.Reader) (subtree bool, err error) {
 type deletedHeadline struct {
 	id      string   // :ID: of the deleted headline, "" when it had none
 	outline []string // its outline path
-	sameKey int      // headlines left with that id (or outline path)
+	title   string
+	sameKey int // headlines left with that id (or outline path)
 }
 
-func (t target) deleteLocked(ctx context.Context, subtree bool) (want deletedHeadline, err error) {
+// deleteLocked removes the headline under the lock. notFound is true when the
+// reference resolved to no headline.
+func (t target) deleteLocked(
+	ctx context.Context, subtree bool,
+) (want deletedHeadline, notFound bool, err error) {
 	token, err := t.lockWithRetry(ctx)
 	if err != nil {
-		return want, err
+		return want, false, err
 	}
 	defer t.client.unlock(context.WithoutCancel(ctx), t.ref.path, token)
 
 	// Fresh read under the lock; the cache may be stale.
 	src, etag, err := t.client.get(ctx, t.ref.path)
 	if err != nil {
-		return want, err
+		return want, false, err
 	}
 	pf := parseFile(t.acct, t.ref.path, etag, src)
 	n, ok := pf.find(t.ref)
 	if !ok {
-		return want, errors.BadRequestf(
+		return want, true, errors.BadRequestf(
 			"org plugin: no headline %s in %s (renamed or moved? try a title~= search)", t.refText(), t.ref.path)
 	}
 	if n.h.Synthetic {
-		return want, errors.BadRequestf("org plugin: %s has no headlines; there is nothing to delete", t.ref.path)
+		return want, false, errors.BadRequestf(
+			"org plugin: %s has no headlines; there is nothing to delete", t.ref.path)
 	}
 	if desc := countHeadlines(n.h.Children); desc > 0 && !subtree {
 		noun := "headlines"
 		if desc == 1 {
 			noun = "headline"
 		}
-		return want, errors.BadRequestf(
+		return want, false, errors.BadRequestf(
 			`org plugin: %q has %d descendant %s and deleting it would take them too; delete them first, `+
 				`or send the delete op's body {"subtree": true} to delete the whole subtree`,
 			n.h.Title, desc, noun)
@@ -115,19 +134,19 @@ func (t target) deleteLocked(ctx context.Context, subtree bool) (want deletedHea
 	removed := 1 + countHeadlines(n.h.Children)
 	after := orgtext.Parse(out, orgtext.Options{Keywords: pf.file.Keywords})
 	if got, wantCount := countHeadlines(after.Headlines), countHeadlines(pf.file.Headlines)-removed; got != wantCount {
-		return want, errors.BadRequestf(
+		return want, false, errors.BadRequestf(
 			"org plugin: deleting %q would change %d other headline(s) in %s; nothing was written",
 			n.h.Title, wantCount-got, t.ref.path)
 	}
 
-	want = deletedHeadline{id: n.h.ID(), outline: n.h.OutlinePath}
+	want = deletedHeadline{id: n.h.ID(), outline: n.h.OutlinePath, title: n.h.Title}
 	want.sameKey = sameKeyCount(after.Headlines, want)
 
 	defer resetCacheEntry(ctx, t.acct.Name, t.ref.path)
 	if err := t.putChecked(ctx, t.ref.path, out, token); err != nil {
-		return want, err
+		return want, false, err
 	}
-	return want, nil
+	return want, false, nil
 }
 
 // refText names the target in an error: its id, else its outline path.

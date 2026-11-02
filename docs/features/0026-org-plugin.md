@@ -214,6 +214,31 @@ rulings):
   org implements. A source without
   it now refuses a delete op that carries a body ("this source's delete takes
   no body"), in an ops list and in a sweep alike, instead of dropping it.
+- **D7-H, per-op outcomes** (#320, #359, #362; the shape is shared by every
+  plugin, org implements the detail). `BulkResult.Outcomes` is one entry per
+  targeted op, in request order, beside the four lists (which keep their
+  meaning and the invariant AppliedNodes + PatchedNothing + Failed = the
+  targeted set): `status` (applied, patched_nothing, failed, deleted,
+  not_found), `fields` (the patch keys that took), `new_uri` (the node's
+  address afterwards, only when it differs from the one targeted) and `name`
+  (a deleted node's name). Status is the canonical reading: a deleted node is
+  also in AppliedNodes, a not_found one also in Failed, so a caller wanting
+  idempotent deletes reads the status and callers of the old lists are
+  unchanged. For org, an edit mints `:ID:`, a rename changes the outline path
+  and a move can change the file, so a headline patched by `?h=` is reported
+  at its `?id=` URI (`org://acct/file.org?id=…`); that is how a caller learns
+  the address the old `?h=` URI no longer resolves to. Plugins opt in with
+  `PatchNodeDetail` and `DeleteNodeDetail` (structural, beside
+  `PatchNode`/`DeleteNode`); one without them still gets a status-only
+  outcome per op. mutate_nodes renders it as `outcomes` in the caller's ids,
+  one entry per op; a plugin that reported none (ynab) gets no `outcomes` key
+  and callers read the four lists, since rebuilding an entry per id from them
+  would only repeat them. Never attempted ops:
+  the SDK loop runs every op and never stops at the first failure; only an op
+  naming a temp id whose create failed is never attempted, and it is a failed
+  outcome with that reason. An atomic batch has no partial result (it
+  commits whole or errors, RFC 0017). The wire (RFC 0013 `node.patch`,
+  `node.delete`, `node.bulk_mutate`) carries none of this yet.
 
 Round-trip tested against Orgzly on 2026-10-18 in the dedicated notebook
 `zz-tests-cutting_garden.org` (and `_mirror.org` for the cross-file move):

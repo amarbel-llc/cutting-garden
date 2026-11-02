@@ -72,6 +72,32 @@ type BulkOp = internal.BulkOp
 // NodeMutator defines, applied per targeted node.
 type BulkOpKind = internal.BulkOpKind
 
+// BulkOutcome is the detail of one targeted op, in request order
+// (cutting-garden#320, #359, #362). It sits beside the four lists of
+// BulkResult and never replaces them: they keep their meaning and the
+// invariant (AppliedNodes + PatchedNothing + Failed = the targeted set), and
+// len(Outcomes) is that same count.
+//
+// Ops that were never attempted (current behaviour, nothing new): the SDK's
+// best-effort loop runs EVERY op and never stops at the first failure, so the
+// only never-attempted op is one naming a temp id whose create failed. It is
+// in Failed already, and its outcome is Status failed with Err "depends on
+// the create of temp id X, which failed" (Ref is X). An atomic batch has no
+// partial result at all: it commits whole, or BulkMutate returns an error and
+// no BulkResult (RFC 0017 §Atomicity semantics), so there are no outcomes for
+// ops that were not applied; the SDK loop refuses atomic outright
+// (ErrBulkAtomicUnsupported). A plugin with its own BulkMutate that does not
+// fill Outcomes (ynab batches into one request) reports none: empty Outcomes
+// means "not reported", and mutate_nodes then has no outcomes key at all —
+// read the four lists.
+//
+// Status is the canonical reading for new callers; the four lists are kept
+// for the callers already built on them.
+type BulkOutcome = internal.BulkOutcome
+
+// BulkOutcomeStatus is what became of one targeted op.
+type BulkOutcomeStatus = internal.BulkOutcomeStatus
+
 // BulkRequest is one bulk-mutate call. EXACTLY ONE of Ops or Sweep MUST be
 // set (both, or neither, is a bad request); Ops, when set, MUST be
 // non-empty.
@@ -167,6 +193,11 @@ type CreationDescriber = internal.CreationDescriber
 // DateGranularity is a bucket coarseness for a FacetDate dimension: the
 // --group-by qualifier spelling ("date_due=(month)") and the config default.
 type DateGranularity = internal.DateGranularity
+
+// DeleteDetail is what a delete reports beyond success: the removed node's
+// name when the source knows it. NotFound is true, with a non-nil error, when
+// there was no such node to delete.
+type DeleteDetail = internal.DeleteDetail
 
 // DiffPlugin enumerates the current state at a location and returns
 // entries in the same shape a CapturePlugin would produce, suitable
@@ -441,6 +472,12 @@ type MembershipWriteApplier = internal.MembershipWriteApplier
 // tree, as returned by ListRoots.
 type Node = internal.Node
 
+// NodeDeleterDetail is the optional delete that reports the removed node's
+// name and tells "no such node" from another failure. It takes the op's body
+// like NodeDeleterWith (empty when the op had none) and is asserted
+// structurally.
+type NodeDeleterDetail = internal.NodeDeleterDetail
+
 // NodeDeleterWith is the optional delete that takes options: a source whose
 // delete has a knob (org's {"subtree": true}) implements it beside
 // NodeMutator.DeleteNode, and says in its describe_node_types text what the
@@ -500,6 +537,12 @@ type NodeIDer = internal.NodeIDer
 // it mutates one live node, with no blob store and no capture receipt
 // (capturing the post-mutation state is a separate `capture` invocation).
 type NodeMutator = internal.NodeMutator
+
+// NodePatcherDetail is the optional patch that also reports the node's URI
+// afterwards. A source implements it beside NodeMutator.PatchNode (which stays
+// the same call); it is asserted structurally, so a plugin implements the
+// method without importing this type.
+type NodePatcherDetail = internal.NodePatcherDetail
 
 // NodeType is one entry in a RootLister plugin's declared type list. It
 // is the unit of self-description for the traversal tree: a Node names
@@ -576,6 +619,11 @@ type PartialListing = internal.PartialListing
 // PartialListings collects the PartialListing reports made during one host
 // operation. It is safe for concurrent use.
 type PartialListings = internal.PartialListings
+
+// PatchDetail is what a patch reports beyond success: the field keys it
+// applied (nil when it does not report them, like PatchNode's applied) and
+// the node's URI afterwards when it changed.
+type PatchDetail = internal.PatchDetail
 
 // Plugin is the cross-cutting identity every capture or restore
 // backend must declare. Schemes returns the URI schemes a plugin
@@ -1379,6 +1427,27 @@ const (
 // posture. Consumers MUST apply this default rather than propagating
 // the empty string.
 const MimeTypeDefault = internal.MimeTypeDefault
+
+// OutcomeApplied: the op applied (a create, put or patch; for a patch at
+// least one recognized field landed). The node is also in AppliedNodes.
+const OutcomeApplied = internal.OutcomeApplied
+
+// OutcomeDeleted: a delete removed the node. The node is also in
+// AppliedNodes; Status is the canonical reading for new callers.
+const OutcomeDeleted = internal.OutcomeDeleted
+
+// OutcomeFailed: the op did not apply, or was never attempted (an op
+// naming a temp id whose create failed). The node is also in Failed.
+const OutcomeFailed = internal.OutcomeFailed
+
+// OutcomeNotFound: a delete found no such node. The node is also in
+// Failed (with Err), so the old lists keep their meaning; a caller that
+// wants "delete is idempotent" reads Status.
+const OutcomeNotFound = internal.OutcomeNotFound
+
+// OutcomePatchedNothing: a patch was accepted but applied no recognized
+// field. The node is also in PatchedNothing.
+const OutcomePatchedNothing = internal.OutcomePatchedNothing
 
 // SearchRegex is an unanchored RE2 (Go regexp) match, as trellis's
 // `_body~=`. Optional: a plugin may return ErrSearchModeUnsupported.

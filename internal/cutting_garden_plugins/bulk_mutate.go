@@ -129,6 +129,68 @@ type BulkCreated struct {
 	URI    *url.URL
 }
 
+// BulkOutcomeStatus is what became of one targeted op.
+type BulkOutcomeStatus string
+
+const (
+	// OutcomeApplied: the op applied (a create, put or patch; for a patch at
+	// least one recognized field landed). The node is also in AppliedNodes.
+	OutcomeApplied BulkOutcomeStatus = "applied"
+	// OutcomePatchedNothing: a patch was accepted but applied no recognized
+	// field. The node is also in PatchedNothing.
+	OutcomePatchedNothing BulkOutcomeStatus = "patched_nothing"
+	// OutcomeFailed: the op did not apply, or was never attempted (an op
+	// naming a temp id whose create failed). The node is also in Failed.
+	OutcomeFailed BulkOutcomeStatus = "failed"
+	// OutcomeDeleted: a delete removed the node. The node is also in
+	// AppliedNodes; Status is the canonical reading for new callers.
+	OutcomeDeleted BulkOutcomeStatus = "deleted"
+	// OutcomeNotFound: a delete found no such node. The node is also in
+	// Failed (with Err), so the old lists keep their meaning; a caller that
+	// wants "delete is idempotent" reads Status.
+	OutcomeNotFound BulkOutcomeStatus = "not_found"
+)
+
+// BulkOutcome is the detail of one targeted op, in request order
+// (cutting-garden#320, #359, #362). It sits beside the four lists of
+// BulkResult and never replaces them: they keep their meaning and the
+// invariant (AppliedNodes + PatchedNothing + Failed = the targeted set), and
+// len(Outcomes) is that same count.
+//
+// Ops that were never attempted (current behaviour, nothing new): the SDK's
+// best-effort loop runs EVERY op and never stops at the first failure, so the
+// only never-attempted op is one naming a temp id whose create failed. It is
+// in Failed already, and its outcome is Status failed with Err "depends on
+// the create of temp id X, which failed" (Ref is X). An atomic batch has no
+// partial result at all: it commits whole, or BulkMutate returns an error and
+// no BulkResult (RFC 0017 §Atomicity semantics), so there are no outcomes for
+// ops that were not applied; the SDK loop refuses atomic outright
+// (ErrBulkAtomicUnsupported). A plugin with its own BulkMutate that does not
+// fill Outcomes (ynab batches into one request) reports none: empty Outcomes
+// means "not reported", and mutate_nodes then has no outcomes key at all —
+// read the four lists.
+//
+// Status is the canonical reading for new callers; the four lists are kept
+// for the callers already built on them.
+type BulkOutcome struct {
+	// URI is the node the op targeted (for a temp-id create, the URI the
+	// source chose). nil only when a Ref op's temp id never resolved.
+	URI *url.URL
+	// Ref is the op's temp id, when it had one.
+	Ref    string
+	Status BulkOutcomeStatus
+	// Fields, for a patch, are the field keys the plugin reported applied;
+	// nil when it did not report them.
+	Fields []string
+	// NewURI is the node's URI after the op, set only when it differs from
+	// URI (an org title edit or move changes the headline's address).
+	NewURI *url.URL
+	// Name is the deleted node's display name, when the source knows it.
+	Name string
+	// Err explains a failed or not_found outcome.
+	Err string
+}
+
 // BulkResult is a BulkMutate call's outcome; its shape differs by
 // Atomicity (RFC 0017 §Atomicity semantics). AppliedNodes is named for
 // its unit (NODES) to avoid colliding with PatchNode's field-level applied
@@ -152,6 +214,12 @@ type BulkResult struct {
 	// Created lists every TempID create that succeeded, in request order —
 	// its node URI also appears in AppliedNodes.
 	Created []BulkCreated
+	// Outcomes is the per-op detail, one entry per targeted op in request
+	// order, for the paths that fill it (ApplyBulkOp does; a plugin's own
+	// BulkMutate MAY). Empty means "not reported": a reader falls back to the
+	// four lists above. In atomic mode a failure is an error and no result
+	// (RFC 0017), so Outcomes only ever describes a success there.
+	Outcomes []BulkOutcome
 	// Atomic reports whether the call committed atomically — true ONLY on
 	// an atomic-mode success; false in every best-effort result and the
 	// zero value.

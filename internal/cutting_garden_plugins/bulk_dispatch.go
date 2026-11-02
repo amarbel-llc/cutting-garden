@@ -36,9 +36,10 @@ func ApplyBulkOp(
 	if op.Ref != "" {
 		target, ok := result.createdURI(op.Ref)
 		if !ok {
-			result.Failed = append(result.Failed, BulkFailure{
-				Ref: op.Ref,
-				Err: dependentFailure(op.Ref),
+			msg := dependentFailure(op.Ref)
+			result.Failed = append(result.Failed, BulkFailure{Ref: op.Ref, Err: msg})
+			result.Outcomes = append(result.Outcomes, BulkOutcome{
+				Ref: op.Ref, Status: OutcomeFailed, Err: msg,
 			})
 			return
 		}
@@ -47,8 +48,10 @@ func ApplyBulkOp(
 
 	var (
 		patchedNothing bool
+		notFound       bool
 		err            error
 	)
+	outcome := BulkOutcome{URI: op.URI, Ref: op.Ref}
 
 	switch op.Kind {
 	case BulkCreate:
@@ -56,13 +59,20 @@ func ApplyBulkOp(
 	case BulkPut:
 		err = nm.PutNode(ctx, op.URI, bytes.NewReader(op.Body))
 	case BulkPatch:
-		var applied []string
-		applied, err = nm.PatchNode(ctx, op.URI, bytes.NewReader(op.Body))
+		var detail PatchDetail
+		detail, err = applyPatch(ctx, nm, op)
 		// A nil applied means the plugin does not report fields, not that
 		// none landed; only an authoritative empty one is patchedNothing.
-		patchedNothing = err == nil && applied != nil && len(applied) == 0
+		patchedNothing = err == nil && detail.Applied != nil && len(detail.Applied) == 0
+		outcome.Fields = detail.Applied
+		if err == nil && !patchedNothing && detail.NewURI != nil &&
+			detail.NewURI.String() != op.URI.String() {
+			outcome.NewURI = detail.NewURI
+		}
 	case BulkDelete:
-		err = applyDelete(ctx, nm, op)
+		var detail DeleteDetail
+		detail, err = applyDelete(ctx, nm, op)
+		outcome.Name, notFound = detail.Name, detail.NotFound
 	default:
 		err = errors.BadRequestf("bulk_mutate: unknown op kind %q", op.Kind)
 	}
@@ -73,11 +83,63 @@ func ApplyBulkOp(
 			result.Failed,
 			BulkFailure{URI: op.URI, Ref: op.Ref, Err: err.Error()},
 		)
+		outcome.Status, outcome.Err = OutcomeFailed, err.Error()
+		if notFound {
+			outcome.Status = OutcomeNotFound
+		}
 	case patchedNothing:
 		result.PatchedNothing = append(result.PatchedNothing, op.URI)
+		outcome.Status = OutcomePatchedNothing
 	default:
 		result.AppliedNodes = append(result.AppliedNodes, op.URI)
+		outcome.Status = OutcomeApplied
+		if op.Kind == BulkDelete {
+			outcome.Status = OutcomeDeleted
+		}
 	}
+	result.Outcomes = append(result.Outcomes, outcome)
+}
+
+// PatchDetail is what a patch reports beyond success: the field keys it
+// applied (nil when it does not report them, like PatchNode's applied) and
+// the node's URI afterwards when it changed.
+type PatchDetail struct {
+	Applied []string
+	NewURI  *url.URL
+}
+
+// NodePatcherDetail is the optional patch that also reports the node's URI
+// afterwards. A source implements it beside NodeMutator.PatchNode (which stays
+// the same call); it is asserted structurally, so a plugin implements the
+// method without importing this type.
+type NodePatcherDetail interface {
+	PatchNodeDetail(ctx context.Context, uri *url.URL, body io.Reader) (PatchDetail, error)
+}
+
+// DeleteDetail is what a delete reports beyond success: the removed node's
+// name when the source knows it. NotFound is true, with a non-nil error, when
+// there was no such node to delete.
+type DeleteDetail struct {
+	Name     string
+	NotFound bool
+}
+
+// NodeDeleterDetail is the optional delete that reports the removed node's
+// name and tells "no such node" from another failure. It takes the op's body
+// like NodeDeleterWith (empty when the op had none) and is asserted
+// structurally.
+type NodeDeleterDetail interface {
+	DeleteNodeDetail(ctx context.Context, uri *url.URL, body io.Reader) (DeleteDetail, error)
+}
+
+// applyPatch runs a patch op through NodePatcherDetail when the source has
+// it, else NodeMutator.PatchNode with no detail beyond the applied fields.
+func applyPatch(ctx context.Context, nm NodeMutator, op BulkOp) (PatchDetail, error) {
+	if p, ok := nm.(NodePatcherDetail); ok {
+		return p.PatchNodeDetail(ctx, op.URI, bytes.NewReader(op.Body))
+	}
+	applied, err := nm.PatchNode(ctx, op.URI, bytes.NewReader(op.Body))
+	return PatchDetail{Applied: applied}, err
 }
 
 // NodeDeleterWith is the optional delete that takes options: a source whose
@@ -89,19 +151,23 @@ type NodeDeleterWith interface {
 	DeleteNodeWith(ctx context.Context, uri *url.URL, body io.Reader) error
 }
 
-// applyDelete runs a delete op. With no body it is NodeMutator.DeleteNode,
-// as always. A body goes to NodeDeleterWith; a source without one refuses it
-// rather than dropping the options a caller sent (a delete with a body used
-// to run without it).
-func applyDelete(ctx context.Context, nm NodeMutator, op BulkOp) error {
+// applyDelete runs a delete op. A source with NodeDeleterDetail gets the op
+// whole. Otherwise, with no body it is NodeMutator.DeleteNode, as always; a
+// body goes to NodeDeleterWith, and a source without one refuses it rather
+// than dropping the options a caller sent (a delete with a body used to run
+// without it).
+func applyDelete(ctx context.Context, nm NodeMutator, op BulkOp) (DeleteDetail, error) {
+	if d, ok := nm.(NodeDeleterDetail); ok {
+		return d.DeleteNodeDetail(ctx, op.URI, bytes.NewReader(op.Body))
+	}
 	if len(op.Body) == 0 {
-		return nm.DeleteNode(ctx, op.URI)
+		return DeleteDetail{}, nm.DeleteNode(ctx, op.URI)
 	}
 	d, ok := nm.(NodeDeleterWith)
 	if !ok {
-		return errors.BadRequestf("this source's delete takes no body")
+		return DeleteDetail{}, errors.BadRequestf("this source's delete takes no body")
 	}
-	return d.DeleteNodeWith(ctx, op.URI, bytes.NewReader(op.Body))
+	return DeleteDetail{}, d.DeleteNodeWith(ctx, op.URI, bytes.NewReader(op.Body))
 }
 
 // applyTempCreate runs a server-assigned create: the container is In, or the
@@ -113,6 +179,9 @@ func applyTempCreate(
 		result.Failed = append(
 			result.Failed, BulkFailure{Ref: op.TempID, Err: msg},
 		)
+		result.Outcomes = append(result.Outcomes, BulkOutcome{
+			Ref: op.TempID, Status: OutcomeFailed, Err: msg,
+		})
 	}
 
 	creator, ok := nm.(ContainerCreator)
@@ -142,6 +211,9 @@ func applyTempCreate(
 			result.Created, BulkCreated{TempID: op.TempID, URI: created},
 		)
 		result.AppliedNodes = append(result.AppliedNodes, created)
+		result.Outcomes = append(result.Outcomes, BulkOutcome{
+			URI: created, Ref: op.TempID, Status: OutcomeApplied,
+		})
 	}
 }
 
