@@ -10,7 +10,7 @@ import (
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
-// list_nodes `fields` (cutting-garden#363): a projection of the enriched view.
+// list_nodes `fields`: a projection of the enriched view.
 // uri, name and type are always kept; container and mimeType are dropped
 // unless listed; each other name selects a declared listing field
 // (Node.Fields), a facet dimension (Node.Facets) or "tags". A name that is

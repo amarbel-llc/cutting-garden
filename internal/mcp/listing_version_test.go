@@ -189,10 +189,15 @@ func TestPaginateListingText_LeafObjectUnchanged(t *testing.T) {
 	}
 }
 
-// TestListNodesFilteredBare_OmitsVersion: bare is the stripped-output path, so
-// even a filtered bare listing carries no version — the rule "the version
-// rides the enriched listing only" holds across filter and bare together.
-func TestListNodesFilteredBare_OmitsVersion(t *testing.T) {
+// TestListNodesFilteredBare_CarriesVersion: a filtered bare listing carries
+// the version block. It used to omit it as a consistency
+// rule in the implementation ("bare is the stripped-output path"); #203's
+// finalized design says bare controls node enrichment, orthogonal to the
+// wrapper and its version block, and a caller who keeps output small with bare
+// still needs the snapshot token. The unfiltered bare listing stays a plain
+// array with no version: it is the cheap ListRoots-only path and a token
+// there would add a FacetVersion call.
+func TestListNodesFilteredBare_CarriesVersion(t *testing.T) {
 	lister := &countingEnrichedLister{token: "bsnap-1"}
 	tools := newFakeTools(t, &fakeMutator{}, "faketest://h/")
 	tools.resolveLister = listerResolve(lister)
@@ -211,7 +216,8 @@ func TestListNodesFilteredBare_OmitsVersion(t *testing.T) {
 		t.Fatalf("decode %q: %v", res.Content[0].Text, err)
 	}
 
-	if view.Version != "" {
-		t.Errorf("bare filtered listing carried version %q; bare strips it", view.Version)
+	if view.Version != "bsnap-1" || view.Freshness == "" {
+		t.Errorf("bare filtered listing version=%q freshness=%q; want bsnap-1 and a freshness",
+			view.Version, view.Freshness)
 	}
 }

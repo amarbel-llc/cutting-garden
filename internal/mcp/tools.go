@@ -139,7 +139,7 @@ const (
 		`"offset":{"type":"integer","minimum":0,"description":"number of child nodes to skip before applying limit (optional, default 0). An offset past the end yields an empty array, not an error."},` +
 		`"filter":{"type":"string","description":"optional comma-separated dimension=value predicates (AND-composed), e.g. \"due_band=overdue\" or \"status=CONFIRMED,year=2026\" — the SAME grammar and dimension keys as read_facets. Call describe_node_types first to see a type's declared facets: each dimension's key and, when closed=true, its complete valid values array (values); an open dimension (closed=false) accepts any value, discovered at enumeration. An undeclared dimension or an out-of-domain closed-dimension value is a REJECTED, actionable error naming what was wrong — never a silent empty/unfiltered result. When present the result is wrapped as {nodes, filterApplied, filterMode} instead of a bare array — filterApplied is false (filterMode \"none\") on the rare scheme with no way to filter, so the caller always knows whether the returned nodes are actually narrowed."},` +
 		`"query":{"type":"string","description":"optional trellis query (RFC 0014) evaluated with the uri as its anchor — the richer alternative to filter, for multi-LEVEL walks and richer predicates. Returns {query, nodes}: the nodes matched by the query's LAST step, each ENRICHED (facets + plugin fields inline) like the default listing. Mutually exclusive with filter; requires a uri. GRAMMAR — a path of STEPS joined by COMBINATORS. Combinators (between steps): \"->\" descend one level, \"<-\" reverse one level, \"->>\"/\"<<-\" transitive closure (one-or-more levels). A step is space-separated TERMS that must ALL match (AND); prefix a term with ^ to negate. Terms: (1) !type — the node's exact type tag, e.g. !caldav-object-vevent-v1 (a tag the plugin does not declare is rejected, naming the declared ones); (2) field OP value — OP is one of = (equals) != (not) *= (contains) ^= (prefix) $= (suffix) < <= > >= (lexicographic; fixed-width dates like 20260131 sort correctly) ~= (RE2 regex); field is a declared facet dimension (matched cheaply) or any other field name (matched against the node's inline fields, else a leaf-body fetch); the pseudo-field _body matches the raw body text (exact case; accelerated when the plugin can search); _words=word (or =[a, b]) matches whole words case-insensitively by the plugin's own word index, and is refused for a plugin without one; (3) [a, b] — OR-alternatives, matches if it satisfies alternative a OR b; (4) [-> pred] — existential, true if some immediate child matches pred. QUOTING: a value or regex containing a reserved rune (space, ^, [, comma) must be quoted, e.g. summary~=\"query builder\". EXAMPLE: !caldav-calendar-v1 -> !caldav-object-vtodo-v1 [summary~=bows, summary~=cake] walks calendars to their objects and keeps VTODOs whose summary matches either regex. DISCOVERY: call describe_node_types for each scheme's types, declared facet dimensions (and their closed value sets), and listing fields — the vocabulary for !type and field predicates. NOT YET SUPPORTED (rejected with a clear, actionable error, cutting-garden#211): typed edges -[pred]->, non-\":\" version sigils (+ . ?), object-identity terms (@digest), and the anchorless roots-as-nodes origin (a leading combinator)."},` +
-		`"bare":{"type":"boolean","description":"opt out of the default enrichment: true returns the cheap pre-enrichment shape {uri,name,type,container,mimeType} with no facets/fields, skipping any extra data-bearing fetch a plugin would otherwise perform (e.g. caldav skips its per-object body fetch, staying hrefs-only). Combining bare with filter still fetches whatever the filter requires; only the OUTPUT is stripped down. Default false: every entry carries its facets, any plugin-declared human-readable fields (e.g. summary/due/status), and — for a type declaring a tag set (see describe_node_types' tag_set) — its tags array, inline."},` +
+		`"bare":{"type":"boolean","description":"opt out of the default enrichment: true returns the cheap pre-enrichment shape {uri,name,type,container,mimeType} with no facets/fields, skipping any extra data-bearing fetch a plugin would otherwise perform (e.g. caldav skips its per-object body fetch, staying hrefs-only). Combining bare with filter still fetches whatever the filter requires; only the OUTPUT is stripped down, and a filtered bare listing still carries version/freshness (one extra FacetVersion call per call: for caldav one PROPFIND). The unfiltered bare listing is a plain array with no version. Default false: every entry carries its facets, any plugin-declared human-readable fields (e.g. summary/due/status), and — for a type declaring a tag set (see describe_node_types' tag_set) — its tags array, inline."},` +
 		`"fields":{"type":"array","items":{"type":"string"},"minItems":1,"description":"optional projection of the enriched output: keep only these keys of each node. uri, name and type are always kept; container and mimeType are dropped unless named. Each other name is a declared listing field (e.g. summary, due, categories), a facet dimension (e.g. status, priority) or \"tags\" — describe_node_types lists them per type. A requested name is emitted once: under fields when the node's type declares it as a listing field, otherwise under facets (categories is both in caldav: you get fields.categories only); \"tags\" is its own top-level key. The projection slims the OUTPUT only; the plugin does the same work to build the nodes. A name valid for any returned node type is accepted (absent on nodes without it); a name valid for none is a REJECTED error listing the valid ones; an empty array is rejected, not \"all\". Works with uri alone, with filter and with query (it changes the output, never which nodes match); not with bare. Example: {\"uri\":\"caldav://work/Tasks/\",\"filter\":\"status=NEEDS-ACTION\",\"fields\":[\"summary\",\"priority\",\"categories\"]}."}}}`
 	readFacetsSchema = `{"type":"object","required":["uri"],` +
 		`"properties":{` +
@@ -199,7 +199,8 @@ func readToolDefs() []protocol.ToolV1 {
 				"listings of the SAME container to know for certain whether they read " +
 				"the same underlying data (equal version = same snapshot). pass " +
 				"bare=true to opt out to a plain array of the cheap " +
-				"{uri,name,type,container,mimeType} shape (no version); the no-uri " +
+				"{uri,name,type,container,mimeType} shape (no version when unfiltered; " +
+				"a filtered bare listing keeps version/freshness); the no-uri " +
 				"roots listing is likewise a plain array. An optional filter (the same " +
 				"dimension=value grammar as read_facets) narrows the returned nodes to " +
 				"those matching and adds filterApplied/filterMode to the object, so " +
@@ -524,7 +525,7 @@ func (t *Tools) call(
 // continuity with the pre-#160 shape and with resources/read's listing.
 type filteredListingView struct {
 	Nodes []nodeView `json:"nodes"`
-	// listingTruncation says when the byte cap cut Nodes short (#363).
+	// listingTruncation says when the byte cap cut Nodes short.
 	listingTruncation
 	// listingVersion carries the container snapshot token when the plugin is
 	// a FacetVersioner (cutting-garden#203), so a filtered listing is
@@ -559,7 +560,7 @@ type queriedListingView struct {
 	// deduplicated by URI, enriched by default (bare strips to {uri,name,
 	// type,container,mimeType}).
 	Nodes []nodeView `json:"nodes"`
-	// listingTruncation says when the byte cap cut Nodes short (#363).
+	// listingTruncation says when the byte cap cut Nodes short.
 	listingTruncation
 	// listingVersion carries only the completeness fields here: a query
 	// that walked any partial listing is itself incomplete (#266).
@@ -655,18 +656,17 @@ func (t *Tools) listNodesURI(
 	// cache's order, computeAndStore): a data change between token and
 	// listing then makes the NEXT call's token differ — a spurious "changed",
 	// never a missed one — rather than yielding a token newer than the nodes
-	// it labels. Only the enriched output carries a version; bare is the
-	// stripped-output path, so it stays version-free like the unfiltered bare
-	// listing (cutting-garden#203).
+	// it labels. A filtered listing carries the version whether or not it is
+	// bare (cutting-garden#203): bare strips node enrichment only. The
+	// unfiltered bare listing is the cheap ListRoots-only path and carries
+	// none.
 	var prov listingProvenance
-	if !bare {
-		if token, hasToken := tokenFor(ctx, lister, u); hasToken {
-			prov = listingProvenance{
-				hasVersion: true,
-				version:    token,
-				computedAt: time.Now(),
-				freshness:  freshnessFresh,
-			}
+	if token, hasToken := tokenFor(ctx, lister, u); hasToken {
+		prov = listingProvenance{
+			hasVersion: true,
+			version:    token,
+			computedAt: time.Now(),
+			freshness:  freshnessFresh,
 		}
 	}
 

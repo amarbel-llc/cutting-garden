@@ -6,7 +6,7 @@ import (
 )
 
 // listingByteCap bounds the node bytes of a filtered or queried list_nodes
-// result when the caller gave no limit (cutting-garden#363). 60,000 B is about
+// result when the caller gave no limit. 60,000 B is about
 // 15,000 tokens at ~4 B/token, safely under the ~25,000-token result limits
 // of the MCP clients this serves. For scale: 230 caldav VTODOs enriched and
 // indented measured 187,572 B (about 815 B each), so the cap keeps roughly 70
