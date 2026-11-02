@@ -139,7 +139,8 @@ const (
 		`"offset":{"type":"integer","minimum":0,"description":"number of child nodes to skip before applying limit (optional, default 0). An offset past the end yields an empty array, not an error."},` +
 		`"filter":{"type":"string","description":"optional comma-separated dimension=value predicates (AND-composed), e.g. \"due_band=overdue\" or \"status=CONFIRMED,year=2026\" — the SAME grammar and dimension keys as read_facets. Call describe_node_types first to see a type's declared facets: each dimension's key and, when closed=true, its complete valid values array (values); an open dimension (closed=false) accepts any value, discovered at enumeration. An undeclared dimension or an out-of-domain closed-dimension value is a REJECTED, actionable error naming what was wrong — never a silent empty/unfiltered result. When present the result is wrapped as {nodes, filterApplied, filterMode} instead of a bare array — filterApplied is false (filterMode \"none\") on the rare scheme with no way to filter, so the caller always knows whether the returned nodes are actually narrowed."},` +
 		`"query":{"type":"string","description":"optional trellis query (RFC 0014) evaluated with the uri as its anchor — the richer alternative to filter, for multi-LEVEL walks and richer predicates. Returns {query, nodes}: the nodes matched by the query's LAST step, each ENRICHED (facets + plugin fields inline) like the default listing. Mutually exclusive with filter; requires a uri. GRAMMAR — a path of STEPS joined by COMBINATORS. Combinators (between steps): \"->\" descend one level, \"<-\" reverse one level, \"->>\"/\"<<-\" transitive closure (one-or-more levels). A step is space-separated TERMS that must ALL match (AND); prefix a term with ^ to negate. Terms: (1) !type — the node's exact type tag, e.g. !caldav-object-vevent-v1 (a tag the plugin does not declare is rejected, naming the declared ones); (2) field OP value — OP is one of = (equals) != (not) *= (contains) ^= (prefix) $= (suffix) < <= > >= (lexicographic; fixed-width dates like 20260131 sort correctly) ~= (RE2 regex); field is a declared facet dimension (matched cheaply) or any other field name (matched against the node's inline fields, else a leaf-body fetch); the pseudo-field _body matches the raw body text (exact case; accelerated when the plugin can search); _words=word (or =[a, b]) matches whole words case-insensitively by the plugin's own word index, and is refused for a plugin without one; (3) [a, b] — OR-alternatives, matches if it satisfies alternative a OR b; (4) [-> pred] — existential, true if some immediate child matches pred. QUOTING: a value or regex containing a reserved rune (space, ^, [, comma) must be quoted, e.g. summary~=\"query builder\". EXAMPLE: !caldav-calendar-v1 -> !caldav-object-vtodo-v1 [summary~=bows, summary~=cake] walks calendars to their objects and keeps VTODOs whose summary matches either regex. DISCOVERY: call describe_node_types for each scheme's types, declared facet dimensions (and their closed value sets), and listing fields — the vocabulary for !type and field predicates. NOT YET SUPPORTED (rejected with a clear, actionable error, cutting-garden#211): typed edges -[pred]->, non-\":\" version sigils (+ . ?), object-identity terms (@digest), and the anchorless roots-as-nodes origin (a leading combinator)."},` +
-		`"bare":{"type":"boolean","description":"opt out of the default enrichment: true returns the cheap pre-enrichment shape {uri,name,type,container,mimeType} with no facets/fields, skipping any extra data-bearing fetch a plugin would otherwise perform (e.g. caldav skips its per-object body fetch, staying hrefs-only). Combining bare with filter still fetches whatever the filter requires; only the OUTPUT is stripped down. Default false: every entry carries its facets, any plugin-declared human-readable fields (e.g. summary/due/status), and — for a type declaring a tag set (see describe_node_types' tag_set) — its tags array, inline."}}}`
+		`"bare":{"type":"boolean","description":"opt out of the default enrichment: true returns the cheap pre-enrichment shape {uri,name,type,container,mimeType} with no facets/fields, skipping any extra data-bearing fetch a plugin would otherwise perform (e.g. caldav skips its per-object body fetch, staying hrefs-only). Combining bare with filter still fetches whatever the filter requires; only the OUTPUT is stripped down. Default false: every entry carries its facets, any plugin-declared human-readable fields (e.g. summary/due/status), and — for a type declaring a tag set (see describe_node_types' tag_set) — its tags array, inline."},` +
+		`"fields":{"type":"array","items":{"type":"string"},"minItems":1,"description":"optional projection of the enriched output: keep only these keys of each node. uri, name and type are always kept; container and mimeType are dropped unless named. Each other name is a declared listing field (e.g. summary, due, categories), a facet dimension (e.g. status, priority) or \"tags\" — describe_node_types lists them per type. A requested name is emitted once: under fields when the node's type declares it as a listing field, otherwise under facets (categories is both in caldav: you get fields.categories only); \"tags\" is its own top-level key. The projection slims the OUTPUT only; the plugin does the same work to build the nodes. A name valid for any returned node type is accepted (absent on nodes without it); a name valid for none is a REJECTED error listing the valid ones; an empty array is rejected, not \"all\". Works with uri alone, with filter and with query (it changes the output, never which nodes match); not with bare. Example: {\"uri\":\"caldav://work/Tasks/\",\"filter\":\"status=NEEDS-ACTION\",\"fields\":[\"summary\",\"priority\",\"categories\"]}."}}}`
 	readFacetsSchema = `{"type":"object","required":["uri"],` +
 		`"properties":{` +
 		`"uri":{"type":"string","description":"the container node URI to summarize"},` +
@@ -210,7 +211,10 @@ func readToolDefs() []protocol.ToolV1 {
 				"type/field predicates, returning the last step's matches as " +
 				"{query, nodes} — mutually exclusive with filter. Optional " +
 				"limit/offset page a large listing host-side after enumeration; a " +
-				"response shorter than limit signals the end.",
+				"response shorter than limit signals the end. To keep a large " +
+				"listing small without losing what you triage by, pass fields " +
+				"(e.g. [\"summary\",\"priority\",\"status\"]): the listing keeps " +
+				"uri/name/type plus only those fields, facets or tags.",
 			InputSchema: json.RawMessage(listNodesSchema),
 			Annotations: annotationFor(mcp_tool_perms.ToolListNodes),
 		},
@@ -385,15 +389,30 @@ func (t *Tools) call(
 
 	case mcp_tool_perms.ToolListNodes:
 		var in struct {
-			URI    string `json:"uri"`
-			Limit  int    `json:"limit"`
-			Offset int    `json:"offset"`
-			Filter string `json:"filter"`
-			Query  string `json:"query"`
-			Bare   bool   `json:"bare"`
+			URI    string    `json:"uri"`
+			Limit  int       `json:"limit"`
+			Offset int       `json:"offset"`
+			Filter string    `json:"filter"`
+			Query  string    `json:"query"`
+			Bare   bool      `json:"bare"`
+			Fields *[]string `json:"fields"`
 		}
 		if err := json.Unmarshal(args, &in); err != nil {
 			return "", errors.Wrap(err)
+		}
+		var fields []string
+		if in.Fields != nil {
+			if fields = *in.Fields; len(fields) == 0 {
+				return "", errors.BadRequestf(
+					"list_nodes: fields is empty; name the fields to keep, or omit fields for the full view")
+			}
+			if in.Bare {
+				return "", errors.BadRequestf(
+					"list_nodes: fields and bare are mutually exclusive; bare drops the enrichment a projection selects from")
+			}
+			if in.URI == "" {
+				return "", errors.BadRequestf("list_nodes: fields requires a uri; the roots listing has no enrichment to project")
+			}
 		}
 		if in.Limit < 0 {
 			return "", errors.ErrorWithStackf("list_nodes: limit must be >= 0")
@@ -419,7 +438,7 @@ func (t *Tools) call(
 						"query subsumes a single-level facet filter",
 				)
 			}
-			return t.listNodesQuery(ctx, in.URI, in.Query, in.Bare, in.Offset, in.Limit)
+			return t.listNodesQuery(ctx, in.URI, in.Query, in.Bare, fields, in.Offset, in.Limit)
 		}
 		filter, err := cutting_garden_plugins.ParseFacetFilter(in.Filter)
 		if err != nil {
@@ -459,7 +478,7 @@ func (t *Tools) call(
 			}
 			return string(body), nil
 		}
-		return t.listNodesURI(ctx, in.URI, filter, in.Bare, in.Offset, in.Limit)
+		return t.listNodesURI(ctx, in.URI, filter, in.Bare, fields, in.Offset, in.Limit)
 
 	case mcp_tool_perms.ToolReadFacets:
 		var in struct {
@@ -547,9 +566,10 @@ func (t *Tools) listNodesURI(
 	uri string,
 	filter cutting_garden_plugins.FacetFilter,
 	bare bool,
+	fields []string,
 	offset, limit int,
 ) (string, error) {
-	if len(filter) == 0 && !bare {
+	if len(filter) == 0 && !bare && fields == nil {
 		// list_nodes is pure child enumeration: it never fetches a node's
 		// own body (RFC 0018 §7.3), so it reads children-only — which is
 		// byte-for-byte the pre-RFC-0018 default (cutting-garden#86).
@@ -571,7 +591,7 @@ func (t *Tools) listNodesURI(
 		return text, nil
 	}
 
-	if len(filter) == 0 {
+	if len(filter) == 0 && bare {
 		// bare, no filter: the cheap path — plain ListRoots only, no
 		// EnrichedLister fetch. A childless result may be a leaf (or an
 		// empty container); that rare case falls back to the full
@@ -647,6 +667,10 @@ func (t *Tools) listNodesURI(
 	var views []nodeView
 	if bare {
 		views = bareNodeViews(lister, nodes)
+	} else if fields != nil {
+		if views, err = projectedNodeViews(lister, nodes, t.tagsOverride, fields); err != nil {
+			return "", err
+		}
 	} else if views, err = enrichedNodeViews(lister, nodes, t.tagsOverride); err != nil {
 		return "", errors.Wrapf(err, "list %s (filtered)", uri)
 	}
@@ -678,6 +702,7 @@ func (t *Tools) listNodesQuery(
 	ctx context.Context,
 	uri, query string,
 	bare bool,
+	fields []string,
 	offset, limit int,
 ) (string, error) {
 	q, err := trellis.Parse(query)
@@ -703,6 +728,10 @@ func (t *Tools) listNodesQuery(
 	var views []nodeView
 	if bare {
 		views = bareNodeViews(lister, nodes)
+	} else if fields != nil {
+		if views, err = projectedNodeViews(lister, nodes, t.tagsOverride, fields); err != nil {
+			return "", err
+		}
 	} else if views, err = enrichedNodeViews(lister, nodes, t.tagsOverride); err != nil {
 		return "", errors.Wrapf(err, "list_nodes %s (query)", uri)
 	}

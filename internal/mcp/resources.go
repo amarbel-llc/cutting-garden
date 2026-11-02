@@ -732,6 +732,12 @@ type nodeView struct {
 	// also rides facets under the tag dimension's key (`facets.categories`,
 	// retiring with #251); this is the first-class spelling.
 	Tags []string `json:"tags,omitempty"`
+
+	// slim marks a view built by the list_nodes `fields` projection
+	// (projection.go): MarshalJSON then omits container unless keepContainer
+	// is set. Never on the wire as a key.
+	slim          bool
+	keepContainer *bool
 }
 
 // projectNodeFacets renders a node's facet membership map for the listing
