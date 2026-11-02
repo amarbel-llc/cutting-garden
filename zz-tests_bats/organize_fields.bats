@@ -61,7 +61,7 @@ generate_fields() {
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize 'caldav:http://127.0.0.1:24106/dav/fields/ -> _terminal=no' priority=`
-	- _base = @blake2b256-jd9rcukcta04969a3lfu8wztukkh498vf6kf95qycr4qszsjsq7qwylsw9
+	- _base = @blake2b256-th24kg9axdt8l7nm4ulpvhyaxem3ta8v2j4l5rlqsqkngm97vcpqcqaf8q
 	- _anchor = caldav:http://127.0.0.1:24106/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -96,7 +96,7 @@ write_field1_edited() {
   cat >"$out" <<-EOM
 	---
 	% generated: \`cg organize 'caldav:http://127.0.0.1:24106/dav/fields/ -> _terminal=no' priority=\`
-	- _base = @blake2b256-jd9rcukcta04969a3lfu8wztukkh498vf6kf95qycr4qszsjsq7qwylsw9
+	- _base = @blake2b256-th24kg9axdt8l7nm4ulpvhyaxem3ta8v2j4l5rlqsqkngm97vcpqcqaf8q
 	- _anchor = caldav:http://127.0.0.1:24106/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -133,7 +133,7 @@ assert_field1_office() {
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize 'caldav:http://127.0.0.1:24106/dav/fields/ -> _terminal=no' priority=`
-	- _base = @blake2b256-x0jx43khmdv7nzknardkkmnemd3a0nntpxjqcddz5the8487229qay2gga
+	- _base = @blake2b256-fq0lrazv67f9qng8qs7v2d8g8r8smfyd9rc06swz6n46wasd2eyq3rauzv
 	- _anchor = caldav:http://127.0.0.1:24106/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -215,7 +215,7 @@ EOF
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize 'caldav:http://127.0.0.1:24106/dav/fields/ -> _terminal=no' priority=`
-	- _base = @blake2b256-747qtzccgr30c3rp7njx5wf0xjzm8yk4yf9d2a8kas6630h8nynsthexac
+	- _base = @blake2b256-wdv5rche2g5y32g8vnjg4mqckek4wj992xqgevcg7uteypp78efq0vyhqm
 	- _anchor = caldav:http://127.0.0.1:24106/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -279,7 +279,7 @@ generate_status_doc() {
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize 'caldav:http://127.0.0.1:24106/dav/fields/ -> _terminal=no' status=`
-	- _base = @blake2b256-vqfx3rya4wej3xpjm7j9w2n7mu0xemsgufxsacahg4clft0w8dnsp235eg
+	- _base = @blake2b256-nspmvpv4ywy54yesp8strhs8g0mmzrqfduvhtdw9ta8da8lumh5spg5rtj
 	- _anchor = caldav:http://127.0.0.1:24106/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -323,7 +323,7 @@ function organize_fields_missing_status_move_in_writes { # @test
   cat >"$edited" <<-'EOM'
 	---
 	% generated: `cg organize 'caldav:http://127.0.0.1:24106/dav/fields/ -> _terminal=no' status=`
-	- _base = @blake2b256-vqfx3rya4wej3xpjm7j9w2n7mu0xemsgufxsacahg4clft0w8dnsp235eg
+	- _base = @blake2b256-nspmvpv4ywy54yesp8strhs8g0mmzrqfduvhtdw9ta8da8lumh5spg5rtj
 	- _anchor = caldav:http://127.0.0.1:24106/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -370,7 +370,7 @@ EOF
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize 'caldav:http://127.0.0.1:24106/dav/fields/ -> _terminal=no' status=`
-	- _base = @blake2b256-9hc5hk3f4zhavdcsesmqrhwysjc4qqppzk5vmyp4n38e9tnd67tqp0vuj3
+	- _base = @blake2b256-kjxmd3m85nc495mn0gqxx5s5kglhjyj2f7577u6vv0xfh3a00u7q76dj4j
 	- _anchor = caldav:http://127.0.0.1:24106/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -407,7 +407,7 @@ function organize_fields_missing_status_absence_is_noop { # @test
   cat >"$edited" <<-'EOM'
 	---
 	% generated: `cg organize 'caldav:http://127.0.0.1:24106/dav/fields/ -> _terminal=no' status=`
-	- _base = @blake2b256-vqfx3rya4wej3xpjm7j9w2n7mu0xemsgufxsacahg4clft0w8dnsp235eg
+	- _base = @blake2b256-nspmvpv4ywy54yesp8strhs8g0mmzrqfduvhtdw9ta8da8lumh5spg5rtj
 	- _anchor = caldav:http://127.0.0.1:24106/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -462,7 +462,7 @@ EOF
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize 'caldav:http://127.0.0.1:24106/dav/fields/ -> _terminal=no' status=`
-	- _base = @blake2b256-ll0jx67lnlwd30t7zek0psfhct9h9rqsq02znhfh39r2r80ttgyqe7fps6
+	- _base = @blake2b256-m38jrwrwrydrj2sjkuxqsryfk0ygfynswgf36ykh46ezysf65q5q7enspt
 	- _anchor = caldav:http://127.0.0.1:24106/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1

@@ -53,9 +53,9 @@ teardown() {
 
 # The generated document's `_base` digest, the digest after lit2 has moved
 # into the `"_ inbox"` bucket, and the digest after lit3's summary trailer edit.
-BASE_GENERATED=blake2b256-4tavus37wyrtnrcfxnc5er67k7u2tlrs8znxw8ukecy32ypaecwqwhgqjj
-BASE_MOVED=blake2b256-lk02cenm9ckj3q03tvuchjd4mfzfqwful7yxjqs63qn3f3mck07q20j5s8
-BASE_SUMMARY_EDITED=blake2b256-ndfgpy8gs979zxeg5hl24t24mgk2m9ye60m6hn6anqjm7x0u5f8q29yn3g
+BASE_GENERATED=blake2b256-nm4avu2fpnnrz5mc3j6ssj0p24xkqq4ujaqtkc9xvwp4q0vrue9q9evwpu
+BASE_MOVED=blake2b256-2erru8r5ac4e4gq5r64lynrur35mv0shjycnt7jjwweyvnp3hkusy3w0e5
+BASE_SUMMARY_EDITED=blake2b256-2wksu0vhsvswspmx0zceu3n6y4a6v74ph36qn9sdl3v4s5yj2nrs2yf3en
 
 # envelope_header prints the `-group-by (tags)` document's hyphence envelope
 # pinned at `_base` $1 — the part every document in this lane shares.

@@ -282,7 +282,7 @@ generate_month() {
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize '"ynab://test/Household/transactions/?date=2026-07"' category=`
-	- _base = @blake2b256-f3s50c6zyf5q5r63scgurucvc8593fc4cvv0e8sgdfhm2s8dvzqql84m8y
+	- _base = @blake2b256-22wavgw8u5auv8q2enhc8465y6g8vpl0ysy5y3m3dqdg20f2zamqv09pr9
 	- _anchor = ynab://test/Household/transactions/?date=2026-07
 	- _type = !cutting_garden-ynab-transaction-v1
 	! organize-base-v1
@@ -320,7 +320,7 @@ function ynab_organize_apply_recategorizes_by_moving_a_line { # @test
   cat >"$edited" <<-'EOM'
 	---
 	% generated: `cg organize '"ynab://test/Household/transactions/?date=2026-07"' category=`
-	- _base = @blake2b256-f3s50c6zyf5q5r63scgurucvc8593fc4cvv0e8sgdfhm2s8dvzqql84m8y
+	- _base = @blake2b256-22wavgw8u5auv8q2enhc8465y6g8vpl0ysy5y3m3dqdg20f2zamqv09pr9
 	- _anchor = ynab://test/Household/transactions/?date=2026-07
 	- _type = !cutting_garden-ynab-transaction-v1
 	! organize-base-v1
@@ -367,7 +367,7 @@ generate_month_by_payee() {
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize '"ynab://test/Household/transactions/?date=2026-07"' payee=`
-	- _base = @blake2b256-9469xht5748ynt7n8lk53ld4esde3rfpym0rj0g7xq4348c5a44sc3rhfx
+	- _base = @blake2b256-q5qf0csxk6x5hydlrvx44ym49f3l7cdq2ltlg2g0z8d99nen20tqwhdxe5
 	- _anchor = ynab://test/Household/transactions/?date=2026-07
 	- _type = !cutting_garden-ynab-transaction-v1
 	! organize-base-v1
@@ -406,7 +406,7 @@ function ynab_organize_apply_repoints_the_payee_by_moving_a_line { # @test
   cat >"$edited" <<-'EOM'
 	---
 	% generated: `cg organize '"ynab://test/Household/transactions/?date=2026-07"' payee=`
-	- _base = @blake2b256-9469xht5748ynt7n8lk53ld4esde3rfpym0rj0g7xq4348c5a44sc3rhfx
+	- _base = @blake2b256-q5qf0csxk6x5hydlrvx44ym49f3l7cdq2ltlg2g0z8d99nen20tqwhdxe5
 	- _anchor = ynab://test/Household/transactions/?date=2026-07
 	- _type = !cutting_garden-ynab-transaction-v1
 	! organize-base-v1

@@ -64,7 +64,7 @@ generate_status_doc() {
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize 'caldav:http://127.0.0.1:24111/dav/lit/ -> _terminal=no' status=`
-	- _base = @blake2b256-rtk59u408f0pg2r069seef2vvhhjkf3m9ade4znvsw3ekhwl9rjs5q3sfd
+	- _base = @blake2b256-hvvcg4psqkljrexanlh7v03j2ugk7jer6fe5hxjnnj97nrpcr45splum2v
 	- _anchor = caldav:http://127.0.0.1:24111/dav/lit/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -116,13 +116,13 @@ function fmt_organize_regenerates_and_rewrites_base { # @test
 
   run_cg fmt-organize "$doc"
   assert_success
-  assert_vector "fmt-organize: $doc rewritten — _base @blake2b256-rtk59u408f0pg2r069seef2vvhhjkf3m9ade4znvsw3ekhwl9rjs5q3sfd → @blake2b256-sr584zn2hynatpuygx0nvxhmxf0lsx5ug503g7d56g746eguz6cs6ujqy5"
+  assert_vector "fmt-organize: $doc rewritten — _base @blake2b256-hvvcg4psqkljrexanlh7v03j2ugk7jer6fe5hxjnnj97nrpcr45splum2v → @blake2b256-6xcdc86yee0yukpr8nqeysafhnhmw8fmmq0w3ew06xwzn2c6m53sjk2duy"
 
   run cat "$doc"
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize 'caldav:http://127.0.0.1:24111/dav/lit/ -> _terminal=no' status=`
-	- _base = @blake2b256-sr584zn2hynatpuygx0nvxhmxf0lsx5ug503g7d56g746eguz6cs6ujqy5
+	- _base = @blake2b256-6xcdc86yee0yukpr8nqeysafhnhmw8fmmq0w3ew06xwzn2c6m53sjk2duy
 	- _anchor = caldav:http://127.0.0.1:24111/dav/lit/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -173,7 +173,7 @@ function fmt_organize_refuses_unapplied_edits { # @test
   cat >"$edited" <<-'EOM'
 	---
 	% generated: `cg organize 'caldav:http://127.0.0.1:24111/dav/lit/ -> _terminal=no' status=`
-	- _base = @blake2b256-rtk59u408f0pg2r069seef2vvhhjkf3m9ade4znvsw3ekhwl9rjs5q3sfd
+	- _base = @blake2b256-hvvcg4psqkljrexanlh7v03j2ugk7jer6fe5hxjnnj97nrpcr45splum2v
 	- _anchor = caldav:http://127.0.0.1:24111/dav/lit/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -237,7 +237,7 @@ function fmt_organize_keeps_trailing_lever { # @test
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize 'caldav:http://127.0.0.1:24111/dav/lit/ -> _terminal=no' status=`
-	- _base = @blake2b256-y4zr8gk6wl085wah7l9eekvhn6t4s5lnp6q0th9zf0v4e67mkrvsy0h2a0
+	- _base = @blake2b256-c74d98laxrcvcsy5tdgws25xahvk9ra0vp505c7c5m6pgmcdrp2qhej5j2
 	- _anchor = caldav:http://127.0.0.1:24111/dav/lit/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -276,13 +276,13 @@ function fmt_organize_keeps_trailing_lever { # @test
 
   run_cg fmt-organize "$doc"
   assert_success
-  assert_vector "fmt-organize: $doc rewritten — _base @blake2b256-y4zr8gk6wl085wah7l9eekvhn6t4s5lnp6q0th9zf0v4e67mkrvsy0h2a0 → @blake2b256-q2lkft2qvplzjx5vrkdkl3y5tfl05us4wkw40m7lj4p4l6n5u9sstsd8xt"
+  assert_vector "fmt-organize: $doc rewritten — _base @blake2b256-c74d98laxrcvcsy5tdgws25xahvk9ra0vp505c7c5m6pgmcdrp2qhej5j2 → @blake2b256-k5pshms75f9jruayw052rce9hme29prk4rkg3gl5telm0uhseqzqfece73"
 
   run cat "$doc"
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize 'caldav:http://127.0.0.1:24111/dav/lit/ -> _terminal=no' status=`
-	- _base = @blake2b256-q2lkft2qvplzjx5vrkdkl3y5tfl05us4wkw40m7lj4p4l6n5u9sstsd8xt
+	- _base = @blake2b256-k5pshms75f9jruayw052rce9hme29prk4rkg3gl5telm0uhseqzqfece73
 	- _anchor = caldav:http://127.0.0.1:24111/dav/lit/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1

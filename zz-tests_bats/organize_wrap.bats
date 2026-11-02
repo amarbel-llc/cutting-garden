@@ -42,8 +42,8 @@ teardown() {
 
 # The generated document's `_base` digest, and the digest after the wrapped
 # edit's commit.
-BASE_GENERATED=blake2b256-r4ds7r4awz7e2s5cqqwfmtxxez4xg8c3xp9dm95ffxlyhzurfjasv2szld
-BASE_WRAPPED_EDITED=blake2b256-3hs268jmfwuc68u37sgstx0uqr0aslj8794dq4xva6705k8uytzs9l0w49
+BASE_GENERATED=blake2b256-j9lnsd46gfwce7qqngvzetlv4jm568p3spr6qrfu8nnjnsaqcdaqhm2t30
+BASE_WRAPPED_EDITED=blake2b256-cr8k2qeqqmw65crpfnff7ga055mgvnw7hdcz6tpkunuljujuxnvstct29z
 
 # wrap_doc prints a whole `-group-by (tags)` document pinned at `_base` $1, the
 # body read from stdin.

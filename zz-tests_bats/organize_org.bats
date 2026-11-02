@@ -33,7 +33,7 @@ generate_inbox_by_state() {
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize 'org://test/_inbox.org -> _terminal=no' state=`
-	- _base = @blake2b256-el7tr6rwg66jvppu2tygeyyzln8tut2xhkhsyvg4vmw6wq6qgcfqynyg5s
+	- _base = @blake2b256-ncuwcxty64sdmrdwvza3usvs900gh4jzf8mlqyxumw7mzafah08s2t6pkr
 	- _anchor = org://test/_inbox.org
 	- _query = _terminal=no
 	- _type = !cutting_garden-org-headline-v1
@@ -80,7 +80,7 @@ function organize_org_apply_state_atoms_tags_title { # @test
   cat >"$edited" <<-'EOM'
 	---
 	% generated: `cg organize 'org://test/_inbox.org -> _terminal=no' state=`
-	- _base = @blake2b256-el7tr6rwg66jvppu2tygeyyzln8tut2xhkhsyvg4vmw6wq6qgcfqynyg5s
+	- _base = @blake2b256-ncuwcxty64sdmrdwvza3usvs900gh4jzf8mlqyxumw7mzafah08s2t6pkr
 	- _anchor = org://test/_inbox.org
 	- _query = _terminal=no
 	- _type = !cutting_garden-org-headline-v1
@@ -153,7 +153,7 @@ function organize_org_inherited_tag_removal_is_refused { # @test
   cat >"$edited" <<-'EOM'
 	---
 	% generated: `cg organize 'org://test/_inbox.org -> _terminal=no' state=`
-	- _base = @blake2b256-el7tr6rwg66jvppu2tygeyyzln8tut2xhkhsyvg4vmw6wq6qgcfqynyg5s
+	- _base = @blake2b256-ncuwcxty64sdmrdwvza3usvs900gh4jzf8mlqyxumw7mzafah08s2t6pkr
 	- _anchor = org://test/_inbox.org
 	- _query = _terminal=no
 	- _type = !cutting_garden-org-headline-v1

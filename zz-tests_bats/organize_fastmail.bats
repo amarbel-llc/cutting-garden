@@ -46,7 +46,7 @@ generate_inbox() {
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize fastmail://test/Inbox/ _inbox`
-	- _base = @blake2b256-2292782sw2stf6zujtnguykqrj9lu0aw8xp2kzmvc4aj2d59jeyqecgyrt
+	- _base = @blake2b256-2u3xu4sggkvp4v6lecryu4nf2vmq73e7y66ge7fxy3kdngkpslgsvxa0mg
 	- _anchor = fastmail://test/Inbox/
 	- _type = !cutting_garden-fastmail-thread-v1
 	- _group-by = _inbox
@@ -70,7 +70,7 @@ edited_inbox() {
   cat >"$edited" <<-'EOM'
 	---
 	% generated: `cg organize fastmail://test/Inbox/ _inbox`
-	- _base = @blake2b256-2292782sw2stf6zujtnguykqrj9lu0aw8xp2kzmvc4aj2d59jeyqecgyrt
+	- _base = @blake2b256-2u3xu4sggkvp4v6lecryu4nf2vmq73e7y66ge7fxy3kdngkpslgsvxa0mg
 	- _anchor = fastmail://test/Inbox/
 	- _type = !cutting_garden-fastmail-thread-v1
 	- _group-by = _inbox
@@ -145,7 +145,7 @@ function organize_fastmail_inbox_ungrouped_render { # @test
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize fastmail://test/Inbox/ has_attachment=`
-	- _base = @blake2b256-dj002eqmuzxa0ppu9l7sk0mup5sssm7vdel0wjgn0cls8fytucuqafyr5u
+	- _base = @blake2b256-uv88cgz05l2l05a2up39gm7pza0gj2np6kqywdj693axf0nantwqryf7mt
 	- _anchor = fastmail://test/Inbox/
 	- _type = !cutting_garden-fastmail-thread-v1
 	! organize-base-v1
@@ -216,7 +216,7 @@ EOF
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize fastmail://test/Inbox/ _inbox`
-	- _base = @blake2b256-2w36y8k53jjgfv95nlkkapscknekk4505krvrl6gcqjm0anc8fkssw20c4
+	- _base = @blake2b256-3tyun7ymeq06683nr2jcj78qexfup0dqutaf3p6qhelz3a0kzjjs0wmcqs
 	- _anchor = fastmail://test/Inbox/
 	- _type = !cutting_garden-fastmail-thread-v1
 	- _group-by = _inbox
@@ -271,7 +271,7 @@ EOF
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize fastmail://test/Inbox/ _inbox`
-	- _base = @blake2b256-d2k5ylqmjhqeq8xyuatac9u5e9tnv3h32ezm7kgcsxrdh6vaeh6spew72z
+	- _base = @blake2b256-trpptxftnm9etxtj2gq8ymlypw4k89n657623echyhk7mknz6gfspc6udw
 	- _anchor = fastmail://test/Inbox/
 	- _type = !cutting_garden-fastmail-thread-v1
 	- _group-by = _inbox
@@ -342,7 +342,7 @@ EOF
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize fastmail://test/Inbox/ _inbox`
-	- _base = @blake2b256-rwklsawjlzng4xqwlpepet50uys08fev2a6mg3dqf0ntq703nxzsjxt3wx
+	- _base = @blake2b256-vth35nxjwpclm6469dhja2deyrnrwaux26qrmr8adv2fagt20gpsfmgdhz
 	- _anchor = fastmail://test/Inbox/
 	- _type = !cutting_garden-fastmail-thread-v1
 	- _group-by = _inbox
@@ -401,7 +401,7 @@ EOF
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize fastmail://test/Inbox/ _inbox`
-	- _base = @blake2b256-g26v9fjaw0gt4jsn75dsuug2ahzweljfxysy9ne47ft4j9lk9heqffn5c7
+	- _base = @blake2b256-7m5l0gv9lfeuf9kaj6tz8n3el5p058nmtsan957l7gw2633fek4qxcshke
 	- _anchor = fastmail://test/Inbox/
 	- _type = !cutting_garden-fastmail-thread-v1
 	- _group-by = _inbox
@@ -462,7 +462,7 @@ EOF
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize fastmail://test/Inbox/ _inbox`
-	- _base = @blake2b256-76l2uq54xrgztcske3jxztvs2ehnj7rgsajvktcefzp749tqmusq7hn6lx
+	- _base = @blake2b256-cejr3p6a233e94s3nd0x0kpqf8krpex7j0u8pgwlder34wymrsrqz0h0cg
 	- _anchor = fastmail://test/Inbox/
 	- _type = !cutting_garden-fastmail-thread-v1
 	- _group-by = _inbox
@@ -572,7 +572,7 @@ EOF
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize fastmail://test/Inbox/ _inbox`
-	- _base = @blake2b256-ey8lxswh530xcalt7fn0vnvejpfwz2xzd4d03ke6xkjpszuq5h9s5wzpaw
+	- _base = @blake2b256-wktwudd6mekkn2zfuut2ucsylatuehhj2nmqscft4d0feg8ma6xq9h6kfj
 	- _anchor = fastmail://test/Inbox/
 	- _type = !cutting_garden-fastmail-thread-v1
 	- _group-by = _inbox
@@ -648,7 +648,7 @@ function organize_fastmail_group_by_date_month { # @test
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize fastmail://test/Inbox/ 'date=(month)'`
-	- _base = @blake2b256-z5npjdt63rqsqnc6dmgpryv8elpjul6n6p9yj7mf262qkee2lzeqt9sn4s
+	- _base = @blake2b256-89sq47keg7jqezp82tjdchpm24h0fkpu46hhwym7kp98vwddn7wq49yjky
 	- _anchor = fastmail://test/Inbox/
 	- _type = !cutting_garden-fastmail-thread-v1
 	! organize-base-v1

@@ -60,7 +60,7 @@ generate_grouped() {
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize 'caldav:http://127.0.0.1:24102/dav/fields/ -> _terminal=no' '(tags)'`
-	- _base = @blake2b256-smtd9jcy4vttjr05939yuzt99pfzj2n5n8kededyvjsdtz58wjkszad3kt
+	- _base = @blake2b256-uwk7p2xkt7nuy97t6ykxkyenty83ty3qjjk055jeua735gwcju5qfrekug
 	- _anchor = caldav:http://127.0.0.1:24102/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -124,7 +124,7 @@ function organize_categories_apply_writes { # @test
   cat >"$edited" <<-'EOM'
 	---
 	% generated: `cg organize 'caldav:http://127.0.0.1:24102/dav/fields/ -> _terminal=no' '(tags)'`
-	- _base = @blake2b256-smtd9jcy4vttjr05939yuzt99pfzj2n5n8kededyvjsdtz58wjkszad3kt
+	- _base = @blake2b256-uwk7p2xkt7nuy97t6ykxkyenty83ty3qjjk055jeua735gwcju5qfrekug
 	- _anchor = caldav:http://127.0.0.1:24102/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -164,7 +164,7 @@ EOF
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize 'caldav:http://127.0.0.1:24102/dav/fields/ -> _terminal=no' '(tags)'`
-	- _base = @blake2b256-4ssget048xz6w0clrnqn3x3dr2428znv7whnmy5nmz5q3y6ahmpq7p9pe9
+	- _base = @blake2b256-fcedy4vdndrczrnspeahxh4wszusnv6nyq28dsaapqxzyjnkycuqxc3wak
 	- _anchor = caldav:http://127.0.0.1:24102/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1

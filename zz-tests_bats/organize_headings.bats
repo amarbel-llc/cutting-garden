@@ -44,10 +44,10 @@ teardown() {
 # bats file_tags=organize
 
 # The generated document's `_base` digest, and the digests after each edit.
-BASE_GENERATED=blake2b256-hqwaqc20953h4gw2tutms8q877dnyjvu5ksqmsg8ngmp4wnqc69qt076yp
-BASE_AFTER_DOUBLE=blake2b256-grx2ekjw2dc3nj3ckajjll3p5kwurhjr39gj85vn7l6mydu9msqsg9e3es
-BASE_AFTER_RESET=blake2b256-m266v73sh7nu9puvklqtvj7axdushh5xqp485m8q3lve050vv9kss22h9q
-BASE_AFTER_NOOP=blake2b256-euq79ddva98sxzlastnypjpwgtxx50pqv399mysu59ygfrw227qsc030v8
+BASE_GENERATED=blake2b256-sgxdt4glk7usan67uah3cyx32t3svxrt68ngyd55e8xdd0hpce6sp85fad
+BASE_AFTER_DOUBLE=blake2b256-vp9s5cn8uaz59ksluuqh4sm9x54qv0u92zw2zm3uul2gcqmf0kyqvgrr8t
+BASE_AFTER_RESET=blake2b256-4hv2n307ey6d2g90clzwcyjtxef53amnr355r8es30gweph2etksekzs59
+BASE_AFTER_NOOP=blake2b256-6587l53m8c6wpd95a8swsah44v0k7l99nxkvssl9nythz2ptrexst3xz84
 
 # envelope_header prints the `-group-by (tags)` document's hyphence envelope
 # pinned at `_base` $1 — the part every document in this lane shares.

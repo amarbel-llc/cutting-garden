@@ -57,7 +57,7 @@ generate_month() {
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize 'caldav:http://127.0.0.1:24104/dav/sched/ -> _terminal=no' 'date_due=(month)'`
-	- _base = @blake2b256-rnrwgxhnfhx00v6dnnu2tyshwcr5utnr4s38egjm6fqqqv7pt9eqzugr2y
+	- _base = @blake2b256-pt2wxledlc56uag0krz9dxyptg6q87a29k352n2xjd4vgvylehrsfr6jr5
 	- _anchor = caldav:http://127.0.0.1:24104/dav/sched/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -97,7 +97,7 @@ function organize_date_month_reschedule_preserves_datetime { # @test
   cat >"$edited" <<-'EOM'
 	---
 	% generated: `cg organize 'caldav:http://127.0.0.1:24104/dav/sched/ -> _terminal=no' 'date_due=(month)'`
-	- _base = @blake2b256-rnrwgxhnfhx00v6dnnu2tyshwcr5utnr4s38egjm6fqqqv7pt9eqzugr2y
+	- _base = @blake2b256-pt2wxledlc56uag0krz9dxyptg6q87a29k352n2xjd4vgvylehrsfr6jr5
 	- _anchor = caldav:http://127.0.0.1:24104/dav/sched/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -157,7 +157,7 @@ EOF
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize 'caldav:http://127.0.0.1:24104/dav/sched/ -> _terminal=no' 'date_due=(month)'`
-	- _base = @blake2b256-yt3aezcvu6z9rfhy9taccnsxrpukfvxkgaq49572xsxde7sazlnqug55hz
+	- _base = @blake2b256-9qylcjfa9w9fdjx088j8n76yjnkk73a2jh4ct7m2alt7rd8cx6csdc9y8j
 	- _anchor = caldav:http://127.0.0.1:24104/dav/sched/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -185,7 +185,7 @@ function organize_date_move_and_atom_edit_conflict { # @test
   cat >"$edited" <<-'EOM'
 	---
 	% generated: `cg organize 'caldav:http://127.0.0.1:24104/dav/sched/ -> _terminal=no' 'date_due=(month)'`
-	- _base = @blake2b256-rnrwgxhnfhx00v6dnnu2tyshwcr5utnr4s38egjm6fqqqv7pt9eqzugr2y
+	- _base = @blake2b256-pt2wxledlc56uag0krz9dxyptg6q87a29k352n2xjd4vgvylehrsfr6jr5
 	- _anchor = caldav:http://127.0.0.1:24104/dav/sched/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -229,7 +229,7 @@ function organize_date_bare_groups_by_day { # @test
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize 'caldav:http://127.0.0.1:24104/dav/sched/ -> _terminal=no' 'date_due=(day)'`
-	- _base = @blake2b256-rl30lnhrxsyy9s5nwa08l2ldzcm4pdemz8rzdgrxj0g986j2c67quwq8xg
+	- _base = @blake2b256-xsncgzaqpq0je5wy3qv25wt6wfh8xjj0xj0wm3euwjtl7y4phjqqu84gyh
 	- _anchor = caldav:http://127.0.0.1:24104/dav/sched/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1

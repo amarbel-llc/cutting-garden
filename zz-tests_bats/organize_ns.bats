@@ -73,7 +73,7 @@ generate_grouped() {
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize 'caldav:http://127.0.0.1:24103/dav/ns/ -> _terminal=no' project`
-	- _base = @blake2b256-p7h5zkwc6tyzlza98h7475qkx84nhnp6sm7lhf5sfu4q2jaapjqssarnnd
+	- _base = @blake2b256-3uxx5klzfec2mhlyq5j8zy72qx25x55z8527ph4gukem5a6z407qehn34v
 	- _anchor = caldav:http://127.0.0.1:24103/dav/ns/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -122,7 +122,7 @@ function organize_ns_rollup_move_writes_reconstructed_tag { # @test
   cat >"$edited" <<-'EOM'
 	---
 	% generated: `cg organize 'caldav:http://127.0.0.1:24103/dav/ns/ -> _terminal=no' project`
-	- _base = @blake2b256-p7h5zkwc6tyzlza98h7475qkx84nhnp6sm7lhf5sfu4q2jaapjqssarnnd
+	- _base = @blake2b256-3uxx5klzfec2mhlyq5j8zy72qx25x55z8527ph4gukem5a6z407qehn34v
 	- _anchor = caldav:http://127.0.0.1:24103/dav/ns/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -168,7 +168,7 @@ EOF
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize 'caldav:http://127.0.0.1:24103/dav/ns/ -> _terminal=no' project`
-	- _base = @blake2b256-j299g407nd3l96kn57j4ulpq5g346lx2t0r0cmj9zz3kq974peqqsl4dmk
+	- _base = @blake2b256-u8l49tk6qx0elfp46ya5c50r0xszz3ffw9p87yxtwnw9j0hejsrqj5s0ry
 	- _anchor = caldav:http://127.0.0.1:24103/dav/ns/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -208,7 +208,7 @@ function organize_ns_direct_root_placement_writes_bare_tag { # @test
   cat >"$edited" <<-'EOM'
 	---
 	% generated: `cg organize 'caldav:http://127.0.0.1:24103/dav/ns/ -> _terminal=no' project`
-	- _base = @blake2b256-p7h5zkwc6tyzlza98h7475qkx84nhnp6sm7lhf5sfu4q2jaapjqssarnnd
+	- _base = @blake2b256-3uxx5klzfec2mhlyq5j8zy72qx25x55z8527ph4gukem5a6z407qehn34v
 	- _anchor = caldav:http://127.0.0.1:24103/dav/ns/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -251,7 +251,7 @@ EOF
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize 'caldav:http://127.0.0.1:24103/dav/ns/ -> _terminal=no' project`
-	- _base = @blake2b256-dnx7aw2v2f7x086rz58znmetu64nkpwkmct3hh4wa3g4c7q4hstszvslun
+	- _base = @blake2b256-lrgtnkxxqsjwralfy2ufmjpst6wddvl4ywufc62z374dj5y84awq9vwdw4
 	- _anchor = caldav:http://127.0.0.1:24103/dav/ns/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1

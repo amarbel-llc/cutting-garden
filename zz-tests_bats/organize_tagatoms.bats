@@ -78,7 +78,7 @@ generate_lit_status() {
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize 'caldav:http://127.0.0.1:24110/dav/lit/ -> _terminal=no' status=`
-	- _base = @blake2b256-h8qlp3gkkmyl6e4t3c6kh0qwcwdggktk8q50yk9f3a5k2h2j5s8s633d3h
+	- _base = @blake2b256-lkrd587k8mpg4tpf9eelygrxwszpq6du2en5ad3krz0m8y5064xqgfnm8j
 	- _anchor = caldav:http://127.0.0.1:24110/dav/lit/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -117,7 +117,7 @@ function organize_tagatoms_unchanged_tags_pass_through { # @test
   cat >"$edited" <<-'EOM'
 	---
 	% generated: `cg organize 'caldav:http://127.0.0.1:24110/dav/lit/ -> _terminal=no' status=`
-	- _base = @blake2b256-h8qlp3gkkmyl6e4t3c6kh0qwcwdggktk8q50yk9f3a5k2h2j5s8s633d3h
+	- _base = @blake2b256-lkrd587k8mpg4tpf9eelygrxwszpq6du2en5ad3krz0m8y5064xqgfnm8j
 	- _anchor = caldav:http://127.0.0.1:24110/dav/lit/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -162,7 +162,7 @@ EOF
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize 'caldav:http://127.0.0.1:24110/dav/lit/ -> _terminal=no' status=`
-	- _base = @blake2b256-wujj4gz8l5wdtxlxa6fj53qlepc6uqjs25qjfjht2q0ydse393lqaengj8
+	- _base = @blake2b256-9y9mchwcp0wjxyetefnfrljcpf03l5tg7qq5wv435gwrrgn872ds5w2kxm
 	- _anchor = caldav:http://127.0.0.1:24110/dav/lit/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -197,7 +197,7 @@ function organize_tagatoms_add_writes_membership { # @test
   cat >"$edited" <<-'EOM'
 	---
 	% generated: `cg organize 'caldav:http://127.0.0.1:24110/dav/lit/ -> _terminal=no' status=`
-	- _base = @blake2b256-h8qlp3gkkmyl6e4t3c6kh0qwcwdggktk8q50yk9f3a5k2h2j5s8s633d3h
+	- _base = @blake2b256-lkrd587k8mpg4tpf9eelygrxwszpq6du2en5ad3krz0m8y5064xqgfnm8j
 	- _anchor = caldav:http://127.0.0.1:24110/dav/lit/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -239,7 +239,7 @@ EOF
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize 'caldav:http://127.0.0.1:24110/dav/lit/ -> _terminal=no' status=`
-	- _base = @blake2b256-xlnh9j0c6wc6yxgqachnyfdt959aple3e3kmwkr9r2ppmqkqmk7qvkjt5j
+	- _base = @blake2b256-plfwee96zs3nhzguer8yxmr8yjnkurp2zuy43rf70qv9n8z4hnhqqukym3
 	- _anchor = caldav:http://127.0.0.1:24110/dav/lit/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -272,7 +272,7 @@ function organize_tagatoms_remove_writes_membership { # @test
   cat >"$edited" <<-'EOM'
 	---
 	% generated: `cg organize 'caldav:http://127.0.0.1:24110/dav/lit/ -> _terminal=no' status=`
-	- _base = @blake2b256-h8qlp3gkkmyl6e4t3c6kh0qwcwdggktk8q50yk9f3a5k2h2j5s8s633d3h
+	- _base = @blake2b256-lkrd587k8mpg4tpf9eelygrxwszpq6du2en5ad3krz0m8y5064xqgfnm8j
 	- _anchor = caldav:http://127.0.0.1:24110/dav/lit/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -312,7 +312,7 @@ EOF
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize 'caldav:http://127.0.0.1:24110/dav/lit/ -> _terminal=no' status=`
-	- _base = @blake2b256-wvu3a7862xy6n64y94avfzf0umtmzdzra2dkhqe94rlsmzacunvs2xhcpf
+	- _base = @blake2b256-djg25ha2n2jdl0w6w9dsqgwxet303d86uut3vg6z6ghy4nszkkkqqupk84
 	- _anchor = caldav:http://127.0.0.1:24110/dav/lit/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -366,7 +366,7 @@ generate_lit_trailing() {
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize 'caldav:http://127.0.0.1:24110/dav/lit/ -> _terminal=no' status=`
-	- _base = @blake2b256-080psn5fygyu7q4s6ajawuf0zv52zknmg3r7qgfzfc9dlrv2a0ns6rprda
+	- _base = @blake2b256-42y2gyg7upvc3qxmsku0sql4et6tf6pyra9qtcnlxcz05wd437asetkpg6
 	- _anchor = caldav:http://127.0.0.1:24110/dav/lit/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -409,7 +409,7 @@ function organize_tagatoms_doc_wins { # @test
   cat >"$edited" <<-'EOM'
 	---
 	% generated: `cg organize 'caldav:http://127.0.0.1:24110/dav/lit/ -> _terminal=no' status=`
-	- _base = @blake2b256-080psn5fygyu7q4s6ajawuf0zv52zknmg3r7qgfzfc9dlrv2a0ns6rprda
+	- _base = @blake2b256-42y2gyg7upvc3qxmsku0sql4et6tf6pyra9qtcnlxcz05wd437asetkpg6
 	- _anchor = caldav:http://127.0.0.1:24110/dav/lit/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -463,7 +463,7 @@ function organize_tagatoms_none_config { # @test
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize 'caldav:http://127.0.0.1:24110/dav/lit/ -> _terminal=no' status=`
-	- _base = @blake2b256-uwhtldy2vdxmmfdz8wgywu7xrzg58t3lwaccghz5gkn8y4cx6wtsd4h7gp
+	- _base = @blake2b256-wxdgyuaws26ztm40ynyp0qqghn4pdv30xj2tzjwypv6z3prpnecq0q7ggs
 	- _anchor = caldav:http://127.0.0.1:24110/dav/lit/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -509,7 +509,7 @@ function organize_tagatoms_strip_placement_keeps_sibling { # @test
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize 'caldav:http://127.0.0.1:24110/dav/lit/ -> _terminal=no' '(tags)'`
-	- _base = @blake2b256-mzedj23zc8fpdgmwydykfav9d9jam9mpa4k30am95sn5rnxy68vsjknfxr
+	- _base = @blake2b256-a2gu5858ud0shjvzhv8ra95cu2vds802nqy75gcmeg6qykfpnhpspqyjse
 	- _anchor = caldav:http://127.0.0.1:24110/dav/lit/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -558,7 +558,7 @@ function organize_tagatoms_whole_dim_move_applies { # @test
   cat >"$edited" <<-'EOM'
 	---
 	% generated: `cg organize 'caldav:http://127.0.0.1:24110/dav/lit/ -> _terminal=no' '(tags)'`
-	- _base = @blake2b256-mzedj23zc8fpdgmwydykfav9d9jam9mpa4k30am95sn5rnxy68vsjknfxr
+	- _base = @blake2b256-a2gu5858ud0shjvzhv8ra95cu2vds802nqy75gcmeg6qykfpnhpspqyjse
 	- _anchor = caldav:http://127.0.0.1:24110/dav/lit/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -599,7 +599,7 @@ EOF
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize 'caldav:http://127.0.0.1:24110/dav/lit/ -> _terminal=no' '(tags)'`
-	- _base = @blake2b256-twqsalnahddw0sla3w3s0kc7jf9ygpnnvm99gc8afce8mpzsy3aq7xucj6
+	- _base = @blake2b256-4aj7hrf6d62y7lpltfj22pdl5l254509w4nc2k47u544r6tdyt9q00e8m8
 	- _anchor = caldav:http://127.0.0.1:24110/dav/lit/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -713,7 +713,7 @@ function organize_tagatoms_ns_root_strip { # @test
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize 'caldav:http://127.0.0.1:24110/dav/ns/ -> _terminal=no' project`
-	- _base = @blake2b256-slcsqsuzguqnyqpsnuu0zhxnpynnkxxkjwhwgnstc2qy3lakmmrqkrr8r8
+	- _base = @blake2b256-jy78e2mxr6nypjq32cymvu0w0pe74hc0wzyxyjrwg9sjvqz2k34sxt9th2
 	- _anchor = caldav:http://127.0.0.1:24110/dav/ns/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -762,7 +762,7 @@ function organize_tagatoms_ns_strip_all_contributors { # @test
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize 'caldav:http://127.0.0.1:24110/dav/ns/ -> _terminal=no' project`
-	- _base = @blake2b256-mw83ctuf73ywmxkzg4f2adr524p5p885yhes9zzcanerlvz9mc6qkaem9n
+	- _base = @blake2b256-g40xkpz80zu3uzmkgrel0zvusw6yz4afpdxp08jea2vaqv2j47kq5t5car
 	- _anchor = caldav:http://127.0.0.1:24110/dav/ns/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -803,7 +803,7 @@ function organize_tagatoms_strip_none { # @test
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize 'caldav:http://127.0.0.1:24110/dav/ns/ -> _terminal=no' project`
-	- _base = @blake2b256-4ap9n2qwe82h95mp9uu2t39y8eq2206sl58revd7j8lcxw4nxrmsewkn0d
+	- _base = @blake2b256-396u3543pxneq7n7zu25rydm34zh6rg3pwu7mth6ak3l2x7ug4gs2qgsz2
 	- _anchor = caldav:http://127.0.0.1:24110/dav/ns/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -850,7 +850,7 @@ function organize_tagatoms_strip_none_move_is_not_an_edit { # @test
   cat >"$edited" <<-'EOM'
 	---
 	% generated: `cg organize 'caldav:http://127.0.0.1:24110/dav/ns/ -> _terminal=no' project`
-	- _base = @blake2b256-4ap9n2qwe82h95mp9uu2t39y8eq2206sl58revd7j8lcxw4nxrmsewkn0d
+	- _base = @blake2b256-396u3543pxneq7n7zu25rydm34zh6rg3pwu7mth6ak3l2x7ug4gs2qgsz2
 	- _anchor = caldav:http://127.0.0.1:24110/dav/ns/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -893,7 +893,7 @@ EOF
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize 'caldav:http://127.0.0.1:24110/dav/ns/ -> _terminal=no' project`
-	- _base = @blake2b256-ww77zktfffnjeg308pmpw3ce504534d0z76dgsulne9u6e2kmsdsffyqqu
+	- _base = @blake2b256-94h4jgs5ltsdfgq7c3349xsy8g9h8dxsg5upqyalc86utw57sjvsswmr39
 	- _anchor = caldav:http://127.0.0.1:24110/dav/ns/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1

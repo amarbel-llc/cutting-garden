@@ -229,7 +229,7 @@ function test_testpeer_organize_write_one_move_round_trips { # @test
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize 'cgtest://fixture/box -> !cgtest-obj-v1 _terminal=no' state=`
-	- _base = @blake2b256-k6z8p9s2shpn8zvn6l30ns0h9xchz5vcyqr2xqvuhzh3phway9usrlgass
+	- _base = @blake2b256-6cnchumeu5mpve5zkc58je7xpyezxwhq4s3mr705vzu4nwlyq6hq3dxrq2
 	- _anchor = cgtest://fixture/box/
 	- _query = !cgtest-obj-v1 _terminal=no
 	- _type = !cgtest-obj-v1
@@ -251,7 +251,7 @@ function test_testpeer_organize_write_one_move_round_trips { # @test
   cat >"$edited" <<-'EOM'
 	---
 	% generated: `cg organize 'cgtest://fixture/box -> !cgtest-obj-v1 _terminal=no' state=`
-	- _base = @blake2b256-k6z8p9s2shpn8zvn6l30ns0h9xchz5vcyqr2xqvuhzh3phway9usrlgass
+	- _base = @blake2b256-6cnchumeu5mpve5zkc58je7xpyezxwhq4s3mr705vzu4nwlyq6hq3dxrq2
 	- _anchor = cgtest://fixture/box/
 	- _query = !cgtest-obj-v1 _terminal=no
 	- _type = !cgtest-obj-v1
@@ -291,7 +291,7 @@ EOF
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize 'cgtest://fixture/box -> !cgtest-obj-v1 _terminal=no' state=`
-	- _base = @blake2b256-mtqqn78khgu4gzg49ku3wqy7wlwvs0g9uhlpva85gn7teqmc5a9sj042ek
+	- _base = @blake2b256-w23jdcef92v85ql3fpyxv52479kdpy0zmmtl0whngevwe4fu268qeck080
 	- _anchor = cgtest://fixture/box/
 	- _query = !cgtest-obj-v1 _terminal=no
 	- _type = !cgtest-obj-v1
@@ -318,7 +318,7 @@ function test_testpeer_organize_write_many_replaces_membership { # @test
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize 'cgtest://fixture/box -> !cgtest-obj-v1 _terminal=no' tag=`
-	- _base = @blake2b256-xv5vlsczmcz3vnpl2vr7y8v852m2nn7xqzskx5x2vvdq753s68rsr8vhe3
+	- _base = @blake2b256-e78c65etlzqg2phynsklj4lmp6wmt70s6urs4jqg2qgdu6fquzdqhxf96g
 	- _anchor = cgtest://fixture/box/
 	- _query = !cgtest-obj-v1 _terminal=no
 	- _type = !cgtest-obj-v1
@@ -343,7 +343,7 @@ function test_testpeer_organize_write_many_replaces_membership { # @test
   cat >"$edited" <<-'EOM'
 	---
 	% generated: `cg organize 'cgtest://fixture/box -> !cgtest-obj-v1 _terminal=no' tag=`
-	- _base = @blake2b256-xv5vlsczmcz3vnpl2vr7y8v852m2nn7xqzskx5x2vvdq753s68rsr8vhe3
+	- _base = @blake2b256-e78c65etlzqg2phynsklj4lmp6wmt70s6urs4jqg2qgdu6fquzdqhxf96g
 	- _anchor = cgtest://fixture/box/
 	- _query = !cgtest-obj-v1 _terminal=no
 	- _type = !cgtest-obj-v1
@@ -387,7 +387,7 @@ EOF
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize 'cgtest://fixture/box -> !cgtest-obj-v1 _terminal=no' tag=`
-	- _base = @blake2b256-26s6dxhthgj5aa2aushseuv47ywump22r2achkcugsqltvy4q4pqvz9ea9
+	- _base = @blake2b256-3g5s6xyemu43y2x4wepwu3k2l4d3tzhj0m3qgv4hw9gjcqxhf6yq4huxx0
 	- _anchor = cgtest://fixture/box/
 	- _query = !cgtest-obj-v1 _terminal=no
 	- _type = !cgtest-obj-v1
@@ -455,7 +455,7 @@ function test_testpeer_tracker_clearable_move_clears_milestone { # @test
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize 'cgtest://fixture/tracker -> !cgtest-ticket-v1 _terminal=no' milestone=`
-	- _base = @blake2b256-58nu7guw9kt8xvu52zv5kakmqjvzd36vpght2m727jq4xj27upasgcrkua
+	- _base = @blake2b256-fy7q63adxnxu8mz9zyf4naz3ynre9tv24jl6x59kjfmxw20qdldq6s8tht
 	- _anchor = cgtest://fixture/tracker/
 	- _query = !cgtest-ticket-v1 _terminal=no
 	- _type = !cgtest-ticket-v1
@@ -479,7 +479,7 @@ function test_testpeer_tracker_clearable_move_clears_milestone { # @test
   cat >"$edited" <<-'EOM'
 	---
 	% generated: `cg organize 'cgtest://fixture/tracker -> !cgtest-ticket-v1 _terminal=no' milestone=`
-	- _base = @blake2b256-58nu7guw9kt8xvu52zv5kakmqjvzd36vpght2m727jq4xj27upasgcrkua
+	- _base = @blake2b256-fy7q63adxnxu8mz9zyf4naz3ynre9tv24jl6x59kjfmxw20qdldq6s8tht
 	- _anchor = cgtest://fixture/tracker/
 	- _query = !cgtest-ticket-v1 _terminal=no
 	- _type = !cgtest-ticket-v1
@@ -517,7 +517,7 @@ EOF
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize 'cgtest://fixture/tracker -> !cgtest-ticket-v1 _terminal=no' milestone=`
-	- _base = @blake2b256-cvu08dw9khvm39cech0gyhpwfdem53mej5ksjtpn97jgrwkvqwdq8xwm80
+	- _base = @blake2b256-6825tn7lx3nx3qwxp5w8mqq28zqx365at9x78cwzr4vxzqj5gease4hy7c
 	- _anchor = cgtest://fixture/tracker/
 	- _query = !cgtest-ticket-v1 _terminal=no
 	- _type = !cgtest-ticket-v1
@@ -558,7 +558,7 @@ function test_testpeer_tracker_zero_count_milestone_is_a_target { # @test
   cat >"$edited" <<-'EOM'
 	---
 	% generated: `cg organize 'cgtest://fixture/tracker -> !cgtest-ticket-v1 _terminal=no' milestone=`
-	- _base = @blake2b256-58nu7guw9kt8xvu52zv5kakmqjvzd36vpght2m727jq4xj27upasgcrkua
+	- _base = @blake2b256-fy7q63adxnxu8mz9zyf4naz3ynre9tv24jl6x59kjfmxw20qdldq6s8tht
 	- _anchor = cgtest://fixture/tracker/
 	- _query = !cgtest-ticket-v1 _terminal=no
 	- _type = !cgtest-ticket-v1
@@ -597,7 +597,7 @@ EOF
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize 'cgtest://fixture/tracker -> !cgtest-ticket-v1 _terminal=no' milestone=`
-	- _base = @blake2b256-r2xkuuxeqynpa3r70tf2ua4p57wdz76nj8j8hkqwf0s5cn2gs03q7rwt70
+	- _base = @blake2b256-w7gwehgcr0r4ss732hzkus8z56rd6ksz6qkauq4rqywwyd679zjs9px3nq
 	- _anchor = cgtest://fixture/tracker/
 	- _query = !cgtest-ticket-v1 _terminal=no
 	- _type = !cgtest-ticket-v1
@@ -631,7 +631,7 @@ function test_testpeer_tracker_non_clearable_move_is_refused { # @test
   cat >"$edited" <<-'EOM'
 	---
 	% generated: `cg organize 'cgtest://fixture/tracker -> !cgtest-ticket-v1' state=`
-	- _base = @blake2b256-wn2xrnakd5wsn466kjvx8prxr9le3y8rvwhdwj64gcwdplk284csr8gr4s
+	- _base = @blake2b256-v8ya3qqkffeu84peefhm5dl0k8p9l4qd2zxgv27r62qkpxjwg20shdmgmx
 	- _anchor = cgtest://fixture/tracker/
 	- _query = !cgtest-ticket-v1
 	- _type = !cgtest-ticket-v1
@@ -680,7 +680,7 @@ function test_testpeer_tracker_terminal_values_hide_closed_by_default { # @test
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize 'cgtest://fixture/tracker -> !cgtest-ticket-v1 _terminal=no' state=`
-	- _base = @blake2b256-j8e4jz6g92zv5vlwy0wwn5t6cst02rgmgfzc962dgled6w03409qtuzwq3
+	- _base = @blake2b256-t8k0k3eupjcjq424f7pavsc02gt49k8jvzltnkvvyu28d8thm0nsl6ydq7
 	- _anchor = cgtest://fixture/tracker/
 	- _query = !cgtest-ticket-v1 _terminal=no
 	- _type = !cgtest-ticket-v1
@@ -703,7 +703,7 @@ function test_testpeer_tracker_terminal_values_hide_closed_by_default { # @test
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize 'cgtest://fixture/tracker -> !cgtest-ticket-v1' state=`
-	- _base = @blake2b256-wn2xrnakd5wsn466kjvx8prxr9le3y8rvwhdwj64gcwdplk284csr8gr4s
+	- _base = @blake2b256-v8ya3qqkffeu84peefhm5dl0k8p9l4qd2zxgv27r62qkpxjwg20shdmgmx
 	- _anchor = cgtest://fixture/tracker/
 	- _query = !cgtest-ticket-v1
 	- _type = !cgtest-ticket-v1
@@ -749,7 +749,7 @@ EOF
   cat >"$edited" <<-'EOM'
 	---
 	% generated: `cg organize 'cgtest://fixture/tracker -> !cgtest-ticket-v1 _terminal=no' milestone=`
-	- _base = @blake2b256-58nu7guw9kt8xvu52zv5kakmqjvzd36vpght2m727jq4xj27upasgcrkua
+	- _base = @blake2b256-fy7q63adxnxu8mz9zyf4naz3ynre9tv24jl6x59kjfmxw20qdldq6s8tht
 	- _anchor = cgtest://fixture/tracker/
 	- _query = !cgtest-ticket-v1 _terminal=no
 	- _type = !cgtest-ticket-v1
@@ -788,7 +788,7 @@ EOF
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize 'cgtest://fixture/tracker -> !cgtest-ticket-v1 _terminal=no' milestone=`
-	- _base = @blake2b256-rdsgwhp3shsytv8eeszatlp0mruwlgy28e7u7h4x26mfez8s6dssy500ad
+	- _base = @blake2b256-2z4t9cql75skyjtvnzml9yythw9836pjdsa84fxt6cmxt764axzskhjwyd
 	- _anchor = cgtest://fixture/tracker/
 	- _query = !cgtest-ticket-v1 _terminal=no
 	- _type = !cgtest-ticket-v1
@@ -824,7 +824,7 @@ function test_testpeer_tracker_tag_groupings { # @test
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize 'cgtest://fixture/tracker -> !cgtest-ticket-v1 _terminal=no' area`
-	- _base = @blake2b256-elvade2h0p0sfs0jnmtekqc3pdckjc644zlm4l06lqck2yhdeegq7m3nkl
+	- _base = @blake2b256-sh7pznmfuwzs2agav0wx47j74sjsvqgh5axj9w562uxc95wlnx6qwqswuf
 	- _anchor = cgtest://fixture/tracker/
 	- _query = !cgtest-ticket-v1 _terminal=no
 	- _type = !cgtest-ticket-v1
@@ -846,7 +846,7 @@ function test_testpeer_tracker_tag_groupings { # @test
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize 'cgtest://fixture/tracker -> !cgtest-ticket-v1 _terminal=no' '(tags)'`
-	- _base = @blake2b256-d358lncx5dtw56hgeeek4tgh2ms8d5d2zz0j3pvzalue25hzjxrse3f6df
+	- _base = @blake2b256-l7arxud4dvjrstgamyxqdms97849azym7v4tgc5s3axyu5y8zctqcdgr4f
 	- _anchor = cgtest://fixture/tracker/
 	- _query = !cgtest-ticket-v1 _terminal=no
 	- _type = !cgtest-ticket-v1
@@ -871,7 +871,7 @@ function test_testpeer_tracker_tag_groupings { # @test
   cat >"$edited" <<-'EOM'
 	---
 	% generated: `cg organize 'cgtest://fixture/tracker -> !cgtest-ticket-v1 _terminal=no' '(tags)'`
-	- _base = @blake2b256-d358lncx5dtw56hgeeek4tgh2ms8d5d2zz0j3pvzalue25hzjxrse3f6df
+	- _base = @blake2b256-l7arxud4dvjrstgamyxqdms97849azym7v4tgc5s3axyu5y8zctqcdgr4f
 	- _anchor = cgtest://fixture/tracker/
 	- _query = !cgtest-ticket-v1 _terminal=no
 	- _type = !cgtest-ticket-v1
@@ -928,7 +928,7 @@ function test_testpeer_tracker_inline_atom_and_trailer_edits { # @test
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize 'cgtest://fixture/tracker -> !cgtest-ticket-v1' state=`
-	- _base = @blake2b256-wn2xrnakd5wsn466kjvx8prxr9le3y8rvwhdwj64gcwdplk284csr8gr4s
+	- _base = @blake2b256-v8ya3qqkffeu84peefhm5dl0k8p9l4qd2zxgv27r62qkpxjwg20shdmgmx
 	- _anchor = cgtest://fixture/tracker/
 	- _query = !cgtest-ticket-v1
 	- _type = !cgtest-ticket-v1
@@ -951,7 +951,7 @@ function test_testpeer_tracker_inline_atom_and_trailer_edits { # @test
   cat >"$edited" <<-'EOM'
 	---
 	% generated: `cg organize 'cgtest://fixture/tracker -> !cgtest-ticket-v1' state=`
-	- _base = @blake2b256-wn2xrnakd5wsn466kjvx8prxr9le3y8rvwhdwj64gcwdplk284csr8gr4s
+	- _base = @blake2b256-v8ya3qqkffeu84peefhm5dl0k8p9l4qd2zxgv27r62qkpxjwg20shdmgmx
 	- _anchor = cgtest://fixture/tracker/
 	- _query = !cgtest-ticket-v1
 	- _type = !cgtest-ticket-v1
@@ -992,7 +992,7 @@ EOF
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize 'cgtest://fixture/tracker -> !cgtest-ticket-v1' state=`
-	- _base = @blake2b256-my50fqra6p976jlr95wx5ccewmhtcqhg68sgealqkh72fsryj9xq2teqjy
+	- _base = @blake2b256-n5walqapv6duz623t9ngm6p0frm8lu5vl48t2djg4rgenqpejlvs7w55ww
 	- _anchor = cgtest://fixture/tracker/
 	- _query = !cgtest-ticket-v1
 	- _type = !cgtest-ticket-v1
@@ -1059,7 +1059,7 @@ function test_testpeer_tracker_creates_a_ticket { # @test
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize 'cgtest://fixture/tracker -> !cgtest-ticket-v1 _terminal=no' milestone=`
-	- _base = @blake2b256-58nu7guw9kt8xvu52zv5kakmqjvzd36vpght2m727jq4xj27upasgcrkua
+	- _base = @blake2b256-fy7q63adxnxu8mz9zyf4naz3ynre9tv24jl6x59kjfmxw20qdldq6s8tht
 	- _anchor = cgtest://fixture/tracker/
 	- _query = !cgtest-ticket-v1 _terminal=no
 	- _type = !cgtest-ticket-v1
@@ -1083,7 +1083,7 @@ function test_testpeer_tracker_creates_a_ticket { # @test
   cat >"$edited" <<-'EOM'
 	---
 	% generated: `cg organize 'cgtest://fixture/tracker -> !cgtest-ticket-v1 _terminal=no' milestone=`
-	- _base = @blake2b256-58nu7guw9kt8xvu52zv5kakmqjvzd36vpght2m727jq4xj27upasgcrkua
+	- _base = @blake2b256-fy7q63adxnxu8mz9zyf4naz3ynre9tv24jl6x59kjfmxw20qdldq6s8tht
 	- _anchor = cgtest://fixture/tracker/
 	- _query = !cgtest-ticket-v1 _terminal=no
 	- _type = !cgtest-ticket-v1
@@ -1126,7 +1126,7 @@ EOF
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize 'cgtest://fixture/tracker -> !cgtest-ticket-v1 _terminal=no' milestone=`
-	- _base = @blake2b256-09kp0e3mkscvp2hlejjqyt0c2n4upcv3yl3z4mxqtn4kpxg0n7kq23hry4
+	- _base = @blake2b256-s6wvr8qldfkftcv6jrnzyfwfe2sdaqq3lkfyjqqv3dc4d4las0wqhkspej
 	- _anchor = cgtest://fixture/tracker/
 	- _query = !cgtest-ticket-v1 _terminal=no
 	- _type = !cgtest-ticket-v1

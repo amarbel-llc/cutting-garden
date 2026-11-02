@@ -61,7 +61,7 @@ status_document() {
   cat <<-'EOM'
 	---
 	% generated: `cg organize 'caldav:http://127.0.0.1:24116/dav/fields/ -> _terminal=no' status=`
-	- _base = @blake2b256-tzu206yu6ur7ykns6tps9nzuf79h7nu3l2h06vpuucmmmzthk33qlaxwes
+	- _base = @blake2b256-d7pv8nxdsx6qmk9ajle0seh2qrdk63g96rapnn8uusgydtzatdes8zxzaw
 	- _anchor = caldav:http://127.0.0.1:24116/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -108,7 +108,7 @@ function organize_create_merges_tag_appearances { # @test
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize 'caldav:http://127.0.0.1:24116/dav/fields/ -> _terminal=no' '(tags)'`
-	- _base = @blake2b256-chnfjxurvz063qz3vuhamvgfl5sy778wgfzs0w6fxyz2wyh5tlpqhje50c
+	- _base = @blake2b256-v00sh8pg6ff4uwrdq343mfrhghncpyusfz2kggr9nflmzz6f74xq6wtsn8
 	- _anchor = caldav:http://127.0.0.1:24116/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -134,7 +134,7 @@ function organize_create_merges_tag_appearances { # @test
   cat >"$edited" <<-'EOM'
 	---
 	% generated: `cg organize 'caldav:http://127.0.0.1:24116/dav/fields/ -> _terminal=no' '(tags)'`
-	- _base = @blake2b256-chnfjxurvz063qz3vuhamvgfl5sy778wgfzs0w6fxyz2wyh5tlpqhje50c
+	- _base = @blake2b256-v00sh8pg6ff4uwrdq343mfrhghncpyusfz2kggr9nflmzz6f74xq6wtsn8
 	- _anchor = caldav:http://127.0.0.1:24116/dav/fields/
 	- _query = _terminal=no
 	- _type = !caldav-object-vtodo-v1
@@ -258,13 +258,13 @@ EOF
   run_cg organize -apply "$edited" -commit
   assert_success
   assert_vector - <<'EOF'
-organize: +call already created → cgk1-d5f6b22088bb4bccae61f50890e06cdf.ics (skipped)
+organize: +call already created → cgk1-2ca09a419f10de40699890c84e2ff44b.ics (skipped)
 organize: no changes to apply
 EOF
   run_cg list -format json -query 'status=in-process' "$CAL"
   assert_success
   assert_vector - <<'EOF'
-{"uri":"caldav:http://127.0.0.1:24116/dav/fields/cgk1-d5f6b22088bb4bccae61f50890e06cdf.ics","name":"cgk1-d5f6b22088bb4bccae61f50890e06cdf.ics","type":"caldav-object-vtodo-v1"}
+{"uri":"caldav:http://127.0.0.1:24116/dav/fields/cgk1-2ca09a419f10de40699890c84e2ff44b.ics","name":"cgk1-2ca09a419f10de40699890c84e2ff44b.ics","type":"caldav-object-vtodo-v1"}
 EOF
 
   run_cg organize -group-by status= "$CAL"
