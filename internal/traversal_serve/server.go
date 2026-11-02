@@ -914,7 +914,21 @@ func (s *server) handleNodePatch(
 		}
 	}
 
-	applied, err := s.mutator.PatchNode(ctx, uri, bytes.NewReader(body))
+	var (
+		applied []string
+		err     error
+		newURI  string
+	)
+	if detailer, ok := s.mutator.(cutting_garden_plugins.NodePatcherDetail); ok {
+		var detail cutting_garden_plugins.PatchDetail
+		detail, err = detailer.PatchNodeDetail(ctx, uri, bytes.NewReader(body))
+		applied = detail.Applied
+		if detail.NewURI != nil {
+			newURI = detail.NewURI.String()
+		}
+	} else {
+		applied, err = s.mutator.PatchNode(ctx, uri, bytes.NewReader(body))
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -924,10 +938,10 @@ func (s *server) handleNodePatch(
 	// far side would read as the authoritative "nothing applied"
 	// (cutting-garden#182).
 	if applied == nil {
-		return NodePatchResult{}, nil
+		return NodePatchResult{URI: newURI}, nil
 	}
 
-	return NodePatchResult{Applied: &applied}, nil
+	return NodePatchResult{Applied: &applied, URI: newURI}, nil
 }
 
 func (s *server) handleNodeDelete(
@@ -943,11 +957,22 @@ func (s *server) handleNodeDelete(
 		return nil, rpcErr
 	}
 
+	if detailer, ok := s.mutator.(cutting_garden_plugins.NodeDeleterDetail); ok {
+		detail, err := detailer.DeleteNodeDetail(ctx, uri, nil)
+		if err != nil {
+			if detail.NotFound {
+				return nil, &RPCError{Code: CodeNotFound, Message: err.Error()}
+			}
+			return nil, err
+		}
+		return NodeDeleteResult{Name: detail.Name}, nil
+	}
+
 	if err := s.mutator.DeleteNode(ctx, uri); err != nil {
 		return nil, err
 	}
 
-	return struct{}{}, nil
+	return NodeDeleteResult{}, nil
 }
 
 // handleNodeBulkMutate serves node.bulk_mutate (RFC 0017). It decodes the

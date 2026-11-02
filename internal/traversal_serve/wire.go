@@ -91,6 +91,11 @@ const (
 	// that cannot honor it for this request — the reject-never-downgrade
 	// rule. Distinct from the sibling RFC 0016's -32001.
 	CodeAtomicUnsupported = -32003
+	// CodeNotFound is node.delete's own code (RFC 0013 §Mutation): the node
+	// to delete does not exist. An error, so a host that predates it reads
+	// a failed delete, which is what it is; a host that knows it reports the
+	// per-op status not_found.
+	CodeNotFound = -32004
 )
 
 // Capability tokens (RFC 0013 §Method set), advertised in
@@ -466,12 +471,22 @@ type NodePatchParams struct {
 // very false signal #182 exists to remove.
 type NodePatchResult struct {
 	Applied *[]string `json:"applied,omitempty"`
+	// URI is the node's address after the patch, present only when the
+	// plugin reports one (a headline renamed or moved no longer answers to
+	// the URI the call used). Absent means "no new address reported".
+	URI string `json:"uri,omitempty"`
 }
 
-// NodeDeleteParams is the node.delete request payload. The result is
-// empty.
+// NodeDeleteParams is the node.delete request payload.
 type NodeDeleteParams struct {
 	URI string `json:"uri"`
+}
+
+// NodeDeleteResult is the node.delete result: empty, or the deleted node's
+// name when the plugin knows it. A node that did not exist is not a result
+// but an error with CodeNotFound.
+type NodeDeleteResult struct {
+	Name string `json:"name,omitempty"`
 }
 
 // BulkOpView is the wire form of one BulkOp (RFC 0017 §Wire binding).
@@ -531,7 +546,21 @@ type BulkMutateResult struct {
 	PatchedNothing []string          `json:"patched_nothing,omitempty"`
 	Failed         []BulkFailureView `json:"failed,omitempty"`
 	Created        []BulkCreatedView `json:"created,omitempty"`
-	Atomic         bool              `json:"atomic,omitempty"`
+	// Outcomes is the per-op detail, one entry per targeted op in request
+	// order; omitted when the plugin reports none.
+	Outcomes []BulkOutcomeView `json:"outcomes,omitempty"`
+	Atomic   bool              `json:"atomic,omitempty"`
+}
+
+// BulkOutcomeView is the wire form of one BulkOutcome.
+type BulkOutcomeView struct {
+	URI    string   `json:"uri,omitempty"`
+	Ref    string   `json:"ref,omitempty"`
+	Status string   `json:"status"`
+	Fields []string `json:"fields,omitempty"`
+	NewURI string   `json:"new_uri,omitempty"`
+	Name   string   `json:"name,omitempty"`
+	Err    string   `json:"err,omitempty"`
 }
 
 // bulkOpViewFrom projects a domain BulkOp onto the wire. A nil URI (a
@@ -704,6 +733,19 @@ func BulkMutateResultFrom(
 		})
 	}
 
+	for _, o := range result.Outcomes {
+		ov := BulkOutcomeView{
+			Ref: o.Ref, Status: string(o.Status), Fields: o.Fields, Name: o.Name, Err: o.Err,
+		}
+		if o.URI != nil {
+			ov.URI = o.URI.String()
+		}
+		if o.NewURI != nil {
+			ov.NewURI = o.NewURI.String()
+		}
+		view.Outcomes = append(view.Outcomes, ov)
+	}
+
 	return view
 }
 
@@ -753,6 +795,32 @@ func (r BulkMutateResult) ToBulkResult() (
 		result.Created = append(result.Created, cutting_garden_plugins.BulkCreated{
 			TempID: view.TempID, URI: uri,
 		})
+	}
+
+	for i, view := range r.Outcomes {
+		o := cutting_garden_plugins.BulkOutcome{
+			Ref: view.Ref, Status: cutting_garden_plugins.BulkOutcomeStatus(view.Status),
+			Fields: view.Fields, Name: view.Name, Err: view.Err,
+		}
+		for _, field := range []struct {
+			name, raw string
+			dst       **url.URL
+		}{
+			{"uri", view.URI, &o.URI},
+			{"new_uri", view.NewURI, &o.NewURI},
+		} {
+			if field.raw == "" {
+				continue
+			}
+			uri, err := url.Parse(field.raw)
+			if err != nil {
+				return result, errors.Wrapf(
+					err, "bulk_mutate: outcomes[%d] %s %q", i, field.name, field.raw,
+				)
+			}
+			*field.dst = uri
+		}
+		result.Outcomes = append(result.Outcomes, o)
 	}
 
 	return result, nil

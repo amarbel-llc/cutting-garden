@@ -1120,14 +1120,23 @@ func (w *WirePlugin) PutNode(
 func (w *WirePlugin) PatchNode(
 	ctx context.Context, uri *url.URL, body io.Reader,
 ) ([]string, error) {
+	detail, err := w.PatchNodeDetail(ctx, uri, body)
+	return detail.Applied, err
+}
+
+// PatchNodeDetail is PatchNode that also carries the node's address after the
+// patch when the peer reports one (the result's uri member).
+func (w *WirePlugin) PatchNodeDetail(
+	ctx context.Context, uri *url.URL, body io.Reader,
+) (cutting_garden_plugins.PatchDetail, error) {
 	sess, err := w.mutationSession()
 	if err != nil {
-		return nil, err
+		return cutting_garden_plugins.PatchDetail{}, err
 	}
 
 	encoded, err := encodeBody(body)
 	if err != nil {
-		return nil, errors.Wrapf(
+		return cutting_garden_plugins.PatchDetail{}, errors.Wrapf(
 			err, "wire plugin %q: read patch body", w.spec.Name,
 		)
 	}
@@ -1138,7 +1147,18 @@ func (w *WirePlugin) PatchNode(
 		NodePatchParams{URI: uri.String(), BodyBase64: encoded},
 		&result,
 	); err != nil {
-		return nil, err
+		return cutting_garden_plugins.PatchDetail{}, err
+	}
+
+	var detail cutting_garden_plugins.PatchDetail
+	if result.URI != "" {
+		newURI, err := url.Parse(result.URI)
+		if err != nil {
+			return detail, errors.Wrapf(
+				err, "wire plugin %q: node.patch result uri %q", w.spec.Name, result.URI,
+			)
+		}
+		detail.NewURI = newURI
 	}
 
 	// A nil pointer covers BOTH shapes that mean "does not report": the key
@@ -1146,24 +1166,51 @@ func (w *WirePlugin) PatchNode(
 	// nil pointer, not a pointer-to-nil-slice — pinned by
 	// TestNodePatchResultDecodeStates). Anything else is a real list the
 	// peer sent, empty or not, and is returned as-is.
-	if result.Applied == nil {
-		return nil, nil
+	if result.Applied != nil {
+		detail.Applied = *result.Applied
 	}
 
-	return *result.Applied, nil
+	return detail, nil
 }
 
 // DeleteNode issues node.delete.
 func (w *WirePlugin) DeleteNode(ctx context.Context, uri *url.URL) error {
-	sess, err := w.mutationSession()
-	if err != nil {
-		return err
+	_, err := w.DeleteNodeDetail(ctx, uri, nil)
+	return err
+}
+
+// DeleteNodeDetail is DeleteNode that also carries the deleted node's name
+// when the peer reports it, and tells a node that was not there (the peer's
+// CodeNotFound answer) from any other failure. node.delete carries no body, so
+// a delete op that has one is refused here, as it is for a plugin whose delete
+// takes none.
+func (w *WirePlugin) DeleteNodeDetail(
+	ctx context.Context, uri *url.URL, body io.Reader,
+) (cutting_garden_plugins.DeleteDetail, error) {
+	if body != nil {
+		if raw, _ := io.ReadAll(body); len(raw) > 0 {
+			return cutting_garden_plugins.DeleteDetail{}, errors.BadRequestf(
+				"this source's delete takes no body")
+		}
 	}
 
-	return w.call(
+	sess, err := w.mutationSession()
+	if err != nil {
+		return cutting_garden_plugins.DeleteDetail{}, err
+	}
+
+	var result NodeDeleteResult
+	if err := w.call(
 		ctx, sess, MethodNodeDelete,
-		NodeDeleteParams{URI: uri.String()}, nil,
-	)
+		NodeDeleteParams{URI: uri.String()}, &result,
+	); err != nil {
+		if code, ok := CodeOf(err); ok && code == CodeNotFound {
+			return cutting_garden_plugins.DeleteDetail{NotFound: true}, err
+		}
+		return cutting_garden_plugins.DeleteDetail{}, err
+	}
+
+	return cutting_garden_plugins.DeleteDetail{Name: result.Name}, nil
 }
 
 // BulkMutate issues node.bulk_mutate (RFC 0017), gated on CapBulkMutate —

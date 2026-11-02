@@ -238,7 +238,10 @@ rulings):
   naming a temp id whose create failed is never attempted, and it is a failed
   outcome with that reason. An atomic batch has no partial result (it
   commits whole or errors, RFC 0017). The wire (RFC 0013 `node.patch`,
-  `node.delete`, `node.bulk_mutate`) carries none of this yet.
+  `node.delete`, `node.bulk_mutate`) carries it as additive optional members
+  (RFC 0013 §Mutation, RFC 0017 `outcomes`; a missing delete target is the
+  error code `-32004`), so a wire plugin is indistinguishable from a linked
+  one.
 
 Round-trip tested against Orgzly on 2026-10-18 in the dedicated notebook
 `zz-tests-cutting_garden.org` (and `_mirror.org` for the cross-file move):

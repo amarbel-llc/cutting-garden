@@ -30,6 +30,9 @@ type BulkMutateResult = internal.BulkMutateResult
 // advertising CapBulkTempIDs.
 type BulkOpView = internal.BulkOpView
 
+// BulkOutcomeView is the wire form of one BulkOutcome.
+type BulkOutcomeView = internal.BulkOutcomeView
+
 // BulkSweepView is the wire form of BulkSweep: a Root, an RFC 0012 §6
 // filter, and one op template.
 type BulkSweepView = internal.BulkSweepView
@@ -157,9 +160,13 @@ type NodeCreateChildResult = internal.NodeCreateChildResult
 // empty.
 type NodeCreateParams = internal.NodeCreateParams
 
-// NodeDeleteParams is the node.delete request payload. The result is
-// empty.
+// NodeDeleteParams is the node.delete request payload.
 type NodeDeleteParams = internal.NodeDeleteParams
+
+// NodeDeleteResult is the node.delete result: empty, or the deleted node's
+// name when the plugin knows it. A node that did not exist is not a result
+// but an error with CodeNotFound.
+type NodeDeleteResult = internal.NodeDeleteResult
 
 // NodePatchParams is the node.patch request payload: a partial-field
 // update of an existing node (NodeMutator.PatchNode — only the fields
@@ -657,6 +664,12 @@ const (
 	CodeInvalidParams     = internal.CodeInvalidParams
 	CodeMethodNotFound    = internal.CodeMethodNotFound
 )
+
+// CodeNotFound is node.delete's own code (RFC 0013 §Mutation): the node
+// to delete does not exist. An error, so a host that predates it reads
+// a failed delete, which is what it is; a host that knows it reports the
+// per-op status not_found.
+const CodeNotFound = internal.CodeNotFound
 
 // CodeUnsupportedMode is nodes.search's own code (RFC 0016 §6): the
 // requested match mode is one the plugin does not accelerate — the

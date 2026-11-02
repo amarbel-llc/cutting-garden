@@ -1136,6 +1136,28 @@ func (p *TreePlugin) DeleteNode(_ context.Context, uri *url.URL) error {
 	return p.persistLocked()
 }
 
+// DeleteNodeDetail is DeleteNode that also names the node it removed and
+// tells a node that was not there (RFC 0013 §Mutation: node.delete's
+// CodeNotFound), so the per-op outcome detail is exercised end to end.
+func (p *TreePlugin) DeleteNodeDetail(
+	ctx context.Context, uri *url.URL, _ io.Reader,
+) (cutting_garden_plugins.DeleteDetail, error) {
+	p.mu.Lock()
+	node, found := p.nodes[uri.String()]
+	name := ""
+	if found {
+		name = node.name
+	}
+	p.mu.Unlock()
+
+	if !found {
+		return cutting_garden_plugins.DeleteDetail{NotFound: true},
+			errors.BadRequestf("delete %s: node does not exist", uri.String())
+	}
+
+	return cutting_garden_plugins.DeleteDetail{Name: name}, p.DeleteNode(ctx, uri)
+}
+
 // deleteSubtree removes node and every descendant. Caller holds p.mu.
 func (p *TreePlugin) deleteSubtree(key string, node *memNode) {
 	for _, childURI := range node.children {

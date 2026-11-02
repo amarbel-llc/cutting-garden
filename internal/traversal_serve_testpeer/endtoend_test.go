@@ -483,8 +483,20 @@ func TestWireIndistinguishableFromLinked(t *testing.T) {
 		t.Errorf("raw after put = %q, want replaced", content.Raw)
 	}
 
-	if err := wire.DeleteNode(ctx, delta); err != nil {
-		t.Fatalf("wire DeleteNode: %v", err)
+	// node.delete names what it removed (the per-op outcome detail), and a
+	// second delete of it answers CodeNotFound — over the real socket.
+	deleted, err := wire.DeleteNodeDetail(ctx, delta, nil)
+	if err != nil {
+		t.Fatalf("wire DeleteNodeDetail: %v", err)
+	}
+	if deleted.Name != "delta" || deleted.NotFound {
+		t.Errorf("wire delete detail = %+v, want the node's name delta", deleted)
+	}
+	again, err := wire.DeleteNodeDetail(ctx, delta, nil)
+	if code, ok := traversal_serve.CodeOf(err); !ok ||
+		code != traversal_serve.CodeNotFound || !again.NotFound {
+		t.Errorf("second wire delete: detail %+v, CodeOf = %d, %t, err %v; want CodeNotFound",
+			again, code, ok, err)
 	}
 	children, err = wire.ListRoots(ctx, box)
 	if err != nil {

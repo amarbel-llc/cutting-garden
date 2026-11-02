@@ -476,6 +476,22 @@ encoding; no special "absent means partial" convention here, unlike
 `facets.counts`'s `complete` field) and `atomic` MUST be `true` only on
 an atomic-mode success.
 
+**Per-op outcomes (amendment, cutting-garden#320, #359, #362).** The
+result MAY carry `outcomes`: one entry per targeted op in request order,
+`{ "uri"?, "ref"?, "status", "fields"?, "new_uri"?, "name"?, "err"? }`,
+beside the four lists, which keep their meaning and the invariant
+(`applied` + `patched_nothing` + `failed` is the targeted set;
+`outcomes` has one entry per op). `status` is `applied`,
+`patched_nothing`, `failed`, `deleted` or `not_found`, and is the
+canonical reading for new callers: a `deleted` node is also in `applied`,
+a `not_found` one also in `failed`. `fields` are the patch keys that
+took, `new_uri` the node's address after the op when it differs, `name`
+a deleted node's name. The member is omitted-as-empty and additive: a
+plugin that reports none leaves the host with the four lists; an op never
+attempted (a temp id whose create failed) is `failed` with its reason; an
+atomic failure is still an error with no result, so `outcomes` only ever
+describes a success there.
+
 **New error code**, extending RFC 0013's §Errors table (this RFC's own
 allocation; it does not renumber or reuse RFC 0013's existing `-32000` /
 `-32002`, nor `-32001`, which the sibling RFC 0016 §6 allocates for
@@ -670,6 +686,7 @@ minimum:
 | Atomic-unsupported rejection | a plugin advertising only `bulk-mutate` (no `bulk-atomic`) rejects an `atomicity: "atomic"` request outright — never silently applies it as best-effort |
 | Per-op semantics parity | each `BulkOpKind` obeys its `NodeMutator` counterpart's exact contract (strict create, full-replace put, patch per the post-#182 contract — unrecognized fields tolerated but application reported per node via `AppliedNodes`/`PatchedNothing`, recognized-key-unusable-value a per-op error, empty body rejected) |
 | Wire round-trip (RFC 0013) | a wire-plugin's `node.bulk_mutate` response, adapted through the host, is indistinguishable from the same plugin linked in-process — RFC 0013's existing conformance bar (§Host integration), extended to this method |
+| Per-op outcomes | `outcomes` (when present) has one entry per targeted op in request order with the status vocabulary above; a `deleted` node is also in `applied`, a `not_found` one also in `failed`; the member is optional and a result without it is valid |
 | Non-retry | a host that loses the transport mid-`node.bulk_mutate` does not automatically re-send the request |
 
 caldav (the `NodeMutator` reference implementer, FDR 0020, with an

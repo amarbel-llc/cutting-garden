@@ -598,7 +598,21 @@ would in process:
   diverged on them (cutting-garden#182, #185): one errored on the
   unusable value while another dropped it and reported `[]`, and both
   believed they were conformant, because the text did not say.
-- `node.delete` params `{ "uri": string }` → result `{}`.
+- `node.delete` params `{ "uri": string }` → result `{ "name": string? }`.
+  `name`, when present, is the deleted node's display name (amendment,
+  cutting-garden#362); omitted means the plugin does not report it. A
+  `uri` that names no node is an error with code `-32004` (`not-found`,
+  below), never a success-shaped result: a host that predates the code
+  reads a failed delete, which is what it is.
+
+  **Per-op detail on `node.patch` and `node.delete` (amendment,
+  cutting-garden#320, #359, #362).** `node.patch`'s result also MAY carry
+  `uri`: the node's address after the patch, present only when it differs
+  from the `uri` the call used (an org headline renamed or moved no longer
+  answers to its old `?h=` address). Omitted means the plugin reports no
+  new address. Both members are additive and optional, tri-state like
+  `applied`: a host MUST NOT read an omission as "unchanged" or "unnamed"
+  beyond what it says, and an older host simply ignores them.
 
 Separately gated on `container-create` (an additive capability token
 per §Compatibility): **`node.create_child`** — server-assigned-identity
@@ -1109,6 +1123,7 @@ internal). This RFC defines:
 |----------|------------------------------------------------------|
 | `-32000` | `unsupported-version` (`initialize` only)            |
 | `-32002` | `invalid-config` (`initialize` only)                 |
+| `-32004` | `not-found` (`node.delete` only): the node to delete does not exist (an error, so an older host reads a failed delete; a newer one reports the per-op status `not_found`) |
 
 Domain outcomes that the Go contracts express as `ok == false` are
 RESULTS, never JSON-RPC errors — the distinction is load-bearing (it
@@ -1357,6 +1372,7 @@ becomes machine-checkable rather than rediscovered.
 | §nodes.list / roots.list / leaf.read round trips | transport go tests | fixed-tree equality |
 | §facets: counts/version/labels parity + `ok:false` fallback | transport go tests | against RFC 0012 fixtures |
 | §Mutation: `node.patch` `applied` tri-state (present set / present-empty / omitted) | conformance driver | manifest recognized / unrecognized-only / wrong-typed patch bodies |
+| §Mutation: `node.patch` `uri` and `node.delete` `name` are optional and tri-state; a missing delete target is `-32004`, never a success result | go transport tests | a plugin with and without the per-op detail; delete of an absent node |
 | §Errors: caller-fault `-32602` vs unadvertised-method `-32601` | conformance driver | malformed URI param; a name no revision defines |
 | §Facets: `by_container` RAW invariants (count>0, sorted, capped) + descend-target reachability (RFC 0012 §13) | conformance driver | pre-normalization; re-issue the filter per entry |
 | Driver self-test: a deliberately-wrong manifest MUST fail | conformance driver | the "a passing driver ratifies nothing" acceptance |
