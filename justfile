@@ -1729,3 +1729,58 @@ debug-impure-linters:
       "$linter"
       echo "--- exit=$?"
     done < <(sed -n 's/^command = "\(.*\)"$/\1/p' "$config")
+
+# Run `cg ARGS` interactively under a poshterity(1) recording, so a UX problem
+# the operator sees at the terminal (an organize editor round-trip, a refusal,
+# a confusing preview) lands in .tmp/recordings/NAME.castx that an agent can
+# then replay screen by screen with debug-view-recording — the deterministic
+# stand-in for "describe what you saw". The session is live: stdin, the editor
+# and the terminal size all pass through; the recording ends when cg exits.
+# Uses the INSTALLED profile `cg` (the operator's real config, plugins and
+# matched madder, like debug-caldav-shell) unless $CG_BIN names another binary
+# (e.g. CG_BIN=.tmp/cutting-garden after debug-build-go). Usage:
+#   just debug-record-cg org-create organize -group-by '(tags)' org:notes/
+#
+# record an interactive `cg` session into .tmp/recordings/NAME.castx
+[group('debug')]
+[positional-arguments]
+debug-record-cg NAME *ARGS:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # ARGS reach cg as "$@" (positional-arguments), so a quoted argument like
+    # '(tags)' survives instead of being re-split by the shell.
+    shift
+    export PATH="$HOME/.nix-profile/bin:$PATH"
+    cd "{{ justfile_directory() }}"
+    mkdir -p .tmp/recordings
+    out=".tmp/recordings/{{ NAME }}.castx"
+    if [ -e "$out" ]; then
+      echo "debug-record-cg: $out exists; pick another NAME or remove it" >&2
+      exit 64
+    fi
+    echo "# recording to $out — the session ends when cg exits" >&2
+    # A refusal (exit 64) is often the very thing being recorded, so cg's exit
+    # status is reported, not inherited: the recording is the deliverable.
+    status=0
+    poshterity record --out "$out" -- "${CG_BIN:-cg}" "$@" || status=$?
+    echo "# cg exited $status; recorded $out" >&2
+    echo "# view with: just debug-view-recording {{ NAME }}" >&2
+
+# Replay a debug-record-cg recording through poshterity's emulator and print a
+# screen: SUB is `replay` (final screen; `--before-alt-exit` for a full-screen
+# editor's last screen), `step` (`--by frame --n N`, intermediate screens) or
+# `seek` (`--contains TEXT`, the first screen showing TEXT). Extra ARGS go to
+# the poshterity subcommand. The agent's half of the record/view dev-loop. Usage:
+#   just debug-view-recording org-create
+#   just debug-view-recording org-create seek --contains 'no changes'
+#
+# print a screen from a .tmp/recordings/NAME.castx recording
+[group('debug')]
+[positional-arguments]
+debug-view-recording NAME SUB='replay' *ARGS:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # ARGS reach poshterity as "$@" (positional-arguments), so a quoted
+    # --contains 'two words' survives instead of being re-split by the shell.
+    shift 2
+    poshterity "{{ SUB }}" "{{ justfile_directory() }}/.tmp/recordings/{{ NAME }}.castx" "$@"
