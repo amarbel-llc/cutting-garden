@@ -90,6 +90,16 @@ let
           zone. Other plugins ignore it.
         '';
       };
+      tagFiles = mkOption {
+        type = types.nullOr (types.listOf types.str);
+        default = null;
+        example = [ "_tags.org" ];
+        description = ''
+          org only: the files holding tag vocabularies (TOML `tag_files`);
+          their headline names carry the hyphen hierarchy that `organize`'s
+          `(tree)` grouping renders. Other plugins ignore it.
+        '';
+      };
     };
   };
 
@@ -338,6 +348,7 @@ in
           session_url = a.sessionUrl or null;
           todo_keywords = a.todoKeywords or null;
           timezone = a.timezone or null;
+          tag_files = a.tagFiles or null;
         };
 
       renderStanza =

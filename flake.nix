@@ -1343,6 +1343,7 @@
                   passwordKey = "cutting-garden/files";
                   todoKeywords = "TODO NEXT | DONE CANCELLED";
                   timezone = "America/New_York";
+                  tagFiles = [ "_tags.org" ];
                 }
               ];
               sampleConfig = shared.renderConfigToml {
@@ -1392,6 +1393,7 @@
               grep -q 'password_key = "cutting-garden/files"' ${sampleConfig}
               grep -q 'todo_keywords = "TODO NEXT | DONE CANCELLED"' ${sampleConfig}
               grep -q 'timezone = "America/New_York"' ${sampleConfig}
+              grep -q 'tag_files = \[ *"_tags.org" *\]' ${sampleConfig}
 
               # cutting-garden#304: tags.interpreter renders a top-level [tags]
               # table (RFC 0019 §4 layer 2), not a bogus [[plugins]] stanza.
