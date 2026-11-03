@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/url"
 	"slices"
+	"strings"
 	"time"
 
 	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
@@ -26,6 +27,7 @@ const (
 	fieldIDSynthetic   = "id_synthetic"
 	fieldID            = "id"
 	fieldModified      = "modified"
+	fieldName          = "name"
 
 	// valueNone is the known-empty value for a headline without a keyword,
 	// priority, or date (RFC 0012 §3).
@@ -98,6 +100,11 @@ func headlineNode(pf *parsedFile, n *hnode, now time.Time) cutting_garden_plugin
 	// duplicate's shadowed :ID: would point at the original.
 	id := n.uri.Query().Get("id")
 	fields[fieldIDSynthetic] = id == ""
+	// Only a tag-vocabulary file's headlines encode a name (#378); a task
+	// file's titles are prose, so they carry none.
+	if pf.tagFile {
+		fields[fieldName] = hyphenName(h.OutlinePath)
+	}
 	if id != "" {
 		// After a quote, an agent reads this to learn the durable ?id= URI.
 		fields[fieldID] = id
@@ -129,6 +136,26 @@ func headlineNode(pf *parsedFile, n *hnode, now time.Time) cutting_garden_plugin
 		Facets: facets,
 		Fields: fields,
 	}
+}
+
+// hyphenName is a tag-vocabulary headline's full hyphen name from its outline
+// path (titles, top-level ancestor first): the titles from its NEAREST BARE
+// ancestor (a title not starting with `-`) down to it, concatenated — the level-1
+// headline is the family and each child's title continues the name
+// (`priority` + `-1_should` = `priority-1_should`; #378, as fastmail joins a
+// mailbox tag). A bare title at any depth starts a new name. With no bare title
+// on the path every title continues, so the whole path joins. Plain
+// concatenation, so the join inverts: a node's title is its name minus its
+// parent's.
+func hyphenName(outline []string) string {
+	start := 0
+	for i := len(outline) - 1; i >= 0; i-- {
+		if !strings.HasPrefix(outline[i], "-") {
+			start = i
+			break
+		}
+	}
+	return strings.Join(outline[start:], "")
 }
 
 func nonNil(s []string) []string {

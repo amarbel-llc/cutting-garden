@@ -134,6 +134,9 @@ func (Plugin) DescribeListingFields() []cutting_garden_plugins.NodeTypeListingFi
 			field(fieldLevel, "Level"),
 			field(fieldID, "ID"),
 			field(fieldIDSynthetic, "Synthetic id"),
+			// The full hyphen name, present only on a tag-vocabulary file's
+			// headlines (the account's tag_files, #378).
+			{Key: fieldName, Label: "Hyphen name", Name: true},
 		}},
 	}
 }

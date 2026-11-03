@@ -246,6 +246,15 @@ func decodeAccountParsed(doc *document.Document) (*AccountDocument, error) {
 			_vTimezone.MarkConsumedString()
 		}
 	}
+	if _vTagFiles, _ok := model.Field("tag_files"); _ok && _vTagFiles.Kind == cst.VLeaf {
+		if _x, _xok := cst.ExtractStringSlice(_vTagFiles.Leaf); _xok {
+			d.data.TagFiles = _x
+			if d.data.TagFiles == nil {
+				d.data.TagFiles = []string{}
+			}
+			_vTagFiles.MarkConsumed()
+		}
+	}
 	return d, nil
 }
 
@@ -312,6 +321,13 @@ func (d *AccountDocument) Encode() ([]byte, error) {
 		}
 	} else {
 		cst.DeleteValue(d.cstDoc.Root(), "timezone")
+	}
+	{
+		if len(d.data.TagFiles) > 0 || cst.HasValue(d.cstDoc.Root(), "tag_files") {
+			if err := cst.SetAny(d.cstDoc.Root(), "tag_files", d.data.TagFiles); err != nil {
+				return nil, fmt.Errorf("%w", err)
+			}
+		}
 	}
 	return d.cstDoc.Bytes(), nil
 }
@@ -394,6 +410,15 @@ func DecodeAccountInto(data *Account, sub *cst.Value) error {
 			_vTimezone.MarkConsumedString()
 		}
 	}
+	if _vTagFiles, _ok := sub.Field("tag_files"); _ok && _vTagFiles.Kind == cst.VLeaf {
+		if _x, _xok := cst.ExtractStringSlice(_vTagFiles.Leaf); _xok {
+			data.TagFiles = _x
+			if data.TagFiles == nil {
+				data.TagFiles = []string{}
+			}
+			_vTagFiles.MarkConsumed()
+		}
+	}
 	return nil
 }
 
@@ -456,6 +481,13 @@ func EncodeAccountFrom(data *Account, doc *document.Document, container *cst.Nod
 		}
 	} else {
 		cst.DeleteValue(container, "timezone")
+	}
+	{
+		if len(data.TagFiles) > 0 || cst.HasValue(container, "tag_files") {
+			if err := cst.SetAny(container, "tag_files", data.TagFiles); err != nil {
+				return fmt.Errorf("%w", err)
+			}
+		}
 	}
 	return nil
 }
@@ -571,6 +603,15 @@ func decodeAccountsSectionParsed(doc *document.Document) (*AccountsSectionDocume
 					_vAccountsTimezone.MarkConsumedString()
 				}
 			}
+			if _vAccountsTagFiles, _ok := _eAccounts.Field("tag_files"); _ok && _vAccountsTagFiles.Kind == cst.VLeaf {
+				if _x, _xok := cst.ExtractStringSlice(_vAccountsTagFiles.Leaf); _xok {
+					d.data.Accounts[i].TagFiles = _x
+					if d.data.Accounts[i].TagFiles == nil {
+						d.data.Accounts[i].TagFiles = []string{}
+					}
+					_vAccountsTagFiles.MarkConsumed()
+				}
+			}
 		}
 	}
 	if _eaAccounts, _eaok := model.Field("accounts"); _eaok && _eaAccounts.IsEmptyArray() {
@@ -651,6 +692,13 @@ func (d *AccountsSectionDocument) Encode() ([]byte, error) {
 				}
 			} else {
 				cst.DeleteValue(container, "timezone")
+			}
+			{
+				if len(d.data.Accounts[i].TagFiles) > 0 || cst.HasValue(container, "tag_files") {
+					if err := cst.SetAny(container, "tag_files", d.data.Accounts[i].TagFiles); err != nil {
+						return nil, fmt.Errorf("%w", err)
+					}
+				}
 			}
 		}
 	}
@@ -741,6 +789,15 @@ func DecodeAccountsSectionInto(data *AccountsSection, sub *cst.Value) error {
 					_vAccountsTimezone.MarkConsumedString()
 				}
 			}
+			if _vAccountsTagFiles, _ok := _eAccounts.Field("tag_files"); _ok && _vAccountsTagFiles.Kind == cst.VLeaf {
+				if _x, _xok := cst.ExtractStringSlice(_vAccountsTagFiles.Leaf); _xok {
+					data.Accounts[i].TagFiles = _x
+					if data.Accounts[i].TagFiles == nil {
+						data.Accounts[i].TagFiles = []string{}
+					}
+					_vAccountsTagFiles.MarkConsumed()
+				}
+			}
 		}
 	}
 	if _eaAccounts, _eaok := sub.Field("accounts"); _eaok && _eaAccounts.IsEmptyArray() {
@@ -819,6 +876,13 @@ func EncodeAccountsSectionFrom(data *AccountsSection, doc *document.Document, co
 				}
 			} else {
 				cst.DeleteValue(container, "timezone")
+			}
+			{
+				if len(data.Accounts[i].TagFiles) > 0 || cst.HasValue(container, "tag_files") {
+					if err := cst.SetAny(container, "tag_files", data.Accounts[i].TagFiles); err != nil {
+						return fmt.Errorf("%w", err)
+					}
+				}
 			}
 		}
 	}

@@ -1004,6 +1004,10 @@ var FoldFacets = internal.FoldFacets
 // InCallScope reports whether ctx is inside a host call scope.
 var InCallScope = internal.InCallScope
 
+// ListingNameKey returns the key of the Name field declared for the node type
+// tag, and whether the type declares one.
+var ListingNameKey = internal.ListingNameKey
+
 // LookupTagInterpreter resolves a registered interpreter by name (RFC 0019 §3).
 // ok is false for an unregistered name; a consumer MUST NOT fall back to a
 // default on a miss (that decision belongs to selection, RFC 0019 §4) — a miss
@@ -1307,6 +1311,10 @@ var ValidateFacetWrites = internal.ValidateFacetWrites
 // date-kind predicate to exact matching). A lister without FacetDescriber has
 // no schema; the filter passes through unchecked, exactly as Validate(nil).
 var ValidateFilterFor = internal.ValidateFilterFor
+
+// ValidateListingFieldSets checks a listing declaration's per-type invariants:
+// at most one Name field per node type, naming both keys when it declares two.
+var ValidateListingFieldSets = internal.ValidateListingFieldSets
 
 // ValidateUnifiedFieldSets checks a unified declaration's cross-codec
 // invariants that no single codec can see: at most one FieldTag field per node

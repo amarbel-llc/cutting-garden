@@ -64,16 +64,23 @@ type Root struct {
 // state — so they read as the user's local time in Orgzly; empty means the
 // host's zone. Other plugins ignore it.
 //
+// TagFiles is the org plugin's list of tag-vocabulary files (cutting-garden
+// #378): paths relative to the account's folder, e.g. ["_tags.org"]. Only
+// headlines of those files carry a hyphen name (the level-1 headline is the
+// family; a child's title continues it), which the `(tree)` organize grouping
+// nests by. Other plugins ignore it.
+//
 //go:generate tommy generate
 type Account struct {
 	Root
-	Username       string `toml:"username,omitempty"`
-	PasswordEnv    string `toml:"password_env,omitempty"`
-	PasswordSource string `toml:"password_source,omitempty"`
-	PasswordKey    string `toml:"password_key,omitempty"`
-	SessionURL     string `toml:"session_url,omitempty"`
-	TodoKeywords   string `toml:"todo_keywords,omitempty"`
-	Timezone       string `toml:"timezone,omitempty"`
+	Username       string   `toml:"username,omitempty"`
+	PasswordEnv    string   `toml:"password_env,omitempty"`
+	PasswordSource string   `toml:"password_source,omitempty"`
+	PasswordKey    string   `toml:"password_key,omitempty"`
+	SessionURL     string   `toml:"session_url,omitempty"`
+	TodoKeywords   string   `toml:"todo_keywords,omitempty"`
+	Timezone       string   `toml:"timezone,omitempty"`
+	TagFiles       []string `toml:"tag_files,omitempty"`
 }
 
 // AccountsSection is the TOML shape of an account-bearing plugin's

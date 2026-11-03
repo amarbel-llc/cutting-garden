@@ -23,6 +23,10 @@ type parsedFile struct {
 	modTime time.Time
 	file    *orgtext.File
 	top     []*hnode // top-level headlines (or the synthesized one)
+	// tagFile marks a tag-vocabulary file of its account (config tag_files):
+	// its headlines carry a hyphen name. Set at load, so a config change
+	// (which resets the cache) re-derives it.
+	tagFile bool
 }
 
 // hnode is one headline with its minted URI.
@@ -113,7 +117,7 @@ func parseFile(a account, rel, etag string, body []byte) *parsedFile {
 		Keywords:  a.keywords,
 		NoInherit: []string{agentQuotedTag, agentCapturedTag},
 	})
-	pf := &parsedFile{rel: rel, etag: etag, file: f}
+	pf := &parsedFile{rel: rel, etag: etag, file: f, tagFile: a.isTagFile(rel)}
 	heads := f.Headlines
 	if len(heads) == 0 {
 		heads = []*orgtext.Headline{f.SynthesizeHeadline(fileStem(rel))}

@@ -49,6 +49,26 @@ write_org_config() {
 	EOF
 }
 
+# write_org_tag_vocab_config [NEST] is write_org_config plus the config the
+# `(tree)` lane (organize_tree.bats, #353/#378) WANTS and the binary does not
+# read yet: the account names its tag-vocabulary files (`tag_files`, paths
+# relative to the account root), and, when NEST (full|1|none) is given, the
+# `[organize] nest` default. The appended `tag_files` key lands in the last
+# [[org.accounts]] table, which write_org_config leaves open.
+write_org_tag_vocab_config() {
+  write_org_config
+  cat >>"$XDG_CONFIG_HOME/cutting-garden/config.toml" <<-EOF
+	tag_files = ["_tags.org"]
+	EOF
+  if [[ -n ${1:-} ]]; then
+    cat >>"$XDG_CONFIG_HOME/cutting-garden/config.toml" <<-EOF
+
+	[organize]
+	nest = "$1"
+	EOF
+  fi
+}
+
 # org_dav METHOD PATH [DEPTH] issues an authenticated request against the
 # running server, printing the body.
 org_dav() {

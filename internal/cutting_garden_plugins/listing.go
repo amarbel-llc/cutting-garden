@@ -3,6 +3,8 @@ package cutting_garden_plugins
 import (
 	"context"
 	"net/url"
+
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
 // ListingField describes one key a node type may carry in Node.Fields — the
@@ -32,6 +34,15 @@ type ListingField struct {
 	// edit back through this field. Replaces the summary→title→name description
 	// guess with an explicit declaration.
 	Trailer bool
+	// Name marks this field as the node's FULL HYPHEN NAME — the name the
+	// `(tree)` organize grouping nests by (cutting-garden#353): the node's own
+	// tag-style name, `trips-26-01-a`, split on every `-`. The field's value is a
+	// string. At most one per node type (ValidateListingFieldSets); a node of the
+	// type MAY omit the key, which means it has no name (organize refuses to
+	// tree such a node, naming it). Read-only: renaming through the name is
+	// specified separately (cutting-garden#380). Wire plugins cannot declare it
+	// yet — RFC 0013 carries no `name_field`.
+	Name bool
 }
 
 // NodeTypeListingFields binds a set of declared listing fields to one node
@@ -44,6 +55,43 @@ type NodeTypeListingFields struct {
 	// Fields are the declared listing-projection keys for Tag, in the
 	// plugin's preferred display order.
 	Fields []ListingField
+}
+
+// ValidateListingFieldSets checks a listing declaration's per-type invariants:
+// at most one Name field per node type, naming both keys when it declares two.
+func ValidateListingFieldSets(sets []NodeTypeListingFields) error {
+	for _, set := range sets {
+		var nameKey string
+		for _, f := range set.Fields {
+			if !f.Name {
+				continue
+			}
+			if nameKey != "" {
+				return errors.ErrorWithStackf(
+					"node type %q declares two Name listing fields (%q and %q); a type has at most one hyphen name",
+					set.Tag, nameKey, f.Key,
+				)
+			}
+			nameKey = f.Key
+		}
+	}
+	return nil
+}
+
+// ListingNameKey returns the key of the Name field declared for the node type
+// tag, and whether the type declares one.
+func ListingNameKey(sets []NodeTypeListingFields, tag string) (string, bool) {
+	for _, set := range sets {
+		if set.Tag != tag {
+			continue
+		}
+		for _, f := range set.Fields {
+			if f.Name {
+				return f.Key, true
+			}
+		}
+	}
+	return "", false
 }
 
 // ListingFieldsDescriber is the OPTIONAL capability that declares a

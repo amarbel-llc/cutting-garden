@@ -107,6 +107,43 @@ function org_mcp_read_node_returns_body_and_fields { # @test
 	EOM
 }
 
+# A tag-vocabulary file (the account's `tag_files`, #378) gives each headline
+# its full hyphen name: the nearest bare ancestor's title plus the `-…` titles
+# below it. A file not listed carries no name, nor does a task file.
+function org_mcp_read_node_hyphen_name_only_in_tag_files { # @test
+  local deep='{"uri":"org://test/_tags.org?id=tags-proj-gamma-two-deep"}'
+
+  # read_node nests a headline that has children under `.body` (a leaf's
+  # `.body` is its text).
+  local name_of='(if (.body | type) == "object" then .body.fields else .fields end).name // "absent"'
+
+  # Not configured as a vocabulary: no name, even for the same file.
+  mcp_drive org://test/ "$(tools_call 3 read_node "$deep")"
+  run jq -r "$name_of" <<<"$(mcp_result_text "$output" 3 | sed '/^raw bytes:/d')"
+  assert_output absent
+
+  write_org_tag_vocab_config
+  local expect=(
+    "tags-proj-gamma-two-deep proj-gamma-two-deep"
+    "tags-trips-26-01-a trips-26-01-a"
+    "tags-priority-0_must priority-0_must"
+    "tags-zz-inbox zz-inbox"
+    "tags-priority priority"
+  )
+  local pair id want
+  for pair in "${expect[@]}"; do
+    read -r id want <<<"$pair"
+    mcp_drive org://test/ "$(tools_call 3 read_node "{\"uri\":\"org://test/_tags.org?id=$id\"}")"
+    run jq -r "$name_of" <<<"$(mcp_result_text "$output" 3 | sed '/^raw bytes:/d')"
+    assert_output "$want"
+  done
+
+  # A task file in the same account is not a vocabulary.
+  mcp_drive org://test/ "$(tools_call 3 read_node '{"uri":"org://test/_inbox.org?h=Renew+passport"}')"
+  run jq -r "$name_of" <<<"$(mcp_result_text "$output" 3 | sed '/^raw bytes:/d')"
+  assert_output absent
+}
+
 function org_mcp_read_facets_counts_states_across_folders { # @test
   mcp_drive org://test/ "$(tools_call 3 read_facets '{"uri":"org://test/"}')"
   run jq -c '.facets.state' <<<"$(mcp_result_text "$output" 3)"

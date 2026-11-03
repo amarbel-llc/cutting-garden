@@ -3,6 +3,7 @@ package org
 import (
 	"context"
 	"net/url"
+	"strings"
 	"time"
 	_ "time/tzdata" // timezone resolves even on a host without a zoneinfo database
 
@@ -23,6 +24,7 @@ import (
 //	password_key = "…"
 //	todo_keywords = "TODO NEXT | DONE CANCELLED"           # D3; optional
 //	timezone = "America/New_York"                          # optional
+//	tag_files = ["_tags.org"]                              # tag vocabularies; optional
 //
 // Unlike fastmail, url names the server: the WebDAV base folder (D2). The
 // account's org:// root is org://<name>/.
@@ -49,6 +51,37 @@ type account struct {
 	base     *url.URL // the WebDAV folder, path ending in "/"
 	keywords orgtext.Keywords
 	loc      *time.Location // for the timestamps the plugin writes
+	tagFiles map[string]bool
+}
+
+// isTagFile reports whether rel (a path relative to the account's folder) is
+// one of the account's tag-vocabulary files.
+func (a account) isTagFile(rel string) bool { return a.tagFiles[rel] }
+
+// validateTagFiles checks an account's tag_files and returns them as a set:
+// each entry is a clean relative path to an .org file (no leading `/`, no `..`
+// or empty segment, no trailing `/`), matched exactly against a file's path
+// under the account's folder.
+func validateTagFiles(files []string) (map[string]bool, error) {
+	set := make(map[string]bool, len(files))
+	for _, f := range files {
+		switch {
+		case f == "":
+			return nil, errors.BadRequestf("tag_files: empty entry")
+		case strings.HasPrefix(f, "/") || strings.HasSuffix(f, "/"):
+			return nil, errors.BadRequestf(
+				"tag_files: %q must be a file path relative to the account folder (no leading or trailing /)", f)
+		case !strings.HasSuffix(f, ".org"):
+			return nil, errors.BadRequestf("tag_files: %q is not an .org file", f)
+		}
+		for _, seg := range strings.Split(f, "/") {
+			if seg == "" || seg == "." || seg == ".." {
+				return nil, errors.BadRequestf("tag_files: %q has an empty, `.` or `..` path segment", f)
+			}
+		}
+		set[f] = true
+	}
+	return set, nil
 }
 
 // now is the current time in the account's zone.
@@ -97,7 +130,11 @@ func validateAccounts(raw []config_common.Account) ([]account, error) {
 		if err := a.ValidatePassword(); err != nil {
 			return nil, errors.BadRequestf("org.accounts[%q]: %s", a.Name, err)
 		}
-		out = append(out, account{Account: a, base: base, keywords: keywords, loc: loc})
+		tagFiles, err := validateTagFiles(a.TagFiles)
+		if err != nil {
+			return nil, errors.BadRequestf("org.accounts[%q]: %s", a.Name, err)
+		}
+		out = append(out, account{Account: a, base: base, keywords: keywords, loc: loc, tagFiles: tagFiles})
 	}
 	return out, nil
 }
