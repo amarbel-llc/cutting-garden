@@ -107,10 +107,7 @@ func headingText(term string) string {
 // it; a synthetic heading names nothing. The flat and every nested spelling of
 // one set of names therefore yield the same entries (in layout order).
 func (doc document) treeEntries() []objectLine {
-	var out []objectLine
-	for _, ln := range doc.Ungrouped {
-		out = append(out, ln)
-	}
+	out := append([]objectLine(nil), doc.Ungrouped...)
 	prefix := func(stack []int) string {
 		var b strings.Builder
 		for _, idx := range stack {
