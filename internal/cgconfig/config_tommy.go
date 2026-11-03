@@ -82,6 +82,12 @@ func decodeConfigV0Parsed(doc *document.Document) (*ConfigV0Document, error) {
 				_vOrganizeTagStrip.MarkConsumedString()
 			}
 		}
+		if _vOrganizeNest, _ok := _vOrganize.Field("nest"); _ok && _vOrganizeNest.Kind == cst.VLeaf {
+			if _x, _xok := cst.ExtractString(_vOrganizeNest.Leaf); _xok {
+				d.data.Organize.Nest = _x
+				_vOrganizeNest.MarkConsumedString()
+			}
+		}
 	} else {
 		if _vDateGranularity, _ok := model.Field("date_granularity"); _ok && _vDateGranularity.Kind == cst.VLeaf {
 			if _x, _xok := cst.ExtractString(_vDateGranularity.Leaf); _xok {
@@ -99,6 +105,12 @@ func decodeConfigV0Parsed(doc *document.Document) (*ConfigV0Document, error) {
 			if _x, _xok := cst.ExtractString(_vTagStrip.Leaf); _xok {
 				d.data.Organize.TagStrip = _x
 				_vTagStrip.MarkConsumedString()
+			}
+		}
+		if _vNest, _ok := model.Field("nest"); _ok && _vNest.Kind == cst.VLeaf {
+			if _x, _xok := cst.ExtractString(_vNest.Leaf); _xok {
+				d.data.Organize.Nest = _x
+				_vNest.MarkConsumedString()
 			}
 		}
 	}
@@ -184,6 +196,13 @@ func (d *ConfigV0Document) Encode() ([]byte, error) {
 			}
 		} else {
 			cst.DeleteValue(tableNode, "tag_strip")
+		}
+		if d.data.Organize.Nest != "" {
+			if err := cst.SetAny(tableNode, "nest", d.data.Organize.Nest); err != nil {
+				return nil, fmt.Errorf("%w", err)
+			}
+		} else {
+			cst.DeleteValue(tableNode, "nest")
 		}
 	}
 	{
@@ -271,6 +290,12 @@ func DecodeConfigV0Into(data *ConfigV0, sub *cst.Value) error {
 				_vOrganizeTagStrip.MarkConsumedString()
 			}
 		}
+		if _vOrganizeNest, _ok := _vOrganize.Field("nest"); _ok && _vOrganizeNest.Kind == cst.VLeaf {
+			if _x, _xok := cst.ExtractString(_vOrganizeNest.Leaf); _xok {
+				data.Organize.Nest = _x
+				_vOrganizeNest.MarkConsumedString()
+			}
+		}
 	} else {
 		if _vDateGranularity, _ok := sub.Field("date_granularity"); _ok && _vDateGranularity.Kind == cst.VLeaf {
 			if _x, _xok := cst.ExtractString(_vDateGranularity.Leaf); _xok {
@@ -288,6 +313,12 @@ func DecodeConfigV0Into(data *ConfigV0, sub *cst.Value) error {
 			if _x, _xok := cst.ExtractString(_vTagStrip.Leaf); _xok {
 				data.Organize.TagStrip = _x
 				_vTagStrip.MarkConsumedString()
+			}
+		}
+		if _vNest, _ok := sub.Field("nest"); _ok && _vNest.Kind == cst.VLeaf {
+			if _x, _xok := cst.ExtractString(_vNest.Leaf); _xok {
+				data.Organize.Nest = _x
+				_vNest.MarkConsumedString()
 			}
 		}
 	}
@@ -369,6 +400,13 @@ func EncodeConfigV0From(data *ConfigV0, doc *document.Document, container *cst.N
 			}
 		} else {
 			cst.DeleteValue(tableNode, "tag_strip")
+		}
+		if data.Organize.Nest != "" {
+			if err := cst.SetAny(tableNode, "nest", data.Organize.Nest); err != nil {
+				return fmt.Errorf("%w", err)
+			}
+		} else {
+			cst.DeleteValue(tableNode, "nest")
 		}
 	}
 	{

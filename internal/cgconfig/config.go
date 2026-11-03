@@ -90,6 +90,17 @@ const (
 	TagStripNone      = "none"
 )
 
+// The `_nest` lever vocabulary (cutting-garden#353), shared like the tag-atom
+// levers by the `[organize] nest` config default and the `- _nest` envelope
+// field: how deep a `(tree)` grouping renders as nested continuation headings —
+// every `-` segment (full, the built-in default), one level, or none (a flat
+// list of full names).
+const (
+	NestFull = "full"
+	NestOne  = "1"
+	NestNone = "none"
+)
+
 // OrganizeConfig configures the organize command (FDR 0023). Not a plugin
 // section — organize is framework-side — so it lives here rather than being
 // delegated.
@@ -118,6 +129,11 @@ type OrganizeConfig struct {
 	// placement, "none" keeps every tag in every box. Empty means the built-in
 	// default (placement). A document's explicit `- _tag-strip` field wins.
 	TagStrip string `toml:"tag_strip,omitempty"`
+
+	// Nest is the default `_nest` lever of a `(tree)` grouping (cutting-garden
+	// #353): how deep a name tree renders as nested headings. Empty means the
+	// built-in default (full).
+	Nest string `toml:"nest,omitempty"`
 }
 
 func (c OrganizeConfig) Validate() error {
@@ -143,6 +159,14 @@ func (c OrganizeConfig) Validate() error {
 		return errors.BadRequestf(
 			"organize.tag_strip %q is not one of %s, %s",
 			c.TagStrip, TagStripPlacement, TagStripNone,
+		)
+	}
+	switch c.Nest {
+	case "", NestFull, NestOne, NestNone:
+	default:
+		return errors.BadRequestf(
+			"organize.nest %q is not one of %s, %s, %s",
+			c.Nest, NestFull, NestOne, NestNone,
 		)
 	}
 	return nil

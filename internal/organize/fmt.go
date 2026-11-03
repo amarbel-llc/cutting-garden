@@ -209,6 +209,7 @@ func (cmd *FmtOrganize) run(
 		query:        doc.Query,
 		tagAtoms:     doc.TagAtoms,
 		tagStrip:     doc.TagStrip,
+		nest:         doc.Nest,
 		provenance:   doc.Provenance,
 		fromDocument: true,
 	})

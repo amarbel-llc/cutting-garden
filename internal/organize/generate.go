@@ -45,6 +45,8 @@ type generateParams struct {
 	// fields (document path); empty on the flag path, where the `[organize]`
 	// config defaults apply instead.
 	tagAtoms, tagStrip string
+	// nest is the document's `_nest` field (document path), like tagAtoms.
+	nest string
 	// provenance, when non-empty, is preserved verbatim (document path);
 	// empty derives the `% generated:` note from the spelling + query + uri.
 	provenance string
@@ -104,8 +106,9 @@ func buildAndStoreFrom(
 	// carries any granularity).
 	dateDefault := cfg.Organize.DateGranularity
 	configTagAtoms, configTagStrip := cfg.Organize.TagAtoms, cfg.Organize.TagStrip
+	configNest := cfg.Organize.Nest
 	if p.fromDocument {
-		dateDefault, configTagAtoms, configTagStrip = "", "", ""
+		dateDefault, configTagAtoms, configTagStrip, configNest = "", "", "", ""
 	}
 	// The unified declaration's cross-codec invariants (a second FieldTag field
 	// per type, G6 v1) are checked ONCE here — generate's resolution point, the
@@ -203,6 +206,8 @@ func buildAndStoreFrom(
 	if tagStrip != tagStripPlacement {
 		doc.TagStrip = tagStrip
 	}
+	// `_nest` is a (tree)-only presentation lever, echoed when non-default.
+	doc.Nest = nestEnvelopeValue(p.groupBy, p.nest, configNest)
 	// Provenance records what the user actually typed for the URI (e.g. the
 	// short alias), even though _anchor is the canonical common prefix — but
 	// echoes the RESOLVED group-by spelling, so a config-defaulted granularity

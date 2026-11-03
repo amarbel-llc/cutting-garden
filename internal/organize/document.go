@@ -224,6 +224,11 @@ type document struct {
 	// (Via) tag(s) from each appearance's box (placement / none, design G2).
 	// Empty = absent, resolving like TagAtoms (default placement).
 	TagStrip string
+	// Nest is `- _nest`: how deep a `(tree)` grouping renders as nested headings
+	// (full / 1 / none, #353). A PRESENTATION lever: renderCanonical blanks it,
+	// so changing it never counts as an unapplied edit. Empty = absent (the
+	// effective value is the config default, then full).
+	Nest string
 	// Distributed carries any other bare `- <term>` envelope lines the user
 	// hand-added (RFC 0015 distribution rule) — preserved verbatim on parse.
 	Distributed []string
@@ -403,6 +408,9 @@ func render(doc document) string {
 	if doc.GroupBy != "" {
 		fmt.Fprintf(&b, "- %s = %s\n", fieldGroupBy, doc.GroupBy)
 	}
+	if doc.Nest != "" {
+		fmt.Fprintf(&b, "- %s = %s\n", fieldNest, doc.Nest)
+	}
 	if doc.TagAtoms != "" {
 		fmt.Fprintf(&b, "- %s = %s\n", fieldTagAtoms, doc.TagAtoms)
 	}
@@ -423,10 +431,13 @@ func render(doc document) string {
 // comment): the exact bytes hashed and stored as the organize-base-v1 blob. The
 // emitted document is this plus the `- _base` line and the provenance note, so
 // the pin names a digest computed without either (RFC 0015 §250, §`%` / `%:`
-// lines: the operational plane never perturbs the base).
+// lines: the operational plane never perturbs the base). `_nest` is left out
+// too: it only spells the same names differently (nest.go), so a document that
+// differs from its base in `_nest` alone is not an edited one.
 func renderCanonical(doc document) string {
 	doc.BaseDigest = ""
 	doc.Provenance = ""
+	doc.Nest = ""
 	return render(doc)
 }
 
@@ -520,6 +531,12 @@ func parseDocument(text string) (document, error) {
 		return document{}, err
 	}
 	if doc.TagStrip, err = parseTagStripField(fields[fieldTagStrip]); err != nil {
+		return document{}, err
+	}
+	if doc.Nest, err = parseNestField(fields[fieldNest]); err != nil {
+		return document{}, err
+	}
+	if err := refuseNestOutsideTree(doc); err != nil {
 		return document{}, err
 	}
 
