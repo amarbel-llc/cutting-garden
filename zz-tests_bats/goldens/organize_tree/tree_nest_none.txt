@@ -1,0 +1,32 @@
+---
+% generated: `cg organize 'org://test/_tags.org ->> !cutting_garden-org-headline-v1 _terminal=no' '(tree)'`
+- _base = @blake2b256-hand-written-pin-fill-with-test-bats-update-vectors
+- _anchor = org://test/_tags.org
+- _query = ->> !cutting_garden-org-headline-v1 _terminal=no
+- _type = !cutting_garden-org-headline-v1
+- _group-by = (tree)
+- _nest = none
+! organize-base-v1
+---
+
+- ["id=tags-priority"] priority
+- ["id=tags-priority-0_must"] priority-0_must
+- ["id=tags-priority-1_should"] priority-1_should
+- ["id=tags-priority-2_nice"] priority-2_nice
+- ["id=tags-trips"] trips
+- ["id=tags-trips-26-01-a"] trips-26-01-a
+- ["id=tags-trips-26-02-b"] trips-26-02-b
+- ["id=tags-trips-26-02-c"] trips-26-02-c
+- ["id=tags-inbox"] inbox
+- ["id=tags-tax"] tax
+- ["id=tags-tax-2025"] tax-2025
+- ["id=tags-tax-2026"] tax-2026
+- ["id=tags-tax-prior-years"] tax-prior-years
+- ["id=tags-proj"] proj
+- ["id=tags-proj-alpha"] proj-alpha
+- ["id=tags-proj-gamma"] proj-gamma
+- ["id=tags-proj-gamma-one"] proj-gamma-one
+- ["id=tags-proj-gamma-two"] proj-gamma-two
+- ["id=tags-proj-gamma-two-deep"] proj-gamma-two-deep
+- ["id=tags-proj-beta"] proj-beta
+- ["id=tags-zz-inbox"] zz-inbox
