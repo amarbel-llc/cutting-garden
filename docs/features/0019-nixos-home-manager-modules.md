@@ -90,7 +90,7 @@ the Go structs (`internal/config_common`, `plugins/caldav`).
   account submodule as `caldav.accounts`, rendered to `[[fastmail.accounts]]`
   / `[[org.accounts]]`. Every account also accepts `passwordSource`
   (`env`/`piggy`) + `passwordKey`, `sessionUrl` (fastmail only),
-  `todoKeywords` and `timezone` (org only), mirroring
+  `todoKeywords`, `timezone` and `tagFiles` (org only), mirroring
   `config_common.Account`'s TOML keys.
 - `tags.interpreter` (cutting-garden#304) — `nullOr (enum ["naive"
   "dodder-hyphen"])`, default `null`, rendered to a top-level `[tags]` table's
