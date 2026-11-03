@@ -26,7 +26,8 @@ const qualifierReserved = "trellis: qualifier terms are reserved; not evaluable 
 // joined by the untyped combinators `->` / `<-` / `->>` / `<<-`, whose terms are
 // type predicates, field predicates (any operator, `~=` included), bare-identifier
 // (tag) predicates, OR-alternatives, and existential single-step forward subpaths,
-// with only the `:` sigil. Typed edges, the default-anchor (root-aggregate
+// with only the `:` sigil. A leading `->>` is accepted (the anchor's
+// descendants). Typed edges, the default-anchor (root-aggregate
 // leading-combinator) origin, version subpaths, non-`:` sigils, and mid-query
 // object-identity terms remain deferred. Qualifier terms (`(x)`, `k=(x)`) are
 // RESERVED in query position (native tags G10) — organize's group-by dialect
@@ -40,7 +41,10 @@ func Validate(q *trellis.Query) error {
 	if q == nil {
 		return errors.BadRequestf("trellis: nil query")
 	}
-	if q.Path.Leading != nil {
+	// A leading forward closure over an explicit anchor selects the anchor's
+	// descendants (`origin ->> step`, #211); any other leading combinator is the
+	// still-deferred default-anchor origin.
+	if q.Path.Leading != nil && q.Path.Leading.Kind != trellis.CombinatorFwdClosure {
 		return errors.BadRequestf(unsupported,
 			"a leading combinator (the default-anchor origin — pass an explicit <uri> instead)")
 	}

@@ -108,6 +108,75 @@ func TestEvaluateResolving_Origin(t *testing.T) {
 	}
 }
 
+// TestEvaluateResolving_ForwardClosure pins `origin ->> step` (cutting-garden
+// #211): every descendant of the origin, at any depth, that matches the step —
+// not just its children — and the later steps continue from there.
+func TestEvaluateResolving_ForwardClosure(t *testing.T) {
+	resolver := sampleResolver(sampleTree(t))
+
+	cases := []struct {
+		name  string
+		query string
+		want  []string
+	}{
+		{"reaches a grandchild", "fake:cal ->> !event-v1", []string{"fake://cal/personal/e1"}},
+		{
+			"reaches children and grandchildren alike",
+			"fake:cal ->> [!calendar-v1, !todo-v1]",
+			[]string{"fake://cal/personal/", "fake://cal/personal/t1", "fake://cal/work/"},
+		},
+		{"facet predicate at depth", "fake:cal ->> component=VTODO", []string{"fake://cal/personal/t1"}},
+		{"later steps continue from the matches", "fake:cal ->> !calendar-v1 -> !event-v1", []string{"fake://cal/personal/e1"}},
+		{"a deep origin closes over its own subtree only", "fake:personal ->> !todo-v1", []string{"fake://cal/personal/t1"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := evalResolvingURIs(t, resolver, tc.query)
+			if !equalStrings(got, tc.want) {
+				t.Errorf("query %q: got %v, want %v", tc.query, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestEvaluateResolving_ForwardClosureMatchesLeadingClosure pins the mode
+// equivalence for the closure: `origin ->> step` is the explicit-anchor
+// evaluation of the leading-closure remainder `->> step`, which is the text
+// SplitOrigin hands consumers.
+func TestEvaluateResolving_ForwardClosureMatchesLeadingClosure(t *testing.T) {
+	tree := sampleTree(t)
+	got := evalResolvingURIs(t, sampleResolver(tree), "fake:cal ->> !event-v1")
+	want := evalURIs(t, tree, "fake://cal/", "->> !event-v1")
+	if !equalStrings(got, want) {
+		t.Errorf("origin-mode %v != explicit-anchor leading closure %v", got, want)
+	}
+}
+
+// TestEvaluateResolving_ForwardClosureIsContainmentOrder pins the order of a
+// closure selection: each node once, a container before its contents and
+// siblings in listing order (depth-first), not level by level — organize lays a
+// document out in this order.
+func TestEvaluateResolving_ForwardClosureIsContainmentOrder(t *testing.T) {
+	q, err := trellis.Parse("fake:cal ->> [!calendar-v1, !event-v1, !todo-v1]")
+	if err != nil {
+		t.Fatal(err)
+	}
+	nodes, err := EvaluateResolving(context.Background(), q, sampleResolver(sampleTree(t)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, n := range nodes {
+		got = append(got, n.URIString())
+	}
+	want := []string{
+		"fake://cal/personal/", "fake://cal/personal/e1", "fake://cal/personal/t1", "fake://cal/work/",
+	}
+	if !equalStrings(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
 // TestEvaluateResolving_MatchesExplicitAnchor pins the mode equivalence: an
 // origin-in-expression query resolves to the same nodes the explicit-anchor
 // Evaluate returns over the same anchor and remainder (`origin -> step` ==
@@ -197,7 +266,8 @@ func TestEvaluateResolving_Rejects(t *testing.T) {
 		query   string
 		wantSub string
 	}{
-		{"non-forward combinator after origin", "fake:cal ->> !event-v1", "non-forward"},
+		{"typed edge after origin", "fake:cal -[!x]-> !event-v1", "non-forward"},
+		{"backward closure after origin", "fake:cal <<- !event-v1", "non-forward"},
 		{"multi-term origin step", "fake:cal !calendar-v1", "single URI term"},
 		{"negated origin", "^fake:cal -> !calendar-v1", "cannot be negated"},
 		{"version sigil on origin", "fake:cal+ -> !calendar-v1", "version sigil"},
@@ -243,6 +313,14 @@ func TestSplitOrigin(t *testing.T) {
 			`"caldav://h/user/me@example.com/cal/"`, "component=VTODO",
 		},
 		{
+			// The closure rides in the remainder as a leading `->>`, so the
+			// text round-trips through an envelope's `_query` and parses as
+			// the explicit-anchor closure form.
+			"forward closure keeps its combinator in the remainder",
+			"fake:cal ->> !event-v1 due<\"2026-08-01\"",
+			"fake:cal", "fake:cal", `->> !event-v1 due<"2026-08-01"`,
+		},
+		{
 			"brackets in the remainder are not split",
 			"fake:cal -> [-> !event-v1] [a, b]",
 			"fake:cal", "fake:cal", "[-> !event-v1] [a, b]",
@@ -264,7 +342,8 @@ func TestSplitOrigin(t *testing.T) {
 
 	rejects := []struct{ name, src, wantSub string }{
 		{"leading combinator", "-> !event-v1", "leading combinator"},
-		{"non-forward bridge", "fake:cal ->> !event-v1", "non-forward"},
+		{"typed edge bridge", "fake:cal -[!x]-> !event-v1", "non-forward"},
+		{"backward closure bridge", "fake:cal <<- !event-v1", "non-forward"},
 		{"multi-term origin", "fake:cal !calendar-v1 -> x", "single URI term"},
 		{"dangling combinator", "fake:cal ->", "syntax error"},
 		{"malformed remainder", "fake:cal -> [unclosed", "syntax error"},

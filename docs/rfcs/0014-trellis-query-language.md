@@ -211,6 +211,10 @@ Every edge has a type; edge kinds are type-system citizens. Containment
 - `->>` / `<<-` — transitive closure, one-or-more hops, visited-set
   deduplication (defined termination on cyclic graphs; no acyclicity
   assumption)
+  Host note (cutting-garden#211): a closure yields its nodes in containment
+  order (depth-first, siblings in listing order), and `origin ->> step` makes
+  the first step range over every descendant of the origin rather than its
+  children (FDR 0022 §Origin resolution).
 - `-[pred]->` / `<-[pred]-` — restrict by a compound predicate evaluated
   against the EDGE (same term grammar; bare name is the degenerate
   identifier predicate). No traversal inside edge brackets in v1.

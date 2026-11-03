@@ -1,0 +1,91 @@
+# A tag vocabulary. A member's tag is its family followed by its own title:
+# the level-1 headline is the family and each child's title continues the
+# name, so the child `-1_should` of the family `priority` is the tag
+# `priority-1_should`, and `-26-01-a` under `trips` is `trips-26-01-a`. A
+# deeper child continues its parent's name. A hyphen always starts a new
+# segment; an underscore is part of one, so the level-1 headline `zz-inbox`
+# is the member `-inbox` of the (unwritten) family `zz`.
+* priority
+:PROPERTIES:
+:ID: tags-priority
+:END:
+** -0_must
+:PROPERTIES:
+:ID: tags-priority-0_must
+:END:
+** -1_should
+:PROPERTIES:
+:ID: tags-priority-1_should
+:END:
+** -2_nice
+:PROPERTIES:
+:ID: tags-priority-2_nice
+:END:
+* trips
+:PROPERTIES:
+:ID: tags-trips
+:END:
+** -26-01-a
+:PROPERTIES:
+:ID: tags-trips-26-01-a
+:END:
+** -26-02-b
+:PROPERTIES:
+:ID: tags-trips-26-02-b
+:END:
+** -26-02-c
+:PROPERTIES:
+:ID: tags-trips-26-02-c
+:END:
+* inbox
+:PROPERTIES:
+:ID: tags-inbox
+:END:
+* tax
+:PROPERTIES:
+:ID: tags-tax
+:END:
+** -2025
+:PROPERTIES:
+:ID: tags-tax-2025
+:END:
+** -2026
+:PROPERTIES:
+:ID: tags-tax-2026
+:END:
+** -prior-years
+:PROPERTIES:
+:ID: tags-tax-prior-years
+:END:
+* proj
+:PROPERTIES:
+:ID: tags-proj
+:END:
+** -alpha
+:PROPERTIES:
+:ID: tags-proj-alpha
+:END:
+** -gamma
+:PROPERTIES:
+:ID: tags-proj-gamma
+:END:
+*** -one
+:PROPERTIES:
+:ID: tags-proj-gamma-one
+:END:
+*** -two
+:PROPERTIES:
+:ID: tags-proj-gamma-two
+:END:
+**** -deep
+:PROPERTIES:
+:ID: tags-proj-gamma-two-deep
+:END:
+** -beta
+:PROPERTIES:
+:ID: tags-proj-beta
+:END:
+* zz-inbox
+:PROPERTIES:
+:ID: tags-zz-inbox
+:END:

@@ -308,6 +308,11 @@ cg organize <expression> [group-by]
   form stays usable. An argument that contains whitespace MUST parse as a
   trellis expression; a reserved rune in its origin MUST be quoted
   (`'"caldav://h/me@example.com/" -> status=needs-action'`).
+- The origin is joined to its selection by `->` (the origin's children) or
+  `->>` (all its descendants, at any depth, in containment order); the other
+  combinators after an origin are refused (cutting-garden#211). The selection's
+  text after the origin is echoed to the envelope's `_query` with a `->>` kept
+  as a leading `->>`.
 - Two limits of the trellis grammar apply: an expression cannot begin with a
   combinator (the anchorless origin is cutting-garden#211), and a value
   containing a reserved rune MUST be quoted — including `(`, which a regular

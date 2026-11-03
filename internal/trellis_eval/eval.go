@@ -67,7 +67,7 @@ func Evaluate(
 	}
 
 	ev := newEvaluator(lister, anchor, opts...)
-	return ev.run(ctx, q.Path.Steps, q.Path.Combinators)
+	return ev.run(ctx, q.Path.Steps, q.Path.Combinators, q.Path.Leading != nil)
 }
 
 // EvaluateOption configures an evaluation. The zero-option call preserves each
@@ -92,8 +92,12 @@ func WithTagsInterpreter(override string) EvaluateOption {
 // origin-resolving entry point produces for a bare `<uri>` origin, matching the
 // set `list <uri>` prints (resolve.go, cutting-garden#37). Shared by the
 // explicit-anchor Evaluate and EvaluateResolving so both anchor identically.
+//
+// closure widens the first step's candidates from the anchor's children to all
+// of its descendants (`anchor ->> step`, #211), in containment order.
 func (ev *evaluator) run(
 	ctx context.Context, steps []trellis.Step, combinators []trellis.Combinator,
+	closure bool,
 ) ([]cgp.Node, error) {
 	if err := checkDeclaredTypes(ev.lister, steps); err != nil {
 		return nil, err
@@ -104,6 +108,13 @@ func (ev *evaluator) run(
 	}
 	if len(steps) == 0 {
 		return current, nil
+	}
+	if closure {
+		var all []cgp.Node
+		if err := ev.preorder(ctx, current, map[string]struct{}{}, &all); err != nil {
+			return nil, err
+		}
+		current = all
 	}
 	if current, err = ev.filter(ctx, current, steps[0]); err != nil {
 		return nil, err
@@ -362,9 +373,9 @@ func (ev *evaluator) ascend(
 }
 
 // descendClosure returns every transitive descendant of the frontier (the
-// forward closure `->>`, one-or-more hops), deduplicated by URI. The frontier
-// nodes themselves are excluded (one-or-more, not zero) and seed the visited
-// set so a cycle back onto them terminates.
+// forward closure `->>`, one-or-more hops), deduplicated by URI, in containment
+// order (see preorder). The frontier nodes themselves are excluded (one-or-more,
+// not zero) and seed the visited set so a cycle back onto them terminates.
 func (ev *evaluator) descendClosure(
 	ctx context.Context, frontier []cgp.Node,
 ) ([]cgp.Node, error) {
@@ -373,10 +384,7 @@ func (ev *evaluator) descendClosure(
 	for _, n := range frontier {
 		visited[n.URIString()] = struct{}{}
 	}
-	queue := append([]cgp.Node(nil), frontier...)
-	for len(queue) > 0 {
-		n := queue[0]
-		queue = queue[1:]
+	for _, n := range frontier {
 		if n.URI == nil {
 			continue
 		}
@@ -384,17 +392,39 @@ func (ev *evaluator) descendClosure(
 		if err != nil {
 			return nil, errors.Wrap(err)
 		}
-		for _, c := range children {
-			key := c.URIString()
-			if _, seen := visited[key]; seen {
-				continue
-			}
-			visited[key] = struct{}{}
-			out = append(out, c)
-			queue = append(queue, c)
+		if err := ev.preorder(ctx, children, visited, &out); err != nil {
+			return nil, err
 		}
 	}
 	return out, nil
+}
+
+// preorder appends nodes and, after each, its own descendants to out —
+// depth-first, siblings in listing order, so a container precedes its contents
+// (containment order; the order a document reads in). A node already in visited
+// is skipped, which both deduplicates a shared descendant and ends a cycle.
+func (ev *evaluator) preorder(
+	ctx context.Context, nodes []cgp.Node, visited map[string]struct{}, out *[]cgp.Node,
+) error {
+	for _, n := range nodes {
+		key := n.URIString()
+		if _, seen := visited[key]; seen {
+			continue
+		}
+		visited[key] = struct{}{}
+		*out = append(*out, n)
+		if n.URI == nil {
+			continue
+		}
+		children, err := ev.listEnriched(ctx, n.URI)
+		if err != nil {
+			return errors.Wrap(err)
+		}
+		if err := ev.preorder(ctx, children, visited, out); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ascendClosure returns every transitive ancestor of the frontier within the

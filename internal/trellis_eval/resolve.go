@@ -69,14 +69,20 @@ func EvaluateResolving(
 	// body evaluated against the resolved anchor. `origin -> step1` therefore
 	// evaluates identically to Evaluate(anchor, "step1"), the `->` standing in
 	// for the implicit origin-node -> children hop.
+	//
+	// A bridging `->>` instead widens the first remaining step from the origin's
+	// children to all of its descendants: `origin ->> step` evaluates like the
+	// explicit-anchor `->> step` (#211).
 	remSteps := q.Path.Steps[1:]
 	var remCombinators []trellis.Combinator
+	closure := false
 	if len(q.Path.Combinators) > 0 {
 		remCombinators = q.Path.Combinators[1:]
+		closure = q.Path.Combinators[0].Kind == trellis.CombinatorFwdClosure
 	}
 
 	ev := newEvaluator(lister, anchor, opts...)
-	return ev.run(ctx, remSteps, remCombinators)
+	return ev.run(ctx, remSteps, remCombinators, closure)
 }
 
 // Selection is an origin-in-expression query split for a consumer that
@@ -88,16 +94,19 @@ type Selection struct {
 	// it), for echoing the expression back to a user.
 	OriginSource string
 	// Query is the source text after the origin's `->`, verbatim; empty for a
-	// bare origin. Evaluating it against the resolved origin is equivalent to
-	// EvaluateResolving over the whole expression.
+	// bare origin. Behind a `->>` it keeps the combinator as a LEADING `->>`
+	// (`->> step…`), the explicit-anchor closure form, so the text alone says
+	// how to evaluate it. Evaluating it against the resolved origin is
+	// equivalent to EvaluateResolving over the whole expression.
 	Query string
 }
 
 // SplitOrigin splits an origin-in-expression query (`origin -> step…`) into its
 // origin and the remainder's source text, applying the same origin rules as
 // EvaluateResolving: a single undecorated identifier, bridged to the rest by a
-// forward `->`. The remainder is NOT validated against the evaluator's supported
-// subset here — Evaluate does that when it runs.
+// forward `->` or a forward closure `->>`. The remainder is NOT validated
+// against the evaluator's supported subset here — Evaluate does that when it
+// runs.
 func SplitOrigin(src string) (Selection, error) {
 	lead, err := trellis.SplitLeadingStep(src)
 	if err != nil {
@@ -107,17 +116,32 @@ func SplitOrigin(src string) (Selection, error) {
 	if err != nil {
 		return Selection{}, err
 	}
-	if lead.Combinator != nil && lead.Combinator.Kind != trellis.CombinatorFwd {
-		return Selection{}, errors.BadRequestf(unsupported,
-			"a non-forward combinator after the origin URI (only `->` bridges an "+
-				"origin to its children this slice, got "+
-				combinatorName(lead.Combinator.Kind)+")")
+	query := lead.Rest
+	if lead.Combinator != nil {
+		if err := originBridgeOK(lead.Combinator.Kind); err != nil {
+			return Selection{}, err
+		}
+		if lead.Combinator.Kind == trellis.CombinatorFwdClosure {
+			query = "->> " + query
+		}
 	}
 	return Selection{
 		Origin:       origin,
 		OriginSource: lead.StepSource,
-		Query:        lead.Rest,
+		Query:        query,
 	}, nil
+}
+
+// originBridgeOK accepts the combinators that may join an origin to the rest:
+// `->` (its children) and `->>` (all its descendants). Every other kind stays
+// deferred (cutting-garden#211).
+func originBridgeOK(kind trellis.CombinatorKind) error {
+	if kind == trellis.CombinatorFwd || kind == trellis.CombinatorFwdClosure {
+		return nil
+	}
+	return errors.BadRequestf(unsupported,
+		"a non-forward combinator after the origin URI (only `->` and `->>` bridge "+
+			"an origin to what it selects this slice, got "+combinatorName(kind)+")")
 }
 
 // validateOriginQuery checks q is a well-formed origin-in-expression query: no
@@ -141,10 +165,8 @@ func validateOriginQuery(q *trellis.Query) error {
 		return err
 	}
 	if len(q.Path.Steps) > 1 {
-		if kind := q.Path.Combinators[0].Kind; kind != trellis.CombinatorFwd {
-			return errors.BadRequestf(unsupported,
-				"a non-forward combinator after the origin URI (only `->` bridges an "+
-					"origin to its children this slice, got "+combinatorName(kind)+")")
+		if err := originBridgeOK(q.Path.Combinators[0].Kind); err != nil {
+			return err
 		}
 		return validatePathBody(q.Path.Steps[1:], q.Path.Combinators[1:])
 	}

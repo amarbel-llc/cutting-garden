@@ -323,9 +323,10 @@ organize origin later), `RootLister`, `LeafReader`, `FacetDescriber`,
 `FacetCounter`, `FacetVersioner` (a file's ETag; folders decline),
 `ListingFieldsDescriber`, `UnifiedDescriber` and `NodeIDer`. ListRoots
 already populates Facets and Fields (the file is parsed anyway), so there
-is no separate `EnrichedLister`; the host filters. Trellis queries must
-start with a step matching the anchor's children (a leading `->>` is not
-supported yet, #211), and a regex containing `(` is quoted:
+is no separate `EnrichedLister`; the host filters. A trellis query starts
+with a step matching the anchor's children, or with `->>` to range over all
+its descendants (`org://test/_tags.org ->> !cutting_garden-org-headline-v1`
+is every headline of the file; #211), and a regex containing `(` is quoted:
 `[!cutting_garden-org-file-v1, !cutting_garden-org-folder-v1] ->>
 !cutting_garden-org-headline-v1 title~="(?i)leak"`.
 Slice 2 adds `NodeMutator` (only `PatchNode`, first with `{"quote": true}`

@@ -319,6 +319,24 @@ func TestEvaluate_GraphTraversal(t *testing.T) {
 			want:  []string{"fake://g/shared"},
 		},
 		{
+			// A leading `->>` over an explicit anchor closes over the
+			// anchor's whole subtree (#211): the form `origin ->> step`
+			// hands the evaluator.
+			name:  "leading forward closure reaches every depth",
+			query: "->> !leaf-v1",
+			want:  []string{"fake://g/a/x/leaf1", "fake://g/b/y/leaf2"},
+		},
+		{
+			name:  "leading forward closure includes the anchor's children",
+			query: "->> !group-v1",
+			want:  []string{"fake://g/a", "fake://g/b"},
+		},
+		{
+			name:  "leading forward closure then a later step",
+			query: "->> !mid-v1 -> !leaf-v1",
+			want:  []string{"fake://g/a/x/leaf1", "fake://g/b/y/leaf2"},
+		},
+		{
 			name:  "backward closure ascends every level",
 			query: "!group-v1 -> !mid-v1 -> !leaf-v1 <<- !group-v1",
 			want:  []string{"fake://g/a", "fake://g/b"},
@@ -354,6 +372,8 @@ func TestEvaluate_Rejects(t *testing.T) {
 		"!calendar-v1 [+]", // version subpath
 		"@blake2b256-abc",  // object-identity term
 		"-> !calendar-v1",  // leading combinator (default anchor)
+		"<- !calendar-v1",  // leading reverse
+		"<<- !calendar-v1", // leading backward closure
 	}
 
 	for _, query := range queries {

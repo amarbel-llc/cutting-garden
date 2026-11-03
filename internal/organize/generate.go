@@ -761,7 +761,12 @@ func commonStringPrefix(a, b string) string {
 // group-by, each shell-quoted when it needs to be.
 func provenance(groupBy, query, origin string) string {
 	expression := origin
-	if query != "" {
+	switch {
+	case strings.HasPrefix(query, "->> "):
+		// A forward closure is its own combinator: the query already leads
+		// with it (trellis_eval.SplitOrigin), so no second arrow joins it.
+		expression = origin + " " + query
+	case query != "":
 		expression = origin + " -> " + query
 	}
 	return fmt.Sprintf("generated: `cg organize %s %s`",

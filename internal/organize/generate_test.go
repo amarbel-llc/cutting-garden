@@ -22,6 +22,13 @@ func TestProvenanceWrapsCommandInBackticks(t *testing.T) {
 			"status=", "_terminal=no", "caldav:task",
 			"generated: `cg organize 'caldav:task -> _terminal=no' status=`",
 		},
+		// A forward closure rides in the query as a leading `->>`: it joins
+		// the origin by a space, not by a second arrow, and re-parses as the
+		// same selection.
+		{
+			"(tree)", "->> !cutting_garden-org-headline-v1 _terminal=no", "org://test/_tags.org",
+			"generated: `cg organize 'org://test/_tags.org ->> !cutting_garden-org-headline-v1 _terminal=no' '(tree)'`",
+		},
 		{
 			"(tags)", `component=VTODO due<"2026-08-01"`, `"caldav://h/me@example.com/"`,
 			"generated: `cg organize '\"caldav://h/me@example.com/\" -> " +
@@ -43,6 +50,7 @@ func TestParseSelection(t *testing.T) {
 	cases := []struct{ arg, origin, originSource, query string }{
 		{"caldav:task", "caldav:task", "caldav:task", ""},
 		{"caldav:task -> status=needs-action", "caldav:task", "caldav:task", "status=needs-action"},
+		{"caldav:task ->> status=needs-action", "caldav:task", "caldav:task", "->> status=needs-action"},
 		{
 			`"caldav://h/me@example.com/" -> component=VTODO`,
 			"caldav://h/me@example.com/", `"caldav://h/me@example.com/"`, "component=VTODO",
@@ -68,7 +76,8 @@ func TestParseSelection(t *testing.T) {
 	}
 
 	for _, arg := range []string{
-		"caldav:task ->> status=x",          // only `->` bridges an origin
+		"caldav:task -[x]-> status=x", // only `->` and `->>` bridge an origin
+		"caldav:task <<- status=x",
 		"caldav:task status=x",              // two terms: not a lone origin
 		"caldav://h/me@example.com/ -> x=y", // reserved rune AND whitespace: must be quoted
 		"caldav:task -> [unclosed",
@@ -99,6 +108,7 @@ func TestParseSelection_BoundType(t *testing.T) {
 		{"!task -> priority=0_must", "priority=0_must"},
 		{"  !task   status=needs-action  due<\"2026-08-01\" ", `status=needs-action  due<"2026-08-01"`},
 		{"!task -> [a, b] -> x", "[a, b] -> x"},
+		{"!task ->> status=needs-action", "->> status=needs-action"},
 	}
 	for _, c := range cases {
 		got, err := parseSelection(c.arg, names)

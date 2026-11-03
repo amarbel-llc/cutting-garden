@@ -69,6 +69,17 @@ that lets organize's selection surface be a single trellis expression
 (cutting-garden#216, path 2b-full): every consumer (organize, `list`, `mcp`)
 can embed a leading URI, not only those that pre-resolve.
 
+**Forward closure from an origin (implemented — cutting-garden#211).** An origin
+may be joined to its selection by `->>` as well as `->`: `origin ->> step` selects
+every descendant of the origin, at any depth, that matches `step` (each node once,
+in containment order — a node, then its contents, then its next sibling), and
+later steps continue from those matches. Over an explicit anchor the same
+selection is spelled as a *leading* `->>` (`list -query '->> step' <uri>`);
+`SplitOrigin` hands consumers that leading form as the query text, so an
+organize envelope's `_query` carries it and a later `fmt-organize` re-selects
+the same nodes. The other bridges (`<-`, `<<-`, the typed edges) stay refused
+after an origin, with their #211 message.
+
 **Still deferred** — this slice resolves a *specific* URI, not the aggregate.
 The **root-aggregate default anchor** (the first two forms above,
 `!root-v1 scheme=caldav -> …` and `work -> …` — the leading-combinator /

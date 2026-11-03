@@ -27,8 +27,61 @@ function org_list_root_shows_files_and_folders { # @test
   run jq -r '.uri' <<<"$output"
   assert_output - <<-'EOM'
 	org://test/_inbox.org
+	org://test/_tags.org
 	org://test/projects/
 	EOM
+}
+
+# A leading `->>` over an explicit uri selects every descendant, at any depth,
+# in containment order (a headline, then its children, then its next sibling) —
+# the whole headline tree of the vocabulary file, not just its level-1 headlines
+# (cutting-garden#211).
+function org_list_query_forward_closure_selects_the_whole_tree { # @test
+  run_cg list -format json -query '->> !cutting_garden-org-headline-v1' org://test/_tags.org
+  assert_success
+  run jq -r '.name' <<<"$output"
+  assert_output - <<-'EOM'
+	priority
+	-0_must
+	-1_should
+	-2_nice
+	trips
+	-26-01-a
+	-26-02-b
+	-26-02-c
+	inbox
+	tax
+	-2025
+	-2026
+	-prior-years
+	proj
+	-alpha
+	-gamma
+	-one
+	-two
+	-deep
+	-beta
+	zz-inbox
+	EOM
+}
+
+# The same closure through the origin-in-expression form organize takes: the
+# combinator rides in the envelope's `_query` and in the provenance note, and a
+# form still deferred (`<<-`) stays a usage error.
+function org_organize_origin_forward_closure { # @test
+  run_cg organize 'org://test/_tags.org ->> !cutting_garden-org-headline-v1' 'state='
+  assert_success
+  assert_line '% generated: `cg organize '"'"'org://test/_tags.org ->> !cutting_garden-org-headline-v1 _terminal=no'"'"' state=`'
+  assert_line '- _query = ->> !cutting_garden-org-headline-v1 _terminal=no'
+  run grep -c '^- \["id=tags-' <<<"$output"
+  assert_output 21
+}
+
+function org_organize_origin_still_refuses_deferred_combinators { # @test
+  run_cg organize 'org://test/_tags.org <<- !cutting_garden-org-headline-v1' 'state='
+  assert_failure 64
+  assert_output --partial 'a non-forward combinator after the origin URI'
+  assert_output --partial 'cutting-garden#211'
 }
 
 function org_list_file_shows_headlines_with_tags { # @test
@@ -57,11 +110,11 @@ function org_mcp_read_node_returns_body_and_fields { # @test
 function org_mcp_read_facets_counts_states_across_folders { # @test
   mcp_drive org://test/ "$(tools_call 3 read_facets '{"uri":"org://test/"}')"
   run jq -c '.facets.state' <<<"$(mcp_result_text "$output" 3)"
-  assert_output '{"DONE":1,"DROPPED":1,"NEXT":1,"TODO":1,"WAIT":1,"none":2}'
+  assert_output '{"DONE":1,"DROPPED":1,"NEXT":1,"TODO":1,"WAIT":1,"none":23}'
 }
 
-# The first step matches the anchor's children (files and folders); a
-# leading combinator is not supported yet (cutting-garden#211).
+# The first step matches the anchor's children (files and folders); a leading
+# `->>` would range over all descendants instead (org_list_query_forward_closure…).
 function org_mcp_query_bare_tag_matches_the_subtree { # @test
   mcp_drive org://test/ "$(tools_call 3 list_nodes '{"uri":"org://test/","query":"[!cutting_garden-org-file-v1, !cutting_garden-org-folder-v1] ->> !cutting_garden-org-headline-v1 project"}')"
   run jq -r '.nodes[].name' <<<"$(mcp_result_text "$output" 3)"
