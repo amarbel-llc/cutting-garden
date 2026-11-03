@@ -145,6 +145,27 @@ function organize_org_apply_state_atoms_tags_title { # @test
   assert_output --partial ':ID:       3f9c1e2a-7b44-4c1e-9a0d-2f1f6c0b8e11'
 }
 
+# A heading may carry a box (#377), but editing a boxed heading is not specified
+# yet: a document that gives a plain heading a box is refused before anything is
+# planned, pointing at #377, and nothing is written. (No generator emits a boxed
+# heading yet, so the box is added by hand.)
+function organize_org_boxed_heading_edit_is_refused { # @test
+  generate_inbox_by_state
+  local edited="$BATS_TEST_TMPDIR/edited.txt"
+  printf '%s\n' "$output" | sed 's/^## =DONE$/## ["id=nope"] =DONE/' >"$edited"
+  run grep -c '^## \["id=nope"\] =DONE$' "$edited"
+  assert_output 1
+
+  local before
+  before="$(org_dav GET /_inbox.org)"
+  run_cg organize -apply "$edited" -commit
+  assert_failure 64
+  assert_output --partial 'boxed heading id=nope'
+  assert_output --partial 'cutting-garden#377'
+  run org_dav GET /_inbox.org
+  assert_output "$before"
+}
+
 # An inherited tag lives in #+FILETAGS (or on a parent headline): removing it
 # from one headline's box is refused, naming the tag, and nothing is written.
 function organize_org_inherited_tag_removal_is_refused { # @test

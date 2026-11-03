@@ -441,5 +441,17 @@ func objectLinesByID(doc document) map[string]objectLine {
 		}
 		out[ln.ID] = ln
 	}
+	// A boxed heading (#377) is a node too: indexed as the line it stands for,
+	// its heading text as the trailer. An object line of the same id wins.
+	for _, s := range doc.Sections {
+		if s.Box == nil {
+			continue
+		}
+		if _, seen := out[s.Box.ID]; !seen {
+			h := *s.Box
+			h.Desc = s.Term
+			out[h.ID] = h
+		}
+	}
 	return out
 }

@@ -179,6 +179,11 @@ func (cmd *Organize) applyEdited(
 	if err != nil {
 		return false, errors.Wrapf(err, "organize --apply: parse pinned base blob")
 	}
+	// A boxed heading (#377) is a node: any edit of one, and any creation beneath
+	// one, is refused before a planner reads the document.
+	if err := refuseBoxedHeadingEdits(base, edited); err != nil {
+		return false, err
+	}
 
 	u, lister, err := command_components.ResolveRootListerPlugin(edited.Anchor)
 	if err != nil {

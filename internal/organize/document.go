@@ -184,6 +184,11 @@ type objectLine struct {
 type section struct {
 	Depth int
 	Term  string
+	// Box is set when the heading is itself an object: `# ["id=…"] name` (cutting-
+	// garden#377). Term is then the text AFTER the box. Nil for every ordinary
+	// bucket heading. A boxed heading is a node, not a placement: it is never an
+	// object line, so no bucket counts it as a member.
+	Box   *objectLine
 	Lines []objectLine
 }
 
@@ -450,7 +455,17 @@ func writeBody(b *strings.Builder, doc document) {
 	}
 	for _, s := range doc.Sections {
 		b.WriteByte('\n')
-		fmt.Fprintf(b, "%s %s\n", strings.Repeat("#", s.Depth), s.Term)
+		if s.Box != nil {
+			var interior strings.Builder
+			if trailingTags {
+				trellis.WriteLiteralTrailingTags(&interior, objectLiteral(*s.Box))
+			} else {
+				trellis.WriteLiteral(&interior, objectLiteral(*s.Box))
+			}
+			fmt.Fprintf(b, "%s [%s] %s\n", strings.Repeat("#", s.Depth), interior.String(), s.Term)
+		} else {
+			fmt.Fprintf(b, "%s %s\n", strings.Repeat("#", s.Depth), s.Term)
+		}
 		if len(s.Lines) > 0 {
 			b.WriteByte('\n')
 		}
@@ -465,11 +480,17 @@ func writeBody(b *strings.Builder, doc document) {
 // frame (`- [<interior>] <desc>`, design G13), shared with `list -format
 // espalier` since native tags slice 4 so the two surfaces cannot drift.
 func writeObjectLine(b *strings.Builder, ln objectLine, trailingTags bool) {
+	node_view.WriteObjectLine(b, objectLiteral(ln), ln.Desc, trailingTags)
+}
+
+// objectLiteral projects an objectLine's box onto a trellis.Literal — shared by
+// object lines and boxed headings, whose boxes are the same literal.
+func objectLiteral(ln objectLine) trellis.Literal {
 	lit := trellis.Literal{New: ln.New, ID: ln.ID, Type: ln.Type, Tags: ln.Tags}
 	for _, f := range ln.Fields {
 		lit.Atoms = append(lit.Atoms, trellis.Atom{Name: f.Name, Value: f.Value})
 	}
-	node_view.WriteObjectLine(b, lit, ln.Desc, trailingTags)
+	return lit
 }
 
 // --- parse -------------------------------------------------------------------
@@ -621,7 +642,11 @@ func parseBody(doc *document, body string) error {
 			if term == "" {
 				continue // a reset: the pop above IS the effect
 			}
-			doc.Sections = append(doc.Sections, section{Depth: depth, Term: term})
+			box, term, err := parseHeadingBox(term, i+1)
+			if err != nil {
+				return err
+			}
+			doc.Sections = append(doc.Sections, section{Depth: depth, Term: term, Box: box})
 			open = append(open, len(doc.Sections)-1)
 
 		case strings.HasPrefix(line, "-"):
@@ -671,6 +696,34 @@ func parseBody(doc *document, body string) error {
 	}
 	closeDescription()
 	return nil
+}
+
+// parseHeadingBox splits a heading's text into its optional leading box and the
+// heading term after it (cutting-garden#377): `["id=…"] trips` is the node
+// `id=…` standing as the heading `trips`. Text that does not open with `[` is an
+// ordinary heading term, returned as is. The box names an existing node, so a
+// temp-id box (a creation) and a box with no heading text after it are refused,
+// as is any box the literal parser rejects — each naming the physical body line.
+func parseHeadingBox(text string, line int) (*objectLine, string, error) {
+	if !strings.HasPrefix(text, "[") {
+		return nil, text, nil
+	}
+	ln, err := parseObjectLine(text)
+	if err != nil {
+		return nil, "", errors.BadRequestf("organize: body line %d: boxed heading %q: %s", line, text, err)
+	}
+	if ln.New {
+		return nil, "", errors.BadRequestf(
+			"organize: body line %d: boxed heading %q: a heading box names an existing node, "+
+				"not a temp id (a creation is an object line)", line, text)
+	}
+	if ln.Desc == "" {
+		return nil, "", errors.BadRequestf(
+			"organize: body line %d: boxed heading %q has no heading text after its box", line, text)
+	}
+	term := ln.Desc
+	ln.Desc, ln.Line = "", line
+	return &ln, term, nil
 }
 
 // isBodyComment reports whether a trimmed body line is an inert comment: a bare
