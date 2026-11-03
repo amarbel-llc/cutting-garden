@@ -126,9 +126,7 @@ func buildAndStoreFrom(
 	}
 
 	if spec.Kind == groupKindTree {
-		if err := refuseUnbuiltNest(effectiveNest(p.nest, configNest)); err != nil {
-			return "", "", err
-		}
+		spec.Nest = effectiveNest(p.nest, configNest)
 	}
 
 	// The tag interpreter serves two jobs here: a NAMESPACE grouping's rollup

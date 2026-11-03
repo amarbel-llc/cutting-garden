@@ -106,6 +106,15 @@ revised: |
     readable; `fmt-organize` compares the parsed, re-canonicalized forms, so
     a document pinned to such a blob is not refused as edited. Each line of a
     multi-line provenance note renders as its own `%` comment.
+  2026-11-03 — BOXED HEADINGS (cutting-garden#377): a heading MAY carry a box
+    (`# ["id=…"] name`), making the heading an object. See §Headings.
+  2026-11-03 — the `(tree)` GROUPING and the `_nest` lever (cutting-garden#353):
+    `- _group-by = (tree)` lays a plugin's nodes out by their own full hyphen
+    names; `- _nest = full | 1 | none` is its presentation lever, EXCLUDED from
+    the base. The base of a `(tree)` document is its sorted NAME SET, not its
+    heading layout. See §Headings → "The `(tree)` grouping" and §"The base
+    blob's shape". Read-only: edits of a name tree are refused pending
+    cutting-garden#380.
 ---
 
 # The organize document dialect
@@ -561,6 +570,14 @@ and appears ONLY on the data plane — `_genre`/`_body` on object nodes,
   semantics, content-addressed into `_base` when present and OMITTED at their
   defaults; `[organize] tag_atoms` / `tag_strip` config may set the defaults,
   and the document's explicit field wins.
+- `- _nest = full | 1 | none` — the `(tree)` grouping's nesting lever
+  (cutting-garden#353): `full` (the built-in default) nests every `-` segment,
+  `1` only the family heading, `none` lays the nodes out flat by full name. It
+  is accepted ONLY on a `- _group-by = (tree)` document (any other document
+  carrying it is rejected: a lever that does nothing is a trap), OMITTED at its
+  default, and defaultable via `[organize] nest`, the document's explicit field
+  winning. Unlike the levers above it is **presentation, not data**: it is
+  EXCLUDED from the base, so changing it is never an unapplied edit.
 
 **`%` / `%:` lines — the OPERATIONAL plane.** NOT content-addressed; **stripped
 from the base entirely** — they configure *how the apply behaves*, not what the
@@ -667,6 +684,41 @@ fields, and a field shadowing a harness-reserved name is a type error.
   `#` heading* — that pre-heading position IS the implicit "ungrouped"
   marker. On apply it reads as membership-∅ for the grouped dimension,
   consistent with the deletion-by-grouped-ness rule.
+- **Boxed headings** (cutting-garden#377). A heading's text MAY open with a
+  box, `# ["id=…"] trips` or `## ["id=…"] -cont`: the heading IS that object —
+  an existing node standing as a heading. The box is the object-line box (id,
+  and any tags or atoms) and the text after it is the heading term; a malformed
+  box, a temp-id box (a heading names an existing node, a creation is an object
+  line) and a box with no heading text are rejected, naming the body line. A
+  boxed heading is a node, not a placement: it is not an object line, so no
+  bucket counts it as a member and the duplicate-placement guard does not see
+  it. Editing one (its text, its place, deleting it, giving a plain heading a
+  box) and creating an object beneath one are refused until their semantics
+  are specified (cutting-garden#380); an unchanged boxed heading applies as a
+  no-op.
+- **The `(tree)` grouping** (cutting-garden#353). `--group-by (tree)` /
+  `- _group-by = (tree)` lays the nodes of a plugin out by their OWN full
+  hyphen names — a name the plugin supplies in the node type's Name listing
+  field (RFC 0009) — instead of by a tags field. A name splits at every `-`
+  past its first character (`_` is literal). The document nests one
+  continuation heading per segment, never collapsing a single-child chain:
+  `trips-26-01-a` is `# trips`, `## -26`, `### -01` and the line `-a`. A
+  heading is **boxed** when a node has exactly that prefix name and
+  **synthetic** (no box) when none does; a line's text is its name relative to
+  its heading, so a heading term joins onto its parent's. Under a heading,
+  leaves list before sub-headings, each in the order the selection first lists
+  them; a childless top-level node is a line above the first heading. Whether
+  a heading is boxed depends on the SELECTION: a parent the query filtered out
+  (the default `_terminal=no` can) is a synthetic heading over members that
+  keep their names. `- _nest = 1` stops at the family heading (every deeper
+  node a line relative to it) and `none` is flat, one line per node, its text
+  the full name. A node with no name (an org file not in the account's
+  `tag_files`), two nodes with one full name, mixed node types, and a plugin
+  declaring no Name field are rejected at generate. A `(tree)` document is
+  read-only: apply compares its name set with the base's and refuses a rename
+  or move, a deletion, an unknown id, an edited box and a creation (naming
+  the node and pointing at cutting-garden#380), while a respelling of the same
+  names is "no changes to apply".
 
 ### Object lines
 
@@ -812,6 +864,14 @@ defect is a real object existing at all for infrastructure, not merely its
 creation being printed; cutting-garden inherits the same invariant.)
 - Divergent edits to clones of one object: conflict (detectable only
   via the base).
+- **A `(tree)` document's base is its NAME SET** (cutting-garden#353): the
+  canonical text renders no headings and no `_nest`, only one box line per node,
+  sorted by full name (then id), each line's text the full name. A document's
+  name set is DERIVED from its layout (the heading terms along a line's path
+  concatenated with the line's text; a boxed heading contributes its own id and
+  its prefix name; a synthetic heading contributes nothing), so the flat and
+  every nested spelling of one set of names hash to the same `_base`, and the
+  clean-body comparison treats a respelling as clean and a rename as an edit.
 
 ### Deletion semantics by grouped-ness
 

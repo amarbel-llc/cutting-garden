@@ -165,7 +165,12 @@ spelling `(tags)` (whole tag set, buckets `# <tag>`), `<ns>` (tag
 namespace rollup), `dim=` (field), `dim=(granularity)` (date field at
 granularity) — a bare term is always a tag, a field is only ever addressed
 with an operator, and a `(…)` parenthetical is a meta qualifier (reserved
-in query position). `internal/trellis/literal.go` (`ParseLiteral` /
+in query position). `(tree)` (#353, `internal/organize/tree.go`) reads no
+tags field: it nests a plugin's nodes by their OWN full hyphen names (a node
+type's `ListingField.Name` field; org derives it for an account's `tag_files`,
+#378) as boxed or synthetic continuation headings; its `_nest` lever is
+presentation, its base is the sorted name set (any respelling is a no-op),
+and apply is read-only (renames: #380). `internal/trellis/literal.go` (`ParseLiteral` /
 `WriteLiteral`) owns organize's box interiors and heading terms; heading
 depth is normalized (shallowest level = root) and an empty heading resets
 context. Since native tags slice 2, an object's tag set renders as

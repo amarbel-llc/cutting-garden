@@ -60,7 +60,6 @@ teardown() {
 
 # (a) The whole tree, at the default nesting a tag-vocabulary file gets.
 function organize_tree_full_document { # @test
-  skip "needs the nested layout (S3 of cutting-garden#353)"
   write_org_tag_vocab_config
 
   run_cg organize "$TREE_SELECTION" '(tree)'
@@ -80,7 +79,6 @@ function organize_tree_nest_none_is_flat { # @test
 # (c) fmt-organize regenerates the same document: the live data is unchanged,
 # so the file is byte-identical and the summary says so.
 function organize_tree_fmt_organize_regenerates_the_same_document { # @test
-  skip "needs the nested layout (S3 of cutting-garden#353)"
   write_org_tag_vocab_config
   local doc="$BATS_TEST_TMPDIR/tree.txt"
 
@@ -99,7 +97,6 @@ function organize_tree_fmt_organize_regenerates_the_same_document { # @test
 # (d) `_nest` is presentation: a document respelled flat (its `_nest` changed)
 # is not an unapplied edit, so applying it is a refusal-free no-op.
 function organize_tree_nest_change_is_a_no_op_apply { # @test
-  skip "needs the nested layout (S3 of cutting-garden#353)"
   write_org_tag_vocab_config
   local edited="$BATS_TEST_TMPDIR/edited.txt"
 
@@ -186,12 +183,53 @@ function organize_tree_refuses_a_nameless_node { # @test
   assert_output --partial 'tag_files'
 }
 
-# Only the flat layout exists so far; the default nesting says so rather than
-# rendering something else.
-function organize_tree_default_nesting_is_not_built_yet { # @test
+# The nested document applies as a no-op when nothing changed: a full apply
+# with boxed headings in the document (the unchanged-boxed-heading case).
+function organize_tree_nested_apply_unchanged_is_a_no_op { # @test
   write_org_tag_vocab_config
+  local doc="$BATS_TEST_TMPDIR/tree.txt"
   run_cg organize "$TREE_SELECTION" '(tree)'
+  assert_success
+  printf '%s\n' "$output" >"$doc"
+  # priority, trips, tax, proj, proj-gamma, proj-gamma-two: boxed (`# zz` is not).
+  run grep -c '^#.* \["id=' "$doc"
+  assert_output 6
+
+  run_cg organize -apply "$doc" -commit
+  assert_success
+  assert_output "organize: no changes to apply"
+}
+
+# Editing a boxed heading's text is a rename of that node and every name
+# below it: refused for now, naming the heading and pointing at #380.
+function organize_tree_apply_refuses_a_boxed_heading_rename { # @test
+  write_org_tag_vocab_config
+  local doc="$BATS_TEST_TMPDIR/tree.txt" edited="$BATS_TEST_TMPDIR/edited.txt"
+  run_cg organize "$TREE_SELECTION" '(tree)'
+  assert_success
+  printf '%s\n' "$output" >"$doc"
+
+  sed 's/^# \(\["id=tags-trips"\]\) trips$/# \1 voyages/' "$doc" >"$edited"
+  run_cg organize -apply "$edited" -commit
   assert_failure 64
-  assert_output --partial 'flat layout so far'
-  assert_output --partial 'nest = "none"'
+  assert_output --partial '[id=tags-trips] was renamed ("trips" -> "voyages")'
+  assert_output --partial 'cutting-garden#380'
+}
+
+# `_nest = 1` nests only the family heading; the names are unchanged, so the
+# same base, and the nested and one-level spellings apply as no-ops to each other.
+function organize_tree_nest_one_is_a_respelling { # @test
+  write_org_tag_vocab_config 1
+  local one="$BATS_TEST_TMPDIR/one.txt"
+  run_cg organize "$TREE_SELECTION" '(tree)'
+  assert_success
+  printf '%s\n' "$output" >"$one"
+  run grep -c '^## ' "$one"
+  assert_output 0
+  run grep -c -- '- _nest = 1' "$one"
+  assert_output 1
+
+  run_cg organize -apply "$one" -commit
+  assert_success
+  assert_output "organize: no changes to apply"
 }

@@ -75,7 +75,7 @@ func TestBuildTreeDocument_FlatLayoutOfFullNames(t *testing.T) {
 		treeNode(t, "t1", "trips-26-01-a"),
 		treeNode(t, "inbox", "inbox"),
 	}
-	spec := groupSpec{Kind: groupKindTree}
+	spec := groupSpec{Kind: groupKindTree, Nest: nestNone}
 	doc, err := buildDocument(nodes, "fake://cal/", "", spec, treeLister(t, nodes...), nil, tagRender{}, nil)
 	if err != nil {
 		t.Fatalf("buildDocument: %v", err)

@@ -124,7 +124,9 @@ func (*Organize) GetDescription() command.Description {
 		Short: "reorganize a plugin's nodes by editing a faceted document",
 		Long: "Generates an editable document that groups a plugin's nodes " +
 			"by a field (`status=`, `date_due=(month)`), its whole tag set " +
-			"(`(tags)`), or a tag namespace (`project`), pinning the pre-edit state as a content-" +
+			"(`(tags)`), a tag namespace (`project`), or, for a plugin that names its " +
+			"nodes (an org tag-vocabulary file), the nodes' own hyphen names as nested " +
+			"headings (`(tree)`, read-only, with a `_nest` lever), pinning the pre-edit state as a content-" +
 			"addressed base; you move object lines between headings and apply " +
 			"the result, which three-way-merges the edits against the base and " +
 			"the re-queried live state and writes each move through the " +
@@ -153,7 +155,7 @@ func (cmd *Organize) SetFlagDefinitions(flagSet interfaces.CLIFlagDefinitions) {
 		"group-by",
 		"",
 		"grouping to build the document around (required to generate): `(tags)` "+
-			"for the whole tag set, a bare tag namespace (`project` → rollup; quote "+
+			"for the whole tag set, `(tree)` for the nodes' own hyphen names, a bare tag namespace (`project` → rollup; quote "+
 			"it if it contains `:` or `/`), `dim=` for a field (taken on trust when "+
 			"the plugin declares no facet schema), or `dim=(year|month|day)` for a "+
 			"date field at that granularity",

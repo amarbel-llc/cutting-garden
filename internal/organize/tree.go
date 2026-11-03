@@ -83,12 +83,138 @@ func buildTreeDocument(
 	if len(types) == 1 {
 		doc.Type = types[0]
 	}
+	entries := make([]objectLine, 0, len(nodes))
 	for _, n := range nodes {
-		doc.Ungrouped = append(doc.Ungrouped, objectLine{
-			ID: idOf(n.URIString()), Desc: names[n.URIString()],
-		})
+		entries = append(entries, objectLine{ID: idOf(n.URIString()), Desc: names[n.URIString()]})
+	}
+	switch nest := effectiveNest(spec.Nest, ""); nest {
+	case nestNone:
+		doc.Ungrouped = entries
+	default:
+		doc.Ungrouped, doc.Sections = layoutTree(entries, nest)
 	}
 	return doc, nil
+}
+
+// trieNode is one hyphen prefix of the name trie: a real node when line is set
+// (a node of exactly that name exists), synthetic when not. kids are in order of
+// first appearance in the selection.
+type trieNode struct {
+	prefix string
+	line   *objectLine
+	kids   []*trieNode
+}
+
+// nameBoundaries are the prefix lengths of name at which it splits: before
+// every `-` past the first character, then the whole name. A name with no
+// such `-` is one segment.
+func nameBoundaries(name string) []int {
+	var cuts []int
+	for i := 1; i < len(name); i++ {
+		if name[i] == '-' {
+			cuts = append(cuts, i)
+		}
+	}
+	return append(cuts, len(name))
+}
+
+// layoutTree lays the name set out as nested continuation headings, in the
+// order the selection lists them (cutting-garden#353):
+//
+//   - one heading per hyphen segment, never collapsed (`# trips` > `## -26` >
+//     `### -01` > `- -a`), BOXED when a node has exactly that prefix name and
+//     SYNTHETIC (no box) when none does;
+//   - a line's text is its name relative to its heading;
+//   - under a heading, leaves list before sub-headings, each in order of first
+//     appearance; a childless top-level node is a line above the first heading;
+//   - `nest = 1` stops after the family heading: every deeper node is a line
+//     whose text is its name relative to that family.
+//
+// Whether a heading is boxed depends on the SELECTION: a parent the query
+// filtered out is a synthetic heading over members that keep their names.
+func layoutTree(entries []objectLine, nest string) (ungrouped []objectLine, sections []section) {
+	root := &trieNode{}
+	for i := range entries {
+		node := root
+		for _, cut := range nameBoundaries(entries[i].Desc) {
+			prefix := entries[i].Desc[:cut]
+			var next *trieNode
+			for _, kid := range node.kids {
+				if kid.prefix == prefix {
+					next = kid
+					break
+				}
+			}
+			if next == nil {
+				next = &trieNode{prefix: prefix}
+				node.kids = append(node.kids, next)
+			}
+			node = next
+		}
+		line := entries[i]
+		node.line = &line
+	}
+
+	maxDepth := 1 << 30
+	if nest == nestOne {
+		maxDepth = 1
+	}
+	var emit func(n *trieNode, parent string, depth int)
+	emit = func(n *trieNode, parent string, depth int) {
+		sec := section{Depth: depth, Term: headingTerm(n.prefix[len(parent):])}
+		if n.line != nil {
+			sec.Box = &objectLine{ID: n.line.ID}
+		}
+		var subs []*trieNode
+		if depth >= maxDepth {
+			// Past the cap: every node below is a line relative to this heading.
+			var walk func(*trieNode)
+			walk = func(k *trieNode) {
+				if k.line != nil {
+					ln := *k.line
+					ln.Desc = k.prefix[len(n.prefix):]
+					sec.Lines = append(sec.Lines, ln)
+				}
+				for _, kid := range k.kids {
+					walk(kid)
+				}
+			}
+			for _, kid := range n.kids {
+				walk(kid)
+			}
+		} else {
+			for _, kid := range n.kids {
+				if len(kid.kids) == 0 {
+					ln := *kid.line
+					ln.Desc = kid.prefix[len(n.prefix):]
+					sec.Lines = append(sec.Lines, ln)
+				} else {
+					subs = append(subs, kid)
+				}
+			}
+		}
+		sections = append(sections, sec)
+		for _, sub := range subs {
+			emit(sub, n.prefix, depth+1)
+		}
+	}
+	for _, top := range root.kids {
+		if len(top.kids) == 0 {
+			ungrouped = append(ungrouped, *top.line)
+			continue
+		}
+		emit(top, "", 1)
+	}
+	return ungrouped, sections
+}
+
+// headingTerm spells a name segment as a heading term: as is when it reads back
+// as itself, quoted otherwise.
+func headingTerm(segment string) string {
+	if v, _, err := parseHeadingValue(segment); err == nil && v == segment {
+		return segment
+	}
+	return trellis.QuoteIfNeeded(segment)
 }
 
 // headingText is a heading term's text as it joins into a name: a bare or
@@ -201,16 +327,4 @@ func refuseTreeEdits(base, edited document) error {
 		}
 	}
 	return nil
-}
-
-// refuseUnbuiltNest is generate's guard while only the flat layout exists: a
-// `(tree)` whose effective `_nest` is not none cannot be rendered yet.
-func refuseUnbuiltNest(nest string) error {
-	if nest == nestNone {
-		return nil
-	}
-	return errors.BadRequestf(
-		"organize: --group-by (tree) can only render the flat layout so far; set "+
-			"`[organize] nest = \"none\"` (or `- _nest = none` in the document), not %q "+
-			"(cutting-garden#353)", nest)
 }

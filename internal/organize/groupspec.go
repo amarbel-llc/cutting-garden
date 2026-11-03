@@ -56,6 +56,10 @@ type groupSpec struct {
 	Granularity cgp.DateGranularity // "" for a non-date dimension
 	Kind        groupKind
 	Namespace   string // set only for groupKindTagNamespace
+	// Nest is the effective `_nest` of a groupKindTree spec (full | 1 | none;
+	// empty means full). Set after the config/document defaults resolve, since
+	// the spelling `(tree)` does not carry it.
+	Nest string
 }
 
 // grouped reports whether the spec names a grouping at all: the zero spec (a

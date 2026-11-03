@@ -1,6 +1,11 @@
 ---
 status: proposed
 date: 2026-06-15
+revised: |
+  2026-11-03 — `ListingField.Name` (cutting-garden#353, #378): a listing field
+    may be marked as the node's full hyphen name, with `ValidateListingFieldSets`
+    and `ListingNameKey`; additive, and not carried over the wire (RFC 0013 has
+    no `name_field`). See §2 "Listing declaration".
 ---
 
 # cutting-garden Plugin SDK (the `pkgs/` public surface)
@@ -202,6 +207,15 @@ unchanged.
   gives `pkgs/cutting_garden_plugins` a dependency on
   `code.linenisgreat.com/tommy/pkg/cst` — accepted, since every
   account-bearing plugin already imports tommy through its section decoder.
+- Listing declaration (cutting-garden#353, #378): `ListingField`,
+  `NodeTypeListingFields`, `ListingFieldsDescriber`. `ListingField.Name` marks
+  the field holding a node's FULL HYPHEN NAME (`trips-26-01-a`), which the
+  `(tree)` organize grouping nests by (RFC 0015): at most one per node type
+  (`ValidateListingFieldSets` rejects a type declaring two), read through
+  `ListingNameKey`; a node of the type MAY omit it, meaning it has no name.
+  The field is additive. It is NOT carried over the wire: RFC 0013 declares no
+  `name_field`, so a wire plugin cannot yet declare one and `(tree)` over it is
+  refused.
 - Resolution and introspection: `ResolveScheme`, `RegisteredPlugins`.
 - Sentinel errors: `ErrUnknownScheme`, `ErrAlreadyRegistered`.
 
