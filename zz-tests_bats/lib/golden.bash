@@ -56,7 +56,7 @@ assert_golden() {
   expected_body="$(mask_base_pin <"$golden")"
   actual_body="$(mask_base_pin <<<"$output")"
   if [[ $expected_body != "$actual_body" ]]; then
-    fail "$(printf 'golden %s differs beyond its `- _base` pin; update mode only fills the pin in\n%s' \
+    fail "$(printf 'golden %s differs beyond its _base pin; update mode only fills the pin in\n%s' \
       "$golden" "$(diff -u <(printf '%s\n' "$expected_body") <(printf '%s\n' "$actual_body") || true)")"
     return 1
   fi
@@ -71,7 +71,7 @@ golden_with_pin_of() {
   local pin
   pin="$(grep -m1 '^- _base = ' <<<"$2")"
   [[ -n $pin ]] || {
-    fail 'no `- _base` line in the document to take the pin from'
+    fail "no _base line in the document to take the pin from"
     return 1
   }
   sed "s|^- _base = .*|$pin|" "$(golden_path "$1")"
