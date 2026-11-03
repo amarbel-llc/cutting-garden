@@ -25,6 +25,10 @@ const (
 	// groupKindTagNamespace groups by a NAMESPACE within the tag set (bare
 	// `project`): Dim is the tag dimension, Namespace the segment prefix.
 	groupKindTagNamespace
+	// groupKindTree lays the nodes out by their OWN full hyphen names (`(tree)`,
+	// cutting-garden#353): no tag dimension, no buckets — nesting is derived
+	// from the names (tree.go).
+	groupKindTree
 )
 
 // groupSpec is a resolved grouping: the ONE spelling shared by the --group-by
@@ -71,6 +75,8 @@ func (s groupSpec) String() string {
 		return trellis.QuoteIfNeeded(s.Namespace)
 	case groupKindTagWhole:
 		return "(tags)"
+	case groupKindTree:
+		return groupByTree
 	default:
 		if s.Granularity == "" {
 			return trellis.QuoteIfNeeded(s.Dim) + "="
@@ -103,6 +109,8 @@ func parseGroupByEncoding(enc string) (groupSpec, error) {
 	switch gt.kind {
 	case groupTermTags:
 		return groupSpec{Kind: groupKindTagWhole}, nil
+	case groupTermTree:
+		return groupSpec{Kind: groupKindTree}, nil
 	case groupTermBare:
 		return groupSpec{Kind: groupKindTagNamespace, Namespace: gt.name}, nil
 	default:
@@ -126,6 +134,9 @@ const (
 	// groupTermField is `<dim>=` (a field, qualifier empty) or
 	// `<dim>=(<qualifier>)` (a field with a granularity qualifier).
 	groupTermField
+	// groupTermTree is the `(tree)` qualifier term: the nodes by their own full
+	// hyphen names (#353).
+	groupTermTree
 )
 
 // groupTerm is the parsed shape of a group-by spelling (flag, `_group-by`, or
@@ -206,12 +217,16 @@ func parseGroupTerm(spelling string) (groupTerm, error) {
 	}
 	switch b := t.Basic.(type) {
 	case trellis.QualifierBasicTerm:
-		if b.Qualifier.Name != "tags" {
-			return groupTerm{}, errors.BadRequestf(
-				"unknown qualifier; the only bare qualifier is `(tags)` (the type's whole tag set)",
-			)
+		switch b.Qualifier.Name {
+		case "tags":
+			return groupTerm{kind: groupTermTags}, nil
+		case "tree":
+			return groupTerm{kind: groupTermTree}, nil
 		}
-		return groupTerm{kind: groupTermTags}, nil
+		return groupTerm{}, errors.BadRequestf(
+			"unknown qualifier; the bare qualifiers are `(tags)` (the type's whole tag set) " +
+				"and `(tree)` (the nodes by their full hyphen names)",
+		)
 	case trellis.FieldPredBasicTerm:
 		return parseFieldGroupTerm(b.FieldPred)
 	}
@@ -336,6 +351,11 @@ func parseGroupSpec(
 			return groupSpec{}, badGroupBy(spelling, "the plugin declares no tag dimension to group by")
 		}
 		return groupSpec{Dim: tagDims[0], Kind: groupKindTagWhole}, nil
+
+	case groupTermTree:
+		// The names come from the nodes' own Name listing field, checked when
+		// the document is built (buildTreeDocument); no tag dimension is needed.
+		return groupSpec{Kind: groupKindTree}, nil
 
 	case groupTermBare:
 		if slices.Contains(tagDims, gt.name) {

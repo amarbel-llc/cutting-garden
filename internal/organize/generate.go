@@ -125,6 +125,12 @@ func buildAndStoreFrom(
 		return "", "", err
 	}
 
+	if spec.Kind == groupKindTree {
+		if err := refuseUnbuiltNest(effectiveNest(p.nest, configNest)); err != nil {
+			return "", "", err
+		}
+	}
+
 	// The tag interpreter serves two jobs here: a NAMESPACE grouping's rollup
 	// (RFC 0019 tags slice 3 — reject the naive interpreter up front with a
 	// clear message rather than its raw "declares no namespaces"), and the
@@ -271,6 +277,9 @@ func buildDocument(
 		if err := rejectAmbiguousBoxIDs(nodes, idOf); err != nil {
 			return document{}, err
 		}
+	}
+	if spec.Kind == groupKindTree {
+		return buildTreeDocument(nodes, anchor, query, spec, lister)
 	}
 	doc := document{
 		Anchor:     anchor,

@@ -179,6 +179,16 @@ func (cmd *Organize) applyEdited(
 	if err != nil {
 		return false, errors.Wrapf(err, "organize --apply: parse pinned base blob")
 	}
+	// A `(tree)` document is read-only (#353, #380): it plans nothing. Its name
+	// set is compared with the base's, which tolerates every respelling, so this
+	// precedes the boxed-heading guard (a respelling moves headings).
+	if spec.Kind == groupKindTree {
+		if err := refuseTreeEdits(base, edited); err != nil {
+			return false, err
+		}
+		fmt.Fprintln(cmd.output, "organize: no changes to apply")
+		return commit, nil
+	}
 	// A boxed heading (#377) is a node: any edit of one, and any creation beneath
 	// one, is refused before a planner reads the document.
 	if err := refuseBoxedHeadingEdits(base, edited); err != nil {

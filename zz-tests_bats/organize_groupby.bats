@@ -243,5 +243,5 @@ function organize_groupby_rejects_query_shapes { # @test
 
   run_cg organize -group-by '(foo)' "$FIELDS"
   assert_failure 64
-  assert_output 'cutting-garden: organize: --group-by (foo): unknown qualifier; the only bare qualifier is `(tags)` (the type'"'"'s whole tag set)'
+  assert_output 'cutting-garden: organize: --group-by (foo): unknown qualifier; the bare qualifiers are `(tags)` (the type'"'"'s whole tag set) and `(tree)` (the nodes by their full hyphen names)'
 }

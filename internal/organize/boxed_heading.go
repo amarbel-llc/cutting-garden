@@ -56,7 +56,7 @@ func refuseBoxedHeadingEdits(base, edited document) error {
 	refuse := func(h boxedHeading, what string) error {
 		return errors.BadRequestf(
 			"organize --apply: boxed heading %s %q was %s; editing a boxed heading "+
-				"is not supported yet (see cutting-garden#377 for the edit semantics)",
+				"is not supported yet (see cutting-garden#377 and #380 for the edit semantics)",
 			h.ID, h.Term, what)
 	}
 	for _, h := range base.boxedHeadings() {

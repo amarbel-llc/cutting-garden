@@ -438,6 +438,9 @@ func renderCanonical(doc document) string {
 	doc.BaseDigest = ""
 	doc.Provenance = ""
 	doc.Nest = ""
+	if doc.GroupBy == groupByTree {
+		doc = doc.treeCanonical()
+	}
 	return render(doc)
 }
 
