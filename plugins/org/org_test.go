@@ -305,6 +305,24 @@ func TestRelativeNodeID(t *testing.T) {
 	}
 }
 
+// Under a FILE anchor a headline is addressed by its query alone, but the id
+// read_node and list_nodes print under the file is the folder-relative
+// `_inbox.org?id=…` (cutting-garden#383): resolving it by appending it to the
+// file's path doubled the path. All three spellings reach the same node, and
+// an id naming a different file is declined.
+func TestResolveNodeID_FileAnchor(t *testing.T) {
+	const anchor, node = "org://test/_inbox.org", "org://test/_inbox.org?id=abc"
+	for _, id := range []string{"id=abc", "?id=abc", "_inbox.org?id=abc"} {
+		got, ok := (Plugin{}).ResolveNodeID(id, anchor)
+		if !ok || got != node {
+			t.Errorf("ResolveNodeID(%q, %q) = %q, %v; want %q", id, anchor, got, ok, node)
+		}
+	}
+	if got, ok := (Plugin{}).ResolveNodeID("other.org?id=abc", anchor); ok {
+		t.Errorf("an id naming another file resolved under a file anchor to %q", got)
+	}
+}
+
 func TestClassifyURI_Errors(t *testing.T) {
 	for _, raw := range []string{
 		"org:///x.org", "org://test/notes.txt", "org://test/a.org?id=x&h=y", "org://test/?h=x",

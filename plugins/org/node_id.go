@@ -36,6 +36,12 @@ func (Plugin) RelativeNodeID(nodeURI, anchor string) (string, bool) {
 	}
 }
 
+// isFolderPath reports whether an anchor's path (no leading slash) is the
+// account root or a folder.
+func isFolderPath(p string) bool {
+	return p == "" || strings.HasSuffix(p, "/")
+}
+
 // ResolveNodeID inverts RelativeNodeID (cutting-garden#315): `id=…` is a
 // headline in the anchor's file, `_inbox.org?id=…` a headline in a file
 // under the anchor folder. An id that does not round-trip is declined, so
@@ -47,10 +53,16 @@ func (p Plugin) ResolveNodeID(id, anchor string) (string, bool) {
 	}
 	anchorPath := strings.TrimPrefix(a.Path, "/")
 	file, query, nested := strings.Cut(id, "?")
+	if nested && !isFolderPath(anchorPath) && (file == "" || file == anchorPath) {
+		// Under a FILE anchor the folder-relative spelling read_node prints
+		// (`_inbox.org?id=…`, cutting-garden#383) and a leading `?` name the
+		// same headline as the bare query.
+		id, nested = query, false
+	}
 	switch {
 	case nested:
 		file = anchorPath + file
-	case anchorPath == "" || strings.HasSuffix(anchorPath, "/"):
+	case isFolderPath(anchorPath):
 		// A bare query names a headline only under a FILE anchor; under a
 		// folder it is a file or folder id, the framework default's.
 		return "", false
