@@ -67,8 +67,10 @@ func (*Health) GetDescription() command.Description {
 			"and reports, for each, the schemes it claims, its receipt " +
 			"type-tag, and which capabilities it implements: capture, " +
 			"restore (direct or via the capture protocol), diff, the " +
-			"RFC 0002 capture protocol (with its kind), and RootLister " +
-			"traversal (with its node types). Takes no positional arguments.",
+			"RFC 0002 capture protocol (with its kind), RootLister " +
+			"traversal (with its node types), and facets (RFC 0012: the " +
+			"declared dimensions, and whether the plugin counts them itself " +
+			"or the framework folds them). Takes no positional arguments.",
 	}
 }
 
@@ -118,6 +120,11 @@ type pluginRow struct {
 	Diff      bool     `json:"diff"`
 	Protocol  string   `json:"protocol_kind,omitempty"`
 	Traversal []string `json:"traversal_types,omitempty"`
+	// Facets are the declared facet dimension keys (RFC 0012), each once;
+	// FacetCounting says who computes a summary: "counter" (the plugin's
+	// one-shot FacetCounter) or "fold" (the framework walk).
+	Facets        []string `json:"facets,omitempty"`
+	FacetCounting string   `json:"facet_counting,omitempty"`
 }
 
 // collectRows enumerates the registered plugins and probes each.
@@ -164,7 +171,42 @@ func probe(p cutting_garden_plugins.Plugin) pluginRow {
 		}
 	}
 
+	row.Facets, row.FacetCounting = probeFacets(p)
+
 	return row
+}
+
+// probeFacets reports p's declared facet dimensions in declaration order,
+// each once, and how its summaries are computed.
+func probeFacets(p cutting_garden_plugins.Plugin) (dimensions []string, counting string) {
+	if describer, ok := p.(cutting_garden_plugins.FacetDescriber); ok {
+		seen := make(map[string]bool)
+		for _, typeFacets := range describer.DescribeFacets() {
+			for _, dimension := range typeFacets.Dimensions {
+				if !seen[dimension.Key] {
+					seen[dimension.Key] = true
+					dimensions = append(dimensions, dimension.Key)
+				}
+			}
+		}
+	}
+
+	switch {
+	case isType[cutting_garden_plugins.FacetCounter](p):
+		counting = "counter"
+	case dimensions != nil:
+		counting = "fold"
+	}
+	return dimensions, counting
+}
+
+// facetsLabel is the table's short form of a row's facets: the dimension
+// count and who counts them (the json output lists the keys).
+func facetsLabel(r pluginRow) string {
+	if r.FacetCounting == "" {
+		return "-"
+	}
+	return fmt.Sprintf("%d (%s)", len(r.Facets), r.FacetCounting)
 }
 
 // isType reports whether p satisfies interface T.
@@ -191,16 +233,17 @@ func writeText(w io.Writer, rows []pluginRow) error {
 
 	// Writes to a strings.Builder cannot fail, so the row writes are
 	// error-free; only the final flush to w is fallible.
-	fmt.Fprintln(tw, "PLUGIN\tSCHEMES\tCAPTURE\tRESTORE\tDIFF\tPROTOCOL\tTRAVERSAL")
+	fmt.Fprintln(tw, "PLUGIN\tSCHEMES\tCAPTURE\tRESTORE\tDIFF\tPROTOCOL\tFACETS\tTRAVERSAL")
 	for _, r := range rows {
 		fmt.Fprintf(
-			tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			r.Plugin,
 			schemesLabel(r.Schemes),
 			yesNo(r.Capture),
 			r.Restore,
 			yesNo(r.Diff),
 			orDash(r.Protocol),
+			facetsLabel(r),
 			orDash(strings.Join(r.Traversal, ",")),
 		)
 	}

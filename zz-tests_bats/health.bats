@@ -14,6 +14,7 @@ function health_reports_plugins_and_capabilities { # @test
   assert_output --partial 'PLUGIN'
   assert_output --partial 'SCHEMES'
   assert_output --partial 'TRAVERSAL'
+  assert_output --partial 'FACETS'
   assert_output --partial 'caldav'
   assert_output --partial 'ytdlp'
   assert_output --partial 'git'
@@ -97,6 +98,8 @@ function health_json_capabilities_per_plugin { # @test
   assert_cap caldav capture true
   assert_cap caldav restore yes
   assert_cap caldav diff true
+  # caldav is also the facet reference: it counts its own summaries.
+  assert_cap caldav facet_counting counter
   [[ $(traversal caldav) == "caldav-calendar-v1,caldav-object-vtodo-v1,caldav-object-vevent-v1,caldav-object-vjournal-v1" ]] ||
     fail "caldav traversal = '$(traversal caldav)', want the calendar container plus three per-component leaf types"
 }

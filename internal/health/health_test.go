@@ -82,6 +82,20 @@ func (fakeFull) ListRoots(
 	return nil, nil
 }
 
+// DescribeFacets makes fakeFull a facet-declaring plugin with no
+// FacetCounter: its summaries come from the framework fold. status is
+// declared on both types, so the facets column lists it once.
+func (fakeFull) DescribeFacets() []cutting_garden_plugins.NodeTypeFacets {
+	return []cutting_garden_plugins.NodeTypeFacets{
+		{Tag: "fakefull-container-v1", Dimensions: []cutting_garden_plugins.FacetDimension{
+			{Key: "status"},
+		}},
+		{Tag: "fakefull-object-v1", Dimensions: []cutting_garden_plugins.FacetDimension{
+			{Key: "status"}, {Key: "priority"},
+		}},
+	}
+}
+
 // fakeProtocol implements capture + diff and restores through the RFC 0002
 // capture protocol rather than directly: the "protocol" restore branch and
 // the protocol-kind column.
@@ -190,6 +204,16 @@ func TestProbe_CapabilitiesPerPlugin(t *testing.T) {
 		strings.Join(r.Traversal, ",") != "fakefull-container-v1,fakefull-object-v1" {
 		t.Errorf("fakefull row = %+v", r)
 	}
+	// fakefull declares facets without a FacetCounter (cutting-garden#155):
+	// its dimensions, each once, summarized by the framework fold.
+	if r := rows["fakefull"]; strings.Join(r.Facets, ",") != "status,priority" ||
+		r.FacetCounting != "fold" {
+		t.Errorf("fakefull facets = %v (%q), want status,priority by fold",
+			r.Facets, r.FacetCounting)
+	}
+	if r := rows["fakeproto"]; len(r.Facets) != 0 || r.FacetCounting != "" {
+		t.Errorf("fakeproto facets = %v (%q), want none", r.Facets, r.FacetCounting)
+	}
 	// displayName skips the empty schemeless claim and names the plugin
 	// after its first non-empty scheme.
 	if r := rows["fakefull"]; len(r.Schemes) != 2 || r.Schemes[0] != "" {
@@ -223,8 +247,8 @@ func TestRun_TextTable(t *testing.T) {
 	// "(default)" is fakefull's empty schemeless claim, rendered readably
 	// instead of a bare leading comma.
 	for _, want := range []string{
-		"PLUGIN", "SCHEMES", "TRAVERSAL",
-		"fakefull", "fakeproto", "(default)",
+		"PLUGIN", "SCHEMES", "TRAVERSAL", "FACETS",
+		"fakefull", "fakeproto", "(default)", "2 (fold)",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("text output missing %q:\n%s", want, out)
