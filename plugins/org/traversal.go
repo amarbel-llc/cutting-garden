@@ -148,7 +148,13 @@ func entryNode(acct string, e davEntry) cutting_garden_plugins.Node {
 func headlineNodes(pf *parsedFile, ns []*hnode, now time.Time) []cutting_garden_plugins.Node {
 	out := make([]cutting_garden_plugins.Node, 0, len(ns))
 	for _, n := range ns {
-		out = append(out, headlineNode(pf, n, now))
+		node := headlineNode(pf, n, now)
+		// The body rides listings only (cutting-garden#386): read_node has it
+		// at its top level, and facet folds and searches have no use for it.
+		if n.h.Body != "" {
+			node.Fields[fieldBody] = n.h.Body
+		}
+		out = append(out, node)
 	}
 	return out
 }

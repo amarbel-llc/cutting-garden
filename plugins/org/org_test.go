@@ -123,6 +123,44 @@ func TestListRoots_FileAndHeadline(t *testing.T) {
 	}
 }
 
+// A headline's body rides its listing Fields so one list_nodes call can triage
+// a subtree (cutting-garden#386); it is declared OptIn, so the default view
+// stays slim, and a headline without a body carries no key.
+func TestListRoots_HeadlineBodyIsAnOptInField(t *testing.T) {
+	setup(t)
+	nodes, err := Plugin{}.ListRoots(context.Background(), mustURL(t, "org://test/_inbox.org"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := nodes[0].Fields[fieldBody]; got != "Ask about the valve." {
+		t.Errorf("plumber body field = %v", got)
+	}
+	if _, ok := nodes[2].Fields[fieldBody]; ok {
+		t.Errorf("a headline without a body carries a body field: %v", nodes[2].Fields)
+	}
+	var declared, optIn bool
+	for _, set := range (Plugin{}).DescribeListingFields() {
+		for _, f := range set.Fields {
+			if set.Tag == typeHeadline && f.Key == fieldBody {
+				declared, optIn = true, f.OptIn
+			}
+		}
+	}
+	if !declared || !optIn {
+		t.Errorf("headline body listing field declared=%v optIn=%v, want both", declared, optIn)
+	}
+
+	// read_node already has the body at its top level; the structured fields
+	// must not repeat it.
+	content, _, err := Plugin{}.ReadLeaf(context.Background(), mustURL(t, "org://test/_inbox.org?h=Call+the+plumber"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := content.Structured.(headlineContent).Fields[fieldBody]; ok {
+		t.Error("read_node repeats the body under fields")
+	}
+}
+
 func TestQuotedTagNotInherited(t *testing.T) {
 	setup(t)
 	nodes, err := Plugin{}.ListRoots(context.Background(), mustURL(t, "org://test/_inbox.org?h=Renew+passport"))

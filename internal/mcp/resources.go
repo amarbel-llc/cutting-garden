@@ -829,11 +829,51 @@ func enrichedNodeViews(
 	if err != nil {
 		return nil, err
 	}
+	optIn := optInListingFields(lister)
 	views := make([]nodeView, 0, len(nodes))
 	for _, n := range nodes {
-		views = append(views, enrichedNodeView(lister, n, presentTags))
+		v := enrichedNodeView(lister, n, presentTags)
+		v.Fields = withoutKeys(v.Fields, optIn[n.Type])
+		views = append(views, v)
 	}
 	return views, nil
+}
+
+// optInListingFields maps a node type tag to its OptIn listing-field keys
+// (ListingField.OptIn, cutting-garden#386): the default enriched view drops
+// them and only a `fields` projection naming one returns it.
+func optInListingFields(lister cutting_garden_plugins.RootLister) map[string]map[string]bool {
+	out := map[string]map[string]bool{}
+	d, ok := lister.(cutting_garden_plugins.ListingFieldsDescriber)
+	if !ok {
+		return out
+	}
+	for _, nt := range d.DescribeListingFields() {
+		for _, f := range nt.Fields {
+			if f.OptIn {
+				if out[nt.Tag] == nil {
+					out[nt.Tag] = map[string]bool{}
+				}
+				out[nt.Tag][f.Key] = true
+			}
+		}
+	}
+	return out
+}
+
+// withoutKeys is fields minus drop, as a copy: Node.Fields is shared with the
+// plugin's cache, so it is never edited in place.
+func withoutKeys(fields map[string]any, drop map[string]bool) map[string]any {
+	if len(drop) == 0 {
+		return fields
+	}
+	out := make(map[string]any, len(fields))
+	for k, v := range fields {
+		if !drop[k] {
+			out[k] = v
+		}
+	}
+	return out
 }
 
 // enrichedNodeView projects n onto the enriched (default) shape: bareNodeView

@@ -107,6 +107,19 @@ function org_mcp_read_node_returns_body_and_fields { # @test
 	EOM
 }
 
+# One list_nodes call returns the sibling headlines' bodies when `fields` names
+# `body` (#386); the default listing leaves it out.
+function org_mcp_list_nodes_body_is_opt_in { # @test
+  mcp_drive org://test/ "$(tools_call 3 list_nodes '{"uri":"org://test/_inbox.org"}')"
+  run jq -r '[.nodes[].fields | has("body")] | any' <<<"$(mcp_result_text "$output" 3)"
+  assert_output false
+
+  mcp_drive org://test/ "$(tools_call 4 list_nodes '{"uri":"org://test/_inbox.org","fields":["title","body"]}')"
+  run jq -r '.nodes[] | select(.fields.title == "Call the plumber about the leak") | .fields.body' \
+    <<<"$(mcp_result_text "$output" 4)"
+  assert_output 'Ask about the shutoff valve too.'
+}
+
 # A tag-vocabulary file (the account's `tag_files`, #378) gives each headline
 # its full hyphen name: the nearest bare ancestor's title plus the `-…` titles
 # below it. A file not listed carries no name, nor does a task file.

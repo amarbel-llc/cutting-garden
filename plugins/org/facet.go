@@ -28,6 +28,7 @@ const (
 	fieldID            = "id"
 	fieldModified      = "modified"
 	fieldName          = "name"
+	fieldBody          = "body"
 
 	// valueNone is the known-empty value for a headline without a keyword,
 	// priority, or date (RFC 0012 §3).

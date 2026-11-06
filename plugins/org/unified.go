@@ -137,6 +137,9 @@ func (Plugin) DescribeListingFields() []cutting_garden_plugins.NodeTypeListingFi
 			// The full hyphen name, present only on a tag-vocabulary file's
 			// headlines (the account's tag_files, #378).
 			{Key: fieldName, Label: "Hyphen name", Name: true},
+			// The headline's own text, returned by list_nodes only when a
+			// `fields` projection names it (#386); absent when it has none.
+			{Key: fieldBody, Label: "Body", OptIn: true},
 		}},
 	}
 }

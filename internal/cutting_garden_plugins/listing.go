@@ -43,6 +43,11 @@ type ListingField struct {
 	// specified separately (cutting-garden#380). Wire plugins cannot declare it
 	// yet — RFC 0013 carries no `name_field`.
 	Name bool
+	// OptIn marks a heavy field (an org headline's body, cutting-garden#386)
+	// the plugin MAY carry on every node's Fields but that the MCP listing
+	// returns only when a `fields` projection names it, so the default
+	// enriched listing stays slim. Wire plugins cannot declare it yet.
+	OptIn bool
 }
 
 // NodeTypeListingFields binds a set of declared listing fields to one node
