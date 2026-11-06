@@ -196,7 +196,9 @@ func TestRunPassesConformantTestpeer(t *testing.T) {
 			" with its fields",
 		"ok 28 - node.create_child: a repeated idempotency_key returns the" +
 			" same node, existed",
-		"1..28",
+		"ok 29 - node.bulk_mutate: a sweep whose listing declines the filter" +
+			" is refused # SKIP manifest declares no bulk_sweep",
+		"1..29",
 	} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("output missing %q:\n%s", want, out.String())

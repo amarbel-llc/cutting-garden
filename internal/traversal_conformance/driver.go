@@ -95,6 +95,7 @@ func Run(
 	r.casePresentation(ctx)
 	r.caseTerminalValues()
 	r.caseCreation(ctx)
+	r.caseBulkSweepRefusesDecline(ctx)
 
 	tw.Plan()
 

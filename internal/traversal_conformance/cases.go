@@ -38,6 +38,7 @@ const (
 	nameDeleteResult  = "node.delete: the result is an object whose name, when present, is a string"
 	nameDeleteMissing = "node.delete: deleting a node that is not there is -32004"
 	nameBulkOutcomes  = "node.bulk_mutate: outcomes, when present, are one per op and agree with the lists"
+	nameBulkSweepDecl = "node.bulk_mutate: a sweep whose listing declines the filter is refused"
 	nameByContainer   = "facets.counts: by_container raw invariants"
 	nameDescend       = "facets.counts: descend targets reachable"
 	nameContainerBody = "leaf.read: container returns its own body beside children"
@@ -284,6 +285,67 @@ func (r *runner) casePatchTriState(ctx context.Context) {
 		traversal_serve.NodeDeleteParams{URI: probe}, nil,
 	)
 	r.assertRPCCode(nameDeleteMissing, err, traversal_serve.CodeNotFound)
+}
+
+// caseBulkSweepRefusesDecline sweeps a container whose enriched listing
+// DECLINES the filter and requires the call to be refused (cutting-garden
+// #208, #191's write-safety rule): a sweep must never widen from "matching"
+// to "every child", and must not read the decline as "nothing matched"
+// either. Any success fails the point, with what it claims to have applied.
+// Gated on CapBulkMutate and the manifest's [bulk_sweep]; the fixture
+// author confirms the decline happens at decline_container.
+func (r *runner) caseBulkSweepRefusesDecline(ctx context.Context) {
+	ctx, cancel := context.WithTimeout(ctx, perCaseDeadline)
+	defer cancel()
+
+	spec := r.manifest.BulkSweep
+	if spec == nil {
+		r.tap.Skip(nameBulkSweepDecl, "manifest declares no bulk_sweep")
+
+		return
+	}
+	if !r.hasCapability(traversal_serve.CapBulkMutate) {
+		r.tap.Skip(nameBulkSweepDecl, "bulk-mutate not advertised")
+
+		return
+	}
+	filter, err := parseFilter(spec.Filter)
+	if err != nil || len(filter) == 0 {
+		r.tap.NotOk(nameBulkSweepDecl, map[string]string{
+			"manifest": "bulk_sweep.filter must be a non-empty dimension=value filter",
+		})
+
+		return
+	}
+
+	var result traversal_serve.BulkMutateResult
+	err = r.session.Call(
+		ctx, traversal_serve.MethodNodeBulkMutate,
+		traversal_serve.BulkMutateParams{
+			Atomicity: string(cutting_garden_plugins.BulkBestEffort),
+			Sweep: &traversal_serve.BulkSweepView{
+				Root:   spec.DeclineContainer,
+				Filter: filter,
+				Op: traversal_serve.BulkOpView{
+					Kind:       string(cutting_garden_plugins.BulkPatch),
+					BodyBase64: encodeBody(spec.PatchBody),
+				},
+			},
+		}, &result,
+	)
+	if err != nil {
+		r.tap.Ok(nameBulkSweepDecl)
+
+		return
+	}
+	r.tap.NotOk(nameBulkSweepDecl, map[string]string{
+		"sweep": fmt.Sprintf(
+			"a sweep of %s, where the listing declines %s, was not refused:"+
+				" %d applied, %d patched_nothing, %d failed",
+			spec.DeclineContainer, spec.Filter,
+			len(result.Applied), len(result.PatchedNothing), len(result.Failed),
+		),
+	})
 }
 
 // assertBulkOutcomes checks node.bulk_mutate's optional `outcomes`

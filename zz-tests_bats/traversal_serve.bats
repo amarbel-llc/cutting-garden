@@ -1238,7 +1238,7 @@ EOF
   # whole multi-line output as ONE string (no per-line/multiline flag),
   # so `^not ok` would never match a mid-output failure — a false-safe
   # assertion. --partial 'not ok' catches a failing point anywhere.
-  assert_output --partial '1..28'
+  assert_output --partial '1..29'
   assert_output --partial 'ok 1 - initialize'
   # The per-op outcome members (cutting-garden#366): patch uri, delete
   # name and -32004, bulk outcomes.

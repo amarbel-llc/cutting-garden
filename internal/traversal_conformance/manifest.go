@@ -104,6 +104,22 @@ type Manifest struct {
 	// back through nodes.list of Container, and deletes it. Optional —
 	// omitting it SKIPs the point.
 	Creation *CreationSpec
+	// BulkSweep, when non-nil, parameterizes the sweep-refusal point
+	// (cutting-garden#208): a sweep over a container whose enriched listing
+	// DECLINES the filter must be refused, never applied. Optional —
+	// omitting it SKIPs the point.
+	BulkSweep *BulkSweepSpec
+}
+
+// BulkSweepSpec names a container where the peer declines Filter (an
+// owner root whose children are containers, say), and the patch body the
+// sweep carries. The fixture author MUST confirm the decline happens there,
+// or the point proves nothing. PatchBody SHOULD be harmless: a
+// non-conformant peer applies it to every child.
+type BulkSweepSpec struct {
+	DeclineContainer string
+	Filter           string
+	PatchBody        string
 }
 
 // CreationSpec parameterizes the creation point. OneDimension/OneValue and
@@ -398,6 +414,22 @@ func LoadManifest(path string) (*Manifest, error) {
 			return nil, err
 		}
 		manifest.Creation = spec
+	}
+
+	if sub, ok, err := decodeTable(model, "bulk_sweep"); err != nil {
+		return nil, err
+	} else if ok {
+		spec := &BulkSweepSpec{}
+		for key, into := range map[string]*string{
+			"decline_container": &spec.DeclineContainer,
+			"filter":            &spec.Filter,
+			"patch_body":        &spec.PatchBody,
+		} {
+			if err := decodeString(sub, key, into); err != nil {
+				return nil, err
+			}
+		}
+		manifest.BulkSweep = spec
 	}
 
 	if leftover := model.Undecoded(); len(leftover) > 0 {
