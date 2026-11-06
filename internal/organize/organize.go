@@ -139,6 +139,7 @@ func (*Organize) GetSeeAlso() []string {
 	return []string{
 		"cutting-garden(1)",
 		"cutting-garden-fmt-organize(1)",
+		"snob_case(7)",
 	}
 }
 

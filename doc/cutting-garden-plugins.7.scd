@@ -514,4 +514,4 @@ posture and RFC 0012 §2 for the pattern applied specifically to facets.
 # SEE ALSO
 
 *eng*(7), *cutting-garden*(1), *cutting-garden-list*(1), *cutting-garden-mcp*(1),
-*cutting-garden-config*(5)
+*cutting-garden-config*(5), *snob_case*(7)
