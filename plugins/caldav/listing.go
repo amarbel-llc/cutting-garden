@@ -41,6 +41,15 @@ const (
 	// node's URI — declared here too so a caller can tell a derived node
 	// apart from its master without parsing the URI.
 	listingFieldRecurrenceID = "recurrence_id"
+	// listingFieldAttendees is a VEVENT's ATTENDEE values (calendar user
+	// addresses, usually mailto:), so "who is in this meeting" needs no
+	// read_node (cutting-garden#177 item 3). Participation status (PARTSTAT,
+	// RSVP) is not parsed yet.
+	listingFieldAttendees = "attendees"
+	// listingFieldHasDescription marks an object carrying a DESCRIPTION, so a
+	// caller knows a read_node will show more without the listing carrying
+	// the text itself (#177 item 3; descriptions can be long).
+	listingFieldHasDescription = "has_description"
 )
 
 var (
@@ -76,6 +85,7 @@ func (Plugin) DescribeListingFields() []cutting_garden_plugins.NodeTypeListingFi
 	// membership path (a full-set CATEGORIES replacement), not an inline field
 	// edit, so it carries no Writable flag here.
 	categories := cutting_garden_plugins.ListingField{Key: listingFieldCategories, Label: "Categories"}
+	hasDescription := cutting_garden_plugins.ListingField{Key: listingFieldHasDescription, Label: "Has description"}
 	return []cutting_garden_plugins.NodeTypeListingFields{
 		{
 			Tag: typeVTODO,
@@ -85,7 +95,7 @@ func (Plugin) DescribeListingFields() []cutting_garden_plugins.NodeTypeListingFi
 				location,
 				{Key: listingFieldPercentComplete, Label: "% Complete"},
 				{Key: listingFieldPriority, Label: "Priority", Writable: true},
-				categories,
+				categories, hasDescription,
 			},
 		},
 		{
@@ -97,11 +107,13 @@ func (Plugin) DescribeListingFields() []cutting_garden_plugins.NodeTypeListingFi
 				location,
 				{Key: listingFieldRecurrenceID, Label: "Recurrence ID"},
 				categories,
+				{Key: listingFieldAttendees, Label: "Attendees"},
+				hasDescription,
 			},
 		},
 		{
 			Tag:    typeVJOURNAL,
-			Fields: []cutting_garden_plugins.ListingField{summary, status, dtstart, categories},
+			Fields: []cutting_garden_plugins.ListingField{summary, status, dtstart, categories, hasDescription},
 		},
 	}
 }
@@ -249,10 +261,13 @@ func (c *client) enrichedCalendarNodes(
 func listingFieldsOf(view objectView) map[string]any {
 	var summary, status, dtstart, dtend, duration, location, due, recurrenceID string
 	var percentComplete, priority int
-	var categories []string
+	var categories, attendees []string
+	var hasDescription bool
 	switch {
 	case view.Event != nil:
 		summary = view.Event.Summary
+		attendees = view.Event.Attendees
+		hasDescription = view.Event.Description != ""
 		status = view.Event.Status
 		dtstart = view.Event.DtStart
 		dtend = view.Event.DtEnd
@@ -272,8 +287,10 @@ func listingFieldsOf(view objectView) map[string]any {
 		percentComplete = view.Task.PercentComplete
 		priority = view.Task.Priority
 		categories = view.Task.Categories
+		hasDescription = view.Task.Description != ""
 	case view.Journal != nil:
 		summary = view.Journal.Summary
+		hasDescription = view.Journal.Description != ""
 		status = view.Journal.Status
 		dtstart = view.Journal.DtStart
 		categories = view.Journal.Categories
@@ -318,6 +335,12 @@ func listingFieldsOf(view objectView) map[string]any {
 	// present-but-empty-omitted convention every other field here follows.
 	if len(categories) > 0 {
 		fields[listingFieldCategories] = categories
+	}
+	if len(attendees) > 0 {
+		fields[listingFieldAttendees] = attendees
+	}
+	if hasDescription {
+		fields[listingFieldHasDescription] = true
 	}
 	return fields
 }
