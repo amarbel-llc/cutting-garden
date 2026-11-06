@@ -1157,8 +1157,8 @@
             # the checks.*-codegen drift gates.
             # scdoc: compiles the hand-written section 5/7 man pages under
             # doc/ (eng-manpages(7) SCDOC PATTERN). Devshell-only, mirrors
-            # cuttingGardenDoc's nativeBuildInputs below; `just debug-manpage`
-            # shells out to it directly for the fast eyeball loop.
+            # cuttingGardenDoc's nativeBuildInputs below, for compiling a
+            # page by hand (`just debug-manpage` renders from the nix build).
             pkgs.scdoc
             # tree-sitter + nodejs: the PINNED grammar toolchain for
             # zz-nvim/grammars/organize (cutting-garden#43, native tags G11).

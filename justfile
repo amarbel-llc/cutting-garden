@@ -1312,14 +1312,14 @@ debug-manpage PAGE='cutting-garden-capture':
     out="$(nix build "{{ justfile_directory() }}#default" --no-link --print-out-paths)"
     page=""
     for sec in 1 5 7; do
-      candidate="$out/share/man/man$sec/{{ PAGE }}.$sec"
+      candidate="$out/share/man/man$sec/{{ PAGE }}.$sec.gz"
       [[ -f "$candidate" ]] && page="$candidate" && break
     done
     [[ -n "$page" ]] || { echo "no page named {{ PAGE }} in man1/5/7; pages:"; ls "$out"/share/man/man*/*; exit 1; }
     if command -v man >/dev/null 2>&1; then
       MANWIDTH=78 man -l "$page"
     else
-      cat "$page"
+      zcat "$page"
     fi
 
 # Verify every shipped man page in the NIX-built package parses under
