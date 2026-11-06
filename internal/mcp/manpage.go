@@ -4,9 +4,47 @@ import "code.linenisgreat.com/cutting-garden/internal/command"
 
 var (
 	_ command.CommandWithArgs     = (*MCP)(nil)
+	_ command.CommandWithEnvVars  = (*MCP)(nil)
 	_ command.CommandWithExamples = (*MCP)(nil)
+	_ command.CommandWithFiles    = (*MCP)(nil)
 	_ command.CommandWithSeeAlso  = (*MCP)(nil)
 )
+
+func (*MCP) GetEnvVars() []command.EnvVar {
+	return []command.EnvVar{
+		{
+			Name:        "XDG_CONFIG_HOME",
+			Description: "Root of the config file read when no URI is given (see FILES).",
+			Default:     "$HOME/.config",
+		},
+		{
+			Name: "STATSD_HOST",
+			Description: "When set, mutate_nodes sends best-effort statsd counters " +
+				"(calls, and mis-encoded op bodies by kind) over UDP to this host. " +
+				"Unset, nothing is sent.",
+		},
+		{
+			Name:        "STATSD_PORT",
+			Description: "The statsd UDP port used with STATSD_HOST.",
+			Default:     "8125",
+		},
+		{
+			Name: "(an account's password_env)",
+			Description: "The variable an account's password_env names in " +
+				"config.toml holds that account's credential (cutting-garden-config(5)).",
+		},
+	}
+}
+
+func (*MCP) GetFiles() []command.FilePath {
+	return []command.FilePath{
+		{
+			Path: "$XDG_CONFIG_HOME/cutting-garden/config.toml",
+			Description: "Plugin accounts, wire-plugin stanzas and the [mcp] background-refresh " +
+				"settings (RFC 0007, cutting-garden-config(5)). A missing file is an empty config.",
+		},
+	}
+}
 
 func (*MCP) GetArgs() []command.ArgGroup {
 	return []command.ArgGroup{{

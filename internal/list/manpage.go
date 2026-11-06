@@ -4,9 +4,36 @@ import "code.linenisgreat.com/cutting-garden/internal/command"
 
 var (
 	_ command.CommandWithArgs     = (*List)(nil)
+	_ command.CommandWithEnvVars  = (*List)(nil)
 	_ command.CommandWithExamples = (*List)(nil)
+	_ command.CommandWithFiles    = (*List)(nil)
 	_ command.CommandWithSeeAlso  = (*List)(nil)
 )
+
+func (*List) GetEnvVars() []command.EnvVar {
+	return []command.EnvVar{
+		{
+			Name:        "XDG_CONFIG_HOME",
+			Description: "Root of the config file read when no URI is given (see FILES).",
+			Default:     "$HOME/.config",
+		},
+		{
+			Name: "(an account's password_env)",
+			Description: "The variable an account's password_env names in " +
+				"config.toml holds that account's credential (cutting-garden-config(5)).",
+		},
+	}
+}
+
+func (*List) GetFiles() []command.FilePath {
+	return []command.FilePath{
+		{
+			Path: "$XDG_CONFIG_HOME/cutting-garden/config.toml",
+			Description: "Plugin accounts and wire-plugin stanzas whose roots a URI-less " +
+				"list enumerates (RFC 0007, cutting-garden-config(5)). A missing file is an empty config.",
+		},
+	}
+}
 
 func (*List) GetArgs() []command.ArgGroup {
 	return []command.ArgGroup{{
