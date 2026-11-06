@@ -324,8 +324,12 @@ func (cmd *Organize) applyEdited(
 		// declared default plus the global [tags] config override (RFC 0019 §4,
 		// #231 slice 3), from the config loaded above.
 		return cmd.applyMemberships(
-			ctx, edited, base, liveNodes, lister, dim, spec.Namespace, cfg.Tags.Interpreter,
-			atomDeltas, !stripNone, pending, commit, interactive, color,
+			ctx, edited, base, liveNodes, lister,
+			membershipPlan{
+				Dim: dim, Namespace: spec.Namespace,
+				AtomDeltas: atomDeltas, SkipPlacementFolds: stripNone,
+			},
+			cfg.Tags.Interpreter, pending, commit, interactive, color,
 		)
 	}
 
@@ -873,17 +877,15 @@ func (cmd *Organize) applyMemberships(
 	edited, base document,
 	liveNodes []cgp.Node,
 	lister cgp.RootLister,
-	dim string,
-	namespace string,
+	plan membershipPlan,
 	tagsOverride string,
-	atomDeltas map[string]tagDelta,
-	placementFolds bool,
 	pending pendingApply,
 	commit, interactive, color bool,
 ) (committed bool, err error) {
+	dim := plan.Dim
 	// Resolve the grouped dimension's tag interpreter from the field's declared
 	// default plus the global [tags] config override (RFC 0019 §4, #231 slice 3).
-	// namespace (spec.Namespace) is "" for a whole-dimension grouping — buckets are
+	// plan.Namespace is "" for a whole-dimension grouping — buckets are
 	// full tags, folded exactly (the slice-2 behavior, identical under naive and
 	// dodder-hyphen) — and the segment prefix (`project`) for a namespace rollup, in
 	// which planMemberships reconstructs the add tag and enumerates the remove
@@ -892,12 +894,10 @@ func (cmd *Organize) applyMemberships(
 	if err != nil {
 		return false, err
 	}
+	plan.Interp = interp
 
 	idOf := boxIDsFor(lister, edited.Anchor)
-	memberships, err := planMemberships(
-		edited, base, liveNodes, idOf, interp, dim, namespace,
-		atomDeltas, placementFolds,
-	)
+	memberships, err := planMemberships(edited, base, liveNodes, idOf, plan)
 	if err != nil {
 		return false, err
 	}

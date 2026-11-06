@@ -22,6 +22,26 @@ type membershipEdit struct {
 	NewTags []string
 }
 
+// membershipPlan carries the tag-plan inputs planMemberships and applyMemberships
+// share, so call sites name them (cutting-garden#258). The zero value of every
+// field but Dim and Interp is the common case: a whole-dimension grouping,
+// no box tag-atom deltas, and bucket (placement) folds on.
+type membershipPlan struct {
+	// Dim is the grouped multi-valued dimension.
+	Dim string
+	// Namespace is the segment prefix of a tag-namespace rollup grouping, or ""
+	// for a whole-dimension (or field) grouping whose buckets are full tags.
+	Namespace string
+	// Interp is the dimension's resolved tag interpreter.
+	Interp cgp.TagInterpreter
+	// AtomDeltas carries each object's box tag-atom edit (design G7).
+	AtomDeltas map[string]tagDelta
+	// SkipPlacementFolds skips the bucket folds entirely — the
+	// `_tag-strip = none` reading, whose AtomDeltas already encode every
+	// placement change.
+	SkipPlacementFolds bool
+}
+
 // planMemberships is the multi-valued-dimension sibling of planFieldEdits: it
 // three-way-merges each object's tag-set membership across the pinned base, the
 // edited document, and the re-queried live node. Because tag adds/removes commute
@@ -54,10 +74,10 @@ type membershipEdit struct {
 // governed by their own bucket rows, so the one-bucket-one-realizing-set rule the
 // continuations follow gives the root exactly the bare tag.
 //
-// atomDeltas carries each object's box tag-atom edit (design G7, native tags
+// plan.AtomDeltas carries each object's box tag-atom edit (design G7, native tags
 // slice 2 T3; planTagAtomDeltas guarantees its ids are present in base): the
 // deltas fold AFTER the bucket folds, removes then adds, each EXACT — a typed
-// atom names a literal tag under every interpreter. placementFolds=false skips
+// atom names a literal tag under every interpreter. plan.SkipPlacementFolds skips
 // the bucket folds entirely — the `_tag-strip = none` reading, whose deltas
 // are the diff of the box-∪-placement EFFECTIVE sets and so already encode
 // every placement change (a moved line's old tag then survives in its box; a
@@ -66,12 +86,10 @@ func planMemberships(
 	edited, base document,
 	live []cgp.Node,
 	idOf boxIDer,
-	interp cgp.TagInterpreter,
-	dim string,
-	namespace string,
-	atomDeltas map[string]tagDelta,
-	placementFolds bool,
+	plan membershipPlan,
 ) ([]membershipEdit, error) {
+	interp, dim, namespace, atomDeltas := plan.Interp, plan.Dim, plan.Namespace, plan.AtomDeltas
+	placementFolds := !plan.SkipPlacementFolds
 	baseM, err := base.memberships(true)
 	if err != nil {
 		return nil, errors.Wrapf(err, "organize: base memberships")

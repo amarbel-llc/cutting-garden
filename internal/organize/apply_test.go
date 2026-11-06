@@ -319,7 +319,10 @@ func TestPlanTagAtomDeltas_StaleAtomReAsserts(t *testing.T) {
 	// net no-op against live, so NOTHING is written (never a silent removal,
 	// never a spurious write).
 	live := []cgp.Node{categoriesNode(t, anchor+"t1.ics", "errand", "work")}
-	edits, err := planMemberships(edited, base, live, boxIDsFor(nil, anchor), mustInterp(t), "categories", "", deltas, true)
+	edits, err := planMemberships(
+		edited, base, live, boxIDsFor(nil, anchor),
+		membershipPlan{Dim: "categories", Interp: mustInterp(t), AtomDeltas: deltas},
+	)
 	if err != nil {
 		t.Fatalf("planMemberships: %v", err)
 	}
@@ -701,8 +704,8 @@ func TestApplyMemberships_AddApplies(t *testing.T) {
 	fake := &membershipFake{}
 	cmd := newWithOutput(io.Discard)
 	wrote, err := cmd.applyMemberships(
-		context.Background(), edited, base, live, fake, "categories", "", "",
-		nil, true, pendingApply{}, true, false, false,
+		context.Background(), edited, base, live, fake,
+		membershipPlan{Dim: "categories"}, "", pendingApply{}, true, false, false,
 	)
 	if err != nil {
 		t.Fatalf("applyMemberships: %v", err)
