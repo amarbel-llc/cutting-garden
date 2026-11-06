@@ -31,6 +31,24 @@ Treat a FIXED or STALE call as a lead to confirm, not a verdict.
 | #324 | DUPLICATE | of #330. |
 | #209 | DUPLICATE (umbrella) | of #204 / #206 / #208. |
 
+### Close list (prepared, NOT executed; waits for the operator's go)
+
+Only issues proven fixed or duplicated, each with its evidence and the
+one-line close comment to post:
+
+| Issue | Evidence | Close comment |
+|---|---|---|
+| #102 | 0c2cf2a (`feat(hooks): gate CUD write tools as ask via the PreToolUse hook (#102)`); a17773d moved the gate to `mutate_nodes` | "Done in 0c2cf2a: the PreToolUse hook asks for the destructive MCP tool (now `mutate_nodes`, a17773d) and allows the read tools (`internal/claude_hooks/claude_hooks.go:51, 84-88`)." |
+| #267 | f392ca0 (`feat(org): … under a WebDAV lock`); every org write path takes the lock and reads back (`plugins/org/dav.go`, `lockWithRetry`) | "Done: org writes take a WebDAV LOCK and verify by read-back (f392ca0 onward, `plugins/org/dav.go`)." |
+| #355 | same request as #314 | "Duplicate of #314 (a fork of Orgzly as a cutting-garden/trellis client)." |
+| #324 | same exploration as #330 | "Duplicate of #330." |
+| #209 | umbrella over #204 / #206 / #208 | "Tracked by #204, #206, #208 (one case each)." Or keep it open as the umbrella; the operator's choice. |
+
+Not on the close list, despite §1: #353 (swift-plum holds that close),
+#378 (its placement rule, the edit side, is still open), and #79, #63,
+#186, #231, #235, #124, #130, #43, #350. Each of these needs a rescope or
+a confirmation first.
+
 ## 2. Ready to work, small, no ruling needed
 
 These have a clear acceptance test and fit one commit each:
