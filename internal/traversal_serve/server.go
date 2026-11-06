@@ -64,7 +64,7 @@ func Serve(
 	case <-ctx.Done():
 		_ = peer.Close()
 		<-peer.ServeDone()
-		return errors.Wrapf(ctx.Err(), "traversal serve")
+		return cancelledSessionEnd(ctx.Err(), srv.shutdownCh)
 
 	case <-srv.shutdownCh:
 		// The serve loop is sequential, so by the time the shutdown
@@ -101,6 +101,36 @@ func Serve(
 		}
 
 		return terminal
+	}
+}
+
+// validatedFilter rebuilds a wire filter and validates it against the served
+// plugin's own facet schema (cutting-garden#239). Validation is also what
+// arms a date-kind predicate for prefix matching, an annotation that never
+// crosses the wire, so without it `date_start=2026-08` silently matched
+// nothing. An undeclared dimension or an out-of-domain closed value is the
+// caller's fault: -32602, naming the valid options.
+func (s *server) validatedFilter(
+	method string, views []PredicateView,
+) (cutting_garden_plugins.FacetFilter, *RPCError) {
+	filter := FacetFilterFrom(views)
+	if err := cutting_garden_plugins.ValidateFilterFor(filter, s.lister); err != nil {
+		return nil, &RPCError{Code: CodeInvalidParams, Message: method + ": " + err.Error()}
+	}
+	return filter, nil
+}
+
+// cancelledSessionEnd is Serve's result when its context ends the session:
+// nil if the host's shutdown notification was received anyway (a plugin
+// that cancels its context on stdin EOF races the shutdown arm, and both
+// were ready; cutting-garden#342), else the cancellation. Checked after the
+// serve loop has drained, so a shutdown it handled is visible here.
+func cancelledSessionEnd(ctxErr error, shutdown <-chan struct{}) error {
+	select {
+	case <-shutdown:
+		return nil
+	default:
+		return errors.Wrapf(ctxErr, "traversal serve")
 	}
 }
 
@@ -532,20 +562,23 @@ func (s *server) handleNodesList(
 		}
 	}
 
+	filter, rpcErr := s.validatedFilter(MethodNodesList, listParams.Filter)
+	if rpcErr != nil {
+		return nil, rpcErr
+	}
+
 	var (
 		nodes   []cutting_garden_plugins.Node
 		handled *bool
 	)
 
 	switch {
-	case len(listParams.Filter) > 0 && s.enriched != nil:
+	case len(filter) > 0 && s.enriched != nil:
 		// Filter pushdown (cutting-garden#193): the plugin narrows the
 		// listing itself via EnrichedLister. The ok/handled bit rides back
 		// on the wire so the host knows whether to trust the narrowed set
 		// or fall back to folding host-side.
-		enriched, applied, eerr := s.enriched.ListEnriched(
-			ctx, uri, FacetFilterFrom(listParams.Filter),
-		)
+		enriched, applied, eerr := s.enriched.ListEnriched(ctx, uri, filter)
 		if eerr != nil {
 			return nil, eerr
 		}
@@ -612,11 +645,15 @@ func (s *server) handleNodesSearch(
 		}
 	}
 
+	filter, rpcErr := s.validatedFilter(MethodNodesSearch, searchParams.Filter)
+	if rpcErr != nil {
+		return nil, rpcErr
+	}
 	found, err := s.searcher.Search(ctx, cutting_garden_plugins.SearchRequest{
 		Root:   uri,
 		Query:  searchParams.Query,
 		Mode:   mode,
-		Filter: FacetFilterFrom(searchParams.Filter),
+		Filter: filter,
 		Limit:  searchParams.Limit,
 	})
 	if stderrors.Is(err, cutting_garden_plugins.ErrSearchModeUnsupported) {
@@ -706,9 +743,11 @@ func (s *server) handleFacetCounts(
 		return nil, rpcErr
 	}
 
-	facetResult, ok, err := s.counter.FacetCounts(
-		ctx, uri, FacetFilterFrom(countParams.Filter),
-	)
+	filter, rpcErr := s.validatedFilter(MethodFacetCounts, countParams.Filter)
+	if rpcErr != nil {
+		return nil, rpcErr
+	}
+	facetResult, ok, err := s.counter.FacetCounts(ctx, uri, filter)
 	if err != nil {
 		return nil, err
 	}
@@ -995,6 +1034,13 @@ func (s *server) handleNodeBulkMutate(
 	}
 	if err := req.Validate(); err != nil {
 		return nil, err
+	}
+	if req.Sweep != nil {
+		// A sweep's filter crosses the wire unarmed like any other
+		// (cutting-garden#239): validate it against this plugin's schema.
+		if err := cutting_garden_plugins.ValidateFilterFor(req.Sweep.Filter, s.lister); err != nil {
+			return nil, &RPCError{Code: CodeInvalidParams, Message: MethodNodeBulkMutate + ": sweep: " + err.Error()}
+		}
 	}
 
 	result, err := s.bulkMutator.BulkMutate(ctx, req)
