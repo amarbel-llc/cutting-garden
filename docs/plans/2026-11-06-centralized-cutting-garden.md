@@ -66,7 +66,7 @@ Krone's mcp-origin already runs this shape for a remote connector
 | Restart blast radius | A cutting-garden restart cuts every session's cutting-garden tools at once; the bridge reconnects and moxy's own restart is unaffected. Other servers are untouched. | A moxy restart cuts every tool of every session. `restart{}` respawns every child and broadcasts `list_changed` (moxy-restart(7)). Crash respawn is open (moxy #409, *unverified in code*). |
 | Migration | Per child: point the moxyfile `cutting-garden` entry at the bridge for some sessions, keep stdio for others. Reversible per session. | All or nothing per host, and it changes the confinement design. |
 
-## Recommendation: (A), now; leave (B) to the moxy and spinclass owners
+## Recommendation: (A) now, as the interim on the way to (B)
 
 (A) removes the multiplication where the quota is spent (cutting-garden's
 caches and refresh loop, and smith's traversal plugin under it). It
@@ -75,9 +75,35 @@ out one session at a time. (B) would need, in moxy alone: a unix-socket
 listener, inbound auth, per-connection sessions, a per-call caller
 (identity and cwd) threaded through tier resolution and the broker, and a
 per-caller moxyfile. It also conflicts with FDR 0035's decision to keep
-moxy inside the unit. If (B) is still wanted, it is moxy's design to
-write, with spinclass ruling on how it fits confinement; this note only
-lists what (B) would touch.
+moxy inside the unit. The operator has since chosen (B) as the long-term
+shape (below); its design belongs to moxy, with spinclass ruling on how it
+fits confinement. This note sequences it but does not design inside those
+repos.
+
+## Operator ruling (2026-11-06)
+
+(A) is acceptable for now; (B), one shared moxy per host, is the
+long-term shape. Implementing (A) waits for the operator's go after
+review. The path below sequences (B); its tracking epic is
+linenisgreat/moxy#508.
+
+## Path from A to B
+
+Sizes are rough (S: a commit or two; M: a slice of several; L: a
+multi-slice feature that needs its own FDR). Each phase ends on an exit
+test, which is what "done" means for that phase.
+
+| Phase | Owner | Size | Prerequisites | Exit test |
+|---|---|---|---|---|
+| **B1: per-caller identity in `moxy serve-http`.** Each connection gets its own MCP session and an authenticated caller (principal, and the caller's cwd), replacing the one server-wide `Mcp-Session-Id`. A unix-socket listener sits beside HTTP. | moxy | L | none | Two clients on one serve-http see distinct session ids. A client without a valid caller credential is refused. The per-call `Caller` is set on every tool call (a test reads it in a child). |
+| **B2: per-caller permissions.** Tier resolution, the policy broker subject and folio's `[folio]` policy evaluate against the caller from B1, not the process. That covers its cwd, its principal and its sweatfile hierarchy. The moxyfile narrows per caller. | moxy (broker client and predicates); spinclass (`policybroker serve` subject per call) | L | B1 | Two callers with different worktrees on one moxy: a folio read inside caller 1's worktree is allowed for caller 1 and refused for caller 2. A broker `deny` for one caller does not affect the other. |
+| **B3: confined units reach the shared moxy.** A per-session socket, forwarded into the unit the way FDR 0035 forwards frontend servers, identifies the unit by `SO_PEERCRED` and cgroup. This replaces the in-unit moxy. | spinclass (FDR 0035 amendment and ruling); clown (socket forwarding) | M–L | B1, B2, and a spinclass ruling that a shared moxy behind per-session sockets is not the ProtectHome bypass FDR 0035 rejected | A confined session's tool calls reach the shared moxy through its socket, attributed to its principal. A write outside its worktree is refused by B2's policy. A process outside the unit cannot use that session's socket. |
+| **B4: resources as arguments that carry permissions.** A tool argument naming a resource (a node URI, a blob, a path) is checked by the broker against the caller before dispatch, so a child server never decides access itself. | moxy and spinclass (design: an RFC 0002 amendment) | M | B2 | A `mutate_nodes` call naming a node outside the caller's allowed resources is refused by moxy before cutting-garden sees it. The same call is allowed for a caller whose policy covers it. |
+| **B5: move children behind the shared moxy.** cutting-garden first: retire (A)'s bridge, and the shared moxy runs the single cutting-garden. Then smith and the other stateful or quota-bearing children, then the rest. | cutting-garden (drop the bridge, keep the socket server or stdio as moxy chooses); circus (the host unit); each child's own repo for any per-session assumption | M per child | B1–B4 for the children that need per-caller scope; B1 alone for read-only, cwd-free children | Host-wide, one cutting-garden process and one refresh loop exist. Sessions on the shared moxy see their own file root (or none, per the open question) and their writes are attributed. A GitHub quota sample shows no per-session multiplication. |
+| **B6: retire per-session moxy.** clown sessions connect to the shared moxy only; the per-session stdio moxy and (A)'s bridge are removed. | clown; moxy; circus | M | B5 for every child a session uses | A new session starts with no moxy process of its own, and every tool works through the shared instance. Stopping the shared moxy surfaces as a clear session-level error, not silent tool loss. |
+
+(A) stays useful through B4: it is the interim that removes the quota
+multiplication now, and B5 is where it is folded into (B).
 
 ## (A) in more detail
 
