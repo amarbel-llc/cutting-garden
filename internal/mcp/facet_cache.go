@@ -41,6 +41,10 @@ type facetCacheEntry struct {
 	verifiedAt time.Time
 	dirty      bool
 	lastErr    string
+	// failures counts consecutive failed background refreshes; retryAfter
+	// is when the refresher may try again (refreshBackoff).
+	failures   int
+	retryAfter time.Time
 
 	// revalidateAfter, when nonzero, is the volatile window (RFC 0012
 	// §11.3): the min RevalidateAfter over the volatile dimensions
@@ -295,7 +299,7 @@ func (fc *facetCache) refreshOne(
 	}
 	fc.mu.Lock()
 	entry := fc.entries[uri]
-	if entry == nil {
+	if entry == nil || fc.now().Before(entry.retryAfter) {
 		fc.mu.Unlock()
 		return
 	}
@@ -370,6 +374,8 @@ func (fc *facetCache) markVerified(uri string) {
 		e.verifiedAt = fc.now()
 		e.dirty = false
 		e.lastErr = ""
+		e.failures = 0
+		e.retryAfter = time.Time{}
 	}
 }
 
@@ -379,6 +385,8 @@ func (fc *facetCache) markError(uri string, err error) {
 	if e := fc.entries[uri]; e != nil {
 		e.dirty = true
 		e.lastErr = err.Error()
+		e.failures++
+		e.retryAfter = fc.now().Add(refreshBackoff(e.failures))
 	}
 }
 

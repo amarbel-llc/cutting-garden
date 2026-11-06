@@ -48,6 +48,10 @@ type listingCacheEntry struct {
 	verifiedAt time.Time
 	dirty      bool
 	lastErr    string
+	// failures counts consecutive failed background refreshes; retryAfter
+	// is when the refresher may try again (refreshBackoff).
+	failures   int
+	retryAfter time.Time
 	// partial holds the plugin's partial-listing reports, so a cache hit
 	// still says the listing is bounded (cutting-garden#266).
 	partial []cutting_garden_plugins.PartialListing
@@ -276,7 +280,7 @@ func (lc *listingCache) refreshOne(
 	}
 	lc.mu.Lock()
 	entry := lc.entries[uri]
-	if entry == nil {
+	if entry == nil || lc.now().Before(entry.retryAfter) {
 		lc.mu.Unlock()
 		return
 	}
@@ -356,6 +360,8 @@ func (lc *listingCache) markVerified(uri string) {
 		e.verifiedAt = lc.now()
 		e.dirty = false
 		e.lastErr = ""
+		e.failures = 0
+		e.retryAfter = time.Time{}
 	}
 }
 
@@ -365,5 +371,7 @@ func (lc *listingCache) markError(uri string, err error) {
 	if e := lc.entries[uri]; e != nil {
 		e.dirty = true
 		e.lastErr = err.Error()
+		e.failures++
+		e.retryAfter = lc.now().Add(refreshBackoff(e.failures))
 	}
 }
