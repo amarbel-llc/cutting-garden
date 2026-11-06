@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -137,8 +138,10 @@ func (t *Tools) hasWriter() bool {
 }
 
 const (
-	describeNodeTypesSchema = `{"type":"object","properties":{}}`
-	readNodeSchema          = `{"type":"object","required":["uri"],` +
+	describeNodeTypesSchema = `{"type":"object","properties":{` +
+		`"scheme":{"type":"string","description":"optional: report only this URI scheme (e.g. org, caldav) instead of every scheme's types — the unfiltered reply is large"},` +
+		`"type":{"type":"string","description":"optional: report only the node type with this tag (e.g. org-headline-v1); narrows to the schemes that declare it, or to scheme's when both are given"}}}`
+	readNodeSchema = `{"type":"object","required":["uri"],` +
 		`"properties":{"uri":{"type":"string","description":"the node URI to read (a leaf returns its parsed fields + a raw-bytes link; a container returns its child listing, plus its own body when it has one)"},` +
 		`"content":{"type":"string","enum":["both","children","body"],"description":"what to return for a node that has both a body and children (optional, default both): both = the node's own body AND its child listing; children = the child listing only (cheap, no body fetch); body = the node's own body only, skipping the listing"}}}`
 	listNodesSchema = `{"type":"object","properties":{` +
@@ -186,6 +189,8 @@ func readToolDefs() []protocol.ToolV1 {
 				"and, for writable types, the body payload mutate_nodes' create and " +
 				"put ops accept, with a concrete example (serverAssignedIdentity " +
 				"marks a type the source names: create it with a +temp id). " +
+				"The full reply is large: pass scheme and/or type to get just one " +
+				"scheme's or one node type's entry. " +
 				"Read-only; call it first to learn a type tag, body shape, and " +
 				"filterable dimensions before mutate_nodes or a filtered " +
 				"read_facets/list_nodes call. The type tags, facet " +
@@ -369,11 +374,24 @@ func (t *Tools) call(
 		return t.callMutateNodes(ctx, args)
 
 	case mcp_tool_perms.ToolDescribeNodeTypes:
-		body, err := json.MarshalIndent(
+		var in struct {
+			Scheme string `json:"scheme"`
+			Type   string `json:"type"`
+		}
+		if len(args) > 0 {
+			if err := json.Unmarshal(args, &in); err != nil {
+				return "", errors.Wrap(err)
+			}
+		}
+		schemas, err := filterSchema(
 			collectSchema(
 				cutting_garden_plugins.RegisteredPlugins(), t.tagsOverride,
-			), "", "  ",
+			), in.Scheme, in.Type,
 		)
+		if err != nil {
+			return "", err
+		}
+		body, err := json.MarshalIndent(schemas, "", "  ")
 		if err != nil {
 			return "", errors.Wrap(err)
 		}
@@ -1207,6 +1225,45 @@ func collectSchema(
 		out = append(out, schemeSchema{Scheme: firstScheme(p), Types: types})
 	}
 	return out
+}
+
+// filterSchema narrows the describe_node_types catalogue to one scheme and/or
+// one type tag (cutting-garden#385); both empty returns it whole. A scheme
+// or type nothing declares is a bad request naming the valid choices, never
+// an empty reply that reads as "no such types".
+func filterSchema(
+	all []schemeSchema, scheme, typeTag string,
+) ([]schemeSchema, error) {
+	if scheme == "" && typeTag == "" {
+		return all, nil
+	}
+	out := make([]schemeSchema, 0, 1)
+	var schemes []string
+	for _, s := range all {
+		schemes = append(schemes, s.Scheme)
+		if scheme != "" && s.Scheme != scheme {
+			continue
+		}
+		if typeTag == "" {
+			out = append(out, s)
+			continue
+		}
+		for _, ts := range s.Types {
+			if ts.Tag == typeTag {
+				out = append(out, schemeSchema{Scheme: s.Scheme, Types: []typeSchema{ts}})
+				break
+			}
+		}
+	}
+	if len(out) > 0 {
+		return out, nil
+	}
+	if scheme != "" && !slices.Contains(schemes, scheme) {
+		return nil, errors.BadRequestf(
+			"describe_node_types: no scheme %q (have %s)", scheme, strings.Join(schemes, ", "))
+	}
+	return nil, errors.BadRequestf(
+		"describe_node_types: no node type %q under scheme %q", typeTag, scheme)
 }
 
 // rootLabel derives a short display name for a root URI: the last path

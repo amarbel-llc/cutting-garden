@@ -1010,6 +1010,47 @@ func TestCallTool_DescribeReturnsJSON(t *testing.T) {
 	}
 }
 
+func schemaFixture() []schemeSchema {
+	return []schemeSchema{
+		{Scheme: "org", Types: []typeSchema{{Tag: "org-file-v1"}, {Tag: "org-headline-v1"}}},
+		{Scheme: "caldav", Types: []typeSchema{{Tag: "caldav-object-vtodo-v1"}}},
+	}
+}
+
+// describe_node_types narrows by scheme and by type (cutting-garden#385).
+func TestFilterSchema(t *testing.T) {
+	all := schemaFixture()
+	got, err := filterSchema(all, "", "")
+	if err != nil || len(got) != 2 {
+		t.Fatalf("unfiltered = %v, %v; want both schemes", got, err)
+	}
+	got, err = filterSchema(all, "org", "")
+	if err != nil || len(got) != 1 || got[0].Scheme != "org" || len(got[0].Types) != 2 {
+		t.Fatalf("scheme=org = %+v, %v; want org with both types", got, err)
+	}
+	got, err = filterSchema(all, "", "org-headline-v1")
+	if err != nil || len(got) != 1 || len(got[0].Types) != 1 || got[0].Types[0].Tag != "org-headline-v1" {
+		t.Fatalf("type only = %+v, %v; want the headline type alone", got, err)
+	}
+	got, err = filterSchema(all, "org", "org-headline-v1")
+	if err != nil || len(got) != 1 || len(got[0].Types) != 1 {
+		t.Fatalf("scheme+type = %+v, %v", got, err)
+	}
+}
+
+func TestFilterSchema_UnknownNamesTheChoices(t *testing.T) {
+	_, err := filterSchema(schemaFixture(), "nope", "")
+	if err == nil || !strings.Contains(err.Error(), "org, caldav") {
+		t.Errorf("unknown scheme err = %v; want it to list the schemes", err)
+	}
+	if _, err := filterSchema(schemaFixture(), "org", "caldav-object-vtodo-v1"); err == nil {
+		t.Error("a type outside the scheme was accepted")
+	}
+	if _, err := filterSchema(schemaFixture(), "", "nope"); err == nil {
+		t.Error("an unknown type was accepted")
+	}
+}
+
 // fakeReader is a resourceReader returning a fixed read result, so the
 // read_node / list_nodes(uri) dispatch can be tested without the plugin
 // registry.
