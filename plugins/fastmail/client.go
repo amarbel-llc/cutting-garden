@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
@@ -36,7 +37,8 @@ type client struct {
 	token      string
 	http       *http.Client
 
-	session *Session // memoized; nil until the first ensureSession
+	sessionMu sync.Mutex
+	session   *Session // memoized; nil until the first ensureSession; guarded by sessionMu
 }
 
 func newClient(sessionURL, token string) *client {

@@ -69,8 +69,13 @@ func (s *Session) downloadURL(blobID, name, accept string) string {
 // ensureSession fetches the JMAP Session object once and memoizes it for
 // the client's life. Account configuration and the session's advertised
 // endpoints are effectively static for a process, and a long-lived `mcp`
-// server would otherwise re-fetch the session on every method call.
+// server would otherwise re-fetch the session on every method call. The
+// mutex makes concurrent first callers share one fetch (cutting-garden#264)
+// rather than a sync.Once, so a failed or cancelled fetch is retried by the
+// next caller instead of being cached.
 func (c *client) ensureSession(ctx context.Context) (*Session, error) {
+	c.sessionMu.Lock()
+	defer c.sessionMu.Unlock()
 	if c.session != nil {
 		return c.session, nil
 	}

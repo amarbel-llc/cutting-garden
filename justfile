@@ -1294,38 +1294,28 @@ debug-make-multiroot-fixture: debug-make-fixture
 debug-capture-multiroot STORE='.default' FORMAT='auto': debug-build-go debug-make-multiroot-fixture
     .tmp/cutting-garden capture -format={{ FORMAT }} {{ STORE }} .tmp/cap-fixture .tmp/cap-fixture-2
 
-# Generate all manpages into .tmp/manpages and render PAGE as text, for
-# eyeballing roff output after editing command Description/manpage metadata
-# (section 1, go-codegen'd via cutting-garden-gen) OR a doc/*.5.scd /
-# doc/*.7.scd source file (section 5/7, scdoc — eng-manpages(7) SCDOC
-# PATTERN, cutting-garden#166 / cutting-garden#172). Searches man1, man5,
-# man7 in that order for the first PAGE.<section> match.
+# Render PAGE as text from the NIX-built package's share/man, for eyeballing
+# roff output after editing command Description/manpage metadata (section 1,
+# go-codegen'd via cutting-garden-gen in the package's postInstall) OR a
+# doc/*.5.scd / doc/*.7.scd source file (section 5/7, scdoc — eng-manpages(7)
+# SCDOC PATTERN, cutting-garden#166 / cutting-garden#172). Searches man1,
+# man5, man7 in that order for the first PAGE.<section> match. There is no
+# ambient go in the devShell (igloo FDR 0008), so the pages come from the
+# package build rather than a local `go run` (cutting-garden#269); a new
+# doc/*.scd must be `git add -N`'d first.
 #
-# generate all manpages into .tmp/manpages and render PAGE as text
+# render PAGE as text from the nix-built package's manpages
 [group('debug')]
 debug-manpage PAGE='cutting-garden-capture':
     #!/usr/bin/env bash
     set -euo pipefail
-    rm -rf .tmp/manpages
-    nix develop --command bash -c '
-      set -euo pipefail
-      go run ./cmd/cutting-garden-gen .tmp/manpages
-      mkdir -p .tmp/manpages/share/man/man5 .tmp/manpages/share/man/man7
-      for f in doc/*.5.scd; do
-        [ -e "$f" ] || continue
-        scdoc < "$f" > ".tmp/manpages/share/man/man5/$(basename "$f" .scd)"
-      done
-      for f in doc/*.7.scd; do
-        [ -e "$f" ] || continue
-        scdoc < "$f" > ".tmp/manpages/share/man/man7/$(basename "$f" .scd)"
-      done
-    '
+    out="$(nix build "{{ justfile_directory() }}#default" --no-link --print-out-paths)"
     page=""
     for sec in 1 5 7; do
-      candidate=".tmp/manpages/share/man/man$sec/{{ PAGE }}.$sec"
+      candidate="$out/share/man/man$sec/{{ PAGE }}.$sec"
       [[ -f "$candidate" ]] && page="$candidate" && break
     done
-    [[ -n "$page" ]] || { echo "no page named {{ PAGE }} in man1/5/7; pages:"; ls .tmp/manpages/share/man/man*/*; exit 1; }
+    [[ -n "$page" ]] || { echo "no page named {{ PAGE }} in man1/5/7; pages:"; ls "$out"/share/man/man*/*; exit 1; }
     if command -v man >/dev/null 2>&1; then
       MANWIDTH=78 man -l "$page"
     else
