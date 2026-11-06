@@ -214,6 +214,15 @@ func (r *runner) facetWriteClear(ctx context.Context, clear *FacetClearSpec) {
 	}
 
 	original := facetKeys(node.Facets[clear.Dimension])
+	if len(original) == 0 {
+		// Clearing an already-empty dimension passes whether the peer
+		// applied the null or ignored it (cutting-garden#276).
+		r.tap.NotOk(nameFacetWriteClear, map[string]string{"precondition": fmt.Sprintf(
+			"%s already has no %s value, so a clear cannot be told from a no-op;"+
+				" name a node that holds one", clear.Node, clear.Dimension,
+		)})
+		return
+	}
 
 	body, err := traversal_serve.HostFacetWritePatch(write, "")
 	if err != nil {
@@ -245,6 +254,15 @@ func (r *runner) facetWriteOne(ctx context.Context, spec *FacetWriteSpec) {
 	}
 
 	original := facetKeys(node.Facets[spec.OneDimension])
+	if sameStringSet(original, []string{spec.OneBucket}) {
+		// Moving a node into the bucket it is already in passes whether the
+		// peer applied the write or ignored it (cutting-garden#276).
+		r.tap.NotOk(nameFacetWriteOne, map[string]string{"precondition": fmt.Sprintf(
+			"%s is already in %s=%s, so the move cannot be told from a no-op;"+
+				" choose a one_value the node is not in", spec.Node, spec.OneDimension, spec.OneBucket,
+		)})
+		return
+	}
 
 	body, err := traversal_serve.HostFacetWritePatch(write, spec.OneBucket)
 	if err != nil {
@@ -278,6 +296,17 @@ func (r *runner) facetWriteMany(ctx context.Context, spec *FacetWriteSpec) {
 	}
 
 	original := facetKeys(node.Facets[spec.ManyDimension])
+	if sameStringSet(original, spec.ManySet) || len(spec.ManySet) == 0 {
+		// Each step must change the set, or a peer that ignores the write
+		// passes it (cutting-garden#276): the replace needs a set the node
+		// does not already hold, and the following [] clear a non-empty one.
+		r.tap.NotOk(nameFacetWriteMany, map[string]string{"precondition": fmt.Sprintf(
+			"%s's %s is already [%s] or many_set is empty, so a write cannot be"+
+				" told from a no-op; choose a non-empty many_set the node does not hold",
+			spec.Node, spec.ManyDimension, strings.Join(original, ","),
+		)})
+		return
+	}
 	problems := map[string]string{}
 
 	for _, set := range [][]string{spec.ManySet, {}} {

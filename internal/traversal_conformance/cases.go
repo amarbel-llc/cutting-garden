@@ -1218,6 +1218,10 @@ func (r *runner) caseFilteredList(ctx context.Context) {
 		}
 	}
 
+	if problem := r.nonexistentValueProblem(ctx, spec.URI, filterViews[0].Dimension); problem != "" {
+		problems["nonexistent_value"] = problem
+	}
+
 	if len(problems) > 0 {
 		r.tap.NotOk(nameFilteredList, problems)
 
@@ -1225,6 +1229,46 @@ func (r *runner) caseFilteredList(ctx context.Context) {
 	}
 
 	r.tap.Ok(nameFilteredList)
+}
+
+// nonexistentFilterValue is a value no peer's data holds.
+const nonexistentFilterValue = "cg-conformance-no-such-value"
+
+// nonexistentValueProblem filters uri on a value that does not exist
+// (cutting-garden#276). A peer whose backend discards an unknown value
+// (Forgejo drops an unknown label filter) would hand back the whole
+// listing while claiming ok:true, which a sweep turns into an op on every
+// node. Acceptable answers are a refusal (-32602, as a closed dimension
+// gives), ok:false (declined, the host folds), or no nodes. Anything else
+// is reported.
+func (r *runner) nonexistentValueProblem(ctx context.Context, uri, dimension string) string {
+	var result traversal_serve.NodesListResult
+	err := r.session.Call(
+		ctx, traversal_serve.MethodNodesList,
+		traversal_serve.NodesListParams{
+			URI:    uri,
+			Filter: []traversal_serve.PredicateView{{Dimension: dimension, Value: nonexistentFilterValue}},
+		}, &result,
+	)
+	if err != nil {
+		if code, ok := traversal_serve.CodeOf(err); ok && code == traversal_serve.CodeInvalidParams {
+			return ""
+		}
+
+		return "filtering " + dimension + "=" + nonexistentFilterValue + " failed: " + err.Error()
+	}
+	if result.OK != nil && !*result.OK {
+		return ""
+	}
+	if len(result.Nodes) > 0 {
+		return fmt.Sprintf(
+			"filtering %s=%s claims to have filtered yet returns %d node(s) —"+
+				" an unknown value must narrow to nothing, be refused, or answer ok:false",
+			dimension, nonexistentFilterValue, len(result.Nodes),
+		)
+	}
+
+	return ""
 }
 
 // caseBulkMutate exercises node.bulk_mutate (RFC 0017) end to end against a
