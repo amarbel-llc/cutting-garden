@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"code.linenisgreat.com/cutting-garden/plugins/internal/tailwriter"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
@@ -196,7 +197,7 @@ func runYtdlp(
 	// goroutine join (wg.Wait) before reading it serves as the
 	// happens-before barrier — no additional lock needed.
 	var stderrTail bytes.Buffer
-	tail := newTailWriter(&stderrTail, stderrTailBytes)
+	tail := tailwriter.New(&stderrTail, stderrTailBytes)
 
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -239,7 +240,7 @@ func runYtdlp(
 // happens-before barrier guarding it; no lock is needed.
 func scanStream(
 	r io.Reader,
-	tail *tailWriter,
+	tail *tailwriter.Writer,
 	onProgress func(progressSample),
 	onLog func(string),
 ) {
@@ -258,32 +259,4 @@ func scanStream(
 		tail.Write([]byte(scanErr.Error()))
 		tail.Write([]byte{'\n'})
 	}
-}
-
-// tailWriter keeps only the last cap bytes written through it.
-// Implements io.Writer so it can buffer yt-dlp's stderr stream without
-// retaining the full progress noise for the failure diagnostic.
-type tailWriter struct {
-	buf *bytes.Buffer
-	cap int
-}
-
-func newTailWriter(buf *bytes.Buffer, cap int) *tailWriter {
-	return &tailWriter{buf: buf, cap: cap}
-}
-
-func (w *tailWriter) Write(p []byte) (int, error) {
-	if len(p) >= w.cap {
-		w.buf.Reset()
-		w.buf.Write(p[len(p)-w.cap:])
-		return len(p), nil
-	}
-	if w.buf.Len()+len(p) > w.cap {
-		drop := w.buf.Len() + len(p) - w.cap
-		bs := w.buf.Bytes()
-		w.buf.Reset()
-		w.buf.Write(bs[drop:])
-	}
-	w.buf.Write(p)
-	return len(p), nil
 }

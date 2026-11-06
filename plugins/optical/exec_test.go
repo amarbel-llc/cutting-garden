@@ -1,7 +1,6 @@
 package cutting_garden_plugin_optical
 
 import (
-	"bytes"
 	"context"
 	"strings"
 	"sync"
@@ -79,22 +78,5 @@ func TestRunExternal_BinaryMissing(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "not found on PATH") {
 		t.Errorf("error %q missing 'not found on PATH'", err.Error())
-	}
-}
-
-func TestTailWriter_KeepsOnlyTail(t *testing.T) {
-	var buf bytes.Buffer
-	w := newTailWriter(&buf, 8)
-	for _, chunk := range [][]byte{
-		[]byte("aaaa"),
-		[]byte("bbbb"),
-		[]byte("cccc"),
-	} {
-		if _, err := w.Write(chunk); err != nil {
-			t.Fatalf("Write: %v", err)
-		}
-	}
-	if got := buf.String(); got != "bbbbcccc" {
-		t.Errorf("tail = %q, want %q", got, "bbbbcccc")
 	}
 }

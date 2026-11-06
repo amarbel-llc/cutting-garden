@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"sync"
 
+	"code.linenisgreat.com/cutting-garden/plugins/internal/tailwriter"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
@@ -76,7 +77,7 @@ func runExternal(
 	// goroutine join (wg.Wait) before reading it is the happens-before
 	// barrier — no additional lock needed.
 	var stderrTail bytes.Buffer
-	tail := newTailWriter(&stderrTail, stderrTailBytes)
+	tail := tailwriter.New(&stderrTail, stderrTailBytes)
 
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -116,7 +117,7 @@ func runExternal(
 // success. The tail is written only by the single stderr goroutine, so
 // the wg.Wait join in runExternal is the happens-before barrier
 // guarding it.
-func scanLines(r io.Reader, tail *tailWriter, onLog func(string)) {
+func scanLines(r io.Reader, tail *tailwriter.Writer, onLog func(string)) {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, scanBufInitial), maxScanLineBytes)
 	for scanner.Scan() {
@@ -134,32 +135,4 @@ func scanLines(r io.Reader, tail *tailWriter, onLog func(string)) {
 		tail.Write([]byte(scanErr.Error()))
 		tail.Write([]byte{'\n'})
 	}
-}
-
-// tailWriter keeps only the last cap bytes written through it.
-// Implements io.Writer so it can buffer a ripping tool's stderr stream
-// without retaining the full progress noise for the failure diagnostic.
-type tailWriter struct {
-	buf *bytes.Buffer
-	cap int
-}
-
-func newTailWriter(buf *bytes.Buffer, cap int) *tailWriter {
-	return &tailWriter{buf: buf, cap: cap}
-}
-
-func (w *tailWriter) Write(p []byte) (int, error) {
-	if len(p) >= w.cap {
-		w.buf.Reset()
-		w.buf.Write(p[len(p)-w.cap:])
-		return len(p), nil
-	}
-	if w.buf.Len()+len(p) > w.cap {
-		drop := w.buf.Len() + len(p) - w.cap
-		bs := w.buf.Bytes()
-		w.buf.Reset()
-		w.buf.Write(bs[drop:])
-	}
-	w.buf.Write(p)
-	return len(p), nil
 }
