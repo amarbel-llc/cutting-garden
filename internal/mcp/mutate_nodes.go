@@ -141,6 +141,8 @@ type mutateGroup struct {
 func (t *Tools) callMutateNodes(
 	ctx context.Context, args json.RawMessage,
 ) (string, error) {
+	countMutateCall(args)
+
 	var in struct {
 		Groups []mutateGroupInput `json:"groups"`
 	}
