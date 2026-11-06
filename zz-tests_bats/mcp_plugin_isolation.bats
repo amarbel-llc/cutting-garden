@@ -70,6 +70,46 @@ function mcp_isolates_a_dead_wire_plugin_bad_command { # @test
     fail "stderr does not mention the dead plugin: $stderr"
 }
 
+# -config <path> loads that file instead of the XDG default
+# (cutting-garden#108), for both config consumers. The stanza's dead command
+# warns on stderr, which only happens when the named file was read; the
+# default location holds no config at all.
+function mcp_and_list_read_the_config_named_by_the_flag { # @test
+  rm -f "$HOME/.config/cutting-garden/config.toml"
+  local cfg="$BATS_TEST_TMPDIR/alt-config.toml"
+  cat >"$cfg" <<-'EOF'
+	[[traversal_plugins]]
+	name = "cg108-configflag"
+	command = ["/nonexistent/cutting-garden-does-not-exist"]
+	schemes = ["cg108-configflag"]
+	EOF
+
+  local reqfile="$BATS_TEST_TMPDIR/mcp_req.jsonl"
+  {
+    echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"bats","version":"0"}}}'
+    echo '{"jsonrpc":"2.0","method":"notifications/initialized"}'
+    tools_call 3 list_nodes '{}'
+  } >"$reqfile"
+  run --separate-stderr timeout --preserve-status 10s "${CG_BIN:-cutting-garden}" mcp -config "$cfg" <"$reqfile"
+  assert_success
+  echo "$stderr" | grep -q 'cg108-configflag' ||
+    fail "mcp -config did not read $cfg: $stderr"
+
+  run --separate-stderr "${CG_BIN:-cutting-garden}" list -config "$cfg"
+  assert_success
+  echo "$stderr" | grep -q 'cg108-configflag' ||
+    fail "list -config did not read $cfg: $stderr"
+}
+
+# A -config file that does not exist is a usage error, not an empty
+# config: the caller named that file.
+function list_config_flag_refuses_a_missing_file { # @test
+  run --separate-stderr "${CG_BIN:-cutting-garden}" list -config "$BATS_TEST_TMPDIR/absent.toml"
+  assert_failure 64
+  echo "$stderr" | grep -q 'absent.toml' ||
+    fail "the refusal does not name the missing file: $stderr"
+}
+
 # Same isolation contract when the wire plugin's command IS runnable but
 # crashes/exits before it ever writes its RFC 0013 announce line — the
 # literal "read announce line (child exited before announcing?): EOF"

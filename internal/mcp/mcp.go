@@ -140,6 +140,11 @@ type MCP struct {
 	// exactly as each plugin sets them (e.g. "file", never the schemeless
 	// "" a bare relative path would parse to).
 	ExcludeSchemes []string
+
+	// ConfigPath, the -config flag, loads this file instead of
+	// $XDG_CONFIG_HOME/cutting-garden/config.toml (cutting-garden#108); a
+	// NixOS-rendered /etc config needs no XDG_CONFIG_HOME=/etc indirection.
+	ConfigPath string
 }
 
 var (
@@ -179,6 +184,13 @@ func (cmd *MCP) SetFlagDefinitions(flagSet interfaces.CLIFlagDefinitions) {
 		"URI scheme to exclude from both aggregated and explicit roots "+
 			"(repeatable, e.g. -exclude-scheme=file)",
 	)
+	flagSet.StringVar(
+		&cmd.ConfigPath,
+		"config",
+		"",
+		"config file to load instead of $XDG_CONFIG_HOME/cutting-garden/config.toml "+
+			"(it must exist)",
+	)
 }
 
 func (*MCP) GetDescription() command.Description {
@@ -205,7 +217,7 @@ func (*MCP) GetDescription() command.Description {
 func (cmd *MCP) Run(req command.Request) {
 	ctx := req.Context.(errors.Context)
 
-	roots, rootLabels, cfg, err := mcpRoots(ctx, req.PopArgs(), cmd.ExcludeSchemes)
+	roots, rootLabels, cfg, err := mcpRoots(ctx, req.PopArgs(), cmd.ExcludeSchemes, cmd.ConfigPath)
 	if err != nil {
 		// A bad endpoint or malformed config is a usage error: the client
 		// misconfigured the server. Fail fast (EX_USAGE) before the
@@ -299,7 +311,7 @@ func (cmd *MCP) Run(req command.Request) {
 // (worse) look like the flag has no effect on the one path an operator is
 // most likely to test by hand.
 func mcpRoots(
-	ctx context.Context, args []string, excludeSchemes []string,
+	ctx context.Context, args []string, excludeSchemes []string, configPath string,
 ) (roots []*url.URL, labels map[string]string, cfg *cgconfig.ConfigV0, err error) {
 	// Config load precedes BOTH branches: explicit root args still
 	// resolve through the scheme registry, and a [[traversal_plugins]]
@@ -307,7 +319,7 @@ func mcpRoots(
 	// integration; the same gap `list <uri>` had, found via #140). The
 	// loaded config is returned so Run reads its [tags] override without
 	// a second load.
-	cfg, err = command_components.LoadAndInjectConfig(os.Stderr)
+	cfg, err = command_components.LoadAndInjectConfigAt(configPath, os.Stderr)
 	if err != nil {
 		return nil, nil, nil, err
 	}

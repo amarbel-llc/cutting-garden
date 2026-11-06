@@ -257,11 +257,15 @@ the plugin's choice and is invisible to the aggregating command:
    `$XDG_CONFIG_HOME/cutting-garden/config.toml`, resolved through the same
    cutting-garden-scoped XDG environment the binary already uses for state
    (`captures.log`). When `$XDG_CONFIG_HOME` is unset, the XDG default
-   (`$HOME/.config`) applies.
+   (`$HOME/.config`) applies. A config-consuming command MAY take a
+   `-config <path>` flag that names the file instead (`list` and `mcp` do,
+   cutting-garden#108); the flag overrides the XDG location entirely.
 2. The file MUST be TOML.
 3. A missing file MUST be treated as an empty configuration and MUST NOT be an
    error. cutting-garden MUST run normally with no config file — intrinsic
-   roots (source 1) still surface.
+   roots (source 1) still surface. This applies to the default location
+   only: a file named by `-config` that does not exist is a usage error
+   (EX_USAGE), since the caller asked for that file.
 4. The on-disk format is produced and consumed by tommy codegen
    (`//go:generate tommy generate`); the Go struct definitions below are the
    normative schema and the generated `Decode*`/`Encode` methods are the

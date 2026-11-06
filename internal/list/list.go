@@ -66,8 +66,11 @@ type List struct {
 	// <uri>'s subtree: the listing becomes the query's matched nodes rather
 	// than the raw child enumeration (FDR 0022, cutting-garden#164). Requires
 	// a <uri>.
-	Query  string
-	output io.Writer
+	Query string
+	// ConfigPath, the -config flag, loads this file instead of
+	// $XDG_CONFIG_HOME/cutting-garden/config.toml (cutting-garden#108).
+	ConfigPath string
+	output     io.Writer
 }
 
 var (
@@ -125,6 +128,13 @@ func (cmd *List) SetFlagDefinitions(flagSet interfaces.CLIFlagDefinitions) {
 		"",
 		"trellis query filtering the listed nodes (RFC 0014; requires a <uri>)",
 	)
+	flagSet.StringVar(
+		&cmd.ConfigPath,
+		"config",
+		"",
+		"config file to load instead of $XDG_CONFIG_HOME/cutting-garden/config.toml "+
+			"(it must exist)",
+	)
 }
 
 func (cmd *List) Run(req command.Request) {
@@ -148,7 +158,7 @@ func (cmd *List) Run(req command.Request) {
 	// section as it decodes (RFC 0007 — the loader dispatches each
 	// registered config-section decoder), so a second read would re-parse
 	// the file and reassign every plugin's package state for nothing.
-	cfg, err := command_components.LoadAndInjectConfig(os.Stderr)
+	cfg, err := command_components.LoadAndInjectConfigAt(cmd.ConfigPath, os.Stderr)
 	if err != nil {
 		errors.ContextCancelWithError(ctx, err)
 		return

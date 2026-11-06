@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"os"
 	"path"
 	"slices"
 	"strings"
@@ -43,6 +44,30 @@ func LoadAndInjectConfig(warnw io.Writer) (*cgconfig.ConfigV0, error) {
 	if err != nil {
 		return nil, err
 	}
+	return loadAndInject(path, warnw)
+}
+
+// LoadAndInjectConfigFrom is LoadAndInjectConfig for an explicit file, the
+// `-config <path>` flag of the config-consuming commands (cutting-garden
+// #108). Unlike the default location, a named file that does not exist is
+// a bad request, not an empty config: the caller asked for that file.
+func LoadAndInjectConfigFrom(path string, warnw io.Writer) (*cgconfig.ConfigV0, error) {
+	if _, err := os.Stat(path); err != nil {
+		return nil, errors.BadRequestf("-config %s: %s", path, err)
+	}
+	return loadAndInject(path, warnw)
+}
+
+// LoadAndInjectConfigAt loads path when it is non-empty, else the default
+// location: the one call a command with a `-config` flag makes.
+func LoadAndInjectConfigAt(path string, warnw io.Writer) (*cgconfig.ConfigV0, error) {
+	if path == "" {
+		return LoadAndInjectConfig(warnw)
+	}
+	return LoadAndInjectConfigFrom(path, warnw)
+}
+
+func loadAndInject(path string, warnw io.Writer) (*cgconfig.ConfigV0, error) {
 	raw, cfg, err := loadConfigWithRaw(path, warnw)
 	if err != nil {
 		return nil, err
