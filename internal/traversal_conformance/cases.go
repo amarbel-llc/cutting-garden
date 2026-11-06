@@ -274,7 +274,7 @@ func (r *runner) casePatchTriState(ctx context.Context) {
 
 		return
 	}
-	r.tap.Ok(namePatchDelete)
+	r.assertProbeRemoved(ctx, probe)
 	r.assertDeleteResult(deleted)
 
 	// The probe is gone now: deleting it again is the not-found case
@@ -377,6 +377,32 @@ func (r *runner) patchResultURI(ctx context.Context, probe string) string {
 	r.tap.Ok(namePatchURI)
 
 	return moved
+}
+
+// assertProbeRemoved checks node.delete's observable post-condition
+// (cutting-garden#206, RFC 0013 §Mutation): after a successful delete the
+// probe no longer lists under its parent. A delete that returns success but
+// leaves the node listable (a soft delete, like closing an issue) is a
+// no-op, and the point fails instead of passing on the call alone.
+func (r *runner) assertProbeRemoved(ctx context.Context, probe string) {
+	parent := r.manifest.WritableContainer
+	children, ok := r.listChildURIs(ctx, parent)
+	if !ok {
+		r.tap.NotOk(namePatchDelete, map[string]string{
+			"uri": probe, "error": "could not re-list " + parent + " to confirm the delete",
+		})
+
+		return
+	}
+	if slices.Contains(children, probe) {
+		r.tap.NotOk(namePatchDelete, map[string]string{
+			"uri":   probe,
+			"error": "the delete succeeded but the node still lists under " + parent,
+		})
+
+		return
+	}
+	r.tap.Ok(namePatchDelete)
 }
 
 // assertDeleteResult checks the node.delete result shape (cutting-garden
@@ -701,9 +727,15 @@ func (r *runner) caseByContainer(
 		return nil, nil, "facets.counts result was not an object"
 	}
 
+	problems := filteredSummaryProblems(fields["summary"], filter)
+
 	entriesRaw, present := fields["by_container"]
 	if !present {
-		r.tap.Ok(nameByContainer)
+		if len(problems) > 0 {
+			r.tap.NotOk(nameByContainer, problems)
+		} else {
+			r.tap.Ok(nameByContainer)
+		}
 		r.tap.Comment(
 			"by_container absent — omission is honest (RFC 0012 §13)",
 		)
@@ -718,8 +750,6 @@ func (r *runner) caseByContainer(
 
 		return nil, nil, "by_container did not decode"
 	}
-
-	problems := map[string]string{}
 
 	if len(entries) > cutting_garden_plugins.FacetContainerBreakdownLimit {
 		problems["length"] = fmt.Sprintf(
@@ -761,6 +791,50 @@ func (r *runner) caseByContainer(
 	r.tap.Ok(nameByContainer)
 
 	return entries, filter, ""
+}
+
+// filteredSummaryProblems checks that a filtered facets.counts summary
+// reflects its filter (cutting-garden#204): a filtered dimension that
+// appears in the summary may count only the filtered value. A peer that
+// accepts the filter and ignores it shows the dimension's other values
+// whenever the data has any, the hole caseFilteredList already closes for
+// nodes.list. A value matches when it equals the filter value ignoring case
+// (fold-case dimensions such as status) or extends it at a `-` (a date
+// prefix: 2026-08 covers the 2026-08-15 bucket). A dimension absent from
+// the summary proves nothing either way and passes.
+func filteredSummaryProblems(
+	raw json.RawMessage, filter []traversal_serve.PredicateView,
+) map[string]string {
+	problems := map[string]string{}
+	if len(filter) == 0 || len(raw) == 0 {
+		return problems
+	}
+
+	var summary cutting_garden_plugins.FacetSummary
+	if err := json.Unmarshal(raw, &summary); err != nil {
+		problems["summary"] = fmt.Sprintf("does not decode: %s", err)
+
+		return problems
+	}
+
+	for _, predicate := range filter {
+		for value, count := range summary[predicate.Dimension] {
+			if count > 0 && !summaryValueMatches(value, predicate.Value) {
+				problems["filter:"+predicate.Dimension] = fmt.Sprintf(
+					"the summary filtered by %s=%s still counts %d under %q"+
+						" — the filter was not applied",
+					predicate.Dimension, predicate.Value, count, value,
+				)
+			}
+		}
+	}
+
+	return problems
+}
+
+func summaryValueMatches(value, filtered string) bool {
+	return strings.EqualFold(value, filtered) ||
+		strings.HasPrefix(strings.ToLower(value), strings.ToLower(filtered)+"-")
 }
 
 // caseDescendTargets is the RFC 0012 §13 attribution ruling's

@@ -605,6 +605,16 @@ would in process:
   below), never a success-shaped result: a host that predates the code
   reads a failed delete, which is what it is.
 
+  A successful `node.delete`'s observable post-condition is removal
+  (cutting-garden#206): the node MUST NOT appear in its parent's
+  subsequent `nodes.list`, and SHOULD fail a direct read with `-32004`.
+  How the substrate gets there (hard delete, or tombstone-and-hide) is its
+  own business, but a node still listable after `delete` was not deleted.
+  A state transition such as closing an issue is `node.patch`, not
+  `node.delete`. A substrate that cannot remove a node of some type MUST
+  NOT accept `node.delete` for it: it refuses the call, and exposes the
+  transition through `patch`.
+
   **Per-op detail on `node.patch` and `node.delete` (amendment,
   cutting-garden#320, #359, #362).** `node.patch`'s result also MAY carry
   `uri`: the node's address after the patch, present only when it differs
