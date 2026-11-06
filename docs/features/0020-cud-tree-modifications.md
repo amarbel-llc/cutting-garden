@@ -44,9 +44,13 @@ promotion-criteria: |
 > **2026-10-15 amendment (cutting-garden#315):** the four singular MCP
 > tools and `bulk_mutate` are replaced by ONE tool, `mutate_nodes`, so
 > agents batch their writes (a single write is a one-op batch). A call is a
-> list of groups, each an `anchor` URI plus `ops` (or a `sweep`); exactly
-> one group is accepted for now, the shape leaving room for batches across
-> plugins. Ops address nodes by the id organize prints under the anchor —
+> list of groups, each an `anchor` URI plus `ops` (or a `sweep`). Since
+> cutting-garden#323 a call may carry several groups, across anchors and
+> plugins: every group is built before any is dispatched (a malformed one
+> refuses the whole call), the groups then apply in order and
+> independently (temp ids and atomicity are per group, and a group refused
+> at dispatch reports its `error` while the rest still run), and the call
+> is an error result only when no group applied anything. Ops address nodes by the id organize prints under the anchor —
 > resolved back to a URI by `node_view.NodeURIFor`, with the new optional
 > `NodeIDResolver` capability for plugins whose ids are not host+path
 > (fastmail threads, org headlines) — or by a full URI under the anchor. A

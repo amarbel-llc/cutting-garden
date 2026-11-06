@@ -19,14 +19,14 @@ import (
 // mutate_nodes is the ONE write tool (cutting-garden#315): every create,
 // put, patch and delete goes through it as a batch, a single write being a
 // one-op batch. A call is a list of groups — each an anchor plus its ops
-// (or a sweep) — so batches spanning several plugins can come later without
-// a shape change; for now exactly one group is accepted. Ops address nodes
+// (or a sweep) — applied in order and independently, so one call can span
+// several anchors and plugins (cutting-garden#323). Ops address nodes
 // by the id organize prints for them, relative to the group's anchor
 // (node_view.NodeURIFor), and a create may name a temp id (`+name`) that
 // later ops in the group address.
 
 const mutateNodesSchema = `{"type":"object","required":["groups"],"properties":{` +
-	`"groups":{"type":"array","minItems":1,"maxItems":1,"description":"the batch, one group per plugin; exactly one group is accepted for now","items":{"type":"object","required":["anchor"],"properties":{` +
+	`"groups":{"type":"array","minItems":1,"description":"the batch: one group per anchor, applied in order. Groups are independent: each has its own temp ids and atomicity, and one group's refusal does not stop the next (it reports its error); a malformed group refuses the whole call before anything is written","items":{"type":"object","required":["anchor"],"properties":{` +
 	`"anchor":{"type":"string","description":"the node URI every op in the group is addressed relative to (e.g. a calendar, mailbox, or org file URI); it fixes the group's plugin"},` +
 	`"atomicity":{"type":"string","enum":["best-effort","atomic"],"description":"optional, default best-effort: each op applies independently and is reported on its own; atomic is all-or-nothing and is refused unless the plugin supports it"},` +
 	`"ops":{"type":"array","description":"the changeset, applied in order. Exactly ONE of ops or sweep.","items":{"type":"object","required":["kind","id"],"properties":{` +
@@ -46,9 +46,10 @@ func mutateNodesToolDef() protocol.ToolV1 {
 		Name: mcp_tool_perms.ToolMutateNodes,
 		Description: "Create, replace, patch, or delete nodes — the one write " +
 			"tool, so batch your writes: a single write is a one-op batch. " +
-			"Pass one group: an anchor URI and either ops (applied in order) " +
-			"or a sweep (one op applied to every node under the anchor " +
-			"matching a filter). Each op addresses its node by the id organize " +
+			"Pass one or more groups, applied in order: each an anchor URI and " +
+			"either ops (applied in order) or a sweep (one op applied to every " +
+			"node under the anchor matching a filter). Temp ids and atomicity " +
+			"are per group. Each op addresses its node by the id organize " +
 			"prints under the anchor (or a full URI under it). Best-effort by " +
 			"default: the result lists applied, patched_nothing (accepted, " +
 			"nothing changed), failed (with the error), and created (temp id → " +
@@ -122,6 +123,10 @@ type mutateGroupView struct {
 	Created        []mutateCreatedView `json:"created,omitempty"`
 	Outcomes       []mutateOutcomeView `json:"outcomes,omitempty"`
 	Atomic         bool                `json:"atomic,omitempty"`
+	// Error is the reason a whole group was refused at dispatch (an atomic
+	// batch the plugin cannot transact, a sweep it cannot resolve), in a
+	// call of several groups; the other groups still ran.
+	Error string `json:"error,omitempty"`
 	// Complete and Partial mark a sweep whose enumeration a plugin reported
 	// bounded — the same signal list_nodes carries (cutting-garden#266).
 	Complete *bool                                   `json:"complete,omitempty"`
@@ -150,52 +155,89 @@ func (t *Tools) callMutateNodes(
 		return "", errors.BadRequestf("mutate_nodes: arguments: %s", err)
 	}
 
-	switch len(in.Groups) {
-	case 0:
+	if len(in.Groups) == 0 {
 		return "", errors.BadRequestf("mutate_nodes: groups is empty")
-	case 1:
-	default:
-		return "", errors.BadRequestf(
-			"mutate_nodes: %d groups given; batches spanning several"+
-				" anchors are not supported yet — send one group per call",
-			len(in.Groups),
-		)
 	}
 
-	group, err := t.buildMutateGroup(in.Groups[0])
-	if err != nil {
-		return "", err
+	// Every group is built before any is dispatched, so a malformed group
+	// refuses the whole call with nothing written (cutting-garden#323).
+	groups := make([]*mutateGroup, 0, len(in.Groups))
+	for i, groupIn := range in.Groups {
+		group, err := t.buildMutateGroup(groupIn)
+		if err != nil {
+			if len(in.Groups) > 1 {
+				return "", errors.BadRequestf("groups[%d]: %s", i, err)
+			}
+			return "", err
+		}
+		groups = append(groups, group)
 	}
 
-	ctx, partial := cutting_garden_plugins.WithPartialListings(ctx)
-	ctx = cutting_garden_plugins.WithBulkOutcomeObserver(ctx, group.logOutcome(t.log))
-	result, err := t.dispatchMutateGroup(ctx, group)
-	t.forgetWrittenSource(group.anchor)
-	if err != nil {
-		return "", err
+	views := make([]mutateGroupView, 0, len(groups))
+	var refusal error
+	for _, group := range groups {
+		view, err := t.applyMutateGroup(ctx, group)
+		if err != nil && len(groups) == 1 {
+			return "", err
+		}
+		if err != nil {
+			refusal = err
+			view = mutateGroupView{Anchor: group.anchor, Applied: []string{}, Error: err.Error()}
+		}
+		views = append(views, view)
 	}
 
-	view := group.render(result, partial.All())
 	body, err := json.MarshalIndent(
 		struct {
 			Groups []mutateGroupView `json:"groups"`
-		}{[]mutateGroupView{view}}, "", "  ",
+		}{views}, "", "  ",
 	)
 	if err != nil {
 		return "", errors.Wrap(err)
 	}
 
-	// Nothing landed: an error result, so a caller skimming for success
-	// cannot read a fully refused batch as done (cutting-garden#180). The
-	// per-id detail rides along in the message.
-	if len(view.Applied) == 0 &&
-		(len(view.Failed) > 0 || len(view.PatchedNothing) > 0) {
+	// Nothing landed in any group: an error result, so a caller skimming for
+	// success cannot read a fully refused batch as done (cutting-garden#180).
+	// The per-id detail rides along in the message.
+	if !anyApplied(views) && (refusal != nil || anyRefused(views)) {
 		return "", errors.BadRequestf(
 			"mutate_nodes: nothing was applied\n%s", body,
 		)
 	}
 
 	return string(body), nil
+}
+
+// applyMutateGroup dispatches one built group and renders its result. Groups
+// are independent: each has its own temp ids and atomicity, and one group's
+// refusal does not stop the next.
+func (t *Tools) applyMutateGroup(ctx context.Context, group *mutateGroup) (mutateGroupView, error) {
+	ctx, partial := cutting_garden_plugins.WithPartialListings(ctx)
+	ctx = cutting_garden_plugins.WithBulkOutcomeObserver(ctx, group.logOutcome(t.log))
+	result, err := t.dispatchMutateGroup(ctx, group)
+	t.forgetWrittenSource(group.anchor)
+	if err != nil {
+		return mutateGroupView{}, err
+	}
+	return group.render(result, partial.All()), nil
+}
+
+func anyApplied(views []mutateGroupView) bool {
+	for _, v := range views {
+		if len(v.Applied) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func anyRefused(views []mutateGroupView) bool {
+	for _, v := range views {
+		if len(v.Failed) > 0 || len(v.PatchedNothing) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func (t *Tools) buildMutateGroup(in mutateGroupInput) (*mutateGroup, error) {

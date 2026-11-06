@@ -234,8 +234,6 @@ func TestMutateNodes_RejectsBothOpsAndSweep(t *testing.T) {
 // before anything is dispatched.
 func TestMutateNodes_RefusesUnsupportedShapes(t *testing.T) {
 	for name, args := range map[string]string{
-		"two groups": `{"groups":[{"anchor":"faketest://h/","ops":[{"kind":"delete","id":"a.ics"}]},` +
-			`{"anchor":"faketest://h/","ops":[{"kind":"delete","id":"b.ics"}]}]}`,
 		"no groups":          `{"groups":[]}`,
 		"uri outside anchor": `{"groups":[{"anchor":"faketest://h/sub/","ops":[{"kind":"delete","id":"faketest://h/b.ics"}]}]}`,
 		"temp ref before create": `{"groups":[{"anchor":"faketest://h/","ops":[` +
