@@ -239,7 +239,7 @@ func BulkBestEffortOps(
 ) BulkResult {
 	var result BulkResult
 	for _, op := range ops {
-		ApplyBulkOp(ctx, nm, op, &result)
+		applyBulkOpInOrder(ctx, nm, op, &result)
 	}
 	return result
 }
@@ -271,7 +271,7 @@ func BulkBestEffortSweep(
 	for _, match := range matches {
 		op := sweep.Op
 		op.URI = match.URI
-		ApplyBulkOp(ctx, nm, op, &result)
+		applyBulkOpInOrder(ctx, nm, op, &result)
 	}
 	return result, nil
 }

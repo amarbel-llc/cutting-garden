@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/url"
+	"os"
 	"path"
 	"strconv"
 	"strings"
@@ -97,6 +99,9 @@ type Tools struct {
 	// tags slice 2). Empty (the test-harness default) falls back to each
 	// field's declared default, then naive.
 	tagsOverride string
+	// log receives mutate_nodes' per-op outcome lines (cutting-garden#392):
+	// stderr in the server, nil (silent) in the test harness.
+	log io.Writer
 }
 
 var _ server.ToolProviderV1 = (*Tools)(nil)
@@ -112,6 +117,7 @@ func newTools(roots []*url.URL, reader readSurface) *Tools {
 		reader:        reader,
 		facets:        reader,
 		resolveLister: command_components.ResolveRootListerPlugin,
+		log:           os.Stderr,
 	}
 }
 

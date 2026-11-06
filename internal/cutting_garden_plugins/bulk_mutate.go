@@ -157,11 +157,12 @@ const (
 // invariant (AppliedNodes + PatchedNothing + Failed = the targeted set), and
 // len(Outcomes) is that same count.
 //
-// Ops that were never attempted (current behaviour, nothing new): the SDK's
-// best-effort loop runs EVERY op and never stops at the first failure, so the
-// only never-attempted op is one naming a temp id whose create failed. It is
-// in Failed already, and its outcome is Status failed with Err "depends on
-// the create of temp id X, which failed" (Ref is X). An atomic batch has no
+// Ops that were never attempted: the SDK's best-effort loop runs EVERY op and
+// never stops at the first failure, so a never-attempted op is either one
+// naming a temp id whose create failed (Status failed, Err "depends on the
+// create of temp id X, which failed", Ref X) or one reached after the call's
+// context was cancelled (Status failed, Err "not attempted: …";
+// cutting-garden#392). Both are in Failed too. An atomic batch has no
 // partial result at all: it commits whole, or BulkMutate returns an error and
 // no BulkResult (RFC 0017 §Atomicity semantics), so there are no outcomes for
 // ops that were not applied; the SDK loop refuses atomic outright

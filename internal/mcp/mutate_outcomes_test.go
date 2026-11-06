@@ -84,6 +84,29 @@ func TestMutateNodes_ReportsOutcomes(t *testing.T) {
 	}
 }
 
+// Each op's outcome is logged as it lands, so a reply lost with its
+// connection leaves a record of what applied (cutting-garden#392).
+func TestMutateNodes_LogsEachOutcomeAsItLands(t *testing.T) {
+	var log strings.Builder
+	tools := newFakeTools(t, &fakeMutator{}, "faketest://h/")
+	tools.log = &log
+
+	res := callMutate(t, tools, `"ops":[`+
+		`{"kind":"put","id":"a.ics","body":"x"},`+
+		`{"kind":"delete","id":"b.ics"}]`)
+	if res.IsError {
+		t.Fatalf("errored: %+v", res.Content)
+	}
+	for _, want := range []string{
+		"mutate_nodes faketest://h/ op 1/2: applied a.ics",
+		"mutate_nodes faketest://h/ op 2/2: deleted b.ics",
+	} {
+		if !strings.Contains(log.String(), want) {
+			t.Errorf("log lacks %q:\n%s", want, log.String())
+		}
+	}
+}
+
 // A plugin that reports no outcomes gets no outcomes key: the four lists are
 // all there is, and rebuilding an entry per id from them would only repeat
 // them.

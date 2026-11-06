@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/url"
 	"strconv"
 	"strings"
@@ -165,6 +166,7 @@ func (t *Tools) callMutateNodes(
 	}
 
 	ctx, partial := cutting_garden_plugins.WithPartialListings(ctx)
+	ctx = cutting_garden_plugins.WithBulkOutcomeObserver(ctx, group.logOutcome(t.log))
 	result, err := t.dispatchMutateGroup(ctx, group)
 	t.forgetWrittenSource(group.anchor)
 	if err != nil {
@@ -538,24 +540,53 @@ func (g *mutateGroup) render(
 func (g *mutateGroup) outcomes(result cutting_garden_plugins.BulkResult) []mutateOutcomeView {
 	var out []mutateOutcomeView
 	for _, o := range result.Outcomes {
-		v := mutateOutcomeView{
-			Status: string(o.Status), Fields: o.Fields, Name: o.Name, Error: o.Err,
-		}
-		if o.NewURI != nil {
-			v.URI = o.NewURI.String()
-		}
-		switch {
-		case o.URI != nil:
-			v.ID = g.id(o.URI)
-		case o.Ref != "":
-			v.ID = g.spelling[o.Ref]
-			if v.ID == "" {
-				v.ID = o.Ref
-			}
-		}
-		out = append(out, v)
+		out = append(out, g.outcomeView(o))
 	}
 	return out
+}
+
+func (g *mutateGroup) outcomeView(o cutting_garden_plugins.BulkOutcome) mutateOutcomeView {
+	v := mutateOutcomeView{
+		Status: string(o.Status), Fields: o.Fields, Name: o.Name, Error: o.Err,
+	}
+	if o.NewURI != nil {
+		v.URI = o.NewURI.String()
+	}
+	switch {
+	case o.URI != nil:
+		v.ID = g.id(o.URI)
+	case o.Ref != "":
+		v.ID = g.spelling[o.Ref]
+		if v.ID == "" {
+			v.ID = o.Ref
+		}
+	}
+	return v
+}
+
+// logOutcome writes each op's outcome to log as the plugin's best-effort
+// loop records it, so a reply lost with its connection (cutting-garden#392)
+// leaves a record of what applied. A sweep's op count is not known ahead,
+// so it logs "op N".
+func (g *mutateGroup) logOutcome(log io.Writer) cutting_garden_plugins.BulkOutcomeObserver {
+	return func(i int, o cutting_garden_plugins.BulkOutcome) {
+		if log == nil {
+			return
+		}
+		v := g.outcomeView(o)
+		position := fmt.Sprintf("op %d", i+1)
+		if g.req.Sweep == nil {
+			position = fmt.Sprintf("op %d/%d", i+1, len(g.req.Ops))
+		}
+		line := fmt.Sprintf("mutate_nodes %s %s: %s %s", g.anchor, position, v.Status, v.ID)
+		if o.URI != nil {
+			line += " " + o.URI.String()
+		}
+		if v.Error != "" {
+			line += ": " + v.Error
+		}
+		fmt.Fprintln(log, line)
+	}
 }
 
 func (g *mutateGroup) id(uri *url.URL) string {

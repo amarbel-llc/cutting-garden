@@ -78,11 +78,12 @@ type BulkOpKind = internal.BulkOpKind
 // invariant (AppliedNodes + PatchedNothing + Failed = the targeted set), and
 // len(Outcomes) is that same count.
 //
-// Ops that were never attempted (current behaviour, nothing new): the SDK's
-// best-effort loop runs EVERY op and never stops at the first failure, so the
-// only never-attempted op is one naming a temp id whose create failed. It is
-// in Failed already, and its outcome is Status failed with Err "depends on
-// the create of temp id X, which failed" (Ref is X). An atomic batch has no
+// Ops that were never attempted: the SDK's best-effort loop runs EVERY op and
+// never stops at the first failure, so a never-attempted op is either one
+// naming a temp id whose create failed (Status failed, Err "depends on the
+// create of temp id X, which failed", Ref X) or one reached after the call's
+// context was cancelled (Status failed, Err "not attempted: …";
+// cutting-garden#392). Both are in Failed too. An atomic batch has no
 // partial result at all: it commits whole, or BulkMutate returns an error and
 // no BulkResult (RFC 0017 §Atomicity semantics), so there are no outcomes for
 // ops that were not applied; the SDK loop refuses atomic outright
@@ -94,6 +95,12 @@ type BulkOpKind = internal.BulkOpKind
 // Status is the canonical reading for new callers; the four lists are kept
 // for the callers already built on them.
 type BulkOutcome = internal.BulkOutcome
+
+// BulkOutcomeObserver is told each op's outcome as the best-effort loop
+// records it: i is the outcome's index in BulkResult.Outcomes. A host that
+// can lose its reply (an MCP server whose client hangs up) logs these, so
+// what applied stays recoverable (cutting-garden#392).
+type BulkOutcomeObserver = internal.BulkOutcomeObserver
 
 // BulkOutcomeStatus is what became of one targeted op.
 type BulkOutcomeStatus = internal.BulkOutcomeStatus
@@ -1326,6 +1333,10 @@ var ValidateListingFieldSets = internal.ValidateListingFieldSets
 // declaration with a unit test calling this (caldav does), catching the error
 // before any command runs.
 var ValidateUnifiedFieldSets = internal.ValidateUnifiedFieldSets
+
+// WithBulkOutcomeObserver returns ctx carrying observe for the best-effort
+// loops (BulkBestEffortOps, BulkBestEffortSweep) to call.
+var WithBulkOutcomeObserver = internal.WithBulkOutcomeObserver
 
 // WithCallScope returns a context that marks one host call. It is idempotent: a
 // context already inside a call scope is returned unchanged, so a nested host
