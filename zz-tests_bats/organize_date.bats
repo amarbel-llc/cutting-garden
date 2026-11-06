@@ -297,8 +297,7 @@ function list_facets_date_filter_prefix_matches { # @test
   refute_output --partial '2026-09'
 
   run_cg list -facets -filter 'date_due=aug' "$CAL"
-  # Exit 2 ("trouble"), not 64: the filter-shape rejection is not classified
-  # as a bad request today — this pins the current behavior.
-  assert_failure 2
+  # A malformed filter is the caller's mistake: EX_USAGE (cutting-garden#256).
+  assert_failure 64
   assert_output 'cutting-garden: filter value "aug" is not a date bucket for dimension "date_due"; expected YYYY, YYYY-MM, or YYYY-MM-DD'
 }

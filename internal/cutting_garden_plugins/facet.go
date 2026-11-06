@@ -7,6 +7,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
 // FacetValue is one node's membership in one bucket of one dimension — the
@@ -443,7 +445,7 @@ func (f FacetFilter) Validate(dims []NodeTypeFacets) error {
 	for i := range f {
 		dim, ok := FindFacetDimension(dims, f[i].Dimension)
 		if !ok {
-			return fmt.Errorf(
+			return errors.BadRequestf(
 				"filter dimension %q is not declared; valid dimensions: %s "+
 					"(see describe_node_types)",
 				f[i].Dimension, strings.Join(declaredDimensionKeys(dims), ", "),
@@ -451,7 +453,7 @@ func (f FacetFilter) Validate(dims []NodeTypeFacets) error {
 		}
 		if dim.Kind == FacetDate {
 			if _, ok := ParseDateBucket(f[i].Value); !ok {
-				return fmt.Errorf(
+				return errors.BadRequestf(
 					"filter value %q is not a date bucket for dimension %q; "+
 						"expected YYYY, YYYY-MM, or YYYY-MM-DD",
 					f[i].Value, f[i].Dimension,
@@ -468,7 +470,7 @@ func (f FacetFilter) Validate(dims []NodeTypeFacets) error {
 			continue
 		}
 		if !containsFacetValue(dim.Values, f[i].Value, dim.FoldCase) {
-			return fmt.Errorf(
+			return errors.BadRequestf(
 				"filter value %q is not valid for dimension %q; valid "+
 					"values: %s (see describe_node_types)",
 				f[i].Value, f[i].Dimension,
