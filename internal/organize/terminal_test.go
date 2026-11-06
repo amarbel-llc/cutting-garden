@@ -128,7 +128,7 @@ func TestSelectNodes_ExcludesTerminal(t *testing.T) {
 		nodes: []cgp.Node{statusNode(t, "done", "COMPLETED"), statusNode(t, "active", "NEEDS-ACTION")},
 	}
 
-	got, err := selectNodes(context.Background(), f, mustURL(t, "fake://cal"), "_terminal=no")
+	got, err := selectNodes(context.Background(), f, mustURL(t, "fake://cal"), "_terminal=no", "")
 	if err != nil {
 		t.Fatalf("selectNodes: %v", err)
 	}
@@ -137,7 +137,7 @@ func TestSelectNodes_ExcludesTerminal(t *testing.T) {
 	}
 
 	// _terminal=yes is the inverse — only the done one.
-	only, err := selectNodes(context.Background(), f, mustURL(t, "fake://cal"), "_terminal=yes")
+	only, err := selectNodes(context.Background(), f, mustURL(t, "fake://cal"), "_terminal=yes", "")
 	if err != nil {
 		t.Fatalf("selectNodes: %v", err)
 	}
@@ -168,7 +168,7 @@ func TestSelectNodes_TerminalKeepsTypesWithoutTerminalNotion(t *testing.T) {
 		},
 	}
 
-	got, err := selectNodes(context.Background(), f, mustURL(t, "fake://cal"), "_terminal=no")
+	got, err := selectNodes(context.Background(), f, mustURL(t, "fake://cal"), "_terminal=no", "")
 	if err != nil {
 		t.Fatalf("selectNodes: %v", err)
 	}

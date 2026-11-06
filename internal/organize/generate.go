@@ -170,7 +170,7 @@ func buildAndStoreFrom(
 	if !p.fromDocument {
 		effective = effectiveQuery(lister, p.query, p.includeTerminal)
 	}
-	nodes, err := selectNodes(ctx, lister, u, effective)
+	nodes, err := selectNodes(ctx, lister, u, effective, cfg.Tags.Interpreter)
 	if err != nil {
 		return "", "", errors.Wrapf(err, "organize %s", uriStr)
 	}

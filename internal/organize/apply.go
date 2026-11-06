@@ -289,7 +289,7 @@ func (cmd *Organize) applyEdited(
 		)
 	}
 
-	liveNodes, err := selectNodes(ctx, lister, u, edited.Query)
+	liveNodes, err := selectNodes(ctx, lister, u, edited.Query, cfg.Tags.Interpreter)
 	if err != nil {
 		return false, errors.Wrapf(err, "organize --apply: re-query live state")
 	}

@@ -16,11 +16,15 @@ import (
 // Either path prefers the plugin's EnrichedLister so Node.Facets is populated —
 // caldav's status/date facets are body-derived and a plain ListRoots leaves them
 // empty (cutting-garden#212), and organize groups by exactly those facets.
+// tagsOverride is the global `[tags] interpreter` config override, so a bare-tag
+// term selects the same nodes here as in `list --query` and the mcp tools
+// (cutting-garden#245).
 func selectNodes(
 	ctx context.Context,
 	lister cgp.RootLister,
 	anchor *url.URL,
 	query string,
+	tagsOverride string,
 ) ([]cgp.Node, error) {
 	if query != "" {
 		q, perr := trellis.Parse(query)
@@ -31,7 +35,9 @@ func selectNodes(
 		// `_terminal=no`/`_terminal=yes` predicate evaluates through the ordinary
 		// facet path (cutting-garden#214) in both generate and apply; a no-op for a
 		// plugin declaring no terminal values.
-		return trellis_eval.Evaluate(ctx, q, anchor, withTerminal(lister))
+		return trellis_eval.Evaluate(
+			ctx, q, anchor, withTerminal(lister), trellis_eval.WithTagsInterpreter(tagsOverride),
+		)
 	}
 	// The enriched-preferring fetch lives in node_view (shared with
 	// `list -format json`, native tags slice 2 T4); the evaluator's own
