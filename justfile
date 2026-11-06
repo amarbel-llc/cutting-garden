@@ -15,6 +15,18 @@ caldav_live_env := '''
     caldav_home="caldav:${caldav_account_url}"
 '''
 
+# Shell fragment the Fastmail JMAP debug recipes interpolate (`jmap_live_env`)
+# at the top of their script — the ONE place the piggy entry is named
+# (cutting-garden#299). It loads JMAP_TOKEN from piggy into the environment,
+# never echoed or written to disk.
+jmap_live_env := '''
+    set +x
+    set -a
+    . <(piggy pass show fastmail-jmap.env)
+    set +a
+    : "${JMAP_TOKEN:?fastmail-jmap.env did not define JMAP_TOKEN}"
+'''
+
 default: build test
 
 [group('build')]
@@ -643,11 +655,7 @@ debug-caldav-expand-probe CAL='93fe8ff4-b027-4c5e-a961-96ec236624d8' START='2026
 debug-jmap-verify:
     #!/usr/bin/env bash
     set -euo pipefail
-    set +x
-    set -a
-    . <(piggy pass show fastmail-jmap.env)
-    set +a
-    : "${JMAP_TOKEN:?fastmail-jmap.env did not define JMAP_TOKEN}"
+    {{ jmap_live_env }}
 
     body="$(mktemp)"
     trap 'rm -f "$body"' EXIT
@@ -689,11 +697,7 @@ debug-jmap-verify:
 debug-jmap-sieve-probe:
     #!/usr/bin/env bash
     set -euo pipefail
-    set +x
-    set -a
-    . <(piggy pass show fastmail-jmap.env)
-    set +a
-    : "${JMAP_TOKEN:?fastmail-jmap.env did not define JMAP_TOKEN}"
+    {{ jmap_live_env }}
 
     session="$(curl -sS --fail -H "Authorization: Bearer ${JMAP_TOKEN}" \
       https://api.fastmail.com/jmap/session)"
@@ -729,11 +733,7 @@ debug-jmap-sieve-probe:
 debug-jmap-request FILE:
     #!/usr/bin/env bash
     set -euo pipefail
-    set +x
-    set -a
-    . <(piggy pass show fastmail-jmap.env)
-    set +a
-    : "${JMAP_TOKEN:?fastmail-jmap.env did not define JMAP_TOKEN}"
+    {{ jmap_live_env }}
 
     apiurl="$(curl -sS --fail -H "Authorization: Bearer ${JMAP_TOKEN}" \
       https://api.fastmail.com/jmap/session | jq -er .apiUrl)"
@@ -758,11 +758,7 @@ debug-jmap-request FILE:
 debug-jmap-backup DIR PAGE='1000':
     #!/usr/bin/env bash
     set -euo pipefail
-    set +x
-    set -a
-    . <(piggy pass show fastmail-jmap.env)
-    set +a
-    : "${JMAP_TOKEN:?fastmail-jmap.env did not define JMAP_TOKEN}"
+    {{ jmap_live_env }}
 
     dir="{{ DIR }}"
     page="{{ PAGE }}"
@@ -1172,11 +1168,7 @@ debug-organize-live CAL='' GROUP_BY='status=': debug-build-go
 debug-organize-fastmail-live ACCOUNT='personal' GROUP_BY='_inbox': debug-build-go
     #!/usr/bin/env bash
     set -euo pipefail
-    set +x
-    set -a
-    . <(piggy pass show fastmail-jmap.env)
-    set +a
-    : "${JMAP_TOKEN:?fastmail-jmap.env did not define JMAP_TOKEN}"
+    {{ jmap_live_env }}
     root="{{ justfile_directory() }}"
     cd "$root"
     nix develop --command madder init -encryption none .default 2>/dev/null || true
