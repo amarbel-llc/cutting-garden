@@ -169,6 +169,30 @@ func TestPlanMemberships_LastLineVanish(t *testing.T) {
 	if err == nil {
 		t.Fatal("deleting an object's last line must reject")
 	}
+	// The refusal says where the object was, not just its id (cutting-garden#283).
+	if !strings.Contains(err.Error(), "t1.ics") || !strings.Contains(err.Error(), "(was under: work)") {
+		t.Errorf("refusal must name the id and the base bucket, got: %v", err)
+	}
+}
+
+// TestDescribeDeleted pins the per-object rendering of the last-line-deletion
+// refusal: description when the base has one, the buckets it sat under, or
+// "ungrouped" when it sat under none (cutting-garden#283).
+func TestDescribeDeleted(t *testing.T) {
+	cases := []struct {
+		id, desc string
+		buckets  []string
+		want     string
+	}{
+		{"a.ics", "Buy filters", []string{"inbox", "work"}, `a.ics "Buy filters" (was under: inbox, work)`},
+		{"b.ics", "", []string{"work"}, `b.ics (was under: work)`},
+		{"c.ics", "Loose end", nil, `c.ics "Loose end" (was ungrouped)`},
+	}
+	for _, c := range cases {
+		if got := describeDeleted(c.id, c.desc, c.buckets); got != c.want {
+			t.Errorf("describeDeleted(%q, %q, %v) = %q, want %q", c.id, c.desc, c.buckets, got, c.want)
+		}
+	}
 }
 
 // TestPlanMemberships_LastLineVanishBatched pins that MULTIPLE deleted objects are

@@ -1,6 +1,7 @@
 package organize
 
 import (
+	"fmt"
 	"sort"
 	"strings"
 
@@ -227,16 +228,40 @@ func planMemberships(
 
 	if len(deleted) > 0 {
 		sort.Strings(deleted)
+		baseDesc := make(map[string]string)
+		for _, ln := range base.objectLines() {
+			if _, seen := baseDesc[ln.ID]; !seen {
+				baseDesc[ln.ID] = ln.Desc
+			}
+		}
+		described := make([]string, len(deleted))
+		for i, id := range deleted {
+			described[i] = describeDeleted(id, baseDesc[id], baseM[id])
+		}
 		return nil, errors.BadRequestf(
 			"organize --apply: %d object(s) deleted from the edited document "+
 				"(last-line deletion is out of scope, cutting-garden#215); "+
 				"regenerate and re-edit:\n  %s",
-			len(deleted), strings.Join(deleted, "\n  "),
+			len(deleted), strings.Join(described, "\n  "),
 		)
 	}
 
 	sort.Slice(edits, func(i, j int) bool { return edits[i].URI < edits[j].URI })
 	return edits, nil
+}
+
+// describeDeleted renders one last-line-deleted object for the refusal: its id,
+// its description from the pinned base (so the user can tell WHICH object went
+// missing), and the buckets it sat under there (cutting-garden#283).
+func describeDeleted(id, desc string, buckets []string) string {
+	out := id
+	if desc != "" {
+		out += fmt.Sprintf(" %q", desc)
+	}
+	if len(buckets) == 0 {
+		return out + " (was ungrouped)"
+	}
+	return out + " (was under: " + strings.Join(buckets, ", ") + ")"
 }
 
 // reassertedMemberships names, per object, the tags whose bucket line the user
