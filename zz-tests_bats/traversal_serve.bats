@@ -1238,41 +1238,47 @@ EOF
   # whole multi-line output as ONE string (no per-line/multiline flag),
   # so `^not ok` would never match a mid-output failure — a false-safe
   # assertion. --partial 'not ok' catches a failing point anywhere.
-  assert_output --partial '1..24'
+  assert_output --partial '1..28'
   assert_output --partial 'ok 1 - initialize'
-  assert_output --partial 'ok 11 - leaf.read: container returns its own body'
-  assert_output --partial 'ok 13 - nodes.list: filter pushdown returns a sound subset'
-  assert_output --partial 'ok 14 - node.bulk_mutate: best-effort applies'
+  # The per-op outcome members (cutting-garden#366): patch uri, delete
+  # name and -32004, bulk outcomes.
+  assert_output --partial "ok 8 - node.patch: a result uri, when present, is the node's new address"
+  assert_output --partial 'ok 10 - node.delete: the result is an object whose name, when present, is a string'
+  assert_output --partial 'ok 11 - node.delete: deleting a node that is not there is -32004'
+  assert_output --partial 'ok 14 - leaf.read: container returns its own body'
+  assert_output --partial 'ok 16 - nodes.list: filter pushdown returns a sound subset'
+  assert_output --partial 'ok 17 - node.bulk_mutate: outcomes, when present, are one per op and agree with the lists'
+  assert_output --partial 'ok 18 - node.bulk_mutate: best-effort applies'
   # The RFC 0013 facet_writes amendment: a peer declaring facet_writes
   # must accept the host-built node.patch bodies (a substituted peer
   # supplies its own [facet_write] node and dimensions; one declaring no
   # facet_writes SKIPs these).
-  assert_output --partial 'ok 15 - initialize: facet_writes declaration is usable by the host'
-  assert_output --partial 'ok 16 - node.patch: host-built write:one body moves the node into the bucket'
-  assert_output --partial "ok 17 - node.patch: host-built write:many body replaces the node's set, [] clears"
+  assert_output --partial 'ok 19 - initialize: facet_writes declaration is usable by the host'
+  assert_output --partial 'ok 20 - node.patch: host-built write:one body moves the node into the bucket'
+  assert_output --partial "ok 21 - node.patch: host-built write:many body replaces the node's set, [] clears"
   # A clearable write:one dimension (forge organize F12) accepts the
   # host-built {"<field>": null}; a substituted peer names its own
   # [facet_clear] node, or SKIPs by omitting the table.
-  assert_output --partial 'ok 18 - node.patch: host-built clear body (null) empties a clearable write:one dimension'
+  assert_output --partial 'ok 22 - node.patch: host-built clear body (null) empties a clearable write:one dimension'
   # The presentation additions (forge organize F11): a peer carrying a
   # tag_set on a node_types entry must pass the host's bring-up check.
-  assert_output --partial 'ok 19 - initialize: node_types presentation members are usable by the host'
+  assert_output --partial 'ok 23 - initialize: node_types presentation members are usable by the host'
   # ...and a peer declaring a trailer_field accepts the host-built
   # {"<trailer_field>": "<text>"} and names the node by it (a substituted
   # peer names its own [trailer] node, or SKIPs by omitting the table).
-  assert_output --partial 'ok 20 - node.patch: host-built trailer_field body renames the node'
+  assert_output --partial 'ok 24 - node.patch: host-built trailer_field body renames the node'
   # terminal_values (forge organize F4): a peer naming terminal values on
   # a facet dimension must pass the host's bring-up check (SKIP if none).
-  assert_output --partial 'ok 21 - initialize: facet terminal_values are usable by the host'
+  assert_output --partial 'ok 25 - initialize: facet terminal_values are usable by the host'
   # Creation (RFC 0013 §Creation, forge organize F10): a peer carrying a
   # `creatable` node_types member must pass the host's bring-up check, and
   # its node.create_child must accept the host-built fields body (a
   # substituted peer names its own [creation] container/type, or SKIPs).
-  assert_output --partial 'ok 22 - initialize: node_types creatable declarations are usable by the host'
-  assert_output --partial 'ok 23 - node.create_child: host-built create body creates the node with its fields'
+  assert_output --partial 'ok 26 - initialize: node_types creatable declarations are usable by the host'
+  assert_output --partial 'ok 27 - node.create_child: host-built create body creates the node with its fields'
   # ...and a repeated `idempotency_key` returns the same node with
   # `existed` (a peer that ignores the key SKIPs).
-  assert_output --partial 'ok 24 - node.create_child: a repeated idempotency_key returns the same node, existed'
+  assert_output --partial 'ok 28 - node.create_child: a repeated idempotency_key returns the same node, existed'
   refute_output --partial 'not ok'
 }
 

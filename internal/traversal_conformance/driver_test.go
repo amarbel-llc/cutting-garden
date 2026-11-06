@@ -167,32 +167,36 @@ func TestRunPassesConformantTestpeer(t *testing.T) {
 		"ok 6 - node.patch: unrecognized-only body reports applied" +
 			" present-empty # SKIP peer tolerates every patch key",
 		"ok 7 - node.patch: wrong-typed body is -32602",
-		"ok 8 - node.delete: probe cleanup",
-		"ok 9 - facets.counts: by_container raw invariants",
-		"ok 10 - facets.counts: descend targets reachable",
-		"ok 11 - leaf.read: container returns its own body beside children",
-		"ok 12 - uri template: container resolves to its body-declaring type",
-		"ok 13 - nodes.list: filter pushdown returns a sound subset",
-		"ok 14 - node.bulk_mutate: best-effort applies and isolates a" +
+		"ok 8 - node.patch: a result uri, when present, is the node's new address",
+		"ok 9 - node.delete: probe cleanup",
+		"ok 10 - node.delete: the result is an object whose name, when present, is a string",
+		"ok 11 - node.delete: deleting a node that is not there is -32004",
+		"ok 12 - facets.counts: by_container raw invariants",
+		"ok 13 - facets.counts: descend targets reachable",
+		"ok 14 - leaf.read: container returns its own body beside children",
+		"ok 15 - uri template: container resolves to its body-declaring type",
+		"ok 16 - nodes.list: filter pushdown returns a sound subset",
+		"ok 17 - node.bulk_mutate: outcomes, when present, are one per op and agree with the lists",
+		"ok 18 - node.bulk_mutate: best-effort applies and isolates a" +
 			" failure, atomic and malformed refused",
-		"ok 15 - initialize: facet_writes declaration is usable by the host",
-		"ok 16 - node.patch: host-built write:one body moves the node into" +
+		"ok 19 - initialize: facet_writes declaration is usable by the host",
+		"ok 20 - node.patch: host-built write:one body moves the node into" +
 			" the bucket",
-		"ok 17 - node.patch: host-built write:many body replaces the node's" +
+		"ok 21 - node.patch: host-built write:many body replaces the node's" +
 			" set, [] clears",
-		"ok 18 - node.patch: host-built clear body (null) empties a clearable" +
+		"ok 22 - node.patch: host-built clear body (null) empties a clearable" +
 			" write:one dimension",
-		"ok 19 - initialize: node_types presentation members are usable by" +
+		"ok 23 - initialize: node_types presentation members are usable by" +
 			" the host",
-		"ok 20 - node.patch: host-built trailer_field body renames the node",
-		"ok 21 - initialize: facet terminal_values are usable by the host",
-		"ok 22 - initialize: node_types creatable declarations are usable by" +
+		"ok 24 - node.patch: host-built trailer_field body renames the node",
+		"ok 25 - initialize: facet terminal_values are usable by the host",
+		"ok 26 - initialize: node_types creatable declarations are usable by" +
 			" the host",
-		"ok 23 - node.create_child: host-built create body creates the node" +
+		"ok 27 - node.create_child: host-built create body creates the node" +
 			" with its fields",
-		"ok 24 - node.create_child: a repeated idempotency_key returns the" +
+		"ok 28 - node.create_child: a repeated idempotency_key returns the" +
 			" same node, existed",
-		"1..24",
+		"1..28",
 	} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("output missing %q:\n%s", want, out.String())
@@ -243,8 +247,8 @@ func TestRunPassesServerAssignedPeer(t *testing.T) {
 		"ok 4 - node.create: probe node",
 		"ok 5 - node.patch: recognized fields reported applied",
 		"ok 7 - node.patch: wrong-typed body is -32602",
-		"ok 8 - node.delete: probe cleanup",
-		"ok 14 - node.bulk_mutate: best-effort applies and isolates a" +
+		"ok 9 - node.delete: probe cleanup",
+		"ok 18 - node.bulk_mutate: best-effort applies and isolates a" +
 			" failure, atomic and malformed refused",
 	} {
 		if !strings.Contains(out.String(), want) {
@@ -292,7 +296,7 @@ func TestRunFailsMismatchedExpectApplied(t *testing.T) {
 	// The probe cleanup must have run despite the failure (the
 	// delete-even-on-failure obligation).
 	if !strings.Contains(
-		out.String(), "ok 8 - node.delete: probe cleanup",
+		out.String(), "ok 9 - node.delete: probe cleanup",
 	) {
 		t.Errorf("probe cleanup did not run after a failed point:\n%s",
 			out.String())
@@ -324,7 +328,7 @@ func TestRunFailsFacetWriteOnUnmappedDimension(t *testing.T) {
 			out.String())
 	}
 
-	want := "not ok 17 - node.patch: host-built write:many body replaces"
+	want := "not ok 21 - node.patch: host-built write:many body replaces"
 	if !strings.Contains(out.String(), want) {
 		t.Errorf("output missing %q:\n%s", want, out.String())
 	}
@@ -354,7 +358,7 @@ func TestRunFailsFacetClearOnNonClearableDimension(t *testing.T) {
 			out.String())
 	}
 
-	want := "not ok 18 - node.patch: host-built clear body (null) empties"
+	want := "not ok 22 - node.patch: host-built clear body (null) empties"
 	if !strings.Contains(out.String(), want) {
 		t.Errorf("output missing %q:\n%s", want, out.String())
 	}
@@ -384,7 +388,7 @@ func TestRunFailsTrailerOnTypeWithoutTrailerField(t *testing.T) {
 			out.String())
 	}
 
-	want := "not ok 20 - node.patch: host-built trailer_field body renames the node"
+	want := "not ok 24 - node.patch: host-built trailer_field body renames the node"
 	if !strings.Contains(out.String(), want) {
 		t.Errorf("output missing %q:\n%s", want, out.String())
 	}

@@ -612,7 +612,16 @@ would in process:
   answers to its old `?h=` address). Omitted means the plugin reports no
   new address. Both members are additive and optional, tri-state like
   `applied`: a host MUST NOT read an omission as "unchanged" or "unnamed"
-  beyond what it says, and an older host simply ignores them.
+  beyond what it says, and an older host simply ignores them. Because these
+  members (and `node.bulk_mutate`'s `outcomes`) arrive within
+  `traversal-plugin/v1`, a peer or host decoding these results with a
+  strict decoder (serde's `deny_unknown_fields`, for one) breaks the day
+  the other side adds a member: §Migration's ignore-unknown-members rule
+  applies to every result here. The conformance driver checks the shapes
+  (cutting-garden#366): a present `uri` is a new, absolute address; a
+  delete result is an object whose `name`, if present, is a string;
+  deleting a missing node is -32004; and `outcomes`, if present, has one
+  entry per op that agrees with the four lists.
 
 Separately gated on `container-create` (an additive capability token
 per §Compatibility): **`node.create_child`** — server-assigned-identity

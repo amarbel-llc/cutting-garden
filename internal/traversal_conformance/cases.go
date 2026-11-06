@@ -34,6 +34,10 @@ const (
 	namePatchEmpty    = "node.patch: unrecognized-only body reports applied present-empty"
 	namePatchWrong    = "node.patch: wrong-typed body is -32602"
 	namePatchDelete   = "node.delete: probe cleanup"
+	namePatchURI      = "node.patch: a result uri, when present, is the node's new address"
+	nameDeleteResult  = "node.delete: the result is an object whose name, when present, is a string"
+	nameDeleteMissing = "node.delete: deleting a node that is not there is -32004"
+	nameBulkOutcomes  = "node.bulk_mutate: outcomes, when present, are one per op and agree with the lists"
 	nameByContainer   = "facets.counts: by_container raw invariants"
 	nameDescend       = "facets.counts: descend targets reachable"
 	nameContainerBody = "leaf.read: container returns its own body beside children"
@@ -204,7 +208,7 @@ func (r *runner) casePatchTriState(ctx context.Context) {
 
 	mutationPoints := []string{
 		namePatchCreate, namePatchApplied, namePatchEmpty, namePatchWrong,
-		namePatchDelete,
+		namePatchURI, namePatchDelete, nameDeleteResult, nameDeleteMissing,
 	}
 
 	if !r.hasCapability(traversal_serve.CapMutate) {
@@ -235,13 +239,15 @@ func (r *runner) casePatchTriState(ctx context.Context) {
 		// The dependent patch points cannot run without the probe;
 		// failing them (rather than skipping) keeps the verdict honest.
 		for _, name := range []string{
-			namePatchApplied, namePatchEmpty, namePatchWrong,
+			namePatchApplied, namePatchEmpty, namePatchWrong, namePatchURI,
 		} {
 			r.tap.NotOk(name, map[string]string{
 				"error": "probe create failed",
 			})
 		}
-		r.tap.Skip(namePatchDelete, "probe was never created")
+		for _, name := range []string{namePatchDelete, nameDeleteResult, nameDeleteMissing} {
+			r.tap.Skip(name, "probe was never created")
+		}
 
 		return
 	}
@@ -249,22 +255,150 @@ func (r *runner) casePatchTriState(ctx context.Context) {
 	r.patchRecognized(ctx, probe)
 	r.patchUnrecognizedOnly(ctx, probe)
 	r.patchWrongTyped(ctx, probe)
+	probe = r.patchResultURI(ctx, probe)
 
 	// Cleanup runs even when the points above failed — they only emit
 	// verdicts, never abort — honoring "delete the probe node in
 	// cleanup even on failure".
+	var deleted json.RawMessage
 	err := r.session.Call(
 		ctx, traversal_serve.MethodNodeDelete,
-		traversal_serve.NodeDeleteParams{URI: probe}, nil,
+		traversal_serve.NodeDeleteParams{URI: probe}, &deleted,
 	)
 	if err != nil {
 		r.tap.NotOk(namePatchDelete, map[string]string{
 			"uri": probe, "error": err.Error(),
 		})
+		r.tap.Skip(nameDeleteResult, "the probe delete failed")
+		r.tap.Skip(nameDeleteMissing, "the probe delete failed")
 
 		return
 	}
 	r.tap.Ok(namePatchDelete)
+	r.assertDeleteResult(deleted)
+
+	// The probe is gone now: deleting it again is the not-found case
+	// (cutting-garden#366, RFC 0013 §Errors), never a success-shaped answer.
+	err = r.session.Call(
+		ctx, traversal_serve.MethodNodeDelete,
+		traversal_serve.NodeDeleteParams{URI: probe}, nil,
+	)
+	r.assertRPCCode(nameDeleteMissing, err, traversal_serve.CodeNotFound)
+}
+
+// assertBulkOutcomes checks node.bulk_mutate's optional `outcomes`
+// (cutting-garden#366, RFC 0017): absent is valid; when present there is one
+// entry per targeted op, each status is one of the five, a `deleted` node is
+// also in applied and a `not_found` one also in failed.
+func (r *runner) assertBulkOutcomes(result traversal_serve.BulkMutateResult, ops int) {
+	if len(result.Outcomes) == 0 {
+		r.tap.Ok(nameBulkOutcomes)
+
+		return
+	}
+
+	problems := map[string]string{}
+	if len(result.Outcomes) != ops {
+		problems["count"] = fmt.Sprintf("%d outcomes for %d ops", len(result.Outcomes), ops)
+	}
+	for i, outcome := range result.Outcomes {
+		key := fmt.Sprintf("outcomes[%d]", i)
+		switch outcome.Status {
+		case string(cutting_garden_plugins.OutcomeApplied), string(cutting_garden_plugins.OutcomePatchedNothing),
+			string(cutting_garden_plugins.OutcomeFailed):
+		case string(cutting_garden_plugins.OutcomeDeleted):
+			if !slices.Contains(result.Applied, outcome.URI) {
+				problems[key] = "deleted " + outcome.URI + " is not also in applied"
+			}
+		case string(cutting_garden_plugins.OutcomeNotFound):
+			if !bulkFailureHas(result.Failed, outcome.URI) {
+				problems[key] = "not_found " + outcome.URI + " is not also in failed"
+			}
+		default:
+			problems[key] = fmt.Sprintf("unknown status %q", outcome.Status)
+		}
+	}
+
+	if len(problems) > 0 {
+		r.tap.NotOk(nameBulkOutcomes, problems)
+
+		return
+	}
+	r.tap.Ok(nameBulkOutcomes)
+}
+
+// patchResultURI checks node.patch's optional `uri` member
+// (cutting-garden#366): absent is valid ("no new address reported"); when
+// present it MUST parse as a URI that differs from the one the call used.
+// It returns the probe's address afterwards, so cleanup deletes the node
+// where it now lives.
+func (r *runner) patchResultURI(ctx context.Context, probe string) string {
+	var raw json.RawMessage
+	err := r.session.Call(
+		ctx, traversal_serve.MethodNodePatch,
+		traversal_serve.NodePatchParams{
+			URI:        probe,
+			BodyBase64: encodeBody(r.manifest.PatchRecognized.Body),
+		}, &raw,
+	)
+	if err != nil {
+		r.tap.NotOk(namePatchURI, map[string]string{"uri": probe, "error": err.Error()})
+
+		return probe
+	}
+
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		r.tap.NotOk(namePatchURI, map[string]string{"error": "node.patch result is not a JSON object"})
+
+		return probe
+	}
+	uriRaw, present := fields["uri"]
+	if !present {
+		r.tap.Ok(namePatchURI)
+
+		return probe
+	}
+
+	var moved string
+	if err := json.Unmarshal(uriRaw, &moved); err != nil {
+		r.tap.NotOk(namePatchURI, map[string]string{"uri": string(uriRaw), "error": "uri is not a string"})
+
+		return probe
+	}
+	if parsed, err := url.Parse(moved); err != nil || !parsed.IsAbs() || moved == probe {
+		r.tap.NotOk(namePatchURI, map[string]string{
+			"uri":   moved,
+			"error": "a present uri must be an absolute URI different from the one patched (" + probe + ")",
+		})
+
+		return probe
+	}
+	r.tap.Ok(namePatchURI)
+
+	return moved
+}
+
+// assertDeleteResult checks the node.delete result shape (cutting-garden
+// #366): a JSON object whose `name`, when present, is a string. Unknown
+// members are tolerated: new members are additive within
+// traversal-plugin/v1.
+func (r *runner) assertDeleteResult(raw json.RawMessage) {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil || fields == nil {
+		r.tap.NotOk(nameDeleteResult, map[string]string{"result": string(raw), "error": "not a JSON object"})
+
+		return
+	}
+	if nameRaw, present := fields["name"]; present {
+		var name string
+		if err := json.Unmarshal(nameRaw, &name); err != nil {
+			r.tap.NotOk(nameDeleteResult, map[string]string{"name": string(nameRaw), "error": "name is not a string"})
+
+			return
+		}
+	}
+	r.tap.Ok(nameDeleteResult)
 }
 
 // createProbe establishes the mutation probe under the writable container
@@ -1043,11 +1177,13 @@ func (r *runner) caseBulkMutate(ctx context.Context) {
 	spec := r.manifest.BulkMutate
 	if spec == nil {
 		r.tap.Skip(nameBulkMutate, "manifest declares no bulk_mutate")
+		r.tap.Skip(nameBulkOutcomes, "manifest declares no bulk_mutate")
 
 		return
 	}
 	if !r.hasCapability(traversal_serve.CapBulkMutate) {
 		r.tap.Skip(nameBulkMutate, "bulk-mutate not advertised")
+		r.tap.Skip(nameBulkOutcomes, "bulk-mutate not advertised")
 
 		return
 	}
@@ -1060,6 +1196,7 @@ func (r *runner) caseBulkMutate(ctx context.Context) {
 			"setup": "could not establish bulk probe URIs — node.create_child" +
 				" setup failed for a server-assigned peer",
 		})
+		r.tap.Skip(nameBulkOutcomes, "the bulk probe could not be set up")
 
 		return
 	}
@@ -1082,7 +1219,9 @@ func (r *runner) caseBulkMutate(ctx context.Context) {
 	if err != nil {
 		problems["best_effort"] = "changeset call errored (best-effort must" +
 			" not, a per-node failure is a failure entry): " + err.Error()
+		r.tap.Skip(nameBulkOutcomes, "the best-effort changeset errored")
 	} else {
+		r.assertBulkOutcomes(result, 2)
 		if !slices.Contains(result.Applied, appliedURI) {
 			problems["applied"] = appliedURI + " not reported applied; got [" +
 				strings.Join(result.Applied, ",") + "]"
