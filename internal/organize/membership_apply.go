@@ -239,6 +239,56 @@ func planMemberships(
 	return edits, nil
 }
 
+// reassertedMemberships names, per object, the tags whose bucket line the user
+// deleted while a box tag atom still carries the tag: the atom re-asserts the
+// membership, so the removal folds to no change ("never a silent removal",
+// RFC 0015). Reported as one `id: tag, tag` entry per object, sorted by id, so
+// apply can say why a deletion did not take (cutting-garden#257). Empty under
+// SkipPlacementFolds, where the atom deltas are the whole diff and no bucket
+// removal exists to be undone.
+func reassertedMemberships(base, edited document, plan membershipPlan) ([]string, error) {
+	if plan.SkipPlacementFolds || len(plan.AtomDeltas) == 0 {
+		return nil, nil
+	}
+	baseM, err := base.memberships(true)
+	if err != nil {
+		return nil, errors.Wrapf(err, "organize: base memberships")
+	}
+	editedM, err := edited.memberships(true)
+	if err != nil {
+		return nil, errors.Wrapf(err, "organize: edited memberships")
+	}
+
+	ids := make([]string, 0, len(plan.AtomDeltas))
+	for id := range plan.AtomDeltas {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+
+	var out []string
+	for _, id := range ids {
+		removedTags := make(map[string]struct{})
+		for _, bucket := range setDifference(stringSet(baseM[id]), stringSet(editedM[id])) {
+			tag := bucket
+			if plan.Namespace != "" {
+				tag = reconstructNamespaceTag(plan.Namespace, bucket)
+			}
+			removedTags[tag] = struct{}{}
+		}
+		var reasserted []string
+		for _, tag := range plan.AtomDeltas[id].adds {
+			if _, removed := removedTags[tag]; removed {
+				reasserted = append(reasserted, tag)
+			}
+		}
+		if len(reasserted) > 0 {
+			sort.Strings(reasserted)
+			out = append(out, id+": "+strings.Join(reasserted, ", "))
+		}
+	}
+	return out, nil
+}
+
 // reconstructNamespaceTag rebuilds the full namespace tag a rollup bucket stands
 // for (RFC 0019 §6.2): the bucket carries its leading `-` (dodder-hyphen's
 // continuation form, `-client`), so `"project" + "-client" = "project-client"`.

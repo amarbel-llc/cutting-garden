@@ -315,6 +315,18 @@ func TestPlanTagAtomDeltas_StaleAtomReAsserts(t *testing.T) {
 		t.Errorf("stale-atom delta = %+v, want adds [work] (the atom re-asserts)", d)
 	}
 
+	// The fold is surfaced, not silent (cutting-garden#257): the deleted `work`
+	// line is named against the atom that re-asserted it.
+	plan := membershipPlan{Dim: "categories", AtomDeltas: deltas}
+	got, err := reassertedMemberships(base, edited, plan)
+	if err != nil || !reflect.DeepEqual(got, []string{"t1.ics: work"}) {
+		t.Errorf("reassertedMemberships = %v, %v; want [t1.ics: work]", got, err)
+	}
+	plan.SkipPlacementFolds = true
+	if got, err := reassertedMemberships(base, edited, plan); err != nil || got != nil {
+		t.Errorf("reassertedMemberships under SkipPlacementFolds = %v, %v; want nothing", got, err)
+	}
+
 	// Composition: the bucket diff removes `work`, the atom delta re-adds it —
 	// net no-op against live, so NOTHING is written (never a silent removal,
 	// never a spurious write).

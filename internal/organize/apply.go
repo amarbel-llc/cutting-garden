@@ -901,6 +901,16 @@ func (cmd *Organize) applyMemberships(
 	if err != nil {
 		return false, err
 	}
+	reasserted, err := reassertedMemberships(base, edited, plan)
+	if err != nil {
+		return false, err
+	}
+	if len(reasserted) > 0 {
+		fmt.Fprintf(cmd.output,
+			"organize: note — a box tag atom re-asserted a membership whose line you "+
+				"deleted (delete the atom too to remove it): %s\n",
+			strings.Join(reasserted, "; "))
+	}
 
 	// Resolve the membership write surface up front (mirroring the single-valued
 	// move precheck) so a plugin declaring a many dimension but no
