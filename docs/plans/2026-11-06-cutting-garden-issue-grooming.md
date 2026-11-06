@@ -42,6 +42,7 @@ one-line close comment to post:
 | #267 | f392ca0 (`feat(org): … under a WebDAV lock`); every org write path takes the lock and reads back (`plugins/org/dav.go`, `lockWithRetry`) | "Done: org writes take a WebDAV LOCK and verify by read-back (f392ca0 onward, `plugins/org/dav.go`)." |
 | #355 | same request as #314 | "Duplicate of #314 (a fork of Orgzly as a cutting-garden/trellis client)." |
 | #324 | same exploration as #330 | "Duplicate of #330." |
+| #107 | moot: every test binary is now built through `buildCuttingGardenGo`, which sets `version` the same way for each, and none of the five test servers (`cmd/cutting-garden-*-test*`) carries build identity; the issue's own option (b) | "Closing as decided: test binaries carry no build identity, uniformly (the test-git-sshd and the five testservers alike); the shared derivation helper replaced the dangling per-derivation `version` attr." Needs the operator to accept option (b). |
 | #209 | umbrella over #204 / #206 / #208 | "Tracked by #204, #206, #208 (one case each)." Or keep it open as the umbrella; the operator's choice. |
 
 Not on the close list, despite §1: #353 (swift-plum holds that close),
