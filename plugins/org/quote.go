@@ -148,7 +148,11 @@ func (Plugin) DescribeBodies() []cutting_garden_plugins.NodeTypeBody {
 				`file, or null), "priority" ("A".."Z" or null), "own_tags" (the headline's own tags, the ` +
 				`whole set), "scheduled" / "deadline" ("YYYY-MM-DD" with an optional " HH:MM", or null), ` +
 				`"body" (the headline's own text, as read_node returns it; drawers such as :LOGBOOK: ` +
-				`and the children are kept; null clears), one of "parent" / "before" / "after" (moves ` +
+				`and the children are kept; null clears) or, to change the body without re-sending it ` +
+				`(at most one body key per patch): "body_append" / "body_prepend" (text added on its own ` +
+				`line after / before the current body) or "body_replace" ({"old": …, "new": …}: old, ` +
+				`matched exactly against the body as read_node returns it, must occur exactly once; new ` +
+				`may be empty), one of "parent" / "before" / "after" (moves ` +
 				`the headline with its subtree: parent = a headline, as its last child, or a file, as ` +
 				`a level-1 headline at its end; before/after = a sibling headline; given as a full ` +
 				`org:// URI, a path from the account root like "notes.org?id=…", or a bare "id=…" in ` +

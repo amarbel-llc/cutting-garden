@@ -31,7 +31,8 @@ traversal + facets, and writable thread tag sets for `organize` inbox
 triage, but no capture/restore/diff, FDR 0024; and org, a traversal
 plugin over a WebDAV folder of `.org` files — Orgzly's sync target — whose
 writes are LOCK-guarded and read back afterwards to catch an Orgzly
-overwrite: a headline patch (metadata fields, `body`, `quote`, and moves
+overwrite: a headline patch (metadata fields, `body` or an incremental
+`body_append`/`body_prepend`/`body_replace`, `quote`, and moves
 via `parent`/`before`/`after`, across files too), a file's preamble (a
 `body` patch on the file node: the text above the first headline, with its
 `#+TODO`/`#+FILETAGS` lines kept apart), a headline delete (a leaf; a delete

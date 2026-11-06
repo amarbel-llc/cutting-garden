@@ -51,13 +51,15 @@ type headlineEdit struct {
 	scheduled *string // "" or "YYYY-MM-DD" with an optional " HH:MM"
 	deadline  *string
 	body      *string       // the own text, as read_node returns it (body.go)
+	bodyOp    *bodyOp       // an incremental body edit (body.go); excludes body
 	move      *headlineMove // move.go
 	quote     bool
 }
 
 func (e headlineEdit) empty() bool {
 	return e.title == nil && e.state == nil && e.priority == nil && e.ownTags == nil &&
-		e.scheduled == nil && e.deadline == nil && e.body == nil && e.move == nil && !e.quote
+		e.scheduled == nil && e.deadline == nil && e.body == nil && e.bodyOp == nil &&
+		e.move == nil && !e.quote
 }
 
 var (
@@ -115,6 +117,13 @@ func parseEdit(body io.Reader) (headlineEdit, error) {
 		}
 		e.body = &body
 	}
+	if e.bodyOp, err = parseBodyOp(patch); err != nil {
+		return e, err
+	}
+	if e.body != nil && e.bodyOp != nil {
+		return e, errors.BadRequestf(
+			"org plugin: a patch takes one body edit: body, body_append, body_prepend or body_replace")
+	}
 	if e.move, err = parseMove(patch); err != nil {
 		return e, err
 	}
@@ -139,6 +148,42 @@ func parseEdit(body io.Reader) (headlineEdit, error) {
 		}
 	}
 	return e, nil
+}
+
+// parseBodyOp reads the incremental body keys; more than one is refused.
+func parseBodyOp(patch map[string]json.RawMessage) (*bodyOp, error) {
+	var ops []*bodyOp
+	for _, key := range []string{fieldPatchBodyAppend, fieldPatchBodyPrepend} {
+		raw, ok := patch[key]
+		if !ok {
+			continue
+		}
+		var text string
+		if err := json.Unmarshal(raw, &text); err != nil {
+			return nil, errors.BadRequestf("org plugin: %s must be a string, got %s", key, raw)
+		}
+		ops = append(ops, &bodyOp{key: key, text: text})
+	}
+	if raw, ok := patch[fieldPatchBodyReplace]; ok {
+		var pair struct {
+			Old *string `json:"old"`
+			New *string `json:"new"`
+		}
+		if err := json.Unmarshal(raw, &pair); err != nil || pair.Old == nil || pair.New == nil ||
+			*pair.Old == "" {
+			return nil, errors.BadRequestf(
+				`org plugin: body_replace must be {"old": "<non-empty text>", "new": "<text>"}, got %s`, raw)
+		}
+		ops = append(ops, &bodyOp{key: fieldPatchBodyReplace, old: *pair.Old, text: *pair.New, replaces: true})
+	}
+	switch len(ops) {
+	case 0:
+		return nil, nil
+	case 1:
+		return ops[0], nil
+	}
+	return nil, errors.BadRequestf(
+		"org plugin: a patch takes one body edit: body, body_append, body_prepend or body_replace")
 }
 
 // clearableString reads key as a string, where null or "none" clears it
@@ -390,10 +435,18 @@ func applyEdit(
 	}
 
 	var newBody *string
-	if e.body != nil {
-		if b := normalizeBody(*e.body); b != h.Body {
+	bodyKey, bodyText := fieldPatchBody, e.body
+	if e.bodyOp != nil {
+		joined, err := e.bodyOp.apply(h.Body)
+		if err != nil {
+			return nil, nil, want, err
+		}
+		bodyKey, bodyText = e.bodyOp.key, &joined
+	}
+	if bodyText != nil {
+		if b := normalizeBody(*bodyText); b != h.Body {
 			newBody = &b
-			applied = append(applied, fieldPatchBody)
+			applied = append(applied, bodyKey)
 		}
 	}
 

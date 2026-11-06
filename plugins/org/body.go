@@ -22,6 +22,56 @@ const fieldPatchBody = "body"
 
 var bodyDrawerRe = regexp.MustCompile(`^[ \t]*:([A-Za-z0-9_-]+):[ \t]*$`)
 
+// Incremental body edits (cutting-garden#384): body_append, body_prepend and
+// body_replace change the body from its current text without the caller
+// re-sending it, so a long body is not copied back verbatim (a copy that can
+// silently change what it was meant to keep). They resolve against the body
+// read under the lock, then go through the same splice and read-back as
+// `body`, and a patch carries at most one body key.
+const (
+	fieldPatchBodyAppend  = "body_append"
+	fieldPatchBodyPrepend = "body_prepend"
+	fieldPatchBodyReplace = "body_replace"
+)
+
+// bodyOp is one incremental body edit: key is the patch key it came from.
+type bodyOp struct {
+	key      string
+	text     string // appended or prepended; the replacement for body_replace
+	old      string // body_replace only: must occur exactly once
+	replaces bool
+}
+
+// apply returns the body after the edit, given the current one as read_node
+// returns it. Appended and prepended text start on their own line.
+func (op bodyOp) apply(current string) (string, error) {
+	switch {
+	case op.replaces:
+		switch n := strings.Count(current, op.old); n {
+		case 1:
+			return strings.Replace(current, op.old, op.text, 1), nil
+		case 0:
+			return "", errors.BadRequestf(
+				"org plugin: body_replace: old text not found in the headline's body " +
+					"(match it exactly as read_node returns the body)")
+		default:
+			return "", errors.BadRequestf(
+				"org plugin: body_replace: old text matches %d times in the headline's body; "+
+					"include more surrounding text so it matches once", n)
+		}
+	case op.key == fieldPatchBodyPrepend:
+		if current == "" {
+			return op.text, nil
+		}
+		return op.text + "\n" + current, nil
+	default:
+		if current == "" {
+			return op.text, nil
+		}
+		return current + "\n" + op.text, nil
+	}
+}
+
 // normalizeBody is the form read_node returns a body in: lines without
 // "\r", blank edges trimmed, common indentation removed.
 func normalizeBody(text string) string {
