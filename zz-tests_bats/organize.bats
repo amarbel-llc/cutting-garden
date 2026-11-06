@@ -296,11 +296,12 @@ function organize_apply_conflict_rejects { # @test
   run_cg organize -apply "$edited_b" -commit
   assert_failure 2
   # The whole rejection: completed windowed task1 OUT of the `_terminal=no`
-  # live listing, so the merge sees no live bucket at all (live="") — still a
-  # drift from the pinned base, and the exact refused move is named.
+  # live listing, so the merge sees no live bucket at all (named as absent, not
+  # as the empty "ungrouped" bucket, #255) — still a drift from the pinned base,
+  # and the exact refused move is named.
   assert_vector - <<-'EOM'
 	cutting-garden: organize --apply: 1 conflict(s) — the live state drifted from the pinned base; regenerate and re-edit:
-	  task1.ics: base="" live="" (your edit moved it to "cancelled")
+	  task1.ics: base="" live=<not in the live selection> (your edit moved it to "cancelled")
 	EOM
 
   run_cg_stdout list -query 'status=completed' "$CAL"

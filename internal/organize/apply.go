@@ -570,9 +570,16 @@ func planMoves(
 		}
 		liveBucket, inLive := liveAsg[key]
 		if !inLive || liveBucket != from {
+			// An object missing from the live selection (windowed out, e.g.
+			// completed under `_terminal=no`) is not the same as one present but
+			// ungrouped (live=""): name the absence (cutting-garden#255).
+			live := fmt.Sprintf("%q", liveBucket)
+			if !inLive {
+				live = "<not in the live selection>"
+			}
 			conflicts = append(conflicts, fmt.Sprintf(
-				"%s: base=%q live=%q (your edit moved it to %q)",
-				key, from, liveBucket, to,
+				"%s: base=%q live=%s (your edit moved it to %q)",
+				key, from, live, to,
 			))
 			continue
 		}
