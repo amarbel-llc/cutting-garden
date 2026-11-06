@@ -311,6 +311,31 @@ in
         key (cutting-garden#304), so this schema has nothing to render it to.
       '';
     };
+
+    mcp.noBackgroundRefresh = mkOption {
+      type = types.listOf types.nonEmptyStr;
+      default = [ ];
+      example = [ "smith" ];
+      description = ''
+        URI schemes (`"*"` for every scheme) the `mcp` server neither warms at
+        startup nor refreshes on its timer, rendered to the `[mcp]` table's
+        `no_background_refresh` key (cutting-garden#393). Their cached
+        listings and facet summaries refresh lazily instead, on a read past
+        the cache TTL. The empty default keeps every scheme on the background
+        refresher and renders nothing.
+      '';
+    };
+
+    mcp.refreshInterval = mkOption {
+      type = types.nullOr types.nonEmptyStr;
+      default = null;
+      example = "15m";
+      description = ''
+        The `mcp` server's background refresh tick as a Go duration, rendered
+        to the `[mcp]` table's `refresh_interval` key. `null` (the default)
+        keeps the built-in 5m and renders nothing.
+      '';
+    };
   };
 
   # renderConfigToml maps the typed config to a config.toml store path, or null
@@ -328,6 +353,10 @@ in
       traversalPlugins = cfg.traversalPlugins or [ ];
       plugins = cfg.plugins or [ ];
       tagsInterpreter = cfg.tags.interpreter or null;
+      mcpSection = lib.filterAttrs (_: v: v != null && v != [ ]) {
+        no_background_refresh = cfg.mcp.noBackgroundRefresh or [ ];
+        refresh_interval = cfg.mcp.refreshInterval or null;
+      };
 
       # Every account-bearing section renders through one function, so the
       # TOML keys stay in lockstep with config_common.Account's tags.
@@ -382,6 +411,7 @@ in
         // lib.optionalAttrs (tagsInterpreter != null) {
           tags.interpreter = tagsInterpreter;
         }
+        // lib.optionalAttrs (mcpSection != { }) { mcp = mcpSection; }
         // pluginConfigSections;
     in
     if settings == { } then null else tomlFormat.generate "cutting-garden-config.toml" settings;

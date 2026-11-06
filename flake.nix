@@ -1351,6 +1351,8 @@
                 fastmail.accounts = sampleFastmail;
                 org.accounts = sampleOrg;
                 tags.interpreter = "dodder-hyphen";
+                mcp.noBackgroundRefresh = [ "smith" ];
+                mcp.refreshInterval = "15m";
               };
 
               # Instantiate the exported NixOS module through a minimal host so the
@@ -1371,6 +1373,8 @@
                         fastmail.accounts = sampleFastmail;
                         org.accounts = sampleOrg;
                         tags.interpreter = "dodder-hyphen";
+                        mcp.noBackgroundRefresh = [ "smith" ];
+                        mcp.refreshInterval = "15m";
                       };
                     }
                   ];
@@ -1399,6 +1403,11 @@
               # table (RFC 0019 §4 layer 2), not a bogus [[plugins]] stanza.
               grep -q '^\[tags\]$' ${sampleConfig}
               grep -q 'interpreter = "dodder-hyphen"' ${sampleConfig}
+
+              # cutting-garden#393: the mcp options render a top-level [mcp] table.
+              grep -q '^\[mcp\]$' ${sampleConfig}
+              grep -q 'no_background_refresh = \[ *"smith" *\]' ${sampleConfig}
+              grep -q 'refresh_interval = "15m"' ${sampleConfig}
 
               # The NixOS module wires the shared renderer: its rendered /etc file
               # must match the renderer's direct output for the same accounts.
