@@ -509,6 +509,17 @@ func TestCheckMoveWritable(t *testing.T) {
 	}
 }
 
+// TestRequireFacetApplier pins the applier probe the apply path runs AFTER the
+// move-writability check (cutting-garden#265): a plugin without a
+// FacetWriteApplier is blamed for it.
+func TestRequireFacetApplier(t *testing.T) {
+	err := requireFacetApplier(nil, "priority")
+	if err == nil || !errors.Is400BadRequest(err) ||
+		!strings.Contains(err.Error(), "no FacetWriteApplier") {
+		t.Errorf("nil applier: err = %v, want a bad request naming the missing FacetWriteApplier", err)
+	}
+}
+
 // categoriesNode builds a live caldav node carrying a MULTI-VALUED `categories`
 // membership — the read-only, multi-appearance dimension of the tags design
 // (docs/plans/2026-08-20-tags-design.md D7). Values are appended in order, so the

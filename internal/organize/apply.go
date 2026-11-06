@@ -409,6 +409,11 @@ func (cmd *Organize) applyEdited(
 				return false, err
 			}
 		}
+		if len(moves) > 0 {
+			if err := requireFacetApplier(moveApplier, dim); err != nil {
+				return false, err
+			}
+		}
 	}
 	if err := rejectMoveFieldCollisions(
 		moves, fieldEdits, dim, boxAtomPresenter(lister), idOf,
@@ -654,7 +659,10 @@ func rejectMoveFieldCollisions(
 // move's patch, and a per-node-type FacetWrite mapping for the dimension. A plugin
 // exposing no writes, declaring no mapping for the dimension, or declaring
 // writable facets without an applier to build the patch is rejected loudly
-// (FDR 0023 "writability must be declared").
+// (FDR 0023 "writability must be declared"). A missing applier is reported by
+// requireFacetApplier, not here: the caller validates each move's write mode
+// first, so a read-only dimension is diagnosed as such rather than blamed on
+// the plugin's missing capability (cutting-garden#265).
 func resolveWrites(
 	lister cgp.RootLister, dim string,
 ) (cgp.NodeMutator, cgp.FacetWriteApplier, map[string]cgp.FacetWrite, error) {
@@ -668,15 +676,21 @@ func resolveWrites(
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	applier, ok := lister.(cgp.FacetWriteApplier)
-	if !ok {
-		return nil, nil, nil, errors.BadRequestf(
-			"organize --apply: plugin declares writable facets but no "+
-				"FacetWriteApplier to build the patch; dimension %q cannot be "+
-				"reorganized", dim,
-		)
-	}
+	applier, _ := lister.(cgp.FacetWriteApplier)
 	return mutator, applier, writes, nil
+}
+
+// requireFacetApplier refuses a plugin that declares writable facets for dim
+// but cannot build the patch (no FacetWriteApplier).
+func requireFacetApplier(applier cgp.FacetWriteApplier, dim string) error {
+	if applier != nil {
+		return nil
+	}
+	return errors.BadRequestf(
+		"organize --apply: plugin declares writable facets but no "+
+			"FacetWriteApplier to build the patch; dimension %q cannot be "+
+			"reorganized", dim,
+	)
 }
 
 // declaredWritesFor collects the per-node-type FacetWrite mapping the plugin
