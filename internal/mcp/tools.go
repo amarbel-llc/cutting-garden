@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/url"
 	"os"
-	"path"
 	"slices"
 	"strconv"
 	"strings"
@@ -1266,30 +1265,10 @@ func filterSchema(
 		"describe_node_types: no node type %q under scheme %q", typeTag, scheme)
 }
 
-// rootLabel derives a short display name for a root URI: the last path
-// segment, else the host, else the full URI. Mirrors list.rootLabel so the
-// `list` command and the list_nodes tool label the entry points the same
-// way. The framework-side fallback when no plugin supplies a friendlier
-// label (see rootDisplayLabel, cutting-garden#120).
-func rootLabel(u *url.URL) string {
-	if trimmed := strings.TrimRight(u.Path, "/"); trimmed != "" {
-		return path.Base(trimmed)
-	}
-	if u.Host != "" {
-		return u.Host
-	}
-	return u.String()
-}
-
-// rootDisplayLabel resolves a root's display name for the no-uri
-// list_nodes listing: the RootLabeler-supplied friendly label
-// (cutting-garden#120, e.g. a caldav calendar's DAV displayname) when
-// present, else the framework's default URL-derived rootLabel().
+// rootDisplayLabel is a root's display name in the no-uri list_nodes
+// listing (cutting-garden#120, e.g. a caldav calendar's DAV displayname).
 func (t *Tools) rootDisplayLabel(u *url.URL) string {
-	if label, ok := t.rootLabels[u.String()]; ok && label != "" {
-		return label
-	}
-	return rootLabel(u)
+	return command_components.RootDisplayLabel(u, t.rootLabels)
 }
 
 // firstScheme is the plugin's first non-empty scheme — the name a user types

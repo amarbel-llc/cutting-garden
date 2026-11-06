@@ -27,9 +27,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net/url"
 	"os"
-	"path"
 	"sort"
 	"strings"
 	"text/tabwriter"
@@ -218,7 +216,7 @@ func (cmd *List) runRoots(ctx errors.Context) error {
 	for _, root := range roots {
 		nodes = append(nodes, cutting_garden_plugins.Node{
 			URI:  root,
-			Name: rootDisplayLabel(root, labels),
+			Name: command_components.RootDisplayLabel(root, labels),
 		})
 	}
 
@@ -235,31 +233,6 @@ func (cmd *List) runRoots(ctx errors.Context) error {
 		return writeEspalier(cmd.output, nodes, node_view.BoxIDs(nil, ""), nil, nil)
 	}
 	return writeText(cmd.output, nodes, nil)
-}
-
-// rootLabel derives a short display name for a root URI: the last path
-// segment, else the host, else the full URI. The framework-side fallback
-// when no plugin supplies a friendlier label (see rootDisplayLabel,
-// cutting-garden#120).
-func rootLabel(u *url.URL) string {
-	if trimmed := strings.TrimRight(u.Path, "/"); trimmed != "" {
-		return path.Base(trimmed)
-	}
-	if u.Host != "" {
-		return u.Host
-	}
-	return u.String()
-}
-
-// rootDisplayLabel resolves a root's display name for the aggregated
-// roots listing: the RootLabeler-supplied friendly label
-// (cutting-garden#120), keyed by the root URL's String() form, when
-// present, else the framework's default rootLabel() derivation.
-func rootDisplayLabel(u *url.URL, labels map[string]string) string {
-	if label, ok := labels[u.String()]; ok && label != "" {
-		return label
-	}
-	return rootLabel(u)
 }
 
 // runList resolves the RootLister for uriStr, enumerates the node's

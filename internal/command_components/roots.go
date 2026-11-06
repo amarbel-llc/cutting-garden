@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"path"
 	"slices"
+	"strings"
 	"sync"
 
 	"code.linenisgreat.com/cutting-garden/internal/capture_wire"
@@ -313,4 +315,29 @@ func AggregateRootLabels(ctx context.Context, warnw io.Writer) map[string]string
 		}
 	}
 	return labels
+}
+
+// RootLabel derives a short display name for a root URI: the last path
+// segment, else the host, else the full URI. The framework-side fallback
+// when no plugin supplies a friendlier label (cutting-garden#120), shared by
+// the `list` command and the mcp roots listings so both name the entry
+// points the same way.
+func RootLabel(u *url.URL) string {
+	if trimmed := strings.TrimRight(u.Path, "/"); trimmed != "" {
+		return path.Base(trimmed)
+	}
+	if u.Host != "" {
+		return u.Host
+	}
+	return u.String()
+}
+
+// RootDisplayLabel is a root's display name: the RootLabeler-supplied label
+// from AggregateRootLabels (keyed by the root URL's String() form) when one
+// is present, else RootLabel.
+func RootDisplayLabel(u *url.URL, labels map[string]string) string {
+	if label, ok := labels[u.String()]; ok && label != "" {
+		return label
+	}
+	return RootLabel(u)
 }

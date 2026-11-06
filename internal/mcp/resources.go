@@ -187,10 +187,7 @@ func (r *Resources) rootResources() []protocol.ResourceV1 {
 // rootDisplayLabel is the root's name as list_nodes shows it: the
 // plugin-supplied friendly label when present, else the URL-derived one.
 func (r *Resources) rootDisplayLabel(u *url.URL) string {
-	if label, ok := r.rootLabels[u.String()]; ok && label != "" {
-		return label
-	}
-	return rootLabel(u)
+	return command_components.RootDisplayLabel(u, r.rootLabels)
 }
 
 // ListResources is the unpaginated resources/list: every configured root
