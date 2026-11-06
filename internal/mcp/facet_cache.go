@@ -376,6 +376,14 @@ func (fc *facetCache) markError(uri string, err error) {
 	}
 }
 
+// dropSource forgets every summary memoized from written's source, as
+// listingCache.dropSource does for listings.
+func (fc *facetCache) dropSource(written *url.URL) {
+	fc.mu.Lock()
+	defer fc.mu.Unlock()
+	dropSameSource(fc.entries, written)
+}
+
 func (fc *facetCache) drop(uri string) {
 	fc.mu.Lock()
 	defer fc.mu.Unlock()

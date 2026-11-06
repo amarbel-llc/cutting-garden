@@ -166,6 +166,7 @@ func (t *Tools) callMutateNodes(
 
 	ctx, partial := cutting_garden_plugins.WithPartialListings(ctx)
 	result, err := t.dispatchMutateGroup(ctx, group)
+	t.forgetWrittenSource(group.anchor)
 	if err != nil {
 		return "", err
 	}
@@ -451,6 +452,24 @@ func (t *Tools) dispatchMutateGroup(
 		)
 	}
 	return result, err
+}
+
+// sourceForgetter is the read surface's memo, dropped after a write so the
+// next read through this server sees it (*Resources satisfies it).
+type sourceForgetter interface {
+	ForgetSource(written *url.URL)
+}
+
+// forgetWrittenSource drops the read caches of the anchor's source after a
+// dispatch — even a failed one, which may have applied part of a batch.
+func (t *Tools) forgetWrittenSource(anchor string) {
+	forgetter, ok := t.reader.(sourceForgetter)
+	if !ok {
+		return
+	}
+	if u, err := url.Parse(anchor); err == nil {
+		forgetter.ForgetSource(u)
+	}
 }
 
 func (t *Tools) bulkMutatorFor(anchor string) cutting_garden_plugins.BulkMutator {

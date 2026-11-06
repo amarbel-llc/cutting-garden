@@ -132,6 +132,15 @@ func (r *Resources) startFacetMaintenance(ctx context.Context) {
 	r.facets.maintain(ctx, r.resolve, facetRefreshInterval)
 }
 
+// ForgetSource drops the memoized listings and facet summaries of written's
+// source after a write through this server, so this server's next read sees
+// the write (cutting-garden#302). A plugin's own caches are its concern
+// (cutting-garden#188).
+func (r *Resources) ForgetSource(written *url.URL) {
+	r.facets.dropSource(written)
+	r.listings.dropSource(written)
+}
+
 // resourcesPageSize bounds one resources/list page (cutting-garden#326).
 // Roots are few, so in practice the first page is the whole list; the bound
 // exists so the response stays small however many roots a config declares.

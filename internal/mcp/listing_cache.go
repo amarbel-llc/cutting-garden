@@ -321,6 +321,27 @@ func (lc *listingCache) refreshOne(
 	lc.mu.Unlock()
 }
 
+// dropSource forgets every listing memoized from written's source (its
+// scheme and host), so the next read after a write through this server
+// recomputes instead of serving the pre-write listing (cutting-garden#302).
+func (lc *listingCache) dropSource(written *url.URL) {
+	lc.mu.Lock()
+	defer lc.mu.Unlock()
+	dropSameSource(lc.entries, written)
+}
+
+// dropSameSource deletes the entries keyed by a URI on written's scheme and
+// host. A write may change any container of its source — its own, an
+// ancestor's counts, a move's destination — so the whole source goes.
+func dropSameSource[V any](entries map[string]V, written *url.URL) {
+	for key := range entries {
+		u, err := url.Parse(key)
+		if err != nil || (u.Scheme == written.Scheme && u.Host == written.Host) {
+			delete(entries, key)
+		}
+	}
+}
+
 func (lc *listingCache) markVerified(uri string) {
 	lc.mu.Lock()
 	defer lc.mu.Unlock()
