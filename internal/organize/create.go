@@ -586,7 +586,10 @@ func planCreations(
 	if err != nil {
 		return nil, nil, err
 	}
-	anchorType, anchorResolved := cgp.ResolveNodeTypeByURI(lister, anchor)
+	// The anchor is a common prefix trimmed to a path boundary, so it ends in
+	// "/" and matches no URI template, which is an anchored full match: trim
+	// one slash so the container-type check below runs (cutting-garden#280).
+	anchorType, anchorResolved := cgp.ResolveNodeTypeByURI(lister, strings.TrimSuffix(anchor, "/"))
 
 	var problems []string
 	for _, obj := range objects {

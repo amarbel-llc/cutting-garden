@@ -483,6 +483,25 @@ func TestPlanCreations(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "declares no creatable node types") {
 		t.Fatalf("planCreations = %v; want no-creation-surface", err)
 	}
+
+	// The anchor is a trailing-slash prefix ("fake://host/cal/"), which no URI
+	// template matches as written: the container-type check must still run
+	// (cutting-garden#280).
+	wrongContainer := &createFake{
+		fakeLister: fakeLister{types: []cgp.NodeType{{Tag: "other", Container: true, URITemplate: "fake://{host}/cal"}}},
+		required:   []string{"summary"},
+	}
+	_, err = plan(wrongContainer, obj)
+	if err == nil || !strings.Contains(err.Error(), "is created under a !cal, but the document's anchor is a !other") {
+		t.Fatalf("planCreations = %v; want the container-type refusal for a trailing-slash anchor", err)
+	}
+	rightContainer := &createFake{
+		fakeLister: fakeLister{types: []cgp.NodeType{{Tag: "cal", Container: true, URITemplate: "fake://{host}/cal"}}},
+		required:   []string{"summary"},
+	}
+	if _, err = plan(rightContainer, obj); err != nil {
+		t.Fatalf("planCreations under the declared container: %v", err)
+	}
 }
 
 // Execution records each landed creation in the ledger (scoped by `_base`);
