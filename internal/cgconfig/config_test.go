@@ -1,6 +1,9 @@
 package cgconfig
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestOrganizeConfig_DateGranularity(t *testing.T) {
 	// Valid value decodes.
@@ -51,6 +54,34 @@ func TestTagsConfig_Interpreter(t *testing.T) {
 		"[tags]\n" + `interpreter = "bogus"` + "\n",
 	)); err == nil {
 		t.Error("tags.interpreter=bogus must fail validation")
+	}
+}
+
+// The `[mcp]` section decodes its opt-out schemes and refresh interval
+// (cutting-garden#393); an unset interval falls back, a bad one is refused.
+func TestMCPConfig(t *testing.T) {
+	doc, err := DecodeConfigV0([]byte(
+		"[mcp]\n" + `no_background_refresh = ["smith", "fastmail"]` + "\n" +
+			`refresh_interval = "30m"` + "\n",
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := doc.Data().MCP
+	if len(got.NoBackgroundRefresh) != 2 || got.NoBackgroundRefresh[0] != "smith" {
+		t.Errorf("NoBackgroundRefresh = %v, want [smith fastmail]", got.NoBackgroundRefresh)
+	}
+	if every := got.RefreshEvery(5 * time.Minute); every != 30*time.Minute {
+		t.Errorf("RefreshEvery = %v, want 30m", every)
+	}
+	if every := (MCPConfig{}).RefreshEvery(5 * time.Minute); every != 5*time.Minute {
+		t.Errorf("unset RefreshEvery = %v, want the 5m fallback", every)
+	}
+
+	for _, bad := range []string{`refresh_interval = "soon"`, `refresh_interval = "-1m"`, `no_background_refresh = [""]`} {
+		if _, err := DecodeConfigV0([]byte("[mcp]\n" + bad + "\n")); err == nil {
+			t.Errorf("%s must fail validation", bad)
+		}
 	}
 }
 

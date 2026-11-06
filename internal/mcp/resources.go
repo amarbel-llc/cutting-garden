@@ -117,19 +117,34 @@ func newResources(roots []*url.URL, writer capture_plugin.Writer) *Resources {
 // declines simply stays cold and computes on first touch. The listing
 // refresher runs in its own goroutine since facets.maintain blocks for the
 // life of ctx.
-func (r *Resources) startFacetMaintenance(ctx context.Context) {
+//
+// A root whose scheme is opted out of background refresh
+// (`[mcp] no_background_refresh`, cutting-garden#393) is not warmed, and the
+// refreshers skip its entries; interval is the refreshers' tick.
+func (r *Resources) startFacetMaintenance(ctx context.Context, interval time.Duration) {
 	for _, root := range r.roots {
 		if ctx.Err() != nil {
 			return
 		}
 		uri := root.String()
+		if r.listings.lazy != nil && r.listings.lazy(uri) {
+			continue
+		}
 		if u, lister, err := r.resolve(uri); err == nil {
 			_, _ = r.facets.serve(ctx, lister, uri, u)
 			_, _, _ = r.listings.serve(ctx, lister, uri, u)
 		}
 	}
-	go r.listings.maintain(ctx, r.resolve, facetRefreshInterval)
-	r.facets.maintain(ctx, r.resolve, facetRefreshInterval)
+	go r.listings.maintain(ctx, r.resolve, interval)
+	r.facets.maintain(ctx, r.resolve, interval)
+}
+
+// keepOffBackgroundRefresh opts schemes out of background maintenance
+// (`[mcp] no_background_refresh`); nil or empty changes nothing.
+func (r *Resources) keepOffBackgroundRefresh(schemes []string) {
+	lazy := backgroundRefreshOff(schemes)
+	r.facets.lazy = lazy
+	r.listings.lazy = lazy
 }
 
 // ForgetSource drops the memoized listings and facet summaries of written's

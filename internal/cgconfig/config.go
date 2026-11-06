@@ -12,6 +12,8 @@
 package cgconfig
 
 import (
+	"time"
+
 	cgp "code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
 	"code.linenisgreat.com/cutting-garden/internal/traversal_serve"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
@@ -37,6 +39,10 @@ type ConfigV0 struct {
 	// Tags carries the global tag-interpreter override (RFC 0019 §4 /
 	// design D6).
 	Tags TagsConfig `toml:"tags,omitempty"`
+
+	// MCP configures the `mcp` server's background cache maintenance
+	// (cutting-garden#393).
+	MCP MCPConfig `toml:"mcp,omitempty"`
 
 	// Plugins is the generalized `[[plugins]]` stanza (cutting-garden#146
 	// slice 2): one entry per plugin binary, declaring which wire
@@ -66,7 +72,56 @@ func (c ConfigV0) Validate() error {
 	if err := c.Tags.Validate(); err != nil {
 		return err
 	}
+	if err := c.MCP.Validate(); err != nil {
+		return err
+	}
 	return traversal_serve.ValidateStanzas(c.Plugins, c.TraversalPlugins)
+}
+
+// MCPConfig tunes how the `mcp` server keeps its memoized listings and facet
+// summaries fresh (cutting-garden#393). By default it warms every configured
+// root at startup and refreshes every cached container on a timer, which is
+// a plugin call per entry per tick even when no client is asking. Like
+// OrganizeConfig, tommy inlines it into ConfigV0's codec.
+type MCPConfig struct {
+	// NoBackgroundRefresh lists the URI schemes (e.g. "smith"; "*" for every
+	// scheme) the server neither warms at startup nor refreshes on its timer.
+	// Their entries refresh lazily instead: a read of an entry older than
+	// the cache TTL recomputes it. Empty (the default) keeps every scheme on
+	// the background refresher.
+	NoBackgroundRefresh []string `toml:"no_background_refresh,omitempty"`
+
+	// RefreshInterval is the background refresher's tick, as a Go duration
+	// ("5m", "30m"). Empty means the built-in default (5m).
+	RefreshInterval string `toml:"refresh_interval,omitempty"`
+}
+
+func (c MCPConfig) Validate() error {
+	for _, scheme := range c.NoBackgroundRefresh {
+		if scheme == "" {
+			return errors.BadRequestf("mcp.no_background_refresh: a scheme must not be empty")
+		}
+	}
+	if c.RefreshInterval == "" {
+		return nil
+	}
+	interval, err := time.ParseDuration(c.RefreshInterval)
+	if err != nil || interval <= 0 {
+		return errors.BadRequestf(
+			"mcp.refresh_interval %q is not a positive Go duration (e.g. \"5m\")",
+			c.RefreshInterval,
+		)
+	}
+	return nil
+}
+
+// RefreshEvery is the background refresher's tick: RefreshInterval, or
+// fallback when it is unset. Validate has already rejected a malformed one.
+func (c MCPConfig) RefreshEvery(fallback time.Duration) time.Duration {
+	if interval, err := time.ParseDuration(c.RefreshInterval); err == nil && interval > 0 {
+		return interval
+	}
+	return fallback
 }
 
 // The tag-atom lever vocabularies (native tags design G1/G2, RFC 0015):

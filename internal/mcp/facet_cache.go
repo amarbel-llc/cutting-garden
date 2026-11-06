@@ -84,6 +84,9 @@ type facetCache struct {
 	mu      sync.Mutex
 	entries map[string]*facetCacheEntry
 	now     func() time.Time
+	// lazy marks the URIs kept off the background refresher
+	// (backgroundRefreshOff); nil means none.
+	lazy func(uri string) bool
 }
 
 func newFacetCache() *facetCache {
@@ -111,7 +114,7 @@ func (fc *facetCache) serve(
 
 	fc.mu.Lock()
 	entry := fc.entries[uri]
-	if entry != nil {
+	if entry != nil && !staleForLazyRead(fc.lazy, uri, entry.computedAt, fc.now()) {
 		view := fc.viewLocked(entry)
 		fc.mu.Unlock()
 		return view, nil
@@ -287,6 +290,9 @@ func (fc *facetCache) refreshOne(
 	resolve resolveFunc,
 	uri string,
 ) {
+	if fc.lazy != nil && fc.lazy(uri) {
+		return
+	}
 	fc.mu.Lock()
 	entry := fc.entries[uri]
 	if entry == nil {

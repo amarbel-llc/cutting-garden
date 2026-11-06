@@ -33,6 +33,9 @@ type listingCache struct {
 	mu      sync.Mutex
 	entries map[string]*listingCacheEntry
 	now     func() time.Time
+	// lazy marks the URIs kept off the background refresher
+	// (backgroundRefreshOff); nil means none.
+	lazy func(uri string) bool
 }
 
 // listingCacheEntry is one node's memoized enriched-unfiltered listing plus
@@ -153,7 +156,8 @@ func (lc *listingCache) serve(
 ) ([]cutting_garden_plugins.Node, listingProvenance, error) {
 	lc.mu.Lock()
 	entry := lc.entries[uri]
-	if entry != nil && !entry.windowExpired(lc.now()) {
+	if entry != nil && !entry.windowExpired(lc.now()) &&
+		!staleForLazyRead(lc.lazy, uri, entry.computedAt, lc.now()) {
 		nodes := entry.nodes
 		prov := entry.provenance(lc.now())
 		lc.mu.Unlock()
@@ -267,6 +271,9 @@ func (lc *listingCache) refreshOne(
 	resolve resolveFunc,
 	uri string,
 ) {
+	if lc.lazy != nil && lc.lazy(uri) {
+		return
+	}
 	lc.mu.Lock()
 	entry := lc.entries[uri]
 	if entry == nil {

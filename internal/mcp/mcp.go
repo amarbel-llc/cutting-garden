@@ -232,8 +232,10 @@ func (cmd *MCP) Run(req command.Request) {
 	provider.rootLabels = rootLabels
 
 	// Warm the facet cache with the configured roots and keep summaries
-	// fresh in the background (RFC 0012 §11.2); ends with ctx.
-	go provider.startFacetMaintenance(ctx)
+	// fresh in the background (RFC 0012 §11.2); ends with ctx. `[mcp]`
+	// keeps chosen schemes off it and sets the tick (cutting-garden#393).
+	provider.keepOffBackgroundRefresh(cfg.MCP.NoBackgroundRefresh)
+	go provider.startFacetMaintenance(ctx, cfg.MCP.RefreshEvery(facetRefreshInterval))
 
 	// The MCP protocol owns stdout (JSON-RPC frames), so diagnostics must
 	// never leak there; the server itself writes only protocol frames.

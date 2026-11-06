@@ -297,6 +297,35 @@ field on every plugin. RFC 0019 §4 also specifies a layer-3 PER-ACCOUNT
 on the config-decoding side (cutting-garden#304), so no plugin account
 stanza accepts it today.
 
+# THE [MCP] BACKGROUND REFRESH
+
+The *mcp* server memoizes each container's enriched listing and facet
+summary. By default it warms every configured root at startup and then,
+on a timer, re-checks every cached container: one plugin call per entry
+per tick even when no client is asking, multiplied by one server per
+session. For a plugin whose backend is metered (smith over the GitHub API)
+that can spend a shared quota with no tool call (cutting-garden#393). A
+top-level *[mcp]* table tunes this:
+
+*no_background_refresh*
+	Array of strings. OPTIONAL. URI schemes (*"smith"*, or *"\*"* for every
+	scheme) the server neither warms at startup nor refreshes on its timer.
+	Their entries refresh lazily instead: a read of an entry older than the
+	15-minute cache TTL recomputes it, so nothing is served stale forever.
+	An empty string aborts config loading with EX_USAGE. Omitted (the
+	default) keeps every scheme on the background refresher.
+
+*refresh_interval*
+	String. OPTIONAL. The background refresher's tick, as a Go duration
+	(*"5m"*, *"30m"*). Omitted means 5m. A value that is not a positive
+	duration aborts config loading with EX_USAGE.
+
+```
+[mcp]
+no_background_refresh = ["smith"]
+refresh_interval = "15m"
+```
+
 # SEE ALSO
 
 *cutting-garden-plugins*(7), *cutting-garden*(1), *cutting-garden-list*(1),

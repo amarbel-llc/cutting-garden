@@ -130,6 +130,40 @@ func decodeConfigV0Parsed(doc *document.Document) (*ConfigV0Document, error) {
 			}
 		}
 	}
+	if _vMcp, _ok := model.Field("mcp"); _ok && _vMcp.Kind == cst.VTable {
+		_vMcp.MarkSeen()
+		if _vMcpNoBackgroundRefresh, _ok := _vMcp.Field("no_background_refresh"); _ok && _vMcpNoBackgroundRefresh.Kind == cst.VLeaf {
+			if _x, _xok := cst.ExtractStringSlice(_vMcpNoBackgroundRefresh.Leaf); _xok {
+				d.data.MCP.NoBackgroundRefresh = _x
+				if d.data.MCP.NoBackgroundRefresh == nil {
+					d.data.MCP.NoBackgroundRefresh = []string{}
+				}
+				_vMcpNoBackgroundRefresh.MarkConsumed()
+			}
+		}
+		if _vMcpRefreshInterval, _ok := _vMcp.Field("refresh_interval"); _ok && _vMcpRefreshInterval.Kind == cst.VLeaf {
+			if _x, _xok := cst.ExtractString(_vMcpRefreshInterval.Leaf); _xok {
+				d.data.MCP.RefreshInterval = _x
+				_vMcpRefreshInterval.MarkConsumedString()
+			}
+		}
+	} else {
+		if _vNoBackgroundRefresh, _ok := model.Field("no_background_refresh"); _ok && _vNoBackgroundRefresh.Kind == cst.VLeaf {
+			if _x, _xok := cst.ExtractStringSlice(_vNoBackgroundRefresh.Leaf); _xok {
+				d.data.MCP.NoBackgroundRefresh = _x
+				if d.data.MCP.NoBackgroundRefresh == nil {
+					d.data.MCP.NoBackgroundRefresh = []string{}
+				}
+				_vNoBackgroundRefresh.MarkConsumed()
+			}
+		}
+		if _vRefreshInterval, _ok := model.Field("refresh_interval"); _ok && _vRefreshInterval.Kind == cst.VLeaf {
+			if _x, _xok := cst.ExtractString(_vRefreshInterval.Leaf); _xok {
+				d.data.MCP.RefreshInterval = _x
+				_vRefreshInterval.MarkConsumedString()
+			}
+		}
+	}
 	if _vPlugins, _ok := model.Field("plugins"); _ok && _vPlugins.Kind == cst.VArray {
 		_vPlugins.MarkSeen()
 		d.data.Plugins = make([]traversal_serve.PluginStanza, len(_vPlugins.Items))
@@ -213,6 +247,23 @@ func (d *ConfigV0Document) Encode() ([]byte, error) {
 			}
 		} else {
 			cst.DeleteValue(tableNode, "interpreter")
+		}
+	}
+	{
+		tableNode := cst.EnsureChildTable(d.cstDoc.Root(), d.cstDoc.Root(), "mcp")
+		{
+			if len(d.data.MCP.NoBackgroundRefresh) > 0 || cst.HasValue(tableNode, "no_background_refresh") {
+				if err := cst.SetAny(tableNode, "no_background_refresh", d.data.MCP.NoBackgroundRefresh); err != nil {
+					return nil, fmt.Errorf("%w", err)
+				}
+			}
+		}
+		if d.data.MCP.RefreshInterval != "" {
+			if err := cst.SetAny(tableNode, "refresh_interval", d.data.MCP.RefreshInterval); err != nil {
+				return nil, fmt.Errorf("%w", err)
+			}
+		} else {
+			cst.DeleteValue(tableNode, "refresh_interval")
 		}
 	}
 	{
@@ -338,6 +389,40 @@ func DecodeConfigV0Into(data *ConfigV0, sub *cst.Value) error {
 			}
 		}
 	}
+	if _vMcp, _ok := sub.Field("mcp"); _ok && _vMcp.Kind == cst.VTable {
+		_vMcp.MarkSeen()
+		if _vMcpNoBackgroundRefresh, _ok := _vMcp.Field("no_background_refresh"); _ok && _vMcpNoBackgroundRefresh.Kind == cst.VLeaf {
+			if _x, _xok := cst.ExtractStringSlice(_vMcpNoBackgroundRefresh.Leaf); _xok {
+				data.MCP.NoBackgroundRefresh = _x
+				if data.MCP.NoBackgroundRefresh == nil {
+					data.MCP.NoBackgroundRefresh = []string{}
+				}
+				_vMcpNoBackgroundRefresh.MarkConsumed()
+			}
+		}
+		if _vMcpRefreshInterval, _ok := _vMcp.Field("refresh_interval"); _ok && _vMcpRefreshInterval.Kind == cst.VLeaf {
+			if _x, _xok := cst.ExtractString(_vMcpRefreshInterval.Leaf); _xok {
+				data.MCP.RefreshInterval = _x
+				_vMcpRefreshInterval.MarkConsumedString()
+			}
+		}
+	} else {
+		if _vNoBackgroundRefresh, _ok := sub.Field("no_background_refresh"); _ok && _vNoBackgroundRefresh.Kind == cst.VLeaf {
+			if _x, _xok := cst.ExtractStringSlice(_vNoBackgroundRefresh.Leaf); _xok {
+				data.MCP.NoBackgroundRefresh = _x
+				if data.MCP.NoBackgroundRefresh == nil {
+					data.MCP.NoBackgroundRefresh = []string{}
+				}
+				_vNoBackgroundRefresh.MarkConsumed()
+			}
+		}
+		if _vRefreshInterval, _ok := sub.Field("refresh_interval"); _ok && _vRefreshInterval.Kind == cst.VLeaf {
+			if _x, _xok := cst.ExtractString(_vRefreshInterval.Leaf); _xok {
+				data.MCP.RefreshInterval = _x
+				_vRefreshInterval.MarkConsumedString()
+			}
+		}
+	}
 	if _vPlugins, _ok := sub.Field("plugins"); _ok && _vPlugins.Kind == cst.VArray {
 		_vPlugins.MarkSeen()
 		data.Plugins = make([]traversal_serve.PluginStanza, len(_vPlugins.Items))
@@ -417,6 +502,23 @@ func EncodeConfigV0From(data *ConfigV0, doc *document.Document, container *cst.N
 			}
 		} else {
 			cst.DeleteValue(tableNode, "interpreter")
+		}
+	}
+	{
+		tableNode := cst.EnsureChildTable(doc.Root(), container, "mcp")
+		{
+			if len(data.MCP.NoBackgroundRefresh) > 0 || cst.HasValue(tableNode, "no_background_refresh") {
+				if err := cst.SetAny(tableNode, "no_background_refresh", data.MCP.NoBackgroundRefresh); err != nil {
+					return fmt.Errorf("%w", err)
+				}
+			}
+		}
+		if data.MCP.RefreshInterval != "" {
+			if err := cst.SetAny(tableNode, "refresh_interval", data.MCP.RefreshInterval); err != nil {
+				return fmt.Errorf("%w", err)
+			}
+		} else {
+			cst.DeleteValue(tableNode, "refresh_interval")
 		}
 	}
 	{
