@@ -360,6 +360,25 @@ func TestCallTool_ListNodesFilterHonestlyUnfiltered(t *testing.T) {
 	if len(view.Nodes) != 1 {
 		t.Errorf("unfiltered fallback nodes = %+v, want the single unfiltered child", view.Nodes)
 	}
+	// The matches may lie below these children (an account root listing its
+	// calendars), so the listing names the two calls that reach them
+	// (cutting-garden#170).
+	for _, want := range []string{"read_facets", "byContainer", `->> status=CONFIRMED`} {
+		if !strings.Contains(view.FilterHint, want) {
+			t.Errorf("filterHint %q does not mention %q", view.FilterHint, want)
+		}
+	}
+}
+
+// A listing whose filter applied carries no hint.
+func TestCallTool_ListNodesFilterAppliedHasNoHint(t *testing.T) {
+	if hint := unappliedFilterHint("faketest://h/", nil); hint != "" {
+		t.Errorf("hint for an empty filter = %q, want none", hint)
+	}
+	filter, _ := cutting_garden_plugins.ParseFacetFilter("summary=a b,status=x")
+	if hint := unappliedFilterHint("faketest://h/", filter); !strings.Contains(hint, `->> summary="a b" status=x`) {
+		t.Errorf("hint %q does not quote a value with a space", hint)
+	}
 }
 
 // TestCallTool_ListNodesFilterOnRootsIsToolError pins that filtering the
