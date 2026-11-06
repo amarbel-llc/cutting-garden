@@ -586,7 +586,7 @@ Tests use binary injection via `bats-emo`:
 | § Root-Provider, aggregation | `config.bats` | a seeded caldav account surfaces as a root in `list` (no URI arg) and an MCP `resources/list` roundtrip |
 | § Root-Labeler, per-root override with fallback and fault isolation | Go unit tests (`plugins/caldav/rootlabels_test.go`, `internal/mcp/aggregate_roots_isolation_test.go`, `internal/mcp/tools_test.go`) | a calendar-scoped caldav account's root label is its DAV displayname; a calendar-home account's root keeps the default derivation; an unreachable account and a `RootLabels`-erroring plugin both degrade non-fatally without dropping another plugin's labels |
 | § Root Sources, intrinsic | `config.bats` | the file plugin surfaces its working directory as a root with no config |
-| § Credential Resolution, precedence | `config.bats` | a node matching an account uses that account's `password_env`; a non-matching host falls back to `CALDAV_USERNAME`/`CALDAV_PASSWORD` |
+| § Credential Resolution, precedence | Go unit tests (`plugins/caldav`) | a node matching an account uses that account's `password_env`; a non-matching host falls back to `CALDAV_USERNAME`/`CALDAV_PASSWORD`. Not in `config.bats`: the caldav testserver does not record the credentials a client presents, so the binary cannot be observed choosing between them (cutting-garden#93) |
 | § Loading and Validation | `config.bats` | an unknown key warns but does not abort; a duplicate `name`/empty `url` aborts with EX_USAGE naming the entry |
 
 Struct-level rules (`Validate` rejections, `Roots` projection,
