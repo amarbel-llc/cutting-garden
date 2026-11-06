@@ -53,6 +53,7 @@ func TestPackWrittenStores_PacksPackableStores(t *testing.T) {
 		[]writtenStore{
 			{id: "archive", store: blob_stores.BlobStoreInitialized{BlobStore: fp}},
 		},
+		false,
 	)
 
 	if fp.packs != 1 {
@@ -61,8 +62,38 @@ func TestPackWrittenStores_PacksPackableStores(t *testing.T) {
 	if fp.lastOpts.Context != ctx {
 		t.Errorf("PackOptions.Context = %v, want the run context", fp.lastOpts.Context)
 	}
+	if fp.lastOpts.DeleteLoose {
+		t.Error("plain packing must keep the loose blobs (DeleteLoose false)")
+	}
 	if len(notices) != 1 || !strings.Contains(notices[0], "packed store=archive") {
 		t.Errorf("notices = %v, want a single `packed store=archive` line", notices)
+	}
+}
+
+// TestPackWrittenStores_DeleteLooseThreadsThrough: deleteLoose reaches
+// PackOptions together with a deletion precondition (madder pack's own
+// NopDeletionPrecondition), and the notice says the loose blobs went.
+func TestPackWrittenStores_DeleteLooseThreadsThrough(t *testing.T) {
+	fp := &fakePackable{}
+
+	var notices []string
+	packWrittenStores(
+		errors.MakeContextDefault(),
+		collectNotices(&notices),
+		[]writtenStore{
+			{id: "archive", store: blob_stores.BlobStoreInitialized{BlobStore: fp}},
+		},
+		true,
+	)
+
+	if !fp.lastOpts.DeleteLoose {
+		t.Error("PackOptions.DeleteLoose = false, want true")
+	}
+	if fp.lastOpts.DeletionPrecondition == nil {
+		t.Error("PackOptions.DeletionPrecondition = nil, want a precondition behind the delete")
+	}
+	if len(notices) != 1 || !strings.Contains(notices[0], "packed store=archive (loose blobs deleted)") {
+		t.Errorf("notices = %v, want the loose-blobs-deleted line", notices)
 	}
 }
 
@@ -77,6 +108,7 @@ func TestPackWrittenStores_SkipsNonPackableStores(t *testing.T) {
 		[]writtenStore{
 			{id: "local"}, // nil BlobStore → not a PackableArchive
 		},
+		false,
 	)
 
 	if len(notices) != 1 ||
@@ -99,6 +131,7 @@ func TestPackWrittenStores_PackErrorIsNonFatal(t *testing.T) {
 			{id: "bad", store: blob_stores.BlobStoreInitialized{BlobStore: failing}},
 			{id: "good", store: blob_stores.BlobStoreInitialized{BlobStore: ok}},
 		},
+		false,
 	)
 
 	if ok.packs != 1 {
@@ -144,5 +177,30 @@ func TestRun_PackSkipsNonPackableDefaultStore(t *testing.T) {
 	}
 	if !strings.Contains(out, "does not support packfiles") {
 		t.Errorf("missing pack-skip notice for the non-packable default store in %q", out)
+	}
+}
+
+// TestRun_PackDeleteLooseImpliesPack: -pack-delete-loose alone is parsed
+// and runs the pack pass (cutting-garden#95), proven by the same
+// non-packable skip notice -pack gives.
+func TestRun_PackDeleteLooseImpliesPack(t *testing.T) {
+	isolateXDG(t)
+	initDefaultBlobStore(t)
+
+	work := t.TempDir()
+	if err := os.WriteFile(
+		filepath.Join(work, "a.txt"), []byte("hello\n"), 0o644,
+	); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(work)
+
+	out, code := driveCapture(t, "-pack-delete-loose", "-format=tap", ".")
+
+	if code != 0 {
+		t.Errorf("exit code = %d, want 0; out=%q", code, out)
+	}
+	if !strings.Contains(out, "does not support packfiles") {
+		t.Errorf("-pack-delete-loose did not run the pack pass: %q", out)
 	}
 }

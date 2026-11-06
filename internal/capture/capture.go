@@ -85,11 +85,20 @@ const (
 // stores — those implementing blob_stores.PackableArchive) is packed
 // once after all receipts are durable, consolidating loose blobs into
 // archive files. Stores that do not support packfiles are skipped.
+//
+// PackDeleteLoose is bound to `--pack-delete-loose` (cutting-garden#95):
+// it implies --pack and also deletes each loose blob once it is in an
+// archive, reclaiming the disk packing alone leaves in use. Off by default,
+// matching `madder pack`.
 type Capture struct {
-	Format   string
-	Progress string
-	Pack     bool
+	Format          string
+	Progress        string
+	Pack            bool
+	PackDeleteLoose bool
 }
+
+// packing reports whether the run packs the stores it wrote to.
+func (cmd *Capture) packing() bool { return cmd.Pack || cmd.PackDeleteLoose }
 
 var (
 	_ command.Cmd                       = (*Capture)(nil)
@@ -159,6 +168,15 @@ func (cmd *Capture) SetFlagDefinitions(
 			"files. Stores that do not support packfiles are skipped. "+
 			"Packing runs only once receipts are durable and never alters "+
 			"the run's exit code: a pack failure degrades to a notice.",
+	)
+	flagSet.BoolVar(
+		&cmd.PackDeleteLoose,
+		"pack-delete-loose",
+		false,
+		"like -pack, and additionally delete each loose blob once it is "+
+			"in an archive (madder pack's -delete-loose), reclaiming the "+
+			"disk that packing alone leaves in use. Implies -pack. Without "+
+			"it the loose copies are kept.",
 	)
 }
 
@@ -551,7 +569,7 @@ func (cmd *Capture) Run(req command.Request) {
 	// under --pack; consumed by packWrittenStores after the group loop.
 	var packTargets []writtenStore
 	recordPackTarget := func(id string, bs blob_stores.BlobStoreInitialized) {
-		if !cmd.Pack {
+		if !cmd.packing() {
 			return
 		}
 		for _, w := range packTargets {
@@ -821,8 +839,8 @@ func (cmd *Capture) Run(req command.Request) {
 	// receipt is durable. Runs before teardown so its notices route
 	// through the live pipeline like any other; deliberately non-fatal
 	// (see packWrittenStores).
-	if cmd.Pack {
-		packWrittenStores(ctx, p.notice, packTargets)
+	if cmd.packing() {
+		packWrittenStores(ctx, p.notice, packTargets, cmd.PackDeleteLoose)
 	}
 
 	if len(captureLogEntries) > 0 {
@@ -881,11 +899,20 @@ func (cmd *Capture) Run(req command.Request) {
 // already durable, so packing is a storage optimization. A pack failure
 // degrades to a notice and never changes the run's exit code, mirroring
 // the failure-receipt handling above.
+//
+// With deleteLoose, each loose blob is deleted once archived, behind the
+// same NopDeletionPrecondition `madder pack` uses today (no replication
+// check yet).
 func packWrittenStores(
 	ctx errors.Context,
 	notice func(format string, args ...any),
 	targets []writtenStore,
+	deleteLoose bool,
 ) {
+	opts := blob_stores.PackOptions{Context: ctx, DeleteLoose: deleteLoose}
+	if deleteLoose {
+		opts.DeletionPrecondition = blob_stores.NopDeletionPrecondition()
+	}
 	for _, w := range targets {
 		packable, ok := w.store.BlobStore.(blob_stores.PackableArchive)
 		if !ok {
@@ -896,11 +923,15 @@ func packWrittenStores(
 			continue
 		}
 
-		if err := packable.Pack(blob_stores.PackOptions{Context: ctx}); err != nil {
+		if err := packable.Pack(opts); err != nil {
 			notice("notice: pack failed for store=%s: %v", quoteEmpty(w.id), err)
 			continue
 		}
 
+		if deleteLoose {
+			notice("notice: packed store=%s (loose blobs deleted)", quoteEmpty(w.id))
+			continue
+		}
 		notice("notice: packed store=%s", quoteEmpty(w.id))
 	}
 }
