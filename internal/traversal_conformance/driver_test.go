@@ -95,6 +95,15 @@ func testpeerManifest(t *testing.T) *traversal_conformance.Manifest {
 			CreateType: testpeer.LeafType,
 			CreateBody: "bulk probe body\n",
 		},
+		// IssueBox's filtered listing declines (ok=false), and its one child
+		// is facet-less: a peer that widens the sweep to "every child" would
+		// patch it, a peer that reads the decline as "nothing matched" would
+		// report success. Both fail the point (cutting-garden#208).
+		BulkSweep: &traversal_conformance.BulkSweepSpec{
+			DeclineContainer: testpeer.IssueBox,
+			Filter:           "state=open",
+			PatchBody:        `{"note":"swept"}`,
+		},
 		// The testpeer declares state (write:one, field "state") and tag
 		// (write:many, field "tags") on its leaf type: beta is closed with
 		// tags [b], so both probes are real moves.
@@ -199,7 +208,7 @@ func TestRunPassesConformantTestpeer(t *testing.T) {
 		"ok 28 - node.create_child: a repeated idempotency_key returns the" +
 			" same node, existed",
 		"ok 29 - node.bulk_mutate: a sweep whose listing declines the filter" +
-			" is refused # SKIP manifest declares no bulk_sweep",
+			" is refused",
 		"1..29",
 	} {
 		if !strings.Contains(out.String(), want) {

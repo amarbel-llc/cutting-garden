@@ -538,6 +538,14 @@ func (p *TreePlugin) ListEnriched(
 		return children, true, nil
 	}
 
+	// IssueBox is the fixture's DECLINING container (cutting-garden#208): a
+	// filtered listing there answers ok=false, as a peer that pushes filters
+	// down only on some containers does (fj-cg: everywhere but issue
+	// listings). The conformance driver's sweep-refusal point sweeps it.
+	if readKey(node) == IssueBox {
+		return nil, false, nil
+	}
+
 	matched := make([]cutting_garden_plugins.Node, 0, len(children))
 	for _, child := range children {
 		if filter.Matches(child.Facets) {
