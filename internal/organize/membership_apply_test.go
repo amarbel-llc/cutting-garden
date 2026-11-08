@@ -175,6 +175,64 @@ func TestPlanMemberships_LastLineVanish(t *testing.T) {
 	}
 }
 
+// TestPlanMemberships_TagGroupedDeletionIsNeverSpurious is the (tags)-grouped
+// reproduction cutting-garden#283 asked for, over the shape generate emits
+// (t1 under BOTH its buckets, t2 untagged and ungrouped). Dropping ONE of a
+// multi-tag object's appearances is a membership removal, not a deletion;
+// only the vanishing of EVERY line for an id is refused, and the refusal names
+// the description and every base bucket the object sat under.
+func TestPlanMemberships_TagGroupedDeletionIsNeverSpurious(t *testing.T) {
+	base := tagAtomWholeDoc()
+	base.Ungrouped[0].Desc = "Loose end"
+	base.Sections[0].Lines[0].Desc = "Buy filters"
+	base.Sections[1].Lines[0].Desc = "Buy filters"
+	live := []cgp.Node{liveNode(t, "t1.ics", "work", "errand"), liveNode(t, "t2.ics")}
+	plan := membershipPlan{Dim: membershipDim, Interp: mustInterp(t)}
+	idOf := boxIDsFor(nil, membershipAnchor)
+
+	// An untouched document plans nothing and refuses nothing.
+	edits, err := planMemberships(tagAtomWholeDoc(), base, live, idOf, plan)
+	if err != nil || len(edits) != 0 {
+		t.Fatalf("unchanged (tags) document: edits=%v err=%v, want none", edits, err)
+	}
+
+	// One appearance of t1 removed (the errand line): still present under work.
+	oneGone := tagAtomWholeDoc()
+	oneGone.Sections[0].Lines = nil
+	edits, err = planMemberships(oneGone, base, live, idOf, plan)
+	if err != nil {
+		t.Fatalf("dropping one appearance must not be a deletion: %v", err)
+	}
+	if len(edits) != 1 || !setEqual(edits[0].NewTags, []string{"work"}) {
+		t.Errorf("edits = %+v, want one edit leaving {work}", edits)
+	}
+
+	// Every line of t1 removed: refused, naming what it was and where.
+	bothGone := tagAtomWholeDoc()
+	bothGone.Sections[0].Lines = nil
+	bothGone.Sections[1].Lines = nil
+	_, err = planMemberships(bothGone, base, live, idOf, plan)
+	if err == nil {
+		t.Fatal("removing every line of an object must be refused")
+	}
+	for _, want := range []string{`t1.ics "Buy filters" (was under: errand, work)`} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("refusal %q should contain %q", err, want)
+		}
+	}
+	if strings.Contains(err.Error(), "t2.ics") {
+		t.Errorf("t2.ics is still present and must not be named: %v", err)
+	}
+
+	// The ungrouped object's line removed: named as ungrouped.
+	noT2 := tagAtomWholeDoc()
+	noT2.Ungrouped = nil
+	_, err = planMemberships(noT2, base, live, idOf, plan)
+	if err == nil || !strings.Contains(err.Error(), `t2.ics "Loose end" (was ungrouped)`) {
+		t.Errorf("refusal should name the ungrouped object, got: %v", err)
+	}
+}
+
 // TestDescribeDeleted pins the per-object rendering of the last-line-deletion
 // refusal: description when the base has one, the buckets it sat under, or
 // "ungrouped" when it sat under none (cutting-garden#283).
