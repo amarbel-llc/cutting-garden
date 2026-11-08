@@ -18,6 +18,8 @@ import (
 	"slices"
 	"sort"
 
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
+
 	"code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
 )
 
@@ -86,7 +88,11 @@ func FirstTagDim(lister cutting_garden_plugins.RootLister) string {
 func InterpreterForDimension(
 	lister cutting_garden_plugins.RootLister, dim string, tagsOverride string,
 ) (cutting_garden_plugins.TagInterpreter, string, error) {
-	name := resolveTagInterpreterName(declaredOrNaive(lister, dim), tagsOverride)
+	declared, err := declaredOrNaive(lister, dim)
+	if err != nil {
+		return nil, "", err
+	}
+	name := resolveTagInterpreterName(declared, tagsOverride)
 	// name is already fully resolved (default + override), so the empty
 	// override here is a pass-through — ResolveTagInterpreter only performs
 	// the registry lookup.
@@ -96,12 +102,15 @@ func InterpreterForDimension(
 
 // declaredOrNaive is the field-default half of the RFC 0019 §4 precedence:
 // the interpreter the plugin declares for dim's unified field, defaulting to
-// "naive" when the capability, the field, or the declaration is absent.
-func declaredOrNaive(lister cutting_garden_plugins.RootLister, dim string) string {
+// "naive" when the capability, the field, or the declaration is absent. A
+// dimension whose declarations diverge across node types is a bad request.
+func declaredOrNaive(
+	lister cutting_garden_plugins.RootLister, dim string,
+) (string, error) {
 	if describer, ok := lister.(cutting_garden_plugins.UnifiedDescriber); ok {
-		return orNaive(declaredTagInterpreter(describer, dim))
+		return declaredTagInterpreter(describer, dim)
 	}
-	return "naive"
+	return "naive", nil
 }
 
 // orNaive applies the RFC 0019 §4 default: an empty (absent) interpreter
@@ -116,23 +125,36 @@ func orNaive(name string) string {
 }
 
 // declaredTagInterpreter returns the interpreter a plugin declares for the
-// dimension's unified field — the first field whose Key == dim across the node
-// types' codecs — or "" when no such field is declared (or it names no
-// interpreter). A tag field's interpreter is a property of the dimension, so the
-// first Key match is authoritative; caller defaults "" to naive.
+// dimension's unified field, across every node type's codecs, defaulting an
+// absent declaration to naive (orNaive); "naive" when no field has Key == dim.
+// A tag field's interpreter is a property of the dimension, so declarations
+// that name DIFFERENT interpreters are a bad request rather than a silent
+// pick by declaration order (cutting-garden#244). Not scoped to the queried
+// node types, which this layer does not see; caldav's three types agree.
 func declaredTagInterpreter(
 	describer cutting_garden_plugins.UnifiedDescriber, dim string,
-) string {
+) (string, error) {
+	declared, owner := "", ""
 	for _, nt := range describer.DescribeUnified() {
 		for _, codec := range nt.Codecs {
 			for _, field := range codec.Fields() {
-				if field.Key == dim {
-					return field.Interpreter
+				if field.Key != dim {
+					continue
+				}
+				name := orNaive(field.Interpreter)
+				switch {
+				case declared == "":
+					declared, owner = name, nt.Tag
+				case declared != name:
+					return "", errors.BadRequestf(
+						"dimension %q declares interpreter %q on %s but %q on %s",
+						dim, declared, owner, name, nt.Tag,
+					)
 				}
 			}
 		}
 	}
-	return ""
+	return orNaive(declared), nil
 }
 
 // UnifiedTagPresenter returns the node → rendered-tag-set function (design

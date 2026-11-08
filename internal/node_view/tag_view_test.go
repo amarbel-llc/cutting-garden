@@ -127,6 +127,50 @@ func TestInterpreterForDimension_FieldDefaultAndOverride(t *testing.T) {
 	}
 }
 
+// TestInterpreterForDimension_DivergentDeclarationsRejected pins the
+// consistency check (cutting-garden#244): two node types declaring DIFFERENT
+// interpreters for one dimension key must not resolve by declaration order. An
+// absent declaration counts as the naive default, so naive-vs-dodder-hyphen
+// diverges too; identical declarations (caldav's three types) still resolve.
+func TestInterpreterForDimension_DivergentDeclarationsRejected(t *testing.T) {
+	tagField := func(interp string) cgp.Codec {
+		return cgp.IdentityCodec{Field: cgp.UnifiedField{
+			Key: "categories", Kind: cgp.FieldTag, MultiValued: true,
+			Interpreter: interp,
+		}}
+	}
+	lister := func(first, second string) interpUnifiedLister {
+		return interpUnifiedLister{fields: []cgp.NodeTypeUnifiedFields{
+			{Tag: "task-v1", Codecs: []cgp.Codec{tagField(first)}},
+			{Tag: "event-v1", Codecs: []cgp.Codec{tagField(second)}},
+		}}
+	}
+
+	for _, c := range []struct{ first, second string }{
+		{"naive", "dodder-hyphen"},
+		{"dodder-hyphen", "naive"},
+		{"", "dodder-hyphen"},
+	} {
+		if _, _, err := InterpreterForDimension(
+			lister(c.first, c.second), "categories", "",
+		); err == nil {
+			t.Errorf("declarations %q vs %q must be rejected", c.first, c.second)
+		}
+	}
+
+	for _, c := range []struct{ first, second string }{
+		{"naive", "naive"},
+		{"", "naive"},
+		{"dodder-hyphen", "dodder-hyphen"},
+	} {
+		if _, _, err := InterpreterForDimension(
+			lister(c.first, c.second), "categories", "",
+		); err != nil {
+			t.Errorf("declarations %q vs %q must resolve: %v", c.first, c.second, err)
+		}
+	}
+}
+
 // tagListCodec presents a stored []string field verbatim as the type's
 // designated tag set — the multi-valued shape NodeTagsPresenter renders.
 type tagListCodec struct{ interpreter string }
