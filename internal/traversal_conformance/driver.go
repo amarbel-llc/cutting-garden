@@ -20,6 +20,7 @@ import (
 
 	tap "code.linenisgreat.com/tap/go/pkgs/writer"
 
+	"code.linenisgreat.com/cutting-garden/internal/buildinfo"
 	"code.linenisgreat.com/cutting-garden/internal/traversal_serve"
 )
 
@@ -56,6 +57,9 @@ func Run(
 	defer cancel()
 
 	tw := tap.NewWriter(out)
+	// Name the driver build in the header, so a peer's report says which
+	// driver ratified it (cutting-garden#107).
+	tw.Comment("cutting-garden-conformance-traversal %s", buildinfo.String())
 
 	session, err := traversal_serve.LaunchWithoutInitialize(
 		ctx, manifest.Command,

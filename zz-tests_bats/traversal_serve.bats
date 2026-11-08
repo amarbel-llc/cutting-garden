@@ -1239,6 +1239,10 @@ EOF
   # so `^not ok` would never match a mid-output failure — a false-safe
   # assertion. --partial 'not ok' catches a failing point anywhere.
   assert_output --partial '1..29'
+  # The nix-built driver carries its build identity in the TAP header
+  # (cutting-garden#107): the version reached the binary, not the dev default.
+  assert_output --partial '# cutting-garden-conformance-traversal '
+  refute_output --partial 'dev+unknown'
   assert_output --partial 'ok 1 - initialize'
   # The per-op outcome members (cutting-garden#366): patch uri, delete
   # name and -32004, bulk outcomes.

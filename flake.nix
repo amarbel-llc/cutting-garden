@@ -641,6 +641,13 @@
           pname = "cutting-garden-conformance-traversal";
           subPackages = [ "cmd/cutting-garden-conformance-traversal" ];
           meta.mainProgram = "cutting-garden-conformance-traversal";
+          # The only test-side binary that carries a build identity
+          # (cutting-garden#107): external peers run it, and its TAP header
+          # names this version and commit. godyn applies the commit at the
+          # link step only, so a new commit relinks this one binary; the
+          # other fixtures stay identity-free.
+          nativeArgs.commit = cgCommit;
+          bgaArgs.commit = cgCommit;
         };
 
         # godyn's per-package go test lane: the test graph is derived at eval

@@ -16,8 +16,22 @@ import (
 	"os/signal"
 	"syscall"
 
+	"code.linenisgreat.com/cutting-garden/internal/buildinfo"
 	"code.linenisgreat.com/cutting-garden/internal/traversal_conformance"
 )
+
+// Populated at link time via `-X main.version` / `-X main.commit` (godyn
+// injects both; the flake passes the commit explicitly). The driver's TAP
+// header names this identity, so a peer's report says which driver build
+// ratified it (cutting-garden#107). Bare `go build` leaves the defaults.
+var (
+	version = "dev"
+	commit  = "unknown"
+)
+
+func init() {
+	buildinfo.Set(version, commit)
+}
 
 func main() { os.Exit(run()) }
 

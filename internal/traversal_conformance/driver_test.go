@@ -159,6 +159,8 @@ func TestRunPassesConformantTestpeer(t *testing.T) {
 
 	for _, want := range []string{
 		"TAP version 14",
+		// The driver build names itself right under the header (#107).
+		"# cutting-garden-conformance-traversal ",
 		"ok 1 - initialize: schema echo, schemes, capabilities",
 		"ok 2 - error code: unknown method is -32601",
 		"ok 3 - error code: malformed nodes.list uri is -32602",
