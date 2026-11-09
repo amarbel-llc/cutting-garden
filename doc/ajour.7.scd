@@ -106,20 +106,25 @@ argument, each object a tool touches. Each of those is a *subject*, with a
 type, usually an id, and the fields a document might name (a tool's *kind*
 and *perm* from its manifest, a recipe's groups, an argument's position and
 value). A value is itself a short path: one step for a file path or an
-input field, and for an object in a tree the steps from its root down to it
-(*caldav:fastmail*, then *cal-7*, then the task), so "under this
-collection" is a matter of where the step sits, not of comparing URI
-strings. Each input field is one subject of one type, a path field is a
-path and never also an input field, and an object is marked *new* only when
-it is being created under a container, never when a file is first written.
-Then, for each document in the stack, ajour walks the path:
+input field. An object a tool touches hangs not under the tool but under
+the server's *resource surface*, beside the tools, as the steps from its
+root down to it (*caldav:fastmail*, then *cal-7*, then the task; a patch
+adds one step per changed field), so "under this collection" is a matter
+of where the step sits, not of comparing URI strings, and a read-only root
+is written once rather than under every read tool. Each input field is one
+subject of one kind, a path field is a path and never also an input field,
+and an object is marked *new* only when it is being created under a
+container, never when a file is first written. Then, for each document in
+the stack, ajour walks the path:
 
 - At each step it finds the nodes that match the subject: same type (or the
   node names none), same id (or the node has *subtree* and its id is a
   segment prefix of the subject's: *file:/wt* contains *file:/wt/src/a.go*
   and not *file:/wtx*; a *new* object is matched by a *+* node and by
   nothing else), a matching lock digest if the node is locked, and every
-  condition on the node true of the subject's fields.
+  condition on the node true of the subject's fields. A node with *subtree*
+  stays matched for every deeper step of the same path, so a container's
+  allowance reaches everything beneath it.
 - If a matching node says *deny*: refused, and the whole answer is no.
 - If no node matches: a stencil refuses the call here ("no allowance"); a
   patch is transparent and stops.

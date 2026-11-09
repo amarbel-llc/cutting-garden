@@ -89,15 +89,22 @@ the consumer splits the document with hyphence's library and hands ajour the
 body. That is what keeps ajour type-agnostic: it never sees a type line.
 
 **The call.** A path of **subjects** from a root down to the dispatching
-node, plus a set of **values** hanging under the last one, each value
-itself a path (R 2026-11-09, writing probe run 2, bug 2):
+node, plus the call's **values** hanging under the last one and the
+**resources** it touches hanging under the server, each value and each
+resource itself a path (R 2026-11-09, writing probe runs 2 and 3; placement
+option A ruled 2026-11-09):
 
     Call{
-      Path   []Subject     // plugin, server, tool, recipe, …: root to leaf
-      Values [][]Subject   // the call's instance values, each independent;
-                           // each a path walked step by step from the last
-                           // Path node: [file] for a path argument,
-                           // [root, container, object] for a resource
+      Path      []Subject     // plugin, server, tool, recipe, …: root to leaf
+      Values    [][]Subject   // the call's inputs, each independent; each a path
+                              // walked from the last Path node: [file] for a
+                              // path field, [field] for an input field
+      Resources [][]Subject   // the objects the call touches, each independent;
+                              // each a path walked from Path[Anchor]:
+                              // [surface, root, container…, object] and, for a
+                              // patch, one more step per changed field
+      Anchor    int           // index into Path of the node resources hang
+                              // under: the server, for a moxy tool
     }
     Subject{
       Type   string              // the node type the enforcer gives it
@@ -122,34 +129,58 @@ any layer is deny").
 Three rules of that contract ajour depends on (R 2026-11-09, writing probe
 run 2):
 
-- **One type per field.** Every top-level input field is presented as
+- **One kind per field.** Every top-level input field is presented as
   exactly one kind of value, the kind the catalog declares for it: a field
-  the manifest marks as a path is one `fs-path-v1` subject (its id the
-  canonical `file:` path, or the `madder://blobs/…` URI a path field
-  accepts in its place, with `field=<name>` so `folio cp`'s `source` and
-  `destination` can be told apart); a field the manifest marks as a tree
-  reference (`list_nodes`' `uri`, `mutate_nodes`' `groups`) is one resource
-  path per node it names, never a `tool-input-v1` blob of JSON (writing
-  probe run 3: a writer who was not told this regex-matched the `groups`
-  JSON); every other field is one `tool-input-v1` subject. A field is never
-  two kinds of value, so `[-> _ !tool-input-v1 open]` can never admit a path
-  or a tree reference (bug 3; vectors A-28, A-31).
+  the manifest marks as a path is one `fs-path-v1` subject when it holds a
+  `file:` id (with `field=<name>` so `folio cp`'s `source` and
+  `destination` can be told apart); a field the catalog marks as a
+  **resource reference** is one resource path per object it names, under
+  the surface of the server that owns the scheme, never a `tool-input-v1`
+  string or blob: a tree URI (`list_nodes`' `uri`), a batch of them
+  (`mutate_nodes`' `groups`; writing probe run 3: a writer who was not told
+  this regex-matched the JSON), any server's resource-URI field (nebulous
+  `resource-read`, chrest `read-resource`, the harness's
+  `ReadMcpResourceTool`), and **a URI with a scheme other than `file:` in a
+  path field** (`folio read` or `jq` given `madder://blobs/<digest>`, which
+  is a read of moxy's resource, under moxy's own server node, so one blob
+  is governed by one node whatever tool it is passed to; R 2026-11-09,
+  "one door"); every other field is one `tool-input-v1` subject, the
+  default the catalog should never leave a URI-carrying field in. A field
+  is never two kinds of value, so `[-> _ !tool-input-v1 open]` can never
+  admit a path or a resource (bug 3; vectors A-28, A-31).
 - **`New` is a birth, not a write.** The enforcer sets `New` only when an
   object is created under a container (a cg `create`, organize's `+` box),
   never for a write to a path: a path is its own id, and a write to a path
   that does not exist yet is `op=write` (or `put`) on that id, admitted by a
   `subtree` allowance like any other write (bug 1; vector A-27).
-- **A resource is a path.** A cg node or an MCP resource is presented as
-  the path of subjects from its root down to the object (`caldav:fastmail`,
-  `cal-7`, the VTODO; `fastmail://main`, `Inbox`, `T5`), each step with its
-  own id as organize prints it. Containment is then the subject's position
-  in the path, and `subtree` on a container step covers everything beneath
-  it without comparing URI strings (a fastmail thread's URI carries its id
-  in the query, so segment-prefix on the string would hinge on a trailing
-  slash). Where the first step of a resource path hangs, under the tool as
-  written here or under a resource node beside the tools, is the pending
-  placement ruling (one-isometry doc, tab "Where a resource hangs"); the
-  path shape holds for every option.
+- **A resource is a path, hung under the server (R 2026-11-09, option A).**
+  A cg node or an MCP resource is presented as the path of subjects from
+  the server's **resource surface** (`resources !mcp-resources-v1`, one per
+  server; a plugin's own resources, moxy's `madder://blobs/…`, hang under a
+  server node named for the plugin) through its root (`caldav:fastmail
+  !cg-root-v1`) down to the object (`cal-7`, the VTODO; `fastmail://main`,
+  `Inbox`, `T5`), each step with its own id as organize prints it and **the
+  plugin's own node type** (`caldav-calendar-v1`,
+  `cutting_garden-ynab-transaction-v1`; D2's `cg-node-v1` is retired, "any
+  node type" is a type-less node, R 2026-11-09). The verb rides on every
+  step of the path (`op=[read]` on each), so a `subtree op=[read]` root
+  admits reads beneath it and never a patch. Containment is then the
+  subject's position in the path, and `subtree` on a container step covers
+  everything beneath it without comparing URI strings (a fastmail thread's
+  URI carries its id in the query, so segment-prefix on the string would
+  hinge on a trailing slash). Tool nodes stay bare of resources: the tool
+  node admits the tool, the surface admits what it may touch, and a
+  read-only root is written once, not once per read tool (four of five
+  run-3 writers reached for this placement unprompted).
+- **A patch is one more step per field (R 2026-11-09).** A patch presents
+  the object's path once per proposed field, each path ending in a
+  `cg-field-v1` step with `Fields{field: [name], value: [proposed]}`, every
+  one admitted independently. So `[-> _ !cutting_garden-ynab-transaction-v1
+  op=[patch] [-> _ !cg-field-v1 field=[category, memo]]]` is an allowlist:
+  `payee` is refused with no deny written, and a field the plugin adds later
+  is refused until a profile names it (the shape run 3's budget-clerk writer
+  invented, by analogy with `tool-input-v1`; it replaces the earlier
+  `patch.`-prefix proposal; vector A-32).
 
 ### The stencil fragment (the grammar ajour reads)
 
@@ -245,30 +276,33 @@ Consequences the rules give for free, so they are not special cases:
   lint]]` is a `_` node whose atom is checked against the recipe subject's
   `group` field; whether a profile MAY carry such a node on a catalog level
   is the profile ruleset's rule (clown's validator), not ajour's.
-- **Creation (R 2026-11-09).** `[-> cal-7 !cg-node-v1 [-> + !caldav-object-vtodo-v1
-  summary^="[auto]"]]` admits creating a VTODO under cal-7 whose summary
-  starts with `[auto]`: the enforcer presents a creation as the value path
-  `[caldav:fastmail, cal-7, {New VTODO}]`, the last step a `New` subject
-  carrying the proposed object's type and fields, and only a `+` node
-  matches it (rule 2). A container with no `+` node admits no creation; a
-  `_` wildcard or a `subtree` allowance never does. Because the value is a
-  path, the `cal-7` step is matched before the `+` step is looked for, so
-  "create only in this collection" is exactly this nesting (vector A-29).
+- **Creation (R 2026-11-09).** Under the server's surface,
+  `[-> caldav:fastmail !cg-root-v1 [-> cal-7 !caldav-calendar-v1 [-> +
+  !caldav-object-vtodo-v1 summary^="[auto]"]]]` admits creating a VTODO
+  under cal-7 whose summary starts with `[auto]`: the enforcer presents a
+  creation as the resource path `[resources, caldav:fastmail, cal-7, {New
+  VTODO}]`, the last step a `New` subject carrying the proposed object's
+  type and fields, and only a `+` node matches it (rule 2). A container
+  with no `+` node admits no creation; a `_` wildcard or a `subtree`
+  allowance never does. Because the resource is a path, the `cal-7` step is
+  matched before the `+` step is looked for, so "create only in this
+  collection" is exactly this nesting (vector A-29).
 - **Verbs (R 2026-11-09, "three slots, three jobs").** The id slot says
   WHAT (`id` / `_` / `+`); an atom in the enforcer's vocabulary says WHICH
   VERB (`op=[read, patch, delete]`, presented as a subject field; a verb
   that is its own tool, `resources/read`, is a catalog node); `deny` says
   NO. Create is spelled only by `+`; `op=create` is refused by the validator.
-  So `[-> cal-7 !cg-node-v1 subtree op=[patch]]` admits patching under
-  cal-7 and nothing else, and `[-> cal-7/event-3 !cg-node-v1 op=[delete]
-  deny]` denies one deletion. Containment is inclusive: `subtree
-  op=[delete]` admits deleting the container itself; "children only" is a
-  deny on the container's own id.
+  So `[-> cal-7 !caldav-calendar-v1 subtree op=[patch]]` admits patching
+  under cal-7 and nothing else, and `[-> cal-7 !caldav-calendar-v1 [->
+  event-3 !caldav-object-vevent-v1 op=[delete] deny]]` denies one deletion.
+  Containment is inclusive: `subtree op=[delete]` admits deleting the
+  container itself; "children only" is a deny on the container's own id.
 - **Resources as subjects.** A server's resource surface is a catalog node
   and a resource's URI the instance subject beneath it, `subtree` being the
-  same segment-prefix containment: `[-> resources !mcp-resources-v1 [->
-  madder://blobs !mcp-resource-v1 subtree op=[read]]]`. This is D2's
-  `cg-root-v1`/`cg-node-v1` generalized, and spinclass#438's broker model
+  same segment-prefix containment when the resource is a URI and the same
+  sticky containment when it is a tree path: `[-> resources
+  !mcp-resources-v1 [-> madder://blobs !mcp-resource-v1 subtree op=[read]]]`.
+  This is D2's `cg-root-v1` generalized, and spinclass#438's broker model
   ("a resource with an operation") stated in ajour's terms; the URI is
   matched exactly as spelled (no `madder:`/`madder://` normalization), so
   the enforcer presents one canonical URI form. (Which record states
@@ -277,9 +311,10 @@ Consequences the rules give for free, so they are not special cases:
 ### Evaluating a call against one layer
 
 Walk the layer from its roots along `Call.Path`, then along each of
-`Call.Values` from the last path node, independently (no cartesian
-expansion: each value is constrained on its own, D2 §2); a value is a path
-and is walked step by step with the same procedure:
+`Call.Values` from the last path node and each of `Call.Resources` from
+`Path[Anchor]`, independently (no cartesian expansion: each value and each
+resource is constrained on its own, D2 §2); every one is a path and is
+walked step by step with the same procedure:
 
 1. At each step, collect the nodes under the current frontier that match the
    subject.
@@ -313,7 +348,8 @@ and is walked step by step with the same procedure:
     Refusal{
       Layer   int          // index into layers
       Kind    Kind         // Deny | NoAllowance | LockMismatch
-      Depth   int          // 0 = root; len(Path) + j for step j of a value
+      Depth   int          // 0 = root; len(Path) + j for step j of a value,
+                           // Anchor + 1 + j for step j of a resource
       Subject Subject
       Node    string       // the spelled node, for Deny and LockMismatch
     }
@@ -467,6 +503,117 @@ A patch that tightens, and a patch that is malformed:
     ParsePatch("[moxy [-> folio [-> read [-> file:/wt !fs-path-v1 subtree]]]]")
       => error: a patch may only deny; leaf [file:/wt !fs-path-v1 subtree] carries no deny
 
+### A complete document
+
+An engineer's capability profile for one worktree, head and body. The head
+is hyphence metadata (circus D2 §2: `- key = value` lines, `#` comment
+lines, the type line last); ajour never reads it. The body is the stencil.
+Every idiom the writing probes asked for is in it: a read-tool group under a
+server, a value list on one field with the wildcard opened for the rest, a
+recipe group with a lock, a resource surface with a read-only root and a
+field-allowlisted patch, a cross-cutting deny root, and a literal worktree
+name.
+
+    ---
+    # engineer-swift-plum: reads any checkout, writes one worktree, runs its
+    # build/test/lint recipes, git without push, comments on two repos'
+    # issues, reads the budget and recategorizes its transactions
+    - role = engineer-swift-plum
+    - harness = claude-code
+    - mode = attended
+    - model = claude-sonnet-5-5
+    - _base = @blake2b256-<digest of the manager profile>
+    ! espalier-profile-v1
+    ---
+
+    [moxy !clown-plugin-v1
+      [-> folio !mcp-server-v1
+        [-> _ !mcp-tool-v1 kind=read
+          [-> file:eng/repos !fs-path-v1 subtree]
+          [-> _ !tool-input-v1 open]]
+        [-> write !mcp-tool-v1
+          [-> file:eng/repos/cutting-garden/.worktrees/swift-plum !fs-path-v1 subtree]
+          [-> _ !tool-input-v1 open]]]
+      [-> grit !mcp-server-v1
+        [-> _ !mcp-tool-v1 kind=read
+          [-> _ !tool-input-v1 open]]
+        [-> commit !mcp-tool-v1
+          [-> _ !tool-input-v1 open]]
+        [-> remote !mcp-tool-v1
+          [-> _ !tool-input-v1 field=subcommand value=[fetch, pull]]
+          [-> _ !tool-input-v1 ^field=subcommand open]]]
+      [-> smith !mcp-server-v1
+        [-> _ !mcp-tool-v1 kind=read
+          [-> _ !tool-input-v1 field=repo value=[linenisgreat/cutting-garden, linenisgreat/madder]]
+          [-> _ !tool-input-v1 ^field=repo open]]
+        [-> issue-comment !mcp-tool-v1
+          [-> _ !tool-input-v1 field=repo value=[linenisgreat/cutting-garden, linenisgreat/madder]]
+          [-> _ !tool-input-v1 ^field=repo open]]]]
+
+    [just-us !clown-plugin-v1
+      [-> just-us !mcp-server-v1
+        [-> run_recipe@blake2b256-s1 !mcp-tool-v1
+          [-> _ !just-recipe-v1 group=[build, test, lint]]]]]
+
+    [cutting-garden !clown-plugin-v1
+      [-> cutting-garden !mcp-server-v1
+        [-> list_nodes !mcp-tool-v1 [-> _ !tool-input-v1 open]]
+        [-> read_node !mcp-tool-v1]
+        [-> mutate_nodes !mcp-tool-v1]
+        [-> resources !mcp-resources-v1
+          [-> ynab:main !cg-root-v1 subtree op=[read]
+            [-> budget/b1 !cutting_garden-ynab-budget-v1
+              [-> transactions
+                [-> _ !cutting_garden-ynab-transaction-v1 op=[patch]
+                  [-> _ !cg-field-v1 field=[category, memo]]]]]]]]]
+
+    [_ !clown-plugin-v1
+      [-> _ !mcp-server-v1
+        [-> _ !mcp-tool-v1
+          [-> file:eng/repos/cutting-garden/infra/secrets !fs-path-v1 subtree deny]]]]
+
+How it reads, root by root. `folio`: every read tool may read under any
+checkout; only `write` may write, and only in this worktree; the wildcard
+opens the tools' other fields (`limit`, `content`) because a field no node
+names refuses the call. `grit`: every read tool; `commit`; `remote` with
+`fetch` and `pull` only, the negated wildcard keeping `open` off the one
+field the value list governs (a `push` has no allowance). `smith`: read
+tools and `issue-comment`, on two repos. `run_recipe`: locked to its live
+schema digest, recipes in three groups, no `explore-cli` so none of its
+arguments is reachable. `cutting-garden`: the three tools are bare; the
+surface says what they may touch: anything under `ynab:main` may be read
+(the sticky `subtree op=[read]`), and a transaction in `budget/b1` may be
+patched in `category` or `memo` and nothing else (the `cg-field-v1`
+allowlist; `transactions` is a type-less container step, "whatever type
+that node has"). The last root is a cross-cutting deny: under every plugin,
+server and tool, the secrets folder is refused, which is how "deny
+`infra/secrets` everywhere" is written without repeating it under each
+tool (a stencil's roots are one forest; whether `_` may stand on a catalog
+level is the validator's rule). Nothing else is mentioned, so `gmail`,
+`spawn-session`, `pr-merge` and the rest are refused by silence.
+
+### Idioms the probes asked for
+
+- **Atoms are pins, not requirements.** `kind=read perm=allow` on a tool
+  node pins the live manifest and refuses on a mismatch; omit them unless
+  you mean to pin. The live values, and the `name@digest` a lock needs,
+  come from the catalog listing (`cg list -format espalier
+  clown-catalog://…`, once clown publishes it). An invented digest refuses
+  everything under it.
+- **A field node with no value atom** (`[-> _ !tool-input-v1 field=format]`)
+  admits any value of that field; rule 4 has no atom to check.
+- **A deny on a server or tool node** refuses every call through it;
+  `subtree` on a catalog node is inert (tool ids are not paths). Writing
+  denies for servers a profile never allows is legal and redundant, since
+  silence already refuses; some writers want them as documentation.
+- **Tool ids are the manifest names verbatim**, underscores or hyphens as
+  the server spells them (`run_recipe`, `issue-list`).
+- **Quoting.** A value that carries a space, a bracket, a comma or a `^` is
+  quoted; a regex is written quoted (`value~="^https://…"`) and follows RFC
+  0014's quoted-value rules for what a backslash escapes.
+- **Layout.** Newline is whitespace, indentation is free, and a body has no
+  comment syntax: the head's `#` lines are the only comment plane.
+
 ### Vectors
 
 The suite is these rows, each a parse or a stack plus the expected verdict.
@@ -504,15 +651,16 @@ Reused rows keep their ids; the `A-` rows are this record's.
 | A-20 | id slot: `[work !task]` (real id), `[_ !task]` (null id), `["_" !task]` (an object named `_`), `[!task]` (no id slot) | the first three parse as written; the fourth is a parse error naming the missing id slot |
 | A-21 | `[-> cal-7 [-> + !vtodo summary^="[auto]"]]`; a `New` VTODO subject with summary `[auto] x`; with summary `y`; an existing VTODO subject | admitted; refused (no allowance); refused (a `+` node never matches an existing object) |
 | A-22 | a patch with `[-> + !vtodo deny]`; a patch with `[-> + !vtodo summary^=x]` | `ParsePatch` accepts; refuses, naming the leaf |
-| A-23 | `[-> cal-7 !cg-node-v1 subtree op=[delete]]`; delete `cal-7` itself; delete `cal-7/event-3`; patch `cal-7/event-3` | admitted (inclusive); admitted; refused (no allowance for `op=patch`) |
+| A-23 | `[-> cal-7 !caldav-calendar-v1 subtree op=[delete]]`; delete `[cal-7]` itself; delete `[cal-7, event-3]`; patch `[cal-7, event-3]` | admitted (inclusive); admitted (sticky); refused (no allowance for `op=patch`) |
 | A-24 | `op=create` anywhere in a stencil | the validator refuses it: create is spelled by `+` |
 | A-25 | under `[-> file:/wt subtree]`: a sibling `[-> file:/wt/secrets deny]` (bare), then `[-> file:/wt/secrets subtree deny]`; read `/wt/secrets/token`, read `/wt/secrets` | bare: `token` admitted (the deny matches only the folder id), `/wt/secrets` denied; `subtree deny`: both denied |
 | A-26 | `[-> file:/wt/** !fs-path-v1]`, `[-> file:/wt/** !fs-path-v1 subtree]`, `[-> file:/**/x !fs-path-v1]`; `Write` of the first | the first two parse to `[file:/wt !fs-path-v1 subtree]`; the third is a parse error; `Write` emits `subtree`, never `/**` |
-| A-27 | `[-> file:/wt !fs-path-v1 subtree]` under a write tool: write `file:/wt/new.go` not `New`; the same subject marked `New`; `[-> cal-7 !cg-node-v1 subtree op=[patch]]` against a `New` VTODO under cal-7 | admitted; refused, no allowance (`subtree` never matches `New`); refused, no `+` node |
+| A-27 | `[-> file:/wt !fs-path-v1 subtree]` under a write tool: write `file:/wt/new.go` not `New`; the same subject marked `New`; `[-> cal-7 !caldav-calendar-v1 subtree op=[patch]]` against a `New` VTODO under cal-7 | admitted; refused, no allowance (`subtree` never matches `New`); refused, no `+` node |
 | A-28 | `read` with fields `file_path` (path-typed) and `limit`; `[-> read [-> _ !tool-input-v1 open] [-> file:/wt !fs-path-v1 subtree]]`: `file_path=/wt/a.go limit=5`; `file_path=/etc/passwd limit=5`; the same stencil without the `fs-path-v1` node, `file_path=/wt/a.go` | admitted; refused, no allowance for `{fs-path-v1 file:/etc/passwd}`; refused (`open` covers only `tool-input-v1`) |
-| A-29 | the Creation example under `mutate_nodes`; value path `[caldav:fastmail, cal-7, New VTODO "[auto] x"]`; `[…, cal-8, New VTODO "[auto] x"]`; `[…, cal-7, New VTODO "y"]` | admitted; refused at the `cal-8` step; refused at the object step |
-| A-30 | `[-> ynab:main !cg-root-v1 subtree op=[read] [-> budget/b2 !cg-node-v1 subtree deny]]`; read `[ynab:main, budget/b1, transactions, t5]`; patch the same; read `[ynab:main, budget/b2, accounts, a1]` | admitted (the sticky `subtree` node matches every deeper step); refused at `budget/b1`, no allowance for `op=patch`; refused, deny at `budget/b2` |
-| A-31 | `mutate_nodes` with `[-> _ !tool-input-v1 open]` and no cg nodes; a call whose `groups` names `[ynab:main, budget/b1, transactions, t5]` with `op=patch` | refused: `groups` is presented as a resource path, which `open` does not cover |
+| A-29 | the Creation example under the server's surface; resource path `[resources, caldav:fastmail, cal-7, New VTODO "[auto] x"]`; `[…, cal-8, New VTODO "[auto] x"]`; `[…, cal-7, New VTODO "y"]` | admitted; refused at the `cal-8` step; refused at the object step |
+| A-30 | `[-> ynab:main !cg-root-v1 subtree op=[read] [-> budget/b2 !cutting_garden-ynab-budget-v1 subtree deny]]`; read `[ynab:main, budget/b1, transactions, t5]`; patch the same; read `[ynab:main, budget/b2, accounts, a1]` | admitted (the sticky `subtree` node matches every deeper step); refused at `ynab:main`, no allowance for `op=patch`; refused, deny at `budget/b2` |
+| A-31 | `mutate_nodes` with `[-> _ !tool-input-v1 open]` and an empty surface; a call whose `groups` names `[ynab:main, budget/b1, transactions, t5]` with `op=patch` | refused: `groups` is presented as a resource path under the surface, which `open` under the tool does not cover |
+| A-32 | `[-> _ !cutting_garden-ynab-transaction-v1 op=[patch] [-> _ !cg-field-v1 field=[category, memo]]]`; patch `{category: Groceries}`; `{category: Groceries, payee: X}`; `{flag: red}` (a field added to the plugin later) | admitted; refused at the `payee` field step (no allowance); refused |
 
 piggy's RFC 0013 conformance vectors point at A-17, A-18 and A-19 by name
 (the ask from piggy/green-larch, 2026-11-09) instead of restating them.
@@ -554,6 +702,21 @@ piggy's RFC 0013 conformance vectors point at A-17, A-18 and A-19 by name
 - **Containment is segment-prefix on `/` only.** Query strings, `..`, case
   folding and symlinks are not understood; the enforcer canonicalizes a
   path before presenting it, or it is not contained.
+- **A tool's output is not a subject, and neither is the blob moxy stores
+  it in.** ajour governs what a call reads and writes through the catalog.
+  When a tool's output is large, it is **moxy**, not the tool call, that
+  writes it to the madder cache and hands back `madder://blobs/<digest>`;
+  no profile can forbid that write, and the session has already been
+  admitted to the bytes by the call that produced them. Reading the blob
+  back is a resource read under moxy's own server node ("one door"). R
+  2026-11-09: moxy keeps a per-session ledger of the digests it returned to
+  that session; a read of one of them is the continuation of an admitted
+  call and is not presented to ajour at all; a read of any other
+  `madder://blobs` digest is an ordinary resource read that needs an
+  explicit `[-> madder://blobs !mcp-resource-v1 subtree op=[read]]` under
+  moxy's surface (the cache is one store per user, shared by every session
+  on the host, and a digest can travel in a chat message, so "knowing the
+  digest" is not the capability; ask 3).
 
 ## Tuning Levers
 
@@ -599,19 +762,29 @@ piggy's RFC 0013 conformance vectors point at A-17, A-18 and A-19 by name
    type, which fields a subject carries (`kind`, `perm`, `async`, `impure`,
    `arg`, `field`, `value`, `position`, `group`, and the verb field, `op`)
    and what each subject's id is, since ajour matches only what the
-   enforcer presents; declare `mcp-resource-v1` for every server's
-   resources, and the patch subject's shape (proposal: the object's live
-   fields plus the proposed values under a `patch.` prefix); declare, per
-   tool, which input fields are path-typed (`fs-path-v1`, one type per
-   field), when a subject is `New` (object creation under a container
-   only), the verb set per node type, and the plugin and server node the
-   hook-governed harness built-ins (Read, Grep, Bash, …) hang under
-   (writing probe run 2, 2026-11-09).
+   enforcer presents; declare `mcp-resources-v1` as every server's resource
+   surface with `mcp-resource-v1` beneath it (a plugin's own resources
+   under a server node named for the plugin), present a cg object with the
+   plugin's own node type at every step (`cg-node-v1` retired), present a
+   patch as one resource path per changed field ending in a `cg-field-v1`
+   step (`field`, `value`), and put the verb on every step of a resource
+   path; declare, per tool, which input fields are path-typed
+   (`fs-path-v1`), which are tree references (resource paths), one kind per
+   field; when a subject is `New` (object creation under a container only);
+   the verb set per node type; and the plugin and server node the
+   hook-governed harness built-ins (Read, Grep, Bash, ReadMcpResourceTool,
+   …) hang under (writing probe runs 2 and 3, 2026-11-09).
 3. **moxy** (moxy#489, the call site): build `ajour.Call` from a tool call
    with the tool subject's `Fields` from the live manifest and one value
-   per top-level input field, each a one-step path typed by the catalog
-   (`fs-path-v1` for a path field, `tool-input-v1` otherwise, never both),
-   and refuse on `Verdict.Admitted == false` rendering `Refusals`.
+   per top-level input field, each a path typed by the catalog
+   (`fs-path-v1` for a `file:` id in a path field, a resource path under
+   the owning server's surface for a resource reference or a non-`file:`
+   URI in a path field, `tool-input-v1` otherwise, never two kinds), and
+   refuse on `Verdict.Admitted == false` rendering `Refusals`; keep a
+   per-session ledger of the overflow digests it returned and present a
+   read of one of them as the admitted call's continuation (no ajour
+   call), every other `madder://blobs` read as a resource read under moxy's
+   own server node (R 2026-11-09).
 4. **spinclass** (FDR 0034 "Verification and revocation"): amend "a
    predicate on a present node that a child profile does not mention is
    inherited unchanged" to the strict rule (a child restates what it keeps)
@@ -623,6 +796,13 @@ piggy's RFC 0013 conformance vectors point at A-17, A-18 and A-19 by name
    containment check is needed; V-D1-7a..c keep their verdicts once the
    child restates the parent's allowance — DONE, circus `9227df20`
    (2026-11-09), with V-D1-7e and V-D1-7f added.
+6. **circus** (D2 §2, the node-type table): add `mcp-resources-v1` (under
+   `mcp-server-v1`) and `mcp-resource-v1` and `cg-field-v1` beneath it,
+   retire `cg-roots-v1` and `cg-node-v1` (the surface is `mcp-resources-v1`,
+   a cg object carries the plugin's own type), move `cg-root-v1` under the
+   surface, and give `fs-path-v1` the `field=` atom; D2's sample A and B
+   bodies move their cg nodes from under the tools to under the surface
+   (placement option A, R 2026-11-09).
 
 ### Open items for the operator
 
