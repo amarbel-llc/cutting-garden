@@ -18,8 +18,9 @@ always attempts the RFC 0008 persistent JSON-RPC/SCM_RIGHTS transport
 first (`<binary> capture-serve` via `internal/capture_serve`, exported at
 `pkgs/capture_serve` for the plugin side; `capture_serve.IsFallbackSignal`
 gates the drop to v1's `capture-batch` + `__write-blob`) — and `hook`,
-the clown-plugin PreToolUse sink — inert until the MCP server grows
-write tools, cutting-garden#102) are registered in
+the clown-plugin PreToolUse sink that gates the MCP server's
+`mutate_nodes` write tool (`internal/claude_hooks`, FDR 0020)) are
+registered in
 `internal/cgapp.Build()`, the single factory
 shared by the `cutting-garden` binary, its `cg` alias, and the
 manpage/completion generator `cutting-garden-gen`. Hidden subcommands
