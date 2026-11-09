@@ -123,12 +123,17 @@ Three rules of that contract ajour depends on (R 2026-11-09, writing probe
 run 2):
 
 - **One type per field.** Every top-level input field is presented as
-  exactly one subject, of one type the catalog declares for it: a field the
-  manifest marks as a path is `fs-path-v1` (its id the canonical `file:`
-  path, with `field=<name>` so `folio cp`'s `source` and `destination` can
-  be told apart), every other field `tool-input-v1`. A field is never two
-  subjects, so `[-> _ !tool-input-v1 open]` can never admit a path (bug 3;
-  vector A-28).
+  exactly one kind of value, the kind the catalog declares for it: a field
+  the manifest marks as a path is one `fs-path-v1` subject (its id the
+  canonical `file:` path, or the `madder://blobs/…` URI a path field
+  accepts in its place, with `field=<name>` so `folio cp`'s `source` and
+  `destination` can be told apart); a field the manifest marks as a tree
+  reference (`list_nodes`' `uri`, `mutate_nodes`' `groups`) is one resource
+  path per node it names, never a `tool-input-v1` blob of JSON (writing
+  probe run 3: a writer who was not told this regex-matched the `groups`
+  JSON); every other field is one `tool-input-v1` subject. A field is never
+  two kinds of value, so `[-> _ !tool-input-v1 open]` can never admit a path
+  or a tree reference (bug 3; vectors A-28, A-31).
 - **`New` is a birth, not a write.** The enforcer sets `New` only when an
   object is created under a container (a cg `create`, organize's `+` box),
   never for a write to a path: a path is its own id, and a write to a path
@@ -283,7 +288,17 @@ and is walked step by step with the same procedure:
 3. Otherwise, if there are no matching nodes: a **stencil** refuses the call
    at this step ("no allowance"); a **patch** stops here, transparent.
 4. Otherwise descend: the frontier becomes the union of the matching nodes'
-   children.
+   children, **plus every matching node that carries `subtree`**, which
+   stays in the frontier for the rest of this path and matches each deeper
+   subject by its atoms alone (its type and id were settled by containment
+   at the step it matched: `[-> ynab:main !cg-root-v1 subtree op=[read]]`
+   admits reading `budget/b1/transactions/t5` beneath it, and `op=[read]`
+   is still checked at every step). A child of a sticky node that matches
+   a deeper subject joins the frontier beside it, so a nested `deny` under
+   a `subtree` allowance still refuses (A-25's rule for paths of subjects;
+   writing probe run 3 found the procedure as first written required a
+   matching child at every step, which made `subtree` on a container step
+   admit nothing beneath it; vector A-30).
 5. A subject that reaches the end of its path with a non-empty frontier at
    every step is **admitted by this layer**.
 
@@ -496,6 +511,8 @@ Reused rows keep their ids; the `A-` rows are this record's.
 | A-27 | `[-> file:/wt !fs-path-v1 subtree]` under a write tool: write `file:/wt/new.go` not `New`; the same subject marked `New`; `[-> cal-7 !cg-node-v1 subtree op=[patch]]` against a `New` VTODO under cal-7 | admitted; refused, no allowance (`subtree` never matches `New`); refused, no `+` node |
 | A-28 | `read` with fields `file_path` (path-typed) and `limit`; `[-> read [-> _ !tool-input-v1 open] [-> file:/wt !fs-path-v1 subtree]]`: `file_path=/wt/a.go limit=5`; `file_path=/etc/passwd limit=5`; the same stencil without the `fs-path-v1` node, `file_path=/wt/a.go` | admitted; refused, no allowance for `{fs-path-v1 file:/etc/passwd}`; refused (`open` covers only `tool-input-v1`) |
 | A-29 | the Creation example under `mutate_nodes`; value path `[caldav:fastmail, cal-7, New VTODO "[auto] x"]`; `[…, cal-8, New VTODO "[auto] x"]`; `[…, cal-7, New VTODO "y"]` | admitted; refused at the `cal-8` step; refused at the object step |
+| A-30 | `[-> ynab:main !cg-root-v1 subtree op=[read] [-> budget/b2 !cg-node-v1 subtree deny]]`; read `[ynab:main, budget/b1, transactions, t5]`; patch the same; read `[ynab:main, budget/b2, accounts, a1]` | admitted (the sticky `subtree` node matches every deeper step); refused at `budget/b1`, no allowance for `op=patch`; refused, deny at `budget/b2` |
+| A-31 | `mutate_nodes` with `[-> _ !tool-input-v1 open]` and no cg nodes; a call whose `groups` names `[ynab:main, budget/b1, transactions, t5]` with `op=patch` | refused: `groups` is presented as a resource path, which `open` does not cover |
 
 piggy's RFC 0013 conformance vectors point at A-17, A-18 and A-19 by name
 (the ask from piggy/green-larch, 2026-11-09) instead of restating them.
