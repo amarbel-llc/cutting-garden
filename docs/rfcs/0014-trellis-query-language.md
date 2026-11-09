@@ -313,6 +313,16 @@ is the flat ancestor: a box line is a flat trellis literal; espalier = box
   two readings.
 - Every box-format interior parses as a one-alternative group (see Terms);
   the description trailer corresponds to the `description` virtual field.
+- **Two id-slot markers exist in data position only** (the `Literal` entry
+  of the normative grammar; cutting-garden#395, 2026-11-09): the **temp id**
+  `+`, `+id`, `+"id"` — an object that does not exist yet, which organize
+  creates (RFC 0015 §Creation) — and the **null id** `_` — a node that
+  equals no id, not even itself: a bucket heading's box, or a stencil's
+  pattern node matched by its type and atoms alone (FDR 0028; the
+  one-isometry ruling of 2026-11-09). An object literally named `_` is
+  written `"_"`. Neither is a query term: in query position `[+ …]` is the
+  version subpath and a bare `_` an ordinary identifier, so a query never
+  creates and never matches "no object".
 
 Data literal:
 
@@ -343,6 +353,41 @@ mechanism) while a URI still appears in queries as an ordinary opaque
 identifier (strict sigil rule) resolved by the type system. Checkout
 filenames (`one/uno.zettel`) belong to the same family: host-layer
 compressed spellings of things the language says longhand.
+
+## Stencil fragment
+
+A second named validity condition over the same grammar, between espalier
+(the ground fragment) and full trellis: the language a capability profile
+and an act body are written in (cutting-garden FDR 0028 "ajour"; piggy RFC
+0013 §4.9 cites it). A stencil is a sequence of `Literal`s, one per root.
+Inside a literal the fragment admits:
+
+- the **id slot**, always present: a real id, bare or quoted; the null id
+  `_` (a pattern over existing objects); the temp id `+`, `+id`, `+"id"` (a
+  creation allowance); a locked id `name@digest` (hyphence RFC 0003);
+- at most one `!type`;
+- tags, bare or quoted; `deny` and `subtree` are reserved to the evaluator
+  and every other tag is carried inert;
+- atoms with any `FieldOp`, a scalar or a value list, and `^` negation of an
+  atom;
+- children `[-> …]`, each one literal of the fragment, nesting to any depth.
+
+It does not admit: a sigil on any term; a version subpath `[+ …]` (inside a
+box a `+` followed by a space is the temp id, never the sigil); `(…)`
+qualifiers; a standalone `@digest` term; OR-alternatives `[a, b]`; a
+combinator other than `->` inside a child, `->>`, `<<-`, typed edges, or a
+child whose path has more than one step; a `_`-prefixed field name
+(framework-reserved). Regexes compile at parse, so a layer that errors has no
+holes.
+
+Every espalier document is in the fragment; a document in the fragment is
+espalier iff it has no hole (no null or temp id, no non-`=` operator, no
+list, no negation). The canonical spelling of a stencil is this nested form,
+which is what a profile's digest and an act's signature cover; the organize
+heading rendering and an id ending in `/**` (read as the id plus `subtree`)
+are input spellings the stencil parser canonicalizes on read. The matching
+and evaluation rules live in FDR 0028, not here: this section fixes only
+which trees are stencils.
 
 ## Deferred
 

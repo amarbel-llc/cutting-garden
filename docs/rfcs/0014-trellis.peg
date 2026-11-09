@@ -44,9 +44,14 @@
 // (internal/trellis) mirrors these productions directly, kept in lockstep by
 // the shared conformance corpus below.
 @import String from "./marklid.peg"
-@import Ident, MarklTerm, DigestTerm, Bareword, FieldName, SigilRune, SP from "./hyphence-content.peg"
+@import Ident, IdentRune, MarklTerm, DigestTerm, Bareword, FieldName, SigilRune, SP from "./hyphence-content.peg"
 
-// ---- entry ---------------------------------------------------------------
+// ---- entries -------------------------------------------------------------
+//
+// Two entries, one grammar. Query is a query; Literal is ONE espalier box in
+// DATA position (an organize `- […]` line, a `list -format espalier` line,
+// a stencil node, FDR 0028). They share every production after a box's id
+// slot; the id slot is the one place they differ (see "literal" below).
 
 Query        <- SP? Path SP? EOF
 
@@ -185,6 +190,34 @@ TypedClosure <- '-[' SP? ConjRun SP? ']->>'
 TypedFwd     <- '-[' SP? ConjRun SP? ']->'
 TypedBack    <- '<-[' SP? ConjRun SP? ']-'
 
+// ---- literal: the box interior in data position ---------------------------
+//
+// A box is a one-alternative group whose first term is the object id, and
+// in data position that id slot admits two markers that are never query
+// terms, so they live here and not in BasicTerm (cutting-garden#395; the
+// hand-rolled parser's ParseLiteral / parseTempIDBox mirror this entry):
+//   +   the TEMP ID (RFC 0015 §Creation, forge organize F8–F10): an object
+//       that does not exist yet, which organize creates — a bare `+`, `+id`,
+//       or `+"id"`. In query position a group opening with `+` is VersionSub,
+//       which is never ground, so a box never meant one and the slot is free.
+//       TempID is tried before Ident because a leading sigil rune followed by
+//       an identifier rune lexes as one Ident (`+foo`) in hyphence's grammar.
+//   _   the NULL ID (one-isometry ruling 2026-11-09; FDR 0028): a node that
+//       equals no id, not even itself — a bucket heading's box or a stencil's
+//       pattern node, matched by its type and atoms alone, never addressable
+//       by a write. An object literally named `_` is written `"_"`
+//       (QuotedRef); `_foo` is an identifier (the !IdentRune guard). In query
+//       position a bare `_` stays an ordinary identifier.
+// A locked id `name@digest` (MarklTerm, hyphence RFC 0003) is admitted in the
+// slot for the stencil fragment (FDR 0028 "Matching", rule 3); the espalier
+// projection rejects it as it rejects any digest term in a box. Groundness
+// (espalier) and the stencil fragment are semantic conditions over this one
+// production, exactly as groundness is over Query.
+Literal      <- SP? '[' SP? IDSlot (SP !Combinator Term)* SP? ']'
+IDSlot       <- TempID / NullID / MarklTerm / QuotedRef / Ident
+TempID       <- '+' (String / Ident)?
+NullID       <- '_' !IdentRune
+
 // ---- lexical -------------------------------------------------------------
 
 // Identifiers are opaque object references using rune-class EXCLUSION,
@@ -286,3 +319,27 @@ EOF          <- !.
 //       and `)` are Reserved, a bare `c(1)` is NOT one identifier (it is
 //       `c` + qualifier `(1)` with no separating space — a syntax error);
 //       the quoted form is the only spelling of that tag
+
+// ---- literal conformance vectors (entry: Literal; each MUST parse) -------
+//
+// These are boxes, parsed from the Literal entry, not queries: the first two
+// would parse from Query too, but as a version subpath, which is the point.
+//
+//   [+ !caldav-object-vtodo-v1 summary="buy milk"]
+//     — bare temp id: a creation with no handle (one appearance)
+//   [+wrap-bug !task]
+//     — temp id with a bare handle (several appearances merge into one object)
+//   [+"wrap bug" !task]
+//     — temp id with a quoted handle
+//   [_ !just-recipe-v1 group=[test, lint]]
+//     — null id: a pattern node matched by type and atoms (a stencil
+//       allowance; the value list is a hole, so it is in the fragment and
+//       not espalier)
+//   ["_" !task]
+//     — an object whose id is literally `_`
+//   [_foo !task]
+//     — an identifier, not the null id (the !IdentRune guard)
+//   [run_recipe@blake2b256-s1 !mcp-tool-v1 [-> _ !just-recipe-v1 group=[test]]]
+//     — locked id in the slot, a null-id child: a stencil node (FDR 0028)
+//   [work !task -client [-> one/uno !md priority=1]]
+//     — an ordinary id with a ground child: espalier
