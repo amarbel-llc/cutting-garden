@@ -224,7 +224,10 @@ refusal the user sees (EPIC 0001 principle 9, "say what is held") renders
 
 The verdict never depends on comparing one layer with another, so no
 containment check over predicates exists anywhere in the package, and layer
-order affects only the numbering of refusals.
+order affects only the numbering of refusals. An `escalation` that replaces
+an act's layer (RFC 0013 §4.9) is applied by piggy's verifier before the
+stack reaches ajour: `Evaluate` sees the resulting layers and knows nothing
+of replacement.
 
 ### The whole API
 
@@ -477,13 +480,15 @@ piggy's RFC 0013 conformance vectors point at A-17, A-18 and A-19 by name
    false` rendering `Refusals`.
 4. **spinclass** (FDR 0034 "Verification and revocation"): amend "a
    predicate on a present node that a child profile does not mention is
-   inherited unchanged" to the strict rule (a child restates what it keeps),
+   inherited unchanged" to the strict rule (a child restates what it keeps)
+   — DONE, spinclass `fcd103ad` (2026-11-09, reported by piggy/green-larch);
    and say whether the ground-id excess lint (V-D1-6) stays in `Narrows` or
-   moves to an ajour helper.
+   moves to an ajour helper — open (operator item 2).
 5. **circus** (D1 §3 step 3): replace "at least one layer says allow" with
    "every stencil admits", which is the only reading under which no
    containment check is needed; V-D1-7a..c keep their verdicts once the
-   child restates the parent's allowance.
+   child restates the parent's allowance — DONE, circus `9227df20`
+   (2026-11-09), with V-D1-7e and V-D1-7f added.
 
 ### Open items for the operator
 
