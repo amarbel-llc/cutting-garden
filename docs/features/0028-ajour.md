@@ -592,6 +592,38 @@ tool (a stencil's roots are one forest; whether `_` may stand on a catalog
 level is the validator's rule). Nothing else is mentioned, so `gmail`,
 `spawn-session`, `pr-merge` and the rest are refused by silence.
 
+### A second example: a session's own issues, through the tree
+
+The forge is a cutting-garden root (`smith://code.linenisgreat.com/
+linenisgreat`, repos and their issues, comments and milestones as typed
+nodes), so "read this repo's issues, comment on them, close them, nothing
+else on the forge" is one resource subtree under the cutting-garden
+server's surface (R 2026-11-09: the tree is the intended door to the
+forge; the moxy `smith` tools, which take `repo` as an input field, are
+transitional, and a profile that scopes them does so with a value list on
+`repo` and `host` both):
+
+    [cutting-garden !clown-plugin-v1
+      [-> cutting-garden !mcp-server-v1
+        [-> list_nodes !mcp-tool-v1 [-> _ !tool-input-v1 open]]
+        [-> read_node !mcp-tool-v1]
+        [-> read_facets !mcp-tool-v1 [-> _ !tool-input-v1 open]]
+        [-> mutate_nodes !mcp-tool-v1]
+        [-> resources !mcp-resources-v1
+          [-> smith://code.linenisgreat.com/linenisgreat !cg-root-v1
+            [-> cutting-garden !smith-repo-v1 subtree op=[read]
+              [-> issues !smith-issues-v1
+                [-> _ !smith-issue-v1
+                  [-> + !smith-comment-v1]
+                  [-> _ !cg-field-v1 field=[state] value=[closed]]]]]]]]]
+
+Anything under the one repo may be read (the sticky `subtree op=[read]`);
+a comment may be created on any of its issues (`+`); an issue may be
+patched in `state` alone, and only to `closed`; every other repo under the
+owner, filing an issue (no `+ !smith-issue-v1`) and relabeling (no `labels`
+field step) are refused by silence. "Its own" is literal: the profile names
+the repo, since the format has no template hole (Limitations).
+
 ### Idioms the probes asked for
 
 - **Atoms are pins, not requirements.** `kind=read perm=allow` on a tool
@@ -784,7 +816,11 @@ piggy's RFC 0013 conformance vectors point at A-17, A-18 and A-19 by name
    per-session ledger of the overflow digests it returned and present a
    read of one of them as the admitted call's continuation (no ajour
    call), every other `madder://blobs` read as a resource read under moxy's
-   own server node (R 2026-11-09).
+   own server node (R 2026-11-09); and present a field the tool would
+   resolve from its environment when omitted (smith's `repo` from the
+   working directory's remote) with the value it resolves to, since an
+   omitted field presents no subject and a value-list allowance on it is
+   otherwise bypassed by leaving it out.
 4. **spinclass** (FDR 0034 "Verification and revocation"): amend "a
    predicate on a present node that a child profile does not mention is
    inherited unchanged" to the strict rule (a child restates what it keeps)
