@@ -82,6 +82,11 @@ func (fakeFull) ListRoots(
 	return nil, nil
 }
 
+// Roots makes fakeFull a RootProvider with one root.
+func (fakeFull) Roots(context.Context) ([]*url.URL, error) {
+	return []*url.URL{{Scheme: "fakefull", Host: "acct", Path: "/"}}, nil
+}
+
 // DescribeFacets makes fakeFull a facet-declaring plugin with no
 // FacetCounter: its summaries come from the framework fold. status is
 // declared on both types, so the facets column lists it once.
@@ -187,7 +192,7 @@ func rowsByName(rows []pluginRow) map[string]pluginRow {
 }
 
 func TestProbe_CapabilitiesPerPlugin(t *testing.T) {
-	rows := rowsByName(collectRows())
+	rows := rowsByName(collectRows(context.Background()))
 
 	for _, name := range []string{
 		"fakefull", "fakeproto", "fakecaptureonly", "fakeschemeonly",
@@ -249,6 +254,7 @@ func TestRun_TextTable(t *testing.T) {
 	for _, want := range []string{
 		"PLUGIN", "SCHEMES", "TRAVERSAL", "FACETS",
 		"fakefull", "fakeproto", "(default)", "2 (fold)",
+		"\nPLUGIN    ROOTS\nfakefull  fakefull://acct/\n",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("text output missing %q:\n%s", want, out)
@@ -274,6 +280,9 @@ func TestRun_JSONRoundTrip(t *testing.T) {
 	rows := rowsByName(got)
 	if r, ok := rows["fakefull"]; !ok || len(r.Traversal) != 2 {
 		t.Errorf("fakefull json row = %+v (ok=%v)", r, ok)
+	}
+	if r := rows["fakefull"]; strings.Join(r.Roots, ",") != "fakefull://acct/" || r.RootsError != "" {
+		t.Errorf("fakefull roots = %v (%q), want fakefull://acct/", r.Roots, r.RootsError)
 	}
 	if r, ok := rows["fakecaptureonly"]; !ok || r.Restore != "no" {
 		t.Errorf("fakecaptureonly json row = %+v (ok=%v)", r, ok)

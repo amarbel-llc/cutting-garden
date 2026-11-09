@@ -3,11 +3,11 @@
 // schemes it claims, its receipt type-tag, and which capabilities it
 // implements — capture, restore (direct or via the capture protocol),
 // diff, the RFC 0002 capture protocol (with its kind), and RootLister
-// traversal (with its node types).
+// traversal (with its node types) — and each RootProvider's roots.
 //
 // Positional surface:
 //
-//	health [-format text|json]
+//	health [-format text|json] [-config <path>]
 //
 // Exit 0 on success, 64 on a bad -format value or trailing arguments.
 
@@ -16,6 +16,7 @@
 package health
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -24,6 +25,7 @@ import (
 	"text/tabwriter"
 
 	"code.linenisgreat.com/cutting-garden/internal/command"
+	"code.linenisgreat.com/cutting-garden/internal/command_components"
 	"code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/interfaces"
@@ -40,7 +42,10 @@ const (
 // report goes to (os.Stdout in New, a buffer in tests).
 type Health struct {
 	Format string
-	output io.Writer
+	// ConfigPath, the -config flag, loads this file instead of
+	// $XDG_CONFIG_HOME/cutting-garden/config.toml.
+	ConfigPath string
+	output     io.Writer
 }
 
 var (
@@ -70,7 +75,10 @@ func (*Health) GetDescription() command.Description {
 			"RFC 0002 capture protocol (with its kind), RootLister " +
 			"traversal (with its node types), and facets (RFC 0012: the " +
 			"declared dimensions, and whether the plugin counts them itself " +
-			"or the framework folds them). Takes no positional arguments.",
+			"or the framework folds them). It also lists each RootProvider " +
+			"plugin's roots (RFC 0007): the accounts the config declares and " +
+			"the intrinsic ones, the entry points `list` and `mcp` start " +
+			"from. Takes no positional arguments.",
 	}
 }
 
@@ -80,6 +88,13 @@ func (cmd *Health) SetFlagDefinitions(flagSet interfaces.CLIFlagDefinitions) {
 		"format",
 		formatText,
 		"output format: text (aligned table) or json (one object per plugin)",
+	)
+	flagSet.StringVar(
+		&cmd.ConfigPath,
+		"config",
+		"",
+		"config file to load instead of $XDG_CONFIG_HOME/cutting-garden/config.toml "+
+			"(it must exist)",
 	)
 }
 
@@ -97,7 +112,15 @@ func (cmd *Health) Run(req command.Request) {
 		return
 	}
 
-	rows := collectRows()
+	// The config is loaded once, before probing: the load injects every
+	// plugin's section (so Roots sees its accounts) and registers any
+	// config-declared wire plugin, which then gets its own row.
+	if _, err := command_components.LoadAndInjectConfigAt(cmd.ConfigPath, os.Stderr); err != nil {
+		errors.ContextCancelWithError(ctx, err)
+		return
+	}
+
+	rows := collectRows(ctx)
 
 	var err error
 	if cmd.Format == formatJSON {
@@ -125,16 +148,40 @@ type pluginRow struct {
 	// one-shot FacetCounter) or "fold" (the framework walk).
 	Facets        []string `json:"facets,omitempty"`
 	FacetCounting string   `json:"facet_counting,omitempty"`
+	// Roots are a RootProvider's top-level roots (RFC 0007); RootsError is
+	// why they could not be enumerated (a wire plugin that failed to spawn,
+	// an unreadable account), the row's other columns still reported.
+	Roots      []string `json:"roots,omitempty"`
+	RootsError string   `json:"roots_error,omitempty"`
 }
 
 // collectRows enumerates the registered plugins and probes each.
-func collectRows() []pluginRow {
+func collectRows(ctx context.Context) []pluginRow {
 	plugins := cutting_garden_plugins.RegisteredPlugins()
 	rows := make([]pluginRow, 0, len(plugins))
 	for _, p := range plugins {
-		rows = append(rows, probe(p))
+		row := probe(p)
+		row.Roots, row.RootsError = probeRoots(ctx, p)
+		rows = append(rows, row)
 	}
 	return rows
+}
+
+// probeRoots asks a RootProvider for its roots, as `list` and `mcp` do
+// with no URI; a failure is reported, not fatal (cutting-garden#165).
+func probeRoots(ctx context.Context, p cutting_garden_plugins.Plugin) (roots []string, failure string) {
+	provider, ok := p.(cutting_garden_plugins.RootProvider)
+	if !ok {
+		return nil, ""
+	}
+	urls, err := provider.Roots(ctx)
+	if err != nil {
+		return nil, err.Error()
+	}
+	for _, u := range urls {
+		roots = append(roots, u.String())
+	}
+	return roots, ""
 }
 
 // probe builds a plugin's row by type-asserting it against each optional
@@ -251,10 +298,36 @@ func writeText(w io.Writer, rows []pluginRow) error {
 		return errors.Wrap(err)
 	}
 
+	writeRootsTable(&buf, rows)
+
 	if _, err := io.WriteString(w, buf.String()); err != nil {
 		return errors.Wrap(err)
 	}
 	return nil
+}
+
+// writeRootsTable appends, after a blank line, one `PLUGIN ROOTS` line per
+// root (or per roots failure), omitted when no plugin has any.
+func writeRootsTable(buf *strings.Builder, rows []pluginRow) {
+	var lines []string
+	for _, r := range rows {
+		for _, root := range r.Roots {
+			lines = append(lines, r.Plugin+"\t"+root)
+		}
+		if r.RootsError != "" {
+			lines = append(lines, r.Plugin+"\t(unavailable: "+r.RootsError+")")
+		}
+	}
+	if len(lines) == 0 {
+		return
+	}
+	buf.WriteString("\n")
+	tw := tabwriter.NewWriter(buf, 0, 2, 2, ' ', 0)
+	fmt.Fprintln(tw, "PLUGIN\tROOTS")
+	for _, line := range lines {
+		fmt.Fprintln(tw, line)
+	}
+	_ = tw.Flush() // a strings.Builder write cannot fail
 }
 
 // writeJSON re-emits the rows as NDJSON — one plugin object per line —

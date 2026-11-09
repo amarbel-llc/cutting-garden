@@ -17,6 +17,10 @@ func (*Health) GetExamples() []command.Example {
 			Description: "Machine-readable capability report, one object per plugin.",
 			Command:     "cutting-garden health -format json | jq .",
 		},
+		{
+			Description: "List each plugin's configured roots.",
+			Command:     "cutting-garden health -format json | jq -r 'select(.roots) | .plugin + \" \" + (.roots | join(\" \"))'",
+		},
 	}
 }
 

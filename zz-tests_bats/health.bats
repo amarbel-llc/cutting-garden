@@ -104,6 +104,26 @@ function health_json_capabilities_per_plugin { # @test
     fail "caldav traversal = '$(traversal caldav)', want the calendar container plus three per-component leaf types"
 }
 
+# Each RootProvider plugin's configured roots (RFC 0007) ride its row: the org
+# account `test` from config, and the file plugin's intrinsic working
+# directory (cutting-garden#92).
+function health_reports_configured_roots_per_plugin { # @test
+  load "$(dirname "$BATS_TEST_FILE")/lib/org.bash"
+  start_org_server
+  write_org_config
+
+  run_cg health -format json
+  stop_org_server
+  assert_success
+  run jq -rs 'map(select(.plugin=="org")) | .[0].roots | join(",")' <<<"$output"
+  assert_output 'org://test/'
+
+  run_cg health
+  assert_success
+  assert_output --partial 'ROOTS'
+  assert_line --regexp '^org +org://test/$'
+}
+
 function health_rejects_bad_format { # @test
   run_cg health -format yaml
   # EX_USAGE for a bad flag value.
