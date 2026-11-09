@@ -1,6 +1,6 @@
 ---
-status: testing
-date: 2026-08-10
+status: accepted
+date: 2026-11-09
 promotion-criteria: |
   Promote to `experimental` once Slice 1 lands: `plugins/fastmail/` speaks
   JMAP against a real account, declares the node types below, and
@@ -19,7 +19,15 @@ promotion-criteria: |
   document, and a real `-commit` triage run on a handful of threads held up.
   Promote to `accepted` once the plugin
   ships in the default binary and the tag-membership write contract has gone
-  two weeks without a correctness lever moving.
+  two weeks without a correctness lever moving. MET 2026-11-09 (drafted
+  2026-08-10): the soak ran from 2026-09-23 (the last lever, new-tag
+  placement ranking, 8ae86ac) and ended 2026-10-07. No tuning lever below
+  moved since: `plugins/fastmail` changed only outside the membership-write
+  path (per-dimension facet incompleteness, the `session_url` validator and
+  plaintext-http refusal, `mutate_nodes`, `!name` roots, a session-memo
+  mutex), and the `internal/organize` membership-apply commits since
+  8ae86ac are diagnostics, a refactor and `+` creation, not changes to the
+  write contract.
 ---
 
 # Fastmail (JMAP) plugin
