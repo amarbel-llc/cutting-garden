@@ -17,7 +17,11 @@ promotion-criteria: |
 > a brief from piggy/green-larch, against the operator's rulings of
 > 2026-11-09 ("Espalier profiles meet the shrinking-set idea", §9: Shape E,
 > stacking never comparing, one spelling for `deny`) as piggy RFC 0013 §4.9
-> and circus EPIC 0001 decisions 3 to 5 carry them. Nothing is built.
+> and circus EPIC 0001 decisions 3 to 5 carry them, and amended the same
+> evening on the operator's rulings in the one-isometry sketch (Google Doc
+> "One isometry: organize and ajour as two spellings of one tree", v2 tab
+> §11): the null id `_`, the temp id `+` as a creation allowance, verbs as
+> atoms, nested espalier as the canonical spelling. Nothing is built.
 > Evidence labels: **V** read in a named file in this worktree or a sibling
 > checkout; **I** inference; **U** unknown; **R** an operator ruling, dated.
 > The plain-words companion is `ajour(7)`.
@@ -72,10 +76,11 @@ from that mark:
 - a **patch**: an act's own body (RFC 0013 §1, §4.9). A patch only denies:
   it is transparent where it says nothing, and every leaf of it MUST carry
   `deny`. A patch that tightens a condition spells the tightening as a deny
-  with a condition (`[-> !recipe-arg-v1 position=1 value!=status deny]`). A
-  body with a leaf lacking `deny` is malformed: `ParsePatch` refuses it, and
-  the enforcer treats the act that carried it as admitting nothing (RFC
-  0013 §4.9 as amended).
+  with a condition (`[-> _ !recipe-arg-v1 position=1 value!=status deny]`);
+  a `+` node appears in a patch only with `deny` (`[-> + !t deny]`: no
+  creation of that type here). A body with a leaf lacking `deny` is
+  malformed: `ParsePatch` refuses it, and the enforcer treats the act that
+  carried it as admitting nothing (RFC 0013 §4.9 as amended).
 
 Both are parsed from the same grammar, the **stencil fragment** of trellis
 (next subsection). A layer's head (the hyphence metadata: `role`, `mode`,
@@ -93,8 +98,10 @@ node, plus a set of **values** hanging under the last one:
     Subject{
       Type   string              // the node type the enforcer gives it
       ID     string              // "" when the subject has no id
+      New    bool                // a creation: the object does not exist yet
       Digest string              // the live catalog digest, when known
-      Fields map[string][]string // every field a stencil might name
+      Fields map[string][]string // every field a stencil might name,
+                                 // the verb among them (op=[patch])
     }
 
 The enforcer owns the vocabulary: which node types exist, what each
@@ -118,7 +125,7 @@ per root; inside a literal:
 
 | Admitted | Not admitted (parse error naming the term) |
 |---|---|
-| an object id first, bare or quoted; **or no id** (a typed node matched by its atoms alone, D2's `[-> !just-recipe-v1 group=[test, lint]]`) | a sigil on any term; a version subpath `[+ …]`; `(…)` qualifiers; `@digest` as a standalone term |
+| the **id slot** first, always present, one of: a real id, bare or quoted; the **null id `_`** (a pattern over existing objects, matched by type and atoms alone: `[-> _ !just-recipe-v1 group=[test, lint]]`; R 2026-11-09); the **temp id `+`**, `+id`, `+"id"` (an object that does not exist yet: a creation allowance, R 2026-11-09). An object literally named `_` is written `"_"`. | a sigil on any term; a version subpath `[+ …]` (a bare `+` followed by a space inside a group is the temp id, never the sigil: data position); `(…)` qualifiers; `@digest` as a standalone term |
 | a **locked id**, `name@<digest>` (one MarklTerm in the id slot, hyphence RFC 0003) | OR-alternative groups `[a, b]` |
 | at most one `!type` | a combinator other than `->` inside a child subpath; `->>`, `<-`, `<<-`, typed edges; a subpath whose path has more than one step |
 | tags: bare or quoted identifiers; `deny` and `subtree` are **reserved** and are the only two ajour reads; every other tag is carried and inert (`required`, `open`, `kind`-style tags are the consumer's) | a `_`-prefixed field name (framework-reserved in RFC 0014) |
@@ -133,15 +140,23 @@ layer that errors is refused before any call is evaluated (D1 V-D1-7d's
 "an erroring predicate is deny" becomes "an erroring layer has no holes").
 
 RFC 0014 gains a "Stencil fragment" subsection beside "Isometry" when the
-operator approves this record; `0014-trellis.peg` is unchanged.
+operator approves this record. `0014-trellis.peg` gains the id-slot
+productions for `+` and `_` (cutting-garden#395: the temp id is in the Go
+parser today and in no PEG production); nothing else in the PEG changes.
+The canonical spelling of a stencil is nested espalier (R 2026-11-09); the
+organize heading rendering is an accepted input spelling once `ParseStencil`
+canonicalizes on read (one-isometry sketch §4, §10), and a stencil's digest
+is over the canonical tree either way.
 
 ### Matching one node against one subject
 
 A node **matches** a subject when all of these hold:
 
 1. **type**: the node has no `!type`, or it equals `Subject.Type`;
-2. **id**: the node has no id; or the ids are equal; or the node carries
-   `subtree` and the node's id is a **segment prefix** of the subject's id
+2. **id**: the node's id is `_` and the subject is not `New`; or the node's
+   id is `+` (any temp id) and the subject is `New`; or the ids are equal;
+   or the node carries `subtree` and the node's id is a **segment prefix**
+   of the subject's id
    (equal, or followed by `/` in the subject's id: `file:/wt` contains
    `file:/wt/src/a.go` and does not contain `file:/wtx`). Segment-prefix is
    the one containment rule, and it is type-agnostic: it fits `file:` paths,
@@ -170,15 +185,40 @@ Consequences the rules give for free, so they are not special cases:
   atoms; the enforcer presents the tool subject with `Fields{kind, perm}`
   from the live manifest; a profile saying `perm=allow` against a manifest
   saying `ask` does not match, so the tool is refused.
-- **`open` (V-D2-14).** A typed node with no id and no atoms matches every
-  subject of its type; D2's `[-> !tool-input-v1 open]` is such a node, and
-  `open` itself is an inert tag. Without that node, an input field no node
-  names is refused.
-- **Catalog predicates (D2 V-D2-7).** `[-> !just-recipe-v1 group=[test,
-  lint]]` is an id-less node whose atom is checked against the recipe
-  subject's `group` field; whether a profile MAY carry such a node on a
-  catalog level is the profile ruleset's rule (clown's validator), not
-  ajour's: ajour evaluates what it is given.
+- **`open` (V-D2-14).** A `_` node with no atoms matches every existing
+  subject of its type; D2's `[-> _ !tool-input-v1 open]` is such a node, and
+  `open` itself is an inert tag (whether it becomes the required spelling of
+  the wildcard is a deferred operator item). Without that node, an input
+  field no node names is refused.
+- **Catalog predicates (D2 V-D2-7).** `[-> _ !just-recipe-v1 group=[test,
+  lint]]` is a `_` node whose atom is checked against the recipe subject's
+  `group` field; whether a profile MAY carry such a node on a catalog level
+  is the profile ruleset's rule (clown's validator), not ajour's.
+- **Creation (R 2026-11-09).** `[-> cal-7 !cg-node-v1 [-> + !caldav-object-vtodo-v1
+  summary^="[auto]"]]` admits creating a VTODO under cal-7 whose summary
+  starts with `[auto]`: the enforcer presents a creation as a `New` subject
+  carrying the proposed object's type and fields, and only a `+` node
+  matches it. A container with no `+` node admits no creation; a `_`
+  wildcard never does.
+- **Verbs (R 2026-11-09, "three slots, three jobs").** The id slot says
+  WHAT (`id` / `_` / `+`); an atom in the enforcer's vocabulary says WHICH
+  VERB (`op=[read, patch, delete]`, presented as a subject field; a verb
+  that is its own tool, `resources/read`, is a catalog node); `deny` says
+  NO. Create is spelled only by `+`; `op=create` is refused by the validator.
+  So `[-> cal-7 !cg-node-v1 subtree op=[patch]]` admits patching under
+  cal-7 and nothing else, and `[-> cal-7/event-3 !cg-node-v1 op=[delete]
+  deny]` denies one deletion. Containment is inclusive: `subtree
+  op=[delete]` admits deleting the container itself; "children only" is a
+  deny on the container's own id.
+- **Resources as subjects.** A server's resource surface is a catalog node
+  and a resource's URI the instance subject beneath it, `subtree` being the
+  same segment-prefix containment: `[-> resources !mcp-resources-v1 [->
+  madder://blobs !mcp-resource-v1 subtree op=[read]]]`. This is D2's
+  `cg-root-v1`/`cg-node-v1` generalized, and spinclass#438's broker model
+  ("a resource with an operation") stated in ajour's terms; the URI is
+  matched exactly as spelled (no `madder:`/`madder://` normalization), so
+  the enforcer presents one canonical URI form. (Which record states
+  "resources are the data-access atom": a placeholder, R 2026-11-09.)
 
 ### Evaluating a call against one layer
 
@@ -395,7 +435,12 @@ Reused rows keep their ids; the `A-` rows are this record's.
 | A-16 | the operator semantics of `~=`, `<`, `*=` agree between `ajour` and `trellis_eval` on one shared table | equal |
 | A-17 | a ground espalier body (RFC 0013 §9's one-deny link body): as a patch; as a stencil | parses as both: a patch (every leaf carries `deny`), and a stencil with one deny and no allowance |
 | A-18 | a ground espalier body whose leaf is an allowance (`[-> file:/wt !fs-path-v1 subtree]`): as a stencil; as a patch | parses as a stencil; `ParsePatch` errors naming the leaf (the act admits nothing) |
-| A-19 | D2 sample A's value-list node `[-> !just-recipe-v1 group=[test, lint]]` alone, and the whole of sample A | parses as a stencil; `trellis.ParseLiteral` refuses the same node (the fragment is wider than espalier) |
+| A-19 | D2 sample A's value-list node `[-> _ !just-recipe-v1 group=[test, lint]]` alone, and the whole of sample A | parses as a stencil; `trellis.ParseLiteral` refuses the same node (the fragment is wider than espalier) |
+| A-20 | id slot: `[work !task]` (real id), `[_ !task]` (null id), `["_" !task]` (an object named `_`), `[!task]` (no id slot) | the first three parse as written; the fourth is a parse error naming the missing id slot |
+| A-21 | `[-> cal-7 [-> + !vtodo summary^="[auto]"]]`; a `New` VTODO subject with summary `[auto] x`; with summary `y`; an existing VTODO subject | admitted; refused (no allowance); refused (a `+` node never matches an existing object) |
+| A-22 | a patch with `[-> + !vtodo deny]`; a patch with `[-> + !vtodo summary^=x]` | `ParsePatch` accepts; refuses, naming the leaf |
+| A-23 | `[-> cal-7 !cg-node-v1 subtree op=[delete]]`; delete `cal-7` itself; delete `cal-7/event-3`; patch `cal-7/event-3` | admitted (inclusive); admitted; refused (no allowance for `op=patch`) |
+| A-24 | `op=create` anywhere in a stencil | the validator refuses it: create is spelled by `+` |
 
 piggy's RFC 0013 conformance vectors point at A-17, A-18 and A-19 by name
 (the ask from piggy/green-larch, 2026-11-09) instead of restating them.
@@ -427,10 +472,13 @@ piggy's RFC 0013 conformance vectors point at A-17, A-18 and A-19 by name
   fixed-width spelling sort; numbers do not (`9 > 10`). Budgets are numbers
   compared by magnitude and are deliberately NOT conditions (D1 §2); a
   stencil that tries to express a cap with `<` gets byte order.
-- **No template holes.** D2 open item 3 (a `_` placeholder for the worktree)
-  is ruled out; a stencil names its paths literally and ajour has no
-  substitution. If the operator later admits a binding, it is the
-  consumer's substitution before `ParseStencil`, never ajour's.
+- **No template holes, and no "self".** D2 open item 3 (a placeholder for
+  the worktree) is ruled out; a stencil names its paths literally and ajour
+  has no substitution. The same deferral covers provenance-scoped mutation
+  ("may patch what you created", `created_by=<principal>`): it needs a
+  bound name for the principal, and reopens only with D2 item 3 (R
+  2026-11-09). If the operator later admits a binding, it is the consumer's
+  substitution before `ParseStencil`, never ajour's.
 - **Containment is segment-prefix on `/` only.** Query strings, `..`, case
   folding and symlinks are not understood; the enforcer canonicalizes a
   path before presenting it, or it is not contained.
@@ -463,6 +511,11 @@ piggy's RFC 0013 conformance vectors point at A-17, A-18 and A-19 by name
   over plugin trees, the neighbour this record is not); cutting-garden#346,
   #349; moxy#489; spinclass FDR 0034 "Verification and revocation".
 - `ajour(7)` in `doc/ajour.7.scd`: the plain-words page.
+- The one-isometry sketch (Google Doc "One isometry: organize and ajour as
+  two spellings of one tree", v2 tab): the canonical tree, the `_`/`+`
+  rulings, verbs, resources, and the rework slices; spinclass#438 (the
+  policy-broker design whose "resource with an operation" is the verb
+  model); cutting-garden#395 (the PEG's id-slot productions).
 
 ### Asks to the other lanes (one sentence each)
 
@@ -472,8 +525,11 @@ piggy's RFC 0013 conformance vectors point at A-17, A-18 and A-19 by name
    patch and §5.3's verdict keeps profile edges and bodies distinguishable.
 2. **clown** (node types, the `clown-catalog://` tree): publish, per node
    type, which fields a subject carries (`kind`, `perm`, `async`, `impure`,
-   `arg`, `field`, `value`, `position`, `group`) and what each subject's id
-   is, since ajour matches only what the enforcer presents.
+   `arg`, `field`, `value`, `position`, `group`, and the verb field, `op`)
+   and what each subject's id is, since ajour matches only what the
+   enforcer presents; declare `mcp-resource-v1` for every server's
+   resources, and the patch subject's shape (proposal: the object's live
+   fields plus the proposed values under a `patch.` prefix).
 3. **moxy** (moxy#489, the call site): build `ajour.Call` from a tool call
    with the tool subject's `Fields` from the live manifest and one value
    subject per top-level input field, and refuse on `Verdict.Admitted ==
