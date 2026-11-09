@@ -342,8 +342,11 @@ nothing and reports nothing applied, which the mcp `mutate_nodes` tool
 lists under `patched_nothing` (an error result when nothing else in the
 batch applied). Slice 3b adds `FacetWriteDescriber`,
 `FacetWriteApplier`, `MembershipWriteApplier`, `FieldWriteApplier` and
-`FieldPresenter`, all derived from the unified declaration; creating
-headlines (`CreationDescriber`) is deferred. The plugin is also the
+`FieldPresenter`, all derived from the unified declaration. Creating
+headlines through organize (`CreationDescriber`, `CreateApplier`) builds
+the capture body from the box's fields, so a `+` box in a document
+anchored at a file appends a level-1 headline through `CreateChild`
+(cutting-garden#352). The plugin is also the
 reference `Searcher` (RFC 0016): it searches exactly what `_body` reads (a
 file's bytes, a headline's whole subtree) from the parse cache, so a
 `_body*=` query over the account costs one PROPFIND per folder instead of
@@ -387,8 +390,9 @@ server.
    addressed by query (`<file>.org?id=…`) rather than by path.
 4. **Body edits and moves** (D7-C, D7-D, landed), as patch keys on the
    same write path; round-trip tested.
-5. **Capture** (D7-E): `CreateChild` on a file or headline.
-6. Later: creation through organize (`CreationDescriber`), local-dir/SFTP
+5. **Capture** (D7-E): `CreateChild` on a file or headline; creation
+   through organize (`CreationDescriber`) rides it (landed, #352).
+6. Later: local-dir/SFTP
    transports, archival capture (dodder FDR 0013's reference set).
 
 ## Prior art and links

@@ -145,6 +145,26 @@ function organize_org_apply_state_atoms_tags_title { # @test
   assert_output --partial ':ID:       3f9c1e2a-7b44-4c1e-9a0d-2f1f6c0b8e11'
 }
 
+# A bare `+` box creates a headline (cutting-garden#352): the bucket sets its
+# state, its atoms and tag atoms its fields and own tags, its trailer the
+# title. The new headline lands at the end of the anchored file, with a minted
+# :ID: and the creation stamp, like an agent capture.
+function organize_org_bare_plus_creates_a_headline { # @test
+  generate_inbox_by_state
+  local edited="$BATS_TEST_TMPDIR/edited.txt"
+  printf '%s\n' "$output" |
+    sed 's/^## =NEXT$/## =NEXT\n\n- [+ errand priority=A] Buy oat milk/' >"$edited"
+
+  run_cg organize -apply "$edited" -commit
+  assert_success
+  assert_output --partial 'organize: created + → '
+  assert_line 'organize: wrote 1 change(s)'
+
+  run inbox_file
+  assert_output --partial '* NEXT [#A] Buy oat milk'
+  assert_output --partial ':errand:'
+}
+
 # A heading may carry a box (#377), but editing a boxed heading is not specified
 # yet: a document that gives a plain heading a box is refused before anything is
 # planned, pointing at #377, and nothing is written. (No generator emits a boxed
