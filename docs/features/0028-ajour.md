@@ -373,6 +373,7 @@ Reused rows keep their ids; the `A-` rows are this record's.
 | V-D2-14 | `tool-input-v1` nodes naming fields, a call with an unnamed field; then with `[-> !tool-input-v1 open]` | refused; admitted |
 | V-D1-7a..c | parent `subtree /wt`; child stencil restates it and adds `deny /wt/justfile`; write `/wt/justfile`, `/wt/src/a.go`, `/etc/hosts` | deny; admitted; refused (no allowance in either) |
 | V-D1-7d | a malformed regex in a layer | `ParseStencil` errors naming the atom; the layer cannot be stacked |
+| V-D1-7e, V-D1-7f | a child widening to `/etc`; a child silent about paths (circus D1 §3 as fixed at circus `9227df20`, 2026-11-09) | refused by the parent (= A-5); refused by the child (= A-3) |
 | A-1 | a stack of patches only | nothing admitted |
 | A-2 | the RFC 0013 §9 link: M, A, deny-only patch P; the three calls above | admitted; refused (P); admitted |
 | A-3 | child stencil omits an allowance the parent has | refused by the child, named |
