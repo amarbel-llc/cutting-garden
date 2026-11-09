@@ -3,10 +3,12 @@ package version
 import (
 	"bytes"
 	"io"
+	"strings"
 	"testing"
 
 	"code.linenisgreat.com/cutting-garden/internal/buildinfo"
 	"code.linenisgreat.com/cutting-garden/internal/command"
+	"code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
 )
 
 // driveVersion dispatches the version subcommand through a fresh Utility
@@ -29,6 +31,20 @@ func TestRun_PrintsSelfLine(t *testing.T) {
 	want := progName + " " + buildinfo.String() + "\n"
 	if got := buf.String(); got != want {
 		t.Errorf("version output = %q, want %q", got, want)
+	}
+}
+
+type fakeSchemeOnly struct{}
+
+func (fakeSchemeOnly) Schemes() []string { return []string{"", "fake"} }
+func (fakeSchemeOnly) TypeTag() string   { return "cutting_garden-capture_receipt-fake-v1" }
+
+func TestWritePluginTable(t *testing.T) {
+	var buf strings.Builder
+	writePluginTable(&buf, []cutting_garden_plugins.Plugin{fakeSchemeOnly{}})
+	want := "\nPLUGIN  SCHEMES  CAPABILITIES\nfake    fake     -\n"
+	if got := buf.String(); got != want {
+		t.Errorf("table = %q, want %q", got, want)
 	}
 }
 

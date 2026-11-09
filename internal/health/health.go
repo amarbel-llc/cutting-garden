@@ -223,6 +223,32 @@ func probe(p cutting_garden_plugins.Plugin) pluginRow {
 	return row
 }
 
+// DisplayName is the name a plugin is reported under: its first non-empty
+// scheme.
+func DisplayName(p cutting_garden_plugins.Plugin) string { return displayName(p) }
+
+// Capabilities is a plugin's compact capability list, in a fixed order:
+// capture, restore (direct or through the capture protocol), diff,
+// traversal (RootLister), facets (declared dimensions), write (NodeMutator)
+// and create (ContainerCreator). `version` prints it per linked plugin.
+func Capabilities(p cutting_garden_plugins.Plugin) []string {
+	row := probe(p)
+	var out []string
+	add := func(has bool, name string) {
+		if has {
+			out = append(out, name)
+		}
+	}
+	add(row.Capture, "capture")
+	add(row.Restore != "no", "restore")
+	add(row.Diff, "diff")
+	add(row.Traversal != nil, "traversal")
+	add(row.FacetCounting != "", "facets")
+	add(isType[cutting_garden_plugins.NodeMutator](p), "write")
+	add(isType[cutting_garden_plugins.ContainerCreator](p), "create")
+	return out
+}
+
 // probeFacets reports p's declared facet dimensions in declaration order,
 // each once, and how its summaries are computed.
 func probeFacets(p cutting_garden_plugins.Plugin) (dimensions []string, counting string) {

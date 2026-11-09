@@ -5,11 +5,15 @@
 //
 //	version
 //
-// Output is the self-identification line mandated by
-// eng-versioning(7) §"version subcommand output" for a binary that pins
-// no downstream components in flake.nix:
+// Output is the self-identification line of eng-versioning(7) §"version
+// subcommand output", then (the hybrid form) a blank line and a table of
+// the linked plugins; the first line stays the whole identity, so
+// `cg version | head -n1` is the scriptable form:
 //
 //	cutting-garden 0.1.0+abc1234
+//
+//	PLUGIN  SCHEMES  CAPABILITIES
+//	caldav  caldav   capture,restore,diff,traversal,facets,write,create
 //
 // Dev builds (bare `go build`, `go run`, `go test`) show
 // "cutting-garden dev+unknown"; release/nix builds show the version.env
@@ -20,9 +24,14 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
+	"strings"
+	"text/tabwriter"
 
 	"code.linenisgreat.com/cutting-garden/internal/buildinfo"
 	"code.linenisgreat.com/cutting-garden/internal/command"
+	"code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
+	"code.linenisgreat.com/cutting-garden/internal/health"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
@@ -57,7 +66,11 @@ func (*Version) GetDescription() command.Description {
 			"build time, as a single self-identification line " +
 			"\"cutting-garden <version>+<commit>\". Dev builds show " +
 			"\"dev+unknown\"; release builds show the version.env value and " +
-			"the flake rev. Takes no positional arguments.",
+			"the flake rev. After a blank line follows a table of the " +
+			"plugins the binary links: each one's schemes and capabilities " +
+			"(capture, restore, diff, traversal, facets, write, create). The " +
+			"first line alone is the identity, for scripts. Takes no " +
+			"positional arguments.",
 	}
 }
 
@@ -71,9 +84,34 @@ func (cmd *Version) Run(req command.Request) {
 		return
 	}
 
-	if _, err := fmt.Fprintf(
-		cmd.output, "%s %s\n", progName, buildinfo.String(),
-	); err != nil {
+	var buf strings.Builder
+	fmt.Fprintf(&buf, "%s %s\n", progName, buildinfo.String())
+	writePluginTable(&buf, cutting_garden_plugins.RegisteredPlugins())
+	if _, err := io.WriteString(cmd.output, buf.String()); err != nil {
 		errors.ContextCancelWithError(ctx, err)
 	}
+}
+
+// writePluginTable appends, after a blank line, the hybrid form of
+// eng-versioning(7): one row per linked plugin with its schemes and
+// capabilities. A binary linking no plugin prints the self-line alone.
+func writePluginTable(buf *strings.Builder, plugins []cutting_garden_plugins.Plugin) {
+	if len(plugins) == 0 {
+		return
+	}
+	buf.WriteString("\n")
+	tw := tabwriter.NewWriter(buf, 0, 2, 2, ' ', 0)
+	fmt.Fprintln(tw, "PLUGIN\tSCHEMES\tCAPABILITIES")
+	for _, p := range plugins {
+		schemes := slices.DeleteFunc(slices.Clone(p.Schemes()), func(s string) bool { return s == "" })
+		if len(schemes) == 0 {
+			schemes = []string{"(default)"}
+		}
+		capabilities := strings.Join(health.Capabilities(p), ",")
+		if capabilities == "" {
+			capabilities = "-"
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\n", health.DisplayName(p), strings.Join(schemes, ","), capabilities)
+	}
+	_ = tw.Flush() // a strings.Builder write cannot fail
 }

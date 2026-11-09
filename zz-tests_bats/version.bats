@@ -21,7 +21,23 @@ function version_prints_self_identification_line { # @test
   # Self-line per eng-versioning(7): "cutting-garden <version>+<commit>".
   # The commit may carry a "-dirty" suffix on worktree builds, hence the
   # [^+]+ (not [^+-]+) tail. dev+unknown defaults are excluded below.
+  run head -n1 <<<"$output"
   assert_output --regexp '^cutting-garden [^+]+\+[^+]+$'
+}
+
+# After the self-line and a blank line, the hybrid form of eng-versioning(7):
+# a table of the plugins the binary links, with their schemes and
+# capabilities (cutting-garden#105).
+function version_lists_linked_plugins { # @test
+  run_cg version
+  assert_success
+  # bats' ${lines[@]} drops blank lines: the header is lines[1], and the
+  # blank separator is checked on the raw output.
+  assert_line --index 1 --regexp '^PLUGIN +SCHEMES +CAPABILITIES$'
+  assert_output --partial $'\n\nPLUGIN '
+  assert_line --regexp '^caldav +caldav +capture,restore,diff,traversal,facets,write'
+  assert_line --regexp '^org +org +traversal,facets,write'
+  assert_line --regexp '^optical +optical +capture$'
 }
 
 function version_matches_source_of_truth { # @test
@@ -32,7 +48,7 @@ function version_matches_source_of_truth { # @test
   assert_success
 
   local got_version
-  got_version="$(echo "$output" | awk '{print $2}' | cut -d+ -f1)"
+  got_version="$(echo "$output" | awk 'NR == 1 {print $2}' | cut -d+ -f1)"
 
   local expected_version
   expected_version="$(grep 'CUTTING_GARDEN_VERSION=' \
@@ -51,7 +67,7 @@ function mcp_server_info_version_carries_the_build_commit { # @test
   run_cg version
   assert_success
   local want
-  want="$(echo "$output" | awk '{print $2}')"
+  want="$(echo "$output" | awk 'NR == 1 {print $2}')"
 
   local reqfile="$BATS_TEST_TMPDIR/mcp_req.jsonl"
   echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"bats","version":"0"}}}' >"$reqfile"
