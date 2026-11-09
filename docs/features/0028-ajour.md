@@ -89,11 +89,15 @@ the consumer splits the document with hyphence's library and hands ajour the
 body. That is what keeps ajour type-agnostic: it never sees a type line.
 
 **The call.** A path of **subjects** from a root down to the dispatching
-node, plus a set of **values** hanging under the last one:
+node, plus a set of **values** hanging under the last one, each value
+itself a path (R 2026-11-09, writing probe run 2, bug 2):
 
     Call{
-      Path   []Subject   // plugin, server, tool, recipe, …: root to leaf
-      Values []Subject   // the call's instance values, each independent
+      Path   []Subject     // plugin, server, tool, recipe, …: root to leaf
+      Values [][]Subject   // the call's instance values, each independent;
+                           // each a path walked step by step from the last
+                           // Path node: [file] for a path argument,
+                           // [root, container, object] for a resource
     }
     Subject{
       Type   string              // the node type the enforcer gives it
@@ -114,6 +118,33 @@ the enforcer presents is **constrained**: ajour has no notion of an
 unconstrained value, so the choice of what to present is the enforcer's
 closed-by-default contract (D2's "an instance value with no predicate on
 any layer is deny").
+
+Three rules of that contract ajour depends on (R 2026-11-09, writing probe
+run 2):
+
+- **One type per field.** Every top-level input field is presented as
+  exactly one subject, of one type the catalog declares for it: a field the
+  manifest marks as a path is `fs-path-v1` (its id the canonical `file:`
+  path, with `field=<name>` so `folio cp`'s `source` and `destination` can
+  be told apart), every other field `tool-input-v1`. A field is never two
+  subjects, so `[-> _ !tool-input-v1 open]` can never admit a path (bug 3;
+  vector A-28).
+- **`New` is a birth, not a write.** The enforcer sets `New` only when an
+  object is created under a container (a cg `create`, organize's `+` box),
+  never for a write to a path: a path is its own id, and a write to a path
+  that does not exist yet is `op=write` (or `put`) on that id, admitted by a
+  `subtree` allowance like any other write (bug 1; vector A-27).
+- **A resource is a path.** A cg node or an MCP resource is presented as
+  the path of subjects from its root down to the object (`caldav:fastmail`,
+  `cal-7`, the VTODO; `fastmail://main`, `Inbox`, `T5`), each step with its
+  own id as organize prints it. Containment is then the subject's position
+  in the path, and `subtree` on a container step covers everything beneath
+  it without comparing URI strings (a fastmail thread's URI carries its id
+  in the query, so segment-prefix on the string would hinge on a trailing
+  slash). Where the first step of a resource path hangs, under the tool as
+  written here or under a resource node beside the tools, is the pending
+  placement ruling (one-isometry doc, tab "Where a resource hangs"); the
+  path shape holds for every option.
 
 ### The stencil fragment (the grammar ajour reads)
 
@@ -160,12 +191,16 @@ accepted as the same thing (vector A-26).
 A node **matches** a subject when all of these hold:
 
 1. **type**: the node has no `!type`, or it equals `Subject.Type`;
-2. **id**: the node's id is `_` and the subject is not `New`; or the node's
-   id is `+` (any temp id) and the subject is `New`; or the ids are equal;
-   or the node carries `subtree` and the node's id is a **segment prefix**
-   of the subject's id
+2. **id**: the node's id is `+` (any temp id) and the subject is `New`; or
+   the subject is **not** `New` and one of: the node's id is `_`; the ids
+   are equal; the node carries `subtree` and the node's id is a **segment
+   prefix** of the subject's id
    (equal, or followed by `/` in the subject's id: `file:/wt` contains
-   `file:/wt/src/a.go` and does not contain `file:/wtx`). Segment-prefix is
+   `file:/wt/src/a.go` and does not contain `file:/wtx`). So a `New`
+   subject is matched by `+` and by nothing else (R 2026-11-09, writing
+   probe run 2, bug 1: the earlier wording let `subtree` and an equal id
+   match a `New` subject, contradicting "Creation" below; vector A-27).
+   Segment-prefix is
    the one containment rule, and it is type-agnostic: it fits `file:` paths,
    URIs and cg node ids alike. **A deny obeys the same rule**: a bare `deny`
    on a folder's id denies that id alone, and a deny meant to cover what is
@@ -207,10 +242,13 @@ Consequences the rules give for free, so they are not special cases:
   is the profile ruleset's rule (clown's validator), not ajour's.
 - **Creation (R 2026-11-09).** `[-> cal-7 !cg-node-v1 [-> + !caldav-object-vtodo-v1
   summary^="[auto]"]]` admits creating a VTODO under cal-7 whose summary
-  starts with `[auto]`: the enforcer presents a creation as a `New` subject
+  starts with `[auto]`: the enforcer presents a creation as the value path
+  `[caldav:fastmail, cal-7, {New VTODO}]`, the last step a `New` subject
   carrying the proposed object's type and fields, and only a `+` node
-  matches it. A container with no `+` node admits no creation; a `_`
-  wildcard never does.
+  matches it (rule 2). A container with no `+` node admits no creation; a
+  `_` wildcard or a `subtree` allowance never does. Because the value is a
+  path, the `cal-7` step is matched before the `+` step is looked for, so
+  "create only in this collection" is exactly this nesting (vector A-29).
 - **Verbs (R 2026-11-09, "three slots, three jobs").** The id slot says
   WHAT (`id` / `_` / `+`); an atom in the enforcer's vocabulary says WHICH
   VERB (`op=[read, patch, delete]`, presented as a subject field; a verb
@@ -233,9 +271,10 @@ Consequences the rules give for free, so they are not special cases:
 
 ### Evaluating a call against one layer
 
-Walk the layer from its roots along `Call.Path`, then into each of
+Walk the layer from its roots along `Call.Path`, then along each of
 `Call.Values` from the last path node, independently (no cartesian
-expansion: each value is constrained on its own, D2 §2):
+expansion: each value is constrained on its own, D2 §2); a value is a path
+and is walked step by step with the same procedure:
 
 1. At each step, collect the nodes under the current frontier that match the
    subject.
@@ -259,7 +298,7 @@ expansion: each value is constrained on its own, D2 §2):
     Refusal{
       Layer   int          // index into layers
       Kind    Kind         // Deny | NoAllowance | LockMismatch
-      Depth   int          // 0 = root; len(Path) + i for Values[i]
+      Depth   int          // 0 = root; len(Path) + j for step j of a value
       Subject Subject
       Node    string       // the spelled node, for Deny and LockMismatch
     }
@@ -356,7 +395,7 @@ Sample A (D2 §3) as the only stencil; a moxy `folio read` call.
     layers: [stencil A]
     call:   Path  = [moxy, folio, read]            (types clown-plugin-v1, mcp-server-v1, mcp-tool-v1;
                                                     read carries Fields{kind:[read], perm:[allow]})
-            Values = [{fs-path-v1, ID: file:circus/.worktrees/_/src/a.go}]
+            Values = [[{fs-path-v1, ID: file:circus/.worktrees/_/src/a.go, Fields{field:[file_path]}}]]
 
     A: moxy ✓ -> folio ✓ -> read ✓ (kind=read perm=allow hold)
        -> [file:circus/.worktrees/_ !fs-path-v1 subtree] matches by segment prefix ✓
@@ -402,8 +441,8 @@ A recipe run with a `_` catalog predicate and a lock:
     call: Path = [just-us, just-us, run_recipe{Digest: s1}, test-go{Type: just-recipe-v1, Fields{group:[test]}}]
           => admitted (the `_` node matches test-go by its group)
     call: … run_recipe{Digest: s2} …                          => refused: lock mismatch [run_recipe@blake2b256-s1 …]
-    call: … explore-cli{Digest: b1}, Values = [{recipe-arg-v1, Fields{position:[1], value:[status]}}]  => admitted
-    call: … explore-cli{Digest: b1}, Values = [{recipe-arg-v1, Fields{position:[1], value:[delete]}}]  => refused: no allowance
+    call: … explore-cli{Digest: b1}, Values = [[{recipe-arg-v1, Fields{position:[1], value:[status]}}]]  => admitted
+    call: … explore-cli{Digest: b1}, Values = [[{recipe-arg-v1, Fields{position:[1], value:[delete]}}]]  => refused: no allowance
     call: … run_recipe{Digest: s1}, with no Digest on the recipe subject       => refused: lock mismatch (no live digest)
 
 A patch that tightens, and a patch that is malformed:
@@ -454,6 +493,9 @@ Reused rows keep their ids; the `A-` rows are this record's.
 | A-24 | `op=create` anywhere in a stencil | the validator refuses it: create is spelled by `+` |
 | A-25 | under `[-> file:/wt subtree]`: a sibling `[-> file:/wt/secrets deny]` (bare), then `[-> file:/wt/secrets subtree deny]`; read `/wt/secrets/token`, read `/wt/secrets` | bare: `token` admitted (the deny matches only the folder id), `/wt/secrets` denied; `subtree deny`: both denied |
 | A-26 | `[-> file:/wt/** !fs-path-v1]`, `[-> file:/wt/** !fs-path-v1 subtree]`, `[-> file:/**/x !fs-path-v1]`; `Write` of the first | the first two parse to `[file:/wt !fs-path-v1 subtree]`; the third is a parse error; `Write` emits `subtree`, never `/**` |
+| A-27 | `[-> file:/wt !fs-path-v1 subtree]` under a write tool: write `file:/wt/new.go` not `New`; the same subject marked `New`; `[-> cal-7 !cg-node-v1 subtree op=[patch]]` against a `New` VTODO under cal-7 | admitted; refused, no allowance (`subtree` never matches `New`); refused, no `+` node |
+| A-28 | `read` with fields `file_path` (path-typed) and `limit`; `[-> read [-> _ !tool-input-v1 open] [-> file:/wt !fs-path-v1 subtree]]`: `file_path=/wt/a.go limit=5`; `file_path=/etc/passwd limit=5`; the same stencil without the `fs-path-v1` node, `file_path=/wt/a.go` | admitted; refused, no allowance for `{fs-path-v1 file:/etc/passwd}`; refused (`open` covers only `tool-input-v1`) |
+| A-29 | the Creation example under `mutate_nodes`; value path `[caldav:fastmail, cal-7, New VTODO "[auto] x"]`; `[…, cal-8, New VTODO "[auto] x"]`; `[…, cal-7, New VTODO "y"]` | admitted; refused at the `cal-8` step; refused at the object step |
 
 piggy's RFC 0013 conformance vectors point at A-17, A-18 and A-19 by name
 (the ask from piggy/green-larch, 2026-11-09) instead of restating them.
@@ -542,11 +584,17 @@ piggy's RFC 0013 conformance vectors point at A-17, A-18 and A-19 by name
    and what each subject's id is, since ajour matches only what the
    enforcer presents; declare `mcp-resource-v1` for every server's
    resources, and the patch subject's shape (proposal: the object's live
-   fields plus the proposed values under a `patch.` prefix).
+   fields plus the proposed values under a `patch.` prefix); declare, per
+   tool, which input fields are path-typed (`fs-path-v1`, one type per
+   field), when a subject is `New` (object creation under a container
+   only), the verb set per node type, and the plugin and server node the
+   hook-governed harness built-ins (Read, Grep, Bash, …) hang under
+   (writing probe run 2, 2026-11-09).
 3. **moxy** (moxy#489, the call site): build `ajour.Call` from a tool call
    with the tool subject's `Fields` from the live manifest and one value
-   subject per top-level input field, and refuse on `Verdict.Admitted ==
-   false` rendering `Refusals`.
+   per top-level input field, each a one-step path typed by the catalog
+   (`fs-path-v1` for a path field, `tool-input-v1` otherwise, never both),
+   and refuse on `Verdict.Admitted == false` rendering `Refusals`.
 4. **spinclass** (FDR 0034 "Verification and revocation"): amend "a
    predicate on a present node that a child profile does not mention is
    inherited unchanged" to the strict rule (a child restates what it keeps)
