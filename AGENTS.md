@@ -39,7 +39,7 @@ via `parent`/`before`/`after`, across files too), a file's preamble (a
 `#+TODO`/`#+FILETAGS` lines kept apart), a headline delete (a leaf; a delete
 op body `{"subtree": true}` takes its subtree, through the optional
 `NodeDeleterWith`) and capture (a temp-id
-create in a file or under a headline), with its parser in
+create in a file or under a headline; an organize `+` box too), with its parser in
 the `plugins/org/orgtext` leaf and an
 in-memory WebDAV test server in `plugins/org/orgtestserver`, FDR 0026;
 and ynab, a traversal plugin over the YNAB REST API, writable only for a
