@@ -146,7 +146,14 @@ parser today and in no PEG production); nothing else in the PEG changes.
 The canonical spelling of a stencil is nested espalier (R 2026-11-09); the
 organize heading rendering is an accepted input spelling once `ParseStencil`
 canonicalizes on read (one-isometry sketch §4, §10), and a stencil's digest
-is over the canonical tree either way.
+is over the canonical tree either way. One more input-only spelling (R
+2026-11-09, from the writing probe: every cold writer reached for the
+gitignore/IAM globstar): an id ending in `/**` is read as the id without the
+suffix plus the `subtree` tag — `[-> file:/wt/** !fs-path-v1]` is
+`[-> file:/wt !fs-path-v1 subtree]` — and `ParseStencil` canonicalizes it;
+the canonical form never carries `/**`, a `/**` anywhere but at the end of
+an id is a parse error, and `/**` together with an explicit `subtree` is
+accepted as the same thing (vector A-26).
 
 ### Matching one node against one subject
 
@@ -160,7 +167,11 @@ A node **matches** a subject when all of these hold:
    (equal, or followed by `/` in the subject's id: `file:/wt` contains
    `file:/wt/src/a.go` and does not contain `file:/wtx`). Segment-prefix is
    the one containment rule, and it is type-agnostic: it fits `file:` paths,
-   URIs and cg node ids alike;
+   URIs and cg node ids alike. **A deny obeys the same rule**: a bare `deny`
+   on a folder's id denies that id alone, and a deny meant to cover what is
+   under it is written `subtree deny` (the writing probe of 2026-11-09
+   caught the examples writing a bare deny and claiming the subtree; one
+   spelling now, vector A-25);
 3. **lock**: if the node's id is locked (`name@d`), `Subject.Digest` equals
    `d`; a locked node against a subject with no digest does not match
    (closed: the enforcer that cannot report a live digest cannot pass a
@@ -260,7 +271,7 @@ result the brief asks for: it names the layer and node that refused. An
 enforcer that wants the short answer reads `Admitted`; one that writes the
 refusal the user sees (EPIC 0001 principle 9, "say what is held") renders
 `Refusals`. ajour prints a refusal as one line: `layer 2 (patch): deny
-[file:/wt/infra/secrets !fs-path-v1 deny] at folio/read`.
+[file:/wt/infra/secrets !fs-path-v1 subtree deny] at folio/read`.
 
 The verdict never depends on comparing one layer with another, so no
 containment check over predicates exists anywhere in the package, and layer
@@ -354,9 +365,9 @@ Sample A (D2 §3) as the only stencil; a moxy `folio read` call.
 The same stack, `file:circus/.worktrees/_/infra/secrets/token`:
 
     A: … -> read -> two nodes match: the subtree allowance and
-       [file:circus/.worktrees/_/infra/secrets !fs-path-v1 deny]; a deny among the matches
+       [file:circus/.worktrees/_/infra/secrets !fs-path-v1 subtree deny]; a deny among the matches
     verdict: refused
-      layer 0 (stencil): deny [file:circus/.worktrees/_/infra/secrets !fs-path-v1 deny] at moxy/folio/read
+      layer 0 (stencil): deny [file:circus/.worktrees/_/infra/secrets !fs-path-v1 subtree deny] at moxy/folio/read
 
 RFC 0013 §9's link: the manager's stencil M (allows read under the worktree),
 the pinned reviewer stencil A, and the link's body as a patch P:
@@ -364,7 +375,7 @@ the pinned reviewer stencil A, and the link's body as a patch P:
     [moxy !clown-plugin-v1
       [-> folio !mcp-server-v1
         [-> read !mcp-tool-v1
-          [-> file:circus/.worktrees/_/infra/secrets !fs-path-v1 deny]]]]
+          [-> file:circus/.worktrees/_/infra/secrets !fs-path-v1 subtree deny]]]]
 
     layers: [stencil M, stencil A, patch P]
     call:   read file:circus/.worktrees/_/src/a.go   -> M ✓, A ✓, P transparent (no match under read)  => admitted
@@ -441,6 +452,8 @@ Reused rows keep their ids; the `A-` rows are this record's.
 | A-22 | a patch with `[-> + !vtodo deny]`; a patch with `[-> + !vtodo summary^=x]` | `ParsePatch` accepts; refuses, naming the leaf |
 | A-23 | `[-> cal-7 !cg-node-v1 subtree op=[delete]]`; delete `cal-7` itself; delete `cal-7/event-3`; patch `cal-7/event-3` | admitted (inclusive); admitted; refused (no allowance for `op=patch`) |
 | A-24 | `op=create` anywhere in a stencil | the validator refuses it: create is spelled by `+` |
+| A-25 | under `[-> file:/wt subtree]`: a sibling `[-> file:/wt/secrets deny]` (bare), then `[-> file:/wt/secrets subtree deny]`; read `/wt/secrets/token`, read `/wt/secrets` | bare: `token` admitted (the deny matches only the folder id), `/wt/secrets` denied; `subtree deny`: both denied |
+| A-26 | `[-> file:/wt/** !fs-path-v1]`, `[-> file:/wt/** !fs-path-v1 subtree]`, `[-> file:/**/x !fs-path-v1]`; `Write` of the first | the first two parse to `[file:/wt !fs-path-v1 subtree]`; the third is a parse error; `Write` emits `subtree`, never `/**` |
 
 piggy's RFC 0013 conformance vectors point at A-17, A-18 and A-19 by name
 (the ask from piggy/green-larch, 2026-11-09) instead of restating them.

@@ -81,8 +81,15 @@ act.
 *subtree* goes:
 
 ```
-[-> file:circus/.worktrees/_/infra/secrets !fs-path-v1 deny]
+[-> file:circus/.worktrees/_/infra/secrets !fs-path-v1 subtree deny]
 ```
+
+*subtree* is the containment tag: the node covers its own id and everything
+under it, by path segment (*file:/wt* covers *file:/wt/src/a.go*, not
+*file:/wtx*). A deny that should cover a folder's contents is written
+*subtree deny*; a bare *deny* denies the one id. You may write the familiar
+globstar instead - *file:/wt/\*\** is read as *file:/wt* with *subtree* - but
+the stored, signed form always spells *subtree*.
 
 A deny anywhere in the stack refuses the call, in a stencil or in a patch.
 A negated condition is *not* a deny: *value!=master*, or *^value=master*,
@@ -119,7 +126,7 @@ at which step, which node - so the message a session sees can say what it
 holds and what stopped it:
 
 ```
-layer 2 (patch): deny [file:circus/.worktrees/_/infra/secrets !fs-path-v1 deny] at moxy/folio/read
+layer 2 (patch): deny [file:circus/.worktrees/_/infra/secrets !fs-path-v1 subtree deny] at moxy/folio/read
 layer 1 (stencil): no allowance for {fs-path-v1 file:/nix/store/…} at moxy/folio/read
 ```
 
