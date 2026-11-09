@@ -176,7 +176,7 @@ A node **matches** a subject when all of these hold:
 The `=` and `^` term prefixes keep their trellis reading: `^` negates the
 atom it prefixes; `=` (exact) is inert here, because ids already match
 exactly unless `subtree` says otherwise. A negated atom is a **condition**,
-never a deny (R 2026-11-09, §5 of the review document): `[-> !recipe-arg-v1
+never a deny (R 2026-11-09, §5 of the review document): `[-> _ !recipe-arg-v1
 position=1 ^value=master]` on a stencil admits every value but `master`.
 
 Consequences the rules give for free, so they are not special cases:
@@ -379,17 +379,17 @@ A child stencil that omits an allowance (the strict rule): C is A with the
     A ✓;  C: no node under read matches  => refused
       layer 1 (stencil): no allowance for {fs-path-v1 file:/nix/store/abc-x/bin/x} at moxy/folio/read
 
-A recipe run with an id-less catalog predicate and a lock:
+A recipe run with a `_` catalog predicate and a lock:
 
     [just-us !clown-plugin-v1
       [-> just-us !mcp-server-v1
         [-> run_recipe@blake2b256-s1 !mcp-tool-v1 kind=exec perm=allow
-          [-> !just-recipe-v1 group=[test, lint]]
+          [-> _ !just-recipe-v1 group=[test, lint]]
           [-> explore-cli@blake2b256-b1 !just-recipe-v1
-            [-> !recipe-arg-v1 position=1 value=[status, update]]]]]]
+            [-> _ !recipe-arg-v1 position=1 value=[status, update]]]]]]
 
     call: Path = [just-us, just-us, run_recipe{Digest: s1}, test-go{Type: just-recipe-v1, Fields{group:[test]}}]
-          => admitted (the id-less node matches test-go by its group)
+          => admitted (the `_` node matches test-go by its group)
     call: … run_recipe{Digest: s2} …                          => refused: lock mismatch [run_recipe@blake2b256-s1 …]
     call: … explore-cli{Digest: b1}, Values = [{recipe-arg-v1, Fields{position:[1], value:[status]}}]  => admitted
     call: … explore-cli{Digest: b1}, Values = [{recipe-arg-v1, Fields{position:[1], value:[delete]}}]  => refused: no allowance
@@ -397,7 +397,7 @@ A recipe run with an id-less catalog predicate and a lock:
 
 A patch that tightens, and a patch that is malformed:
 
-    ParsePatch("[just-us [-> just-us [-> run_recipe [-> explore-cli [-> !recipe-arg-v1 position=1 value!=status deny]]]]]")
+    ParsePatch("[just-us [-> just-us [-> run_recipe [-> explore-cli [-> _ !recipe-arg-v1 position=1 value!=status deny]]]]]")
       => ok; `update` is now denied at position 1, `status` still needs a stencil to admit it
     ParsePatch("[moxy [-> folio [-> read [-> file:/wt !fs-path-v1 subtree]]]]")
       => error: a patch may only deny; leaf [file:/wt !fs-path-v1 subtree] carries no deny
@@ -413,7 +413,7 @@ Reused rows keep their ids; the `A-` rows are this record's.
 | V-D2-8 | `value="--dry-run"` quoted; bare `--dry-run` | quoted parses; the bare form's result is whatever `trellis.Parse` gives, recorded |
 | V-D2-12 | `recipe-arg-v1` matrix: `value=[a, b]`, `value^=origin/`, `value~=^v[0-9]+$`, `value!=master`, each one admitted and one refused input | per case |
 | V-D2-13 | `fs-path-v1 subtree` plus nested `deny`; a file created under the subtree after bless | admitted; refused under the deny |
-| V-D2-14 | `tool-input-v1` nodes naming fields, a call with an unnamed field; then with `[-> !tool-input-v1 open]` | refused; admitted |
+| V-D2-14 | `tool-input-v1` nodes naming fields, a call with an unnamed field; then with `[-> _ !tool-input-v1 open]` | refused; admitted |
 | V-D1-7a..c | parent `subtree /wt`; child stencil restates it and adds `deny /wt/justfile`; write `/wt/justfile`, `/wt/src/a.go`, `/etc/hosts` | deny; admitted; refused (no allowance in either) |
 | V-D1-7d | a malformed regex in a layer | `ParseStencil` errors naming the atom; the layer cannot be stacked |
 | V-D1-7e, V-D1-7f | a child widening to `/etc`; a child silent about paths (circus D1 §3 as fixed at circus `9227df20`, 2026-11-09) | refused by the parent (= A-5); refused by the child (= A-3) |
@@ -424,7 +424,7 @@ Reused rows keep their ids; the `A-` rows are this record's.
 | A-5 | child stencil allows `/etc` where no parent does | refused by the parent (the stencil rule: a child cannot widen) |
 | A-6 | lock `run_recipe@s1`, live `s2`; live absent | lock mismatch; lock mismatch |
 | A-7 | `perm=allow` on a node, subject `perm:[ask]` (V-D2-11 through ajour) | refused, no allowance |
-| A-8 | id-less typed node with `group=[test, lint]`; subjects in `[test, docs]`, in `[docs]` | admitted; refused |
+| A-8 | `_` typed node with `group=[test, lint]`; subjects in `[test, docs]`, in `[docs]` | admitted; refused |
 | A-9 | `value!=master` against a multi-valued field `[master, dev]`; `^value=master` likewise | refused (universal); refused |
 | A-10 | `subtree /wt` against `/wtx/a`, against `/wt` | refused; admitted (equal) |
 | A-11 | a patch with an allowance-shaped leaf | `ParsePatch` errors naming the leaf |
