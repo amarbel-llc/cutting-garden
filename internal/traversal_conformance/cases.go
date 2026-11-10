@@ -1144,37 +1144,26 @@ func (r *runner) caseTemplateWalk(ctx context.Context) {
 		return
 	}
 
-	queue := slices.Clone(roots.Roots)
-	seen := map[string]bool{}
-	lists, checked := 0, 0
-	for len(queue) > 0 && lists < templateWalkLists && checked < templateWalkNodes {
-		uri := queue[0]
-		queue = queue[1:]
-		if seen[uri] {
-			continue
-		}
-		seen[uri] = true
-
-		nodes, ok := r.listNodeViews(ctx, uri)
-		lists++
-		if !ok {
-			continue
-		}
-		for _, node := range nodes {
-			queue = append(queue, node.URI)
-			template, declared := templates[node.Type]
-			if !declared {
-				continue
+	var failure map[string]string
+	lists, checked := walkTemplatedNodes(
+		roots.Roots,
+		func(uri string) ([]traversal_serve.NodeView, bool) { return r.listNodeViews(ctx, uri) },
+		lister.types,
+		func(node traversal_serve.NodeView, template string, lists, checked int) bool {
+			problem := templateProblem(lister, node, template)
+			if problem == "" {
+				return true
 			}
-			checked++
-			if problem := templateProblem(lister, node, template); problem != "" {
-				r.tap.NotOk(nameTemplateWalk, map[string]string{
-					"uri": node.URI, "type": node.Type, "template": template,
-					"problem": problem, "walk": templateWalkScope(lists, checked),
-				})
-				return
+			failure = map[string]string{
+				"uri": node.URI, "type": node.Type, "template": template,
+				"problem": problem, "walk": templateWalkScope(lists, checked),
 			}
-		}
+			return false
+		},
+	)
+	if failure != nil {
+		r.tap.NotOk(nameTemplateWalk, failure)
+		return
 	}
 
 	if checked == 0 {
@@ -1183,6 +1172,62 @@ func (r *runner) caseTemplateWalk(ctx context.Context) {
 		return
 	}
 	r.tap.Ok(nameTemplateWalk)
+}
+
+// walkTemplatedNodes lists breadth-first from roots, within the walk's
+// bounds, descending only into nodes whose type is a declared container (or
+// is undeclared), and calls check for every listed node whose type declares a
+// uri_template, with the walk's progress so far; check returns false to stop
+// the walk. It returns how many containers it listed and nodes it checked.
+func walkTemplatedNodes(
+	roots []string,
+	list func(uri string) ([]traversal_serve.NodeView, bool),
+	types []cutting_garden_plugins.NodeType,
+	check func(node traversal_serve.NodeView, template string, lists, checked int) bool,
+) (lists, checked int) {
+	templates := map[string]string{}
+	leaf := map[string]bool{}
+	for _, nodeType := range types {
+		if nodeType.URITemplate != "" {
+			templates[nodeType.Tag] = nodeType.URITemplate
+		}
+		if !nodeType.Container {
+			leaf[nodeType.Tag] = true
+		}
+	}
+
+	queue := slices.Clone(roots)
+	seen := map[string]bool{}
+	for len(queue) > 0 && lists < templateWalkLists && checked < templateWalkNodes {
+		uri := queue[0]
+		queue = queue[1:]
+		if seen[uri] {
+			continue
+		}
+		seen[uri] = true
+
+		nodes, ok := list(uri)
+		lists++
+		if !ok {
+			continue
+		}
+		for _, node := range nodes {
+			// Only containers are listed, so the list budget is not spent on
+			// leaves; a node of an undeclared type may be either and is listed.
+			if !leaf[node.Type] {
+				queue = append(queue, node.URI)
+			}
+			template, declared := templates[node.Type]
+			if !declared {
+				continue
+			}
+			checked++
+			if !check(node, template, lists, checked) {
+				return lists, checked
+			}
+		}
+	}
+	return lists, checked
 }
 
 // templateProblem is why node's URI does not round-trip through its type's
