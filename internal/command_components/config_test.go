@@ -213,6 +213,32 @@ value = "loaded"
 	}
 }
 
+// The skipped sections describe the most recent load only: a later load of a
+// file with no failing section, or of no file at all, reports none.
+func TestLoadConfig_SkippedSectionsResetOnEveryLoad(t *testing.T) {
+	failing := writeTempConfig(t, `
+[cctest_section]
+reject = true
+`)
+	for _, next := range []string{
+		writeTempConfig(t, "[cctest_other]\nvalue = \"ok\"\n"),
+		filepath.Join(t.TempDir(), "absent.toml"),
+	} {
+		if _, err := LoadConfig(failing, nil); err != nil {
+			t.Fatalf("LoadConfig(failing): %v", err)
+		}
+		if len(SkippedConfigSections()) != 1 {
+			t.Fatalf("after the failing load: %+v, want one skipped", SkippedConfigSections())
+		}
+		if _, err := LoadConfig(next, nil); err != nil {
+			t.Fatalf("LoadConfig(%s): %v", next, err)
+		}
+		if got := SkippedConfigSections(); len(got) != 0 {
+			t.Errorf("after loading %s: %+v, want none (stale from the earlier load)", next, got)
+		}
+	}
+}
+
 // D3, under CG_STRICT_CONFIG=1 (the CI switch, cutting-garden#325): a
 // section decoder's failure (a plugin's Validate rejecting an entry) is
 // EX_USAGE naming the file, the section, and the entry.

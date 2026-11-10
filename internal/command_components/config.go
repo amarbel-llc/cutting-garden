@@ -39,10 +39,11 @@ func DefaultConfigPath() (string, error) {
 
 // LoadConfig reads and decodes the config at path. A missing file yields a
 // zero ConfigV0 and a nil error — cutting-garden runs normally with no
-// config (RFC 0007 § File Location). A failing framework section, and any
-// TOML syntax or type error, is a bad-request error (EX_USAGE); a failing
-// plugin section is skipped with a warning unless CG_STRICT_CONFIG=1
-// (cutting-garden#325), and SkippedConfigSections reports it. Keys present in the file but
+// config (RFC 0007 § File Location). A TOML syntax error, and a failing
+// framework section, is a bad-request error (EX_USAGE); a failing plugin
+// section (a type error inside it included) is skipped with a warning unless
+// CG_STRICT_CONFIG=1 (cutting-garden#325), and SkippedConfigSections reports
+// it, for this load only. Keys present in the file but
 // consumed by no field are reported to warnw (typically os.Stderr) and do
 // not fail the load.
 //
@@ -72,6 +73,8 @@ func LoadConfig(path string, warnw io.Writer) (*cgconfig.ConfigV0, error) {
 func loadConfigWithRaw(
 	path string, warnw io.Writer,
 ) ([]byte, *cgconfig.ConfigV0, error) {
+	// The skipped sections describe this load only, whatever path it takes.
+	setSkippedConfigSections(nil)
 	raw, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, &cgconfig.ConfigV0{}, nil
