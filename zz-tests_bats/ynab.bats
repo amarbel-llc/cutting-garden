@@ -192,6 +192,15 @@ function ynab_mcp_describe_names_every_transaction_patch_field { # @test
   assert_output t-0702
 }
 
+# The batched write names each op's ignored keys on its outcome
+# (cutting-garden#376): an unknown key beside a real field, and an op naming
+# only an unknown key, which stays patched_nothing.
+function ynab_mcp_patch_outcomes_name_ignored_fields { # @test
+  mcp_drive ynab://test/ "$(tools_call 3 mutate_nodes '{"groups":[{"anchor":"ynab://test/Household/transactions/","ops":[{"kind":"patch","id":"t-0702","body":"{\"memo\":\"with a stray key\",\"color\":\"red\"}"},{"kind":"patch","id":"t-0709","body":"{\"emoji\":\"rocket\"}"}]}]}')"
+  run jq -c '.groups[0].outcomes | map({id, status, fields, ignored}) | sort_by(.id)' <<<"$(mcp_result_text "$output" 3)"
+  assert_output '[{"id":"t-0702","status":"applied","fields":["memo"],"ignored":["color"]},{"id":"t-0709","status":"patched_nothing","fields":null,"ignored":["emoji"]}]'
+}
+
 # A reconciled transaction's cleared state is locked: the patch is refused and
 # nothing changes.
 function ynab_mcp_patch_refuses_a_reconciled_cleared_change { # @test

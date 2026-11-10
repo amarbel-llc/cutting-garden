@@ -1150,7 +1150,7 @@ func (w *WirePlugin) PatchNodeDetail(
 		return cutting_garden_plugins.PatchDetail{}, err
 	}
 
-	var detail cutting_garden_plugins.PatchDetail
+	detail := cutting_garden_plugins.PatchDetail{Ignored: result.Ignored}
 	if result.URI != "" {
 		newURI, err := url.Parse(result.URI)
 		if err != nil {

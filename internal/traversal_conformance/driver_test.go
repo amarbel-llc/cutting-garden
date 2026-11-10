@@ -74,6 +74,11 @@ func testpeerManifest(t *testing.T) *traversal_conformance.Manifest {
 			ExpectApplied: []string{"note", "rank"},
 		},
 		PatchUnrecognizedOnly: traversal_conformance.PatchSpec{Body: ""},
+		PatchIgnored: traversal_conformance.PatchIgnoredSpec{
+			Body:          `{"note":"mixed","unsupported_color":"red"}`,
+			ExpectApplied: []string{"note"},
+			ExpectIgnored: []string{"unsupported_color"},
+		},
 		PatchWrongTyped: traversal_conformance.PatchSpec{
 			Body: "not json",
 		},
@@ -209,7 +214,9 @@ func TestRunPassesConformantTestpeer(t *testing.T) {
 			" same node, existed",
 		"ok 29 - node.bulk_mutate: a sweep whose listing declines the filter" +
 			" is refused",
-		"1..29",
+		"ok 30 - node.create: probe node",
+		"ok 31 - node.patch: ignored names the body keys tolerated but not applied",
+		"1..31",
 	} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("output missing %q:\n%s", want, out.String())

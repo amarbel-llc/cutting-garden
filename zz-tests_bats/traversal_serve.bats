@@ -1192,6 +1192,11 @@ body = ""
 [patch_wrong_typed]
 body = "not json"
 
+[patch_ignored]
+body = "{\"note\":\"mixed\",\"unsupported_color\":\"red\"}"
+expect_applied = ["note"]
+expect_ignored = ["unsupported_color"]
+
 [facet_container]
 uri = "cgtest://fixture/box"
 filter = "state=open"
@@ -1238,7 +1243,7 @@ EOF
   # whole multi-line output as ONE string (no per-line/multiline flag),
   # so `^not ok` would never match a mid-output failure — a false-safe
   # assertion. --partial 'not ok' catches a failing point anywhere.
-  assert_output --partial '1..29'
+  assert_output --partial '1..31'
   # The nix-built driver carries its build identity in the TAP header
   # (cutting-garden#107): the version reached the binary, not the dev default.
   assert_output --partial '# cutting-garden-conformance-traversal '
@@ -1283,6 +1288,10 @@ EOF
   # ...and a repeated `idempotency_key` returns the same node with
   # `existed` (a peer that ignores the key SKIPs).
   assert_output --partial 'ok 28 - node.create_child: a repeated idempotency_key returns the same node, existed'
+  # A patch body naming a supported and an unsupported key reports both
+  # sets, disjoint, on its own probe node (cutting-garden#376); a peer
+  # omitting [patch_ignored] SKIPs.
+  assert_output --partial 'ok 31 - node.patch: ignored names the body keys tolerated but not applied'
   refute_output --partial 'not ok'
 }
 

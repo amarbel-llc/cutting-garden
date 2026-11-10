@@ -475,6 +475,9 @@ type NodePatchResult struct {
 	// plugin reports one (a headline renamed or moved no longer answers to
 	// the URI the call used). Absent means "no new address reported".
 	URI string `json:"uri,omitempty"`
+	// Ignored names the body keys the plugin tolerated but did not apply
+	// (cutting-garden#376). Absent means none, or not reported.
+	Ignored []string `json:"ignored,omitempty"`
 }
 
 // NodeDeleteParams is the node.delete request payload.
@@ -558,9 +561,11 @@ type BulkOutcomeView struct {
 	Ref    string   `json:"ref,omitempty"`
 	Status string   `json:"status"`
 	Fields []string `json:"fields,omitempty"`
-	NewURI string   `json:"new_uri,omitempty"`
-	Name   string   `json:"name,omitempty"`
-	Err    string   `json:"err,omitempty"`
+	// Ignored is the outcome's ignored patch keys (cutting-garden#376).
+	Ignored []string `json:"ignored,omitempty"`
+	NewURI  string   `json:"new_uri,omitempty"`
+	Name    string   `json:"name,omitempty"`
+	Err     string   `json:"err,omitempty"`
 }
 
 // bulkOpViewFrom projects a domain BulkOp onto the wire. A nil URI (a
@@ -735,7 +740,8 @@ func BulkMutateResultFrom(
 
 	for _, o := range result.Outcomes {
 		ov := BulkOutcomeView{
-			Ref: o.Ref, Status: string(o.Status), Fields: o.Fields, Name: o.Name, Err: o.Err,
+			Ref: o.Ref, Status: string(o.Status), Fields: o.Fields, Ignored: o.Ignored,
+			Name: o.Name, Err: o.Err,
 		}
 		if o.URI != nil {
 			ov.URI = o.URI.String()
@@ -800,7 +806,7 @@ func (r BulkMutateResult) ToBulkResult() (
 	for i, view := range r.Outcomes {
 		o := cutting_garden_plugins.BulkOutcome{
 			Ref: view.Ref, Status: cutting_garden_plugins.BulkOutcomeStatus(view.Status),
-			Fields: view.Fields, Name: view.Name, Err: view.Err,
+			Fields: view.Fields, Ignored: view.Ignored, Name: view.Name, Err: view.Err,
 		}
 		for _, field := range []struct {
 			name, raw string

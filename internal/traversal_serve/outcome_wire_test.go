@@ -20,13 +20,14 @@ type detailPlugin struct {
 	newURI  string
 	name    string
 	missing bool
+	ignored []string
 }
 
 func (d detailPlugin) PatchNodeDetail(
 	ctx context.Context, uri *url.URL, body io.Reader,
 ) (cutting_garden_plugins.PatchDetail, error) {
 	applied, err := d.fakeFullPlugin.PatchNode(ctx, uri, body)
-	detail := cutting_garden_plugins.PatchDetail{Applied: applied}
+	detail := cutting_garden_plugins.PatchDetail{Applied: applied, Ignored: d.ignored}
 	if d.newURI != "" {
 		detail.NewURI, _ = url.Parse(d.newURI)
 	}
@@ -71,6 +72,26 @@ func TestServeNodePatchResultCarriesTheNewURI(t *testing.T) {
 		}
 		if got, want := string(raw), `{"applied":["state"],"uri":"mem://host/root/a?id=1"}`; got != want {
 			t.Errorf("result = %s, want %s", got, want)
+		}
+	})
+
+	// The ignored keys (cutting-garden#376) cross both ways: in the raw
+	// result, and back out of the adapter.
+	t.Run("ignored", func(t *testing.T) {
+		d := detailPlugin{
+			fakeFullPlugin: &fakeFullPlugin{patchApplied: []string{"state"}},
+			ignored:        []string{"color"},
+		}
+		client, _ := startServe(t, detailConfig(d))
+		mustInitialize(t, client)
+		raw, err := rawCall(t, client, MethodNodePatch, patch)
+		if err != nil || string(raw) != `{"applied":["state"],"ignored":["color"]}` {
+			t.Errorf("result = %s err=%v", raw, err)
+		}
+		adapter, _ := newTestWirePlugin(t, memSpec(), detailConfig(d))
+		detail, err := adapter.PatchNodeDetail(context.Background(), mustParseURL(t, fakeLeafA), strings.NewReader("{}"))
+		if err != nil || len(detail.Ignored) != 1 || detail.Ignored[0] != "color" {
+			t.Errorf("adapter detail = %+v err=%v, want ignored [color]", detail, err)
 		}
 	})
 
@@ -173,7 +194,7 @@ func TestBulkMutateResultOutcomesRoundTrip(t *testing.T) {
 		Outcomes: []cutting_garden_plugins.BulkOutcome{
 			{
 				URI: u("mem://h/a"), Status: cutting_garden_plugins.OutcomeApplied,
-				Fields: []string{"title"}, NewURI: u("mem://h/a?id=1"),
+				Fields: []string{"title"}, Ignored: []string{"color"}, NewURI: u("mem://h/a?id=1"),
 			},
 			{URI: u("mem://h/b"), Status: cutting_garden_plugins.OutcomeDeleted, Name: "Bee"},
 			{URI: u("mem://h/c"), Status: cutting_garden_plugins.OutcomeNotFound, Err: "gone"},

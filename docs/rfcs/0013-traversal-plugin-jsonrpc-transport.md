@@ -620,7 +620,12 @@ would in process:
   `uri`: the node's address after the patch, present only when it differs
   from the `uri` the call used (an org headline renamed or moved no longer
   answers to its old `?h=` address). Omitted means the plugin reports no
-  new address. Both members are additive and optional, tri-state like
+  new address. It also MAY carry `ignored: [string]` (amendment,
+  cutting-garden#376): the body keys the plugin tolerated but did not
+  apply, disjoint from `applied`, so a caller can account for every key it
+  sent as applied, ignored or already current. Omitted means none, or not
+  reported; a body naming only ignored keys still reports `applied: []`.
+  These members are additive and optional, tri-state like
   `applied`: a host MUST NOT read an omission as "unchanged" or "unnamed"
   beyond what it says, and an older host simply ignores them. Because these
   members (and `node.bulk_mutate`'s `outcomes`) arrive within

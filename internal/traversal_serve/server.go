@@ -955,13 +955,14 @@ func (s *server) handleNodePatch(
 
 	var (
 		applied []string
+		ignored []string
 		err     error
 		newURI  string
 	)
 	if detailer, ok := s.mutator.(cutting_garden_plugins.NodePatcherDetail); ok {
 		var detail cutting_garden_plugins.PatchDetail
 		detail, err = detailer.PatchNodeDetail(ctx, uri, bytes.NewReader(body))
-		applied = detail.Applied
+		applied, ignored = detail.Applied, detail.Ignored
 		if detail.NewURI != nil {
 			newURI = detail.NewURI.String()
 		}
@@ -977,10 +978,10 @@ func (s *server) handleNodePatch(
 	// far side would read as the authoritative "nothing applied"
 	// (cutting-garden#182).
 	if applied == nil {
-		return NodePatchResult{URI: newURI}, nil
+		return NodePatchResult{URI: newURI, Ignored: ignored}, nil
 	}
 
-	return NodePatchResult{Applied: &applied, URI: newURI}, nil
+	return NodePatchResult{Applied: &applied, URI: newURI, Ignored: ignored}, nil
 }
 
 func (s *server) handleNodeDelete(

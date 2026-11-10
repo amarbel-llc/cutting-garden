@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"path"
 	"slices"
+	"strings"
 	"testing"
 
 	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
@@ -149,6 +150,22 @@ func TestBulkMutate_NoOpsAreReportedAndWriteNothing(t *testing.T) {
 	}
 	if srv.Writes() != 0 {
 		t.Errorf("no-ops sent %d write(s)", srv.Writes())
+	}
+}
+
+// The three accounts are disjoint (cutting-garden#376): a recognized key whose
+// value is already current is neither applied nor ignored, so a caller can
+// account for every key it sent as applied, ignored or already current.
+func TestPatchNodeDetail_ACurrentValueIsNeitherAppliedNorIgnored(t *testing.T) {
+	newFixture(t)
+	detail, err := (Plugin{}).PatchNodeDetail(context.Background(),
+		mustParseURL(t, txnPrefix+"t1"),
+		strings.NewReader(`{"category":"Dining Out","color":"red"}`)) // category already so
+	if err != nil {
+		t.Fatalf("PatchNodeDetail: %v", err)
+	}
+	if detail.Applied == nil || len(detail.Applied) != 0 || !slices.Equal(detail.Ignored, []string{"color"}) {
+		t.Errorf("applied %#v ignored %v, want [] and [color]", detail.Applied, detail.Ignored)
 	}
 }
 

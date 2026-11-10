@@ -59,6 +59,11 @@ type Manifest struct {
 	// PatchWrongTyped is a patch body the peer must reject as a caller
 	// mistake: JSON-RPC -32602 (cutting-garden#185).
 	PatchWrongTyped PatchSpec
+	// PatchIgnored is a patch body naming keys the peer applies and keys it
+	// tolerates without applying, with the applied and ignored sets the
+	// node.patch result must report (cutting-garden#376). An empty Body
+	// SKIPs the point.
+	PatchIgnored PatchIgnoredSpec
 	// FacetContainer, when non-nil, names a container whose
 	// facets.counts result should carry the RFC 0012 §13 by_container
 	// breakdown, plus the filter the breakdown cases apply. Optional —
@@ -188,6 +193,13 @@ type PatchSpec struct {
 	Body string
 }
 
+// PatchIgnoredSpec is a mixed patch body and the sets it must report.
+type PatchIgnoredSpec struct {
+	Body          string
+	ExpectApplied []string
+	ExpectIgnored []string
+}
+
 // FacetContainerSpec names the breakdown-case container and filter.
 type FacetContainerSpec struct {
 	URI string
@@ -279,6 +291,22 @@ func LoadManifest(path string) (*Manifest, error) {
 			sub, "expect_applied", &manifest.PatchRecognized.ExpectApplied,
 		); err != nil {
 			return nil, err
+		}
+	}
+
+	if sub, ok, err := decodeTable(model, "patch_ignored"); err != nil {
+		return nil, err
+	} else if ok {
+		if err := decodeString(sub, "body", &manifest.PatchIgnored.Body); err != nil {
+			return nil, err
+		}
+		for key, into := range map[string]*[]string{
+			"expect_applied": &manifest.PatchIgnored.ExpectApplied,
+			"expect_ignored": &manifest.PatchIgnored.ExpectIgnored,
+		} {
+			if err := decodeStringSlice(sub, key, into); err != nil {
+				return nil, err
+			}
 		}
 	}
 

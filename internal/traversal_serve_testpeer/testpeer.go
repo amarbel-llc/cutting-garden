@@ -1040,12 +1040,33 @@ func (p *TreePlugin) PutNode(
 	return p.persistLocked()
 }
 
+// UnsupportedKeyPrefix marks a patch key this peer tolerates but does not
+// apply: it is reported as ignored (cutting-garden#376), so the conformance
+// driver's patch_ignored point has an unsupported key to name. Every other
+// key merges into the structured view.
+const UnsupportedKeyPrefix = "unsupported_"
+
 func (p *TreePlugin) PatchNode(
-	_ context.Context, uri *url.URL, body io.Reader,
+	ctx context.Context, uri *url.URL, body io.Reader,
 ) ([]string, error) {
+	detail, err := p.PatchNodeDetail(ctx, uri, body)
+	return detail.Applied, err
+}
+
+// PatchNodeDetail is PatchNode that also reports the ignored keys.
+func (p *TreePlugin) PatchNodeDetail(
+	_ context.Context, uri *url.URL, body io.Reader,
+) (cutting_garden_plugins.PatchDetail, error) {
+	applied, ignored, err := p.patchNode(uri, body)
+	return cutting_garden_plugins.PatchDetail{Applied: applied, Ignored: ignored}, err
+}
+
+func (p *TreePlugin) patchNode(
+	uri *url.URL, body io.Reader,
+) (applied, ignored []string, err error) {
 	data, err := readAllBody(body)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	p.mu.Lock()
@@ -1055,11 +1076,11 @@ func (p *TreePlugin) PatchNode(
 
 	node, found := p.nodes[key]
 	if !found {
-		return nil, errors.BadRequestf("patch %s: node does not exist", key)
+		return nil, nil, errors.BadRequestf("patch %s: node does not exist", key)
 	}
 
 	if len(data) == 0 {
-		return nil, errors.BadRequestf("patch %s: empty body", key)
+		return nil, nil, errors.BadRequestf("patch %s: empty body", key)
 	}
 
 	// The plugin-defined patch format: a JSON object whose fields merge
@@ -1067,8 +1088,15 @@ func (p *TreePlugin) PatchNode(
 	// (the NodeMutator contract).
 	var fields map[string]any
 	if err := json.Unmarshal(data, &fields); err != nil {
-		return nil, errors.BadRequestf("patch %s: body is not a JSON object: %s", key, err)
+		return nil, nil, errors.BadRequestf("patch %s: body is not a JSON object: %s", key, err)
 	}
+	for field := range fields {
+		if strings.HasPrefix(field, UnsupportedKeyPrefix) {
+			ignored = append(ignored, field)
+			delete(fields, field)
+		}
+	}
+	slices.Sort(ignored)
 
 	// A field a declared facet write maps is ALSO the node's membership in
 	// that dimension: the host-built shapes (RFC 0013 facet_writes) move it.
@@ -1076,13 +1104,13 @@ func (p *TreePlugin) PatchNode(
 	// unusable value is a clean -32602 with the node untouched.
 	facetUpdates, err := p.facetUpdatesFromPatch(key, node.typ, fields)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	// The declared trailer field IS the node's name (the RFC 0013
 	// trailer_field contract): a retitle renames the node.
 	rename, err := p.trailerRenameFromPatch(key, node.typ, fields)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if rename != "" {
 		node.name = rename
@@ -1106,17 +1134,20 @@ func (p *TreePlugin) PatchNode(
 	}
 	p.generation++
 	if err := p.persistLocked(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	// This peer's structured view accepts any key, so every field named is
-	// a field applied — reported explicitly (never nil) so the wire's
-	// applied round-trip is exercised end-to-end (cutting-garden#182).
-	// Sorted: the wire result is compared verbatim by the
-	// indistinguishability tests, and Go map iteration order is random.
-	applied := slices.Sorted(maps.Keys(fields))
+	// This peer's structured view accepts any key but the unsupported ones,
+	// so every other field named is a field applied — reported explicitly
+	// (never nil) so the wire's applied round-trip is exercised end-to-end
+	// (cutting-garden#182). Sorted: the wire result is compared verbatim by
+	// the indistinguishability tests, and Go map iteration order is random.
+	applied = slices.Sorted(maps.Keys(fields))
+	if applied == nil && len(ignored) > 0 {
+		applied = []string{} // an unsupported-only body applied nothing
+	}
 
-	return applied, nil
+	return applied, ignored, nil
 }
 
 func (p *TreePlugin) DeleteNode(_ context.Context, uri *url.URL) error {

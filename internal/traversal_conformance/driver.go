@@ -100,6 +100,7 @@ func Run(
 	r.caseTerminalValues()
 	r.caseCreation(ctx)
 	r.caseBulkSweepRefusesDecline(ctx)
+	r.casePatchIgnored(ctx)
 
 	tw.Plan()
 

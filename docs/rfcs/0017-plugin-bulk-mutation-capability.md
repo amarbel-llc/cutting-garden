@@ -478,15 +478,18 @@ an atomic-mode success.
 
 **Per-op outcomes (amendment, cutting-garden#320, #359, #362).** The
 result MAY carry `outcomes`: one entry per targeted op in request order,
-`{ "uri"?, "ref"?, "status", "fields"?, "new_uri"?, "name"?, "err"? }`,
+`{ "uri"?, "ref"?, "status", "fields"?, "ignored"?, "new_uri"?, "name"?, "err"? }`,
 beside the four lists, which keep their meaning and the invariant
 (`applied` + `patched_nothing` + `failed` is the targeted set;
 `outcomes` has one entry per op). `status` is `applied`,
 `patched_nothing`, `failed`, `deleted` or `not_found`, and is the
 canonical reading for new callers: a `deleted` node is also in `applied`,
 a `not_found` one also in `failed`. `fields` are the patch keys that
-took, `new_uri` the node's address after the op when it differs, `name`
-a deleted node's name. The member is omitted-as-empty and additive: a
+took, `ignored` the patch keys the plugin tolerated but did not apply
+(amendment, cutting-garden#376; disjoint from `fields`, omitted when none
+or not reported, and a patch naming only such keys stays
+`patched_nothing`), `new_uri` the node's address after the op when it
+differs, `name` a deleted node's name. The member is omitted-as-empty and additive: a
 plugin that reports none leaves the host with the four lists; an op never
 attempted (a temp id whose create failed) is `failed` with its reason; an
 atomic failure is still an error with no result, so `outcomes` only ever
