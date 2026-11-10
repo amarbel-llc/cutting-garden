@@ -172,23 +172,27 @@ func rootFrontier(roots []Node) frontier {
 // transparent there and stops walking that path.
 func evaluateLayer(kind layerKind, roots []Node, call Call) []Refusal {
 	front := rootFrontier(roots)
-	after := make([]frontier, 0, len(call.Path))
+	var anchor *frontier
+	reachedEnd := true
 	for i, s := range call.Path {
-		next, refusal, stopped := step(kind, front, s, i)
+		next, refusal, stopped := step(kind, front, s, i, false)
 		if refusal != nil {
 			return []Refusal{*refusal}
 		}
 		if stopped {
+			reachedEnd = false
 			break
 		}
-		after = append(after, next)
 		front = next
+		if i == call.Anchor {
+			anchor = &next
+		}
 	}
 
 	var refusals []Refusal
-	walk := func(from frontier, steps []Subject, depth0 int) {
+	walk := func(from frontier, steps []Subject, depth0 int, resource bool) {
 		for j, s := range steps {
-			next, refusal, stopped := step(kind, from, s, depth0+j)
+			next, refusal, stopped := step(kind, from, s, depth0+j, resource)
 			if refusal != nil {
 				refusals = append(refusals, *refusal)
 				return
@@ -199,18 +203,25 @@ func evaluateLayer(kind layerKind, roots []Node, call Call) []Refusal {
 			from = next
 		}
 	}
-	if len(after) == len(call.Path) {
-		last := rootFrontier(roots)
-		if len(after) > 0 {
-			last = after[len(after)-1]
-		}
+	if reachedEnd {
 		for _, value := range call.Values {
-			walk(last, value, len(call.Path))
+			walk(front, value, len(call.Path), false)
 		}
 	}
-	if call.Anchor < len(after) {
+	switch {
+	case anchor != nil:
 		for _, resource := range call.Resources {
-			walk(after[call.Anchor], resource, call.Anchor+1)
+			walk(*anchor, resource, call.Anchor+1, true)
+		}
+	case reachedEnd && kind == layerStencil:
+		// An Anchor that indexes no Path step leaves the resources nowhere
+		// to hang: closed by default, a stencil admits none of them.
+		for _, resource := range call.Resources {
+			var s Subject
+			if len(resource) > 0 {
+				s = resource[0]
+			}
+			refusals = append(refusals, Refusal{Kind: KindNoAllowance, Depth: call.Anchor + 1, Subject: s})
 		}
 	}
 	return refusals
@@ -218,12 +229,14 @@ func evaluateLayer(kind layerKind, roots []Node, call Call) []Refusal {
 
 // step matches subject s against front at depth: it refuses (a deny among
 // the matches; no match in a stencil), stops (no match in a patch), or
-// returns the next frontier.
-func step(kind layerKind, front frontier, s Subject, depth int) (frontier, *Refusal, bool) {
+// returns the next frontier. resource marks a step of a resource path, the
+// only place a creation verb is presented.
+func step(kind layerKind, front frontier, s Subject, depth int, resource bool) (frontier, *Refusal, bool) {
+	creation := resource && slices.Contains(s.Fields[verbField], verbCreate)
 	var matched, sticky []*Node
 	var lockFailed *Node
 	for _, n := range front.nodes {
-		switch matchNode(n, s) {
+		switch matchNode(n, s, creation) {
 		case matchOK:
 			matched = append(matched, n)
 		case matchLockFailed:
@@ -233,11 +246,11 @@ func step(kind layerKind, front frontier, s Subject, depth int) (frontier, *Refu
 		}
 	}
 	for _, n := range front.sticky {
-		if !s.New && atomsHold(n, s) {
+		if !s.New && atomsHold(n, s, creation) {
 			sticky = append(sticky, n)
 		}
 	}
-	all := append(matched, sticky...)
+	all := uniqueNodes(append(matched, sticky...))
 	for _, n := range all {
 		if n.Deny {
 			return frontier{}, &Refusal{Kind: KindDeny, Depth: depth, Subject: s, Node: spellNode(n)}, false
@@ -264,7 +277,22 @@ func step(kind layerKind, front frontier, s Subject, depth int) (frontier, *Refu
 			next.sticky = append(next.sticky, n)
 		}
 	}
+	next.nodes, next.sticky = uniqueNodes(next.nodes), uniqueNodes(next.sticky)
 	return next, nil, false
+}
+
+// uniqueNodes drops repeats, keeping first-seen order: a subtree node can be
+// both a sticky survivor and a child of another sticky node.
+func uniqueNodes(nodes []*Node) []*Node {
+	seen := make(map[*Node]bool, len(nodes))
+	out := nodes[:0:0]
+	for _, n := range nodes {
+		if !seen[n] {
+			seen[n] = true
+			out = append(out, n)
+		}
+	}
+	return out
 }
 
 type matchResult int
@@ -278,7 +306,7 @@ const (
 // matchNode is FDR 0028 "Matching one node against one subject": type, id,
 // atoms, then the lock (a node that matches but for its lock is reported as
 // a lock mismatch when nothing else matches).
-func matchNode(n *Node, s Subject) matchResult {
+func matchNode(n *Node, s Subject, creation bool) matchResult {
 	if n.Type != "" && n.Type != s.Type {
 		return matchNo
 	}
@@ -294,7 +322,7 @@ func matchNode(n *Node, s Subject) matchResult {
 			return matchNo
 		}
 	}
-	if !atomsHold(n, s) {
+	if !atomsHold(n, s, creation) {
 		return matchNo
 	}
 	if n.Lock != "" && s.Digest != n.Lock {
@@ -310,9 +338,9 @@ func segmentPrefix(prefix, id string) bool {
 }
 
 // atomsHold reports that every atom of n holds against s's fields; an `op=`
-// atom is skipped on a creation step.
-func atomsHold(n *Node, s Subject) bool {
-	creation := slices.Contains(s.Fields[verbField], verbCreate)
+// atom is skipped on a creation step (a resource step presenting
+// `op=create`).
+func atomsHold(n *Node, s Subject, creation bool) bool {
 	for i, fp := range n.Atoms {
 		if creation && !fp.Field.Quoted && fp.Field.Name == verbField {
 			continue
@@ -342,13 +370,21 @@ func atomHolds(fp trellis.FieldPred, negated bool, compiled []*regexp.Regexp, va
 	if op == trellis.FieldOpNotEq {
 		op, universal = trellis.FieldOpEq, !universal
 	}
+	patterns := make([]*regexp.Regexp, len(fp.Values))
+	if op == trellis.FieldOpRegex {
+		for k, want := range fp.Values {
+			re := regexpFor(trellis.ValueText(want), compiled, k)
+			if re == nil {
+				// A pattern that does not compile (a Node built in code; a
+				// parsed one was refused) never holds, negated or not.
+				return false
+			}
+			patterns[k] = re
+		}
+	}
 	matchesAny := func(got string) bool {
 		for k, want := range fp.Values {
-			var re *regexp.Regexp
-			if k < len(compiled) {
-				re = compiled[k]
-			}
-			if satisfies(op, got, valueText(want), re) {
+			if satisfies(op, got, trellis.ValueText(want), patterns[k]) {
 				return true
 			}
 		}
@@ -364,35 +400,30 @@ func atomHolds(fp trellis.FieldPred, negated bool, compiled []*regexp.Regexp, va
 // want; re is want compiled, when op is `~=` and the parse compiled it. The
 // semantics are trellis_eval's (vector A-16): bytes compare, RE2 unanchored.
 func satisfies(op trellis.FieldOp, got, want string, re *regexp.Regexp) bool {
-	switch op {
-	case trellis.FieldOpEq:
-		return got == want
-	case trellis.FieldOpNotEq:
-		return got != want
-	case trellis.FieldOpContains:
-		return strings.Contains(got, want)
-	case trellis.FieldOpPrefix:
-		return strings.HasPrefix(got, want)
-	case trellis.FieldOpSuffix:
-		return strings.HasSuffix(got, want)
-	case trellis.FieldOpLt:
-		return got < want
-	case trellis.FieldOpLte:
-		return got <= want
-	case trellis.FieldOpGt:
-		return got > want
-	case trellis.FieldOpGte:
-		return got >= want
-	case trellis.FieldOpRegex:
-		if re == nil {
-			var err error
-			if re, err = regexp.Compile(want); err != nil {
-				return false
-			}
-		}
-		return re.MatchString(got)
+	if op != trellis.FieldOpRegex {
+		return trellis.CompareFieldOp(op, got, want)
 	}
-	return false
+	if re == nil {
+		var err error
+		if re, err = regexp.Compile(want); err != nil {
+			return false
+		}
+	}
+	return re.MatchString(got)
+}
+
+// regexpFor is pattern compiled: the parse-time compile when it is still
+// pattern (an atom edited after parse no longer lines up), else a fresh
+// compile; nil when pattern does not compile.
+func regexpFor(pattern string, compiled []*regexp.Regexp, k int) *regexp.Regexp {
+	if k < len(compiled) && compiled[k] != nil && compiled[k].String() == pattern {
+		return compiled[k]
+	}
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return nil
+	}
+	return re
 }
 
 func spellNode(n *Node) string {

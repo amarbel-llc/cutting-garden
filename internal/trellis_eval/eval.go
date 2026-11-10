@@ -970,49 +970,16 @@ func scalarString(v any) string {
 
 // valueString renders a trellis field-predicate value as the string the
 // operators compare against.
-func valueString(v trellis.Value) string {
-	switch t := v.(type) {
-	case trellis.StringValue:
-		return t.Value
-	case trellis.Bareword:
-		return t.Name
-	case trellis.DigestTerm:
-		return "@" + t.Digest
-	case trellis.MarklTerm:
-		return t.Purpose + "@" + t.Digest
-	default:
-		return ""
-	}
-}
+func valueString(v trellis.Value) string { return trellis.ValueText(v) }
 
-// compare applies a field operator to two strings. Ordering operators use
-// lexicographic comparison, which orders the canonical fixed-width date
-// forms (YYYYMMDD, RFC3339) correctly — richer typing is deferred (FDR 0022).
+// compare applies a field operator to two strings (trellis.CompareFieldOp,
+// shared with pkgs/ajour). Ordering operators use lexicographic comparison,
+// which orders the canonical fixed-width date forms (YYYYMMDD, RFC3339)
+// correctly — richer typing is deferred (FDR 0022). FieldOpRegex is handled
+// by satisfies before reaching compare; FieldOpInvalid is rejected by
+// Validate.
 func compare(op trellis.FieldOp, got, want string) bool {
-	switch op {
-	case trellis.FieldOpEq:
-		return got == want
-	case trellis.FieldOpNotEq:
-		return got != want
-	case trellis.FieldOpContains:
-		return strings.Contains(got, want)
-	case trellis.FieldOpPrefix:
-		return strings.HasPrefix(got, want)
-	case trellis.FieldOpSuffix:
-		return strings.HasSuffix(got, want)
-	case trellis.FieldOpLt:
-		return got < want
-	case trellis.FieldOpLte:
-		return got <= want
-	case trellis.FieldOpGt:
-		return got > want
-	case trellis.FieldOpGte:
-		return got >= want
-	default:
-		// FieldOpRegex is handled by satisfies before reaching compare;
-		// FieldOpInvalid is rejected by Validate.
-		return false
-	}
+	return trellis.CompareFieldOp(op, got, want)
 }
 
 // satisfies applies a field operator to two strings, handling the regex

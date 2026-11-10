@@ -171,6 +171,9 @@ func projectNode(tree trellis.TreeNode, kind layerKind) (Node, error) {
 		node.Negated = append(node.Negated, atom.Negate)
 		node.compiled = append(node.compiled, compiled)
 	}
+	if !slices.ContainsFunc(node.compiled, func(c []*regexp.Regexp) bool { return c != nil }) {
+		node.compiled = nil // no `~=` atom: a parsed Node equals its code-built twin
+	}
 
 	switch kind {
 	case layerStencil:
@@ -217,7 +220,7 @@ func checkAtom(atom trellis.TreeAtom) ([]*regexp.Regexp, error) {
 			return nil, refuse("a `(qualifier)` value is not in the stencil fragment")
 		}
 		if atom.Pred.Op == trellis.FieldOpRegex {
-			re, err := regexp.Compile(valueText(v))
+			re, err := regexp.Compile(trellis.ValueText(v))
 			if err != nil {
 				return nil, refuse("the regex does not compile: %v", err)
 			}
@@ -225,22 +228,6 @@ func checkAtom(atom trellis.TreeAtom) ([]*regexp.Regexp, error) {
 		}
 	}
 	return compiled, nil
-}
-
-// valueText is a value's decoded text, the string a predicate compares.
-func valueText(v trellis.Value) string {
-	switch v := v.(type) {
-	case trellis.StringValue:
-		return v.Value
-	case trellis.Bareword:
-		return v.Name
-	case trellis.DigestTerm:
-		return "@" + v.Digest
-	case trellis.MarklTerm:
-		return v.Purpose + "@" + v.Digest
-	default:
-		return ""
-	}
 }
 
 // spellHead spells a node without its children, `[id !type tags atoms]`,

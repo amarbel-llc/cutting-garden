@@ -547,6 +547,24 @@ var verdictVectors = []verdictVector{
 	{id: "A-35", name: "repo refused", layers: []layerSrc{stencil(`[moxy [-> smith [-> issue-list [-> _ !tool-input-v1 ^field=[repo, host] open]]]]`)}, call: moxyCall("smith", "issue-list", nil, input("repo", "a/b")), refusals: []string{"0:no-allowance@3"}},
 	{id: "A-35", name: "host refused", layers: []layerSrc{stencil(`[moxy [-> smith [-> issue-list [-> _ !tool-input-v1 ^field=[repo, host] open]]]]`)}, call: moxyCall("smith", "issue-list", nil, input("host", "h")), refusals: []string{"0:no-allowance@3"}},
 
+	// Review findings (2026-11-10), pinned beside the FDR rows.
+	{
+		id: "closed", name: "an Anchor past the Path admits no resource",
+		layers: []layerSrc{stencil(cgStencil(`[-> ynab:main !cg-root-v1 subtree op=[read]]`))},
+		call: func() Call {
+			c := ynabTxn("read", "budget/b1")
+			c.Anchor = 3
+			return c
+		}(),
+		refusals: []string{"0:no-allowance@4"},
+	},
+	{
+		id: "closed", name: "op=create on a value is not a creation step",
+		layers:   []layerSrc{stencil(`[t [-> _ !v op=[read]]]`)},
+		call:     Call{Path: path(subj("", "t")), Values: [][]Subject{path(subj("v", "", "op=create"))}},
+		refusals: []string{"0:no-allowance@1"},
+	},
+
 	// A-36: the create verb is not checked by op=.
 	{id: "A-36", name: "create through a read-only container", layers: []layerSrc{stencil(cgStencil(`[-> caldav:fastmail !cg-root-v1 op=[read] [-> cal-7 !caldav-calendar-v1 subtree op=[read] [-> + !caldav-object-vtodo-v1 summary^="[auto]"]]]`))}, call: calCall("create", newSubj("caldav-object-vtodo-v1", "summary=[auto] x")), admit: true},
 	{id: "A-36", name: "a patch there is still refused", layers: []layerSrc{stencil(cgStencil(`[-> caldav:fastmail !cg-root-v1 op=[read] [-> cal-7 !caldav-calendar-v1 subtree op=[read] [-> + !caldav-object-vtodo-v1 summary^="[auto]"]]]`))}, call: calCall("patch", subj("caldav-object-vevent-v1", "event-3")), refusals: []string{"0:no-allowance@3"}},
@@ -612,8 +630,14 @@ func refusalsMatch(got []Refusal, want []string) bool {
 // TestVerdictString pins the one-line refusal rendering (FDR 0028 "The
 // verdict").
 func TestVerdictString(t *testing.T) {
-	m, _ := ParseStencil(stencilC)
-	p, _ := ParsePatch(linkBody)
+	m, err := ParseStencil(stencilC)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := ParsePatch(linkBody)
+	if err != nil {
+		t.Fatal(err)
+	}
 	v := Evaluate([]Layer{m, p}, moxyCall("folio", "read", readTool, fsPath(wt+"/infra/secrets/x")))
 	want := "layer 1 (patch): deny [" + wt + "/infra/secrets !fs-path-v1 subtree deny] at moxy/folio/read"
 	if !strings.Contains(v.String(), want) {
@@ -623,6 +647,34 @@ func TestVerdictString(t *testing.T) {
 	want = "layer 0 (stencil): no allowance for {fs-path-v1 file:/nix/store/x} at moxy/folio/read"
 	if strings.TrimSpace(v.String()) != want {
 		t.Fatalf("String() = %q, want %q", v.String(), want)
+	}
+}
+
+// TestEvaluate_CodeBuiltRegex pins that a Node built in code with a `~=`
+// pattern that does not compile never holds, even negated (closed), and that
+// an atom edited after parse is matched by its new pattern.
+func TestEvaluate_CodeBuiltRegex(t *testing.T) {
+	bad := trellis.FieldPred{
+		Field: trellis.FieldName{Name: "value"}, Op: trellis.FieldOpRegex,
+		Values: []trellis.Value{trellis.StringValue{Value: "("}},
+	}
+	stencil := Stencil{Roots: []Node{{
+		ID: "t", HasID: true,
+		Children: []Node{{Type: "v", Atoms: []trellis.FieldPred{bad}, Negated: []bool{true}}},
+	}}}
+	call := Call{Path: path(subj("", "t")), Values: [][]Subject{path(subj("v", "", "value=x"))}}
+	if v := Evaluate([]Layer{stencil}, call); v.Admitted {
+		t.Fatalf("a negated uncompilable pattern admitted the call:\n%s", v)
+	}
+
+	parsed, err := ParseStencil(`[t [-> _ !v value~="^a"]]`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed.Roots[0].Children[0].Atoms[0].Values = []trellis.Value{trellis.StringValue{Value: "^b"}}
+	call.Values = [][]Subject{path(subj("v", "", "value=bx"))}
+	if v := Evaluate([]Layer{parsed}, call); !v.Admitted {
+		t.Fatalf("an edited pattern was matched by its parse-time compile:\n%s", v)
 	}
 }
 
