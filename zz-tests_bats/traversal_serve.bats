@@ -23,7 +23,14 @@ teardown() {
 #   launch-contract cases every conformant `traversal-serve`
 #   implementation MUST pass. A non-Go peer (e.g. a Rust fj-cg)
 #   substitutes its own binary via CG_TEST_TRAVERSAL_SERVE (bats-emo
-#   require_bin) and runs these unmodified.
+#   require_bin) and runs these unmodified, from the checkout:
+#
+#     CG_TEST_TRAVERSAL_SERVE=/path/to/peer just debug-test-bats \
+#       --filter-tags 'portable,!in_tree_manifest' traversal_serve.bats
+#
+#   The host runner passes CG_TEST_TRAVERSAL_SERVE through its `env -i`,
+#   defaulting to the in-tree peer when unset (cutting-garden#407,
+#   bats_host.bats).
 #
 #   PORTABLE — CONFORMANCE (test_portable_conformance_*): the
 #   method-semantics half, driven by the compiled conformance DRIVER
@@ -32,7 +39,10 @@ teardown() {
 #   the TESTPEER note below anticipated: the driver owns the AF_UNIX
 #   session + half-close choreography a shell can't do well, so bats
 #   only runs it and checks the TAP verdict. It drives the same
-#   CG_TEST_TRAVERSAL_SERVE peer.
+#   CG_TEST_TRAVERSAL_SERVE peer. Its two cases pin the in-tree manifest
+#   (tag in_tree_manifest), so a substituted peer excludes them and runs
+#   the driver directly with its own manifest:
+#   `nix run .#conformance-traversal -- --manifest <peer>.toml`.
 #
 #   TESTPEER (test_tags=testpeer, names test_testpeer_*): the Go test
 #   peer's fixed cgtest tree driven through the HOST — `cutting-garden`
@@ -1160,7 +1170,7 @@ EOF
 # supplies its own manifest; this case pins the in-tree testpeer).
 # ---------------------------------------------------------------------
 
-# bats test_tags=portable
+# bats test_tags=portable,in_tree_manifest
 function test_portable_conformance_driver_passes_testpeer { # @test
   require_bin CG_TEST_TRAVERSAL_SERVE cutting-garden-test-traversal-serve ||
     skip "cutting-garden-test-traversal-serve not available in this lane"
@@ -1295,7 +1305,7 @@ EOF
   refute_output --partial 'not ok'
 }
 
-# bats test_tags=portable
+# bats test_tags=portable,in_tree_manifest
 function test_portable_conformance_driver_fails_a_wrong_expectation { # @test
   # The driver's own acceptance property: it MUST be able to fail. A
   # manifest asserting an applied set the peer will not report has to

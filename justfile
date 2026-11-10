@@ -138,6 +138,16 @@ lint-go-analyzers: (lint-go-analyzer "seqerror") (lint-go-analyzer "repool") (li
 test-bats:
     nix build .#bats-capture --show-trace
 
+# Run bats_host.bats alone as a hermetic lane (.#bats-host-runner): the host
+# runner's pass-through of a substituted RFC 0013 / RFC 0008 peer
+# (cutting-garden#407), without rebuilding the whole suite. test-bats runs it
+# too.
+#
+# run the host runner's peer pass-through cases as a hermetic lane
+[group('debug')]
+debug-test-bats-host-runner:
+    nix build .#bats-host-runner --no-link --print-build-logs
+
 # Run bats files on the HOST against the hermetic lane's exact binaries
 # (.#cutting-garden-bats-host: bats-capture's CG_BIN / MADDER_BIN / testserver
 # pairing, a from-scratch environment) — the fast dev-loop for one lane, with

@@ -935,9 +935,20 @@
         # (cutting-garden#250). The environment is rebuilt from scratch
         # (`env -i`) so nothing ambient — above all the operator's
         # XDG_CONFIG_HOME, and with it their config.toml — reaches a test the
-        # sandbox would have run without it. CG_UPDATE_VECTORS is the one
-        # variable passed through (lib/vectors.bash). Run it from
-        # zz-tests_bats/; arguments go to bats verbatim.
+        # sandbox would have run without it. Passed through: CG_UPDATE_VECTORS
+        # (lib/vectors.bash), and the batsHostPeerVars, each defaulting to its
+        # in-tree peer when unset. Run it from zz-tests_bats/; arguments go to
+        # bats verbatim.
+        #
+        # batsHostPeerVars are the peers an external implementation substitutes
+        # to self-verify (cutting-garden#407): an RFC 0013 traversal peer runs
+        # traversal_serve.bats's `portable` cases with CG_TEST_TRAVERSAL_SERVE
+        # set to its binary, an RFC 0008 capture peer capture_serve.bats with
+        # CG_TEST_CAPTURE_SERVE. Pinned by bats_host.bats.
+        batsHostPeerVars = [
+          "CG_TEST_TRAVERSAL_SERVE"
+          "CG_TEST_CAPTURE_SERVE"
+        ];
         cuttingGardenBatsHost = pkgs.writeShellApplication rec {
           name = "cutting-garden-bats-host";
           runtimeInputs = [
@@ -963,12 +974,50 @@
               ${
                 pkgs.lib.concatStringsSep " \\\n  " (
                   pkgs.lib.mapAttrsToList (
-                    envVar: spec: "${envVar}=${pkgs.lib.escapeShellArg "${spec.base}/bin/${spec.name}"}"
+                    envVar: spec:
+                    let
+                      inTree = "${spec.base}/bin/${spec.name}";
+                    in
+                    # A store path needs no quoting, and inside "${VAR:-…}" a
+                    # single-quoted default would keep its quotes.
+                    if builtins.elem envVar batsHostPeerVars then
+                      "${envVar}=\"\${${envVar}:-${inTree}}\""
+                    else
+                      "${envVar}=${pkgs.lib.escapeShellArg inTree}"
                   ) batsLaneBinaries
                 )
               } \
               bats "$@"
           '';
+        };
+
+        # bats-capture's arguments, shared with the narrow bats-host-runner
+        # lane. Only these lanes get CG_BATS_HOST, the host runner itself, so
+        # bats_host.bats can run it with a substituted peer; the host runner
+        # does not pass itself on, so under it that case skips.
+        batsLaneArgs = {
+          base = cuttingGarden;
+          bats = batsLaneRunner;
+          batsSrc = ./zz-tests_bats;
+          binaries = batsLaneBinaries // {
+            CG_BATS_HOST = {
+              base = cuttingGardenBatsHost;
+              name = "cutting-garden-bats-host";
+            };
+          };
+          batsLibPath = [ batsLaneLibPath ];
+          # version.env staged sibling-of-bats (lands at stage/version.env;
+          # bats runs from stage/zz-tests_bats/) so version.bats can read
+          # the source-of-truth release version via
+          # ${BATS_TEST_DIRNAME}/../version.env and pin it against the
+          # binary's ldflag-burnt `version` output.
+          extraStagedFiles = [
+            {
+              src = ./version.env;
+              dest = "version.env";
+            }
+          ];
+          nativeBuildInputs = batsLaneTools;
         };
       in
       {
@@ -1097,25 +1146,13 @@
           # cutting-garden binary (plus madder, for cross-tests).
           # Success leaves a stamp file at $out; failure aborts the
           # nix build with the bats diagnostic.
-          bats-capture = bats.lib.${system}.batsLane {
-            base = cuttingGarden;
-            bats = batsLaneRunner;
-            batsSrc = ./zz-tests_bats;
-            binaries = batsLaneBinaries;
-            batsLibPath = [ batsLaneLibPath ];
-            # version.env staged sibling-of-bats (lands at stage/version.env;
-            # bats runs from stage/zz-tests_bats/) so version.bats can read
-            # the source-of-truth release version via
-            # ${BATS_TEST_DIRNAME}/../version.env and pin it against the
-            # binary's ldflag-burnt `version` output.
-            extraStagedFiles = [
-              {
-                src = ./version.env;
-                dest = "version.env";
-              }
-            ];
-            nativeBuildInputs = batsLaneTools;
-          };
+          bats-capture = bats.lib.${system}.batsLane batsLaneArgs;
+
+          # bats_host.bats alone (cutting-garden#407): the host runner's
+          # pass-through of an external peer, without the whole suite.
+          bats-host-runner = bats.lib.${system}.batsLane (
+            batsLaneArgs // { testFiles = [ "bats_host.bats" ]; }
+          );
 
           # The bats suite run on the HOST against bats-capture's exact
           # binaries — see cuttingGardenBatsHost.

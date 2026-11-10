@@ -1384,6 +1384,21 @@ mechanism by which method-level divergence (the kind found by hand
 across three implementations in July 2026 — cutting-garden#182/#185/#173)
 becomes machine-checkable rather than rediscovered.
 
+The paved command for the launch cases, from the cutting-garden checkout:
+
+    CG_TEST_TRAVERSAL_SERVE=/path/to/peer just debug-test-bats \
+      --filter-tags 'portable,!in_tree_manifest' traversal_serve.bats
+
+The host runner (`.#cutting-garden-bats-host`) rebuilds its environment
+with `env -i`, but passes `CG_TEST_TRAVERSAL_SERVE` (and, for an RFC 0008
+capture peer running `capture_serve.bats`, `CG_TEST_CAPTURE_SERVE`)
+through, defaulting each to the in-tree peer when unset (cutting-garden#407,
+pinned by `bats_host.bats`). The lane's two driver cases
+(`driver_passes_testpeer`, `fails_a_wrong_expectation`) pin the in-tree
+manifest and carry the `in_tree_manifest` tag the command excludes: a
+substituted peer's equivalent is the direct `.#conformance-traversal` run
+with its own manifest above.
+
 ### Covered Requirements
 
 | Requirement | Test file | Description |
