@@ -25,7 +25,9 @@ promotion-criteria: |
 > operator's rulings of that day (open items 1 to 3) by
 > cutting-garden/rare-sycamore, which built phase 1, the parser
 > (cutting-garden#396: `trellis.ParseTree` and `pkgs/ajour`'s
-> `ParseStencil`, `ParsePatch`, `Write`); `Evaluate` is phase 2 (#346).
+> `ParseStencil`, `ParsePatch`, `Write`); phase 2 (#346) built `Evaluate`
+> and the verdict vectors the same day; the explain verb (open item 4) is
+> #403.
 > Evidence labels: **V** read in a named file in this worktree or a sibling
 > checkout; **I** inference; **U** unknown; **R** an operator ruling, dated.
 > The plain-words companion is `ajour(7)`.
@@ -427,6 +429,12 @@ of replacement.
 
     func Evaluate(layers []Layer, call Call) Verdict
     func (Verdict) String() string                  // one line per refusal
+    type Kind int                                   // KindDeny | KindNoAllowance | KindLockMismatch
+
+`Call`, `Subject`, `Verdict` and `Refusal` are as "The two inputs" and "The
+verdict" write them. A `~=` atom's patterns are compiled at parse and carried
+on the `Node` unexported, so `Evaluate` never recompiles them (a `Node` built
+in code is compiled on demand); the public shape is unchanged.
 
 What is deliberately NOT in it: `_base` resolution and the chain (piggy's
 verdict hands ajour the layers in order); the head of any document; a
@@ -932,4 +940,4 @@ piggy's RFC 0013 conformance vectors point at A-17, A-18 and A-19 by name
    included; patches are exempt ("Matching", vector A-33).
 4. A debugging surface: `cg ajour <layers…> --call <json>` printing the
    verdict, beside clown's `show-effective-profile`. Not in this record's
-   scope; filed when the package exists.
+   scope; filed as cutting-garden#403.

@@ -25,9 +25,9 @@ through.
 This page explains how the documents combine. The design record is
 cutting-garden FDR 0028 (*docs/features/0028-ajour.md*); the rule it
 implements is piggy RFC 0013 §4.9; the chain itself is explained in
-*piggy-acts*(7). As of 2026-11-10 the record is *proposed*; the parser is
-built (*ParseStencil*, *ParsePatch*, *Write*) and the evaluator that checks a
-call is not yet.
+*piggy-acts*(7). As of 2026-11-10 the record is *proposed*; the parser
+(*ParseStencil*, *ParsePatch*, *Write*) and the evaluator (*Evaluate*) are
+built, and no enforcer calls them yet.
 
 # THE STENCIL STACK
 

@@ -71,6 +71,11 @@ type Node struct {
 	Atoms    []trellis.FieldPred
 	Negated  []bool
 	Children []Node
+
+	// compiled[i][k] is atom i's value k compiled, for a `~=` atom; set at
+	// parse so Evaluate never recompiles (nil for a Node built in code,
+	// which Evaluate then compiles on demand).
+	compiled [][]*regexp.Regexp
 }
 
 // ParseStencil parses src, in the canonical nested spelling or the heading
@@ -158,11 +163,13 @@ func projectNode(tree trellis.TreeNode, kind layerKind) (Node, error) {
 	node.Subtree = slices.Contains(node.Tags, TagSubtree)
 
 	for _, atom := range tree.Atoms {
-		if err := checkAtom(atom); err != nil {
+		compiled, err := checkAtom(atom)
+		if err != nil {
 			return Node{}, err
 		}
 		node.Atoms = append(node.Atoms, atom.Pred)
 		node.Negated = append(node.Negated, atom.Negate)
+		node.compiled = append(node.compiled, compiled)
 	}
 
 	switch kind {
@@ -195,25 +202,29 @@ func projectNode(tree trellis.TreeNode, kind layerKind) (Node, error) {
 // checkAtom refuses what the fragment excludes from an atom: a
 // framework-reserved `_` field name (unquoted; a quoted name is opaque), a
 // `(qualifier)` value, and a regex that does not compile (V-D1-7d: a layer
-// that errors has no holes).
-func checkAtom(atom trellis.TreeAtom) error {
+// that errors has no holes). It returns a `~=` atom's values compiled, nil
+// for any other operator.
+func checkAtom(atom trellis.TreeAtom) ([]*regexp.Regexp, error) {
 	refuse := func(why string, args ...any) error {
 		return errors.BadRequestf("atom `%s`: "+why, append([]any{trellis.SpellTreeAtom(atom)}, args...)...)
 	}
 	if !atom.Pred.Field.Quoted && strings.HasPrefix(atom.Pred.Field.Name, "_") {
-		return refuse("a `_`-prefixed field name is framework-reserved")
+		return nil, refuse("a `_`-prefixed field name is framework-reserved")
 	}
+	var compiled []*regexp.Regexp
 	for _, v := range atom.Pred.Values {
 		if _, isQualifier := v.(trellis.Qualifier); isQualifier {
-			return refuse("a `(qualifier)` value is not in the stencil fragment")
+			return nil, refuse("a `(qualifier)` value is not in the stencil fragment")
 		}
 		if atom.Pred.Op == trellis.FieldOpRegex {
-			if _, err := regexp.Compile(valueText(v)); err != nil {
-				return refuse("the regex does not compile: %v", err)
+			re, err := regexp.Compile(valueText(v))
+			if err != nil {
+				return nil, refuse("the regex does not compile: %v", err)
 			}
+			compiled = append(compiled, re)
 		}
 	}
-	return nil
+	return compiled, nil
 }
 
 // valueText is a value's decoded text, the string a predicate compares.
