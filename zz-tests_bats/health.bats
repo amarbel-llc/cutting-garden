@@ -124,6 +124,39 @@ function health_reports_configured_roots_per_plugin { # @test
   assert_line --regexp '^org +org://test/$'
 }
 
+# A plugin section that fails to load is skipped, not fatal (cutting-garden
+# #325): health still runs, names the section and its error, and the json
+# carries a trailing skipped_config line. CG_STRICT_CONFIG=1 keeps the old
+# fail-fast EX_USAGE for CI.
+function health_reports_a_skipped_config_section { # @test
+  export XDG_CONFIG_HOME="$HOME/.config"
+  mkdir -p "$XDG_CONFIG_HOME/cutting-garden"
+  cat >"$XDG_CONFIG_HOME/cutting-garden/config.toml" <<-'EOF'
+	[[caldav.accounts]]
+	name = "broken"
+	url = "caldav://dav.example/dav/me/"
+	password_source = "bogus"
+	password_key = "x"
+	EOF
+
+  run_cg health
+  assert_success
+  assert_output --partial 'skipped config sections:'
+  assert_output --partial 'caldav: '
+  assert_output --partial 'bogus'
+
+  # stdout only: the skip warning goes to stderr.
+  run_cg_stdout health -format json
+  assert_success
+  echo "$stderr" | grep -q 'skipping \[caldav\]' ||
+    fail "stderr does not warn about the skipped section: $stderr"
+  run jq -rs 'map(select(has("skipped_config"))) | .[0].skipped_config | map(.section) | join(",")' <<<"$output"
+  assert_output caldav
+
+  CG_STRICT_CONFIG=1 run_cg health
+  assert_failure 64
+}
+
 function health_rejects_bad_format { # @test
   run_cg health -format yaml
   # EX_USAGE for a bad flag value.

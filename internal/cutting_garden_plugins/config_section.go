@@ -72,6 +72,17 @@ func (r *configSectionRegistry) names() []string {
 // section name, so the loader can prefix the file path and report EX_USAGE
 // naming file, section, and entry.
 func (r *configSectionRegistry) decode(model *cst.Value) error {
+	if failures := r.decodeEach(model); len(failures) > 0 {
+		return errors.Errorf("%s: %w", failures[0].Section, failures[0].Err)
+	}
+	return nil
+}
+
+// decodeEach runs every present section's decoder, collecting each failure
+// instead of stopping at the first, so one bad section does not keep the
+// others from loading (cutting-garden#325).
+func (r *configSectionRegistry) decodeEach(model *cst.Value) []ConfigSectionFailure {
+	var failures []ConfigSectionFailure
 	for _, name := range r.names() {
 		sub, ok := model.Get(name)
 		if !ok || sub.Kind != cst.VTable {
@@ -82,10 +93,22 @@ func (r *configSectionRegistry) decode(model *cst.Value) error {
 		r.mu.RUnlock()
 		sub.MarkSeen()
 		if err := d(sub); err != nil {
-			return errors.Errorf("%s: %w", name, err)
+			failures = append(failures, ConfigSectionFailure{Section: name, Err: err})
 		}
 	}
-	return nil
+	return failures
+}
+
+// ConfigSectionFailure is one plugin config section whose decoder failed.
+type ConfigSectionFailure struct {
+	Section string
+	Err     error
+}
+
+// DecodeRegisteredConfigSectionsEach is DecodeRegisteredConfigSections that
+// decodes every section and returns all the failures, in section order.
+func DecodeRegisteredConfigSectionsEach(model *cst.Value) []ConfigSectionFailure {
+	return defaultConfigSectionRegistry.decodeEach(model)
 }
 
 var defaultConfigSectionRegistry = newConfigSectionRegistry()

@@ -985,6 +985,10 @@ func renderContents(contents []protocol.ResourceContent) string {
 type schemeSchema struct {
 	Scheme string       `json:"scheme"`
 	Types  []typeSchema `json:"types"`
+	// SkippedConfig is why this scheme's config section was skipped at load
+	// (cutting-garden#325), so a client seeing a scheme with no roots also
+	// sees the reason. Omitted when the section loaded.
+	SkippedConfig string `json:"skipped_config,omitempty"`
 }
 
 // typeSchema describes one node type: its tag, whether it is a container or a
@@ -1221,9 +1225,22 @@ func collectSchema(
 			}
 			types = append(types, ts)
 		}
-		out = append(out, schemeSchema{Scheme: firstScheme(p), Types: types})
+		out = append(out, schemeSchema{
+			Scheme: firstScheme(p), Types: types, SkippedConfig: skippedConfigFor(p),
+		})
 	}
 	return out
+}
+
+// skippedConfigFor is the load error of p's config section when the load
+// skipped it. A plugin's section is registered under one of its schemes.
+func skippedConfigFor(p cutting_garden_plugins.Plugin) string {
+	for _, s := range command_components.SkippedConfigSections() {
+		if slices.Contains(p.Schemes(), s.Section) {
+			return s.Error
+		}
+	}
+	return ""
 }
 
 // filterSchema narrows the describe_node_types catalogue to one scheme and/or

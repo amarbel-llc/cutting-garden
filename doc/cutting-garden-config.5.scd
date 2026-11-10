@@ -48,6 +48,21 @@ table in a binary that does not link the caldav plugin is therefore inert.
 A malformed *[[traversal_plugins]]*/*[[plugins]]* entry aborts config loading
 with an EX_USAGE (64) exit, naming the stanza and the problem.
 
+A linked plugin's section that fails to load (an account its plugin rejects:
+an unknown *password_source*, two caldav accounts on one path) is skipped
+instead: one warning names the file, the section and the plugin's error, and
+that plugin runs with no configured accounts while every other section loads.
+*cutting-garden-health*(1) lists the skipped sections, and the mcp server's
+describe_node_types names the error on that scheme. A framework table, a
+stanza, and a TOML syntax or type error stay fatal.
+
+# ENVIRONMENT
+
+*CG_STRICT_CONFIG*
+	When *1*, a linked plugin's section that fails to load aborts config
+	loading with EX_USAGE, as every config error did before. For CI and nix
+	checks.
+
 One linked-plugin account field is documented here because nothing else in
 the file hints at it; see *THE FASTMAIL SESSION_URL OVERRIDE* below. One
 framework-level table is documented for the same reason; see *THE [TAGS]

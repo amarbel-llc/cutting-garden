@@ -460,7 +460,8 @@ url  = "ytdlp:https://www.youtube.com/feed/subscriptions"
 
 A section's `Validate` MUST reject: a duplicate `name`; an empty `name` or
 `url`; a `url` that does not parse or whose scheme the plugin does not claim.
-A validation error MUST abort config load (§ Loading and Validation).
+A validation error MUST NOT load the section: the section is skipped, or
+under strict mode the load aborts (§ Loading and Validation).
 
 ### Credential Resolution
 
@@ -510,9 +511,18 @@ preferred-root plugins (sources 1, 2) that need no credentials are unaffected.
    is such an unknown key: it MUST NOT be decoded or validated. A `[caldav]`
    table in a binary that does not link the caldav plugin is therefore inert
    — a warning, not an error.
-4. A decode or `Validate` error, from either pass, MUST abort the command
-   with a usage-class error (EX_USAGE), naming the file, the section, and the
-   offending entry.
+4. A decode or `Validate` error in the FRAMEWORK pass, and any TOML syntax
+   or type error, MUST abort the command with a usage-class error
+   (EX_USAGE), naming the file, the section, and the offending entry.
+5. (Amendment, cutting-garden#325.) An error in a PLUGIN section's decoder
+   MUST NOT abort the load: that section is skipped, so one misconfigured
+   account cannot take every plugin down. The loader MUST warn once per
+   skipped section, naming the file, the section and the decoder's error
+   (which names the entry), and MUST make the skipped sections available
+   to report (`health`, and the mcp server's describe_node_types). It MUST
+   NOT resolve a credential to do so. The other sections load as normal.
+   With `CG_STRICT_CONFIG=1` in the environment, such an error instead
+   aborts with EX_USAGE as in item 4, for CI.
 
 ### Package Layering
 
@@ -587,7 +597,7 @@ Tests use binary injection via `bats-emo`:
 | § Root-Labeler, per-root override with fallback and fault isolation | Go unit tests (`plugins/caldav/rootlabels_test.go`, `internal/mcp/aggregate_roots_isolation_test.go`, `internal/mcp/tools_test.go`) | a calendar-scoped caldav account's root label is its DAV displayname; a calendar-home account's root keeps the default derivation; an unreachable account and a `RootLabels`-erroring plugin both degrade non-fatally without dropping another plugin's labels |
 | § Root Sources, intrinsic | `config.bats` | the file plugin surfaces its working directory as a root with no config |
 | § Credential Resolution, precedence | Go unit tests (`plugins/caldav`) | a node matching an account uses that account's `password_env`; a non-matching host falls back to `CALDAV_USERNAME`/`CALDAV_PASSWORD`. Not in `config.bats`: the caldav testserver does not record the credentials a client presents, so the binary cannot be observed choosing between them (cutting-garden#93) |
-| § Loading and Validation | `config.bats` | an unknown key warns but does not abort; a duplicate `name`/empty `url` aborts with EX_USAGE naming the entry |
+| § Loading and Validation | `config.bats`, `health.bats` | an unknown key warns but does not abort; a duplicate `name`/empty `url` skips that section with a warning naming the entry, and aborts with EX_USAGE under `CG_STRICT_CONFIG=1`; `health` lists a skipped section |
 
 Struct-level rules (`Validate` rejections, `Roots` projection,
 credential-precedence unit behavior, section registration and dispatch) are

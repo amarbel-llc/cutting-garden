@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 
 	"code.linenisgreat.com/cutting-garden/internal/cgconfig"
 	"code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
@@ -38,8 +39,10 @@ func DefaultConfigPath() (string, error) {
 
 // LoadConfig reads and decodes the config at path. A missing file yields a
 // zero ConfigV0 and a nil error — cutting-garden runs normally with no
-// config (RFC 0007 § File Location). Decode or Validate failures are
-// returned as bad-request errors (EX_USAGE). Keys present in the file but
+// config (RFC 0007 § File Location). A failing framework section, and any
+// TOML syntax or type error, is a bad-request error (EX_USAGE); a failing
+// plugin section is skipped with a warning unless CG_STRICT_CONFIG=1
+// (cutting-garden#325), and SkippedConfigSections reports it. Keys present in the file but
 // consumed by no field are reported to warnw (typically os.Stderr) and do
 // not fail the load.
 //
@@ -93,18 +96,35 @@ func loadConfigWithRaw(
 		return nil, nil, errors.BadRequestf("%s: %s", path, err)
 	}
 
-	// The dispatch error already names the section and the entry; prefixing
-	// the path yields "<path>: <section>: <entry>" — EX_USAGE naming all
-	// three (RFC 0007 § Loading and Validation).
-	if err := cutting_garden_plugins.DecodeRegisteredConfigSections(model); err != nil {
-		return nil, nil, errors.BadRequestf("%s: %s", path, err)
+	// A plugin section whose decoder fails is skipped with a warning, so one
+	// bad account cannot take every plugin down (cutting-garden#325); the
+	// plugin then simply has no configured accounts. CG_STRICT_CONFIG=1
+	// restores fail-fast for CI: the dispatch error already names the
+	// section and the entry, and prefixing the path yields
+	// "<path>: <section>: <entry>", EX_USAGE naming all three (RFC 0007
+	// § Loading and Validation).
+	failures := cutting_garden_plugins.DecodeRegisteredConfigSectionsEach(model)
+	if len(failures) > 0 && strictConfig() {
+		return nil, nil, errors.BadRequestf(
+			"%s: %s: %s", path, failures[0].Section, failures[0].Err)
 	}
+	skipped := make([]SkippedConfigSection, 0, len(failures))
+	skippedNames := make([]traversal_serve.PluginStanza, 0, len(failures))
+	for _, f := range failures {
+		skipped = append(skipped, SkippedConfigSection{Section: f.Section, Error: f.Err.Error()})
+		skippedNames = append(skippedNames, traversal_serve.PluginStanza{ConfigSection: f.Section})
+		if warnw != nil {
+			fmt.Fprintf(warnw, "warning: %s: skipping [%s]: %s\n", path, f.Section, f.Err)
+		}
+	}
+	setSkippedConfigSections(skipped)
 
 	if warnw != nil {
 		// Both stanza tables claim sections: the generalized [[plugins]] and
-		// the [[traversal_plugins]] alias (cutting-garden#347).
+		// the [[traversal_plugins]] alias (cutting-garden#347). A skipped
+		// section's leftover keys were reported above, not as unknown.
 		unused := withoutStanzaClaimedKeys(
-			model.Undecoded(), slices.Concat(cfg.Plugins, cfg.TraversalPlugins),
+			model.Undecoded(), slices.Concat(cfg.Plugins, cfg.TraversalPlugins, skippedNames),
 		)
 		if len(unused) > 0 {
 			fmt.Fprintf(warnw,
@@ -113,6 +133,42 @@ func loadConfigWithRaw(
 	}
 
 	return raw, cfg, nil
+}
+
+// strictConfigEnv makes a failing plugin config section fatal again
+// (cutting-garden#325), for CI and nix checks.
+const strictConfigEnv = "CG_STRICT_CONFIG"
+
+func strictConfig() bool {
+	v := os.Getenv(strictConfigEnv)
+	return v != "" && v != "0"
+}
+
+// SkippedConfigSection is a plugin config section the last load skipped
+// because its decoder failed; Error is the decoder's message, which names
+// the entry.
+type SkippedConfigSection struct {
+	Section string `json:"section"`
+	Error   string `json:"error"`
+}
+
+var (
+	skippedMu     sync.Mutex
+	skippedConfig []SkippedConfigSection
+)
+
+func setSkippedConfigSections(s []SkippedConfigSection) {
+	skippedMu.Lock()
+	defer skippedMu.Unlock()
+	skippedConfig = s
+}
+
+// SkippedConfigSections reports the sections the most recent config load
+// skipped, for health and the mcp server to surface; empty when none.
+func SkippedConfigSections() []SkippedConfigSection {
+	skippedMu.Lock()
+	defer skippedMu.Unlock()
+	return slices.Clone(skippedConfig)
 }
 
 // withoutStanzaClaimedKeys drops undecoded-key warnings for sections a

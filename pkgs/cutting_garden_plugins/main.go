@@ -166,6 +166,9 @@ type Codec = internal.Codec
 // plugin's package state (SetConfiguredAccounts or the like).
 type ConfigSectionDecoder = internal.ConfigSectionDecoder
 
+// ConfigSectionFailure is one plugin config section whose decoder failed.
+type ConfigSectionFailure = internal.ConfigSectionFailure
+
 // ContainerCreator is the OPTIONAL capability for sources that assign a
 // created node's identity server-side (a feed subscription's server-chosen
 // feed id, a forge's issue number, a zettel pool's next id): create a child
@@ -936,6 +939,10 @@ var DateBucketMatches = internal.DateBucketMatches
 // before any plugin's roots are aggregated. Exported because the loader
 // lives in the framework (command_components), outside this package.
 var DecodeRegisteredConfigSections = internal.DecodeRegisteredConfigSections
+
+// DecodeRegisteredConfigSectionsEach is DecodeRegisteredConfigSections that
+// decodes every section and returns all the failures, in section order.
+var DecodeRegisteredConfigSectionsEach = internal.DecodeRegisteredConfigSectionsEach
 
 // DeriveFacetDimensions reproduces FacetDescriber's per-type dimension list from a
 // node type's codecs: every GROUPABLE presentation field becomes a FacetDimension,

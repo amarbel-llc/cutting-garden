@@ -50,8 +50,19 @@ type Health struct {
 
 var (
 	_ command.Cmd                       = (*Health)(nil)
+	_ command.CommandWithEnvVars        = (*Health)(nil)
 	_ interfaces.CommandComponentWriter = (*Health)(nil)
 )
+
+func (*Health) GetEnvVars() []command.EnvVar {
+	return []command.EnvVar{{
+		Name: "CG_STRICT_CONFIG",
+		Description: "When 1, a plugin config section that fails to load is an " +
+			"error (EX_USAGE) instead of being skipped with a warning and " +
+			"listed under \"skipped config sections\" (json: a trailing " +
+			"skipped_config line). For CI.",
+	}}
+}
 
 // New constructs a Health with default flag values; output routes to
 // os.Stdout.
@@ -78,7 +89,8 @@ func (*Health) GetDescription() command.Description {
 			"or the framework folds them). It also lists each RootProvider " +
 			"plugin's roots (RFC 0007): the accounts the config declares and " +
 			"the intrinsic ones, the entry points `list` and `mcp` start " +
-			"from. Takes no positional arguments.",
+			"from, and the plugin config sections the load skipped because " +
+			"they failed. Takes no positional arguments.",
 	}
 }
 
@@ -121,12 +133,13 @@ func (cmd *Health) Run(req command.Request) {
 	}
 
 	rows := collectRows(ctx)
+	skipped := command_components.SkippedConfigSections()
 
 	var err error
 	if cmd.Format == formatJSON {
-		err = writeJSON(cmd.output, rows)
+		err = writeJSON(cmd.output, rows, skipped)
 	} else {
-		err = writeText(cmd.output, rows)
+		err = writeText(cmd.output, rows, skipped)
 	}
 	if err != nil {
 		errors.ContextCancelWithError(ctx, err)
@@ -299,8 +312,9 @@ func displayName(p cutting_garden_plugins.Plugin) string {
 	return "(schemeless)"
 }
 
-// writeText renders the rows as an aligned table.
-func writeText(w io.Writer, rows []pluginRow) error {
+// writeText renders the rows as an aligned table, then the roots table and
+// the skipped config sections.
+func writeText(w io.Writer, rows []pluginRow, skipped []command_components.SkippedConfigSection) error {
 	var buf strings.Builder
 	tw := tabwriter.NewWriter(&buf, 0, 2, 2, ' ', 0)
 
@@ -325,6 +339,7 @@ func writeText(w io.Writer, rows []pluginRow) error {
 	}
 
 	writeRootsTable(&buf, rows)
+	writeSkippedConfig(&buf, skipped)
 
 	if _, err := io.WriteString(w, buf.String()); err != nil {
 		return errors.Wrap(err)
@@ -356,12 +371,34 @@ func writeRootsTable(buf *strings.Builder, rows []pluginRow) {
 	_ = tw.Flush() // a strings.Builder write cannot fail
 }
 
+// writeSkippedConfig appends, after a blank line, the plugin config sections
+// the load skipped because they failed (cutting-garden#325), one per line
+// with the error; omitted when none were.
+func writeSkippedConfig(buf *strings.Builder, skipped []command_components.SkippedConfigSection) {
+	if len(skipped) == 0 {
+		return
+	}
+	buf.WriteString("\nskipped config sections:\n")
+	for _, s := range skipped {
+		fmt.Fprintf(buf, "  %s: %s\n", s.Section, s.Error)
+	}
+}
+
 // writeJSON re-emits the rows as NDJSON — one plugin object per line —
-// for piping into jq.
-func writeJSON(w io.Writer, rows []pluginRow) error {
+// for piping into jq, then, when the load skipped any config section, one
+// trailing {"skipped_config": [...]} line.
+func writeJSON(w io.Writer, rows []pluginRow, skipped []command_components.SkippedConfigSection) error {
 	enc := json.NewEncoder(w)
 	for i := range rows {
 		if err := enc.Encode(rows[i]); err != nil {
+			return errors.Wrap(err)
+		}
+	}
+	if len(skipped) > 0 {
+		trailer := struct {
+			Skipped []command_components.SkippedConfigSection `json:"skipped_config"`
+		}{skipped}
+		if err := enc.Encode(trailer); err != nil {
 			return errors.Wrap(err)
 		}
 	}

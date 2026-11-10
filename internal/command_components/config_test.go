@@ -34,6 +34,25 @@ const (
 
 var testSectionTokenEnv string
 
+// testOtherSection is a second fake section, so a test can check that one
+// section's failure leaves the others loaded (cutting-garden#325).
+const testOtherSection = "cctest_other"
+
+var testOtherValue string
+
+func init() {
+	cutting_garden_plugins.MustRegisterConfigSection(testOtherSection,
+		func(sub *cst.Value) error {
+			if v, ok := sub.Get("value"); ok && v.Kind == cst.VLeaf {
+				if s, sok := cst.ExtractString(v.Leaf); sok {
+					v.MarkConsumed()
+					testOtherValue = s
+				}
+			}
+			return nil
+		})
+}
+
 func init() {
 	cutting_garden_plugins.MustRegisterConfigSection(testSectionName,
 		func(sub *cst.Value) error {
@@ -160,9 +179,45 @@ name = "x"
 	}
 }
 
-// D3: a section decoder's failure (a plugin's Validate rejecting an entry)
-// is EX_USAGE naming the file, the section, and the entry.
+// A plugin section whose decoder fails is skipped with a warning, and the
+// rest of the config loads (cutting-garden#325): one bad account must not
+// take every plugin down. The warning names the file, the section and the
+// decoder's error.
+func TestLoadConfig_FailingSectionIsSkippedWithAWarning(t *testing.T) {
+	testOtherValue = ""
+	path := writeTempConfig(t, `
+[cctest_section]
+reject = true
+
+[cctest_other]
+value = "loaded"
+`)
+	var warn bytes.Buffer
+	if _, err := LoadConfig(path, &warn); err != nil {
+		t.Fatalf("a failing plugin section must not fail the load: %v", err)
+	}
+	if testOtherValue != "loaded" {
+		t.Errorf("the other section was not decoded: value = %q", testOtherValue)
+	}
+	want := "warning: " + path + ": skipping [" + testSectionName + "]: " + testSectionReject
+	if !strings.Contains(warn.String(), want) {
+		t.Errorf("warning = %q, want it to contain %q", warn.String(), want)
+	}
+	if strings.Contains(warn.String(), "unknown config keys") {
+		t.Errorf("a skipped section's keys must not also warn as unknown: %q", warn.String())
+	}
+	skipped := SkippedConfigSections()
+	if len(skipped) != 1 || skipped[0].Section != testSectionName ||
+		!strings.Contains(skipped[0].Error, testSectionReject) {
+		t.Errorf("SkippedConfigSections = %+v, want the one rejected section", skipped)
+	}
+}
+
+// D3, under CG_STRICT_CONFIG=1 (the CI switch, cutting-garden#325): a
+// section decoder's failure (a plugin's Validate rejecting an entry) is
+// EX_USAGE naming the file, the section, and the entry.
 func TestLoadConfig_SectionDecoderErrorIsBadRequest(t *testing.T) {
+	t.Setenv("CG_STRICT_CONFIG", "1")
 	path := writeTempConfig(t, `
 [cctest_section]
 reject = true
