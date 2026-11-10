@@ -1,0 +1,4 @@
+[just-us !clown-plugin-v1
+  [-> just-us !mcp-server-v1
+    [-> run_recipe@blake2b256-s3 !mcp-tool-v1
+      [-> _ !just-recipe-v1 group=[test, lint]]]]]

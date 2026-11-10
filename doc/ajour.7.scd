@@ -175,6 +175,7 @@ holes a condition needs.
 
 # SEE ALSO
 
+*cutting-garden-ajour*(1) (the verdict for one call, explained),
 *piggy-acts*(7) (the chain and the acts), piggy RFC 0013 §4.9 (the rule),
 cutting-garden FDR 0028 (the design record and the vectors), cutting-garden
 RFC 0014 (trellis and espalier), *cutting-garden-plugins*(7).

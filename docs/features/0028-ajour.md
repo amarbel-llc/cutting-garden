@@ -434,7 +434,9 @@ of replacement.
 `Call`, `Subject`, `Verdict` and `Refusal` are as "The two inputs" and "The
 verdict" write them. A `~=` atom's patterns are compiled at parse and carried
 on the `Node` unexported, so `Evaluate` never recompiles them (a `Node` built
-in code is compiled on demand); the public shape is unchanged.
+in code is compiled on demand); the public shape is unchanged. The public
+surface suffices for an outside consumer: `cmd/cutting-garden-ajour` imports
+`pkgs/ajour` and nothing under `internal/`.
 
 What is deliberately NOT in it: `_base` resolution and the chain (piggy's
 verdict hands ajour the layers in order); the head of any document; a
@@ -939,5 +941,15 @@ piggy's RFC 0013 conformance vectors point at A-17, A-18 and A-19 by name
    `open` is a parse error naming the node, interior and `deny` nodes
    included; patches are exempt ("Matching", vector A-33).
 4. A debugging surface: `cg ajour <layers…> --call <json>` printing the
-   verdict, beside clown's `show-effective-profile`. Not in this record's
-   scope; filed as cutting-garden#403.
+   verdict, beside clown's `show-effective-profile`. Built as
+   `cutting-garden-ajour` (cutting-garden#403, R 2026-11-10), a binary
+   installed beside `cutting-garden` with its own page,
+   `cutting-garden-ajour(1)`: `--stencil`/`--patch` in stack order, `--call`
+   JSON, exit 0 admitted / 1 refused / 64 bad input. Its spelling is not
+   `cg ajour` because every cg subcommand lives under `internal/`, which the
+   layering guard (`internal/sdklayering`) forbids from importing
+   `pkgs/ajour`; `cg ajour` needs an SDK command registry for non-internal
+   subcommands (cutting-garden#405, for the operator). Its bats lane,
+   `zz-tests_bats/ajour.bats`, runs the two Examples and A-6 through the
+   shipped binary, the seed of the whole-stack lane the promotion criteria
+   name.

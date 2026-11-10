@@ -123,6 +123,19 @@ function install_emits_cg_alias { # @test
     fail "missing cg zsh completion at $prefix/share/zsh/site-functions/_cg"
 }
 
+function install_emits_ajour_explain_binary { # @test
+  # cutting-garden-ajour(1) (FDR 0028 open item 4, cutting-garden#403) ships
+  # beside cutting-garden and cg, with its scdoc page in the same man1 tree.
+  local prefix
+  prefix="$(install_prefix)"
+
+  [[ -x "$prefix/bin/cutting-garden-ajour" ]] ||
+    fail "missing cutting-garden-ajour binary at $prefix/bin/cutting-garden-ajour"
+
+  [[ -f "$prefix/share/man/man1/cutting-garden-ajour.1.gz" ]] ||
+    fail "missing cutting-garden-ajour(1) at $prefix/share/man/man1/cutting-garden-ajour.1.gz"
+}
+
 function install_omits_gen_binary { # @test
   # The gen binary was used to produce the artifacts then deleted
   # in postInstall. Release artifacts must not ship it — it has no

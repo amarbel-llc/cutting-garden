@@ -1,0 +1,11 @@
+{
+  "Path": [
+    {"Type": "clown-plugin-v1", "ID": "moxy"},
+    {"Type": "mcp-server-v1", "ID": "rg"},
+    {"Type": "mcp-tool-v1", "ID": "search", "Fields": {"kind": ["read"], "perm": ["allow"]}}
+  ],
+  "Values": [
+    [{"Type": "fs-path-v1", "ID": "file:circus/.worktrees/swift-plum", "Fields": {"field": ["path"]}}]
+  ],
+  "Anchor": 1
+}

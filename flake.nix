@@ -484,6 +484,11 @@
             "cmd/cutting-garden"
             "cmd/cg"
             "cmd/cutting-garden-gen"
+            # The ajour explain verb (FDR 0028 open item 4,
+            # cutting-garden#403): its own binary, since a cg subcommand
+            # cannot import pkgs/ajour (cutting-garden#405). Its page is the
+            # hand-written doc/cutting-garden-ajour.1.scd (cuttingGardenDoc).
+            "cmd/cutting-garden-ajour"
           ];
           # buildGoAuto has no `commit` slot; src = ./. is a plain path with no
           # .rev, so each backend gets it explicitly.
@@ -762,7 +767,14 @@
           dontUnpack = true;
           dontBuild = true;
           installPhase = ''
-            mkdir -p $out/share/man/man5 $out/share/man/man7
+            mkdir -p $out/share/man/man1 $out/share/man/man5 $out/share/man/man7
+            # Section 1 here is only for binaries outside the Go-codegen'd
+            # Utility (cutting-garden-ajour(1)); cg's own pages come from
+            # cutting-garden-gen.
+            for f in $src/*.1.scd; do
+              [ -e "$f" ] || continue
+              scdoc < "$f" > "$out/share/man/man1/$(basename "$f" .scd)"
+            done
             for f in $src/*.5.scd; do
               [ -e "$f" ] || continue
               scdoc < "$f" > "$out/share/man/man5/$(basename "$f" .scd)"

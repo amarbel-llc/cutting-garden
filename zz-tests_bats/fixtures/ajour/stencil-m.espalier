@@ -1,0 +1,7 @@
+[moxy !clown-plugin-v1
+  [-> folio !mcp-server-v1
+    [-> read !mcp-tool-v1
+      [-> file:circus/.worktrees/swift-plum !fs-path-v1 subtree]]]
+  [-> rg !mcp-server-v1
+    [-> search !mcp-tool-v1
+      [-> file:circus/.worktrees/swift-plum !fs-path-v1 subtree]]]]
