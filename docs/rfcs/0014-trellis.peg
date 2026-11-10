@@ -48,12 +48,19 @@
 
 // ---- entries -------------------------------------------------------------
 //
-// Two entries, one grammar. Query is a query; Literal is ONE espalier box in
-// DATA position (an organize `- […]` line, a `list -format espalier` line,
-// a stencil node, FDR 0028). They share every production after a box's id
-// slot; the id slot is the one place they differ (see "literal" below).
+// Three entries, one grammar. Query is a query; Literal is ONE espalier box
+// in DATA position (an organize `- […]` line, a `list -format espalier`
+// line, a stencil node, FDR 0028); Literals is a DOCUMENT of them, one per
+// root (a nested espalier document, a stencil, a patch). Query and Literal
+// share every production after a box's id slot; the id slot is the one place
+// they differ (see "literal" below).
 
 Query        <- SP? Path SP? EOF
+
+// Roots are separated by whitespace (cutting-garden#402): `[a] [b]` and
+// `[a]⏎[b]` are two roots, `[a][b]` is no document. The canonical writer puts
+// a blank line between roots.
+Literals     <- SP? Literal (SP Literal)* SP? EOF
 
 // A path is steps joined by combinators. The result set is the last
 // step's (object, version) pairs. Whitespace around combinators is
@@ -339,7 +346,16 @@ EOF          <- !.
 //     — an object whose id is literally `_`
 //   [_foo !task]
 //     — an identifier, not the null id (the !IdentRune guard)
-//   [run_recipe@blake2b256-s1 !mcp-tool-v1 [-> _ !just-recipe-v1 group=[test]]]
+//   [run_recipe@blake2b256-s3 !mcp-tool-v1 [-> _ !just-recipe-v1 group=[test]]]
 //     — locked id in the slot, a null-id child: a stencil node (FDR 0028)
 //   [work !task -client [-> one/uno !md priority=1]]
 //     — an ordinary id with a ground child: espalier
+
+// ---- literals conformance vectors (entry: Literals) -----------------------
+//
+//   [a !t] [b !t]
+//     — two roots on one line, space-separated: MUST parse
+//   [a !t]⏎⏎[b !t [-> c]]
+//     — two roots separated by a blank line (the canonical layout): MUST parse
+//   [a !t][b !t]
+//     — adjacent roots with no whitespace: MUST NOT parse (cutting-garden#402)

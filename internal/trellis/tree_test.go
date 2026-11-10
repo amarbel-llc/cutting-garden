@@ -174,6 +174,7 @@ func TestParseTree_Refusals(t *testing.T) {
 		{"# [a]\nnot a line", "not a line"},
 		{"- [a] trailer", "trailer"},
 		{"# a] b", "unexpected `]`"},
+		{`[a !t][b !t]`, "separated by whitespace"},
 		{"\n\n# work ^tag", "offset 9"},
 	}
 	for _, tc := range cases {
@@ -205,6 +206,9 @@ func TestParseTree_EspalierVectors(t *testing.T) {
 		`[run_recipe@blake2b256-s3 !mcp-tool-v1 [-> _ !just-recipe-v1 group=[test]]]`,
 		`[work !task -client [-> one/uno !md priority=1]]`,
 		`[story-8841 !newsblur-story-v1 year=2026 [-> content-8841 @blake2b256-9ft3x]]`,
+		// The PEG's Literals entry (cutting-garden#402).
+		`[a !t] [b !t]`,
+		"[a !t]\n\n[b !t [-> c]]",
 	} {
 		t.Run(src, func(t *testing.T) {
 			roots, err := ParseTree(src)

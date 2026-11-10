@@ -72,9 +72,14 @@ func ParseTreeNested(src string) ([]TreeNode, error) {
 	p := &parser{src: []rune(src)}
 	var roots []TreeNode
 	for {
-		p.skipSPOpt()
+		separated := p.skipSP()
 		if p.atEOF() {
 			return roots, nil
+		}
+		if len(roots) > 0 && !separated {
+			// The PEG's Literals entry: `[a] [b]`, never `[a][b]`
+			// (cutting-garden#402).
+			return nil, p.treeError("roots must be separated by whitespace: `%s` follows the last `]`", p.termTextAt())
 		}
 		node, err := p.parseTreeLiteral()
 		if err != nil {

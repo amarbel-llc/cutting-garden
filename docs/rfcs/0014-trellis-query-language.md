@@ -359,7 +359,9 @@ compressed spellings of things the language says longhand.
 A second named validity condition over the same grammar, between espalier
 (the ground fragment) and full trellis: the language a capability profile
 and an act body are written in (cutting-garden FDR 0028 "ajour"; piggy RFC
-0013 §4.9 cites it). A stencil is a sequence of `Literal`s, one per root.
+0013 §4.9 cites it). A stencil is a sequence of `Literal`s, one per root,
+separated by whitespace (the grammar's `Literals` entry; `[a][b]` with no
+whitespace between roots is no document, cutting-garden#402).
 Inside a literal the fragment admits:
 
 - the **id slot**, always present: a real id, bare or quoted; the null id
