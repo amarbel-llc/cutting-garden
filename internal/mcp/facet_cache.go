@@ -275,8 +275,12 @@ func (fc *facetCache) maintain(
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			// One tick is one host call (cutting-garden#341): its entries
+			// share per-call confirmations (an org file's ETag, a caldav
+			// calendar-home's discovery), and the next tick confirms afresh.
+			tick := cutting_garden_plugins.WithCallScope(ctx)
 			for _, uri := range fc.uris() {
-				fc.refreshOne(ctx, resolve, uri)
+				fc.refreshOne(tick, resolve, uri)
 				if ctx.Err() != nil {
 					return
 				}

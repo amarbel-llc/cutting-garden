@@ -253,8 +253,11 @@ func (lc *listingCache) maintain(
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			// One tick is one host call (cutting-garden#341), as in
+			// facetCache.maintain.
+			tick := cutting_garden_plugins.WithCallScope(ctx)
 			for _, uri := range lc.uris() {
-				lc.refreshOne(ctx, resolve, uri)
+				lc.refreshOne(tick, resolve, uri)
 				if ctx.Err() != nil {
 					return
 				}

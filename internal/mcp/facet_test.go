@@ -181,6 +181,9 @@ type countingFacetLister struct {
 	computes int
 	token    string
 	fail     bool
+	// versionScopes records, per FacetVersion call, whether it ran inside a
+	// host call scope (cutting-garden#341).
+	versionScopes []bool
 }
 
 func (l *countingFacetLister) FacetCounts(
@@ -209,11 +212,51 @@ func (l *countingFacetLister) FacetCounts(
 }
 
 func (l *countingFacetLister) FacetVersion(
-	context.Context, *url.URL,
+	ctx context.Context, _ *url.URL,
 ) (string, bool, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
+	l.versionScopes = append(l.versionScopes, cutting_garden_plugins.InCallScope(ctx))
 	return l.token, l.token != "", nil
+}
+
+// scopesSince returns the scope records after the first n.
+func (l *countingFacetLister) scopesSince(n int) []bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return append([]bool(nil), l.versionScopes[min(n, len(l.versionScopes)):]...)
+}
+
+// A refresher tick is one host call (cutting-garden#341): the plugin calls it
+// makes run inside a call scope, so entries of one source share confirmations.
+func TestFacetCache_RefreshTickIsOneCallScope(t *testing.T) {
+	lister := &countingFacetLister{token: "t1"}
+	r := newCountingResources(t, lister)
+	if _, err := r.ReadResource(context.Background(), "faketest://h/work"); err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	before := len(lister.scopesSince(0))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() { r.facets.maintain(ctx, r.resolve, time.Millisecond); close(done) }()
+	deadline := time.Now().Add(5 * time.Second)
+	for len(lister.scopesSince(before)) == 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	cancel()
+	<-done
+
+	scopes := lister.scopesSince(before)
+	if len(scopes) == 0 {
+		t.Fatal("the refresher made no FacetVersion call")
+	}
+	for i, in := range scopes {
+		if !in {
+			t.Errorf("refresh FacetVersion call %d ran outside a call scope", i)
+		}
+	}
 }
 
 func (l *countingFacetLister) set(fn func(*countingFacetLister)) {
