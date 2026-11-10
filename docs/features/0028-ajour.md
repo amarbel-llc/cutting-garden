@@ -326,6 +326,15 @@ Consequences the rules give for free, so they are not special cases:
   negated and never beside `deny`; since it matches nothing, a typed `_`
   node whose only atom is `perm` is still a wildcard and needs `open`
   (vectors A-7, A-37 to A-49).
+  Downstream: clown RFC 0019 R-14 (perm wording mirrors `checkPerm`,
+  PR-39..45), R-7 amended (perm exempt from the pin check, PR-46), R-4
+  amended (a perm-only `_` needs `open`, PR-47), M-1 retired (unattended
+  `ask`, now resolved by posture); clown RFC 0018 §3 (perm is not a pin;
+  kind, async, impure are) and §11 (exactly one escalator; `MOXY_POSTURE`,
+  `MOXY_PROFILE_LAYERS`); moxy FDR 0015 amendment (allow skips the ask
+  tier, dynamic predicates stay a floor, enforcement order, `Resolve`);
+  piggy RFC 0013 §4.9 (the stencil digest convention, cfa35f1); circus D2
+  §1, §5.
 - **`open` (V-D2-14).** A `_` node with no atoms matches every existing
   subject of its type; D2's `[-> _ !tool-input-v1 open]` is such a node.
   `open` is the **required spelling of a wildcard** (R 2026-11-10, open item
@@ -474,6 +483,7 @@ of replacement.
     func ParseStencil(src string) (Stencil, error)  // the stencil fragment
     func ParsePatch(src string) (Patch, error)      // same grammar; every leaf must carry deny
     func (Stencil) Write(*strings.Builder)          // round-trip, in the fragment's spelling
+    func (Stencil) Digest() string                  // blake2b256 markl id over the Write bytes
     func (Patch) Write(*strings.Builder)
 
     type Layer interface{ ajourLayer() }            // Stencil | Patch
@@ -499,6 +509,17 @@ of replacement.
     type Perm int                                   // PermDefault | PermAllow | PermAsk
     type Posture int                                // PostureAttended | PostureUnattended
     type Action int                                 // ActionRefuse | ActionRun | ActionPrompt | ActionEscalate
+
+`Stencil.Digest` is the stencil's content address, the value a profile edge
+pins (piggy RFC 0013 §4.9): a blake2b256 markl id over the canonical
+nested-espalier `Write` bytes of the tree alone (no hyphence head, nothing
+around it), spelled `blake2b256-<blech32>`. Every input spelling of one tree
+(heading rendering, `/**`) digests the same (vectors A-50 to A-53).
+Registered markl purpose (cutting-garden keeps no registry of its own; this
+line is it): `cutting_garden-stencil-digest-v1`, format blake2b256, the
+purpose-full spelling `cutting_garden-stencil-digest-v1@blake2b256-…`
+(`ajour.PurposeStencilDigest`). A patch has no digest: it is signed inline,
+never pinned.
 
 `Call`, `Subject`, `Verdict` and `Refusal` are as "The two inputs" and "The
 verdict" write them. A `~=` atom's patterns are compiled at parse and carried
@@ -858,6 +879,10 @@ Reused rows keep their ids; the `A-` rows are this record's.
 | A-47 | `perm=bogus`; `perm=[allow, ask]`; `^perm=ask`; `perm^=a`; `perm=ask deny`; two `perm` atoms; `[-> _ !mcp-tool-v1 perm=ask]` without `open`; `"perm"=x` | each a parse error naming the atom or the rule; the last parses (a quoted name is opaque) |
 | A-48 | `Write` of a stencil with `perm=` on tool and non-tool nodes | spelled exactly as read; re-parses to a fixed point |
 | A-49 | `Resolve` of Admitted; of Refused; of Ask attended (with or without a channel), unattended with a channel, unattended without; of the zero Verdict | Run; Refuse; Prompt; Escalate; Refuse; Refuse |
+| A-50 | "A complete document" in the nested and the heading spellings | one `Stencil.Digest` |
+| A-51 | `[-> file:/wt/** !fs-path-v1]` and `[-> file:/wt !fs-path-v1 subtree]` | one digest |
+| A-52 | the complete document with one atom changed | a different digest |
+| A-53 | `Digest` of `[read [-> file:/wt !fs-path-v1 subtree]]` | equals toolbox(1)'s `digest -a blake2b256` over its `Write` bytes, an independent check |
 piggy's RFC 0013 conformance vectors point at A-17, A-18 and A-19 by name
 (the ask from piggy/green-larch, 2026-11-09) instead of restating them.
 

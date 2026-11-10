@@ -8,8 +8,8 @@
 // plugin would, and imports nothing from internal/: a dagnabit copy facade
 // over an internal/ajour would keep its internal/trellis import (checked
 // 2026-11-10), so Node.Atoms would be a type no consumer outside this module
-// can name. Its closure is pkgs/trellis, dewey's errors and the standard
-// library.
+// can name. Its closure is pkgs/trellis, dewey's errors, piggy's markl (for
+// Stencil.Digest) and the standard library.
 package ajour
 
 import (
