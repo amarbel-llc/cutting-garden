@@ -52,6 +52,9 @@ const (
 // memo (leave it).
 type transactionPatch struct {
 	recognized []string
+	// ignored are the body's keys outside transactionPatchFields
+	// (cutting-garden#376).
+	ignored []string
 
 	hasCategory bool
 	category    string // a category id, "Group/Category", or a bare name
@@ -84,31 +87,50 @@ type transactionPatch struct {
 // request, never a tolerated field (#185). After the write the plugin checks
 // the transaction YNAB returns carries the new values; a server that answered
 // success without applying them is an error, not a silent false success.
-func (Plugin) PatchNode(
+func (p Plugin) PatchNode(
 	ctx context.Context, node *url.URL, body io.Reader,
 ) ([]string, error) {
+	detail, err := p.PatchNodeDetail(ctx, node, body)
+	return detail.Applied, err
+}
+
+// PatchNodeDetail is PatchNode that also names the body keys it tolerated but
+// did not apply (cutting-garden#376).
+func (Plugin) PatchNodeDetail(
+	ctx context.Context, node *url.URL, body io.Reader,
+) (cutting_garden_plugins.PatchDetail, error) {
 	if node == nil {
-		return nil, errors.ErrorWithStackf("ynab plugin: PatchNode requires a node URI")
+		return cutting_garden_plugins.PatchDetail{},
+			errors.ErrorWithStackf("ynab plugin: PatchNode requires a node URI")
 	}
 	ref, err := classifyURI(node)
 	if err != nil {
-		return nil, err
+		return cutting_garden_plugins.PatchDetail{}, err
 	}
 	if ref.kind == kindPayee {
-		return patchPayee(ctx, ref, body)
+		applied, ignored, err := patchPayee(ctx, ref, body)
+		return cutting_garden_plugins.PatchDetail{Applied: applied, Ignored: ignored}, err
 	}
 	if ref.kind != kindTransaction {
-		return nil, errors.BadRequestf(
+		return cutting_garden_plugins.PatchDetail{}, errors.BadRequestf(
 			"ynab plugin: only transaction and payee nodes are patchable; %q is not one\n"+
 				"hint: pass `ynab://<account>/<budget>/transactions/<id>` or "+
 				"`ynab://<account>/<budget>/payees/<id>`", node,
 		)
 	}
-
 	patch, err := parseTransactionPatch(body)
 	if err != nil {
-		return nil, err
+		return cutting_garden_plugins.PatchDetail{}, err
 	}
+	applied, err := patchTransaction(ctx, ref, patch)
+	return cutting_garden_plugins.PatchDetail{Applied: applied, Ignored: patch.ignored}, err
+}
+
+// patchTransaction applies a parsed transaction patch (PatchNode's
+// transaction half).
+func patchTransaction(
+	ctx context.Context, ref nodeRef, patch transactionPatch,
+) ([]string, error) {
 	if len(patch.recognized) == 0 {
 		return patch.recognized, nil // nothing recognized: no fetch, honest report
 	}
@@ -189,6 +211,7 @@ func parseTransactionPatch(body io.Reader) (transactionPatch, error) {
 		return patch, errors.BadRequestf("ynab plugin: invalid patch JSON: %s", err)
 	}
 	patch.recognized = cutting_garden_plugins.RecognizedPatchFields(fields, transactionPatchFields)
+	patch.ignored = cutting_garden_plugins.IgnoredPatchFields(fields, transactionPatchFields)
 
 	if rawCategory, ok := fields["category"]; ok {
 		category, err := stringField("category", rawCategory)

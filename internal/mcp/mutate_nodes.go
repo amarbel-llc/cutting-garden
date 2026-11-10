@@ -59,6 +59,7 @@ func mutateNodesToolDef() protocol.ToolV1 {
 			"status (applied, patched_nothing, failed, deleted, not_found — " +
 			"prefer it to the lists: a deleted node is also in applied, a " +
 			"not_found one also in failed), fields (the patch keys that took), " +
+			"ignored (the patch keys the source tolerated but did not apply, when it reports them), " +
 			"uri (the node's address afterwards, only when it changed: an org " +
 			"headline edited by ?h= is then addressed by ?id=) and name (a " +
 			"deleted node's name). Bodies are STRINGS — JSON-encode a JSON body. A " +
@@ -110,9 +111,12 @@ type mutateOutcomeView struct {
 	ID     string   `json:"id"`
 	Status string   `json:"status"`
 	Fields []string `json:"fields,omitempty"`
-	URI    string   `json:"uri,omitempty"`
-	Name   string   `json:"name,omitempty"`
-	Error  string   `json:"error,omitempty"`
+	// Ignored names the patch body's keys the plugin tolerated but did not
+	// apply (cutting-garden#376).
+	Ignored []string `json:"ignored,omitempty"`
+	URI     string   `json:"uri,omitempty"`
+	Name    string   `json:"name,omitempty"`
+	Error   string   `json:"error,omitempty"`
 }
 
 type mutateGroupView struct {
@@ -591,7 +595,8 @@ func (g *mutateGroup) outcomes(result cutting_garden_plugins.BulkResult) []mutat
 
 func (g *mutateGroup) outcomeView(o cutting_garden_plugins.BulkOutcome) mutateOutcomeView {
 	v := mutateOutcomeView{
-		Status: string(o.Status), Fields: o.Fields, Name: o.Name, Error: o.Err,
+		Status: string(o.Status), Fields: o.Fields, Ignored: o.Ignored,
+		Name: o.Name, Error: o.Err,
 	}
 	if o.NewURI != nil {
 		v.URI = o.NewURI.String()

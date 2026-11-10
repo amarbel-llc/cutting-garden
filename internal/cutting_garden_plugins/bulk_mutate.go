@@ -167,9 +167,9 @@ const (
 // no BulkResult (RFC 0017 §Atomicity semantics), so there are no outcomes for
 // ops that were not applied; the SDK loop refuses atomic outright
 // (ErrBulkAtomicUnsupported). A plugin with its own BulkMutate that does not
-// fill Outcomes (ynab batches into one request) reports none: empty Outcomes
-// means "not reported", and mutate_nodes then has no outcomes key at all —
-// read the four lists.
+// fill Outcomes reports none: empty Outcomes means "not reported", and
+// mutate_nodes then has no outcomes key at all — read the four lists. ynab,
+// which batches into one request, fills them (cutting-garden#376).
 //
 // Status is the canonical reading for new callers; the four lists are kept
 // for the callers already built on them.
@@ -183,6 +183,9 @@ type BulkOutcome struct {
 	// Fields, for a patch, are the field keys the plugin reported applied;
 	// nil when it did not report them.
 	Fields []string
+	// Ignored, for a patch, are the body keys the plugin tolerated but did
+	// not apply (cutting-garden#376); nil when none or not reported.
+	Ignored []string
 	// NewURI is the node's URI after the op, set only when it differs from
 	// URI (an org title edit or move changes the headline's address).
 	NewURI *url.URL

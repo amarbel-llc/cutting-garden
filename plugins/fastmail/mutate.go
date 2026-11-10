@@ -127,9 +127,10 @@ func (Plugin) PatchNodeDetail(
 	// round-trip, so a body naming nothing we understand costs no fetch and
 	// still reports honestly.
 	recognized := cutting_garden_plugins.RecognizedPatchFields(fields, threadPatchFields)
+	ignored := cutting_garden_plugins.IgnoredPatchFields(fields, threadPatchFields)
 	switch {
 	case len(recognized) == 0:
-		return cutting_garden_plugins.PatchDetail{Applied: recognized}, nil
+		return cutting_garden_plugins.PatchDetail{Applied: recognized, Ignored: ignored}, nil
 	case len(recognized) > 1:
 		return none, errors.BadRequestf(
 			"fastmail plugin: a patch moves the thread (%q) or replaces its tag set (%q), not both",
@@ -144,10 +145,12 @@ func (Plugin) PatchNodeDetail(
 				patchFieldMailbox,
 			)
 		}
-		return moveThread(ctx, ref, target)
+		detail, err := moveThread(ctx, ref, target)
+		detail.Ignored = ignored
+		return detail, err
 	}
 	applied, err := patchThreadTags(ctx, ref, fields[listingFieldTags])
-	return cutting_garden_plugins.PatchDetail{Applied: applied}, err
+	return cutting_garden_plugins.PatchDetail{Applied: applied, Ignored: ignored}, err
 }
 
 // moveThread moves the thread at ref out of the mailbox its URI names and into

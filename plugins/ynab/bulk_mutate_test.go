@@ -190,6 +190,37 @@ func TestBulkMutate_PatchesOfOneTransactionMerge(t *testing.T) {
 	}
 }
 
+// The batch reports one outcome per op, each naming its own ignored keys
+// (cutting-garden#376): an applied op, an op merged into it, and an op naming
+// only an unknown key, which stays patched_nothing.
+func TestBulkMutate_OutcomesNameIgnoredFields(t *testing.T) {
+	newFixture(t)
+	result := bulk(t,
+		patchOp(t, txnPrefix+"t1", `{"category":"Rent","color":"red"}`),
+		patchOp(t, txnPrefix+"t1", `{"memo":"merged","flag":"x"}`),
+		patchOp(t, txnPrefix+"t2", `{"emoji":"rocket"}`),
+	)
+	type view struct {
+		node    string
+		status  cutting_garden_plugins.BulkOutcomeStatus
+		ignored []string
+	}
+	var got []view
+	for _, o := range result.Outcomes {
+		got = append(got, view{path.Base(o.URI.Path), o.Status, o.Ignored})
+	}
+	want := []view{
+		{"t2", cutting_garden_plugins.OutcomePatchedNothing, []string{"emoji"}},
+		{"t1", cutting_garden_plugins.OutcomeApplied, []string{"color"}},
+		{"t1", cutting_garden_plugins.OutcomeApplied, []string{"flag"}},
+	}
+	if !slices.EqualFunc(got, want, func(a, b view) bool {
+		return a.node == b.node && a.status == b.status && slices.Equal(a.ignored, b.ignored)
+	}) {
+		t.Errorf("outcomes = %+v, want %+v", got, want)
+	}
+}
+
 // A clear (null) and an empty string are different requests, so they conflict.
 func TestBulkMutate_ANullMemoAndAnEmptyMemoConflict(t *testing.T) {
 	newFixture(t)

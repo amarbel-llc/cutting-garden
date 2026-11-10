@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/url"
+	"slices"
 
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
@@ -65,6 +66,7 @@ func ApplyBulkOp(
 		// none landed; only an authoritative empty one is patchedNothing.
 		patchedNothing = err == nil && detail.Applied != nil && len(detail.Applied) == 0
 		outcome.Fields = detail.Applied
+		outcome.Ignored = detail.Ignored
 		if err == nil && !patchedNothing && detail.NewURI != nil &&
 			detail.NewURI.String() != op.URI.String() {
 			outcome.NewURI = detail.NewURI
@@ -101,10 +103,12 @@ func ApplyBulkOp(
 }
 
 // PatchDetail is what a patch reports beyond success: the field keys it
-// applied (nil when it does not report them, like PatchNode's applied) and
-// the node's URI afterwards when it changed.
+// applied (nil when it does not report them, like PatchNode's applied), the
+// body keys it tolerated but did not apply (cutting-garden#376; nil when none
+// or not reported), and the node's URI afterwards when it changed.
 type PatchDetail struct {
 	Applied []string
+	Ignored []string
 	NewURI  *url.URL
 }
 
@@ -319,4 +323,20 @@ func RecognizedPatchFields(
 		}
 	}
 	return recognized
+}
+
+// IgnoredPatchFields returns the keys of fields outside supported, sorted:
+// the fields a patch tolerates but does not apply, which a plugin reports as
+// PatchDetail.Ignored (cutting-garden#376). nil when there are none.
+func IgnoredPatchFields(
+	fields map[string]json.RawMessage, supported []string,
+) []string {
+	var ignored []string
+	for key := range fields {
+		if !slices.Contains(supported, key) {
+			ignored = append(ignored, key)
+		}
+	}
+	slices.Sort(ignored)
+	return ignored
 }

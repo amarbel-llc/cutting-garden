@@ -9,6 +9,23 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
+// parseEdit names the keys no edit reads (cutting-garden#376); a body of only
+// such keys is an empty edit.
+func TestParseEdit_NamesIgnoredKeys(t *testing.T) {
+	e, err := parseEdit(strings.NewReader(`{"state":"DONE","color":"red","after":"id=x","zzz":1}`))
+	if err != nil {
+		t.Fatalf("parseEdit: %v", err)
+	}
+	if diff := cmp.Diff([]string{"color", "zzz"}, e.ignored); diff != "" {
+		t.Errorf("ignored (-want +got):\n%s", diff)
+	}
+	e, err = parseEdit(strings.NewReader(`{"color":"red"}`))
+	if err != nil || !e.empty() || len(e.ignored) != 1 {
+		t.Errorf("an unknown-only body: empty=%v ignored=%v err=%v, want an empty edit ignoring color",
+			e.empty(), e.ignored, err)
+	}
+}
+
 func patch(t *testing.T, uri, body string) ([]string, error) {
 	t.Helper()
 	return Plugin{}.PatchNode(context.Background(), mustURL(t, uri), strings.NewReader(body))

@@ -88,9 +88,9 @@ type BulkOpKind = internal.BulkOpKind
 // no BulkResult (RFC 0017 §Atomicity semantics), so there are no outcomes for
 // ops that were not applied; the SDK loop refuses atomic outright
 // (ErrBulkAtomicUnsupported). A plugin with its own BulkMutate that does not
-// fill Outcomes (ynab batches into one request) reports none: empty Outcomes
-// means "not reported", and mutate_nodes then has no outcomes key at all —
-// read the four lists.
+// fill Outcomes reports none: empty Outcomes means "not reported", and
+// mutate_nodes then has no outcomes key at all — read the four lists. ynab,
+// which batches into one request, fills them (cutting-garden#376).
 //
 // Status is the canonical reading for new callers; the four lists are kept
 // for the callers already built on them.
@@ -628,8 +628,9 @@ type PartialListing = internal.PartialListing
 type PartialListings = internal.PartialListings
 
 // PatchDetail is what a patch reports beyond success: the field keys it
-// applied (nil when it does not report them, like PatchNode's applied) and
-// the node's URI afterwards when it changed.
+// applied (nil when it does not report them, like PatchNode's applied), the
+// body keys it tolerated but did not apply (cutting-garden#376; nil when none
+// or not reported), and the node's URI afterwards when it changed.
 type PatchDetail = internal.PatchDetail
 
 // Plugin is the cross-cutting identity every capture or restore
@@ -1007,6 +1008,11 @@ var FindFacetDimension = internal.FindFacetDimension
 // or one with an empty schema): with nothing declared nothing can be counted,
 // and no walk is made.
 var FoldFacets = internal.FoldFacets
+
+// IgnoredPatchFields returns the keys of fields outside supported, sorted:
+// the fields a patch tolerates but does not apply, which a plugin reports as
+// PatchDetail.Ignored (cutting-garden#376). nil when there are none.
+var IgnoredPatchFields = internal.IgnoredPatchFields
 
 // InCallScope reports whether ctx is inside a host call scope.
 var InCallScope = internal.InCallScope

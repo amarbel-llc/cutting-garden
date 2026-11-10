@@ -123,27 +123,49 @@ type objectPatchBody struct {
 // dtstart, categories. The categories field is the []string CATEGORIES tag set
 // (tags slice 2, RFC 0019): a full-set replacement, cleared by an empty array.
 // JSON null clears any field.
-func (Plugin) PatchNode(
+func (p Plugin) PatchNode(
 	ctx context.Context,
 	node *url.URL,
 	body io.Reader,
 ) ([]string, error) {
+	detail, err := p.PatchNodeDetail(ctx, node, body)
+	return detail.Applied, err
+}
+
+// PatchNodeDetail is PatchNode that also names the fields it tolerated but
+// did not apply (cutting-garden#376): the keys of the component's field
+// object, or of the bare body, outside the component's patchable set.
+func (Plugin) PatchNodeDetail(
+	ctx context.Context,
+	node *url.URL,
+	body io.Reader,
+) (cutting_garden_plugins.PatchDetail, error) {
+	applied, ignored, err := patchNode(ctx, node, body)
+	if err != nil {
+		return cutting_garden_plugins.PatchDetail{}, err
+	}
+	return cutting_garden_plugins.PatchDetail{Applied: applied, Ignored: ignored}, nil
+}
+
+func patchNode(
+	ctx context.Context, node *url.URL, body io.Reader,
+) (applied, ignored []string, err error) {
 	if node == nil {
-		return nil, errors.ErrorWithStackf("caldav plugin: PatchNode requires a node URI")
+		return nil, nil, errors.ErrorWithStackf("caldav plugin: PatchNode requires a node URI")
 	}
 
 	raw, err := io.ReadAll(body)
 	if err != nil {
-		return nil, errors.Wrap(err)
+		return nil, nil, errors.Wrap(err)
 	}
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 {
-		return nil, errors.BadRequestf("caldav plugin: PatchNode body must be objectView JSON; got empty body")
+		return nil, nil, errors.BadRequestf("caldav plugin: PatchNode body must be objectView JSON; got empty body")
 	}
 
 	var top map[string]json.RawMessage
 	if err := json.Unmarshal(trimmed, &top); err != nil {
-		return nil, errors.BadRequestf("caldav plugin: invalid patch JSON: %s", err)
+		return nil, nil, errors.BadRequestf("caldav plugin: invalid patch JSON: %s", err)
 	}
 	// No top-level `component`: a bare field object, whose component is the
 	// stored object's.
@@ -153,7 +175,7 @@ func (Plugin) PatchNode(
 
 	var patch objectPatchBody
 	if err := json.Unmarshal(trimmed, &patch); err != nil {
-		return nil, errors.BadRequestf("caldav plugin: invalid patch JSON: %s", err)
+		return nil, nil, errors.BadRequestf("caldav plugin: invalid patch JSON: %s", err)
 	}
 
 	var fields map[string]json.RawMessage
@@ -166,26 +188,27 @@ func (Plugin) PatchNode(
 	case "VJOURNAL":
 		fields, supported = patch.Journal, journalPatchFields
 	default:
-		return nil, badPatchShape(fmt.Sprintf(
+		return nil, nil, badPatchShape(fmt.Sprintf(
 			"the patch has unknown component %q (want VEVENT, VTODO, or VJOURNAL)", patch.Component))
 	}
 
 	// Which of the named fields this component actually recognizes is
 	// decided BEFORE any network round-trip, so a body naming nothing we
 	// understand costs no GET/PUT and still reports honestly.
-	applied := cutting_garden_plugins.RecognizedPatchFields(fields, supported)
+	applied = cutting_garden_plugins.RecognizedPatchFields(fields, supported)
+	ignored = cutting_garden_plugins.IgnoredPatchFields(fields, supported)
 	if len(applied) == 0 {
-		return applied, nil
+		return applied, ignored, nil
 	}
 
 	c, href, currentView, err := fetchPatchTarget(ctx, node)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := storePatched(ctx, c, href, node, patch.Component, currentView, fields); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return applied, nil
+	return applied, ignored, nil
 }
 
 // patchBare patches with a bare field object (`{"categories":["a"]}`): no
@@ -196,22 +219,22 @@ func (Plugin) PatchNode(
 // null clears, and a body naming nothing recognized stores nothing.
 func patchBare(
 	ctx context.Context, node *url.URL, fields map[string]json.RawMessage,
-) ([]string, error) {
+) (applied, ignored []string, err error) {
 	// A section object without its `component` is a half-written wrapper, not
 	// a field named "task": say so rather than ignore it.
 	for _, section := range []string{"event", "task", "journal"} {
 		if _, ok := fields[section]; ok {
-			return nil, badPatchShape(fmt.Sprintf(
+			return nil, nil, badPatchShape(fmt.Sprintf(
 				"the %q section needs a top-level \"component\" beside it", section))
 		}
 	}
 	if len(fields) == 0 {
-		return []string{}, nil
+		return []string{}, nil, nil
 	}
 
 	c, href, currentView, err := fetchPatchTarget(ctx, node)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var supported []string
 	switch currentView.Component {
@@ -222,14 +245,15 @@ func patchBare(
 	case "VJOURNAL":
 		supported = journalPatchFields
 	}
-	applied := cutting_garden_plugins.RecognizedPatchFields(fields, supported)
+	applied = cutting_garden_plugins.RecognizedPatchFields(fields, supported)
+	ignored = cutting_garden_plugins.IgnoredPatchFields(fields, supported)
 	if len(applied) == 0 {
-		return applied, nil
+		return applied, ignored, nil
 	}
 	if err := storePatched(ctx, c, href, node, currentView.Component, currentView, fields); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return applied, nil
+	return applied, ignored, nil
 }
 
 // badPatchShape is a malformed patch body's rejection: what is wrong, then the

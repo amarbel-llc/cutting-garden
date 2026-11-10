@@ -422,6 +422,12 @@ function mcp_cud_round_trips { # @test
   assert_equal "$(mcp_is_error "$output" 3)" "false"
   assert_equal "$(applied_ids)" "e2e.ics"
 
+  # A field the plugin does not apply is named on the outcome, beside the
+  # applied ones (cutting-garden#376).
+  mcp_mutate '[{"kind":"patch","id":"e2e.ics","body":"{\"summary\":\"E2E again\",\"color\":\"red\"}"}]'
+  assert_equal "$(mcp_result_text "$output" 3 | jq -c '.groups[0].outcomes[0] | {fields, ignored}')" \
+    '{"fields":["summary"],"ignored":["color"]}'
+
   mcp_mutate '[{"kind":"delete","id":"e2e.ics"}]'
   assert_equal "$(mcp_is_error "$output" 3)" "false"
   assert_equal "$(applied_ids)" "e2e.ics"

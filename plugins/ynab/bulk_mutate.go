@@ -92,11 +92,41 @@ func (p Plugin) bulkSweep(
 // are resolved and batched together.
 type bulkKey struct{ account, budget string }
 
-// bulkMember is one transaction patch queued for its budget's batch.
+// bulkMember is one transaction patch queued for its budget's batch. merged
+// holds the later ops on the same transaction that mergeMembers folded into it;
+// they share its result.
 type bulkMember struct {
-	op    cutting_garden_plugins.BulkOp
-	txnID string
-	patch transactionPatch
+	op     cutting_garden_plugins.BulkOp
+	txnID  string
+	patch  transactionPatch
+	merged []bulkMember
+}
+
+// recordOutcome adds one per-op outcome for op (cutting-garden#376: ynab's
+// batch reports outcomes, so a patch's ignored keys reach the caller).
+func recordOutcome(
+	result *cutting_garden_plugins.BulkResult, op cutting_garden_plugins.BulkOp,
+	status cutting_garden_plugins.BulkOutcomeStatus, fields, ignored []string, err error,
+) {
+	outcome := cutting_garden_plugins.BulkOutcome{
+		URI: op.URI, Ref: op.Ref, Status: status, Fields: fields, Ignored: ignored,
+	}
+	if err != nil {
+		outcome.Err = err.Error()
+	}
+	result.Outcomes = append(result.Outcomes, outcome)
+}
+
+// recordMemberOutcome records the outcome of m and of every op merged into it,
+// each with its own ignored keys.
+func recordMemberOutcome(
+	result *cutting_garden_plugins.BulkResult, m bulkMember,
+	status cutting_garden_plugins.BulkOutcomeStatus, fields []string, err error,
+) {
+	recordOutcome(result, m.op, status, fields, m.patch.ignored, err)
+	for _, other := range m.merged {
+		recordOutcome(result, other.op, status, fields, other.patch.ignored, err)
+	}
 }
 
 // bulkGroup is the transaction patches destined for one spelling of a budget.
@@ -129,6 +159,7 @@ func (p Plugin) bulkOps(
 		ref, err := classifyURI(op.URI)
 		if err != nil {
 			result.Failed = append(result.Failed, bulkFailure(op, err))
+			recordOutcome(&result, op, cutting_garden_plugins.OutcomeFailed, nil, nil, err)
 			continue
 		}
 		if ref.kind != kindTransaction {
@@ -138,11 +169,14 @@ func (p Plugin) bulkOps(
 		patch, err := parseTransactionPatch(bytes.NewReader(op.Body))
 		if err != nil {
 			result.Failed = append(result.Failed, bulkFailure(op, err))
+			recordOutcome(&result, op, cutting_garden_plugins.OutcomeFailed, nil, nil, err)
 			continue
 		}
 		if len(patch.recognized) == 0 {
 			// Nothing recognized: no read, no write, an honest empty (#182).
 			result.PatchedNothing = append(result.PatchedNothing, op.URI)
+			recordOutcome(&result, op, cutting_garden_plugins.OutcomePatchedNothing,
+				[]string{}, patch.ignored, nil)
 			continue
 		}
 		key := bulkKey{ref.account, ref.budget}
@@ -174,6 +208,7 @@ func applyBulkGroup(
 ) {
 	failOne := func(m bulkMember, err error) {
 		result.Failed = append(result.Failed, bulkFailure(m.op, err))
+		recordMemberOutcome(result, m, cutting_garden_plugins.OutcomeFailed, nil, err)
 	}
 	failAll := func(err error) {
 		for _, m := range group.members {
@@ -238,6 +273,7 @@ func applyBulkGroup(
 		}
 		if len(plan.changed) == 0 {
 			result.PatchedNothing = append(result.PatchedNothing, m.op.URI) // already as requested
+			recordMemberOutcome(result, m, cutting_garden_plugins.OutcomePatchedNothing, []string{}, nil)
 			continue
 		}
 		batch = append(batch, planned{m, plan})
@@ -260,6 +296,7 @@ func applyBulkGroup(
 			continue
 		}
 		result.AppliedNodes = append(result.AppliedNodes, b.member.op.URI)
+		recordMemberOutcome(result, b.member, cutting_garden_plugins.OutcomeApplied, b.plan.changed, nil)
 	}
 }
 
@@ -287,6 +324,7 @@ func mergeMembers(
 			continue
 		}
 		merged[i].patch = combined
+		merged[i].merged = append(merged[i].merged, m)
 	}
 	return merged
 }

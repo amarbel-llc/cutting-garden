@@ -30,19 +30,34 @@ var payeePatchFields = []string{"name"}
 // sends one rename, and checks the payee YNAB returns carries the new name. A
 // body naming nothing recognized, or a name the payee already has, sends no
 // write and reports a non-nil EMPTY applied (cutting-garden#182).
-func patchPayee(ctx context.Context, ref nodeRef, body io.Reader) ([]string, error) {
+// The keys outside payeePatchFields are returned as ignored (cutting-garden#376).
+func patchPayee(
+	ctx context.Context, ref nodeRef, body io.Reader,
+) (applied, ignored []string, err error) {
 	raw, err := io.ReadAll(body)
 	if err != nil {
-		return nil, errors.Wrap(err)
+		return nil, nil, errors.Wrap(err)
 	}
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 {
-		return nil, errors.BadRequestf("ynab plugin: PatchNode body must be JSON; got empty body")
+		return nil, nil, errors.BadRequestf("ynab plugin: PatchNode body must be JSON; got empty body")
 	}
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(trimmed, &fields); err != nil {
-		return nil, errors.BadRequestf("ynab plugin: invalid patch JSON: %s", err)
+		return nil, nil, errors.BadRequestf("ynab plugin: invalid patch JSON: %s", err)
 	}
+	ignored = cutting_garden_plugins.IgnoredPatchFields(fields, payeePatchFields)
+	applied, err = renamePayee(ctx, ref, fields)
+	if err != nil {
+		return nil, nil, err
+	}
+	return applied, ignored, nil
+}
+
+// renamePayee is patchPayee's write, given the decoded body.
+func renamePayee(
+	ctx context.Context, ref nodeRef, fields map[string]json.RawMessage,
+) ([]string, error) {
 	recognized := cutting_garden_plugins.RecognizedPatchFields(fields, payeePatchFields)
 	if len(recognized) == 0 {
 		return recognized, nil // nothing recognized: no fetch, honest report

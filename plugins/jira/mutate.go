@@ -163,6 +163,30 @@ var issuePatchFields = []string{
 // issues no network call, reporting a non-nil empty applied rather than a
 // bare success. status and assignee are pre-resolved (pure GETs) BEFORE the
 // field PUT, so a bad status/assignee fails without a partial mutation.
+//
+// PatchNodeDetail is PatchNode that also names the body keys outside
+// issuePatchFields (cutting-garden#376).
+func (p Plugin) PatchNodeDetail(
+	ctx context.Context, node *url.URL, body io.Reader,
+) (cutting_garden_plugins.PatchDetail, error) {
+	raw, err := io.ReadAll(body)
+	if err != nil {
+		return cutting_garden_plugins.PatchDetail{}, errors.Wrap(err)
+	}
+	applied, err := p.PatchNode(ctx, node, bytes.NewReader(raw))
+	if err != nil {
+		return cutting_garden_plugins.PatchDetail{}, err
+	}
+	// PatchNode has already refused a body that is not a JSON object.
+	var fields map[string]json.RawMessage
+	_ = json.Unmarshal(bytes.TrimSpace(raw), &fields)
+	return cutting_garden_plugins.PatchDetail{
+		Applied: applied,
+		Ignored: cutting_garden_plugins.IgnoredPatchFields(fields, issuePatchFields),
+	}, nil
+}
+
+// PatchNode applies the recognized fields of a patch body to an issue.
 func (Plugin) PatchNode(
 	ctx context.Context, node *url.URL, body io.Reader,
 ) ([]string, error) {

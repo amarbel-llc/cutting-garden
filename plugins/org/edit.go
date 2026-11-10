@@ -54,6 +54,16 @@ type headlineEdit struct {
 	bodyOp    *bodyOp       // an incremental body edit (body.go); excludes body
 	move      *headlineMove // move.go
 	quote     bool
+	// ignored are the body's keys no edit reads (cutting-garden#376).
+	ignored []string
+}
+
+// patchKeys is every key parseEdit reads.
+var patchKeys = []string{
+	fieldQuote, fieldPatchTitle, fieldPatchState, fieldPatchPriority, fieldPatchOwnTags,
+	fieldPatchScheduled, fieldPatchDeadline, fieldPatchBody, fieldPatchBodyAppend,
+	fieldPatchBodyPrepend, fieldPatchBodyReplace, fieldPatchParent, fieldPatchBefore,
+	fieldPatchAfter,
 }
 
 func (e headlineEdit) empty() bool {
@@ -78,7 +88,7 @@ func parseEdit(body io.Reader) (headlineEdit, error) {
 	if len(patch) == 0 {
 		return headlineEdit{}, errors.BadRequestf("org plugin: empty patch body")
 	}
-	var e headlineEdit
+	e := headlineEdit{ignored: cutting_garden_plugins.IgnoredPatchFields(patch, patchKeys)}
 	if raw, ok := patch[fieldQuote]; ok {
 		var quote bool
 		if err := json.Unmarshal(raw, &quote); err != nil || !quote {
@@ -239,7 +249,7 @@ func (Plugin) PatchNodeDetail(
 		return cutting_garden_plugins.PatchDetail{}, err
 	}
 	if e.empty() {
-		return cutting_garden_plugins.PatchDetail{Applied: []string{}}, nil
+		return cutting_garden_plugins.PatchDetail{Applied: []string{}, Ignored: e.ignored}, nil
 	}
 	t, err := resolve(uri)
 	if err != nil {
@@ -248,7 +258,7 @@ func (Plugin) PatchNodeDetail(
 	switch t.ref.kind {
 	case kindFile:
 		applied, err := t.patchPreamble(ctx, e)
-		return cutting_garden_plugins.PatchDetail{Applied: applied}, err
+		return cutting_garden_plugins.PatchDetail{Applied: applied, Ignored: e.ignored}, err
 	case kindHeadline:
 	default:
 		return cutting_garden_plugins.PatchDetail{}, errors.BadRequestf(
@@ -264,7 +274,7 @@ func (Plugin) PatchNodeDetail(
 		applied, id, err = t.edit(ctx, e, t.acct.now())
 		path = t.ref.path
 	}
-	detail := cutting_garden_plugins.PatchDetail{Applied: applied}
+	detail := cutting_garden_plugins.PatchDetail{Applied: applied, Ignored: e.ignored}
 	if err == nil && len(applied) > 0 && id != "" {
 		detail.NewURI = headlineURI(t.acct.Name, path, id, nil, 1)
 	}

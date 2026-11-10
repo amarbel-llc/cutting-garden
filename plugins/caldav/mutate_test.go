@@ -264,6 +264,27 @@ func TestPatchNode_UnknownFieldsToleratedButNotReportedApplied(t *testing.T) {
 	}
 }
 
+// The detailed patch names the tolerated fields (cutting-garden#376), in the
+// wrapped form and in the bare one.
+func TestPatchNodeDetail_NamesIgnoredFields(t *testing.T) {
+	_, home := startFake(t)
+	node := mustParseURL(t, objectArg(home, "/dav/cal/task1.ics"))
+	for _, body := range []string{
+		`{"component":"VTODO","task":{"summary":"ok","color":"red","priority_emoji":"rocket"}}`,
+		`{"summary":"ok","color":"red","priority_emoji":"rocket"}`,
+	} {
+		detail, err := Plugin{}.PatchNodeDetail(context.Background(), node, strings.NewReader(body))
+		if err != nil {
+			t.Fatalf("PatchNodeDetail(%s): %v", body, err)
+		}
+		if !slices.Equal(detail.Applied, []string{"summary"}) ||
+			!slices.Equal(detail.Ignored, []string{"color", "priority_emoji"}) {
+			t.Errorf("%s: applied %v ignored %v, want [summary] and [color priority_emoji]",
+				body, detail.Applied, detail.Ignored)
+		}
+	}
+}
+
 // The cutting-garden#180 shape, reproduced against caldav: a body naming
 // ONLY fields the plugin does not recognize. Nothing is written, and the
 // caller must be able to tell — a non-nil empty applied, not a bare success.
