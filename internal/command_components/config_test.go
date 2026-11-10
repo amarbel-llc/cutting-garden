@@ -126,6 +126,34 @@ url = "nosuchplugin://h/p/"
 	}
 }
 
+// A section a stanza claims via config_section is consumed raw by the wire
+// plugin, so it is not an unknown key, whichever table declares the stanza:
+// the generalized [[plugins]] or the [[traversal_plugins]] alias
+// (cutting-garden#347, where a nebulous section warned).
+func TestLoadConfig_StanzaClaimedSectionDoesNotWarn(t *testing.T) {
+	for _, table := range []string{"plugins", "traversal_plugins"} {
+		t.Run(table, func(t *testing.T) {
+			path := writeTempConfig(t, `
+[[`+table+`]]
+name = "newsblur"
+command = ["nebulous"]
+schemes = ["newsblur"]
+config_section = "nebulous"
+
+[[nebulous.accounts]]
+name = "x"
+`)
+			var warn bytes.Buffer
+			if _, err := LoadConfig(path, &warn); err != nil {
+				t.Fatalf("load: %v", err)
+			}
+			if warn.Len() != 0 {
+				t.Errorf("a stanza-claimed section must not warn, got %q", warn.String())
+			}
+		})
+	}
+}
+
 // D3: a section decoder's failure (a plugin's Validate rejecting an entry)
 // is EX_USAGE naming the file, the section, and the entry.
 func TestLoadConfig_SectionDecoderErrorIsBadRequest(t *testing.T) {

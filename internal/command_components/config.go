@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"code.linenisgreat.com/cutting-garden/internal/cgconfig"
@@ -100,8 +101,10 @@ func loadConfigWithRaw(
 	}
 
 	if warnw != nil {
+		// Both stanza tables claim sections: the generalized [[plugins]] and
+		// the [[traversal_plugins]] alias (cutting-garden#347).
 		unused := withoutStanzaClaimedKeys(
-			model.Undecoded(), cfg.TraversalPlugins,
+			model.Undecoded(), slices.Concat(cfg.Plugins, cfg.TraversalPlugins),
 		)
 		if len(unused) > 0 {
 			fmt.Fprintf(warnw,
@@ -113,7 +116,7 @@ func loadConfigWithRaw(
 }
 
 // withoutStanzaClaimedKeys drops undecoded-key warnings for sections a
-// [[traversal_plugins]] stanza claims via config_section: those keys are
+// [[plugins]] or [[traversal_plugins]] stanza claims via config_section: those keys are
 // consumed — raw, by the wire plugin itself — not unknown.
 func withoutStanzaClaimedKeys(
 	keys []string, stanzas []traversal_serve.PluginStanza,
