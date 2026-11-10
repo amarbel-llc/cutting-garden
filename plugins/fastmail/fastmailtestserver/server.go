@@ -64,7 +64,11 @@ type Server struct {
 	accountID string
 	mailboxes []Mailbox
 	emails    []Email
-	stateSeq  int
+	// emailSeq and mailboxSeq are the Email and Mailbox type states, kept
+	// apart as RFC 8620 §1.5 keeps them: a mailbox change moves only the
+	// Mailbox state (cutting-garden#340 depends on that difference).
+	emailSeq   int
+	mailboxSeq int
 	// createSeq numbers Mailbox/set creations so a created mailbox's id is
 	// deterministic (mb-new-1, mb-new-2, …) across a run.
 	createSeq int
@@ -124,7 +128,23 @@ func (s *Server) AddMailbox(id, name, parentID, role string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.mailboxes = append(s.mailboxes, Mailbox{ID: id, Name: name, ParentID: parentID, Role: role})
-	s.stateSeq++
+	s.mailboxSeq++
+}
+
+// RenameMailbox renames a seeded mailbox, as a user renaming a label in
+// Fastmail would: only the Mailbox state moves. It reports whether the id
+// exists.
+func (s *Server) RenameMailbox(id, name string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i := range s.mailboxes {
+		if s.mailboxes[i].ID == id {
+			s.mailboxes[i].Name = name
+			s.mailboxSeq++
+			return true
+		}
+	}
+	return false
 }
 
 // AddEmail seeds a message.
@@ -132,7 +152,7 @@ func (s *Server) AddEmail(e Email) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.emails = append(s.emails, e)
-	s.stateSeq++
+	s.emailSeq++
 }
 
 func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
@@ -237,7 +257,7 @@ func (s *Server) mailboxGet() any {
 			"totalThreads": threads,
 		})
 	}
-	return map[string]any{"accountId": s.accountID, "state": s.state(), "list": list}
+	return map[string]any{"accountId": s.accountID, "state": s.mailboxState(), "list": list}
 }
 
 // membershipCounts computes a mailbox's DIRECT membership counts from the
@@ -473,7 +493,7 @@ func (s *Server) mailboxSet(
 		s.mailboxes = append(s.mailboxes, Mailbox{
 			ID: id, Name: create.Name, ParentID: resolved,
 		})
-		s.stateSeq++
+		s.mailboxSeq++
 		creations[creationID] = id
 		created[creationID] = map[string]any{
 			"id":           id,
@@ -487,7 +507,7 @@ func (s *Server) mailboxSet(
 
 	return "Mailbox/set", map[string]any{
 		"accountId":  s.accountID,
-		"newState":   s.state(),
+		"newState":   s.mailboxState(),
 		"created":    created,
 		"notCreated": notCreated,
 	}
@@ -549,7 +569,7 @@ func (s *Server) emailSet(
 			continue
 		}
 		s.emails[index] = patched
-		s.stateSeq++
+		s.emailSeq++
 		updated[id] = nil
 	}
 
@@ -816,9 +836,13 @@ func emailJSON(e Email) map[string]any {
 	}
 }
 
-// state is the current Email/Mailbox type state, bumped on every seed so a
-// change moves the FacetVersion token.
-func (s *Server) state() string { return fmt.Sprintf("state-%d", s.stateSeq) }
+// state is the current Email type state (Email/get, Email/query,
+// Thread/get), bumped on every email change.
+func (s *Server) state() string { return fmt.Sprintf("state-%d", s.emailSeq) }
+
+// mailboxState is the current Mailbox type state, bumped on every mailbox
+// change and only then.
+func (s *Server) mailboxState() string { return fmt.Sprintf("mbstate-%d", s.mailboxSeq) }
 
 func page[T any](items []T, position, limit int) []T {
 	if position < 0 {
