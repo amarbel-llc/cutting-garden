@@ -117,8 +117,10 @@ through the SDK's config-section registry
 `DecodeConfigV0` takes bytes), then `DecodeRegisteredConfigSections` over
 the same model. Consequences: a table no registered decoder claims is an ordinary
 unknown-key **warning**, not an error (a `[caldav]` table in a binary that
-never linked caldav is inert); a failing section decoder is EX_USAGE naming
-file, section and entry; and **decoding a section injects it**, so a command
+never linked caldav is inert); a failing section decoder skips that section
+with a warning naming file, section and entry (`health` lists it;
+`CG_STRICT_CONFIG=1` makes it EX_USAGE, RFC 0007 item 5); and **decoding a
+section injects it**, so a command
 must load the config once and thread the value rather than re-calling
 `LoadConfig`. Every plugin's section decoder shares ONE tommy schema,
 `config_common.AccountsSection` (`{Accounts []Account}`) — tommy blanks a
