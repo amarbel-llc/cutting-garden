@@ -126,6 +126,27 @@ func hasKeys(m map[string]any, want ...string) bool {
 	return true
 }
 
+// A requested listing field the node lacks is null, so "no due date" differs
+// from "due not requested" (cutting-garden#389); a node listed without
+// enrichment (no Fields map) gets no nulls, since nobody checked.
+func TestNullMissingFields(t *testing.T) {
+	requested := map[string]bool{"summary": true, "due": true}
+	got := nullMissingFields(map[string]any{"summary": "x"}, requested, true)
+	if want := (map[string]any{"summary": "x", "due": nil}); !reflect.DeepEqual(got, want) {
+		t.Errorf("projected node: %v, want %v", got, want)
+	}
+	if got := nullMissingFields(nil, requested, true); !reflect.DeepEqual(got, map[string]any{"summary": nil, "due": nil}) {
+		t.Errorf("projected node with none of them: %v", got)
+	}
+	if got := nullMissingFields(nil, requested, false); got != nil {
+		t.Errorf("unenriched node: %v, want nil (no nulls)", got)
+	}
+	b, err := json.Marshal(map[string]any{"fields": nullMissingFields(map[string]any{}, map[string]bool{"due": true}, true)})
+	if err != nil || string(b) != `{"fields":{"due":null}}` {
+		t.Errorf("wire = %s err=%v, want due as null", b, err)
+	}
+}
+
 func TestListNodesFields_FilterPath(t *testing.T) {
 	text, isErr := listProj(t,
 		`{"uri":"faketest://h/work","filter":"status=NEEDS-ACTION","fields":["summary","priority","tags"]}`)

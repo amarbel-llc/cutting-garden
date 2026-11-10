@@ -780,7 +780,10 @@ Fields map[string]any
 `"status"`, `"dtstart"`, …), values MUST be JSON-marshalable, and — like
 `Facets` — MUST be free of credentials or secrets. `nil` means the node
 contributes no extra listing fields (a plugin MAY rely on `Facets` alone,
-or on neither).
+or on neither). A non-nil `Fields` is the node's whole projection: a host
+that projects a caller's named fields (mcp `list_nodes` `fields`) renders a
+key the node's type declares but the map lacks as `null`, "this node has
+none", and never does so for a nil map (cutting-garden#389).
 
 `ListingFieldsDescriber` declares which keys a node type may carry, the
 schema counterpart to `FacetDescriber` (§2):

@@ -14,9 +14,10 @@ import (
 // uri, name and type are always kept; container and mimeType are dropped
 // unless listed; each other name selects a declared listing field
 // (Node.Fields), a facet dimension (Node.Facets) or "tags". A name that is
-// valid for any returned node type is accepted and simply absent on nodes
-// that lack it; a name valid for none is a bad request listing the valid
-// ones. It changes the output only: which nodes come back is the filter's or
+// valid for any returned node type is accepted: a listing field the node's
+// type declares but the node lacks is null (#389), and any other name is
+// absent on nodes that lack it; a name valid for none is a bad request
+// listing the valid ones. It changes the output only: which nodes come back is the filter's or
 // the query's business.
 
 const (
@@ -151,6 +152,7 @@ func projectedNodeViews(
 		}
 		v.Facets = keepKeys(v.Facets, wantFacet)
 		v.Fields = keepKeys(v.Fields, asField)
+		v.Fields = nullMissingFields(v.Fields, asField, n.Fields != nil)
 		views = append(views, v)
 	}
 	return views, nil
@@ -170,6 +172,31 @@ func declaredListingFields(lister cutting_garden_plugins.RootLister) map[string]
 		}
 	}
 	return out
+}
+
+// nullMissingFields sets each requested listing field the node's type
+// declares but the node does not carry to null, so "this task has no due
+// date" reads differently from "due was not asked for" (cutting-garden#389).
+// Only for a node the plugin projected fields for (projected): a node with no
+// Fields map at all was listed without enrichment, and null there would claim
+// an absence nobody checked. The default (unprojected) listing is unchanged,
+// keeping it slim (#367).
+func nullMissingFields(
+	fields map[string]any, requested map[string]bool, projected bool,
+) map[string]any {
+	if !projected {
+		return fields
+	}
+	for k := range requested {
+		if _, present := fields[k]; present {
+			continue
+		}
+		if fields == nil {
+			fields = map[string]any{}
+		}
+		fields[k] = nil
+	}
+	return fields
 }
 
 // keepKeys is m restricted to the wanted keys (nil when none remain, so the

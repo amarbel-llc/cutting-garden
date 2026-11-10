@@ -170,6 +170,29 @@ function mcp_browse_and_read { # @test
     fail "read_node(task1) summary: $read"
 }
 
+# A listing field the caller names in `fields` but a node lacks is null, so
+# "this task has no due date" reads differently from "due was not asked
+# for" (cutting-garden#389): neither seeded task carries a DUE.
+function mcp_list_nodes_fields_names_an_absent_field_as_null { # @test
+  mcp_drive "$CALDAV_SOURCE" "$(tools_call 3 list_nodes \
+    "$(jq -nc --arg u "$(caldav_cal_uri)" '{uri:$u,fields:["summary","due"]}')")"
+  run jq -c '[.nodes[] | select(.type == "caldav-object-vtodo-v1") | .fields] | sort_by(.summary) | .[]' \
+    <<<"$(mcp_result_text "$output" 3)"
+  assert_output - <<-'EOM'
+	{"due":null,"summary":"Buy milk"}
+	{"due":null,"summary":"Walk dog"}
+	EOM
+}
+
+# The default listing (no fields) still omits a field a node lacks, staying
+# slim (#367): the null is only for a field the caller named.
+function mcp_list_nodes_default_listing_omits_an_absent_field { # @test
+  mcp_drive "$CALDAV_SOURCE" "$(tools_call 3 list_nodes "$(jq -nc --arg u "$(caldav_cal_uri)" '{uri:$u}')")"
+  run jq -c '[.nodes[] | select(.type == "caldav-object-vtodo-v1") | .fields | has("due")] | unique' \
+    <<<"$(mcp_result_text "$output" 3)"
+  assert_output '[false]'
+}
+
 # list_nodes' filter param retrieves the matching nodes directly — the
 # #160 fix for the measured 45-tool-call gap (read_facets could only COUNT
 # overdue/matching items, never retrieve them). Descend to the "Personal"
