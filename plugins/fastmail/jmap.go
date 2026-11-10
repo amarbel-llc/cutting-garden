@@ -136,7 +136,36 @@ type mailboxGetArgs struct {
 }
 
 type mailboxGetResult struct {
-	List []Mailbox `json:"list"`
+	State string    `json:"state"`
+	List  []Mailbox `json:"list"`
+}
+
+// facetStates returns the account's Email and Mailbox type states (RFC 8620
+// §1.5) in ONE request: an Email/get and a Mailbox/get, both with no ids
+// (§3.3 lets a request carry several calls). The Mailbox state moves when a
+// mailbox is created, renamed, moved or destroyed, which the Email state
+// does not see.
+func (c *client) facetStates(ctx context.Context) (emailState, mailboxState string, err error) {
+	sess, err := c.ensureSession(ctx)
+	if err != nil {
+		return "", "", err
+	}
+	responses, err := c.callMany(ctx, []jmapMethodCall{
+		{"Email/get", emailGetArgs{AccountID: sess.AccountID(), IDs: []string{}}, "email"},
+		{"Mailbox/get", mailboxGetArgs{AccountID: sess.AccountID(), IDs: []string{}}, "mailbox"},
+	})
+	if err != nil {
+		return "", "", err
+	}
+	var email emailGetResult
+	if err := decodeResponseFor(responses, "Email/get", "email", &email); err != nil {
+		return "", "", err
+	}
+	var mailbox mailboxGetResult
+	if err := decodeResponseFor(responses, "Mailbox/get", "mailbox", &mailbox); err != nil {
+		return "", "", err
+	}
+	return email.State, mailbox.State, nil
 }
 
 // mailboxGetAll fetches every mailbox in the account (Mailbox/get with null

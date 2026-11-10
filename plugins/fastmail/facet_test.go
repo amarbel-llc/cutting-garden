@@ -120,6 +120,41 @@ func TestFacetVersion(t *testing.T) {
 	}
 }
 
+// A mailbox rename changes the tags a thread presents without touching any
+// email, so it must move the facet version too, or a memoized summary is
+// served stale (cutting-garden#340). The testserver keeps the Email and
+// Mailbox states apart, as JMAP does.
+func TestFacetVersion_MovesOnAMailboxRename(t *testing.T) {
+	srv := startWired(t)
+	srv.AddMailbox("mb-inbox", "Inbox", "", "inbox")
+	srv.AddMailbox("mb-label", "old", "", "")
+	srv.AddEmail(fastmailtestserver.Email{
+		ID: "e1", ThreadID: "T1", MailboxIDs: []string{"mb-inbox", "mb-label"},
+		Keywords: []string{"$seen"}, From: []fastmailtestserver.Address{{Email: "a@example.test"}},
+		Subject: "s", ReceivedAt: "2026-01-01T00:00:00Z", BlobID: "blob-e1",
+	})
+	inbox := mailboxURI(testAccount, []string{"Inbox"})
+
+	before, ok, err := (Plugin{}).FacetVersion(context.Background(), inbox)
+	if err != nil || !ok {
+		t.Fatalf("FacetVersion: ok=%v err=%v", ok, err)
+	}
+	if !srv.RenameMailbox("mb-label", "new") {
+		t.Fatal("rename: no such mailbox")
+	}
+	after, ok, err := (Plugin{}).FacetVersion(context.Background(), inbox)
+	if err != nil || !ok {
+		t.Fatalf("FacetVersion after rename: ok=%v err=%v", ok, err)
+	}
+	if after == before {
+		t.Errorf("FacetVersion = %q before and after a mailbox rename, want it to move", before)
+	}
+	res, ok := facetCounts(t, inbox.String(), nil)
+	if !ok || count(res.Summary, facetTags, "new") != 1 || count(res.Summary, facetTags, "old") != 0 {
+		t.Errorf("tags after rename = %v, want new and not old", res.Summary[facetTags])
+	}
+}
+
 func TestFacetCounts_FromTopNCap(t *testing.T) {
 	srv := startWired(t)
 	srv.AddMailbox("mb-bulk", "bulk", "", "")

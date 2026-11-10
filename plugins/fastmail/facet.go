@@ -172,18 +172,20 @@ func (Plugin) FacetCounts(
 }
 
 // FacetVersion is the fastmail change token (RFC 0012 §11): the
-// account-global Email type state (RFC 8620 §1.5), which moves on ANY email
-// change — new, deleted, or a keyword/mailbox mutation. One Email/get with no
-// ids, strictly cheaper than FacetCounts. It applies to mailbox nodes,
-// mirroring FacetCounts; other kinds report ok=false so the framework falls
-// back to a TTL.
+// account-global Email type state joined with the Mailbox type state (RFC
+// 8620 §1.5). The Email state moves on any email change (new, deleted, or a
+// keyword/mailbox mutation); the Mailbox state moves on a mailbox create,
+// rename, move or destroy. Both matter: a thread's `tags` facet joins its
+// mailbox ids to the mailbox tree's label names, so a rename changes the
+// tags without touching any email (cutting-garden#340, verified against the
+// testserver, which keeps the two states apart). One request carrying an
+// Email/get and a Mailbox/get with no ids, strictly cheaper than
+// FacetCounts. It applies to mailbox nodes, mirroring FacetCounts; other
+// kinds report ok=false so the framework falls back to a TTL.
 //
-// Blind spot (RFC 0012 §11.1, cutting-garden#340, suspected and not yet
-// verified): a thread's `tags` facet joins its mailbox ids to the mailbox
-// tree's label names, and renaming or moving a mailbox changes the Mailbox
-// object, whose state is separate from the Email state. Such a change would
-// alter the presented tags without moving this token, and a memoized summary
-// would be served stale until the framework TTL.
+// The token is opaque: a consumer compares two for equality and reads
+// nothing from the `<email>.<mailbox>` shape. A token from before this
+// shape never equals one after it, which costs exactly one forced refresh.
 func (Plugin) FacetVersion(
 	ctx context.Context, node *url.URL,
 ) (string, bool, error) {
@@ -203,14 +205,14 @@ func (Plugin) FacetVersion(
 	if err != nil {
 		return "", false, err
 	}
-	state, err := c.emailState(ctx)
+	emailState, mailboxState, err := c.facetStates(ctx)
 	if err != nil {
 		return "", false, err
 	}
-	if state == "" {
+	if emailState == "" || mailboxState == "" {
 		return "", false, nil
 	}
-	return state, true, nil
+	return emailState + "." + mailboxState, true, nil
 }
 
 // resolveMailbox fetches the account's mailbox tree and resolves ref's
