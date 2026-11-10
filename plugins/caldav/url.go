@@ -3,6 +3,7 @@ package caldav
 import (
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
@@ -64,6 +65,12 @@ func baseURLFromArg(u *url.URL) (string, error) {
 				"caldav plugin: parse inner URL %q: %s", inner, err,
 			)
 		}
+		// No URL scheme at all: the segment is an account alias, and an
+		// unknown one, so say that instead of blaming an inner URL
+		// (cutting-garden#241).
+		if parsed.Scheme == "" {
+			return "", unknownAccountAlias(name)
+		}
 		if parsed.Scheme != "http" && parsed.Scheme != "https" {
 			return "", errors.BadRequestf(
 				"caldav plugin: inner URL must be http or https, got %q in %q\n"+
@@ -90,6 +97,26 @@ func baseURLFromArg(u *url.URL) (string, error) {
 		RawQuery: u.RawQuery,
 	}
 	return rebuilt.String(), nil
+}
+
+// unknownAccountAlias refuses a caldav:<name> alias no account carries,
+// naming the configured accounts, sorted, so a typo shows its fix.
+func unknownAccountAlias(name string) error {
+	names := make([]string, 0, len(configuredAccounts))
+	for _, acct := range configuredAccounts {
+		names = append(names, acct.Name)
+	}
+	slices.Sort(names)
+	configured := "no caldav accounts are configured"
+	if len(names) > 0 {
+		configured = "configured: " + strings.Join(names, ", ")
+	}
+	return errors.BadRequestf(
+		"caldav plugin: no configured caldav account named %q (%s); accounts are the "+
+			"[[caldav.accounts]] entries of the cutting-garden config (the default file, "+
+			"or the -config file), see cutting-garden-config(5)",
+		name, configured,
+	)
 }
 
 // expandAccountAlias resolves a caldav:<name>[/<sub>] alias: the named account's

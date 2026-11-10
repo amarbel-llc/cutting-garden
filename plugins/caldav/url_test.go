@@ -2,6 +2,7 @@ package caldav
 
 import (
 	"net/url"
+	"strings"
 	"testing"
 
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
@@ -87,6 +88,34 @@ func TestConnectionFromArg_EnvFallback(t *testing.T) {
 	}
 }
 
+// An opaque segment with no URL scheme is an intended account alias, so an
+// unknown one is refused by name, listing the configured accounts sorted,
+// as a bad request, instead of falling through to the inner-URL complaint
+// (cutting-garden#241).
+func TestBaseURLFromArg_UnknownAliasNamesTheAccounts(t *testing.T) {
+	setAccounts(t,
+		acct("work", "caldav://caldav.example/dav/work/", "me", "CALDAV_X"),
+		acct("task", "caldav://caldav.example/dav/task/", "me", "CALDAV_X"),
+	)
+	for _, arg := range []string{"caldav:tasks", "caldav:tasks/7f76.ics"} {
+		_, err := baseURLFromArg(mustParseURL(t, arg))
+		if err == nil {
+			t.Fatalf("baseURLFromArg(%q) = nil error, want a refusal", arg)
+		}
+		if !errors.Is400BadRequest(err) {
+			t.Errorf("%s: want a bad request, got %v", arg, err)
+		}
+		for _, want := range []string{`no configured caldav account named "tasks"`, "task, work"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("%s: error %q does not contain %q", arg, err, want)
+			}
+		}
+		if strings.Contains(err.Error(), "inner URL") {
+			t.Errorf("%s: error %q still blames an inner URL", arg, err)
+		}
+	}
+}
+
 // TestBaseURLFromArg_AccountAlias pins the caldav:<name>[/<sub>] resolution: a
 // configured account name expands to its URL (+ sub-path); an unknown name and
 // the inner-url form are unaffected.
@@ -101,7 +130,7 @@ func TestBaseURLFromArg_AccountAlias(t *testing.T) {
 	}{
 		{name: "bare alias -> account base", arg: "caldav:fastmail", want: "https://caldav.example/dav/user/me/"},
 		{name: "alias + sub-path", arg: "caldav:fastmail/7f76.ics", want: "https://caldav.example/dav/user/me/7f76.ics"},
-		{name: "unknown name falls through to inner-url (errors)", arg: "caldav:unknown", wantErr: true},
+		{name: "unknown name is refused as an unknown alias", arg: "caldav:unknown", wantErr: true},
 		{name: "inner-url form unaffected by alias check", arg: "caldav:http://localhost:5232/dav/", want: "http://localhost:5232/dav/"},
 	}
 	for _, tc := range cases {

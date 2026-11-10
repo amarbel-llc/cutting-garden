@@ -180,6 +180,38 @@ function list_query_or_alternatives { # @test
 # Round-trip: capture → restore back to the endpoint → diff is clean. The
 # diff exercises the native-identity freshness probe; an unchanged server
 # reports no differences.
+# A mistyped `caldav:<name>` alias is refused by name, listing the
+# configured accounts sorted, as a usage error (cutting-garden#241), on
+# list and organize alike (both resolve through the plugin); the right
+# alias still resolves.
+function unknown_caldav_alias_names_the_configured_accounts { # @test
+  export XDG_CONFIG_HOME="$HOME/.config"
+  mkdir -p "$XDG_CONFIG_HOME/cutting-garden"
+  cat >"$XDG_CONFIG_HOME/cutting-garden/config.toml" <<-EOF
+	[[caldav.accounts]]
+	name = "work"
+	url = "${CALDAV_SOURCE%/dav/}/dav/work/"
+
+	[[caldav.accounts]]
+	name = "task"
+	url = "${CALDAV_SOURCE%/dav/}/dav/cal/"
+	EOF
+
+  run_cg list caldav:tasks
+  assert_failure 64
+  assert_output --partial 'no configured caldav account named "tasks"'
+  assert_output --partial 'task, work'
+  refute_output --partial 'inner URL'
+
+  run_cg organize caldav:tasks status=
+  assert_failure 64
+  assert_output --partial 'no configured caldav account named "tasks"'
+
+  run_cg list caldav:task
+  assert_success
+  assert_output --partial 'task1.ics'
+}
+
 function capture_restore_diff_round_trips { # @test
   run_cg capture -format json "$CALDAV_SOURCE"
   assert_success
