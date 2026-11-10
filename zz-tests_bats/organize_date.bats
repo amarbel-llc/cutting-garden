@@ -272,25 +272,28 @@ function organize_date_config_default_month { # @test
 function list_facets_date_filter_prefix_matches { # @test
   run_cg list -facets -filter 'date_due=2026' "$CAL"
   assert_success
-  # Exact full rows for every stable dimension. The fifth row, due_band, is
-  # computed against the wall clock (a fixture DUE drifts from later to
-  # overdue as real time passes), so it is the one line that cannot be
-  # pinned; everything else is asserted whole, and the row count proves the
-  # volatile line is not hiding an extra row.
+  # Exact full rows for every stable dimension. The due_band row is computed
+  # against the wall clock (a fixture DUE drifts from later to overdue as real
+  # time passes), so it is the one line that cannot be pinned; everything else
+  # is asserted whole, and the row count proves the volatile line is not
+  # hiding an extra row. The fixture tasks carry no STATUS, so they count as
+  # status `none` (cutting-garden#382 item 1).
   # shellcheck disable=SC2154  # $lines is populated by bats' `run` (via run_cg)
-  assert_equal "${#lines[@]}" 5
+  assert_equal "${#lines[@]}" 6
   assert_line 'component  VTODO 2'
   assert_line 'date_due   2026-08 1  2026-09 1'
   assert_line 'priority   3_unspecified 2'
+  assert_line 'status     none 2'
   assert_line 'timezone   America/Los_Angeles 2'
 
   run_cg list -facets -filter 'date_due=2026-08' "$CAL"
   assert_success
-  # Same five rows here — four pinned whole, due_band covered by the count.
-  assert_equal "${#lines[@]}" 5
+  # Same six rows here — five pinned whole, due_band covered by the count.
+  assert_equal "${#lines[@]}" 6
   assert_line 'component  VTODO 1'
   assert_line 'date_due   2026-08 1'
   assert_line 'priority   3_unspecified 1'
+  assert_line 'status     none 1'
   assert_line 'timezone   America/Los_Angeles 1'
   # Nothing of the excluded month leaks anywhere — including the volatile
   # due_band line the exact-row asserts above cannot cover.

@@ -108,6 +108,7 @@ function list_facets_categories_filter { # @test
 	component   VTODO 2
 	due_band    later 0  overdue 0  this-week 0  today 0
 	priority    1_should 1  2_nice 1
+	status      none 2
 	EOM
 }
 

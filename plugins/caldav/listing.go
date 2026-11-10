@@ -222,7 +222,9 @@ func (c *client) enrichedCalendarNodes(
 		}
 		for _, res := range resources {
 			facets := objectFacets(res.data)
-			if facets == nil || !filter.Matches(facets) {
+			// A statusless VTODO matches status=none and status=needs-action
+			// (filterFacets), while its node keeps its own facets.
+			if facets == nil || !filter.Matches(filterFacets(facets)) {
 				continue
 			}
 			view, ok := parseObjectView(res.data)

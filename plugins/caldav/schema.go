@@ -34,8 +34,11 @@ func (Plugin) DescribeBodies() []cutting_garden_plugins.NodeTypeBody {
 	}
 	return []cutting_garden_plugins.NodeTypeBody{
 		{
-			Tag:     typeVTODO,
-			Accepts: accepts("VTODO"),
+			Tag: typeVTODO,
+			Accepts: append(accepts("VTODO"),
+				"status facet: a VTODO with no STATUS counts as `none` in read_facets, and a "+
+					"status=needs-action filter (read_facets, list_nodes filter) includes it, RFC 5545's "+
+					"default; a trellis status predicate does not see it yet (cutting-garden#413)"),
 			Example: objectView{
 				Component: "VTODO",
 				Task: &ical.Task{

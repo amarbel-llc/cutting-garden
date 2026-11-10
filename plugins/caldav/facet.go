@@ -2,6 +2,7 @@ package caldav
 
 import (
 	"context"
+	"maps"
 	"math"
 	"net/url"
 	"sort"
@@ -276,14 +277,66 @@ func (c *client) foldCalendarFacets(
 		}
 		for _, res := range resources {
 			facets := objectFacets(res.data)
-			if facets == nil || !filter.Matches(facets) {
+			if facets == nil || !filter.Matches(filterFacets(facets)) {
 				continue
 			}
-			liftFacets(summary, facets)
+			liftFacets(summary, countedFacets(facets))
 			matched++
 		}
 	}
 	return matched, nil
+}
+
+// statusNone is the status value a VTODO with no STATUS counts under
+// (cutting-garden#382 item 1, option D-a). RFC 5545 makes such a task
+// NEEDS-ACTION, so caldav's filter also matches it for status=needs-action.
+// Neither value enters the node's own facets: organize groups by those, and
+// keeps a statusless task in the dimension's no-value section (RFC 0020). The
+// framework-wide form of this rule, which trellis would also see, is
+// cutting-garden#413.
+const statusNone = "none"
+
+// statuslessTask reports a VTODO whose facets carry no status.
+func statuslessTask(facets map[string][]cutting_garden_plugins.FacetValue) bool {
+	component := facets[facetComponent]
+	return len(component) == 1 && component[0].Key == "VTODO" && len(facets[facetStatus]) == 0
+}
+
+// withStatus returns facets with the status dimension set to keys, leaving
+// facets itself untouched.
+func withStatus(
+	facets map[string][]cutting_garden_plugins.FacetValue, keys ...string,
+) map[string][]cutting_garden_plugins.FacetValue {
+	out := maps.Clone(facets)
+	values := make([]cutting_garden_plugins.FacetValue, len(keys))
+	for i, key := range keys {
+		values[i] = cutting_garden_plugins.FacetValue{Key: key}
+	}
+	out[facetStatus] = values
+	return out
+}
+
+// countedFacets is an object's facets as FacetCounts lifts them: a statusless
+// VTODO counts as status `none`, so the status buckets sum to the VTODO count.
+func countedFacets(
+	facets map[string][]cutting_garden_plugins.FacetValue,
+) map[string][]cutting_garden_plugins.FacetValue {
+	if !statuslessTask(facets) {
+		return facets
+	}
+	return withStatus(facets, statusNone)
+}
+
+// filterFacets is an object's facets as caldav's own filter matches them: a
+// statusless VTODO holds both `none` and needs-action, so status=none and
+// status=needs-action each find it and open work is not undercounted.
+func filterFacets(
+	facets map[string][]cutting_garden_plugins.FacetValue,
+) map[string][]cutting_garden_plugins.FacetValue {
+	if !statuslessTask(facets) {
+		return facets
+	}
+	return withStatus(facets, statusNone, "needs-action")
 }
 
 // objectFacets parses one iCalendar object and projects its facet values.

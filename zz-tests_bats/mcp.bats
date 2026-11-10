@@ -74,6 +74,32 @@ function mcp_read_facets { # @test
     fail "filtered read_facets not reported fresh: $text"
 }
 
+# A VTODO with no STATUS (RFC 5545's default is NEEDS-ACTION) counts as status
+# `none`, and caldav's own filter matches it for status=none and for
+# status=needs-action, so open work is not undercounted (cutting-garden#382
+# item 1, option D-a). The seeded Personal tasks carry no STATUS. The node's
+# facets stay without a status, so organize is unchanged.
+function mcp_status_filter_counts_a_task_with_no_status { # @test
+  mcp_drive "$CALDAV_SOURCE" "$(tools_call 3 read_facets \
+    "$(jq -nc --arg u "$(caldav_cal_uri)" '{uri:$u,filter:"component=VTODO"}')")"
+  assert_equal "$(mcp_result_text "$output" 3 | jq -c '.facets.status')" '{"none":2}'
+
+  local filter
+  for filter in status=needs-action status=none; do
+    mcp_drive "$CALDAV_SOURCE" "$(tools_call 3 list_nodes \
+      "$(jq -nc --arg u "$(caldav_cal_uri)" --arg f "$filter" '{uri:$u,filter:$f}')")"
+    assert_equal "$(mcp_result_text "$output" 3 | jq -c '[.nodes[].uri | split("/") | last] | sort')" \
+      '["task1.ics","task2.ics"]'
+  done
+
+  # The pinned gap: trellis matches predicates against the node's own facets,
+  # which carry no status, so a trellis status predicate does not see these
+  # tasks yet (cutting-garden#413).
+  mcp_drive "$CALDAV_SOURCE" "$(tools_call 3 list_nodes \
+    "$(jq -nc --arg u "$(caldav_cal_uri)" '{uri:$u,query:"!caldav-object-vtodo-v1 status=needs-action"}')")"
+  assert_equal "$(mcp_result_text "$output" 3 | jq -c '[.nodes[].uri]')" '[]'
+}
+
 # describe_node_types reports caldav's node types and which are writable, with
 # the body payload for the writable object leaf.
 function mcp_describe_node_types { # @test
