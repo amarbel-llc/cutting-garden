@@ -101,6 +101,7 @@ func Run(
 	r.caseCreation(ctx)
 	r.caseBulkSweepRefusesDecline(ctx)
 	r.casePatchIgnored(ctx)
+	r.caseTemplateWalk(ctx)
 
 	tw.Plan()
 

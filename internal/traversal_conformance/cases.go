@@ -43,6 +43,7 @@ const (
 	nameDescend       = "facets.counts: descend targets reachable"
 	nameContainerBody = "leaf.read: container returns its own body beside children"
 	nameURITemplate   = "uri template: container resolves to its body-declaring type"
+	nameTemplateWalk  = "uri template: every listed node resolves to its own type"
 	nameFilteredList  = "nodes.list: filter pushdown returns a sound subset"
 	nameBulkMutate    = "node.bulk_mutate: best-effort applies and isolates a failure, atomic and malformed refused"
 )
@@ -1086,6 +1087,145 @@ func (r *runner) caseURITemplateResolves(
 	}
 
 	r.tap.Ok(nameURITemplate)
+}
+
+// The template walk's bounds: it lists at most templateWalkLists
+// containers and checks at most templateWalkNodes nodes, so a large peer
+// tree costs a bounded session. The diagnostics name them (templateWalkScope),
+// so a peer knows how far its tree was checked.
+const (
+	templateWalkLists = 32
+	templateWalkNodes = 500
+)
+
+// templateWalkScope describes how far a walk got, against its bounds.
+func templateWalkScope(lists, checked int) string {
+	return fmt.Sprintf(
+		"%d of at most %d containers listed, %d of at most %d templated nodes checked",
+		lists, templateWalkLists, checked, templateWalkNodes,
+	)
+}
+
+// caseTemplateWalk checks the peer's declared uri_templates against the
+// URIs it actually lists, with no manifest input (cutting-garden#408):
+// starting from roots.list, it lists containers breadth-first, and every
+// listed node whose type declares a uri_template must match that template
+// and resolve, through the host's own resolver, to exactly its type (RFC
+// 0018 §5; the specificity rule breaks overlaps, and a true tie resolves to
+// nothing). Roots are listed from but not checked: RFC 0018 §5 puts them
+// outside template resolution. It SKIPs when no declared type has a
+// template or the peer advertises no roots. Point 15 stays the
+// body-declaring refinement for a manifest's container_body.
+func (r *runner) caseTemplateWalk(ctx context.Context) {
+	ctx, cancel := context.WithTimeout(ctx, perCaseDeadline)
+	defer cancel()
+
+	lister := r.declaredLister()
+	templates := map[string]string{}
+	for _, nodeType := range lister.types {
+		if nodeType.URITemplate != "" {
+			templates[nodeType.Tag] = nodeType.URITemplate
+		}
+	}
+	if len(templates) == 0 {
+		r.tap.Skip(nameTemplateWalk, "no declared node type has a uri_template")
+		return
+	}
+	if !r.hasCapability(traversal_serve.CapRoots) {
+		r.tap.Skip(nameTemplateWalk, "roots not advertised: nothing to walk from")
+		return
+	}
+
+	var roots traversal_serve.RootsListResult
+	if err := r.session.Call(
+		ctx, traversal_serve.MethodRootsList, struct{}{}, &roots,
+	); err != nil {
+		r.tap.NotOk(nameTemplateWalk, map[string]string{"roots.list": err.Error()})
+		return
+	}
+
+	queue := slices.Clone(roots.Roots)
+	seen := map[string]bool{}
+	lists, checked := 0, 0
+	for len(queue) > 0 && lists < templateWalkLists && checked < templateWalkNodes {
+		uri := queue[0]
+		queue = queue[1:]
+		if seen[uri] {
+			continue
+		}
+		seen[uri] = true
+
+		nodes, ok := r.listNodeViews(ctx, uri)
+		lists++
+		if !ok {
+			continue
+		}
+		for _, node := range nodes {
+			queue = append(queue, node.URI)
+			template, declared := templates[node.Type]
+			if !declared {
+				continue
+			}
+			checked++
+			if problem := templateProblem(lister, node, template); problem != "" {
+				r.tap.NotOk(nameTemplateWalk, map[string]string{
+					"uri": node.URI, "type": node.Type, "template": template,
+					"problem": problem, "walk": templateWalkScope(lists, checked),
+				})
+				return
+			}
+		}
+	}
+
+	if checked == 0 {
+		r.tap.Skip(nameTemplateWalk,
+			"the walk listed no node of a templated type ("+templateWalkScope(lists, checked)+")")
+		return
+	}
+	r.tap.Ok(nameTemplateWalk)
+}
+
+// templateProblem is why node's URI does not round-trip through its type's
+// template, or "" when it resolves to exactly that type.
+func templateProblem(
+	lister declaredTypesLister, node traversal_serve.NodeView, template string,
+) string {
+	parsed, err := cutting_garden_plugins.ParseURITemplate(template)
+	if err != nil {
+		return fmt.Sprintf("its type's uri_template %q does not parse: %s", template, err)
+	}
+	if _, ok := parsed.Match(node.URI); !ok {
+		return fmt.Sprintf(
+			"does not match its type's uri_template %q (RFC 0018 §5.1)", template,
+		)
+	}
+	resolved, ok := cutting_garden_plugins.ResolveNodeTypeByURI(lister, node.URI)
+	switch {
+	case !ok:
+		return "matches its type's template but ties with another type's," +
+			" so it resolves to no type (RFC 0018 §4)"
+	case resolved.Type.Tag != node.Type:
+		return fmt.Sprintf(
+			"resolves to %q, a more specific template than its own type's"+
+				" (RFC 0018 §4, §5.2)", resolved.Type.Tag,
+		)
+	}
+	return ""
+}
+
+// listNodeViews issues nodes.list and returns the children's wire views;
+// ok is false on a call or decode failure.
+func (r *runner) listNodeViews(
+	ctx context.Context, uri string,
+) ([]traversal_serve.NodeView, bool) {
+	var result traversal_serve.NodesListResult
+	if err := r.session.Call(
+		ctx, traversal_serve.MethodNodesList,
+		traversal_serve.NodesListParams{URI: uri}, &result,
+	); err != nil {
+		return nil, false
+	}
+	return result.Nodes, true
 }
 
 // listChildURIs issues nodes.list and returns the child URIs; ok is false

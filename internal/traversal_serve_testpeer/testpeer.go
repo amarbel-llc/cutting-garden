@@ -337,6 +337,15 @@ const UndeclaredTerminalValueEnv = "CG_TESTPEER_UNDECLARED_TERMINAL_VALUE"
 // UndeclaredTerminalValue is the value UndeclaredTerminalValueEnv adds.
 const UndeclaredTerminalValue = "done"
 
+// WrongURITemplateEnv, when set (to any non-empty value), makes the peer
+// declare WrongIssueURITemplate for IssueType: a template the IssueBox URI
+// it lists does not match, which the conformance driver's template walk
+// must fail (cutting-garden#408).
+const WrongURITemplateEnv = "CG_TESTPEER_WRONG_URI_TEMPLATE"
+
+// WrongIssueURITemplate is the template WrongURITemplateEnv declares.
+const WrongIssueURITemplate = "cgtest://fixture/box/ticket-{n}"
+
 // configFromEnv is Config plus the environment-driven state file: the tree
 // is restored from $CG_TESTPEER_STATE_FILE when it exists and persisted to
 // it on every mutation.
@@ -397,13 +406,17 @@ func (p *TreePlugin) Schemes() []string { return []string{Scheme} }
 func (p *TreePlugin) TypeTag() string { return TypeTag }
 
 func (p *TreePlugin) Types() []cutting_garden_plugins.NodeType {
+	issueTemplate := IssueURITemplate
+	if os.Getenv(WrongURITemplateEnv) != "" {
+		issueTemplate = WrongIssueURITemplate
+	}
 	return []cutting_garden_plugins.NodeType{
 		{Tag: ContainerType, Container: true},
 		{Tag: LeafType, Container: false, MimeType: LeafMimeType},
 		{Tag: AssignedLeafType, Container: false, MimeType: LeafMimeType},
 		// A container type that ALSO declares a URI template and a body
 		// (cutting-garden#168, RFC 0018).
-		{Tag: IssueType, Container: true, URITemplate: IssueURITemplate},
+		{Tag: IssueType, Container: true, URITemplate: issueTemplate},
 		{Tag: TicketType, Container: false},
 	}
 }

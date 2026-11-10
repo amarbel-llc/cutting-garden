@@ -216,7 +216,8 @@ func TestRunPassesConformantTestpeer(t *testing.T) {
 			" is refused",
 		"ok 30 - node.create: probe node",
 		"ok 31 - node.patch: ignored names the body keys tolerated but not applied",
-		"1..31",
+		"ok 32 - uri template: every listed node resolves to its own type",
+		"1..32",
 	} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("output missing %q:\n%s", want, out.String())
@@ -278,6 +279,46 @@ func TestRunPassesServerAssignedPeer(t *testing.T) {
 
 	if strings.Contains(out.String(), "not ok") {
 		t.Errorf("output contains a not-ok point:\n%s", out.String())
+	}
+}
+
+// The template walk checks a peer's declared uri_templates against the
+// URIs it lists whether or not the manifest names a container_body
+// (cutting-garden#408): with none, point 15 SKIPs but point 32 still fails
+// a peer whose listed issue URI does not match its own type's template.
+func TestRunFailsWrongURITemplateWithoutContainerBody(t *testing.T) {
+	ctx, cancel := context.WithTimeout(
+		context.Background(), 120*time.Second,
+	)
+	defer cancel()
+
+	t.Setenv(mainModeEnv, "1")
+	t.Setenv(testpeer.WrongURITemplateEnv, "1")
+
+	manifest := testpeerManifest(t)
+	manifest.ContainerBody = nil
+
+	var out bytes.Buffer
+	passed, err := traversal_conformance.Run(ctx, manifest, &out)
+	if err != nil {
+		t.Fatalf("Run: %v\noutput:\n%s", err, out.String())
+	}
+
+	if passed {
+		t.Fatalf("passed = true with a wrong uri_template:\n%s", out.String())
+	}
+
+	for _, want := range []string{
+		"ok 15 - uri template: container resolves to its body-declaring type" +
+			" # SKIP manifest declares no container_body",
+		"not ok 32 - uri template: every listed node resolves to its own type",
+		testpeer.IssueBox,
+		testpeer.WrongIssueURITemplate,
+		"of at most 32 containers listed",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("output missing %q:\n%s", want, out.String())
+		}
 	}
 }
 

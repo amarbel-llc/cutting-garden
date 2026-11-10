@@ -1435,6 +1435,7 @@ with its own manifest above.
 | §Creation: a repeated `idempotency_key` returns the same `created` URI with `"existed": true` and one node | conformance driver | point 24; manifest `[creation]`; SKIP when the peer ignores the key; created nodes deleted afterwards |
 | §Creation: `idempotency_key` and unknown params are tolerated by a peer without keyed creation; a keyed repeat round-trips `existed` through WirePlugin | transport go tests | `TestServerCreateChildToleratesKeyAndUnknownParams`, `TestWirePluginCreateChildWithKey` |
 | §Creation: `organize --apply` creates through a wire plugin from a merged temp id | `traversal_serve.bats` (`testpeer`) | `test_testpeer_tracker_creates_a_ticket` |
+| RFC 0018 §5: every listed node whose type declares a `uri_template` matches it and resolves to exactly that type (roots excluded) | conformance driver | "uri template: every listed node resolves to its own type"; a bounded breadth-first walk from `roots.list`, independent of the manifest (cutting-garden#408); SKIP when no type declares a template or no roots are advertised |
 
 ## Compatibility
 
