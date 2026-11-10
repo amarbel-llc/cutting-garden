@@ -105,7 +105,7 @@ resource itself a path (R 2026-11-09, writing probe runs 2 and 3; placement
 option A ruled 2026-11-09):
 
     Call{
-      Path      []Subject     // plugin, server, tool, recipe, …: root to leaf
+      Path      []Subject     // plugin, server, tool, …: root to leaf
       Values    [][]Subject   // the call's inputs, each independent; each a path
                               // walked from the last Path node: [file] for a
                               // path field, [field] for an input field
@@ -128,9 +128,17 @@ option A ruled 2026-11-09):
 The enforcer owns the vocabulary: which node types exist, what each
 subject's `ID` and `Fields` are (clown's catalog contract, #349, moxy#489).
 For a moxy tool call the path is plugin, server, tool and the values are the
-tool-input fields (`{field: [pattern], value: ["foo"]}`); for a recipe the
-path continues into the recipe (`{Type: just-recipe-v1, ID: explore-cli,
-Fields: {group: [explore]}}`) and the values are its arguments. A subject
+tool-input fields (`{field: [pattern], value: ["foo"]}`). A recipe is a
+**value path** under the `run_recipe` tool step, like a resource path (R
+2026-11-10, clown RFC 0018): `[{Type: just-recipe-v1, ID: explore-cli,
+Fields: {group: [explore]}}, {recipe-arg-v1, Fields{position:[1],
+value:[status]}}]`, matched against `[-> explore-cli !just-recipe-v1 [-> _
+!recipe-arg-v1 position=1 …]]` under the tool; a locked recipe id in that
+value step is checked by rule 3, and `run_recipe`'s other inputs
+(`timeout`, `async`) are ordinary `tool-input-v1` subjects under the tool,
+so a sibling `[-> _ !tool-input-v1 open]` governs them. A subcommand is
+likewise a `tool-input-v1` subject with `field=subcommand` (one kind per
+field; D2's `tool-arg-v1` is retired). A subject
 the enforcer presents is **constrained**: ajour has no notion of an
 unconstrained value, so the choice of what to present is the enforcer's
 closed-by-default contract (D2's "an instance value with no predicate on
@@ -516,12 +524,12 @@ A recipe run with a `_` catalog predicate and a lock:
           [-> explore-cli@blake2b256-c3 !just-recipe-v1
             [-> _ !recipe-arg-v1 position=1 value=[status, update]]]]]]
 
-    call: Path = [just-us, just-us, run_recipe{Digest: s3}, test-go{Type: just-recipe-v1, Fields{group:[test]}}]
+    call: Path = [just-us, just-us, run_recipe{Digest: s3}], Values = [[test-go{Type: just-recipe-v1, Fields{group:[test]}}]]
           => admitted (the `_` node matches test-go by its group)
     call: … run_recipe{Digest: s2} …                          => refused: lock mismatch [run_recipe@blake2b256-s3 …]
-    call: … explore-cli{Digest: c3}, Values = [[{recipe-arg-v1, Fields{position:[1], value:[status]}}]]  => admitted
-    call: … explore-cli{Digest: c3}, Values = [[{recipe-arg-v1, Fields{position:[1], value:[delete]}}]]  => refused: no allowance
-    call: … run_recipe{Digest: s3}, with no Digest on the recipe subject       => refused: lock mismatch (no live digest)
+    call: … Values = [[explore-cli{Digest: c3}, {recipe-arg-v1, Fields{position:[1], value:[status]}}]]  => admitted
+    call: … Values = [[explore-cli{Digest: c3}, {recipe-arg-v1, Fields{position:[1], value:[delete]}}]]  => refused: no allowance
+    call: … Values = [[explore-cli]], with no Digest on the recipe subject     => refused: lock mismatch (no live digest)
 
 (Placeholder digests in this record are abbreviated blech32, `s3`, `c3`,
 because the grammar's digest slot is charset-strict: `blake2b256-s1` does not

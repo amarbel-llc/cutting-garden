@@ -108,9 +108,9 @@ sheet.
 # HOW ONE CALL IS CHECKED
 
 The enforcer that dispatches the call describes it as a path from a root
-down to the thing being invoked - plugin, server, tool, and for a recipe
-the recipe - plus the call's values: the file path, each input field, each
-argument, each object a tool touches. Each of those is a *subject*, with a
+down to the thing being invoked - plugin, server, tool - plus the call's
+values: the file path, each input field, the recipe a *run_recipe* call
+runs (with its arguments beneath it), each object a tool touches. Each of those is a *subject*, with a
 type, usually an id, and the fields a document might name (a tool's *kind*
 and *perm* from its manifest, a recipe's groups, an argument's position and
 value). A value is itself a short path: one step for a file path or an
