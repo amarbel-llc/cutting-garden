@@ -1,14 +1,19 @@
 ---
-status: proposed
-date: 2026-11-09
+status: experimental
+date: 2026-11-10
 promotion-criteria: |
-  proposed -> experimental: the vectors below are a conformance suite (go
-  tests in `pkgs/ajour`, the whole-stack cases as a bats lane) and green;
-  one enforcer (moxy for its tools, or the clown hook for the harness's
-  built-ins) evaluates a real tool call through `pkgs/ajour` and refuses on
-  its verdict, advisory or enforced. experimental -> testing: two enforcers
-  share the package with no fork of the rules, and the stencil fragment is
-  written into RFC 0014 as a named validity condition beside Isomorphism.
+  experimental -> testing: one enforcer (moxy for its tools, or the clown
+  hook for the harness's built-ins) evaluates a real tool call through
+  `pkgs/ajour` and refuses on its verdict, advisory or enforced; two
+  enforcers share the package with no fork of the rules; and the stencil
+  fragment is written into RFC 0014 as a named validity condition beside
+  Isomorphism. (proposed -> experimental was ruled met on 2026-11-10: the
+  vectors are a conformance suite, go tests in `pkgs/ajour` plus the
+  whole-stack `zz-tests_bats/ajour.bats` through the shipped
+  `cutting-garden-ajour`, all green; the first real-call dry run,
+  clown/ready-elder's `just explore-ajour-dry-run` over a real catalog
+  listing, produced verdicts the enforcers can act on, with the shadow-mode
+  link in moxy waiting on a flake input.)
 ---
 
 # ajour — the stencil-stack evaluator for operator-act conditions
@@ -33,6 +38,16 @@ promotion-criteria: |
 > verdict gained the Ask outcome and `Resolve` (vectors A-37 to A-49).
 > Evidence labels: **V** read in a named file in this worktree or a sibling
 > checkout; **I** inference; **U** unknown; **R** an operator ruling, dated.
+> Moved to `experimental` on 2026-11-10 (R, relayed by circus/eager-holly)
+> after phases 1 and 2 landed (#396, #346, #403) and the first real-call dry
+> run (clown/ready-elder's `just explore-ajour-dry-run`); the same ruling
+> chose option B for `ask` from moxy's research note
+> `docs/plans/2026-11-10-permissions-unification-research.md`, which the
+> ask/escalate amendment above carries (the profile's `perm` decides,
+> `Evaluate` stays posture-free, the enforcer resolves Ask by session
+> posture). Downstream: clown RFC 0019 (perm as a decision, the unattended
+> `ask` rule), moxy FDR 0015 (the floor rule and enforcement order), circus
+> D2 §1 and §5.
 > The plain-words companion is `ajour(7)`.
 
 Tracks cutting-garden#346 (the constrained fragment and its evaluator) and
