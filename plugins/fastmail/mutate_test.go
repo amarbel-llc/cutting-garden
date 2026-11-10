@@ -555,6 +555,9 @@ func TestPatchNode_BodyShapes(t *testing.T) {
 		{"not JSON", "tags: nope"},
 		{"tags is a string", `{"tags":"payee-acme"}`},
 		{"tags holds a number", `{"tags":[7]}`},
+		{"mailbox is not a string", `{"mailbox":["Archive"]}`},
+		{"mailbox is empty", `{"mailbox":"/"}`},
+		{"mailbox and tags together", `{"mailbox":"Archive","tags":["_inbox"]}`},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			_, err := Plugin{}.PatchNode(
@@ -581,6 +584,29 @@ func TestPatchNode_BodyShapes(t *testing.T) {
 			t.Errorf("applied = %#v, want a non-nil empty slice", applied)
 		}
 	})
+}
+
+// TestPlanThreadMove pins the move (cutting-garden#401): members in the
+// source leave it for the destination and keep their other mailboxes, a
+// member elsewhere is untouched, one already in the destination only leaves
+// the source, and a move onto the source itself plans nothing.
+func TestPlanThreadMove(t *testing.T) {
+	members := []Email{
+		{ID: "a", MailboxIDs: map[string]bool{"inbox": true, "msft": true}},
+		{ID: "b", MailboxIDs: map[string]bool{"sent": true}},
+		{ID: "c", MailboxIDs: map[string]bool{"inbox": true, "archive": true}},
+	}
+	got := planThreadMove(members, "inbox", "archive")
+	want := map[string]emailPatch{
+		"a": {"mailboxIds/inbox": nil, "mailboxIds/archive": true},
+		"c": {"mailboxIds/inbox": nil},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("planThreadMove = %#v, want %#v", got, want)
+	}
+	if got := planThreadMove(members, "inbox", "inbox"); len(got) != 0 {
+		t.Errorf("a move onto the source planned %#v, want nothing", got)
+	}
 }
 
 // assertNoMemberStranded replays a plan's patches against the members it was

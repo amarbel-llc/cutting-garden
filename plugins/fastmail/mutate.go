@@ -14,23 +14,62 @@ import (
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
-var _ cutting_garden_plugins.NodeMutator = (*Plugin)(nil)
+var (
+	_ cutting_garden_plugins.NodeMutator   = (*Plugin)(nil)
+	_ cutting_garden_plugins.BodyDescriber = (*Plugin)(nil)
+)
+
+// patchFieldMailbox is the thread's move field (cutting-garden#401): the
+// full name-path of the mailbox to move the thread to.
+const patchFieldMailbox = "mailbox"
 
 // threadPatchFields is the recognized PatchNode key set (cutting-garden#182),
-// SORTED so the applied report is deterministic. A thread's designated tag
-// set is the only writable field the plugin has: `subject`, `from` and `date`
-// are read-only projections of the member messages, and `has_attachment` has
-// no stored counterpart at all. A body naming another key is TOLERATED but
-// never reported in applied, so a caller can always tell what landed.
-var threadPatchFields = []string{listingFieldTags}
+// SORTED so the applied report is deterministic: a thread's designated tag set
+// and its move. `subject`, `from` and `date` are read-only projections of the
+// member messages, and `has_attachment` has no stored counterpart at all. A
+// body naming another key is TOLERATED but never reported in applied, so a
+// caller can always tell what landed.
+var threadPatchFields = []string{patchFieldMailbox, listingFieldTags}
 
-// PatchNode replaces a thread's tag set, fanning the change out over every
-// member message in ONE JMAP request (fastmail tags slice 1, D3/D4).
+// DescribeBodies declares the thread's patch for describe_node_types: the two
+// fields, and a move as the example, since a move is the write a capability
+// profile names as one cg-field-v1 step (FDR 0024).
+func (Plugin) DescribeBodies() []cutting_garden_plugins.NodeTypeBody {
+	return []cutting_garden_plugins.NodeTypeBody{{
+		Tag: typeThread,
+		Accepts: []string{
+			`application/json, patch ops only, one of: "mailbox" (string: the full name-path of ` +
+				`a mailbox, as a mailbox URI carries it, e.g. "Archive", "Inbox" or ` +
+				`"payee/-one_medical") moves the thread out of the mailbox its URI is listed under ` +
+				`and into that one: each member message in the source mailbox leaves it and joins ` +
+				`the target, its other mailboxes kept, and members elsewhere (a Sent reply) are ` +
+				`untouched. The result's uri is the thread under the target mailbox. Or "tags" ` +
+				`(the whole tag set, dodder-hyphen tags plus the state tags _inbox, _unread, ` +
+				`_flagged, _trash) replaces the thread's tag set: a label tag is a mailbox ` +
+				`membership, a new tag creates its mailbox. A patch naming both is refused. ` +
+				`Threads are never deleted: _trash or a move to "Trash" is the soft form.`,
+		},
+		Example: map[string]any{patchFieldMailbox: "Archive"},
+	}}
+}
+
+// PatchNode is PatchNodeDetail without the new URI.
+func (p Plugin) PatchNode(
+	ctx context.Context, node *url.URL, body io.Reader,
+) ([]string, error) {
+	detail, err := p.PatchNodeDetail(ctx, node, body)
+	return detail.Applied, err
+}
+
+// PatchNodeDetail moves a thread between mailboxes ("mailbox") or replaces its
+// tag set ("tags"), fanning the change out over the member messages in ONE
+// JMAP request (fastmail tags slice 1, D3/D4; cutting-garden#401).
 //
 // The node URI MUST be a thread (`fastmail://<account>/<mailbox>/?thread=…`):
-// a mailbox, an email or a raw-message node is a bad request, since a tag set
-// is a property of the thread and nothing else here is writable. The body is
-// flat JSON whose one recognized key is a FULL-SET replacement:
+// a mailbox, an email or a raw-message node is a bad request, since both
+// writes are properties of the thread and nothing else here is writable. The
+// body is flat JSON naming one of the two keys; the move is planned by
+// planThreadMove, and the tag set is a FULL-SET replacement:
 //
 //	{"tags": ["_flagged", "_inbox", "payee-one_medical"]}
 //
@@ -44,24 +83,26 @@ var threadPatchFields = []string{listingFieldTags}
 // tag can be written is a pure question, so a typo costs no round-trip and
 // nothing is written.
 //
-// applied is `["tags"]` plus one `mailbox:<full/path>` entry per created
-// mailbox. A body naming no recognized key, and a body whose requested set
-// already matches the live one, both apply nothing, issue no request, and
-// report a non-nil EMPTY applied rather than a bare success.
-func (Plugin) PatchNode(
+// applied is `["mailbox"]` for a move, and `["tags"]` plus one
+// `mailbox:<full/path>` entry per created mailbox for a tag-set write. A body
+// naming no recognized key, and a write that changes nothing, apply nothing,
+// issue no request, and report a non-nil EMPTY applied rather than a bare
+// success.
+func (Plugin) PatchNodeDetail(
 	ctx context.Context, node *url.URL, body io.Reader,
-) ([]string, error) {
+) (cutting_garden_plugins.PatchDetail, error) {
+	var none cutting_garden_plugins.PatchDetail
 	if node == nil {
-		return nil, errors.ErrorWithStackf(
+		return none, errors.ErrorWithStackf(
 			"fastmail plugin: PatchNode requires a node URI",
 		)
 	}
 	ref, err := classifyURI(node)
 	if err != nil {
-		return nil, err
+		return none, err
 	}
 	if ref.kind != kindThread {
-		return nil, errors.BadRequestf(
+		return none, errors.BadRequestf(
 			"fastmail plugin: only thread nodes are patchable; %q is not one\n"+
 				"hint: pass `fastmail://<account>/<mailbox>/?thread=<id>`", node,
 		)
@@ -69,30 +110,121 @@ func (Plugin) PatchNode(
 
 	raw, err := io.ReadAll(body)
 	if err != nil {
-		return nil, errors.Wrap(err)
+		return none, errors.Wrap(err)
 	}
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 {
-		return nil, errors.BadRequestf(
+		return none, errors.BadRequestf(
 			"fastmail plugin: PatchNode body must be JSON; got empty body",
 		)
 	}
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(trimmed, &fields); err != nil {
-		return nil, errors.BadRequestf("fastmail plugin: invalid patch JSON: %s", err)
+		return none, errors.BadRequestf("fastmail plugin: invalid patch JSON: %s", err)
 	}
 
 	// Which keys this type recognizes is decided BEFORE any network
 	// round-trip, so a body naming nothing we understand costs no fetch and
 	// still reports honestly.
-	applied := cutting_garden_plugins.RecognizedPatchFields(fields, threadPatchFields)
-	if len(applied) == 0 {
-		return applied, nil
+	recognized := cutting_garden_plugins.RecognizedPatchFields(fields, threadPatchFields)
+	switch {
+	case len(recognized) == 0:
+		return cutting_garden_plugins.PatchDetail{Applied: recognized}, nil
+	case len(recognized) > 1:
+		return none, errors.BadRequestf(
+			"fastmail plugin: a patch moves the thread (%q) or replaces its tag set (%q), not both",
+			patchFieldMailbox, listingFieldTags,
+		)
+	case recognized[0] == patchFieldMailbox:
+		var target string
+		if err := json.Unmarshal(fields[patchFieldMailbox], &target); err != nil ||
+			strings.Trim(target, "/") == "" {
+			return none, errors.BadRequestf(
+				"fastmail plugin: patch field %q must be a mailbox's full name-path, like \"Archive\"",
+				patchFieldMailbox,
+			)
+		}
+		return moveThread(ctx, ref, target)
 	}
+	applied, err := patchThreadTags(ctx, ref, fields[listingFieldTags])
+	return cutting_garden_plugins.PatchDetail{Applied: applied}, err
+}
+
+// moveThread moves the thread at ref out of the mailbox its URI names and into
+// the one at the name-path target (cutting-garden#401).
+func moveThread(
+	ctx context.Context, ref nodeRef, target string,
+) (cutting_garden_plugins.PatchDetail, error) {
+	var none cutting_garden_plugins.PatchDetail
+	c, err := resolveClient(ref)
+	if err != nil {
+		return none, err
+	}
+	tree, err := c.loadMailboxTree(ctx)
+	if err != nil {
+		return none, err
+	}
+	source, ok := tree.resolvePath(ref.mailboxPath)
+	if !ok {
+		return none, errors.BadRequestf(
+			"fastmail plugin: no mailbox at path %q in account %q",
+			pathString(ref.mailboxPath), ref.account,
+		)
+	}
+	dest, ok := tree.resolvePath(strings.Split(strings.Trim(target, "/"), "/"))
+	if !ok || !inScope(dest) {
+		return none, errors.BadRequestf(
+			"fastmail plugin: no mailbox at path %q in account %q", target, ref.account,
+		)
+	}
+	members, err := c.threadMembers(ctx, ref.threadID)
+	if err != nil {
+		return none, err
+	}
+	updates := planThreadMove(members, source.ID, dest.ID)
+	if len(updates) == 0 {
+		return cutting_garden_plugins.PatchDetail{Applied: []string{}}, nil
+	}
+	if _, err := c.applyThreadPatch(ctx, threadPatchRequest{Updates: updates}); err != nil {
+		return none, err
+	}
+	return cutting_garden_plugins.PatchDetail{
+		Applied: []string{patchFieldMailbox},
+		NewURI:  threadURI(ref.account, tree.path(dest.ID), ref.threadID),
+	}, nil
+}
+
+// planThreadMove is the PURE move planner: every member in sourceID leaves it
+// and joins destID, keeping its other mailboxes; a member not in sourceID is
+// untouched, and a move onto the same mailbox plans nothing. A member always
+// ends in destID, so JMAP's at-least-one-mailbox rule cannot fire.
+func planThreadMove(members []Email, sourceID, destID string) map[string]emailPatch {
+	updates := map[string]emailPatch{}
+	if sourceID == destID {
+		return updates
+	}
+	for _, member := range members {
+		if !member.MailboxIDs[sourceID] {
+			continue
+		}
+		patch := emailPatch{"mailboxIds/" + sourceID: nil}
+		if !member.MailboxIDs[destID] {
+			patch["mailboxIds/"+destID] = true
+		}
+		updates[member.ID] = patch
+	}
+	return updates
+}
+
+// patchThreadTags replaces the thread's tag set from the "tags" value raw.
+func patchThreadTags(
+	ctx context.Context, ref nodeRef, raw json.RawMessage,
+) ([]string, error) {
+	applied := []string{listingFieldTags}
 	// A recognized key carrying an unusable value is the caller's own bug,
 	// never a tolerated field (FDR 0020, cutting-garden#185).
 	var newTags []string
-	if err := json.Unmarshal(fields[listingFieldTags], &newTags); err != nil {
+	if err := json.Unmarshal(raw, &newTags); err != nil {
 		return nil, errors.BadRequestf(
 			"fastmail plugin: patch field %q must be an array of strings: %s",
 			listingFieldTags, err,

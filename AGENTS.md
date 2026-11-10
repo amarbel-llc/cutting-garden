@@ -29,7 +29,8 @@ filtered out of usage, manpages, and completion. Capture/restore/diff
 backends are URI-scheme-keyed plugins (file, git, yt-dlp, caldav,
 optical, gphotos, jira; plus fastmail, a traversal-only plugin — JMAP mail
 traversal + facets, and writable thread tag sets for `organize` inbox
-triage, but no capture/restore/diff, FDR 0024; and org, a traversal
+triage plus a thread `mailbox` move field, but no capture/restore/diff,
+FDR 0024; and org, a traversal
 plugin over a WebDAV folder of `.org` files — Orgzly's sync target — whose
 writes are LOCK-guarded and read back afterwards to catch an Orgzly
 overwrite: a headline patch (metadata fields, `body` or an incremental

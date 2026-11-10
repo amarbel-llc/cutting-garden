@@ -289,6 +289,30 @@ set against the presented one, and issues **ONE JMAP request** per thread:
 per created mailbox; a set that already matches the live one issues nothing and
 reports an empty `applied`.
 
+**Moving a thread: the `mailbox` field** (cutting-garden#401). A thread's URI
+names the mailbox it is listed under (`fastmail://<account>/Inbox/?thread=T2`),
+so a move has a source as well as a target. `{"mailbox": "Archive"}` names the
+target by its full name-path, the path a mailbox URI carries (`"Archive"`,
+`"Inbox"`, `"payee/-one_medical"`). Every member message in the source mailbox
+leaves it and joins the target, keeping its other mailboxes; members elsewhere
+(a reply in Sent) are untouched. This is the move Fastmail's own UI makes. It
+is one JMAP `Email/set`, and the patch result's `uri` is the thread under the
+target mailbox. A move is not a tag-set write, although it changes the same
+`mailboxIds`: the target may be a mailbox with no tag (Sent, Junk, the `_`
+root). A patch naming both `mailbox` and `tags` is refused. `applied` is
+`["mailbox"]`, or empty when no member is in the source or the target is the
+source. An unknown or out-of-scope target is a bad request, and nothing is
+written.
+
+This one field is what a capability profile (FDR 0028) scopes "move mail
+between mailboxes, never delete" to:
+`[-> _ !cutting_garden-fastmail-thread-v1 op=[patch] [-> _ !cg-field-v1
+field=[mailbox] value=[Archive, Inbox]]]`. Threads have no delete op (§Excluded
+from writes), and `"tags"` is a second field a profile simply does not allow.
+The mailbox node type is `cutting_garden-fastmail-mailbox-v1`;
+`describe_node_types` reports it, and reports the thread's patch body
+(`DescribeBodies`), with a move as its example.
+
 **Object ids are thread ids.** organize's default box id is the node URI's
 host+path relative to the anchor, which cannot see a thread id (it rides in
 the query), so every thread in a mailbox would collapse to one id. The plugin
