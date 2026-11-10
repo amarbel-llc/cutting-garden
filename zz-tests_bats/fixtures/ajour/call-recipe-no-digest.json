@@ -1,0 +1,11 @@
+{
+  "Path": [
+    {"Type": "clown-plugin-v1", "ID": "just-us"},
+    {"Type": "mcp-server-v1", "ID": "just-us"},
+    {"Type": "mcp-tool-v1", "ID": "run_recipe"}
+  ],
+  "Values": [
+    [{"Type": "just-recipe-v1", "ID": "build-nix", "Fields": {"group": ["build"]}}]
+  ],
+  "Anchor": 1
+}

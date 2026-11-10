@@ -156,6 +156,12 @@ func pathText(path []Subject) string {
 type frontier struct {
 	nodes  []*Node
 	sticky []*Node
+	// lockShadow is the first node on this path that matched but for its
+	// lock while another node (a wildcard) let the walk go on. When the walk
+	// later finds no allowance, the lock is the refusal named, at its own
+	// step, since it is what kept the path from its allowance
+	// (cutting-garden#411, vector A-6).
+	lockShadow *Refusal
 }
 
 func rootFrontier(roots []Node) frontier {
@@ -260,12 +266,18 @@ func step(kind layerKind, front frontier, s Subject, depth int, resource bool) (
 		if kind == layerPatch {
 			return frontier{}, nil, true
 		}
-		if lockFailed != nil {
+		switch {
+		case lockFailed != nil:
 			return frontier{}, &Refusal{Kind: KindLockMismatch, Depth: depth, Subject: s, Node: spellNode(lockFailed)}, false
+		case front.lockShadow != nil:
+			return frontier{}, front.lockShadow, false
 		}
 		return frontier{}, &Refusal{Kind: KindNoAllowance, Depth: depth, Subject: s}, false
 	}
-	var next frontier
+	next := frontier{lockShadow: front.lockShadow}
+	if next.lockShadow == nil && lockFailed != nil {
+		next.lockShadow = &Refusal{Kind: KindLockMismatch, Depth: depth, Subject: s, Node: spellNode(lockFailed)}
+	}
 	for _, n := range all {
 		for i := range n.Children {
 			next.nodes = append(next.nodes, &n.Children[i])

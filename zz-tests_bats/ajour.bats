@@ -72,6 +72,18 @@ function ajour_a6_lock_mismatch { # @test
 	EOM
 }
 
+function ajour_a6_lock_mismatch_under_a_wildcard_tool_node { # @test
+  # cutting-garden#411: the cross-cutting deny root's `_ !mcp-tool-v1 open`
+  # also matches run_recipe, so the lock must still be what is named, at the
+  # tool, and not the recipe value beneath it.
+  run_ajour --stencil "$FIX/stencil-complete.espalier" --call "$FIX/call-recipe-no-digest.json"
+  assert_failure 1
+  assert_output - <<-'EOM'
+		refused
+		layer 0 (stencil): lock mismatch [run_recipe@blake2b256-s3 !mcp-tool-v1] at just-us/just-us/run_recipe
+	EOM
+}
+
 function ajour_a1_patches_alone_admit_nothing { # @test
   run_ajour --patch "$FIX/patch-p.espalier" --call "$FIX/call-read-src.json"
   assert_failure 1

@@ -379,6 +379,23 @@ var verdictVectors = []verdictVector{
 		admit:  true,
 	},
 
+	{
+		// #411: a wildcard tool node (the complete document's cross-cutting
+		// deny root) also matches the tool step, so the step does not refuse
+		// there; the lock still has to be what the verdict names, at the tool.
+		id: "A-6", name: "no live digest under a wildcard tool node (#411)",
+		layers: []layerSrc{stencil(completeDocument)},
+		call: Call{
+			Path: path(
+				subj("clown-plugin-v1", "just-us"), subj("mcp-server-v1", "just-us"),
+				subj("mcp-tool-v1", "run_recipe"),
+			),
+			Values: [][]Subject{path(subj("just-recipe-v1", "build-nix", "group=build"))},
+			Anchor: 1,
+		},
+		refusals: []string{"0:lock-mismatch@2"},
+	},
+
 	// A-7: a manifest mismatch.
 	{
 		id: "A-7", name: "perm=allow against a manifest saying ask",

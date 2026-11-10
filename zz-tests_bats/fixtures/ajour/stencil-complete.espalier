@@ -1,0 +1,18 @@
+[moxy !clown-plugin-v1
+  [-> folio !mcp-server-v1
+    [-> _ !mcp-tool-v1 kind=read
+      [-> file:eng/repos !fs-path-v1 subtree]
+      [-> _ !tool-input-v1 open]]
+    [-> write !mcp-tool-v1
+      [-> file:eng/repos/cutting-garden/.worktrees/swift-plum !fs-path-v1 subtree]
+      [-> _ !tool-input-v1 open]]]]
+
+[just-us !clown-plugin-v1
+  [-> just-us !mcp-server-v1
+    [-> run_recipe@blake2b256-s3 !mcp-tool-v1
+      [-> _ !just-recipe-v1 group=[build, test, lint]]]]]
+
+[_ !clown-plugin-v1 open
+  [-> _ !mcp-server-v1 open
+    [-> _ !mcp-tool-v1 open
+      [-> file:eng/repos/cutting-garden/infra/secrets !fs-path-v1 subtree deny]]]]
