@@ -88,35 +88,70 @@ type Refusal struct {
 
 // A Verdict is Evaluate's answer.
 type Verdict struct {
+	// Outcome is Refused (any refusal, or no stencil), Ask (no refusal, and
+	// a node on the walk said `perm=ask`), or Admitted.
+	Outcome Outcome
+	// Perm, when Admitted, says whether every stencil decided `perm=allow`
+	// (the enforcer skips its ask tier) or left the call to the tier.
+	Perm Perm
+	// Admitted is Outcome == OutcomeAdmitted: false for an Ask, so an
+	// enforcer that reads only Admitted refuses an Ask rather than run it.
 	Admitted bool
 	// Refusals lists every layer that refused, in stack order.
 	Refusals []Refusal
+	// Asks lists every asking node of every layer that admitted the call, in
+	// stack order, each node once; listed for explain even when the call is
+	// refused.
+	Asks []Ask
 }
 
 // Evaluate checks call against the stencil stack (FDR 0028 "Evaluating a
 // call against one layer", "The verdict"): admitted iff there is at least one
 // stencil, every stencil admits every subject, and no layer denies any. Every
-// layer is walked, so the verdict lists every refusal, in stack order.
+// layer is walked, so the verdict lists every refusal, in stack order. The
+// decision is the strongest `perm` over each layer's matched nodes, then over
+// the stencils (allow < default < ask); Evaluate never sees the session's
+// posture (Verdict.Resolve does).
 func Evaluate(layers []Layer, call Call) Verdict {
 	var v Verdict
-	stencils := 0
+	stencils, allAllow := 0, true
 	at := pathText(call.Path)
 	for i, layer := range layers {
 		kind, roots := layerParts(layer)
-		if kind == layerStencil {
-			stencils++
-		}
-		for _, r := range evaluateLayer(kind, roots, call) {
+		refusals, decision := evaluateLayer(kind, roots, call)
+		for _, r := range refusals {
 			r.Layer, r.layerKind, r.at = i, kind, at
 			v.Refusals = append(v.Refusals, r)
 		}
+		if kind == layerStencil {
+			stencils++
+			allAllow = allAllow && decision.explicit && decision.perm == PermAllow
+		}
+		if len(refusals) > 0 {
+			continue // a refusing layer's asks decide nothing
+		}
+		for _, a := range decision.asks {
+			a.Layer, a.layerKind, a.at = i, kind, at
+			v.Asks = append(v.Asks, a)
+		}
 	}
-	v.Admitted = stencils > 0 && len(v.Refusals) == 0
+	switch {
+	case stencils == 0 || len(v.Refusals) > 0:
+		v.Outcome = OutcomeRefused
+	case len(v.Asks) > 0:
+		v.Outcome = OutcomeAsk
+	default:
+		v.Outcome = OutcomeAdmitted
+		if allAllow {
+			v.Perm = PermAllow
+		}
+	}
+	v.Admitted = v.Outcome == OutcomeAdmitted
 	return v
 }
 
-// String renders one line per refusal: `layer 2 (patch): deny [node] at
-// moxy/folio/read`.
+// String renders one line per refusal, then one per ask: `layer 2 (patch):
+// deny [node] at moxy/folio/read`, `layer 0 (stencil): ask [node] at …`.
 func (v Verdict) String() string {
 	var b strings.Builder
 	for _, r := range v.Refusals {
@@ -128,6 +163,9 @@ func (v Verdict) String() string {
 			fmt.Fprintf(&b, "%s %s", r.Kind, r.Node)
 		}
 		fmt.Fprintf(&b, " at %s\n", r.at)
+	}
+	for _, a := range v.Asks {
+		fmt.Fprintf(&b, "layer %d (%s): ask %s at %s\n", a.Layer, a.layerKind, a.Node, a.at)
 	}
 	return b.String()
 }
@@ -175,15 +213,24 @@ func rootFrontier(roots []Node) frontier {
 // evaluateLayer walks the call through one layer: the path, then each value
 // from the last path step and each resource from Path[Anchor],
 // independently. A stencil refuses a subject no node matches; a patch is
-// transparent there and stops walking that path.
-func evaluateLayer(kind layerKind, roots []Node, call Call) []Refusal {
+// transparent there and stops walking that path. The decision is noted from
+// every node a step matched.
+func evaluateLayer(kind layerKind, roots []Node, call Call) ([]Refusal, layerDecision) {
+	var decision layerDecision
+	step := func(front frontier, s Subject, depth int, resource bool) (frontier, *Refusal, bool) {
+		next, matched, refusal, stopped := stepOnce(kind, front, s, depth, resource)
+		for _, n := range matched {
+			decision.note(n, s, depth)
+		}
+		return next, refusal, stopped
+	}
 	front := rootFrontier(roots)
 	var anchor *frontier
 	reachedEnd := true
 	for i, s := range call.Path {
-		next, refusal, stopped := step(kind, front, s, i, false)
+		next, refusal, stopped := step(front, s, i, false)
 		if refusal != nil {
-			return []Refusal{*refusal}
+			return []Refusal{*refusal}, decision
 		}
 		if stopped {
 			reachedEnd = false
@@ -198,7 +245,7 @@ func evaluateLayer(kind layerKind, roots []Node, call Call) []Refusal {
 	var refusals []Refusal
 	walk := func(from frontier, steps []Subject, depth0 int, resource bool) {
 		for j, s := range steps {
-			next, refusal, stopped := step(kind, from, s, depth0+j, resource)
+			next, refusal, stopped := step(from, s, depth0+j, resource)
 			if refusal != nil {
 				refusals = append(refusals, *refusal)
 				return
@@ -230,14 +277,14 @@ func evaluateLayer(kind layerKind, roots []Node, call Call) []Refusal {
 			refusals = append(refusals, Refusal{Kind: KindNoAllowance, Depth: call.Anchor + 1, Subject: s})
 		}
 	}
-	return refusals
+	return refusals, decision
 }
 
-// step matches subject s against front at depth: it refuses (a deny among
-// the matches; no match in a stencil), stops (no match in a patch), or
-// returns the next frontier. resource marks a step of a resource path, the
-// only place a creation verb is presented.
-func step(kind layerKind, front frontier, s Subject, depth int, resource bool) (frontier, *Refusal, bool) {
+// stepOnce matches subject s against front at depth: it refuses (a deny
+// among the matches; no match in a stencil), stops (no match in a patch), or
+// returns the next frontier and the nodes that matched. resource marks a
+// step of a resource path, the only place a creation verb is presented.
+func stepOnce(kind layerKind, front frontier, s Subject, depth int, resource bool) (frontier, []*Node, *Refusal, bool) {
 	creation := resource && slices.Contains(s.Fields[verbField], verbCreate)
 	var matched, sticky []*Node
 	var lockFailed *Node
@@ -259,20 +306,20 @@ func step(kind layerKind, front frontier, s Subject, depth int, resource bool) (
 	all := uniqueNodes(append(matched, sticky...))
 	for _, n := range all {
 		if n.Deny {
-			return frontier{}, &Refusal{Kind: KindDeny, Depth: depth, Subject: s, Node: spellNode(n)}, false
+			return frontier{}, nil, &Refusal{Kind: KindDeny, Depth: depth, Subject: s, Node: spellNode(n)}, false
 		}
 	}
 	if len(all) == 0 {
 		if kind == layerPatch {
-			return frontier{}, nil, true
+			return frontier{}, nil, nil, true
 		}
 		switch {
 		case lockFailed != nil:
-			return frontier{}, &Refusal{Kind: KindLockMismatch, Depth: depth, Subject: s, Node: spellNode(lockFailed)}, false
+			return frontier{}, nil, &Refusal{Kind: KindLockMismatch, Depth: depth, Subject: s, Node: spellNode(lockFailed)}, false
 		case front.lockShadow != nil:
-			return frontier{}, front.lockShadow, false
+			return frontier{}, nil, front.lockShadow, false
 		}
-		return frontier{}, &Refusal{Kind: KindNoAllowance, Depth: depth, Subject: s}, false
+		return frontier{}, nil, &Refusal{Kind: KindNoAllowance, Depth: depth, Subject: s}, false
 	}
 	next := frontier{lockShadow: front.lockShadow}
 	if next.lockShadow == nil && lockFailed != nil {
@@ -290,7 +337,7 @@ func step(kind layerKind, front frontier, s Subject, depth int, resource bool) (
 		}
 	}
 	next.nodes, next.sticky = uniqueNodes(next.nodes), uniqueNodes(next.sticky)
-	return next, nil, false
+	return next, all, nil, false
 }
 
 // uniqueNodes drops repeats, keeping first-seen order: a subtree node can be
@@ -349,12 +396,12 @@ func segmentPrefix(prefix, id string) bool {
 	return id == prefix || strings.HasPrefix(id, prefix+"/")
 }
 
-// atomsHold reports that every atom of n holds against s's fields; an `op=`
-// atom is skipped on a creation step (a resource step presenting
-// `op=create`).
+// atomsHold reports that every atom of n holds against s's fields. A `perm=`
+// atom is a decision, never matched; an `op=` atom is skipped on a creation
+// step (a resource step presenting `op=create`).
 func atomsHold(n *Node, s Subject, creation bool) bool {
 	for i, fp := range n.Atoms {
-		if creation && !fp.Field.Quoted && fp.Field.Name == verbField {
+		if isPermAtom(fp) || (creation && !fp.Field.Quoted && fp.Field.Name == verbField) {
 			continue
 		}
 		var compiled []*regexp.Regexp

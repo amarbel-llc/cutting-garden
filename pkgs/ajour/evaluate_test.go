@@ -396,13 +396,7 @@ var verdictVectors = []verdictVector{
 		refusals: []string{"0:lock-mismatch@2"},
 	},
 
-	// A-7: a manifest mismatch.
-	{
-		id: "A-7", name: "perm=allow against a manifest saying ask",
-		layers:   []layerSrc{stencil(stencilA)},
-		call:     moxyCall("folio", "read", []string{"kind=read", "perm=ask"}, fsPath(wt+"/a.go")),
-		refusals: []string{"0:no-allowance@2"},
-	},
+	// A-7 and V-D2-11 (perm decides, kind pins) are in ask_test.go.
 
 	// A-8: a catalog predicate on a multi-valued field.
 	{

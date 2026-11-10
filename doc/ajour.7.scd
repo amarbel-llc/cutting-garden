@@ -112,7 +112,7 @@ down to the thing being invoked - plugin, server, tool - plus the call's
 values: the file path, each input field, the recipe a *run_recipe* call
 runs (with its arguments beneath it), each object a tool touches. Each of those is a *subject*, with a
 type, usually an id, and the fields a document might name (a tool's *kind*
-and *perm* from its manifest, a recipe's groups, an argument's position and
+from its manifest, a recipe's groups, an argument's position and
 value). A value is itself a short path: one step for a file path or an
 input field. An object a tool touches hangs not under the tool but under
 the server's *resource surface*, beside the tools, as the steps from its
@@ -141,6 +141,35 @@ the stack, ajour walks the path:
 The call is admitted when there is at least one stencil, every stencil
 admits every subject, and no document denies any. A stack of patches alone
 admits nothing: no stencil, no hole.
+
+# ASK, ALLOW AND THE ENFORCER'S TIER
+
+A node may carry one *perm* condition, and it is not a condition at all: it
+is never compared with the subject, it is the document's decision for the
+calls that pass through that node. *perm=ask* admits the call subject to a
+human; *perm=allow* says the enforcer may skip its own ask tier for the call,
+and nothing more (it never admits what a document refuses, and a tool whose
+manifest decides per call, by path, keeps that check as a floor); *perm=dynamic*,
+or no *perm* at all, leaves the call to the enforcer's tier, as the tool's
+manifest sets it. *kind* is still a fact: a node saying *kind=read* refuses a
+tool whose manifest says *write*. It may sit on any node, so
+*[-> file:/wt/infra !fs-path-v1 subtree perm=ask]* asks only for that
+folder.
+
+The strongest decision wins, ask over the tier over allow: within a document
+over every node the call matched that carries a *perm* (a document none of
+whose matched nodes does leaves the call to the tier), then over the
+documents, so a later stencil
+can turn an allow into an ask but never the reverse, and the tier is skipped
+only when every stencil says *allow*. A patch carries no *perm*: it only
+denies. A deny or a missing allowance anywhere still refuses the call,
+whatever any node asked.
+
+So the answer has three outcomes: refused, *ask*, or admitted. ajour does not
+know whether a human is watching; the enforcer does, and maps an ask onto
+the session: an attended session prompts, an unattended one escalates to the
+operator when it has a channel to do so and refuses otherwise. An ask never
+runs unanswered.
 
 The answer comes back with every refusal that occurred - which document,
 at which step, which node - so the message a session sees can say what it

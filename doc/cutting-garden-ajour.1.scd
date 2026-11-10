@@ -21,6 +21,17 @@ layer 1 (stencil): deny [file:/wt/infra/secrets !fs-path-v1 subtree deny] at mox
 layer 0 (stencil): no allowance for {fs-path-v1 file:/etc/hosts} at moxy/folio/write
 ```
 
+A call no layer refuses but some node decides *perm=ask* for prints *ask*
+and one line per asking node instead: the call is admitted only once a human
+(or the operator's channel) answers, which is the enforcer's job, not this
+tool's. An admitted call whose every stencil decides *perm=allow* prints a
+second line saying the enforcer skips its own ask tier.
+
+```
+ask
+layer 0 (stencil): ask [read !mcp-tool-v1 kind=read perm=ask] at moxy/folio/read
+```
+
 It is the debugging surface for a capability profile: run the call an
 enforcer refused through the same layers to see which document stopped it.
 It checks no signature and reads no chain; the layers are the documents you
@@ -59,8 +70,8 @@ hyphence head (*---*) is refused; split the head off first.
 	every subject, and no layer denies any.
 
 *1*
-	The call is refused. A stack with no stencil refuses everything and says
-	so.
+	The call is refused, or it asks (the first line says which). A stack with
+	no stencil refuses everything and says so.
 
 *64*
 	Bad input: a layer that does not parse (the message names the term), a

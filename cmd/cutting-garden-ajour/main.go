@@ -27,7 +27,9 @@ import (
 // Exit codes, diff(1)-style as cutting-garden(1) documents them.
 const (
 	exitAdmitted = 0
-	exitRefused  = 1
+	// exitRefused is also an Ask's: not admitted until a human answers, so a
+	// script that reads only the status never runs an asked call.
+	exitRefused = 1
 	// exitUsage is EX_USAGE for any bad input: a layer or call that does not
 	// parse, a malformed call, a missing flag, or a file that cannot be read
 	// (the paths are input too). The tool ran to completion on it.
@@ -87,9 +89,17 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 
 	verdict := ajour.Evaluate(layers, call)
-	if verdict.Admitted {
+	switch verdict.Outcome {
+	case ajour.OutcomeAdmitted:
 		fmt.Fprintln(stdout, "admitted")
+		if verdict.Perm == ajour.PermAllow {
+			fmt.Fprintln(stdout, "perm=allow in every stencil: the enforcer skips its ask tier")
+		}
 		return exitAdmitted
+	case ajour.OutcomeAsk:
+		fmt.Fprintln(stdout, "ask")
+		fmt.Fprint(stdout, verdict.String())
+		return exitRefused
 	}
 	fmt.Fprintln(stdout, "refused")
 	if !slices.ContainsFunc(stack, func(l layerArg) bool { return !l.patch }) {

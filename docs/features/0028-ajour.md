@@ -27,7 +27,10 @@ promotion-criteria: |
 > (cutting-garden#396: `trellis.ParseTree` and `pkgs/ajour`'s
 > `ParseStencil`, `ParsePatch`, `Write`); phase 2 (#346) built `Evaluate`
 > and the verdict vectors the same day; the explain verb (open item 4) is
-> #403.
+> #403. Amended again 2026-11-10 on the operator's option B for `ask`
+> (moxy/live-aspen's permissions-unification note, Rulings 1-2) by
+> cutting-garden/rare-sycamore: `perm=` became the node's decision, and the
+> verdict gained the Ask outcome and `Resolve` (vectors A-37 to A-49).
 > Evidence labels: **V** read in a named file in this worktree or a sibling
 > checkout; **I** inference; **U** unknown; **R** an operator ruling, dated.
 > The plain-words companion is `ajour(7)`.
@@ -287,10 +290,27 @@ position=1 ^value=master]` on a stencil admits every value but `master`.
 
 Consequences the rules give for free, so they are not special cases:
 
-- **Manifest mismatch (V-D2-11).** `kind=read perm=allow` on a tool node are
-  atoms; the enforcer presents the tool subject with `Fields{kind, perm}`
-  from the live manifest; a profile saying `perm=allow` against a manifest
-  saying `ask` does not match, so the tool is refused.
+- **Facts are pins, perm is a decision (R 2026-11-10, option B for ask).**
+  `kind=read` on a tool node is an atom like any other: the enforcer
+  presents the tool subject with `Fields{kind}` from the live manifest, and
+  a profile saying `kind=read` against a manifest saying `write` does not
+  match, so the tool is refused (V-D2-11, kept as that kind mismatch). An
+  unquoted `perm=` atom is **not** matched: it is the node's decision for the
+  calls whose walk matched it, on any node, not only a tool node.
+  `perm=ask` admits the call subject to a human; `perm=allow` means the
+  enforcer skips its own ask tier for this call and nothing more (it never
+  admits what the tree refuses, and a `dynamic` tool's path predicate stays
+  the enforcer's floor, the research note's option A for dynamic);
+  `perm=dynamic`, or no `perm` atom, leaves the call to the manifest tier.
+  The strongest decision wins, allow < default < ask: over a layer's
+  matched nodes that carry a `perm` (none leaves that layer at default),
+  then over the stencils, so the tier is skipped only when every stencil
+  says `allow`, and a later stencil can tighten but never loosen. A patch
+  carries no `perm` (it only denies; asking from a patch awaits a ruling).
+  One `perm` per node, `=` only, one value of `allow|ask|dynamic`, never
+  negated and never beside `deny`; since it matches nothing, a typed `_`
+  node whose only atom is `perm` is still a wildcard and needs `open`
+  (vectors A-7, A-37 to A-49).
 - **`open` (V-D2-14).** A `_` node with no atoms matches every existing
   subject of its type; D2's `[-> _ !tool-input-v1 open]` is such a node.
   `open` is the **required spelling of a wildcard** (R 2026-11-10, open item
@@ -378,9 +398,13 @@ walked step by step with the same procedure:
     func Evaluate(layers []Layer, call Call) Verdict
 
     Verdict{
-      Admitted bool
+      Outcome  Outcome     // Refused | Ask | Admitted
+      Perm     Perm        // when Admitted: Default | Allow (skip the tier)
+      Admitted bool        // Outcome == Admitted; false for an Ask
       Refusals []Refusal   // every layer that refused, in stack order
+      Asks     []Ask       // every asking node of every admitting layer
     }
+    Ask{ Layer int; Depth int; Subject Subject; Node string }
     Refusal{
       Layer   int          // index into layers
       Kind    Kind         // Deny | NoAllowance | LockMismatch
@@ -390,9 +414,31 @@ walked step by step with the same procedure:
       Node    string       // the spelled node, for Deny and LockMismatch
     }
 
-`Admitted` is true iff **there is at least one stencil**, every stencil
-admits every subject, and no layer denies any subject. A stack of patches
-alone admits nothing (no stencil, no hole). The refusal list is the explain
+`Outcome` is Refused unless **there is at least one stencil**, every stencil
+admits every subject, and no layer denies any subject; a stack of patches
+alone admits nothing (no stencil, no hole). With no refusal, it is Ask when
+any node on the walk of an admitting layer decided `perm=ask`, else
+Admitted, with `Perm` Allow when every stencil decided `allow`. `Asks` lists
+each asking node once (a sticky `subtree` node at the step it first
+matched), and is kept on a refused verdict for explain; a refusing layer's
+asks are dropped, since that layer admits nothing. `Admitted` is kept and
+is false for an Ask, so an enforcer that reads only it refuses an Ask rather
+than run it.
+
+`Evaluate` never sees the session's posture: posture is session state, not
+something in the signed layers; one verdict then serves the explain verb,
+shadow-mode logs and every enforcer alike; what an unattended session does
+with an ask is the enforcer's configuration; and a session's posture can
+change on restart while its layers do not. One mapping is still shared:
+
+    func (Verdict) Resolve(posture Posture, canEscalate bool) Action
+      // Admitted -> Run; Refused -> Refuse;
+      // Ask: Attended -> Prompt; Unattended -> Escalate if canEscalate, else Refuse
+
+`canEscalate` says the enforcer has a channel to the operator (a chat or
+the card); an unattended enforcer with none refuses, so an Ask never
+silently becomes a run (vector A-49). The profile head's `mode = attended`
+is a declaration, not the posture. The refusal list is the explain
 result the brief asks for: it names the layer and node that refused. An
 enforcer that wants the short answer reads `Admitted`; one that writes the
 refusal the user sees (EPIC 0001 principle 9, "say what is held") renders
@@ -430,8 +476,14 @@ of replacement.
     }
 
     func Evaluate(layers []Layer, call Call) Verdict
-    func (Verdict) String() string                  // one line per refusal
+    func (Verdict) String() string                  // one line per refusal, then per ask
+    func (Verdict) Resolve(Posture, bool) Action    // the enforcer's posture applied
+    func (Node) Perm() Perm                         // the node's perm atom read
     type Kind int                                   // KindDeny | KindNoAllowance | KindLockMismatch
+    type Outcome int                                // OutcomeRefused | OutcomeAsk | OutcomeAdmitted
+    type Perm int                                   // PermDefault | PermAllow | PermAsk
+    type Posture int                                // PostureAttended | PostureUnattended
+    type Action int                                 // ActionRefuse | ActionRun | ActionPrompt | ActionEscalate
 
 `Call`, `Subject`, `Verdict` and `Refusal` are as "The two inputs" and "The
 verdict" write them. A `~=` atom's patterns are compiled at parse and carried
@@ -492,12 +544,12 @@ Sample A (D2 §3) as the only stencil; a moxy `folio read` call.
 
     layers: [stencil A]
     call:   Path  = [moxy, folio, read]            (types clown-plugin-v1, mcp-server-v1, mcp-tool-v1;
-                                                    read carries Fields{kind:[read], perm:[allow]})
+                                                    read carries Fields{kind:[read]})
             Values = [[{fs-path-v1, ID: file:circus/.worktrees/swift-plum/src/a.go, Fields{field:[file_path]}}]]
 
-    A: moxy ✓ -> folio ✓ -> read ✓ (kind=read perm=allow hold)
+    A: moxy ✓ -> folio ✓ -> read ✓ (kind=read holds; perm=allow is A's decision, not matched)
        -> [file:circus/.worktrees/swift-plum !fs-path-v1 subtree] matches by segment prefix ✓
-    verdict: admitted
+    verdict: admitted, Perm Allow (the enforcer skips its ask tier)
 
 The same stack, `file:circus/.worktrees/swift-plum/infra/secrets/token`:
 
@@ -683,9 +735,10 @@ the repo, since the format has no template hole (Limitations).
 
 ### Idioms the probes asked for
 
-- **Atoms are pins, not requirements.** `kind=read perm=allow` on a tool
-  node pins the live manifest and refuses on a mismatch; omit them unless
-  you mean to pin. The live values, and the `name@digest` a lock needs,
+- **Facts are pins; `perm` decides.** `kind=read` on a tool node pins the
+  live manifest and refuses on a mismatch; omit it unless you mean to pin.
+  `perm=` is never a pin: write `perm=allow` only where you mean to skip
+  the enforcer's ask tier, `perm=ask` where a human must answer. The live values, and the `name@digest` a lock needs,
   come from the catalog listing (`cg list -format espalier
   clown-catalog://…`, once clown publishes it). An invented digest refuses
   everything under it.
@@ -746,7 +799,8 @@ Reused rows keep their ids; the `A-` rows are this record's.
 | A-4 | child stencil restates the allowance | admitted |
 | A-5 | child stencil allows `/etc` where no parent does | refused by the parent (the stencil rule: a child cannot widen) |
 | A-6 | lock `run_recipe@s1`, live `s2`; live absent | lock mismatch; lock mismatch |
-| A-7 | `perm=allow` on a node, subject `perm:[ask]` (V-D2-11 through ajour) | refused, no allowance |
+| A-7 | `perm=allow` on a node, subject `perm:[ask]` from the manifest | Admitted, Perm Allow (the subject's perm is not matched; rewritten 2026-11-10, it was V-D2-11 through ajour) |
+| V-D2-11 | `kind=read` on a tool node, the manifest says `write` | refused, no allowance (a fact pin; it was the perm mismatch) |
 | A-8 | `_` typed node with `group=[test, lint]`; subjects in `[test, docs]`, in `[docs]` | admitted; refused |
 | A-9 | `value!=master` against a multi-valued field `[master, dev]`; `^value=master` likewise | refused (universal); refused |
 | A-10 | `subtree /wt` against `/wtx/a`, against `/wt` | refused; admitted (equal) |
@@ -776,6 +830,19 @@ Reused rows keep their ids; the `A-` rows are this record's.
 | A-34 | the one-node shape `[-> ynab:main !cg-root-v1 subtree op=[read] [-> budget/b1 … [-> _ !…-transaction-v1 op=[patch] [-> _ !cg-field-v1 field=[category, memo]]]]]`, then the two-sibling shape of "A complete document"; patch `[ynab:main, budget/b1, transactions, t5, {category}]`; the same under `budget/b2` | `ParseStencil` keeps both same-id siblings, in order; one-node: refused at `ynab:main`, no allowance for `op=patch`; two-sibling: admitted; refused under `budget/b2` |
 | A-35 | `[-> _ !tool-input-v1 ^field=[repo, host] open]`; input fields `limit`, `repo`, `host` | parses; `limit` admitted, `repo` and `host` refused (no allowance) |
 | A-36 | `[-> cal-7 !caldav-calendar-v1 subtree op=[read] [-> + !caldav-object-vtodo-v1 summary^="[auto]"]]`: create `[auto] x` under cal-7 (every step `op=create`); patch `[cal-7, event-3]`; then `[-> cal-7 !caldav-calendar-v1 op=[patch]]` with no `+` node, the same creation | admitted (the `op=[read]` atom is not checked against a create step); refused, no allowance for `op=patch`; refused at the object step, no `+` node |
+| A-37 | `perm=ask` on the tool node; a call it admits | Ask, `Admitted` false, one ask at layer 0, the tool's step |
+| A-38 | no `perm` atom; `perm=dynamic`; the manifest says `ask` | Admitted, Perm Default (the tier decides); the same |
+| A-39 | a parent stencil with `perm=allow`, a child stencil restating the tool without `perm` | Admitted, Perm Default (the tier is skipped only when every stencil says allow) |
+| A-40 | a parent stencil with `perm=ask`, a child with `perm=allow` | Ask (a child cannot loosen) |
+| A-41 | a stencil with `perm=allow`, a patch leaf `perm=ask` on the same tool | Ask; held until the operator rules on asking from a patch (today A-46 refuses the patch) |
+| A-42 | a stencil with `perm=ask`, a patch denying the tool | refused by the patch's deny, the stencil's ask still listed |
+| A-43 | the tool `perm=allow`, `[-> file:wt !fs-path-v1 subtree]` and `[-> file:wt/infra !fs-path-v1 subtree perm=ask]`; read `wt/infra/x`; read `wt/src/x` | Ask at the path step; Admitted, Perm Allow |
+| A-44 | `[-> ynab:main !cg-root-v1 subtree op=[read] perm=ask]`; read a transaction three steps below | Ask, one entry, at `ynab:main`'s step |
+| A-45 | stencil 1 asks, stencil 2 has no allowance for the call | refused (no allowance outranks ask; the refusing layer's ask is dropped) |
+| A-46 | `ParsePatch` of a node with `perm=allow deny`; of a leaf `perm=ask` | each errors naming the atom (a patch carries no `perm`) |
+| A-47 | `perm=bogus`; `perm=[allow, ask]`; `^perm=ask`; `perm^=a`; `perm=ask deny`; two `perm` atoms; `[-> _ !mcp-tool-v1 perm=ask]` without `open`; `"perm"=x` | each a parse error naming the atom or the rule; the last parses (a quoted name is opaque) |
+| A-48 | `Write` of a stencil with `perm=` on tool and non-tool nodes | spelled exactly as read; re-parses to a fixed point |
+| A-49 | `Resolve` of Admitted; of Refused; of Ask attended (with or without a channel), unattended with a channel, unattended without; of the zero Verdict | Run; Refuse; Prompt; Escalate; Refuse; Refuse |
 piggy's RFC 0013 conformance vectors point at A-17, A-18 and A-19 by name
 (the ask from piggy/green-larch, 2026-11-09) instead of restating them.
 
@@ -787,7 +854,7 @@ piggy's RFC 0013 conformance vectors point at A-17, A-18 and A-19 by name
   calls `Evaluate` without first obtaining a `valid` verdict from piggy has
   no stack to evaluate.
 - **The subjects are the enforcer's truth.** ajour cannot tell whether
-  `Fields{perm:[allow]}` is what the manifest says, or whether a `Digest` is
+  `Fields{kind:[read]}` is what the manifest says, or whether a `Digest` is
   the live one. A dishonest or incomplete enforcer gets an honest answer to
   the wrong question; EPIC 0001 principle 7 (enforce at the frontend) is
   what makes the enforcer trustworthy, not ajour.
@@ -873,7 +940,7 @@ piggy's RFC 0013 conformance vectors point at A-17, A-18 and A-19 by name
    and say that a body is a patch that may only deny, so §9's example is a
    patch and §5.3's verdict keeps profile edges and bodies distinguishable.
 2. **clown** (node types, the `clown-catalog://` tree): publish, per node
-   type, which fields a subject carries (`kind`, `perm`, `async`, `impure`,
+   type, which fields a subject carries (`kind`, `async`, `impure`,
    `arg`, `field`, `value`, `position`, `group`, and the verb field, `op`)
    and what each subject's id is, since ajour matches only what the
    enforcer presents; declare `mcp-resources-v1` as every server's resource

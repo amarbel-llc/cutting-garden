@@ -26,7 +26,22 @@ run_ajour() {
 function ajour_example_sample_a_admits_a_read_under_the_worktree { # @test
   run_ajour --stencil "$FIX/stencil-a.espalier" --call "$FIX/call-read-src.json"
   assert_success
-  assert_output 'admitted'
+  assert_output - <<-'EOM'
+		admitted
+		perm=allow in every stencil: the enforcer skips its ask tier
+	EOM
+}
+
+# A-37 through the binary: `perm=ask` admits subject to a human, which is not
+# admitted (exit 1), naming the node that asked.
+function ajour_a37_perm_ask_asks { # @test
+  sed 's/perm=allow/perm=ask/' "$FIX/stencil-a.espalier" >"$BATS_TEST_TMPDIR/ask.espalier"
+  run_ajour --stencil "$BATS_TEST_TMPDIR/ask.espalier" --call "$FIX/call-read-src.json"
+  assert_failure 1
+  assert_output - <<-'EOM'
+		ask
+		layer 0 (stencil): ask [read !mcp-tool-v1 kind=read perm=ask] at moxy/folio/read
+	EOM
 }
 
 function ajour_example_sample_a_denies_the_secrets_folder { # @test
@@ -110,5 +125,5 @@ function ajour_a_call_with_an_unknown_field_is_bad_input { # @test
 function ajour_reads_the_call_from_stdin { # @test
   run bash -c "'$AJOUR_BIN' --stencil '$FIX/stencil-a.espalier' --call - <'$FIX/call-read-src.json'"
   assert_success
-  assert_output 'admitted'
+  assert_line --index 0 'admitted'
 }

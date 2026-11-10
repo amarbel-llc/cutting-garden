@@ -161,6 +161,9 @@ func projectNode(tree trellis.TreeNode, kind layerKind) (Node, error) {
 	}
 	node.Deny = slices.Contains(node.Tags, TagDeny)
 	node.Subtree = slices.Contains(node.Tags, TagSubtree)
+	if err := checkPerm(tree, node.Deny, kind); err != nil {
+		return Node{}, err
+	}
 
 	for _, atom := range tree.Atoms {
 		compiled, err := checkAtom(atom)
@@ -177,10 +180,13 @@ func projectNode(tree trellis.TreeNode, kind layerKind) (Node, error) {
 
 	switch kind {
 	case layerStencil:
-		if tree.Kind == trellis.IDNull && tree.Type != "" && len(tree.Atoms) == 0 &&
+		// A `perm` atom decides and matches nothing, so it does not keep a
+		// node from being a wildcard.
+		conditions := slices.ContainsFunc(tree.Atoms, func(a trellis.TreeAtom) bool { return !isPermAtom(a.Pred) })
+		if tree.Kind == trellis.IDNull && tree.Type != "" && !conditions &&
 			!slices.Contains(node.Tags, TagOpen) {
 			return Node{}, errors.BadRequestf(
-				"node %s: a wildcard (a typed `_` node with no atoms) must carry the `open` tag",
+				"node %s: a wildcard (a typed `_` node with no conditions) must carry the `open` tag",
 				spellHead(tree),
 			)
 		}
