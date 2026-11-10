@@ -196,8 +196,10 @@ run 2):
 
 A named validity condition on RFC 0014's grammar, between espalier (the
 ground fragment, "Isomorphism") and full trellis. It is a projection over
-`trellis.Parse`'s AST, as `trellis.ParseLiteral` is (V `internal/trellis/
-literal.go`); no new lexer. A stencil is a sequence of trellis literals, one
+the literal tree `trellis.ParseTree` reads (V `internal/trellis/tree.go`:
+the PEG's `Literal` entry, its id slot read directly and every other term
+through the query parser's own `parseTerm`, so there is no new lexer). A
+stencil is a sequence of trellis literals, one
 per root; inside a literal:
 
 | Admitted | Not admitted (parse error naming the term) |
@@ -435,7 +437,7 @@ item 2).
 parser for it, and an allow/deny evaluator over a request and a chain of
 predicates. This record answers all three with one package: the fragment is
 the stencil fragment, its parser is `ajour.ParseStencil` (a projection over
-`pkgs/trellis`), and its evaluator is `ajour.Evaluate`. There is no
+`pkgs/trellis`'s literal tree), and its evaluator is `ajour.Evaluate`. There is no
 separate "fragment evaluator": the fragment's only consumer is the stencil
 stack, and a predicate's meaning (does this value satisfy it) is defined in
 "Matching one node against one subject" and nowhere else.
