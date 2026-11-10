@@ -33,10 +33,12 @@ package trellis_eval
 import (
 	"context"
 	"encoding/json"
+	stderrors "errors"
 	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 
 	cgp "code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
 	"code.linenisgreat.com/cutting-garden/internal/trellis"
@@ -182,12 +184,23 @@ type evaluator struct {
 	// a caldav calendar cost two plugin calls per object (cutting-garden#398).
 	// An undeclared type is still listed.
 	leafTypes map[string]struct{}
+
+	// width is how many per-node reads run at once: 1 (sequential) unless the
+	// plugin is a ConcurrentReader, then its limit capped at maxEvalWorkers
+	// (cutting-garden#313).
+	width int
+	// cacheMu guards regex and searches, which concurrent per-node workers
+	// share.
+	cacheMu sync.Mutex
 }
 
 func newEvaluator(
 	lister cgp.RootLister, anchor *url.URL, opts ...EvaluateOption,
 ) *evaluator {
-	ev := &evaluator{lister: lister, anchor: anchor, leafTypes: map[string]struct{}{}}
+	ev := &evaluator{lister: lister, anchor: anchor, leafTypes: map[string]struct{}{}, width: 1}
+	if cr, ok := lister.(cgp.ConcurrentReader); ok {
+		ev.width = max(1, min(maxEvalWorkers, cr.MaxConcurrentReads()))
+	}
 	for _, nt := range lister.Types() {
 		if !nt.Container {
 			ev.leafTypes[nt.Tag] = struct{}{}
@@ -260,6 +273,88 @@ func (ev *evaluator) childrenOf(ctx context.Context, n cgp.Node) ([]cgp.Node, er
 	return ev.listEnriched(ctx, n.URI)
 }
 
+// forEach runs fn(i) for every i in [0, n): one at a time, in order, for a
+// plugin that is not a ConcurrentReader; otherwise at most ev.width at once,
+// started in order (cutting-garden#313). Callers write fn's results into
+// index-addressed slots, so what they assemble is in input order either way.
+// The first error cancels the calls not yet finished, and the error returned
+// is the lowest-index one that is not a cancellation forEach itself caused —
+// the error the sequential walk would have met first.
+func (ev *evaluator) forEach(
+	ctx context.Context, n int, fn func(ctx context.Context, i int) error,
+) error {
+	if ev.width <= 1 || n <= 1 {
+		for i := range n {
+			if err := fn(ctx, i); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	parent := ctx
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	errs := make([]error, n)
+	sem := make(chan struct{}, ev.width)
+	var wg sync.WaitGroup
+start:
+	for i := range n {
+		select {
+		case sem <- struct{}{}:
+		case <-ctx.Done():
+			break start
+		}
+		if ctx.Err() != nil {
+			<-sem
+			break
+		}
+		wg.Add(1)
+		go func() {
+			defer func() { <-sem; wg.Done() }()
+			if err := fn(ctx, i); err != nil {
+				errs[i] = err
+				cancel()
+			}
+		}()
+	}
+	wg.Wait()
+	induced := func(err error) bool {
+		return parent.Err() == nil && stderrors.Is(err, context.Canceled)
+	}
+	for _, err := range errs {
+		if err != nil && !induced(err) {
+			return err
+		}
+	}
+	for _, err := range errs {
+		if err != nil {
+			return err
+		}
+	}
+	return parent.Err()
+}
+
+// childrenEach lists the children of every node through childrenOf, under
+// forEach's bound, into slots aligned with nodes; skip(i) true leaves slot i
+// unlisted.
+func (ev *evaluator) childrenEach(
+	ctx context.Context, nodes []cgp.Node, skip func(i int) bool,
+) ([][]cgp.Node, error) {
+	slots := make([][]cgp.Node, len(nodes))
+	err := ev.forEach(ctx, len(nodes), func(ctx context.Context, i int) error {
+		if skip != nil && skip(i) {
+			return nil
+		}
+		children, err := ev.childrenOf(ctx, nodes[i])
+		if err != nil {
+			return errors.Wrap(err)
+		}
+		slots[i] = children
+		return nil
+	})
+	return slots, err
+}
+
 func (ev *evaluator) mayHaveChildren(n cgp.Node) bool {
 	if n.URI == nil {
 		return false
@@ -296,13 +391,13 @@ func (ev *evaluator) traverse(
 func (ev *evaluator) descend(
 	ctx context.Context, nodes []cgp.Node,
 ) ([]cgp.Node, error) {
+	slots, err := ev.childrenEach(ctx, nodes, nil)
+	if err != nil {
+		return nil, err
+	}
 	var out []cgp.Node
 	seen := make(map[string]struct{})
-	for _, n := range nodes {
-		children, err := ev.childrenOf(ctx, n)
-		if err != nil {
-			return nil, errors.Wrap(err)
-		}
+	for _, children := range slots {
 		for _, c := range children {
 			key := c.URIString()
 			if _, dup := seen[key]; dup {
@@ -337,31 +432,35 @@ func (ev *evaluator) inverse(ctx context.Context) (map[string][]cgp.Node, error)
 		return nil, errors.Wrap(err)
 	}
 
-	// BFS over the reachable subtree. queue holds nodes whose children have not
-	// yet been listed; visited guards against cycles and shared-child
+	// BFS over the reachable subtree, one level per round: level holds nodes
+	// whose children have not yet been listed (listed together, under
+	// forEach's bound), merged in level order so the index and the call order
+	// are the FIFO walk's; visited guards against cycles and shared-child
 	// re-descent while still recording every parent of a shared child.
-	queue := append([]cgp.Node(nil), roots...)
+	level := append([]cgp.Node(nil), roots...)
 	visited := make(map[string]struct{}, len(roots))
 	for _, r := range roots {
 		visited[r.URIString()] = struct{}{}
 	}
 
-	for len(queue) > 0 {
-		parent := queue[0]
-		queue = queue[1:]
-		children, err := ev.childrenOf(ctx, parent)
+	for len(level) > 0 {
+		slots, err := ev.childrenEach(ctx, level, nil)
 		if err != nil {
-			return nil, errors.Wrap(err)
+			return nil, err
 		}
-		for _, c := range children {
-			key := c.URIString()
-			parents[key] = appendUniqueByURI(parents[key], parent)
-			if _, seen := visited[key]; seen {
-				continue
+		var next []cgp.Node
+		for i, parent := range level {
+			for _, c := range slots[i] {
+				key := c.URIString()
+				parents[key] = appendUniqueByURI(parents[key], parent)
+				if _, seen := visited[key]; seen {
+					continue
+				}
+				visited[key] = struct{}{}
+				next = append(next, c)
 			}
-			visited[key] = struct{}{}
-			queue = append(queue, c)
 		}
+		level = next
 	}
 
 	ev.parents = parents
@@ -407,11 +506,11 @@ func (ev *evaluator) descendClosure(
 	for _, n := range frontier {
 		visited[n.URIString()] = struct{}{}
 	}
-	for _, n := range frontier {
-		children, err := ev.childrenOf(ctx, n)
-		if err != nil {
-			return nil, errors.Wrap(err)
-		}
+	slots, err := ev.childrenEach(ctx, frontier, nil)
+	if err != nil {
+		return nil, err
+	}
+	for _, children := range slots {
 		if err := ev.preorder(ctx, children, visited, &out); err != nil {
 			return nil, err
 		}
@@ -423,9 +522,19 @@ func (ev *evaluator) descendClosure(
 // depth-first, siblings in listing order, so a container precedes its contents
 // (containment order; the order a document reads in). A node already in visited
 // is skipped, which both deduplicates a shared descendant and ends a cycle.
+//
+// For a ConcurrentReader it lists one sibling list's children in a single
+// bounded round before descending into any of them, then assembles in the
+// same depth-first order, so the result is the sequential walk's. A node
+// unvisited when the round starts but reached through an earlier sibling's
+// subtree (a shared descendant) is listed once more than the sequential walk
+// would; its children are not used.
 func (ev *evaluator) preorder(
 	ctx context.Context, nodes []cgp.Node, visited map[string]struct{}, out *[]cgp.Node,
 ) error {
+	if ev.width > 1 {
+		return ev.preorderRounds(ctx, nodes, visited, out)
+	}
 	for _, n := range nodes {
 		key := n.URIString()
 		if _, seen := visited[key]; seen {
@@ -438,6 +547,39 @@ func (ev *evaluator) preorder(
 			return errors.Wrap(err)
 		}
 		if err := ev.preorder(ctx, children, visited, out); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// preorderRounds is preorder's concurrent path: the siblings' children are
+// listed in one round, skipping a node already visited or repeated earlier
+// in the same list, then each sibling is placed and descended in order.
+func (ev *evaluator) preorderRounds(
+	ctx context.Context, nodes []cgp.Node, visited map[string]struct{}, out *[]cgp.Node,
+) error {
+	listed := make(map[string]struct{}, len(nodes))
+	skip := make([]bool, len(nodes))
+	for i, n := range nodes {
+		key := n.URIString()
+		_, seen := visited[key]
+		_, repeat := listed[key]
+		skip[i] = seen || repeat
+		listed[key] = struct{}{}
+	}
+	slots, err := ev.childrenEach(ctx, nodes, func(i int) bool { return skip[i] })
+	if err != nil {
+		return err
+	}
+	for i, n := range nodes {
+		key := n.URIString()
+		if _, seen := visited[key]; seen {
+			continue
+		}
+		visited[key] = struct{}{}
+		*out = append(*out, n)
+		if err := ev.preorderRounds(ctx, slots[i], visited, out); err != nil {
 			return err
 		}
 	}
@@ -493,13 +635,18 @@ func appendUniqueByURI(nodes []cgp.Node, n cgp.Node) []cgp.Node {
 func (ev *evaluator) filter(
 	ctx context.Context, nodes []cgp.Node, step trellis.Step,
 ) ([]cgp.Node, error) {
+	keep := make([]bool, len(nodes))
+	err := ev.forEach(ctx, len(nodes), func(ctx context.Context, i int) error {
+		ok, err := ev.matchStep(ctx, nodes[i], step)
+		keep[i] = ok
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
 	var out []cgp.Node
-	for _, n := range nodes {
-		ok, err := ev.matchStep(ctx, n, step)
-		if err != nil {
-			return nil, err
-		}
-		if ok {
+	for i, n := range nodes {
+		if keep[i] {
 			out = append(out, n)
 		}
 	}
@@ -736,6 +883,10 @@ func (ev *evaluator) matchFieldPred(
 }
 
 const bodyField = "_body"
+
+// maxEvalWorkers bounds the evaluator's concurrent reads per evaluation,
+// whatever a ConcurrentReader plugin allows (cutting-garden#313).
+const maxEvalWorkers = 8
 
 // facetDimTraits is the slice of a FacetDimension's declaration matchFacet
 // dispatches on: the Kind (date hierarchy-prefix `=`) and FoldCase
@@ -1000,6 +1151,8 @@ func (ev *evaluator) satisfies(op trellis.FieldOp, got, want string) bool {
 // failure (unreachable after Validate) caches and returns nil so a bad pattern
 // is not recompiled per node.
 func (ev *evaluator) regexFor(pattern string) *regexp.Regexp {
+	ev.cacheMu.Lock()
+	defer ev.cacheMu.Unlock()
 	if re, ok := ev.regex[pattern]; ok {
 		return re
 	}

@@ -103,11 +103,8 @@ func (ev *evaluator) matchWords(ctx context.Context, n cgp.Node, fp trellis.Fiel
 			return false, errors.BadRequestf(
 				"trellis: `_words` needs a plugin that searches words; this one does not (use `_body*=`)")
 		}
-		if !hits.complete && !hits.reported {
-			cgp.ReportPartialListing(ctx, ev.anchor, fmt.Sprintf(
-				"the plugin's word search for %q reported its result incomplete", word))
-			hits.reported = true
-			ev.searches[searchKey{cgp.SearchWords, word}] = hits
+		if !hits.complete {
+			ev.reportIncompleteWords(ctx, word)
 		}
 		if _, ok := hits.uris[uri]; ok {
 			return true, nil
@@ -116,7 +113,28 @@ func (ev *evaluator) matchWords(ctx context.Context, n cgp.Node, fp trellis.Fiel
 	return false, nil
 }
 
+// reportIncompleteWords reports an incomplete words answer partial once per
+// word, however many workers meet it.
+func (ev *evaluator) reportIncompleteWords(ctx context.Context, word string) {
+	ev.cacheMu.Lock()
+	defer ev.cacheMu.Unlock()
+	key := searchKey{cgp.SearchWords, word}
+	hits := ev.searches[key]
+	if hits.reported {
+		return
+	}
+	cgp.ReportPartialListing(ctx, ev.anchor, fmt.Sprintf(
+		"the plugin's word search for %q reported its result incomplete", word))
+	hits.reported = true
+	ev.searches[key] = hits
+}
+
+// searchFor answers one (mode, query) search, memoized. The lock is held
+// across the plugin call, so concurrent per-node workers asking the same
+// question wait for the one search rather than each issuing it.
 func (ev *evaluator) searchFor(ctx context.Context, mode cgp.SearchMode, query string) (searchHits, error) {
+	ev.cacheMu.Lock()
+	defer ev.cacheMu.Unlock()
 	key := searchKey{mode, query}
 	if hits, ok := ev.searches[key]; ok {
 		return hits, nil

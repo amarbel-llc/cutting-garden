@@ -1223,6 +1223,10 @@ the fj-cg Rust peer, and present in this RFC's own reference host).
 - `ctx` cancellation host-side maps to closing the socket (v1 has no
   per-request cancel; a cancelled host operation that must not kill the
   session simply abandons the response).
+- Concurrency: a wire plugin declares no concurrency bound, so the host
+  treats it as a sequential reader (the linked `ConcurrentReader`
+  capability, cutting-garden#313, has no wire token); a future
+  `initialize` member may declare a concurrency bound.
 
 ### Host integration — configuration and dispatch
 

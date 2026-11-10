@@ -511,6 +511,16 @@ framework falls back around, never an error condition to work around by
 implementing something poorly. See RFC 0009 for the SDK's compatibility
 posture and RFC 0012 §2 for the pattern applied specifically to facets.
 
+*ConcurrentReader* (*MaxConcurrentReads*) is the one capability that is a
+promise rather than a feature: implementing it tells a consumer it may make
+your read calls - *ListRoots*, *ListEnriched*, *ReadLeaf* for different nodes
+- at the same time, up to that many at once (the trellis evaluator caps it
+at its own bound). Without it you are called one read at a time. Implement it
+only once every read path is safe under concurrent callers: caches and
+clients locked, a shared freshness check made once rather than once per
+caller, and a source that tolerates the load. A plugin with a request
+budget (ynab's) leaves it out. The traversal wire has no token for it yet.
+
 # SEE ALSO
 
 *eng*(7), *cutting-garden*(1), *cutting-garden-list*(1), *cutting-garden-mcp*(1),
