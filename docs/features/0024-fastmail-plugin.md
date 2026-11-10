@@ -346,11 +346,17 @@ cannot be all-or-nothing, and an atomic request is refused
 
 The `Email/set` carries `ifInState`, the Email state the batch's members were
 read at. It guards against STALENESS (another client changed the mail between
-the read and the write), not against partial failure. On a `stateMismatch` the
-server writes no message and every batched op fails with "re-plan and retry".
-The `Mailbox/set` creates in the same request have already run and are not
-rolled back, so a re-plan finds those tags existing and the retry creates
-nothing new (pinned by a test). Unverified against live Fastmail: RFC 8620
+the read and the write), not against partial failure. The state is
+ACCOUNT-WIDE, so new mail arriving anywhere in the account between the read
+and the write trips it too. On a `stateMismatch` the server writes no message.
+The plugin then re-reads (mailbox tree, members, state) and re-plans the batch
+ONCE. The `Mailbox/set` creates in the refused request have already run and are
+not rolled back, so the re-plan finds those tags existing and creates nothing
+new, and the op still reports `mailbox:<path>` for them. Only a second
+mismatch fails every batched op, with "re-plan and retry". A caller's retry
+then finds the same (pinned by tests). The single-node `PatchNode` path
+carries no guard: a single write is last-writer-wins. The two paths differ on
+purpose, since a batch plans many threads from one read. Unverified against live Fastmail: RFC 8620
 scopes a state to its type, so a mailbox create should not move the Email
 state, but if live Fastmail does move it, every batch that creates a tag will
 hit `stateMismatch`. The fallback is then to split such a batch into two

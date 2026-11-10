@@ -227,12 +227,37 @@ func TestBulkMutate_RefusedCreateFailsItsOps(t *testing.T) {
 		[]string{"_flagged", "_inbox", "_unread", "payee-one_medical"})
 }
 
-// The Email/set carries the Email state the batch was planned against: a
-// write in between fails the whole batch, with nothing written, and the error
-// says to re-plan.
+// The Email state moving once between the read and the write (new mail
+// arriving anywhere in the account) costs one re-read and re-plan, and the
+// batch lands. The re-plan reuses the mailbox the first attempt created.
+func TestBulkMutate_OneStateMismatchIsReplannedOnce(t *testing.T) {
+	srv := newBulkFixture(t)
+	srv.SimulateConcurrentEmailChanges(1)
+
+	result := bulkMutate(t,
+		bulkPatch(bulkT3(), `{"tags":["_flagged","_inbox","payee-acme"]}`),
+		bulkPatch(bulkT1(), `{"mailbox":"Archive"}`),
+	)
+
+	assertOutcome(t, "T3", outcomeAt(t, result, 0), bulkT3(),
+		cutting_garden_plugins.OutcomeApplied, []string{"tags", "mailbox:payee/-acme"})
+	assertOutcome(t, "T1", outcomeAt(t, result, 1), bulkT1(),
+		cutting_garden_plugins.OutcomeApplied, []string{"mailbox"})
+	if got := srv.EmailSetCalls(); got != 2 {
+		t.Errorf("Email/set calls = %d, want 2 (the refused one and the re-planned one)", got)
+	}
+	if got := srv.MailboxSetCalls(); got != 1 {
+		t.Errorf("Mailbox/set calls = %d, want 1 (the re-plan reuses the created mailbox)", got)
+	}
+	assertStrings(t, "T3 tags", liveThreadTags(t, testAccount, "T3"),
+		[]string{"_flagged", "_inbox", "payee-acme"})
+}
+
+// A second mismatch, after the one re-plan, fails the whole batch with nothing
+// written, and the error says to re-plan and retry.
 func TestBulkMutate_StateMismatchFailsTheBatch(t *testing.T) {
 	srv := newBulkFixture(t)
-	srv.SimulateConcurrentEmailChange()
+	srv.SimulateConcurrentEmailChanges(2)
 
 	result := bulkMutate(t,
 		bulkPatch(bulkT1(), `{"mailbox":"Archive"}`),
@@ -254,7 +279,7 @@ func TestBulkMutate_StateMismatchFailsTheBatch(t *testing.T) {
 // succeeds and creates nothing new.
 func TestBulkMutate_RetryAfterStateMismatchCreatesNothingNew(t *testing.T) {
 	srv := newBulkFixture(t)
-	srv.SimulateConcurrentEmailChange()
+	srv.SimulateConcurrentEmailChanges(2)
 	op := bulkPatch(bulkT3(), `{"tags":["_flagged","_inbox","payee-acme"]}`)
 
 	first := bulkMutate(t, op)

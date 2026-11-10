@@ -81,9 +81,10 @@ type Server struct {
 	// forbidden SetError: the per-record failures a real server can answer.
 	refusedMailboxNames map[string]bool
 	refusedEmailUpdates map[string]bool
-	// concurrentChangePending moves the Email state just before the next
-	// Email/set checks ifInState, as another client's write would.
-	concurrentChangePending bool
+	// concurrentChangesPending moves the Email state just before each of the
+	// next that many Email/sets checks ifInState, as another client's write
+	// (or newly arrived mail) would.
+	concurrentChangesPending int
 }
 
 // EmailSetCalls reports how many Email/set method calls the server has
@@ -124,13 +125,13 @@ func (s *Server) RefuseEmailUpdate(id string) {
 	s.refusedEmailUpdates[id] = true
 }
 
-// SimulateConcurrentEmailChange moves the Email state once, just before the
-// next Email/set checks its ifInState: the write another client made between
-// a caller's read and its write.
-func (s *Server) SimulateConcurrentEmailChange() {
+// SimulateConcurrentEmailChanges moves the Email state just before each of the
+// next n Email/sets checks its ifInState: a write another client made (or
+// mail that arrived) between a caller's read and its write, n times over.
+func (s *Server) SimulateConcurrentEmailChanges(n int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.concurrentChangePending = true
+	s.concurrentChangesPending = n
 }
 
 // Start launches a server for one mail account and returns it. Close it
@@ -613,8 +614,8 @@ func (s *Server) emailSet(
 	defer s.mu.Unlock()
 
 	s.emailSetCalls++
-	if s.concurrentChangePending {
-		s.concurrentChangePending = false
+	if s.concurrentChangesPending > 0 {
+		s.concurrentChangesPending--
 		s.emailSeq++
 	}
 	// RFC 8620 §5.3: an ifInState that is not the current state refuses the

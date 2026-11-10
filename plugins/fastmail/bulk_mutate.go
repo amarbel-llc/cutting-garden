@@ -3,6 +3,7 @@ package fastmail
 import (
 	"context"
 	"net/url"
+	"slices"
 	"sort"
 	"strings"
 
@@ -32,11 +33,14 @@ var _ cutting_garden_plugins.BulkMutator = (*Plugin)(nil)
 //     thread's other messages were updated anyway (JMAP applies records one by
 //     one, RFC 8620 §5.3, so a thread can land partly).
 //
-// The Email/set carries ifInState, the Email state the batch was read at. If
-// the account's mail changed in between, the server refuses the whole call
-// and every batched op fails with a "re-plan and retry" error. The creates in
-// the same request ran first and are not rolled back, so a retry finds those
-// tags existing and creates nothing new.
+// The Email/set carries ifInState, the Email state the batch was read at. That
+// state is account-wide, so any change between the read and the write (new
+// mail arriving anywhere) makes the server refuse the whole call. The batch
+// is then re-read and re-planned once; the creates in the refused request ran
+// first and are not rolled back, so the re-plan finds those tags existing and
+// creates nothing new. Only a second refusal fails every batched op, with a
+// "re-plan and retry" error. The single-node PatchNode path carries no guard
+// (last writer wins); the two paths differ on purpose.
 //
 // Two ops on one thread merge when they ask for the same write; otherwise the
 // later one fails, since one Email/set has no order between two patches of
@@ -167,21 +171,61 @@ type plannedMember struct {
 	newURI    *url.URL
 }
 
-// applyBulkGroup reads what one account's batch needs, plans every op, sends
-// the ONE request, and attributes its answer to each op.
+// bulkGroupAttempts is how many times one account's batch is read, planned
+// and sent: once, plus one re-plan after a stateMismatch. The guard is the
+// account-wide Email state, so new mail arriving anywhere between the read and
+// the write trips it; one re-read absorbs that, and only a second mismatch
+// fails the batch.
+const bulkGroupAttempts = 2
+
+// applyBulkGroup sends one account's batch in up to bulkGroupAttempts
+// attempts and records the verdicts of the attempt that settled it. An
+// attempt refused for stateMismatch is discarded whole: the re-plan re-reads
+// the mailbox tree, members and state, and finds the mailboxes the refused
+// attempt created (they are not rolled back), so it creates them only once.
 func applyBulkGroup(ctx context.Context, group *bulkGroup, r *bulkRecorder) {
 	members := mergeThreadOps(group.members, r.fail)
-	failEach := func(members []bulkMember, err error) {
+	c, err := resolveClient(group.ref)
+	if err != nil {
 		for _, m := range members {
 			r.fail(m, err)
 		}
-	}
-
-	c, err := resolveClient(group.ref)
-	if err != nil {
-		failEach(members, err)
 		return
 	}
+	var created []string
+	for attempt := 1; ; attempt++ {
+		verdicts, createdNow, mismatch := attemptBulkGroup(
+			ctx, c, members, created, attempt == bulkGroupAttempts,
+		)
+		created = append(created, createdNow...)
+		if mismatch {
+			continue
+		}
+		for _, record := range verdicts {
+			record(r)
+		}
+		return
+	}
+}
+
+// attemptBulkGroup reads what the batch needs, plans every op, sends the ONE
+// request, and returns each op's verdict as a pending record. It also returns
+// the paths of the mailboxes this attempt created. mismatch is true, with no
+// verdicts, when the server refused the Email/set for stateMismatch and this
+// is not the final attempt. createdBefore names mailboxes earlier attempts
+// created, for the final refusal's message.
+func attemptBulkGroup(
+	ctx context.Context, c *client, members []bulkMember, createdBefore []string, final bool,
+) (verdicts []func(*bulkRecorder), created []string, mismatch bool) {
+	fail := func(m bulkMember, err error) {
+		verdicts = append(verdicts, func(r *bulkRecorder) { r.fail(m, err) })
+	}
+	failEach := func(members []bulkMember, err error) {
+		for _, m := range members {
+			fail(m, err)
+		}
+	}
+
 	tree, err := c.loadMailboxTree(ctx)
 	if err != nil {
 		failEach(members, err)
@@ -203,13 +247,13 @@ func applyBulkGroup(ctx context.Context, group *bulkGroup, r *bulkRecorder) {
 	for _, m := range members {
 		emails, ok := byThread[m.ref.threadID]
 		if !ok {
-			r.fail(m, errors.BadRequestf("fastmail plugin: no thread %q", m.ref.threadID))
+			fail(m, errors.BadRequestf("fastmail plugin: no thread %q", m.ref.threadID))
 			continue
 		}
 		mark := creations.mark()
-		pm, memberUpdates, err := planBulkMember(m, emails, tree, creations)
+		pm, memberUpdates, err := planBulkMember(m, emails, tree, creations, createdBefore)
 		if err != nil {
-			r.fail(m, err)
+			fail(m, err)
 			continue
 		}
 		if len(memberUpdates) == 0 {
@@ -218,7 +262,7 @@ func applyBulkGroup(ctx context.Context, group *bulkGroup, r *bulkRecorder) {
 			// plan creates with no updates, drop them, so the shared request
 			// never creates a mailbox no op uses.
 			creations.rollback(mark)
-			r.nothing(m)
+			verdicts = append(verdicts, func(r *bulkRecorder) { r.nothing(m) })
 			continue
 		}
 		for id, patch := range memberUpdates {
@@ -229,11 +273,11 @@ func applyBulkGroup(ctx context.Context, group *bulkGroup, r *bulkRecorder) {
 		planned = append(planned, pm)
 	}
 	if len(planned) == 0 {
-		return
+		return verdicts, nil, false
 	}
 	failPlanned := func(err error) {
 		for _, pm := range planned {
-			r.fail(pm.member, err)
+			fail(pm.member, err)
 		}
 	}
 
@@ -242,26 +286,47 @@ func applyBulkGroup(ctx context.Context, group *bulkGroup, r *bulkRecorder) {
 	)
 	if err != nil {
 		failPlanned(err)
-		return
+		return verdicts, nil, false
 	}
-	if sent.updateError != nil {
-		failPlanned(batchRefusal(*sent.updateError, creations, sent.createdIDs))
-		return
+	created = createdPaths(creations, sent.createdIDs)
+	if refusal := sent.updateError; refusal != nil {
+		if refusal.Type == "stateMismatch" && !final {
+			return nil, created, true
+		}
+		failPlanned(batchRefusal(*refusal, slices.Concat(createdBefore, created)))
+		return verdicts, created, false
 	}
 	for _, pm := range planned {
 		if err := memberRefusal(pm, sent); err != nil {
-			r.fail(pm.member, err)
+			fail(pm.member, err)
 			continue
 		}
-		r.applied(pm.member, pm.fields, pm.newURI)
+		verdicts = append(verdicts, func(r *bulkRecorder) {
+			r.applied(pm.member, pm.fields, pm.newURI)
+		})
 	}
+	return verdicts, created, false
+}
+
+// createdPaths names the mailboxes a request created, in allocation order.
+func createdPaths(creations *mailboxCreations, createdIDs map[string]string) []string {
+	var paths []string
+	for _, tag := range creations.order {
+		created := creations.byTag[tag]
+		if _, ok := createdIDs[created.creationID]; ok {
+			paths = append(paths, created.path)
+		}
+	}
+	return paths
 }
 
 // planBulkMember plans one op against the batch's shared reads: a move by
 // planThreadMove, a tag-set write by planThreadPatchWith drawing its creates
-// from the batch's shared table.
+// from the batch's shared table. createdBefore names the mailboxes earlier
+// attempts of the batch created.
 func planBulkMember(
 	m bulkMember, emails []Email, tree *mailboxTree, creations *mailboxCreations,
+	createdBefore []string,
 ) (plannedMember, map[string]emailPatch, error) {
 	pm := plannedMember{member: m}
 	if m.patch.moveTo != "" {
@@ -281,6 +346,18 @@ func planBulkMember(
 	}
 	pm.creations = plan.creations
 	pm.fields = []string{listingFieldTags}
+	// A mailbox an earlier, refused attempt of this batch created for one of
+	// this op's tags was created for this op, so it is reported as on the
+	// attempt that created it.
+	for _, tag := range sortedUnique(m.patch.tags) {
+		id, ok := tree.tagIndex[tag]
+		if !ok {
+			continue
+		}
+		if path := strings.Join(tree.path(id), "/"); slices.Contains(createdBefore, path) {
+			pm.fields = append(pm.fields, "mailbox:"+path)
+		}
+	}
 	for _, created := range plan.creations {
 		pm.fields = append(pm.fields, "mailbox:"+created.path)
 	}
@@ -319,19 +396,11 @@ func memberRefusal(pm plannedMember, sent sentThreadPatch) error {
 }
 
 // batchRefusal is the error every batched op gets when the server refused
-// the whole Email/set. A stateMismatch means the mail changed after it was
-// read; nothing in the Email/set was written, so the caller re-plans and
-// retries. Mailboxes the same request created stay, and are named.
-func batchRefusal(
-	refusal methodError, creations *mailboxCreations, createdIDs map[string]string,
-) error {
-	var stay []string
-	for _, tag := range creations.order {
-		created := creations.byTag[tag]
-		if _, ok := createdIDs[created.creationID]; ok {
-			stay = append(stay, created.path)
-		}
-	}
+// the whole Email/set, on the final attempt. A stateMismatch means the mail
+// changed after it was read, again after the one re-plan; nothing in the
+// Email/set was written, so the caller re-plans and retries. The mailboxes the
+// attempts created stay, and are named (stay).
+func batchRefusal(refusal methodError, stay []string) error {
 	created := ""
 	if len(stay) > 0 {
 		created = "; the mailboxes it created stay: " + strings.Join(stay, ", ")
