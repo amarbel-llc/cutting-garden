@@ -58,7 +58,13 @@ type fakeFullPlugin struct {
 	// non-conformant shape the host must read conservatively.
 	facetIncomplete                map[string]cutting_garden_plugins.FacetGap
 	facetClaimsCompleteDespiteGaps bool
+	// listScopes records, per ListRoots call, whether it ran in a call scope
+	// and whether its probe key was already confirmed in that scope
+	// (cutting-garden#341).
+	listScopes []listScope
 }
+
+type listScope struct{ inScope, alreadyConfirmed bool }
 
 var (
 	_ cutting_garden_plugins.RootProvider   = (*fakeFullPlugin)(nil)
@@ -87,8 +93,16 @@ func (p *fakeFullPlugin) Types() []cutting_garden_plugins.NodeType {
 }
 
 func (p *fakeFullPlugin) ListRoots(
-	_ context.Context, node *url.URL,
+	ctx context.Context, node *url.URL,
 ) ([]cutting_garden_plugins.Node, error) {
+	const probe = "mem-probe"
+	p.mu.Lock()
+	p.listScopes = append(p.listScopes, listScope{
+		inScope:          cutting_garden_plugins.InCallScope(ctx),
+		alreadyConfirmed: cutting_garden_plugins.ConfirmedThisCall(ctx, probe),
+	})
+	p.mu.Unlock()
+	cutting_garden_plugins.ConfirmForThisCall(ctx, probe)
 	if node.String() != fakeRootURI {
 		return nil, nil
 	}
@@ -704,6 +718,39 @@ func TestServeNodesListRoundTrip(t *testing.T) {
 
 	if got := result.Nodes[1].Facets["state"]; len(got) != 1 || got[0].Key != "closed" {
 		t.Errorf("nodes[1] state facet = %+v, want [closed]", got)
+	}
+}
+
+// Each wire request is served in its own call scope (cutting-garden#341): the
+// plugin's calls run inside one, and a confirmation made while serving one
+// request does not carry into the next (the host's call boundary does not
+// cross the wire).
+func TestServeEachRequestIsOneCallScope(t *testing.T) {
+	plugin := &fakeFullPlugin{}
+	client, _ := startServe(t, fullPluginConfig(plugin))
+	mustInitialize(t, client)
+
+	for range 2 {
+		var result NodesListResult
+		if err := client.Call(context.Background(), MethodNodesList,
+			NodesListParams{URI: fakeRootURI}, &result); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	plugin.mu.Lock()
+	scopes := append([]listScope(nil), plugin.listScopes...)
+	plugin.mu.Unlock()
+	if len(scopes) < 2 {
+		t.Fatalf("ListRoots calls = %d, want at least 2", len(scopes))
+	}
+	for i, s := range scopes {
+		if !s.inScope {
+			t.Errorf("ListRoots call %d ran outside a call scope", i)
+		}
+		if s.alreadyConfirmed {
+			t.Errorf("ListRoots call %d saw a confirmation from an earlier request", i)
+		}
 	}
 }
 

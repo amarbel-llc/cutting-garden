@@ -376,7 +376,11 @@ func newServer(cfg ServeConfig) (*server, error) {
 func (s *server) Handle(
 	ctx context.Context, method string, params json.RawMessage,
 ) (any, error) {
-	result, err := s.dispatch(ctx, method, params)
+	// One wire request is one call scope on the plugin side
+	// (cutting-garden#341): its plugin calls share per-call confirmations. The
+	// host's call boundary does not cross the wire, so a host call spanning
+	// many requests gets one scope per request.
+	result, err := s.dispatch(cutting_garden_plugins.WithCallScope(ctx), method, params)
 	if err == nil {
 		return result, nil
 	}

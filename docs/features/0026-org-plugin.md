@@ -94,7 +94,8 @@ Taken 2026-10-14:
   2026-10-15): a trellis walk with `_body~=` lists and reads every headline,
   and with a PROPFIND each it took over two minutes on about 300 headlines.
   The host marks a call with `WithCallScope` (mcp tool calls and resource
-  reads, one `cg list` invocation) and the plugin records its confirmation
+  reads, each mcp refresher tick, one `cg list` invocation, one `cg organize`
+  generate or apply, cutting-garden#341) and the plugin records its confirmation
   there (`ConfirmForThisCall`), so the next call asks again and an Orgzly
   upload shows at once. Outside a call scope nothing is confirmed and every
   load revalidates. A write withdraws the file's confirmation
