@@ -98,7 +98,9 @@ origin always lives in the expression.
   implement a sigil REJECTS the query ("sigil unsupported by host") —
   never silent degradation.
 - **Traversal acceleration**: v1 evaluation is walk-based (reverse edges
-  by scan-and-invert; closures as bounded BFS with visited sets). Hosts
+  by scan-and-invert; closures as bounded BFS with visited sets). A node
+  whose declared type is not a container is never listed (cutting-garden#398:
+  a closure over a caldav calendar was two PROPFINDs per object). Hosts
   may advertise native reverse-edge / reachability answering; the
   evaluator probes by type assertion exactly as facet capabilities are
   probed (RFC 0012).

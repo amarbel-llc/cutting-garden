@@ -175,12 +175,24 @@ type evaluator struct {
 	// searches memoizes its answers per (mode, query) for one evaluation.
 	searcher cgp.Searcher
 	searches map[searchKey]searchHits
+
+	// leafTypes holds the plugin's declared non-container type tags. A node
+	// of one has no children by NodeType's contract, so the walk never lists
+	// it — the per-leaf PROPFIND + credential lookup that made a closure over
+	// a caldav calendar cost two plugin calls per object (cutting-garden#398).
+	// An undeclared type is still listed.
+	leafTypes map[string]struct{}
 }
 
 func newEvaluator(
 	lister cgp.RootLister, anchor *url.URL, opts ...EvaluateOption,
 ) *evaluator {
-	ev := &evaluator{lister: lister, anchor: anchor}
+	ev := &evaluator{lister: lister, anchor: anchor, leafTypes: map[string]struct{}{}}
+	for _, nt := range lister.Types() {
+		if !nt.Container {
+			ev.leafTypes[nt.Tag] = struct{}{}
+		}
+	}
 	if el, ok := lister.(cgp.EnrichedLister); ok {
 		ev.enriched = el
 	}
@@ -239,6 +251,23 @@ func (ev *evaluator) listEnriched(
 	return ev.lister.ListRoots(ctx, u)
 }
 
+// childrenOf lists n's children through listEnriched, answering nothing
+// without asking the plugin when n has no URI or is of a declared leaf type.
+func (ev *evaluator) childrenOf(ctx context.Context, n cgp.Node) ([]cgp.Node, error) {
+	if !ev.mayHaveChildren(n) {
+		return nil, nil
+	}
+	return ev.listEnriched(ctx, n.URI)
+}
+
+func (ev *evaluator) mayHaveChildren(n cgp.Node) bool {
+	if n.URI == nil {
+		return false
+	}
+	_, leaf := ev.leafTypes[n.Type]
+	return !leaf
+}
+
 // traverse maps the current frontier through one combinator to the next
 // frontier, before the next step's predicate filters it. Only the untyped
 // graph directions reach here; Validate rejects the typed forms.
@@ -270,10 +299,7 @@ func (ev *evaluator) descend(
 	var out []cgp.Node
 	seen := make(map[string]struct{})
 	for _, n := range nodes {
-		if n.URI == nil {
-			continue
-		}
-		children, err := ev.listEnriched(ctx, n.URI)
+		children, err := ev.childrenOf(ctx, n)
 		if err != nil {
 			return nil, errors.Wrap(err)
 		}
@@ -323,10 +349,7 @@ func (ev *evaluator) inverse(ctx context.Context) (map[string][]cgp.Node, error)
 	for len(queue) > 0 {
 		parent := queue[0]
 		queue = queue[1:]
-		if parent.URI == nil {
-			continue
-		}
-		children, err := ev.listEnriched(ctx, parent.URI)
+		children, err := ev.childrenOf(ctx, parent)
 		if err != nil {
 			return nil, errors.Wrap(err)
 		}
@@ -385,10 +408,7 @@ func (ev *evaluator) descendClosure(
 		visited[n.URIString()] = struct{}{}
 	}
 	for _, n := range frontier {
-		if n.URI == nil {
-			continue
-		}
-		children, err := ev.listEnriched(ctx, n.URI)
+		children, err := ev.childrenOf(ctx, n)
 		if err != nil {
 			return nil, errors.Wrap(err)
 		}
@@ -413,10 +433,7 @@ func (ev *evaluator) preorder(
 		}
 		visited[key] = struct{}{}
 		*out = append(*out, n)
-		if n.URI == nil {
-			continue
-		}
-		children, err := ev.listEnriched(ctx, n.URI)
+		children, err := ev.childrenOf(ctx, n)
 		if err != nil {
 			return errors.Wrap(err)
 		}
@@ -564,7 +581,7 @@ func (ev *evaluator) matchBasic(
 func (ev *evaluator) matchSubPath(
 	ctx context.Context, n cgp.Node, sub trellis.SubPath,
 ) (bool, error) {
-	if n.URI == nil {
+	if !ev.mayHaveChildren(n) {
 		return false, nil
 	}
 	// Empty form `[->]`: "has any child."

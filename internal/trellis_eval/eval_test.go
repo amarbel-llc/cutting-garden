@@ -34,7 +34,7 @@ func (f *fakeTree) Types() []cgp.NodeType {
 	if f.types != nil {
 		return f.types
 	}
-	return []cgp.NodeType{{Tag: "calendar-v1"}, {Tag: "event-v1"}, {Tag: "todo-v1"}}
+	return []cgp.NodeType{{Tag: "calendar-v1", Container: true}, {Tag: "event-v1"}, {Tag: "todo-v1"}}
 }
 
 func (f *fakeTree) ListRoots(_ context.Context, u *url.URL) ([]cgp.Node, error) {
@@ -266,7 +266,10 @@ func graphTree(t *testing.T) *fakeTree {
 	shared := node(t, "fake://g/shared", "shared-v1", nil)
 	return &fakeTree{
 		types: []cgp.NodeType{
-			{Tag: "group-v1"}, {Tag: "mid-v1"}, {Tag: "leaf-v1"}, {Tag: "shared-v1"},
+			{Tag: "group-v1", Container: true},
+			{Tag: "mid-v1", Container: true},
+			{Tag: "leaf-v1"},
+			{Tag: "shared-v1"},
 		},
 		children: map[string][]cgp.Node{
 			"fake://g/": {
