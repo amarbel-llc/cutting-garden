@@ -41,10 +41,37 @@ func resolve(u *url.URL) (target, error) {
 // from the parse cache without a GET (D9) — unless the ETag was already
 // confirmed during this host call (cutting-garden#311), when even the PROPFIND
 // is skipped.
+//
+// Concurrent loads of one file share one confirmation (cutting-garden#313):
+// the first becomes the flight, the rest wait for it and take its parse,
+// confirmed for their own call too (it was fetched after their call began).
 func (t target) file(ctx context.Context) (*parsedFile, error) {
 	if pf, ok := freshCached(ctx, t.acct.Name, t.ref.path); ok {
 		return pf, nil
 	}
+	f, leader := joinFlight(t.acct.Name, t.ref.path)
+	if !leader {
+		select {
+		case <-f.done:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		if f.err != nil && ctx.Err() == nil && isCancellation(f.err) {
+			return t.confirmAndLoad(ctx) // the leader's caller gave up; this one has not
+		}
+		if f.err == nil && f.pf.etag != "" {
+			cutting_garden_plugins.ConfirmForThisCall(ctx, confirmKey(t.acct.Name, t.ref.path))
+		}
+		return f.pf, f.err
+	}
+	f.pf, f.err = t.confirmAndLoad(ctx)
+	landFlight(t.acct.Name, t.ref.path, f)
+	return f.pf, f.err
+}
+
+// confirmAndLoad is one confirmation: a Depth-0 PROPFIND for the ETag, then the
+// parse cache or a GET.
+func (t target) confirmAndLoad(ctx context.Context) (*parsedFile, error) {
 	etag := ""
 	if entries, err := t.client.propfind(ctx, t.ref.path, "0"); err == nil && len(entries) > 0 {
 		etag = entries[0].etag

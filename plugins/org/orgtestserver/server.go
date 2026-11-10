@@ -59,6 +59,19 @@ type Server struct {
 	counts map[string]int // method → authenticated requests served
 
 	staleUploads map[string][]byte // path → content uploaded right after its next UNLOCK
+
+	delays map[string]time.Duration // method → how long each such request is held
+}
+
+// Delay holds every later request with this method for d before serving it,
+// so a test can make concurrent requests overlap (cutting-garden#313).
+func (s *Server) Delay(method string, d time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.delays == nil {
+		s.delays = map[string]time.Duration{}
+	}
+	s.delays[method] = d
 }
 
 // Requests reports how many authenticated requests with this method the
@@ -201,7 +214,9 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mu.Lock()
 	s.counts[r.Method]++
+	delay := s.delays[r.Method]
 	s.mu.Unlock()
+	time.Sleep(delay)
 	p := strings.Trim(path.Clean("/"+r.URL.Path), "/")
 	switch r.Method {
 	case "PROPFIND":

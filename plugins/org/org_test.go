@@ -3,6 +3,7 @@ package org
 import (
 	"context"
 	"net/url"
+	"sync"
 	"testing"
 	"time"
 
@@ -220,6 +221,37 @@ func TestPerCallConfirmationSkipsRepeatPropfind(t *testing.T) {
 	read(next, "org://test/_inbox.org?h=Renamed+by+the+phone")
 	if got := srv.Requests("PROPFIND"); got != 2 {
 		t.Errorf("PROPFIND in the next call = %d, want 2", got)
+	}
+}
+
+// Concurrent first reads of one file in one call share a single confirmation
+// (cutting-garden#313): the first PROPFIND is held long enough that all eight
+// reads are in flight before it answers, and still only one PROPFIND and one
+// GET reach the server.
+func TestConcurrentFirstReadsShareOneConfirmation(t *testing.T) {
+	srv := setup(t)
+	srv.Delay("PROPFIND", 200*time.Millisecond)
+	call := cutting_garden_plugins.WithCallScope(context.Background())
+	var wg sync.WaitGroup
+	errs := make([]error, 8)
+	for i := range errs {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, _, errs[i] = (Plugin{}).ReadLeaf(call, mustURL(t, "org://test/_inbox.org?h=Call+the+plumber"))
+		}()
+	}
+	wg.Wait()
+	for _, err := range errs {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := srv.Requests("PROPFIND"); got != 1 {
+		t.Errorf("PROPFIND for 8 concurrent first reads = %d, want 1", got)
+	}
+	if got := srv.Requests("GET"); got != 1 {
+		t.Errorf("GET for 8 concurrent first reads = %d, want 1", got)
 	}
 }
 

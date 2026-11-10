@@ -2,6 +2,7 @@ package org
 
 import (
 	"context"
+	stderrors "errors"
 	"net/url"
 	"slices"
 	"strings"
@@ -70,15 +71,67 @@ func resetCache() {
 	cacheMu.Lock()
 	defer cacheMu.Unlock()
 	cache = map[string]*parsedFile{}
+	for key := range flights {
+		generations[key]++
+	}
 }
 
 // resetCacheEntry drops one file after this process wrote it, and withdraws
 // the call's confirmation of it: the write changed what the ETag described.
+// It also retires any confirmation in flight, so a read after the write never
+// joins one that began before it.
 func resetCacheEntry(ctx context.Context, account, rel string) {
 	cutting_garden_plugins.UnconfirmForThisCall(ctx, confirmKey(account, rel))
 	cacheMu.Lock()
 	defer cacheMu.Unlock()
 	delete(cache, cacheKey(account, rel))
+	generations[cacheKey(account, rel)]++
+}
+
+// A flight is one in-progress confirmation of a file (cutting-garden#313):
+// concurrent loads of the file wait on it instead of each sending their own
+// PROPFIND and GET. It belongs to the file's generation when it began, and a
+// load joins only a flight of the current generation.
+type flight struct {
+	done chan struct{}
+	gen  uint64
+	pf   *parsedFile
+	err  error
+}
+
+// flights and generations are guarded by cacheMu.
+var (
+	flights     = map[string]*flight{}
+	generations = map[string]uint64{}
+)
+
+// joinFlight returns the file's current flight, or starts one; leader is true
+// when the caller started it and must land it.
+func joinFlight(account, rel string) (f *flight, leader bool) {
+	key := cacheKey(account, rel)
+	cacheMu.Lock()
+	defer cacheMu.Unlock()
+	if f, ok := flights[key]; ok && f.gen == generations[key] {
+		return f, false
+	}
+	f = &flight{done: make(chan struct{}), gen: generations[key]}
+	flights[key] = f
+	return f, true
+}
+
+// landFlight publishes the leader's result to its waiters.
+func landFlight(account, rel string, f *flight) {
+	key := cacheKey(account, rel)
+	cacheMu.Lock()
+	if flights[key] == f {
+		delete(flights, key)
+	}
+	cacheMu.Unlock()
+	close(f.done)
+}
+
+func isCancellation(err error) bool {
+	return stderrors.Is(err, context.Canceled) || stderrors.Is(err, context.DeadlineExceeded)
 }
 
 // loadFile returns rel parsed. knownETag, when non-empty (from a
