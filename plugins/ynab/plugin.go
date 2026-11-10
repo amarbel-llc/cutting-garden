@@ -31,6 +31,11 @@ const typeTagCaptureReceipt = "cutting_garden-capture_receipt-ynab-v1"
 // Plugin is the YNAB traversal, facet and transaction-patch backend. It is a
 // zero-size value: all account config lives in package state
 // (configuredAccounts, see config.go).
+//
+// It deliberately does NOT implement ConcurrentReader (cutting-garden#313):
+// YNAB allows 200 requests an hour, so overlapping reads would only spend the
+// budget faster, and the 60 s freshness cache already makes repeat reads free.
+// A consumer therefore calls it one read at a time.
 type Plugin struct{}
 
 // Schemes returns the single `ynab` scheme. It claims no bare transport
