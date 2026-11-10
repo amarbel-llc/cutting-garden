@@ -220,7 +220,16 @@ TypedBack    <- '<-[' SP? ConjRun SP? ']-'
 // projection rejects it as it rejects any digest term in a box. Groundness
 // (espalier) and the stencil fragment are semantic conditions over this one
 // production, exactly as groundness is over Query.
-Literal      <- SP? '[' SP? IDSlot (SP !Combinator Term)* SP? ']'
+//
+// A CHILD `[-> …]` in data position is read through the same IDSlot
+// (cutting-garden#397), not as a Query SubPath: a SubPath's first step is a
+// query Term, where `+` is a Sigil and `+"id"` has no parse, so a child temp
+// id, null id or lock would otherwise be spelled differently from a root's.
+// Child is tried before Term, whose Group would read the same bracket as a
+// SubPath. A child is one literal: one step, `->` only, never empty.
+Literal      <- SP? '[' SP? IDSlot (SP !Combinator LiteralTerm)* SP? ']'
+LiteralTerm  <- Child / Term
+Child        <- '[' SP? '->' SP IDSlot (SP !Combinator LiteralTerm)* SP? ']'
 IDSlot       <- TempID / NullID / MarklTerm / QuotedRef / Ident
 TempID       <- '+' (String / Ident)?
 NullID       <- '_' !IdentRune
@@ -350,6 +359,11 @@ EOF          <- !.
 //     — locked id in the slot, a null-id child: a stencil node (FDR 0028)
 //   [work !task -client [-> one/uno !md priority=1]]
 //     — an ordinary id with a ground child: espalier
+//   [cal-7 [-> +"wrap bug" !task] [-> + !task] [-> _ !t open]]
+//     — temp ids and a null id in CHILD position, read through IDSlot as a
+//       root's are (Child, cutting-garden#397)
+//   [moxy [-> folio [-> run@blake2b256-s3 !mcp-tool-v1 [-> _ !t open]]]]
+//     — a locked child, nested children to depth three
 
 // ---- literals conformance vectors (entry: Literals) -----------------------
 //

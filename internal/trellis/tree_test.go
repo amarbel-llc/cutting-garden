@@ -206,6 +206,9 @@ func TestParseTree_EspalierVectors(t *testing.T) {
 		`[run_recipe@blake2b256-s3 !mcp-tool-v1 [-> _ !just-recipe-v1 group=[test]]]`,
 		`[work !task -client [-> one/uno !md priority=1]]`,
 		`[story-8841 !newsblur-story-v1 year=2026 [-> content-8841 @blake2b256-9ft3x]]`,
+		// The PEG's Child production (cutting-garden#397).
+		`[cal-7 [-> +"wrap bug" !task] [-> + !task] [-> _ !t open]]`,
+		`[moxy [-> folio [-> run@blake2b256-s3 !mcp-tool-v1 [-> _ !t open]]]]`,
 		// The PEG's Literals entry (cutting-garden#402).
 		`[a !t] [b !t]`,
 		"[a !t]\n\n[b !t [-> c]]",

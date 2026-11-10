@@ -199,9 +199,8 @@ func (p *parser) parseTreeAttr(node *TreeNode) error {
 			if !p.skipSP() || p.atEOF() || p.src[p.pos] == ']' {
 				return p.treeErrorAt(start, "an empty child `[->]` (a child is `[-> id …]`, with a space after the arrow)")
 			}
-			// TODO(#397): a child's interior is read through IDSlot like a
-			// root literal's, a superset of the PEG, which reads it as a
-			// Query Path (so `[-> +"id" !t]` has no production there).
+			// A child's interior is read through IDSlot like a root
+			// literal's: the PEG's Child production (cutting-garden#397).
 			child, err := p.parseTreeBody()
 			if err != nil {
 				return err
