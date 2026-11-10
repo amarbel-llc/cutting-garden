@@ -72,6 +72,65 @@ type Server struct {
 	// createSeq numbers Mailbox/set creations so a created mailbox's id is
 	// deterministic (mb-new-1, mb-new-2, …) across a run.
 	createSeq int
+	// emailSetCalls and mailboxSetCalls count the /set method calls, so a test
+	// can pin how many a bulk write issued (cutting-garden#292).
+	emailSetCalls   int
+	mailboxSetCalls int
+	// refusedMailboxNames and refusedEmailUpdates make Mailbox/set refuse a
+	// create by name, and Email/set refuse an update by email id, with a
+	// forbidden SetError: the per-record failures a real server can answer.
+	refusedMailboxNames map[string]bool
+	refusedEmailUpdates map[string]bool
+	// concurrentChangePending moves the Email state just before the next
+	// Email/set checks ifInState, as another client's write would.
+	concurrentChangePending bool
+}
+
+// EmailSetCalls reports how many Email/set method calls the server has
+// served.
+func (s *Server) EmailSetCalls() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.emailSetCalls
+}
+
+// MailboxSetCalls reports how many Mailbox/set method calls the server has
+// served.
+func (s *Server) MailboxSetCalls() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.mailboxSetCalls
+}
+
+// RefuseMailboxName makes every later Mailbox/set create of a mailbox named
+// name answer notCreated with a forbidden SetError.
+func (s *Server) RefuseMailboxName(name string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.refusedMailboxNames == nil {
+		s.refusedMailboxNames = map[string]bool{}
+	}
+	s.refusedMailboxNames[name] = true
+}
+
+// RefuseEmailUpdate makes every later Email/set update of the email id answer
+// notUpdated with a forbidden SetError.
+func (s *Server) RefuseEmailUpdate(id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.refusedEmailUpdates == nil {
+		s.refusedEmailUpdates = map[string]bool{}
+	}
+	s.refusedEmailUpdates[id] = true
+}
+
+// SimulateConcurrentEmailChange moves the Email state once, just before the
+// next Email/set checks its ifInState: the write another client made between
+// a caller's read and its write.
+func (s *Server) SimulateConcurrentEmailChange() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.concurrentChangePending = true
 }
 
 // Start launches a server for one mail account and returns it. Close it
@@ -453,6 +512,7 @@ func (s *Server) mailboxSet(
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	s.mailboxSetCalls++
 	created := map[string]any{}
 	notCreated := map[string]setErr{}
 	// Sorted so a creation naming another creation of the SAME call
@@ -469,6 +529,12 @@ func (s *Server) mailboxSet(
 			notCreated[creationID] = setErr{
 				Type:       "invalidProperties",
 				Properties: []string{"name"}, Description: "name is required",
+			}
+			continue
+		}
+		if s.refusedMailboxNames[create.Name] {
+			notCreated[creationID] = setErr{
+				Type: "forbidden", Description: fmt.Sprintf("may not create %q", create.Name),
 			}
 			continue
 		}
@@ -514,9 +580,10 @@ func (s *Server) mailboxSet(
 }
 
 type emailSetArgs struct {
-	Create  map[string]json.RawMessage            `json:"create"`
-	Update  map[string]map[string]json.RawMessage `json:"update"`
-	Destroy []string                              `json:"destroy"`
+	IfInState *string                               `json:"ifInState"`
+	Create    map[string]json.RawMessage            `json:"create"`
+	Update    map[string]map[string]json.RawMessage `json:"update"`
+	Destroy   []string                              `json:"destroy"`
 }
 
 // emailSet serves Email/set UPDATE only, applying RFC 8620 §5.3 patch
@@ -545,6 +612,17 @@ func (s *Server) emailSet(
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	s.emailSetCalls++
+	if s.concurrentChangePending {
+		s.concurrentChangePending = false
+		s.emailSeq++
+	}
+	// RFC 8620 §5.3: an ifInState that is not the current state refuses the
+	// whole call, writing nothing.
+	if args.IfInState != nil && *args.IfInState != s.state() {
+		return "error", map[string]any{"type": "stateMismatch"}
+	}
+
 	updated := map[string]any{}
 	notUpdated := map[string]setErr{}
 	for _, id := range sortedKeys(args.Update) {
@@ -558,6 +636,12 @@ func (s *Server) emailSet(
 		if index < 0 {
 			notUpdated[id] = setErr{
 				Type: "notFound", Description: "no such email",
+			}
+			continue
+		}
+		if s.refusedEmailUpdates[id] {
+			notUpdated[id] = setErr{
+				Type: "forbidden", Description: "this message may not be changed",
 			}
 			continue
 		}

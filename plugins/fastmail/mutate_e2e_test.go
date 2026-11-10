@@ -25,8 +25,13 @@ import (
 // archive-invariant probe the server would REFUSE if the planner stranded it.
 func newMutateFixture(t *testing.T) string {
 	t.Helper()
-	srv := startWired(t)
+	seedMutateFixture(startWired(t))
+	return testAccount
+}
 
+// seedMutateFixture seeds newMutateFixture's tree into srv, for a test that
+// also needs the server's hooks (the bulk tests count its Email/set calls).
+func seedMutateFixture(srv *fastmailtestserver.Server) {
 	srv.AddMailbox("mb-inbox", "Inbox", "", roleInbox)
 	srv.AddMailbox("mb-archive", "Archive", "", roleArchive)
 	srv.AddMailbox("mb-trash", "Trash", "", roleTrash)
@@ -56,8 +61,6 @@ func newMutateFixture(t *testing.T) string {
 		Subject:    "Renew the lease?", ReceivedAt: "2026-07-16T11:00:00Z",
 		BlobID: "blob-e3",
 	})
-
-	return testAccount
 }
 
 // mutateClient is a client for the wired fixture account, for the read-backs

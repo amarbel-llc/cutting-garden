@@ -262,19 +262,29 @@ type emailGetResult struct {
 func (c *client) emailGet(
 	ctx context.Context, ids, properties []string,
 ) ([]Email, error) {
+	list, _, err := c.emailGetWithState(ctx, ids, properties)
+	return list, err
+}
+
+// emailGetWithState is emailGet also returning the Email state the list was
+// read at, the token a later Email/set can name as its ifInState. No ids
+// issues nothing and returns no state.
+func (c *client) emailGetWithState(
+	ctx context.Context, ids, properties []string,
+) ([]Email, string, error) {
 	sess, err := c.ensureSession(ctx)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	if len(ids) == 0 {
-		return nil, nil
+		return nil, "", nil
 	}
 	var out emailGetResult
 	args := emailGetArgs{AccountID: sess.AccountID(), IDs: ids, Properties: properties}
 	if err := c.call(ctx, "Email/get", args, &out); err != nil {
-		return nil, err
+		return nil, "", err
 	}
-	return out.List, nil
+	return out.List, out.State, nil
 }
 
 // emailState returns the account-global Email type state (RFC 8620 §1.5) —
@@ -339,7 +349,11 @@ type setError struct {
 type emailPatch = map[string]any
 
 type emailSetArgs struct {
-	AccountID string                `json:"accountId"`
+	AccountID string `json:"accountId"`
+	// IfInState, when set, makes the server refuse the whole call with a
+	// stateMismatch error unless the account's Email state still equals it
+	// (RFC 8620 §5.3).
+	IfInState string                `json:"ifInState,omitempty"`
 	Update    map[string]emailPatch `json:"update,omitempty"`
 }
 
@@ -374,11 +388,14 @@ type mailboxSetResult struct {
 	NotCreated map[string]setError `json:"notCreated"`
 }
 
-// emailSetCall builds the Email/set method call applying updates.
-func emailSetCall(accountID string, updates map[string]emailPatch, callID string) jmapMethodCall {
+// emailSetCall builds the Email/set method call applying updates, guarded by
+// ifInState when it is not empty.
+func emailSetCall(
+	accountID string, updates map[string]emailPatch, ifInState, callID string,
+) jmapMethodCall {
 	return jmapMethodCall{
 		"Email/set",
-		emailSetArgs{AccountID: accountID, Update: updates},
+		emailSetArgs{AccountID: accountID, IfInState: ifInState, Update: updates},
 		callID,
 	}
 }
@@ -436,6 +453,54 @@ func (c *client) applyThreadPatch(
 	ctx context.Context, req threadPatchRequest,
 ) (threadPatchResult, error) {
 	out := threadPatchResult{CreatedIDs: map[string]string{}}
+	sent, err := c.sendThreadPatch(ctx, req, "")
+	if err != nil {
+		return out, err
+	}
+	out.CreatedIDs = sent.createdIDs
+	if err := refusedRecords("Mailbox/set", sent.notCreated); err != nil {
+		return out, err
+	}
+	if sent.updateError != nil {
+		return out, errors.ErrorWithStackf(
+			"fastmail plugin: Email/set: server error: %s", sent.updateError.raw,
+		)
+	}
+	if err := refusedRecords("Email/set", sent.notUpdated); err != nil {
+		return out, err
+	}
+	return out, nil
+}
+
+// methodError is a JMAP method-level error response (RFC 8620 §3.6.2): the
+// whole call was refused. raw is the error object, for a diagnostic.
+type methodError struct {
+	Type string `json:"type"`
+	raw  string
+}
+
+// sentThreadPatch is what one thread-patch request answered, record by
+// record: the created mailboxes (creation id → server id), the refused
+// creates and updates, and a method-level refusal of the whole Email/set
+// (updateError, nil when the call ran).
+type sentThreadPatch struct {
+	createdIDs  map[string]string
+	notCreated  map[string]setError
+	notUpdated  map[string]setError
+	updateError *methodError
+}
+
+// sendThreadPatch issues req as ONE request — Mailbox/set creates, then the
+// Email/set naming them — and reports what each record answered without
+// judging it: applyThreadPatch turns any refusal into an error, a bulk write
+// attributes each to its op (cutting-garden#292). ifInState, when not empty,
+// guards the Email/set with the Email state the caller planned against. A
+// transport failure, or a method-level refusal of the Mailbox/set, is an
+// error. An empty request issues nothing.
+func (c *client) sendThreadPatch(
+	ctx context.Context, req threadPatchRequest, ifInState string,
+) (sentThreadPatch, error) {
+	out := sentThreadPatch{createdIDs: map[string]string{}}
 	if len(req.Creates) == 0 && len(req.Updates) == 0 {
 		return out, nil
 	}
@@ -455,7 +520,7 @@ func (c *client) applyThreadPatch(
 		calls = append(calls, mailboxSetCall(accountID, req.Creates, createCallID))
 	}
 	if len(req.Updates) > 0 {
-		calls = append(calls, emailSetCall(accountID, req.Updates, updateCallID))
+		calls = append(calls, emailSetCall(accountID, req.Updates, ifInState, updateCallID))
 	}
 
 	responses, err := c.callMany(ctx, calls)
@@ -471,25 +536,53 @@ func (c *client) applyThreadPatch(
 			return out, err
 		}
 		for creationID, mailbox := range created.Created {
-			out.CreatedIDs[creationID] = mailbox.ID
+			out.createdIDs[creationID] = mailbox.ID
 		}
-		if err := refusedRecords("Mailbox/set", created.NotCreated); err != nil {
-			return out, err
-		}
+		out.notCreated = created.NotCreated
 	}
 
 	if len(req.Updates) > 0 {
+		refusal, err := methodErrorFor(responses, updateCallID)
+		if err != nil {
+			return out, err
+		}
+		if refusal != nil {
+			out.updateError = refusal
+			return out, nil
+		}
 		var updated emailSetResult
 		if err := decodeResponseFor(
 			responses, "Email/set", updateCallID, &updated,
 		); err != nil {
 			return out, err
 		}
-		if err := refusedRecords("Email/set", updated.NotUpdated); err != nil {
-			return out, err
-		}
+		out.notUpdated = updated.NotUpdated
 	}
 	return out, nil
+}
+
+// methodErrorFor returns the method-level error answering callID, or nil when
+// the call answered normally or not at all (decodeResponseFor reports a
+// missing response).
+func methodErrorFor(responses []jmapMethodResponse, callID string) (*methodError, error) {
+	for _, response := range responses {
+		name, result, id, err := response.parse()
+		if err != nil {
+			return nil, err
+		}
+		if id != callID {
+			continue
+		}
+		if name != "error" {
+			return nil, nil
+		}
+		refusal := methodError{raw: snippet(result)}
+		if err := json.Unmarshal(result, &refusal); err != nil {
+			return nil, errors.Wrapf(err, "fastmail plugin: parse error response for call %q", callID)
+		}
+		return &refusal, nil
+	}
+	return nil, nil
 }
 
 // refusedRecords turns a /set method's SetError map into ONE bad request

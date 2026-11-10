@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"slices"
 	"sort"
 	"strings"
 
@@ -112,27 +113,75 @@ func (Plugin) PatchNodeDetail(
 	if err != nil {
 		return none, errors.Wrap(err)
 	}
+	patch, err := parseThreadPatch(raw)
+	if err != nil {
+		return none, err
+	}
+	switch {
+	case patch.empty():
+		return cutting_garden_plugins.PatchDetail{Applied: []string{}, Ignored: patch.ignored}, nil
+	case patch.moveTo != "":
+		detail, err := moveThread(ctx, ref, patch.moveTo)
+		detail.Ignored = patch.ignored
+		return detail, err
+	}
+	applied, err := patchThreadTags(ctx, ref, patch.tags)
+	return cutting_garden_plugins.PatchDetail{Applied: applied, Ignored: patch.ignored}, err
+}
+
+// threadPatch is a parsed thread patch body: a move (moveTo, the target's
+// name-path), a tag-set write (isTags, tags), or neither. ignored is the
+// body's unrecognized keys.
+type threadPatch struct {
+	ignored []string
+	moveTo  string
+	isTags  bool
+	tags    []string
+}
+
+// empty reports a body naming no recognized key: nothing to write.
+func (p threadPatch) empty() bool { return p.moveTo == "" && !p.isTags }
+
+// sameWrite reports whether two patches ask for the same write, reading a
+// tag list as the set it is.
+func (p threadPatch) sameWrite(other threadPatch) bool {
+	if p.moveTo != other.moveTo || p.isTags != other.isTags {
+		return false
+	}
+	return slices.Equal(sortedUnique(p.tags), sortedUnique(other.tags))
+}
+
+// sortedUnique returns tags sorted with duplicates dropped.
+func sortedUnique(tags []string) []string {
+	out := slices.Clone(tags)
+	slices.Sort(out)
+	return slices.Compact(out)
+}
+
+// parseThreadPatch reads a thread patch body. What it accepts is a pure
+// question, settled BEFORE any network round-trip, so a body naming nothing
+// recognized costs no fetch and still reports honestly, and a tag that can
+// never be written (a typo'd `_sent`) is refused without one.
+func parseThreadPatch(raw []byte) (threadPatch, error) {
+	var patch threadPatch
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 {
-		return none, errors.BadRequestf(
+		return patch, errors.BadRequestf(
 			"fastmail plugin: PatchNode body must be JSON; got empty body",
 		)
 	}
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(trimmed, &fields); err != nil {
-		return none, errors.BadRequestf("fastmail plugin: invalid patch JSON: %s", err)
+		return patch, errors.BadRequestf("fastmail plugin: invalid patch JSON: %s", err)
 	}
 
-	// Which keys this type recognizes is decided BEFORE any network
-	// round-trip, so a body naming nothing we understand costs no fetch and
-	// still reports honestly.
 	recognized := cutting_garden_plugins.RecognizedPatchFields(fields, threadPatchFields)
-	ignored := cutting_garden_plugins.IgnoredPatchFields(fields, threadPatchFields)
+	patch.ignored = cutting_garden_plugins.IgnoredPatchFields(fields, threadPatchFields)
 	switch {
 	case len(recognized) == 0:
-		return cutting_garden_plugins.PatchDetail{Applied: recognized, Ignored: ignored}, nil
+		return patch, nil
 	case len(recognized) > 1:
-		return none, errors.BadRequestf(
+		return patch, errors.BadRequestf(
 			"fastmail plugin: a patch moves the thread (%q) or replaces its tag set (%q), not both",
 			patchFieldMailbox, listingFieldTags,
 		)
@@ -140,17 +189,29 @@ func (Plugin) PatchNodeDetail(
 		var target string
 		if err := json.Unmarshal(fields[patchFieldMailbox], &target); err != nil ||
 			strings.Trim(target, "/") == "" {
-			return none, errors.BadRequestf(
+			return patch, errors.BadRequestf(
 				"fastmail plugin: patch field %q must be a mailbox's full name-path, like \"Archive\"",
 				patchFieldMailbox,
 			)
 		}
-		detail, err := moveThread(ctx, ref, target)
-		detail.Ignored = ignored
-		return detail, err
+		patch.moveTo = target
+		return patch, nil
 	}
-	applied, err := patchThreadTags(ctx, ref, fields[listingFieldTags])
-	return cutting_garden_plugins.PatchDetail{Applied: applied, Ignored: ignored}, err
+	// A recognized key carrying an unusable value is the caller's own bug,
+	// never a tolerated field (FDR 0020, cutting-garden#185).
+	if err := json.Unmarshal(fields[listingFieldTags], &patch.tags); err != nil {
+		return patch, errors.BadRequestf(
+			"fastmail plugin: patch field %q must be an array of strings: %s",
+			listingFieldTags, err,
+		)
+	}
+	// planThreadPatch re-checks so it stays self-contained for its table
+	// tests; this is the refusal the user actually hits.
+	if _, err := validateRequestedTags(patch.tags); err != nil {
+		return patch, err
+	}
+	patch.isTags = true
+	return patch, nil
 }
 
 // moveThread moves the thread at ref out of the mailbox its URI names and into
@@ -167,18 +228,9 @@ func moveThread(
 	if err != nil {
 		return none, err
 	}
-	source, ok := tree.resolvePath(ref.mailboxPath)
-	if !ok {
-		return none, errors.BadRequestf(
-			"fastmail plugin: no mailbox at path %q in account %q",
-			pathString(ref.mailboxPath), ref.account,
-		)
-	}
-	dest, ok := tree.resolvePath(strings.Split(strings.Trim(target, "/"), "/"))
-	if !ok || !inScope(dest) {
-		return none, errors.BadRequestf(
-			"fastmail plugin: no mailbox at path %q in account %q", target, ref.account,
-		)
+	source, dest, err := resolveMove(tree, ref, target)
+	if err != nil {
+		return none, err
 	}
 	members, err := c.threadMembers(ctx, ref.threadID)
 	if err != nil {
@@ -195,6 +247,25 @@ func moveThread(
 		Applied: []string{patchFieldMailbox},
 		NewURI:  threadURI(ref.account, tree.path(dest.ID), ref.threadID),
 	}, nil
+}
+
+// resolveMove resolves a move's source, the mailbox the thread's URI lists it
+// under, and its in-scope destination at the name-path target.
+func resolveMove(tree *mailboxTree, ref nodeRef, target string) (source, dest Mailbox, err error) {
+	source, ok := tree.resolvePath(ref.mailboxPath)
+	if !ok {
+		return source, dest, errors.BadRequestf(
+			"fastmail plugin: no mailbox at path %q in account %q",
+			pathString(ref.mailboxPath), ref.account,
+		)
+	}
+	dest, ok = tree.resolvePath(strings.Split(strings.Trim(target, "/"), "/"))
+	if !ok || !inScope(dest) {
+		return source, dest, errors.BadRequestf(
+			"fastmail plugin: no mailbox at path %q in account %q", target, ref.account,
+		)
+	}
+	return source, dest, nil
 }
 
 // planThreadMove is the PURE move planner: every member in sourceID leaves it
@@ -219,29 +290,12 @@ func planThreadMove(members []Email, sourceID, destID string) map[string]emailPa
 	return updates
 }
 
-// patchThreadTags replaces the thread's tag set from the "tags" value raw.
+// patchThreadTags replaces the thread's tag set with newTags, which
+// parseThreadPatch has already validated.
 func patchThreadTags(
-	ctx context.Context, ref nodeRef, raw json.RawMessage,
+	ctx context.Context, ref nodeRef, newTags []string,
 ) ([]string, error) {
 	applied := []string{listingFieldTags}
-	// A recognized key carrying an unusable value is the caller's own bug,
-	// never a tolerated field (FDR 0020, cutting-garden#185).
-	var newTags []string
-	if err := json.Unmarshal(raw, &newTags); err != nil {
-		return nil, errors.BadRequestf(
-			"fastmail plugin: patch field %q must be an array of strings: %s",
-			listingFieldTags, err,
-		)
-	}
-	// Whether a tag CAN be written is a pure string question — it needs
-	// neither the mailbox tree nor the members — so it is settled here, on
-	// the same principle as the body shape above: a typo'd `_sent` costs no
-	// round-trip. planThreadPatch re-checks so it stays self-contained for
-	// its table tests; this is the refusal the user actually hits.
-	if _, err := validateRequestedTags(newTags); err != nil {
-		return nil, err
-	}
-
 	c, err := resolveClient(ref)
 	if err != nil {
 		return nil, err
@@ -385,7 +439,64 @@ func (p threadPatchPlan) empty() bool {
 func planThreadPatch(
 	current threadView, tree *mailboxTree, newTags []string,
 ) (threadPatchPlan, error) {
-	var plan threadPatchPlan
+	return planThreadPatchWith(current, tree, newTags, newMailboxCreations())
+}
+
+// mailboxCreations allocates the Mailbox/set creates a request carries, one
+// per new tag, so several threads' plans naming one new tag share one create
+// (cutting-garden#292). Creation ids are c1, c2, … in allocation order.
+type mailboxCreations struct {
+	creates map[string]MailboxCreate
+	byTag   map[string]createdMailbox
+	order   []string // tags, in allocation order
+}
+
+func newMailboxCreations() *mailboxCreations {
+	return &mailboxCreations{
+		creates: map[string]MailboxCreate{},
+		byTag:   map[string]createdMailbox{},
+	}
+}
+
+// forTag returns tag's create, allocating it on first use.
+func (m *mailboxCreations) forTag(tree *mailboxTree, tag string) createdMailbox {
+	if created, ok := m.byTag[tag]; ok {
+		return created
+	}
+	creationID := fmt.Sprintf("c%d", len(m.creates)+1)
+	parentID, name := tree.placeNewTag(tag)
+	m.creates[creationID] = MailboxCreate{Name: name, ParentID: parentID}
+	created := createdMailbox{creationID: creationID, path: tree.pathUnder(parentID, name)}
+	m.byTag[tag] = created
+	m.order = append(m.order, tag)
+	return created
+}
+
+// mark and rollback drop the creates allocated by a plan that then failed,
+// so a refused op leaves no orphan mailbox in a shared request.
+func (m *mailboxCreations) mark() int { return len(m.order) }
+
+func (m *mailboxCreations) rollback(mark int) {
+	for _, tag := range m.order[mark:] {
+		delete(m.creates, m.byTag[tag].creationID)
+		delete(m.byTag, tag)
+	}
+	m.order = m.order[:mark]
+}
+
+// planThreadPatchWith is planThreadPatch allocating its creates from
+// creations, which a bulk write shares across threads. The plan's Creates is
+// creations' map, so it holds every create allocated so far. On an error the
+// creates this plan allocated are rolled back.
+func planThreadPatchWith(
+	current threadView, tree *mailboxTree, newTags []string, creations *mailboxCreations,
+) (plan threadPatchPlan, err error) {
+	mark := creations.mark()
+	defer func() {
+		if err != nil {
+			creations.rollback(mark)
+		}
+	}()
 
 	want, err := validateRequestedTags(newTags)
 	if err != nil {
@@ -419,7 +530,7 @@ func planThreadPatch(
 	}
 
 	plan.request = threadPatchRequest{
-		Creates: map[string]MailboxCreate{},
+		Creates: creations.creates,
 		Updates: map[string]emailPatch{},
 	}
 	// Resolve every added label ONCE: an existing mailbox id, or a creation
@@ -431,14 +542,9 @@ func planThreadPatch(
 			addRefs = append(addRefs, id)
 			continue
 		}
-		creationID := fmt.Sprintf("c%d", len(plan.request.Creates)+1)
-		parentID, name := tree.placeNewTag(tag)
-		plan.request.Creates[creationID] = MailboxCreate{Name: name, ParentID: parentID}
-		plan.creations = append(plan.creations, createdMailbox{
-			creationID: creationID,
-			path:       tree.pathUnder(parentID, name),
-		})
-		addRefs = append(addRefs, "#"+creationID)
+		created := creations.forTag(tree, tag)
+		plan.creations = append(plan.creations, created)
+		addRefs = append(addRefs, "#"+created.creationID)
 	}
 
 	for _, member := range current.members {
