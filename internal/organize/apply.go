@@ -114,6 +114,9 @@ func (cmd *Organize) applyDocument(
 	ctx errors.Context, cfg *cgconfig.ConfigV0, editedText string,
 	commit, interactive, color bool,
 ) (committed bool, landed []landedCreation, err error) {
+	// One apply is one host call (cutting-garden#341): the edits the user made
+	// in between came after generate's call, so it confirms afresh.
+	ctx = command_components.CallScope(ctx)
 	run := &applyRun{}
 	committed, err = cmd.applyEdited(ctx, cfg, editedText, commit, interactive, color, run)
 	if err != nil && run.creationsDone && len(run.landed) > 0 {

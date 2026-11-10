@@ -91,6 +91,8 @@ func (cmd *Organize) buildAndStore(
 func buildAndStoreFrom(
 	ctx errors.Context, cfg *cgconfig.ConfigV0, uriStr string, p generateParams,
 ) (rendered, digest string, err error) {
+	// One generate is one host call (cutting-garden#341).
+	ctx = command_components.CallScope(ctx)
 	u, lister, err := command_components.ResolveRootListerPlugin(uriStr)
 	if err != nil {
 		return "", "", err

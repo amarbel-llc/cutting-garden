@@ -12,10 +12,12 @@
 package orgtestserver
 
 import (
+	"encoding/json"
 	"encoding/xml"
 	"fmt"
 	"io"
 	"io/fs"
+	"maps"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -176,7 +178,22 @@ func (s *Server) SeedDir(root string) error {
 	return nil
 }
 
+// requestsPath serves the per-method request counts as JSON, without auth and
+// without being counted: the bats lanes' view of Requests, to pin how many
+// round trips a command costs (cutting-garden#341). It exists only in this
+// test-only server (not shipped in the cutting-garden release, like the rest
+// of the package), never in a plugin.
+const requestsPath = "/__requests"
+
 func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet && r.URL.Path == requestsPath {
+		s.mu.Lock()
+		counts := maps.Clone(s.counts)
+		s.mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(counts)
+		return
+	}
 	if user, pass, ok := r.BasicAuth(); !ok || user != Username || pass != Password {
 		w.Header().Set("WWW-Authenticate", `Basic realm="orgtestserver"`)
 		http.Error(w, "unauthorized", http.StatusUnauthorized)

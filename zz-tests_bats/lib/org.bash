@@ -80,6 +80,12 @@ org_dav() {
   curl "${args[@]}" "${ORG_WEBDAV_URL}${path}"
 }
 
+# org_requests METHOD prints how many authenticated METHOD requests the
+# running server has served (the testserver's unauthenticated /__requests).
+org_requests() {
+  curl -sS "${ORG_WEBDAV_URL%/}/__requests" | jq -r --arg m "$1" '.[$m] // 0'
+}
+
 stop_org_server() {
   if [[ -n ${ORG_STDIN_FD:-} ]]; then
     eval "exec ${ORG_STDIN_FD}>&-"

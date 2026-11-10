@@ -278,7 +278,7 @@ func (cmd *List) runList(
 
 	// One cg invocation is one call scope (cutting-garden#311).
 	lctx, partial := cutting_garden_plugins.WithPartialListings(
-		cutting_garden_plugins.WithCallScope(ctx),
+		command_components.CallScope(ctx),
 	)
 	var nodes []cutting_garden_plugins.Node
 	if cmd.Query != "" {
@@ -502,7 +502,7 @@ func (cmd *List) runFacets(ctx errors.Context, uriStr string) error {
 
 	// One cg invocation is one call scope (cutting-garden#311).
 	result, ok, err := cutting_garden_plugins.ResolveFacetCounts(
-		cutting_garden_plugins.WithCallScope(ctx), lister, u, filter,
+		command_components.CallScope(ctx), lister, u, filter,
 	)
 	if err != nil {
 		return errors.Wrapf(err, "list --facets %s", uriStr)

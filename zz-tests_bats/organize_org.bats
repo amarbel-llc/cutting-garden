@@ -27,6 +27,26 @@ teardown() {
 
 # bats file_tags=organize,org
 
+# One organize invocation is one host call (cutting-garden#341): generate, and
+# then an apply of the unedited document (which re-reads the live state), each
+# confirm the file's ETag once, one PROPFIND and one GET, where outside a call
+# scope the file was confirmed twice.
+function organize_org_confirms_a_file_once_per_invocation { # @test
+  local propfind get
+  propfind="$(org_requests PROPFIND)"
+  get="$(org_requests GET)"
+  run_cg organize -group-by state= 'org://test/_inbox.org -> _body~=e'
+  assert_success
+  echo "$output" >"$BATS_TEST_TMPDIR/doc.org"
+  assert_equal "$(($(org_requests PROPFIND) - propfind)) $(($(org_requests GET) - get))" "1 1"
+
+  propfind="$(org_requests PROPFIND)"
+  get="$(org_requests GET)"
+  run_cg organize -apply "$BATS_TEST_TMPDIR/doc.org" -commit
+  assert_success
+  assert_equal "$(($(org_requests PROPFIND) - propfind)) $(($(org_requests GET) - get))" "1 1"
+}
+
 generate_inbox_by_state() {
   run_cg organize -group-by state= org://test/_inbox.org
   assert_success
