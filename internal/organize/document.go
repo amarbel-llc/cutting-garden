@@ -500,7 +500,10 @@ func writeObjectLine(b *strings.Builder, ln objectLine, trailingTags bool) {
 // objectLiteral projects an objectLine's box onto a trellis.Literal — shared by
 // object lines and boxed headings, whose boxes are the same literal.
 func objectLiteral(ln objectLine) trellis.Literal {
-	lit := trellis.Literal{New: ln.New, ID: ln.ID, Type: ln.Type, Tags: ln.Tags}
+	lit := trellis.Literal{ID: ln.ID, Type: ln.Type, Tags: ln.Tags}
+	if ln.New {
+		lit.Kind = trellis.IDTemp
+	}
 	for _, f := range ln.Fields {
 		lit.Atoms = append(lit.Atoms, trellis.Atom{Name: f.Name, Value: f.Value})
 	}
@@ -876,14 +879,14 @@ func parseObjectLine(rest string) (objectLine, error) {
 	if err != nil {
 		return objectLine{}, err
 	}
-	if lit.Null {
+	if lit.Kind == trellis.IDNull {
 		return objectLine{}, errors.BadRequestf(
 			"box %q: the null id `_` is not an object organize can place; "+
 				"spell an object literally named `_` as `\"_\"`", strings.TrimSpace(rest),
 		)
 	}
 	ln := objectLine{
-		New: lit.New, ID: lit.ID, Type: lit.Type, Tags: lit.Tags,
+		New: lit.Kind == trellis.IDTemp, ID: lit.ID, Type: lit.Type, Tags: lit.Tags,
 		Desc: strings.TrimSpace(trailer),
 	}
 	for _, a := range lit.Atoms {

@@ -187,38 +187,38 @@ func TestLiteral_TempID(t *testing.T) {
 			name:     "bare temp id with type, tag and atom",
 			interior: `+wrap-bug !fj-issue-v1 bug milestone=v0.3`,
 			want: Literal{
-				New: true, ID: "wrap-bug", Type: "fj-issue-v1",
+				Kind: IDTemp, ID: "wrap-bug", Type: "fj-issue-v1",
 				Tags: []string{"bug"}, Atoms: []Atom{{"milestone", "v0.3"}},
 			},
 		},
 		{
 			name:     "quoted temp id",
 			interior: `+"wrap bug" work`,
-			want:     Literal{New: true, ID: "wrap bug", Tags: []string{"work"}},
+			want:     Literal{Kind: IDTemp, ID: "wrap bug", Tags: []string{"work"}},
 		},
 		{
 			name:     "single-appearance creation",
 			interior: `+`,
-			want:     Literal{New: true},
+			want:     Literal{Kind: IDTemp},
 		},
 		{
 			name:     "single-appearance creation with slots",
 			interior: `+ !caldav-object-vtodo-v1 status=needs-action`,
 			want: Literal{
-				New: true, Type: "caldav-object-vtodo-v1",
+				Kind: IDTemp, Type: "caldav-object-vtodo-v1",
 				Atoms: []Atom{{"status", "needs-action"}},
 			},
 		},
 		{
 			name:     "extra whitespace collapses",
 			interior: `  +x   k=v `,
-			want:     Literal{New: true, ID: "x", Atoms: []Atom{{"k", "v"}}},
+			want:     Literal{Kind: IDTemp, ID: "x", Atoms: []Atom{{"k", "v"}}},
 			spelled:  `+x k=v`,
 		},
 		{
 			name:     "an id-interior sigil stays in the temp id",
 			interior: `+a:b`,
-			want:     Literal{New: true, ID: "a:b"},
+			want:     Literal{Kind: IDTemp, ID: "a:b"},
 		},
 	}
 	for _, tc := range cases {
@@ -274,7 +274,7 @@ func TestLiteral_NullID(t *testing.T) {
 		interior string
 		want     Literal
 	}{
-		{`_ !task k=v`, Literal{Null: true, Type: "task", Atoms: []Atom{{"k", "v"}}}},
+		{`_ !task k=v`, Literal{Kind: IDNull, Type: "task", Atoms: []Atom{{"k", "v"}}}},
 		{`"_" !task`, Literal{ID: "_", Type: "task"}},
 		{`_foo !task`, Literal{ID: "_foo", Type: "task"}},
 		{`"+x"`, Literal{ID: "+x"}},

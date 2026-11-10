@@ -191,7 +191,7 @@ func creationIdempotencyKey(base, tempKey string) string {
 }
 
 func barePlusContentHash(ln objectLine) string {
-	lit := trellis.Literal{New: true, Type: ln.Type, Tags: ln.Tags}
+	lit := trellis.Literal{Kind: trellis.IDTemp, Type: ln.Type, Tags: ln.Tags}
 	for _, f := range ln.Fields {
 		lit.Atoms = append(lit.Atoms, trellis.Atom{Name: f.Name, Value: f.Value})
 	}

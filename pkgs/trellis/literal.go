@@ -18,18 +18,17 @@ import (
 // non-`=` operators — survives ParseLiteral, so a Literal is always exactly
 // re-spellable by WriteLiteral and never carries query semantics.
 type Literal struct {
-	// New marks a TEMP-ID box (forge organize F8): the first slot was
-	// `+<opaque>`, `+"<opaque>"`, or a bare `+` — an object that does not
-	// exist yet, which organize creates. ID then holds the decoded opaque
-	// part (empty for a bare `+`), never the `+`.
-	New bool
-	// Null marks a NULL-ID box: the first slot was a bare `_` (RFC 0014
-	// "Isomorphism"; the PEG's NullID), a node that equals no id, not even
-	// itself. ID is then empty. An object literally named `_` is spelled
-	// `"_"` and arrives as ID "_" with Null false.
-	Null bool
+	// Kind is what the id slot holds, as for a TreeNode: IDReal; IDTemp for a
+	// TEMP-ID box (forge organize F8: `+<opaque>`, `+"<opaque>"`, or a bare
+	// `+`, an object that does not exist yet, which organize creates); IDNull
+	// for a NULL-ID box (a bare `_`, RFC 0014 "Isomorphism"; the PEG's
+	// NullID, a node that equals no id, not even itself). An object literally
+	// named `_` is spelled `"_"` and arrives as IDReal with ID "_".
+	Kind IDKind
 	// ID is the object reference, decoded (a quoted `"one/uno.zettel"` id
-	// arrives unquoted here; WriteLiteral re-quotes it as needed).
+	// arrives unquoted here; WriteLiteral re-quotes it as needed). For IDTemp
+	// it holds the decoded opaque handle (empty for a bare `+`), never the
+	// `+`; for IDNull it is empty.
 	ID string
 	// Type is the `!type` term's name; empty when the box carries none
 	// (organize's spelling 2, where the envelope distributes the type).
@@ -127,7 +126,7 @@ func (p *parser) parseTempIDBox(start int) (lit Literal, matched bool, err error
 	}
 	p.pos++
 
-	lit.New = true
+	lit.Kind = IDTemp
 	id, ok := p.parseTempIDHandle()
 	if !ok {
 		return Literal{}, true, p.boxSyntaxError(start, "unterminated temp id")
@@ -192,7 +191,7 @@ func projectLiteral(group Group, interior string) (Literal, error) {
 		return Literal{}, notGround(interior, first, "a `^`/`=` prefix is a query decoration")
 	}
 	if ident, ok := first.Basic.(IdentBasicTerm); ok && ident.Sigil == nil && ident.Ident.Name == "_" {
-		return projectAttrs(Literal{Null: true}, terms[1:], interior)
+		return projectAttrs(Literal{Kind: IDNull}, terms[1:], interior)
 	}
 	if _, locked := first.Basic.(MarklBasicTerm); locked {
 		return Literal{}, notGround(interior, first,
@@ -324,14 +323,7 @@ type SpelledLiteral struct {
 // id-slot variant also quotes a `_` or `+…` id so it never re-reads as the
 // null or temp id.
 func SpellLiteral(lit Literal) SpelledLiteral {
-	slot := TreeNode{ID: lit.ID}
-	switch {
-	case lit.New:
-		slot.Kind = IDTemp
-	case lit.Null:
-		slot.Kind = IDNull
-	}
-	s := SpelledLiteral{ID: SpellTreeID(slot), Type: lit.Type}
+	s := SpelledLiteral{ID: SpellTreeID(TreeNode{Kind: lit.Kind, ID: lit.ID}), Type: lit.Type}
 	for _, tag := range lit.Tags {
 		s.Tags = append(s.Tags, QuoteIfNeeded(tag))
 	}
