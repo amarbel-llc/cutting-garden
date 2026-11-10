@@ -809,7 +809,7 @@ A plugin that declares a `one` or `many` mapping for type T:
   `facets` (the key absent, or an empty array) on every subsequent
   `nodes.list`, and the plugin SHOULD report `field` in `applied`. A
   plugin that declares `clearable` and silently ignores the `null` is
-  non-conformant (conformance point 18).
+  non-conformant (conformance point 22).
 
 The shapes carry the target bucket VERBATIM. A dimension whose write
 needs computation the host cannot do — a date bucket that must splice a
@@ -1401,6 +1401,10 @@ with its own manifest above.
 
 ### Covered Requirements
 
+Point numbers are the driver's TAP plan as the in-tree testpeer run emits
+it (`1..32`); a peer's run numbers its points the same way, since the
+driver emits every point, SKIPped or not, in a fixed order.
+
 | Requirement | Test file | Description |
 |-------------|-----------|-------------|
 | §Launch: cookie guard — no cookie ⇒ exit non-zero, empty stdout | `traversal_serve.bats` | invoke `traversal-serve` bare |
@@ -1416,26 +1420,26 @@ with its own manifest above.
 | §Facets: `by_container` RAW invariants (count>0, sorted, capped) + descend-target reachability (RFC 0012 §13) | conformance driver | pre-normalization; re-issue the filter per entry |
 | Driver self-test: a deliberately-wrong manifest MUST fail | conformance driver | the "a passing driver ratifies nothing" acceptance |
 | Indistinguishability: `list` and `mcp` output over the wire peer equals the same tree served by a linked in-process plugin | go end-to-end | the conformance bar |
-| §Facet writes: the `facet_writes` block passes the host's bring-up rules | conformance driver | point 15; SKIP when the peer declares none |
-| §Facet writes: `node.patch` accepts the host-built `one` body and the node re-lists in the bucket | conformance driver | point 16; manifest `[facet_write]` `node`/`container`/`one_dimension`/`one_bucket`; the node is restored afterwards |
-| §Facet writes: `node.patch` treats the `many` array as a full replacement, `[]` clears | conformance driver | point 17; manifest `many_dimension`/`many_set`; restored afterwards |
+| §Facet writes: the `facet_writes` block passes the host's bring-up rules | conformance driver | point 19; SKIP when the peer declares none |
+| §Facet writes: `node.patch` accepts the host-built `one` body and the node re-lists in the bucket | conformance driver | point 20; manifest `[facet_write]` `node`/`container`/`one_dimension`/`one_bucket`; the node is restored afterwards |
+| §Facet writes: `node.patch` treats the `many` array as a full replacement, `[]` clears | conformance driver | point 21; manifest `many_dimension`/`many_set`; restored afterwards |
 | §Facet writes: declaration, host-built bodies, applied report and resulting listing identical wire vs linked | go end-to-end | `TestWireFacetWritesIndistinguishableFromLinked` |
 | §Facet writes: `organize --apply` writes through a wire plugin (write:one move, write:many re-file) and an unusable declaration fails bring-up | `traversal_serve.bats` (`testpeer`) | whole-document vectors over the cgtest tree |
-| §Facet writes: `node.patch` accepts `{"<field>": null}` for a `clearable` write and the node re-lists with no value in the dimension | conformance driver | point 18; manifest `[facet_clear]` `container`/`node`/`dimension`; restored afterwards |
-| §Presentation: `node_types` presentation members pass the host's bring-up rules | conformance driver | point 19; SKIP when the peer declares none |
-| §Presentation: `node.patch` accepts `{"<trailer_field>": "<text>"}` and the node re-lists named `<text>` | conformance driver | point 20; manifest `[trailer]` `container`/`node`/`text`; restored afterwards |
+| §Facet writes: `node.patch` accepts `{"<field>": null}` for a `clearable` write and the node re-lists with no value in the dimension | conformance driver | point 22; manifest `[facet_clear]` `container`/`node`/`dimension`; restored afterwards |
+| §Presentation: `node_types` presentation members pass the host's bring-up rules | conformance driver | point 23; SKIP when the peer declares none |
+| §Presentation: `node.patch` accepts `{"<trailer_field>": "<text>"}` and the node re-lists named `<text>` | conformance driver | point 24; manifest `[trailer]` `container`/`node`/`text`; restored afterwards |
 | §Presentation: unified tag field, box atoms, listing fields, field-write bodies and projected fields identical wire vs linked | go end-to-end | `TestWireTrackerPresentationIndistinguishableFromLinked` |
 | §Facet writes / §Presentation: organize over a wire plugin — a clearing move and the non-clearable refusal; tag atoms rendered and edited; `(tags)` / namespace groupings with a membership move; inline atom, trailer and clearable-atom edits in one apply; `describe_node_types` `tag_set`/listing fields and `mcp` `tags` | `traversal_serve.bats` (`testpeer`) | whole-document TRACKER vectors over `cgtest://fixture/tracker` |
-| §Wire encodings: `terminal_values` passes the host's bring-up rules | conformance driver | point 21; SKIP when no dimension declares any |
+| §Wire encodings: `terminal_values` passes the host's bring-up rules | conformance driver | point 25; SKIP when no dimension declares any |
 | §Wire encodings: `terminal_values` decodes to the same `TerminalValues` a linked plugin declares; empty/absent ≙ nil | go end-to-end + unit | `TestWireIndistinguishableFromLinked` (`DescribeFacets` deep-equal, ticket `state` ≙ `[closed]`); `TestFacetDimensionViewTerminalValues`, `TestValidateTerminalValuesDeclaration` |
 | §Wire encodings: organize hides a wire plugin's terminal nodes by default (`_terminal=no` echoed in `_query`), `-include-terminal` restores them; a value outside the closed domain fails bring-up | `traversal_serve.bats` (`testpeer`) | `test_testpeer_tracker_terminal_values_hide_closed_by_default`, `test_testpeer_undeclared_terminal_value_fails_initialize` |
-| §Creation: `creatable` members pass the host's bring-up rules | conformance driver | point 22; SKIP when the peer declares none |
-| §Creation: `node.create_child` accepts the host-built fields body and the created node lists with the trailer as its name and the supplied facet values | conformance driver | point 23; manifest `[creation]` `container`/`type`/`trailer` (+ optional `one_dimension`/`one_value`, `many_dimension`/`many_set`); the created node is deleted afterwards |
+| §Creation: `creatable` members pass the host's bring-up rules | conformance driver | point 26; SKIP when the peer declares none |
+| §Creation: `node.create_child` accepts the host-built fields body and the created node lists with the trailer as its name and the supplied facet values | conformance driver | point 27; manifest `[creation]` `container`/`type`/`trailer` (+ optional `one_dimension`/`one_value`, `many_dimension`/`many_set`); the created node is deleted afterwards |
 | §Creation: declaration and host body identical wire vs linked; a created ticket lists with its fields | go end-to-end | `TestWireTrackerCreationIndistinguishableFromLinked` |
-| §Creation: a repeated `idempotency_key` returns the same `created` URI with `"existed": true` and one node | conformance driver | point 24; manifest `[creation]`; SKIP when the peer ignores the key; created nodes deleted afterwards |
+| §Creation: a repeated `idempotency_key` returns the same `created` URI with `"existed": true` and one node | conformance driver | point 28; manifest `[creation]`; SKIP when the peer ignores the key; created nodes deleted afterwards |
 | §Creation: `idempotency_key` and unknown params are tolerated by a peer without keyed creation; a keyed repeat round-trips `existed` through WirePlugin | transport go tests | `TestServerCreateChildToleratesKeyAndUnknownParams`, `TestWirePluginCreateChildWithKey` |
 | §Creation: `organize --apply` creates through a wire plugin from a merged temp id | `traversal_serve.bats` (`testpeer`) | `test_testpeer_tracker_creates_a_ticket` |
-| RFC 0018 §5: every listed node whose type declares a `uri_template` matches it and resolves to exactly that type (roots excluded) | conformance driver | "uri template: every listed node resolves to its own type"; a bounded breadth-first walk from `roots.list`, independent of the manifest (cutting-garden#408); SKIP when no type declares a template or no roots are advertised |
+| RFC 0018 §5: every listed node whose type declares a `uri_template` matches it and resolves to exactly that type (roots excluded) | conformance driver | point 32, "uri template: every listed node resolves to its own type"; a bounded breadth-first walk from `roots.list`, independent of the manifest (cutting-garden#408); SKIP when no type declares a template or no roots are advertised |
 
 ## Compatibility
 
