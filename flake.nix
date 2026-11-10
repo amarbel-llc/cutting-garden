@@ -755,10 +755,11 @@
         # scoped to `src = ./doc` — buildGoApplication's src is filtered for
         # Go-relevant files, so a Go-application postInstall step can't
         # reliably read arbitrary non-Go source paths like doc/*.scd; a plain
-        # mkDerivation with its own src sidesteps that entirely. Section 1
-        # pages stay on the existing Go-codegen path (cutting-garden-gen);
-        # this derivation covers ONLY man5/man7, merged into the default
-        # package below.
+        # mkDerivation with its own src sidesteps that entirely. The Utility's
+        # section 1 pages stay on the existing Go-codegen path
+        # (cutting-garden-gen); this derivation covers man5/man7 plus the
+        # section 1 page of a binary outside the Utility
+        # (cutting-garden-ajour(1)), merged into the default package below.
         cuttingGardenDoc = pkgs.stdenvNoCC.mkDerivation {
           pname = "cutting-garden-doc";
           version = cgVersion;

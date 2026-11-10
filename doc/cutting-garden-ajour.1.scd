@@ -26,6 +26,14 @@ enforcer refused through the same layers to see which document stopped it.
 It checks no signature and reads no chain; the layers are the documents you
 name, in the order you name them.
 
+*--stencil* and *--patch* build one stack in command-line order, the first
+flag the bottom (the chain's start). A refusal's layer number is the flag's
+position among all of them, from 0.
+
+A layer file holds the body only, in nested espalier or the heading
+rendering (FDR 0028 "The stencil fragment"). A file that opens with a
+hyphence head (*---*) is refused; split the head off first.
+
 # OPTIONS
 
 *--stencil* _FILE_
@@ -35,14 +43,6 @@ name, in the order you name them.
 *--patch* _FILE_
 	An act's own body, read as a patch: every leaf must carry *deny*.
 	Repeatable.
-
-	*--stencil* and *--patch* build one stack in command-line order, the first
-	flag the bottom (the chain's start). A refusal's layer number is the
-	flag's position among all of them, from 0.
-
-	A layer file holds the body only, in nested espalier or the heading
-	rendering (FDR 0028 "The stencil fragment"). A file that opens with a
-	hyphence head (*---*) is refused; split the head off first.
 
 *--call* _FILE_|*-*
 	The call as JSON, the shape of *ajour.Call*: *Path* (the subjects from
@@ -64,13 +64,15 @@ name, in the order you name them.
 
 *64*
 	Bad input: a layer that does not parse (the message names the term), a
-	malformed call, a missing *--call*, an unreadable file.
+	malformed call, a missing *--call*, an unreadable file. *-h* exits 0.
+
+# NOTES
+
+This is a separate binary rather than *cg ajour*: every *cg* subcommand lives
+under *internal/*, which the layering guard keeps from importing *pkgs/ajour*;
+*cg ajour* waits on an SDK command registry (cutting-garden#405).
 
 # SEE ALSO
 
 *ajour*(7), *cutting-garden*(1); cutting-garden FDR 0028
 (*docs/features/0028-ajour.md*).
-
-This is a separate binary rather than *cg ajour*: every *cg* subcommand lives
-under *internal/*, which the layering guard keeps from importing *pkgs/ajour*;
-*cg ajour* waits on an SDK command registry (cutting-garden#405).

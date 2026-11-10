@@ -227,9 +227,10 @@ TypedBack    <- '<-[' SP? ConjRun SP? ']-'
 // id, null id or lock would otherwise be spelled differently from a root's.
 // Child is tried before Term, whose Group would read the same bracket as a
 // SubPath. A child is one literal: one step, `->` only, never empty.
-Literal      <- SP? '[' SP? IDSlot (SP !Combinator LiteralTerm)* SP? ']'
+Literal      <- SP? '[' SP? LiteralBody
+Child        <- '[' SP? '->' SP LiteralBody
+LiteralBody  <- IDSlot (SP !Combinator LiteralTerm)* SP? ']'
 LiteralTerm  <- Child / Term
-Child        <- '[' SP? '->' SP IDSlot (SP !Combinator LiteralTerm)* SP? ']'
 IDSlot       <- TempID / NullID / MarklTerm / QuotedRef / Ident
 TempID       <- '+' (String / Ident)?
 NullID       <- '_' !IdentRune

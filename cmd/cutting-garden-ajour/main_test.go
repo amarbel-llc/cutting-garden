@@ -51,6 +51,26 @@ func TestRun_FlagOrderIsStackOrder(t *testing.T) {
 	}
 }
 
+// TestRun_HelpAndPatchOnly pins that -h exits 0, and that a patch-only stack
+// says it holds no stencil even when its patch also denies.
+func TestRun_HelpAndPatchOnly(t *testing.T) {
+	var stdout, stderr strings.Builder
+	if code := run([]string{"-h"}, strings.NewReader(""), &stdout, &stderr); code != 0 {
+		t.Fatalf("run(-h) = %d, want 0", code)
+	}
+
+	dir := t.TempDir()
+	deny := writeFile(t, dir, "p.espalier", `[moxy [-> folio [-> read [-> file:/nix !fs-path-v1 subtree deny]]]]`)
+	call := writeFile(t, dir, "call.json", callNixStore)
+	stdout.Reset()
+	if code := run([]string{"--patch", deny, "--call", call}, strings.NewReader(""), &stdout, &stderr); code != 1 {
+		t.Fatalf("run(patch only) = %d, want 1", code)
+	}
+	if !strings.Contains(stdout.String(), "no stencil in the stack") || !strings.Contains(stdout.String(), "layer 0 (patch): deny") {
+		t.Fatalf("stdout = %q, want the no-stencil note and the patch's deny", stdout.String())
+	}
+}
+
 // TestRun_BadInputIsUsage pins exit 64 (EX_USAGE) for every parse or shape
 // error, and that the error goes to stderr.
 func TestRun_BadInputIsUsage(t *testing.T) {
@@ -64,7 +84,7 @@ func TestRun_BadInputIsUsage(t *testing.T) {
 		{"--stencil", writeFile(t, dir, "head.espalier", "---\n- role = x\n---\n[x]"), "--call", call},
 		{"--stencil", stencil, "--call", writeFile(t, dir, "bad.json", `{"Nope": 1}`)},
 		{"--stencil", filepath.Join(dir, "missing"), "--call", call},
-		{"--bogus"},
+		{"--bogus", "x"},
 	} {
 		var stdout, stderr strings.Builder
 		if code := run(args, strings.NewReader(""), &stdout, &stderr); code != 64 {

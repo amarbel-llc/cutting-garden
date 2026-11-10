@@ -10,7 +10,8 @@ setup() {
   load "$(dirname "$BATS_TEST_FILE")/lib/common.bash"
   export output
   # The explain binary ships beside cutting-garden in the default package.
-  AJOUR_BIN="${CG_BIN%/cutting-garden}/cutting-garden-ajour"
+  AJOUR_BIN="$(dirname "$CG_BIN")/cutting-garden-ajour"
+  [[ -x $AJOUR_BIN ]] || fail "cutting-garden-ajour not beside CG_BIN at $AJOUR_BIN"
   FIX="$(dirname "$BATS_TEST_FILE")/fixtures/ajour"
 }
 

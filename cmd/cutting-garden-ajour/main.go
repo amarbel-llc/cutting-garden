@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 
 	"code.linenisgreat.com/cutting-garden/pkgs/ajour"
@@ -26,7 +27,10 @@ import (
 const (
 	exitAdmitted = 0
 	exitRefused  = 1
-	exitUsage    = 64 // EX_USAGE: a parse or shape error in the input
+	// exitUsage is EX_USAGE for any bad input: a layer or call that does not
+	// parse, a malformed call, a missing flag, or a file that cannot be read
+	// (the paths are input too). The tool ran to completion on it.
+	exitUsage = 64
 )
 
 func main() {
@@ -39,29 +43,26 @@ type layerArg struct {
 	path  string
 }
 
-// stackFlag appends to the one ordered stack, so --stencil and --patch
-// interleave in the order given (bottom of the stack first).
-type stackFlag struct {
-	stack *[]layerArg
-	patch bool
-}
-
-func (f stackFlag) String() string { return "" }
-
-func (f stackFlag) Set(path string) error {
-	*f.stack = append(*f.stack, layerArg{patch: f.patch, path: path})
-	return nil
-}
-
 func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	flags := flag.NewFlagSet("cutting-garden-ajour", flag.ContinueOnError)
 	flags.SetOutput(stderr)
+	// Both flags append to one ordered stack, so --stencil and --patch
+	// interleave in the order given (bottom of the stack first).
 	var stack []layerArg
+	stackFlag := func(patch bool) func(string) error {
+		return func(path string) error {
+			stack = append(stack, layerArg{patch: patch, path: path})
+			return nil
+		}
+	}
 	var callPath string
-	flags.Var(stackFlag{stack: &stack}, "stencil", "a capability profile's body, as a stencil (repeatable; stack order)")
-	flags.Var(stackFlag{stack: &stack, patch: true}, "patch", "an act's body, as a deny-only patch (repeatable; stack order)")
+	flags.Func("stencil", "a capability profile's body, as a stencil (repeatable; stack order)", stackFlag(false))
+	flags.Func("patch", "an act's body, as a deny-only patch (repeatable; stack order)", stackFlag(true))
 	flags.StringVar(&callPath, "call", "", "the call as JSON (ajour.Call), or - for stdin")
 	if err := flags.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return exitAdmitted
+		}
 		return exitUsage
 	}
 	usage := func(err error) int {
@@ -90,9 +91,9 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		return exitAdmitted
 	}
 	fmt.Fprintln(stdout, "refused")
-	if len(verdict.Refusals) == 0 {
-		// Evaluate refuses without a refusal only when the stack holds no
-		// stencil: no stencil, no hole.
+	if !slices.ContainsFunc(stack, func(l layerArg) bool { return !l.patch }) {
+		// No stencil, no hole: a stack of patches alone admits nothing,
+		// whatever its patches deny.
 		fmt.Fprintln(stdout, "no stencil in the stack: nothing is admitted")
 	}
 	fmt.Fprint(stdout, verdict.String())
