@@ -244,6 +244,31 @@ func TestFacetVersionDeterministicAndMutationSensitive(t *testing.T) {
 	}
 }
 
+// A patch that applies nothing (only unsupported_ keys) is an honest no-op:
+// it reports applied=[] and its ignored keys, and leaves the version token
+// where it was, so a memoized summary is not invalidated by a write that
+// changed nothing.
+func TestPatchOfOnlyUnsupportedKeysLeavesTheTokenAlone(t *testing.T) {
+	ctx := context.Background()
+	box := mustParseURL(t, RootBox)
+	plugin := NewPlugin()
+	before, _, _ := plugin.FacetVersion(ctx, box)
+
+	detail, err := plugin.PatchNodeDetail(ctx, mustParseURL(t, LeafBeta),
+		strings.NewReader(`{"unsupported_x": 1}`))
+	if err != nil {
+		t.Fatalf("PatchNodeDetail: %v", err)
+	}
+	if detail.Applied == nil || len(detail.Applied) != 0 ||
+		!slices.Equal(detail.Ignored, []string{"unsupported_x"}) {
+		t.Errorf("detail = %+v, want applied [] and ignored [unsupported_x]", detail)
+	}
+
+	if after, _, _ := plugin.FacetVersion(ctx, box); after != before {
+		t.Errorf("token moved from %q to %q on a patch that applied nothing", before, after)
+	}
+}
+
 // TestMutationsRoundTripInMemory pins the write surface: create appends
 // to the parent listing, patch merges into the structured view, put
 // replaces raw, delete removes (recursively), and the guards hold

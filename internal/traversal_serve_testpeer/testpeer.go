@@ -1110,6 +1110,11 @@ func (p *TreePlugin) patchNode(
 		}
 	}
 	slices.Sort(ignored)
+	// Only unsupported keys: nothing to apply, so nothing is written and the
+	// version token stays put, the honest no-op a reference peer models.
+	if len(fields) == 0 && len(ignored) > 0 {
+		return []string{}, ignored, nil
+	}
 
 	// A field a declared facet write maps is ALSO the node's membership in
 	// that dimension: the host-built shapes (RFC 0013 facet_writes) move it.
