@@ -144,6 +144,24 @@ func TestParseEditedMove(t *testing.T) {
 	}
 }
 
+// TestParseObjectLine_NullIDRefused pins that a box whose id slot is the null
+// id `_` (RFC 0014) is a named refusal, never an object with an empty id, and
+// that the refusal tells the writer how to spell an object named `_`.
+func TestParseObjectLine_NullIDRefused(t *testing.T) {
+	_, err := parseObjectLine(`[_ !caldav-object-v1] Buy milk`)
+	if err == nil || !errors.Is400BadRequest(err) {
+		t.Fatalf("parseObjectLine(null id) = %v; want a bad request", err)
+	}
+	if !strings.Contains(err.Error(), "null id") || !strings.Contains(err.Error(), `"_"`) {
+		t.Fatalf("error = %v; want it to name the null id and the `\"_\"` spelling", err)
+	}
+
+	ln, err := parseObjectLine(`["_" !caldav-object-v1] Buy milk`)
+	if err != nil || ln.ID != "_" {
+		t.Fatalf(`parseObjectLine("_") = %+v, %v; want the object named _`, ln, err)
+	}
+}
+
 // TestParseSpelling1 pins that the type-as-heading spelling parses: the `# !type`
 // heading and inline `!type` boxes, with the dimension at depth 2.
 func TestParseSpelling1(t *testing.T) {

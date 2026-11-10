@@ -21,6 +21,11 @@ type Literal struct {
 	// exist yet, which organize creates. ID then holds the decoded opaque
 	// part (empty for a bare `+`), never the `+`.
 	New bool
+	// Null marks a NULL-ID box: the first slot was a bare `_` (RFC 0014
+	// "Isometry"; the PEG's NullID), a node that equals no id, not even
+	// itself. ID is then empty. An object literally named `_` is spelled
+	// `"_"` and arrives as ID "_" with Null false.
+	Null bool
 	// ID is the object reference, decoded (a quoted `"one/uno.zettel"` id
 	// arrives unquoted here; WriteLiteral re-quotes it as needed).
 	ID string
@@ -175,6 +180,13 @@ func projectLiteral(group Group, interior string) (Literal, error) {
 	if first.Negate || first.Exact {
 		return Literal{}, notGround(interior, first, "a `^`/`=` prefix is a query decoration")
 	}
+	if ident, ok := first.Basic.(IdentBasicTerm); ok && ident.Sigil == nil && ident.Ident.Name == "_" {
+		return projectAttrs(Literal{Null: true}, terms[1:], interior)
+	}
+	if _, locked := first.Basic.(MarklBasicTerm); locked {
+		return Literal{}, notGround(interior, first,
+			"a locked id `name@digest` is a stencil node (FDR 0028), not espalier")
+	}
 	id, ok := plainIdent(first.Basic)
 	if !ok {
 		return Literal{}, notGround(interior, first, "the first term must be the object id")
@@ -296,9 +308,12 @@ type SpelledLiteral struct {
 // SpellLiteral spells every slot of lit through the ONE quoting rule
 // (QuoteIfNeeded, design G9).
 func SpellLiteral(lit Literal) SpelledLiteral {
-	id := QuoteIfNeeded(lit.ID)
-	if lit.New {
+	id := spellRealID(lit.ID)
+	switch {
+	case lit.New:
 		id = SpellTempID(lit.ID)
+	case lit.Null:
+		id = "_"
 	}
 	s := SpelledLiteral{ID: id, Type: lit.Type}
 	for _, tag := range lit.Tags {

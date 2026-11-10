@@ -25,8 +25,9 @@ through.
 This page explains how the documents combine. The design record is
 cutting-garden FDR 0028 (*docs/features/0028-ajour.md*); the rule it
 implements is piggy RFC 0013 §4.9; the chain itself is explained in
-*piggy-acts*(7). As of this page's writing (2026-11-09) the record is
-*proposed* and nothing is built.
+*piggy-acts*(7). As of 2026-11-10 the record is *proposed*; the parser is
+built (*ParseStencil*, *ParsePatch*, *Write*) and the evaluator that checks a
+call is not yet.
 
 # THE STENCIL STACK
 
@@ -90,6 +91,13 @@ under it, by path segment (*file:/wt* covers *file:/wt/src/a.go*, not
 *subtree deny*; a bare *deny* denies the one id. You may write the familiar
 globstar instead - *file:/wt/\*\** is read as *file:/wt* with *subtree* - but
 the stored, signed form always spells *subtree*.
+
+A node whose id is *\_* is a pattern: it matches every existing object of
+its type whose fields satisfy its conditions. One with a type and no
+conditions at all is a wildcard, and in a stencil it must say so with the
+*open* tag (*[-> \_ !tool-input-v1 open]*); without it the stencil is refused
+when it is read. *+* in the id place is an object that does not exist yet:
+the only node that allows a creation.
 
 A deny anywhere in the stack refuses the call, in a stencil or in a patch.
 A negated condition is *not* a deny: *value!=master*, or *^value=master*,

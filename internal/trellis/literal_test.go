@@ -264,6 +264,44 @@ func TestLiteral_TempID(t *testing.T) {
 	}
 }
 
+// TestLiteral_NullID pins the null id in the box's id slot (RFC 0014
+// "Isometry", the PEG's NullID): a bare `_` is Null with no id, distinct from
+// an object literally named `_` (spelled `"_"`), and `_foo` stays an id. A
+// locked id is a stencil node, which the espalier projection refuses, naming
+// it.
+func TestLiteral_NullID(t *testing.T) {
+	cases := []struct {
+		interior string
+		want     Literal
+	}{
+		{`_ !task k=v`, Literal{Null: true, Type: "task", Atoms: []Atom{{"k", "v"}}}},
+		{`"_" !task`, Literal{ID: "_", Type: "task"}},
+		{`_foo !task`, Literal{ID: "_foo", Type: "task"}},
+		{`"+x"`, Literal{ID: "+x"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.interior, func(t *testing.T) {
+			got, err := ParseLiteral(tc.interior)
+			if err != nil {
+				t.Fatalf("ParseLiteral(%q): %v", tc.interior, err)
+			}
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("ParseLiteral(%q) = %+v, want %+v", tc.interior, got, tc.want)
+			}
+			var b strings.Builder
+			WriteLiteral(&b, got)
+			if b.String() != tc.interior {
+				t.Fatalf("WriteLiteral = %q, want %q", b.String(), tc.interior)
+			}
+		})
+	}
+
+	_, err := ParseLiteral(`run_recipe@blake2b256-s3 !mcp-tool-v1`)
+	if err == nil || !errors.Is400BadRequest(err) || !strings.Contains(err.Error(), "run_recipe@blake2b256-s3") {
+		t.Fatalf("ParseLiteral(locked id) = %v; want a bad request naming the term", err)
+	}
+}
+
 func TestQuoteIfNeeded(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{"work", "work"},

@@ -1,0 +1,133 @@
+package trellis
+
+import "strings"
+
+// ParseTreeHeadings parses src in the heading rendering (the one-isometry
+// sketch §4; RFC 0015's body without its sugar) into the same tree
+// ParseTreeNested reads:
+//
+//   - `#`×d then a literal is an interior node at depth d (a boxed heading);
+//     `#`×d then a bare term run is a null-id bucket carrying those terms
+//     (`# work` is `[_ work]`);
+//   - `- [literal]` is a leaf under the nearest open heading, or a root when
+//     none is open;
+//   - depth is relative: a heading nests under the nearest open heading that
+//     is shallower, so the shallowest heading is a root;
+//   - an empty heading (`#` alone) closes every open heading.
+//
+// A literal may wrap across lines. Organize's sugar (partial terms,
+// laddering, `%` scopes) and its description trailers are not read here: a
+// trailer after a literal is refused.
+func ParseTreeHeadings(src string) ([]TreeNode, error) {
+	p := &parser{src: []rune(src)}
+	var roots []TreeNode
+	type open struct {
+		depth int
+		node  *TreeNode
+	}
+	var stack []open
+	attach := func(n TreeNode) *TreeNode {
+		if len(stack) == 0 {
+			roots = append(roots, n)
+			return &roots[len(roots)-1]
+		}
+		parent := stack[len(stack)-1].node
+		parent.Children = append(parent.Children, n)
+		return &parent.Children[len(parent.Children)-1]
+	}
+	for {
+		p.skipLineSpace()
+		if p.atEOF() {
+			return roots, nil
+		}
+		switch p.src[p.pos] {
+		case '\n', '\r':
+			p.pos++
+			continue
+		case '#':
+			depth := 0
+			for !p.atEOF() && p.src[p.pos] == '#' {
+				depth++
+				p.pos++
+			}
+			p.skipLineSpace()
+			if p.atLineEnd() {
+				stack = stack[:0]
+				continue
+			}
+			node, err := p.parseHeadingContent()
+			if err != nil {
+				return nil, err
+			}
+			for len(stack) > 0 && stack[len(stack)-1].depth >= depth {
+				stack = stack[:len(stack)-1]
+			}
+			stack = append(stack, open{depth: depth, node: attach(node)})
+		case '-':
+			p.pos++
+			if !p.skipLineSpaceRequired() {
+				return nil, p.treeError("a line that is neither a heading nor a `- […]` leaf: `%s`", p.restOfLine())
+			}
+			node, err := p.parseTreeLiteral()
+			if err != nil {
+				return nil, err
+			}
+			if err := p.expectLineEnd(); err != nil {
+				return nil, err
+			}
+			attach(node)
+		default:
+			return nil, p.treeError("a line that is neither a heading nor a `- […]` leaf: `%s`", p.restOfLine())
+		}
+	}
+}
+
+// parseHeadingContent reads what follows a heading's `#`s: a boxed literal,
+// or a bare term run read as a null-id bucket.
+func (p *parser) parseHeadingContent() (TreeNode, error) {
+	if p.src[p.pos] == '[' {
+		node, err := p.parseTreeLiteral()
+		if err != nil {
+			return TreeNode{}, err
+		}
+		return node, p.expectLineEnd()
+	}
+	line := p.restOfLine()
+	p.pos += len([]rune(line))
+	bucket := &parser{src: []rune("[_ " + line + "]")}
+	return bucket.parseTreeLiteral()
+}
+
+func (p *parser) skipLineSpace() {
+	for !p.atEOF() && (p.src[p.pos] == ' ' || p.src[p.pos] == '\t') {
+		p.pos++
+	}
+}
+
+func (p *parser) skipLineSpaceRequired() bool {
+	start := p.pos
+	p.skipLineSpace()
+	return p.pos > start
+}
+
+func (p *parser) atLineEnd() bool {
+	return p.atEOF() || p.src[p.pos] == '\n' || p.src[p.pos] == '\r'
+}
+
+func (p *parser) restOfLine() string {
+	end := p.pos
+	for end < len(p.src) && p.src[end] != '\n' && p.src[end] != '\r' {
+		end++
+	}
+	return strings.TrimRight(string(p.src[p.pos:end]), " \t")
+}
+
+// expectLineEnd refuses anything after a literal on its line (an organize
+// description trailer has no place in the tree).
+func (p *parser) expectLineEnd() error {
+	p.skipLineSpace()
+	if p.atLineEnd() {
+		return nil
+	}
+	return p.treeError("a trailer after a literal: `%s`", p.restOfLine())
+}

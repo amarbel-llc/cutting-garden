@@ -876,6 +876,12 @@ func parseObjectLine(rest string) (objectLine, error) {
 	if err != nil {
 		return objectLine{}, err
 	}
+	if lit.Null {
+		return objectLine{}, errors.BadRequestf(
+			"box %q: the null id `_` is not an object organize can place; "+
+				"spell an object literally named `_` as `\"_\"`", strings.TrimSpace(rest),
+		)
+	}
 	ln := objectLine{
 		New: lit.New, ID: lit.ID, Type: lit.Type, Tags: lit.Tags,
 		Desc: strings.TrimSpace(trailer),
