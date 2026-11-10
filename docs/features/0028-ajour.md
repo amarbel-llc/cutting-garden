@@ -196,7 +196,9 @@ run 2):
   the object's path once per proposed field, each path ending in a
   `cg-field-v1` step with `Fields{field: [name], value: [proposed]}`, every
   one admitted independently. So `[-> _ !cutting_garden-ynab-transaction-v1
-  op=[patch] [-> _ !cg-field-v1 field=[category, memo]]]` is an allowlist:
+  op=[patch] [-> _ !cg-field-v1 field=[category, memo]]]` is an allowlist
+  (the field names are the patch keys `describe_node_types` reports in the
+  type's body; memo is a patch path only, not a facet):
   `payee` is refused with no deny written, and a field the plugin adds later
   is refused until a profile names it (the shape run 3's budget-clerk writer
   invented, by analogy with `tool-input-v1`; it replaces the earlier

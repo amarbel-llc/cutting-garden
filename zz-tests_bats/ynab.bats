@@ -175,6 +175,23 @@ function ynab_mcp_patch_recategorizes_a_transaction { # @test
   assert_output '[["Groceries"],"Groceries","moved by bats"]'
 }
 
+# The declaration matches the write path (cutting-garden#410): describe_node_types
+# reports the transaction writable, its patch body names all four keys write.go
+# recognizes (memo has no facet, so the body is its only advertisement), and a
+# memo-only patch still applies.
+function ynab_mcp_describe_names_every_transaction_patch_field { # @test
+  mcp_drive ynab://test/ "$(tools_call 3 describe_node_types '{}')"
+  run jq -r '.[].types[] | select(.tag == "cutting_garden-ynab-transaction-v1")
+    | .body.accepts[0] as $a
+    | [.writable, all("category", "cleared", "memo", "payee"; . as $f | $a | contains("\"" + $f + "\""))] | @tsv' \
+    <<<"$(mcp_result_text "$output" 3)"
+  assert_output "$(printf 'true\ttrue')"
+
+  mcp_drive ynab://test/ "$(tools_call 3 mutate_nodes '{"groups":[{"anchor":"ynab://test/Household/transactions/","ops":[{"kind":"patch","id":"t-0702","body":"{\"memo\":\"x\"}"}]}]}')"
+  run jq -r '.groups[0].applied | join(",")' <<<"$(mcp_result_text "$output" 3)"
+  assert_output t-0702
+}
+
 # A reconciled transaction's cleared state is locked: the patch is refused and
 # nothing changes.
 function ynab_mcp_patch_refuses_a_reconciled_cleared_change { # @test
