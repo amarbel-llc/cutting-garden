@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file (symlinked as `CLAUDE.md`) provides guidance to coding agents when working with code in this repository.
 
 ## Project status
 
@@ -78,9 +78,10 @@ lives in `amarbel-llc/madder` →
 `docs/plans/2026-05-10-extract-cutting-garden-design.md`; newer design
 docs live in this repo under `docs/{rfcs,features,plans}/`.
 
-`list` and `mcp` are the read-only consumers of the plugin **traversal**
+`list` and `mcp` are the consumers of the plugin **traversal**
 primitive (`RootLister`, FDR 0014): `list` prints a node's child nodes,
-`mcp` serves them over the Model Context Protocol (FDR 0015). A plugin MAY
+`mcp` serves them over the Model Context Protocol (FDR 0015) and adds the
+one write tool, `mutate_nodes` (FDR 0020). A plugin MAY
 also declare **facets** (RFC 0012, FDR 0021) — grouped-count summaries the
 framework computes over a node type's children, surfaced by `list --facets`,
 the `mcp` container read's `facets` block, the `mcp` `read_facets` tool (the
@@ -108,7 +109,7 @@ tommy resolves a config field's type to its *defining* package, so an
 alias facade would make caldav's generated codec import `internal/`
 (RFC 0009 §5). The framework aggregator is `internal/cgconfig`
 (`ConfigV0`), which holds ONLY the framework sections (`organize`, `tags`,
-`plugins`, `traversal_plugins`) and imports **no plugin**: each
+`mcp`, `plugins`, `traversal_plugins`) and imports **no plugin**: each
 account-bearing plugin claims its own top-level table by name at `init()`
 through the SDK's config-section registry
 (`cutting_garden_plugins.MustRegisterConfigSection`), and
@@ -179,7 +180,15 @@ presentation, its base is the sorted name set (any respelling is a no-op),
 and apply is read-only (renames: #380). `internal/trellis/literal.go` (`ParseLiteral` /
 `WriteLiteral`) owns organize's box interiors and heading terms; heading
 depth is normalized (shallowest level = root) and an empty heading resets
-context. Since native tags slice 2, an object's tag set renders as
+context. `internal/trellis/tree.go` (`TreeNode`, `ParseTree` /
+`ParseTreeNested` / `ParseTreeHeadings`, `WriteTree`; copy-exported to
+`pkgs/trellis`) is the literal TREE the nested and heading spellings both
+project from (RFC 0014 §Isomorphism), whose id slot takes a real id, the
+null id `_`, a temp id (`+`, `+id`, `+"id"`), a locked id `name@digest` or a
+globstar `<id>/**`; `pkgs/ajour` (`ParseStencil`, `ParsePatch`, `Write`,
+`Evaluate`; FDR 0028, ajour(7)) is real source importing `pkgs/trellis`,
+not a dagnabit facade, because an out-of-tree enforcer links it. Since native
+tags slice 2, an object's tag set renders as
 key-free bare/quoted atoms in its box (SortKey-ordered), governed by the
 `_tag-atoms = leading|trailing|none` and `_tag-strip = placement|none`
 envelope levers (`[organize]` config defaults; a tag-grouped document
