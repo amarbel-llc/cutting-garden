@@ -117,15 +117,24 @@ func recordOutcome(
 	result.Outcomes = append(result.Outcomes, outcome)
 }
 
-// recordMemberOutcome records the outcome of m and of every op merged into it,
-// each with its own ignored keys.
+// recordMemberOutcome records the result of m and of every op merged into it,
+// each with its own ignored keys: one entry per op in the list status names
+// (AppliedNodes, PatchedNothing or Failed) and one per op in Outcomes, so the
+// lists and Outcomes count the same ops (RFC 0017's invariant).
 func recordMemberOutcome(
 	result *cutting_garden_plugins.BulkResult, m bulkMember,
 	status cutting_garden_plugins.BulkOutcomeStatus, fields []string, err error,
 ) {
-	recordOutcome(result, m.op, status, fields, m.patch.ignored, err)
-	for _, other := range m.merged {
-		recordOutcome(result, other.op, status, fields, other.patch.ignored, err)
+	for _, op := range append([]bulkMember{m}, m.merged...) {
+		switch status {
+		case cutting_garden_plugins.OutcomeApplied:
+			result.AppliedNodes = append(result.AppliedNodes, op.op.URI)
+		case cutting_garden_plugins.OutcomePatchedNothing:
+			result.PatchedNothing = append(result.PatchedNothing, op.op.URI)
+		case cutting_garden_plugins.OutcomeFailed:
+			result.Failed = append(result.Failed, bulkFailure(op.op, err))
+		}
+		recordOutcome(result, op.op, status, fields, op.patch.ignored, err)
 	}
 }
 
@@ -207,7 +216,6 @@ func applyBulkGroup(
 	result *cutting_garden_plugins.BulkResult,
 ) {
 	failOne := func(m bulkMember, err error) {
-		result.Failed = append(result.Failed, bulkFailure(m.op, err))
 		recordMemberOutcome(result, m, cutting_garden_plugins.OutcomeFailed, nil, err)
 	}
 	failAll := func(err error) {
@@ -272,7 +280,7 @@ func applyBulkGroup(
 			continue
 		}
 		if len(plan.changed) == 0 {
-			result.PatchedNothing = append(result.PatchedNothing, m.op.URI) // already as requested
+			// already as requested
 			recordMemberOutcome(result, m, cutting_garden_plugins.OutcomePatchedNothing, []string{}, nil)
 			continue
 		}
@@ -295,7 +303,6 @@ func applyBulkGroup(
 			failOne(b.member, err)
 			continue
 		}
-		result.AppliedNodes = append(result.AppliedNodes, b.member.op.URI)
 		recordMemberOutcome(result, b.member, cutting_garden_plugins.OutcomeApplied, b.plan.changed, nil)
 	}
 }

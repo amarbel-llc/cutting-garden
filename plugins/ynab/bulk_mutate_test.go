@@ -195,8 +195,12 @@ func TestBulkMutate_PatchesOfOneTransactionMerge(t *testing.T) {
 		patchOp(t, txnPrefix+"t1", `{"memo":"merged"}`),
 		patchOp(t, txnPrefix+"t1", `{"memo":"merged"}`), // an equal repeat is not a conflict
 	)
-	if got := lastSegments(result.AppliedNodes); !slices.Equal(got, []string{"t1"}) || len(result.Failed) != 0 {
-		t.Fatalf("applied %v failed %v, want t1 once and no failures", got, result.Failed)
+	// Every op is accounted for in the lists, as in Outcomes: the three ops on
+	// t1 were all applied, by one entry.
+	if got := lastSegments(result.AppliedNodes); !slices.Equal(got, []string{"t1", "t1", "t1"}) ||
+		len(result.Failed) != 0 || len(result.Outcomes) != 3 {
+		t.Fatalf("applied %v failed %v outcomes %d, want t1 for each of the 3 ops and no failures",
+			got, result.Failed, len(result.Outcomes))
 	}
 	saved, _ := srv.TransactionByID("b1", "t1")
 	if *saved.CategoryID != "c3" || saved.Memo == nil || *saved.Memo != "merged" {
