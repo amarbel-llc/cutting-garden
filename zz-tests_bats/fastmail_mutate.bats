@@ -101,6 +101,29 @@ function fastmail_mutate_move_thread_to_nested_mailbox { # @test
 	EOM
 }
 
+# Two ops in one mutate_nodes group go through the plugin's BulkMutator
+# (cutting-garden#292), which sends them as one Email/set: T2 moves to the
+# Archive and T3 loses its flag. Each op reports its own outcome, in request
+# order.
+function fastmail_mutate_two_ops_in_one_group { # @test
+  mcp_drive "$FASTMAIL_ROOT" "$(tools_call 3 mutate_nodes "$(jq -nc \
+    --arg a "${FASTMAIL_ROOT}Inbox/" \
+    '{groups:[{anchor:$a,ops:[
+      {kind:"patch",id:"T2",body:"{\"mailbox\": \"Archive\"}"},
+      {kind:"patch",id:"T3",body:"{\"tags\": [\"_inbox\"]}"}]}]}')")"
+  output="$(mcp_result_text "$output" 3 | jq -c '.groups[0].outcomes[] | {status, fields, uri, error}')"
+  assert_vector - <<-'EOM'
+	{"status":"applied","fields":["mailbox"],"uri":"fastmail://test/Archive/?thread=T2","error":null}
+	{"status":"applied","fields":["tags"],"uri":null,"error":null}
+	EOM
+
+  run_cg list -format json "${FASTMAIL_ROOT}Inbox/"
+  assert_success
+  run jq -c '{uri, tags}' <<<"$output"
+  assert_output --partial '{"uri":"fastmail://test/Inbox/?thread=T3","tags":["_inbox"]}'
+  refute_output --partial 'thread=T2'
+}
+
 # An unknown target is refused by name and writes nothing; so is a body that
 # also names `tags` (a move and a tag-set replacement in one patch).
 function fastmail_mutate_move_refusals { # @test

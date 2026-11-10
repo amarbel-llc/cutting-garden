@@ -322,9 +322,41 @@ anchor mailbox gets its bare thread id (`T1`), a thread in a descendant mailbox
 resolve every id through it, and a `NodeIDer` plugin whose distinct nodes
 collide on one id is refused at generate.
 
-The plugin does **not** advertise `bulk-atomic` (RFC 0017) yet: each thread's
-patch is already one JMAP request, and the capability flag lands with the MCP
-`bulk_mutate` wiring.
+**Bulk writes** (`BulkMutator`, RFC 0017, cutting-garden#292). A changeset or
+sweep of thread patches costs ONE write request per account: the Mailbox/set
+creates every op's new tags need (one create per tag, however many ops name
+it), then one `Email/set` carrying every op's member updates. The reads ahead
+of it are shared too: the mailbox tree, one `Thread/get` and one `Email/get`
+for all the targeted threads. Each op is planned by the single-patch planners,
+so it keeps PatchNode's refusals, and gets its own outcome in request order
+(the ynab BulkMutator does not keep request order yet, cutting-garden#409):
+applied (`["mailbox"]` and the new URI for a move; `["tags"]` plus
+`mailbox:<path>` for each mailbox its tags create), patched_nothing, or failed
+when its plan is refused, a create it needs is in `notCreated`, or one of its
+messages is in `notUpdated`. The error names the record and the server's
+SetError, and says which of the thread's other messages were updated anyway.
+Two ops on one thread merge when they ask for the same write; otherwise the
+later one fails, since one `Email/set` has no order between two patches of a
+message. An op that is not a thread patch takes the single-node path.
+
+The plugin does **not** advertise `bulk-atomic`: a JMAP `/set` applies record
+by record and a refused update rolls nothing back (RFC 8620 §5.3), so the batch
+cannot be all-or-nothing, and an atomic request is refused
+(`ErrBulkAtomicUnsupported`).
+
+The `Email/set` carries `ifInState`, the Email state the batch's members were
+read at. It guards against STALENESS (another client changed the mail between
+the read and the write), not against partial failure. On a `stateMismatch` the
+server writes no message and every batched op fails with "re-plan and retry".
+The `Mailbox/set` creates in the same request have already run and are not
+rolled back, so a re-plan finds those tags existing and the retry creates
+nothing new (pinned by a test). Unverified against live Fastmail: RFC 8620
+scopes a state to its type, so a mailbox create should not move the Email
+state, but if live Fastmail does move it, every batch that creates a tag will
+hit `stateMismatch`. The fallback is then to split such a batch into two
+requests (`Mailbox/set`, re-read the Email state, `Email/set` with
+`ifInState`), which keeps the guard at the cost of one round trip for
+tag-creating batches only.
 
 **Excluded from writes**, deliberately: sending, draft creation,
 delete/expunge, and message-content edits. Those are compositional/destructive
@@ -472,8 +504,8 @@ declines live-mutation tools.
 - FDR 0018 — unified type namespace: node-type naming.
 - RFC 0007 — config subsystem: `[[fastmail.accounts]]` and credential
   resolution.
-- RFC 0017 — bulk mutation: the `bulk-atomic` posture the JMAP `Email/set`
-  fan-out will advertise once the plugin implements `BulkMutator`.
+- RFC 0017 — bulk mutation: the plugin's best-effort `BulkMutator`, and why it
+  does not advertise `bulk-atomic`.
 - The interactive `Fastmail` MCP server (email/contacts/calendar/notes) — the
   live-mutation sibling, the same relationship sisyphus has to the jira plugin
   and bob's caldav has to the caldav plugin.
