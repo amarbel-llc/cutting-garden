@@ -1253,7 +1253,7 @@ EOF
   # whole multi-line output as ONE string (no per-line/multiline flag),
   # so `^not ok` would never match a mid-output failure — a false-safe
   # assertion. --partial 'not ok' catches a failing point anywhere.
-  assert_output --partial '1..31'
+  assert_output --partial '1..32'
   # The nix-built driver carries its build identity in the TAP header
   # (cutting-garden#107): the version reached the binary, not the dev default.
   assert_output --partial '# cutting-garden-conformance-traversal '
@@ -1302,6 +1302,9 @@ EOF
   # sets, disjoint, on its own probe node (cutting-garden#376); a peer
   # omitting [patch_ignored] SKIPs.
   assert_output --partial 'ok 31 - node.patch: ignored names the body keys tolerated but not applied'
+  # Every listed node of a templated type resolves to its own type, walked
+  # from roots.list with no manifest input (cutting-garden#408).
+  assert_output --partial 'ok 32 - uri template: every listed node resolves to its own type'
   refute_output --partial 'not ok'
 }
 
