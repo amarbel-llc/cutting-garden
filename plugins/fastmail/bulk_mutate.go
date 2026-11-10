@@ -206,12 +206,18 @@ func applyBulkGroup(ctx context.Context, group *bulkGroup, r *bulkRecorder) {
 			r.fail(m, errors.BadRequestf("fastmail plugin: no thread %q", m.ref.threadID))
 			continue
 		}
+		mark := creations.mark()
 		pm, memberUpdates, err := planBulkMember(m, emails, tree, creations)
 		if err != nil {
 			r.fail(m, err)
 			continue
 		}
 		if len(memberUpdates) == 0 {
+			// Believed unreachable: a plan that allocates a create also adds it
+			// to every member, and an empty thread is refused. Should one ever
+			// plan creates with no updates, drop them, so the shared request
+			// never creates a mailbox no op uses.
+			creations.rollback(mark)
 			r.nothing(m)
 			continue
 		}
