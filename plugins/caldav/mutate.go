@@ -180,13 +180,14 @@ func patchNode(
 
 	var fields map[string]json.RawMessage
 	var supported []string
+	var section string
 	switch patch.Component {
 	case "VEVENT":
-		fields, supported = patch.Event, eventPatchFields
+		fields, supported, section = patch.Event, eventPatchFields, "event"
 	case "VTODO":
-		fields, supported = patch.Task, taskPatchFields
+		fields, supported, section = patch.Task, taskPatchFields, "task"
 	case "VJOURNAL":
-		fields, supported = patch.Journal, journalPatchFields
+		fields, supported, section = patch.Journal, journalPatchFields, "journal"
 	default:
 		return nil, nil, badPatchShape(fmt.Sprintf(
 			"the patch has unknown component %q (want VEVENT, VTODO, or VJOURNAL)", patch.Component))
@@ -197,6 +198,12 @@ func patchNode(
 	// understand costs no GET/PUT and still reports honestly.
 	applied = cutting_garden_plugins.RecognizedPatchFields(fields, supported)
 	ignored = cutting_garden_plugins.IgnoredPatchFields(fields, supported)
+	// A top-level key beside component and its own section (a field put at
+	// the wrong level, another component's section) is not applied either, so
+	// it is named too (cutting-garden#376).
+	ignored = append(ignored,
+		cutting_garden_plugins.IgnoredPatchFields(top, []string{"component", section})...)
+	slices.Sort(ignored)
 	if len(applied) == 0 {
 		return applied, ignored, nil
 	}

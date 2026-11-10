@@ -285,6 +285,24 @@ func TestPatchNodeDetail_NamesIgnoredFields(t *testing.T) {
 	}
 }
 
+// In the wrapped form, a top-level key beside component and its section (a
+// field put at the wrong level, or another component's section) is not
+// applied, so it is named as ignored too.
+func TestPatchNodeDetail_NamesIgnoredTopLevelKeys(t *testing.T) {
+	_, home := startFake(t)
+	node := mustParseURL(t, objectArg(home, "/dav/cal/task1.ics"))
+	detail, err := Plugin{}.PatchNodeDetail(context.Background(), node, strings.NewReader(
+		`{"component":"VTODO","task":{"summary":"ok","color":"red"},"due":"2026-11-11","event":{"summary":"x"}}`))
+	if err != nil {
+		t.Fatalf("PatchNodeDetail: %v", err)
+	}
+	if !slices.Equal(detail.Applied, []string{"summary"}) ||
+		!slices.Equal(detail.Ignored, []string{"color", "due", "event"}) {
+		t.Errorf("applied %v ignored %v, want [summary] and [color due event]",
+			detail.Applied, detail.Ignored)
+	}
+}
+
 // The cutting-garden#180 shape, reproduced against caldav: a body naming
 // ONLY fields the plugin does not recognize. Nothing is written, and the
 // caller must be able to tell — a non-nil empty applied, not a bare success.
