@@ -129,12 +129,18 @@ url = "nosuchplugin://h/p/"
 // A section a stanza claims via config_section is consumed raw by the wire
 // plugin, so it is not an unknown key, whichever table declares the stanza:
 // the generalized [[plugins]] or the [[traversal_plugins]] alias
-// (cutting-garden#347, where a nebulous section warned).
+// (cutting-garden#347, where a nebulous section warned). A capture-only
+// [[plugins]] stanza's section counts as claimed too: the key is spoken for
+// whichever protocol the stanza speaks.
 func TestLoadConfig_StanzaClaimedSectionDoesNotWarn(t *testing.T) {
-	for _, table := range []string{"plugins", "traversal_plugins"} {
-		t.Run(table, func(t *testing.T) {
+	for name, header := range map[string]string{
+		"plugins":           "[[plugins]]",
+		"traversal_plugins": "[[traversal_plugins]]",
+		"plugins capture":   "[[plugins]]\nprotocols = [\"capture\"]",
+	} {
+		t.Run(name, func(t *testing.T) {
 			path := writeTempConfig(t, `
-[[`+table+`]]
+`+header+`
 name = "newsblur"
 command = ["nebulous"]
 schemes = ["newsblur"]
