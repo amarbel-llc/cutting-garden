@@ -114,6 +114,21 @@ func TestBaseURLFromArg_UnknownAliasNamesTheAccounts(t *testing.T) {
 			t.Errorf("%s: error %q still blames an inner URL", arg, err)
 		}
 	}
+
+	// A bare `caldav:` names no account either, and gets the same refusal.
+	_, err := baseURLFromArg(&url.URL{Scheme: schemeCalDAV})
+	if err == nil || !errors.Is400BadRequest(err) ||
+		!strings.Contains(err.Error(), "task, work") {
+		t.Errorf("caldav: alone = %v, want a bad request naming the accounts", err)
+	}
+
+	// A segment with a scheme is not an alias, even one that reads like
+	// host:port (url.Parse gives it the scheme "host"): it keeps the
+	// inner-URL hint.
+	_, err = baseURLFromArg(mustParseURL(t, "caldav:host:8443/dav"))
+	if err == nil || !strings.Contains(err.Error(), "inner URL must be http or https") {
+		t.Errorf("caldav:host:8443/dav = %v, want the inner-URL refusal", err)
+	}
 }
 
 // TestBaseURLFromArg_AccountAlias pins the caldav:<name>[/<sub>] resolution: a

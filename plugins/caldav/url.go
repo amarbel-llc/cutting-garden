@@ -1,6 +1,7 @@
 package caldav
 
 import (
+	"fmt"
 	"net/url"
 	"os"
 	"slices"
@@ -81,6 +82,11 @@ func baseURLFromArg(u *url.URL) (string, error) {
 		return inner, nil
 	}
 
+	// A bare `caldav:` names no account and no server: refuse it as an
+	// alias miss, listing the accounts it could have named.
+	if u.Host == "" && u.Path == "" {
+		return "", unknownAccountAlias("")
+	}
 	if u.Host == "" {
 		return "", errors.BadRequestf(
 			"caldav plugin: empty host in %q\n"+
@@ -111,11 +117,15 @@ func unknownAccountAlias(name string) error {
 	if len(names) > 0 {
 		configured = "configured: " + strings.Join(names, ", ")
 	}
+	what := fmt.Sprintf("no configured caldav account named %q", name)
+	if name == "" {
+		what = "`caldav:` names no account"
+	}
 	return errors.BadRequestf(
-		"caldav plugin: no configured caldav account named %q (%s); accounts are the "+
+		"caldav plugin: %s (%s); accounts are the "+
 			"[[caldav.accounts]] entries of the cutting-garden config (the default file, "+
 			"or the -config file), see cutting-garden-config(5)",
-		name, configured,
+		what, configured,
 	)
 }
 
