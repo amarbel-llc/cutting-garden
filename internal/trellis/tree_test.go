@@ -8,7 +8,7 @@ import (
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
-// The literal tree (RFC 0014 "Isometry" and "Stencil fragment"; the PEG's
+// The literal tree (RFC 0014 "Isomorphism" and "Stencil fragment"; the PEG's
 // Literal entry): one TreeNode per root, children from `[-> …]`, nesting to
 // any depth, the id slot admitting a real id, the null id `_`, a temp id and a
 // locked id. Every case is also a write -> re-parse round trip.
@@ -126,7 +126,7 @@ func TestParseTree_Headings(t *testing.T) {
 
 func TestParseTree_HeadingBuckets(t *testing.T) {
 	// A bare heading is a `_` bucket carrying the heading's terms (the one-
-	// isometry sketch §4); depth normalizes to the shallowest heading; an
+	// isomorphism sketch §4); depth normalizes to the shallowest heading; an
 	// empty heading closes every open heading.
 	headings := `## status=needs-action
 - [task1.ics]
@@ -172,6 +172,7 @@ func TestParseTree_Refusals(t *testing.T) {
 		{`x`, "x"},
 		{"# [a]\nnot a line", "not a line"},
 		{"- [a] trailer", "trailer"},
+		{"# a] b", "b"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.src, func(t *testing.T) {

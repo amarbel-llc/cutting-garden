@@ -8,7 +8,7 @@ promotion-criteria: |
   built-ins) evaluates a real tool call through `pkgs/ajour` and refuses on
   its verdict, advisory or enforced. experimental -> testing: two enforcers
   share the package with no fork of the rules, and the stencil fragment is
-  written into RFC 0014 as a named validity condition beside Isometry.
+  written into RFC 0014 as a named validity condition beside Isomorphism.
 ---
 
 # ajour — the stencil-stack evaluator for operator-act conditions
@@ -18,10 +18,14 @@ promotion-criteria: |
 > 2026-11-09 ("Espalier profiles meet the shrinking-set idea", §9: Shape E,
 > stacking never comparing, one spelling for `deny`) as piggy RFC 0013 §4.9
 > and circus EPIC 0001 decisions 3 to 5 carry them, and amended the same
-> evening on the operator's rulings in the one-isometry sketch (Google Doc
-> "One isometry: organize and ajour as two spellings of one tree", v2 tab
+> evening on the operator's rulings in the one-isomorphism sketch (Google Doc
+> "One isomorphism: organize and ajour as two spellings of one tree", v2 tab
 > §11): the null id `_`, the temp id `+` as a creation allowance, verbs as
-> atoms, nested espalier as the canonical spelling. Nothing is built.
+> atoms, nested espalier as the canonical spelling. Amended 2026-11-10 on the
+> operator's rulings of that day (open items 1 to 3) by
+> cutting-garden/rare-sycamore, which built phase 1, the parser
+> (cutting-garden#396: `trellis.ParseTree` and `pkgs/ajour`'s
+> `ParseStencil`, `ParsePatch`, `Write`); `Evaluate` is phase 2 (#346).
 > Evidence labels: **V** read in a named file in this worktree or a sibling
 > checkout; **I** inference; **U** unknown; **R** an operator ruling, dated.
 > The plain-words companion is `ajour(7)`.
@@ -57,7 +61,13 @@ parser's public facade) exactly as an out-of-tree plugin would, and nothing
 from `internal/`. It is real source in `pkgs/`, not a dagnabit facade over an
 `internal/` package: no in-tree command needs it, and the copy-mode facade
 would have to rewrite an `internal/trellis` import to `pkgs/trellis`, which
-dagnabit's copy mode is not known to do (U). Its dependency closure is
+dagnabit's copy mode does not do (V 2026-11-10: `dagnabit export -copy` over
+a probe `internal/ajour` left `pkgs/ajour` importing `internal/trellis`, so
+`Node.Atoms` would have been a type no out-of-tree consumer can name; and
+`internal/sdklayering` forbids the `internal/` -> `pkgs/` edge that would
+avoid it). The literal tree it projects from (`trellis.TreeNode`,
+`ParseTree`, `WriteTree`) lives in `internal/trellis` and reaches
+`pkgs/trellis` through that package's existing copy facade. Its dependency closure is
 `pkgs/trellis` plus dewey's `pkgs/errors` and the standard library (`regexp`
 for `~=`); no hyphence, no traversal SDK, no plugin. See "The dependency
 argument" for why it is here and when it would leave.
@@ -185,7 +195,7 @@ run 2):
 ### The stencil fragment (the grammar ajour reads)
 
 A named validity condition on RFC 0014's grammar, between espalier (the
-ground fragment, "Isometry") and full trellis. It is a projection over
+ground fragment, "Isomorphism") and full trellis. It is a projection over
 `trellis.Parse`'s AST, as `trellis.ParseLiteral` is (V `internal/trellis/
 literal.go`); no new lexer. A stencil is a sequence of trellis literals, one
 per root; inside a literal:
@@ -195,7 +205,7 @@ per root; inside a literal:
 | the **id slot** first, always present, one of: a real id, bare or quoted; the **null id `_`** (a pattern over existing objects, matched by type and atoms alone: `[-> _ !just-recipe-v1 group=[test, lint]]`; R 2026-11-09); the **temp id `+`**, `+id`, `+"id"` (an object that does not exist yet: a creation allowance, R 2026-11-09). An object literally named `_` is written `"_"`. | a sigil on any term; a version subpath `[+ …]` (a bare `+` followed by a space inside a group is the temp id, never the sigil: data position); `(…)` qualifiers; `@digest` as a standalone term |
 | a **locked id**, `name@<digest>` (one MarklTerm in the id slot, hyphence RFC 0003) | OR-alternative groups `[a, b]` |
 | at most one `!type` | a combinator other than `->` inside a child subpath; `->>`, `<-`, `<<-`, typed edges; a subpath whose path has more than one step |
-| tags: bare or quoted identifiers; `deny` and `subtree` are **reserved** and are the only two ajour reads; every other tag is carried and inert (`required`, `open`, `kind`-style tags are the consumer's) | a `_`-prefixed field name (framework-reserved in RFC 0014) |
+| tags: bare or quoted identifiers; `deny` and `subtree` are **reserved** and are the only two the evaluator reads; `open` is checked at parse as the required spelling of a wildcard (R 2026-11-10) and changes no match; every other tag is carried and inert (`required`, `kind`-style tags are the consumer's) | a `_`-prefixed field name (framework-reserved in RFC 0014) |
 | atoms with any `FieldOp` — `=`, `!=`, `*=`, `^=`, `$=`, `~=` (RE2), `<`, `<=`, `>`, `>=` — a scalar or a value list `[a, b]`, and `^` negation of an atom | an atom with a `(qualifier)` value |
 | children: `[-> …]` subpaths, each one literal of this fragment, nesting to any depth | |
 
@@ -206,13 +216,13 @@ no negation). Regexes are compiled at parse; a bad one is a parse error, so a
 layer that errors is refused before any call is evaluated (D1 V-D1-7d's
 "an erroring predicate is deny" becomes "an erroring layer has no holes").
 
-RFC 0014 gains a "Stencil fragment" subsection beside "Isometry" when the
+RFC 0014 gains a "Stencil fragment" subsection beside "Isomorphism" when the
 operator approves this record. `0014-trellis.peg` gains the id-slot
 productions for `+` and `_` (cutting-garden#395: the temp id is in the Go
 parser today and in no PEG production); nothing else in the PEG changes.
 The canonical spelling of a stencil is nested espalier (R 2026-11-09); the
 organize heading rendering is an accepted input spelling once `ParseStencil`
-canonicalizes on read (one-isometry sketch §4, §10), and a stencil's digest
+canonicalizes on read (one-isomorphism sketch §4, §10), and a stencil's digest
 is over the canonical tree either way. One more input-only spelling (R
 2026-11-09, from the writing probe: every cold writer reached for the
 gitignore/IAM globstar): an id ending in `/**` is read as the id without the
@@ -268,10 +278,15 @@ Consequences the rules give for free, so they are not special cases:
   from the live manifest; a profile saying `perm=allow` against a manifest
   saying `ask` does not match, so the tool is refused.
 - **`open` (V-D2-14).** A `_` node with no atoms matches every existing
-  subject of its type; D2's `[-> _ !tool-input-v1 open]` is such a node, and
-  `open` itself is an inert tag (whether it becomes the required spelling of
-  the wildcard is a deferred operator item). Without that node, an input
-  field no node names is refused.
+  subject of its type; D2's `[-> _ !tool-input-v1 open]` is such a node.
+  `open` is the **required spelling of a wildcard** (R 2026-11-10, open item
+  3): in a stencil, a typed `_` node with no atoms that lacks the `open` tag
+  is a parse error naming the node, interior and `deny` nodes included
+  (`[_ !clown-plugin-v1 open [-> …]]`); a patch is exempt, and an untyped
+  `_` is the profile validator's (one-isomorphism sketch §8 row 2). `open`
+  changes no match: ajour checks its presence at parse and evaluates the
+  node as before (vector A-33). Without such a node, an input field no node
+  names is refused.
 - **Catalog predicates (D2 V-D2-7).** `[-> _ !just-recipe-v1 group=[test,
   lint]]` is a `_` node whose atom is checked against the recipe subject's
   `group` field; whether a profile MAY carry such a node on a catalog level
@@ -292,6 +307,13 @@ Consequences the rules give for free, so they are not special cases:
   VERB (`op=[read, patch, delete]`, presented as a subject field; a verb
   that is its own tool, `resources/read`, is a catalog node); `deny` says
   NO. Create is spelled only by `+`; `op=create` is refused by the validator.
+  A creation path presents the verb `create` on every step, the container
+  steps above the `+` and the `New` step alike, and the `op=` atom (which
+  names read, patch, put and delete only) is not checked against a step
+  whose verb is `create`: the container steps match by type, id and their
+  other atoms, and the `+` node alone admits or refuses the creation (R
+  2026-11-10; vector A-36). So a `subtree op=[read]` container lets a
+  creation through to its `+` child while still refusing a patch.
   So `[-> cal-7 !caldav-calendar-v1 subtree op=[patch]]` admits patching
   under cal-7 and nothing else, and `[-> cal-7 !caldav-calendar-v1 [->
   event-3 !caldav-object-vevent-v1 op=[delete] deny]]` denies one deletion.
@@ -380,8 +402,11 @@ of replacement.
     func (Patch) Write(*strings.Builder)
 
     type Layer interface{ ajourLayer() }            // Stencil | Patch
+    type Stencil struct{ Roots []Node }
+    type Patch struct{ Roots []Node }
     type Node struct {                              // one literal of the fragment
-      ID       string; HasID bool; Lock string
+      ID       string; HasID bool; Lock string     // HasID false for `_` and `+`
+      New      bool                                // the temp id `+…` (ID holds its handle)
       Type     string
       Tags     []string                            // every tag, deny and subtree included, in order
       Deny     bool; Subtree bool
@@ -446,18 +471,18 @@ Sample A (D2 §3) as the only stencil; a moxy `folio read` call.
     layers: [stencil A]
     call:   Path  = [moxy, folio, read]            (types clown-plugin-v1, mcp-server-v1, mcp-tool-v1;
                                                     read carries Fields{kind:[read], perm:[allow]})
-            Values = [[{fs-path-v1, ID: file:circus/.worktrees/_/src/a.go, Fields{field:[file_path]}}]]
+            Values = [[{fs-path-v1, ID: file:circus/.worktrees/swift-plum/src/a.go, Fields{field:[file_path]}}]]
 
     A: moxy ✓ -> folio ✓ -> read ✓ (kind=read perm=allow hold)
-       -> [file:circus/.worktrees/_ !fs-path-v1 subtree] matches by segment prefix ✓
+       -> [file:circus/.worktrees/swift-plum !fs-path-v1 subtree] matches by segment prefix ✓
     verdict: admitted
 
-The same stack, `file:circus/.worktrees/_/infra/secrets/token`:
+The same stack, `file:circus/.worktrees/swift-plum/infra/secrets/token`:
 
     A: … -> read -> two nodes match: the subtree allowance and
-       [file:circus/.worktrees/_/infra/secrets !fs-path-v1 subtree deny]; a deny among the matches
+       [file:circus/.worktrees/swift-plum/infra/secrets !fs-path-v1 subtree deny]; a deny among the matches
     verdict: refused
-      layer 0 (stencil): deny [file:circus/.worktrees/_/infra/secrets !fs-path-v1 subtree deny] at moxy/folio/read
+      layer 0 (stencil): deny [file:circus/.worktrees/swift-plum/infra/secrets !fs-path-v1 subtree deny] at moxy/folio/read
 
 RFC 0013 §9's link: the manager's stencil M (allows read under the worktree),
 the pinned reviewer stencil A, and the link's body as a patch P:
@@ -465,12 +490,12 @@ the pinned reviewer stencil A, and the link's body as a patch P:
     [moxy !clown-plugin-v1
       [-> folio !mcp-server-v1
         [-> read !mcp-tool-v1
-          [-> file:circus/.worktrees/_/infra/secrets !fs-path-v1 subtree deny]]]]
+          [-> file:circus/.worktrees/swift-plum/infra/secrets !fs-path-v1 subtree deny]]]]
 
     layers: [stencil M, stencil A, patch P]
-    call:   read file:circus/.worktrees/_/src/a.go   -> M ✓, A ✓, P transparent (no match under read)  => admitted
-    call:   read file:circus/.worktrees/_/infra/secrets/x -> P denies                                   => refused
-    call:   rg search file:circus/.worktrees/_          -> P has no rg node: transparent; M ✓, A ✓      => admitted
+    call:   read file:circus/.worktrees/swift-plum/src/a.go   -> M ✓, A ✓, P transparent (no match under read)  => admitted
+    call:   read file:circus/.worktrees/swift-plum/infra/secrets/x -> P denies                                   => refused
+    call:   rg search file:circus/.worktrees/swift-plum          -> P has no rg node: transparent; M ✓, A ✓      => admitted
 
 A child stencil that omits an allowance (the strict rule): C is A with the
 `file:/nix/store` node removed under `read`.
@@ -484,17 +509,21 @@ A recipe run with a `_` catalog predicate and a lock:
 
     [just-us !clown-plugin-v1
       [-> just-us !mcp-server-v1
-        [-> run_recipe@blake2b256-s1 !mcp-tool-v1 kind=exec perm=allow
+        [-> run_recipe@blake2b256-s3 !mcp-tool-v1 kind=exec perm=allow
           [-> _ !just-recipe-v1 group=[test, lint]]
-          [-> explore-cli@blake2b256-b1 !just-recipe-v1
+          [-> explore-cli@blake2b256-c3 !just-recipe-v1
             [-> _ !recipe-arg-v1 position=1 value=[status, update]]]]]]
 
-    call: Path = [just-us, just-us, run_recipe{Digest: s1}, test-go{Type: just-recipe-v1, Fields{group:[test]}}]
+    call: Path = [just-us, just-us, run_recipe{Digest: s3}, test-go{Type: just-recipe-v1, Fields{group:[test]}}]
           => admitted (the `_` node matches test-go by its group)
-    call: … run_recipe{Digest: s2} …                          => refused: lock mismatch [run_recipe@blake2b256-s1 …]
-    call: … explore-cli{Digest: b1}, Values = [[{recipe-arg-v1, Fields{position:[1], value:[status]}}]]  => admitted
-    call: … explore-cli{Digest: b1}, Values = [[{recipe-arg-v1, Fields{position:[1], value:[delete]}}]]  => refused: no allowance
-    call: … run_recipe{Digest: s1}, with no Digest on the recipe subject       => refused: lock mismatch (no live digest)
+    call: … run_recipe{Digest: s2} …                          => refused: lock mismatch [run_recipe@blake2b256-s3 …]
+    call: … explore-cli{Digest: c3}, Values = [[{recipe-arg-v1, Fields{position:[1], value:[status]}}]]  => admitted
+    call: … explore-cli{Digest: c3}, Values = [[{recipe-arg-v1, Fields{position:[1], value:[delete]}}]]  => refused: no allowance
+    call: … run_recipe{Digest: s3}, with no Digest on the recipe subject       => refused: lock mismatch (no live digest)
+
+(Placeholder digests in this record are abbreviated blech32, `s3`, `c3`,
+because the grammar's digest slot is charset-strict: `blake2b256-s1` does not
+parse, `1` and `b` being outside the alphabet.)
 
 A patch that tightens, and a patch that is malformed:
 
@@ -552,7 +581,7 @@ name.
 
     [just-us !clown-plugin-v1
       [-> just-us !mcp-server-v1
-        [-> run_recipe@blake2b256-s1 !mcp-tool-v1
+        [-> run_recipe@blake2b256-s3 !mcp-tool-v1
           [-> _ !just-recipe-v1 group=[build, test, lint]]]]]
 
     [cutting-garden !clown-plugin-v1
@@ -561,15 +590,16 @@ name.
         [-> read_node !mcp-tool-v1]
         [-> mutate_nodes !mcp-tool-v1]
         [-> resources !mcp-resources-v1
-          [-> ynab:main !cg-root-v1 subtree op=[read]
+          [-> ynab:main !cg-root-v1 subtree op=[read]]
+          [-> ynab:main !cg-root-v1 op=[patch]
             [-> budget/b1 !cutting_garden-ynab-budget-v1
               [-> transactions
                 [-> _ !cutting_garden-ynab-transaction-v1 op=[patch]
                   [-> _ !cg-field-v1 field=[category, memo]]]]]]]]]
 
-    [_ !clown-plugin-v1
-      [-> _ !mcp-server-v1
-        [-> _ !mcp-tool-v1
+    [_ !clown-plugin-v1 open
+      [-> _ !mcp-server-v1 open
+        [-> _ !mcp-tool-v1 open
           [-> file:eng/repos/cutting-garden/infra/secrets !fs-path-v1 subtree deny]]]]
 
 How it reads, root by root. `folio`: every read tool may read under any
@@ -582,14 +612,16 @@ tools and `issue-comment`, on two repos. `run_recipe`: locked to its live
 schema digest, recipes in three groups, no `explore-cli` so none of its
 arguments is reachable. `cutting-garden`: the three tools are bare; the
 surface says what they may touch: anything under `ynab:main` may be read
-(the sticky `subtree op=[read]`), and a transaction in `budget/b1` may be
-patched in `category` or `memo` and nothing else (the `cg-field-v1`
-allowlist; `transactions` is a type-less container step, "whatever type
+(the sticky `subtree op=[read]` node), and, through a second node with the
+same id, a transaction in `budget/b1` may be patched in `category` or `memo`
+and nothing else (the `cg-field-v1` allowlist; one node cannot do both,
+"Idioms"; `transactions` is a type-less container step, "whatever type
 that node has"). The last root is a cross-cutting deny: under every plugin,
 server and tool, the secrets folder is refused, which is how "deny
 `infra/secrets` everywhere" is written without repeating it under each
 tool (a stencil's roots are one forest; whether `_` may stand on a catalog
-level is the validator's rule). Nothing else is mentioned, so `gmail`,
+level is the validator's rule; each `_` level is a wildcard, so it carries
+`open`). Nothing else is mentioned, so `gmail`,
 `spawn-session`, `pr-merge` and the rest are refused by silence.
 
 ### A second example: a session's own issues, through the tree
@@ -611,14 +643,17 @@ transitional, and a profile that scopes them does so with a value list on
         [-> mutate_nodes !mcp-tool-v1]
         [-> resources !mcp-resources-v1
           [-> smith://code.linenisgreat.com/linenisgreat !cg-root-v1
-            [-> cutting-garden !smith-repo-v1 subtree op=[read]
+            [-> cutting-garden !smith-repo-v1 subtree op=[read]]
+            [-> cutting-garden !smith-repo-v1 op=[patch]
               [-> issues !smith-issues-v1
-                [-> _ !smith-issue-v1
+                [-> _ !smith-issue-v1 op=[patch]
                   [-> + !smith-comment-v1]
                   [-> _ !cg-field-v1 field=[state] value=[closed]]]]]]]]]
 
-Anything under the one repo may be read (the sticky `subtree op=[read]`);
-a comment may be created on any of its issues (`+`); an issue may be
+Anything under the one repo may be read (the sticky `subtree op=[read]`
+node); through the second node with the same id, a comment may be created
+on any of its issues (`+`; a creation path presents `create`, which the
+`op=[patch]` atoms on the steps above it do not check, "Verbs"); an issue may be
 patched in `state` alone, and only to `closed`; every other repo under the
 owner, filing an issue (no `+ !smith-issue-v1`) and relabeling (no `labels`
 field step) are refused by silence. "Its own" is literal: the profile names
@@ -638,13 +673,35 @@ the repo, since the format has no template hole (Limitations).
   `subtree` on a catalog node is inert (tool ids are not paths). Writing
   denies for servers a profile never allows is legal and redundant, since
   silence already refuses; some writers want them as documentation.
+- **Read wide, write narrow: two sibling nodes with one id.** A
+  `subtree` node's `op` atom is checked at every step, so one node cannot
+  be wide for one verb and narrow for another: `subtree op=[read, patch]`
+  would admit a patch anywhere beneath it. Write
+  `[-> ynab:main !cg-root-v1 subtree op=[read]]` beside
+  `[-> ynab:main !cg-root-v1 op=[patch] [-> budget/b1 …]]`; nodes with
+  the same id on one level are legal and their matches union (the
+  frontier rule). ajour never merges or refuses them (vector A-34).
+- **A negated value list is "none of these".** `^field=[repo, host]` on the
+  `open` node negates the existential list, so it matches a field that is
+  neither `repo` nor `host`; two `^` atoms on one node conjoin (vector
+  A-35).
+- **A value is matched as its JSON text**: `value=[true]`, `value=[false]`,
+  a number as its digits (`position=1`); the enforcer presents every input
+  value that way (moxy ask 3).
+- **`_` inside an id is a literal character.** Only the whole id `_` is the
+  null id; `file:circus/.worktrees/_x` and `_foo` are ordinary ids.
 - **Tool ids are the manifest names verbatim**, underscores or hyphens as
   the server spells them (`run_recipe`, `issue-list`).
 - **Quoting.** A value that carries a space, a bracket, a comma or a `^` is
   quoted; a regex is written quoted (`value~="^https://…"`) and follows RFC
   0014's quoted-value rules for what a backslash escapes.
 - **Layout.** Newline is whitespace, indentation is free, and a body has no
-  comment syntax: the head's `#` lines are the only comment plane.
+  comment syntax: the head's `#` lines are the only comment plane. A body
+  that opens with `#` or `-` is read in the heading rendering (boxed
+  `#`-depth headings, `- […]` leaves, a bare heading being a `_` bucket;
+  `trellis.ParseTreeHeadings`) and canonicalized to the same tree; `Write`
+  emits nested espalier, two spaces per child depth, a blank line between
+  roots.
 
 ### Vectors
 
@@ -680,7 +737,7 @@ Reused rows keep their ids; the `A-` rows are this record's.
 | A-17 | a ground espalier body (RFC 0013 §9's one-deny link body): as a patch; as a stencil | parses as both: a patch (every leaf carries `deny`), and a stencil with one deny and no allowance |
 | A-18 | a ground espalier body whose leaf is an allowance (`[-> file:/wt !fs-path-v1 subtree]`): as a stencil; as a patch | parses as a stencil; `ParsePatch` errors naming the leaf (the act admits nothing) |
 | A-19 | D2 sample A's value-list node `[-> _ !just-recipe-v1 group=[test, lint]]` alone, and the whole of sample A | parses as a stencil; `trellis.ParseLiteral` refuses the same node (the fragment is wider than espalier) |
-| A-20 | id slot: `[work !task]` (real id), `[_ !task]` (null id), `["_" !task]` (an object named `_`), `[!task]` (no id slot) | the first three parse as written; the fourth is a parse error naming the missing id slot |
+| A-20 | id slot: `[work !task]` (real id), `[_ !task open]` (null id; a wildcard, so `open`, A-33), `["_" !task]` (an object named `_`), `[!task]` (no id slot) | the first three parse as written; the fourth is a parse error naming the missing id slot |
 | A-21 | `[-> cal-7 [-> + !vtodo summary^="[auto]"]]`; a `New` VTODO subject with summary `[auto] x`; with summary `y`; an existing VTODO subject | admitted; refused (no allowance); refused (a `+` node never matches an existing object) |
 | A-22 | a patch with `[-> + !vtodo deny]`; a patch with `[-> + !vtodo summary^=x]` | `ParsePatch` accepts; refuses, naming the leaf |
 | A-23 | `[-> cal-7 !caldav-calendar-v1 subtree op=[delete]]`; delete `[cal-7]` itself; delete `[cal-7, event-3]`; patch `[cal-7, event-3]` | admitted (inclusive); admitted (sticky); refused (no allowance for `op=patch`) |
@@ -693,7 +750,10 @@ Reused rows keep their ids; the `A-` rows are this record's.
 | A-30 | `[-> ynab:main !cg-root-v1 subtree op=[read] [-> budget/b2 !cutting_garden-ynab-budget-v1 subtree deny]]`; read `[ynab:main, budget/b1, transactions, t5]`; patch the same; read `[ynab:main, budget/b2, accounts, a1]` | admitted (the sticky `subtree` node matches every deeper step); refused at `ynab:main`, no allowance for `op=patch`; refused, deny at `budget/b2` |
 | A-31 | `mutate_nodes` with `[-> _ !tool-input-v1 open]` and an empty surface; a call whose `groups` names `[ynab:main, budget/b1, transactions, t5]` with `op=patch` | refused: `groups` is presented as a resource path under the surface, which `open` under the tool does not cover |
 | A-32 | `[-> _ !cutting_garden-ynab-transaction-v1 op=[patch] [-> _ !cg-field-v1 field=[category, memo]]]`; patch `{category: Groceries}`; `{category: Groceries, payee: X}`; `{flag: red}` (a field added to the plugin later) | admitted; refused at the `payee` field step (no allowance); refused |
-
+| A-33 | `[read [-> _ !tool-input-v1]]` as a stencil; `[_ !clown-plugin-v1 [-> _ !mcp-server-v1 open …]]` as a stencil; `[read [-> _ !tool-input-v1 open]]`; `[read [-> _ !tool-input-v1 deny]]` as a patch | `ParseStencil` errors naming `[_ !tool-input-v1]`; errors naming `[_ !clown-plugin-v1]` (an interior wildcard needs `open` too); parses; parses (a patch is exempt) |
+| A-34 | the one-node shape `[-> ynab:main !cg-root-v1 subtree op=[read] [-> budget/b1 … [-> _ !…-transaction-v1 op=[patch] [-> _ !cg-field-v1 field=[category, memo]]]]]`, then the two-sibling shape of "A complete document"; patch `[ynab:main, budget/b1, transactions, t5, {category}]`; the same under `budget/b2` | `ParseStencil` keeps both same-id siblings, in order; one-node: refused at `ynab:main`, no allowance for `op=patch`; two-sibling: admitted; refused under `budget/b2` |
+| A-35 | `[-> _ !tool-input-v1 ^field=[repo, host] open]`; input fields `limit`, `repo`, `host` | parses; `limit` admitted, `repo` and `host` refused (no allowance) |
+| A-36 | `[-> cal-7 !caldav-calendar-v1 subtree op=[read] [-> + !caldav-object-vtodo-v1 summary^="[auto]"]]`: create `[auto] x` under cal-7 (every step `op=create`); patch `[cal-7, event-3]`; then `[-> cal-7 !caldav-calendar-v1 op=[patch]]` with no `+` node, the same creation | admitted (the `op=[read]` atom is not checked against a create step); refused, no allowance for `op=patch`; refused at the object step, no `+` node |
 piggy's RFC 0013 conformance vectors point at A-17, A-18 and A-19 by name
 (the ask from piggy/green-larch, 2026-11-09) instead of restating them.
 
@@ -774,11 +834,11 @@ piggy's RFC 0013 conformance vectors point at A-17, A-18 and A-19 by name
   location).
 - The operator's review document, tab "Espalier profiles meet the
   shrinking-set idea", §4 to §6, §9 (rulings 2026-11-09), §11 (the terms).
-- RFC 0014 "Isometry" and `0014-trellis.peg`; FDR 0022 (trellis evaluation
+- RFC 0014 "Isomorphism" and `0014-trellis.peg`; FDR 0022 (trellis evaluation
   over plugin trees, the neighbour this record is not); cutting-garden#346,
   #349; moxy#489; spinclass FDR 0034 "Verification and revocation".
 - `ajour(7)` in `doc/ajour.7.scd`: the plain-words page.
-- The one-isometry sketch (Google Doc "One isometry: organize and ajour as
+- The one-isomorphism sketch (Google Doc "One isomorphism: organize and ajour as
   two spellings of one tree", v2 tab): the canonical tree, the `_`/`+`
   rulings, verbs, resources, and the rework slices; spinclass#438 (the
   policy-broker design whose "resource with an operation" is the verb
@@ -825,8 +885,9 @@ piggy's RFC 0013 conformance vectors point at A-17, A-18 and A-19 by name
    predicate on a present node that a child profile does not mention is
    inherited unchanged" to the strict rule (a child restates what it keeps)
    — DONE, spinclass `fcd103ad` (2026-11-09, reported by piggy/green-larch);
-   and say whether the ground-id excess lint (V-D1-6) stays in `Narrows` or
-   moves to an ajour helper — open (operator item 2).
+   and keep the ground-id excess lint (V-D1-6) in `Narrows` (operator item
+   2, ruled 2026-11-10: WET for now, a DRY candidate for an ajour helper
+   once a second enforcer blesses).
 5. **circus** (D1 §3 step 3): replace "at least one layer says allow" with
    "every stencil admits", which is the only reading under which no
    containment check is needed; V-D1-7a..c keep their verdicts once the
@@ -843,17 +904,22 @@ piggy's RFC 0013 conformance vectors point at A-17, A-18 and A-19 by name
 ### Open items for the operator
 
 1. Whether a patch may also carry allowance-shaped conditions (a filter
-   that never admits) or stays deny-only as written here. Recommendation:
-   deny-only; a filter is a deny with a negated condition.
+   that never admits) or stays deny-only as written here. **RULED
+   2026-11-10: deny-only "for now; re-examine as use cases show a need for
+   allow filters."** A filter is a deny with a negated condition;
+   `ParsePatch` refuses a leaf without `deny` (A-11, A-18, A-22).
 2. Whether the bless-time ground-id excess lint (D1 V-D1-6) is an ajour
-   helper or stays spinclass's. Recommendation: spinclass's, since it is a
-   chain-time check on two profiles and ajour never looks at two layers
-   together.
+   helper or stays spinclass's. **RULED 2026-11-10: spinclass's, in
+   `Narrows`, WET for now**: the operator is not sure only spinclass will
+   ever bless; it is a DRY candidate, and if clown's
+   `show-effective-profile` or moxy also bless later, an exported
+   `Excess(parent, child Stencil) []string` in `pkgs/ajour` becomes its home
+   and spinclass calls it. Not written until then.
 3. Whether `open` stays a documentation tag (an atom-less typed node is the
-   wildcard, as here) or becomes the only spelling of a wildcard (then an
-   atom-less node without `open` is a parse error in a stencil).
-   Recommendation: the latter, for legibility at the bless prompt; it costs
-   one line in "Matching" and one vector.
+   wildcard) or becomes the only spelling of a wildcard. **RULED 2026-11-10:
+   the required spelling**: in a stencil an atom-less typed `_` node without
+   `open` is a parse error naming the node, interior and `deny` nodes
+   included; patches are exempt ("Matching", vector A-33).
 4. A debugging surface: `cg ajour <layers…> --call <json>` printing the
    verdict, beside clown's `show-effective-profile`. Not in this record's
    scope; filed when the package exists.

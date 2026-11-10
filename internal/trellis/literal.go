@@ -22,7 +22,7 @@ type Literal struct {
 	// part (empty for a bare `+`), never the `+`.
 	New bool
 	// Null marks a NULL-ID box: the first slot was a bare `_` (RFC 0014
-	// "Isometry"; the PEG's NullID), a node that equals no id, not even
+	// "Isomorphism"; the PEG's NullID), a node that equals no id, not even
 	// itself. ID is then empty. An object literally named `_` is spelled
 	// `"_"` and arrives as ID "_" with Null false.
 	Null bool
@@ -306,16 +306,18 @@ type SpelledLiteral struct {
 }
 
 // SpellLiteral spells every slot of lit through the ONE quoting rule
-// (QuoteIfNeeded, design G9).
+// (QuoteIfNeeded, design G9); the id slot goes through SpellTreeID, whose
+// id-slot variant also quotes a `_` or `+…` id so it never re-reads as the
+// null or temp id.
 func SpellLiteral(lit Literal) SpelledLiteral {
-	id := spellRealID(lit.ID)
+	slot := TreeNode{ID: lit.ID}
 	switch {
 	case lit.New:
-		id = SpellTempID(lit.ID)
+		slot.Kind = IDTemp
 	case lit.Null:
-		id = "_"
+		slot.Kind = IDNull
 	}
-	s := SpelledLiteral{ID: id, Type: lit.Type}
+	s := SpelledLiteral{ID: SpellTreeID(slot), Type: lit.Type}
 	for _, tag := range lit.Tags {
 		s.Tags = append(s.Tags, QuoteIfNeeded(tag))
 	}
@@ -467,21 +469,7 @@ func termString(t Term) string {
 	case QualifierBasicTerm:
 		b.WriteString(bt.String())
 	case FieldPredBasicTerm:
-		fp := bt.FieldPred
-		b.WriteString(fieldNameString(fp.Field))
-		b.WriteString(fp.Op.String())
-		if fp.List {
-			b.WriteByte('[')
-		}
-		for i, v := range fp.Values {
-			if i > 0 {
-				b.WriteString(", ")
-			}
-			b.WriteString(valueString(v))
-		}
-		if fp.List {
-			b.WriteByte(']')
-		}
+		b.WriteString(fieldPredString(bt.FieldPred))
 	case TypeBasicTerm:
 		b.WriteString("!" + bt.Type.Name + sigilString(bt.Sigil))
 	case DigestBasicTerm:
@@ -494,6 +482,28 @@ func termString(t Term) string {
 		b.WriteString(bt.Ident.Name + sigilString(bt.Sigil))
 	case SigilBasicTerm:
 		b.WriteString(bt.Sigil.Runes)
+	}
+	return b.String()
+}
+
+// fieldPredString spells a field predicate: the name (quoted when it was
+// parsed quoted), the operator, then the value or `[a, b]` list, each value
+// in the alternative it was parsed as. It re-parses to the same FieldPred.
+func fieldPredString(fp FieldPred) string {
+	var b strings.Builder
+	b.WriteString(fieldNameString(fp.Field))
+	b.WriteString(fp.Op.String())
+	if fp.List {
+		b.WriteByte('[')
+	}
+	for i, v := range fp.Values {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		b.WriteString(valueString(v))
+	}
+	if fp.List {
+		b.WriteByte(']')
 	}
 	return b.String()
 }

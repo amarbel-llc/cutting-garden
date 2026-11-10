@@ -4,7 +4,7 @@ package trellis
 
 import "strings"
 
-// ParseTreeHeadings parses src in the heading rendering (the one-isometry
+// ParseTreeHeadings parses src in the heading rendering (the one-isomorphism
 // sketch §4; RFC 0015's body without its sugar) into the same tree
 // ParseTreeNested reads:
 //
@@ -97,7 +97,14 @@ func (p *parser) parseHeadingContent() (TreeNode, error) {
 	line := p.restOfLine()
 	p.pos += len([]rune(line))
 	bucket := &parser{src: []rune("[_ " + line + "]")}
-	return bucket.parseTreeLiteral()
+	node, err := bucket.parseTreeLiteral()
+	if err != nil {
+		return TreeNode{}, err
+	}
+	if !bucket.atEOF() {
+		return TreeNode{}, p.treeError("unexpected `%s` in a heading", string(bucket.src[bucket.pos:len(bucket.src)-1]))
+	}
+	return node, nil
 }
 
 func (p *parser) skipLineSpace() {

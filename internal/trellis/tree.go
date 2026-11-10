@@ -28,7 +28,7 @@ type TreeAtom struct {
 }
 
 // A TreeNode is one literal of the canonical nested form (RFC 0014
-// "Isometry"; the one-isometry rulings of 2026-11-09): the id slot, at most
+// "Isomorphism"; the one-isomorphism rulings of 2026-11-09): the id slot, at most
 // one `!type`, tags, field atoms with any operator, an optional blob digest,
 // and children from `[-> …]` subpaths, nesting to any depth. It is the shape
 // espalier data, organize documents and ajour stencils share; which holes a
@@ -167,22 +167,19 @@ func (p *parser) parseTreeIDSlot() (TreeNode, error) {
 		}
 		id, ok := p.scanIdentText()
 		if !ok {
-			p.pos = start
-			return TreeNode{}, p.treeError("a literal with no id slot: `%s` stands where the id goes", p.termTextAt())
+			return TreeNode{}, p.treeErrorNamingAt(start, "a literal with no id slot: `%s` stands where the id goes")
 		}
 		node.ID = id
 		if p.hasPrefix("**") {
 			p.pos += 2
 			if !strings.HasSuffix(id, "/") || len(id) < 2 || p.continuesTerm() {
-				p.pos = start
-				return TreeNode{}, p.treeError("`/**` may only end an id: `%s`", p.termTextAt())
+				return TreeNode{}, p.treeErrorNamingAt(start, "`/**` may only end an id: `%s`")
 			}
 			node.ID, node.Globstar = strings.TrimSuffix(id, "/"), true
 		}
 	}
 	if p.continuesTerm() {
-		p.pos = start
-		return TreeNode{}, p.treeError("a sigil or stray rune on the id slot: `%s`", p.termTextAt())
+		return TreeNode{}, p.treeErrorNamingAt(start, "a sigil or stray rune on the id slot: `%s`")
 	}
 	return node, nil
 }
@@ -196,12 +193,10 @@ func (p *parser) parseTreeAttr(node *TreeNode) error {
 		combStart := p.pos
 		if comb, ok := p.parseCombinator(); ok {
 			if comb.Kind != CombinatorFwd {
-				p.pos = combStart
-				return p.treeError("a child combinator other than `->`: `%s`", combinatorString(comb))
+				return p.treeErrorAt(combStart, "a child combinator other than `->`: `%s`", combinatorString(comb))
 			}
 			if !p.skipSP() || p.atEOF() || p.src[p.pos] == ']' {
-				p.pos = start
-				return p.treeError("an empty child `[->]`")
+				return p.treeErrorAt(start, "an empty child `[->]`")
 			}
 			// TODO(#397): a child's interior is read through IDSlot like a
 			// root literal's, a superset of the PEG, which reads it as a
@@ -216,22 +211,19 @@ func (p *parser) parseTreeAttr(node *TreeNode) error {
 		p.pos = start
 	}
 	term, ok := p.parseTerm()
-	if !ok {
-		p.pos = start
-		return p.treeError("unexpected `%s` in a literal", p.termTextAt())
-	}
-	if p.continuesTerm() {
-		p.pos = start
-		return p.treeError("unexpected `%s` in a literal", p.termTextAt())
+	if !ok || p.continuesTerm() {
+		return p.treeErrorNamingAt(start, "unexpected `%s` in a literal")
 	}
 	refuse := func(why string) error {
-		p.pos = start
-		return p.treeError("term `%s` %s", termString(term), why)
+		return p.treeErrorAt(start, "term `%s` %s", termString(term), why)
 	}
 	if term.Negate {
 		if _, isAtom := term.Basic.(FieldPredBasicTerm); !isAtom {
 			return refuse("is not a literal term: `^` negates only a field atom")
 		}
+	}
+	if basicSigil(term.Basic) != nil {
+		return refuse("carries a sigil (a version-set scope, not a literal term)")
 	}
 	// A leading `=` (exact) is inert in a literal: ids already match
 	// exactly (FDR 0028 "Matching"), so the canonical form drops it.
@@ -239,26 +231,17 @@ func (p *parser) parseTreeAttr(node *TreeNode) error {
 	case FieldPredBasicTerm:
 		node.Atoms = append(node.Atoms, TreeAtom{Negate: term.Negate, Pred: b.FieldPred})
 	case TypeBasicTerm:
-		if b.Sigil != nil {
-			return refuse("carries a sigil (a version-set scope, not a literal term)")
-		}
 		if node.Type != "" {
 			return refuse("is a second `!type` (a literal carries at most one)")
 		}
 		node.Type = b.Type.Name
 	case DigestBasicTerm:
-		if b.Sigil != nil {
-			return refuse("carries a sigil (a version-set scope, not a literal term)")
-		}
 		if node.Digest != "" {
 			return refuse("is a second `@digest` (a literal carries at most one)")
 		}
 		node.Digest = b.Digest.Digest
 	case IdentBasicTerm, QuotedRefBasicTerm:
-		tag, ok := plainIdent(term.Basic)
-		if !ok {
-			return refuse("carries a sigil (a version-set scope, not a literal term)")
-		}
+		tag, _ := plainIdent(term.Basic)
 		node.Tags = append(node.Tags, tag)
 	case GroupBasicTerm:
 		switch body := b.Group.Body.(type) {
@@ -274,6 +257,23 @@ func (p *parser) parseTreeAttr(node *TreeNode) error {
 		return refuse("is a locked id outside the id slot")
 	default:
 		return refuse("is not a literal term (a qualifier or a bare sigil)")
+	}
+	return nil
+}
+
+// basicSigil is the trailing sigil a basic term carries, nil when none.
+func basicSigil(b BasicTerm) *Sigil {
+	switch b := b.(type) {
+	case TypeBasicTerm:
+		return b.Sigil
+	case DigestBasicTerm:
+		return b.Sigil
+	case MarklBasicTerm:
+		return b.Sigil
+	case QuotedRefBasicTerm:
+		return b.Sigil
+	case IdentBasicTerm:
+		return b.Sigil
 	}
 	return nil
 }
@@ -308,6 +308,20 @@ func (p *parser) termTextAt() string {
 		return "end of input"
 	}
 	return string(p.src[p.pos:end])
+}
+
+// treeErrorAt is treeError reported at offset at (the start of the term it
+// names).
+func (p *parser) treeErrorAt(at int, format string, args ...any) error {
+	p.pos = at
+	return p.treeError(format, args...)
+}
+
+// treeErrorNamingAt reports at offset at, naming the source text there
+// (termTextAt read after the reset); format has one %s for it.
+func (p *parser) treeErrorNamingAt(at int, format string) error {
+	p.pos = at
+	return p.treeError(format, p.termTextAt())
 }
 
 func (p *parser) treeError(format string, args ...any) error {
@@ -422,27 +436,10 @@ func spellRealID(id string) string {
 	return QuoteIfNeeded(id)
 }
 
-// SpellTreeAtom spells one atom with its `^` prefix: the field name quoted
-// when it was parsed quoted, the operator, then the value or `[a, b]` list,
-// each value in the alternative it was parsed as.
+// SpellTreeAtom spells one atom with its `^` prefix (fieldPredString).
 func SpellTreeAtom(a TreeAtom) string {
-	var b strings.Builder
 	if a.Negate {
-		b.WriteByte('^')
+		return "^" + fieldPredString(a.Pred)
 	}
-	b.WriteString(fieldNameString(a.Pred.Field))
-	b.WriteString(a.Pred.Op.String())
-	if a.Pred.List {
-		b.WriteByte('[')
-	}
-	for i, v := range a.Pred.Values {
-		if i > 0 {
-			b.WriteString(", ")
-		}
-		b.WriteString(valueString(v))
-	}
-	if a.Pred.List {
-		b.WriteByte(']')
-	}
-	return b.String()
+	return fieldPredString(a.Pred)
 }

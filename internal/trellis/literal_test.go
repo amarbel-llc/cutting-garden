@@ -265,7 +265,7 @@ func TestLiteral_TempID(t *testing.T) {
 }
 
 // TestLiteral_NullID pins the null id in the box's id slot (RFC 0014
-// "Isometry", the PEG's NullID): a bare `_` is Null with no id, distinct from
+// "Isomorphism", the PEG's NullID): a bare `_` is Null with no id, distinct from
 // an object literally named `_` (spelled `"_"`), and `_foo` stays an id. A
 // locked id is a stencil node, which the espalier projection refuses, naming
 // it.
