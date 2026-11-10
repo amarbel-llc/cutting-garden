@@ -6,9 +6,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
+	"sync"
 	"time"
 
+	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
@@ -229,6 +232,48 @@ func (c *client) discoverCalendars(
 		calendars = append(calendars, cal)
 	}
 	return false, calendars, nil
+}
+
+// discoveryResult is one discoverCalendars answer, kept for the rest of the
+// host call that fetched it.
+type discoveryResult struct {
+	selfIsCalendar bool
+	calendars      []calendar
+}
+
+var (
+	discoveryMu    sync.Mutex
+	discoveryCache = map[string]discoveryResult{}
+)
+
+// discoverCalendarsThisCall is discoverCalendars shared across one host call
+// (cutting-garden#398): at a calendar-home the trellis walk's declined
+// ListEnriched and its ListRoots fallback would otherwise PROPFIND the same
+// URL twice. An entry is served only when this call fetched it (the call
+// scope confirms the key), so a later call always discovers again; outside a
+// call scope it is plain discoverCalendars. Only the traversal reads use it:
+// FacetVersion's ctag must be fresh, so facet.go discovers directly.
+func (c *client) discoverCalendarsThisCall(
+	ctx context.Context,
+) (bool, []calendar, error) {
+	key := "caldav-discovery:" + c.base
+	if cutting_garden_plugins.ConfirmedThisCall(ctx, key) {
+		discoveryMu.Lock()
+		cached, ok := discoveryCache[key]
+		discoveryMu.Unlock()
+		if ok {
+			return cached.selfIsCalendar, slices.Clone(cached.calendars), nil
+		}
+	}
+	selfIsCalendar, calendars, err := c.discoverCalendars(ctx)
+	if err != nil || !cutting_garden_plugins.InCallScope(ctx) {
+		return selfIsCalendar, calendars, err
+	}
+	discoveryMu.Lock()
+	discoveryCache[key] = discoveryResult{selfIsCalendar, slices.Clone(calendars)}
+	discoveryMu.Unlock()
+	cutting_garden_plugins.ConfirmForThisCall(ctx, key)
+	return selfIsCalendar, calendars, nil
 }
 
 // calendarQuery is the REPORT body template that fetches every resource

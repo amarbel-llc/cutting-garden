@@ -161,7 +161,7 @@ func (Plugin) ListEnriched(
 	}
 	c := newClient(base, username, password)
 
-	selfIsCalendar, _, err := c.discoverCalendars(ctx)
+	selfIsCalendar, _, err := c.discoverCalendarsThisCall(ctx)
 	if err != nil {
 		return nil, false, err
 	}

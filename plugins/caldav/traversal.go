@@ -89,7 +89,7 @@ func (Plugin) ListRoots(
 	}
 	c := newClient(base, username, password)
 
-	selfIsCalendar, calendars, err := c.discoverCalendars(ctx)
+	selfIsCalendar, calendars, err := c.discoverCalendarsThisCall(ctx)
 	if err != nil {
 		return nil, err
 	}

@@ -1,6 +1,7 @@
 # Trellis query cost over caldav (cutting-garden#398)
 
-Status: first step implemented (this commit); later steps proposed.
+Status: steps 1 and 3 implemented; step 2 waits on an operator decision;
+step 4 proposed.
 
 The report: `list_nodes` with the query `->> [summary~="..."]` over one real
 task calendar ran for more than two minutes and returned nothing; a second
@@ -76,12 +77,20 @@ so a long-lived `cg mcp` decrypts once per session instead of once per
 call. This is a security trade-off for the operator to decide: the secret
 stays in memory for the life of the process instead of for one request.
 
-### Step 3 (proposed): one discovery per host call
+### Step 3 (done): one discovery per host call
 
 At a calendar-home, `ListEnriched` declines after its PROPFIND and the
-evaluator's `ListRoots` fallback repeats it. A per-call scope cache, the
-pattern the org plugin uses with `WithCallScope` (cutting-garden#311),
-would share the one `discoverCalendars` result.
+evaluator's `ListRoots` fallback repeats it. `discoverCalendarsThisCall`
+now shares the one `discoverCalendars` result for the rest of the host call
+(the `WithCallScope` confirmation pattern, cutting-garden#311). An entry is
+served only when this call fetched it, so a new call discovers again, and
+outside a call scope nothing is shared. Only `ListRoots` and `ListEnriched`
+use it: `FacetVersion` keeps discovering directly so its ctag is always fresh.
+`plugins/caldav/discovery_scope_test.go` counts the PROPFINDs for a
+calendar-home listing: 2 per call before, 1 after; 2 outside a scope
+(observed). The saving is one PROPFIND per calendar-home listing per call,
+plus any repeat listing of the same node in one call; it is small next to
+step 1.
 
 ### Step 4 (later): server-side text-match and cross-call reuse
 
