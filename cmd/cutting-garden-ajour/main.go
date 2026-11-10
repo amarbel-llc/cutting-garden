@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"code.linenisgreat.com/cutting-garden/pkgs/ajour"
+	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/files"
 )
 
 // Exit codes, diff(1)-style as cutting-garden(1) documents them.
@@ -132,7 +133,7 @@ func readCall(path string, stdin io.Reader) (ajour.Call, error) {
 		if err != nil {
 			return ajour.Call{}, err
 		}
-		defer f.Close()
+		defer files.CloseReadOnly(f)
 		in = f
 	}
 	dec := json.NewDecoder(in)
