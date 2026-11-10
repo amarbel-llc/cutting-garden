@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 )
 
 // Root is a plugin entry point with no credentials — a "preferred root"
@@ -201,10 +202,58 @@ func (a Account) Password() (string, error) {
 	case a.PasswordSource == "env":
 		return os.Getenv(a.PasswordKey), nil
 	case a.PasswordSource == "piggy":
-		return piggyPassShow(a.PasswordKey)
+		return rememberedPiggyPassword(a.PasswordKey)
 	default:
 		return "", nil
 	}
+}
+
+// piggyPasswords remembers each piggy entry's decrypted password for the
+// life of the process (cutting-garden#398 step 2, an operator decision): a
+// long-lived `cg mcp` would otherwise run one card decrypt per call, hundreds
+// for one trellis query. The secret is held in this process's memory only:
+// never written to disk, never logged, gone when the process exits. A failed
+// decrypt is not remembered, so the next call tries again. Each key has its
+// own lock, held across its decrypt, so concurrent first calls for one key
+// decrypt once, and a slow decrypt of one key never blocks another.
+//
+// Only the pkgs/config_common copy of this package runs in a binary (every
+// caller of Password is a plugin, and plugins import pkgs/), so a process has
+// one memo.
+var (
+	piggyPasswordsMu sync.Mutex
+	piggyPasswords   = map[string]string{}
+	piggyKeyLocks    = map[string]*sync.Mutex{}
+)
+
+// rememberedPiggyPassword is piggyPassShow, decrypting each key once per
+// process.
+func rememberedPiggyPassword(key string) (string, error) {
+	piggyPasswordsMu.Lock()
+	keyLock, ok := piggyKeyLocks[key]
+	if !ok {
+		keyLock = &sync.Mutex{}
+		piggyKeyLocks[key] = keyLock
+	}
+	piggyPasswordsMu.Unlock()
+
+	keyLock.Lock()
+	defer keyLock.Unlock()
+
+	piggyPasswordsMu.Lock()
+	password, ok := piggyPasswords[key]
+	piggyPasswordsMu.Unlock()
+	if ok {
+		return password, nil
+	}
+	password, err := piggyPassShow(key)
+	if err != nil {
+		return "", err
+	}
+	piggyPasswordsMu.Lock()
+	piggyPasswords[key] = password
+	piggyPasswordsMu.Unlock()
+	return password, nil
 }
 
 // piggyStderrTailBytes caps how much of `piggy pass show`'s stderr is

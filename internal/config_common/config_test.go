@@ -1,9 +1,11 @@
 package config_common
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -229,6 +231,112 @@ func writeStubPiggy(t *testing.T, exitCode int, stdout, stderr string) {
 		t.Fatal(err)
 	}
 	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
+}
+
+// A piggy password is decrypted once per process (cutting-garden#398 step
+// 2): a long-lived `cg mcp` making hundreds of calls costs one card decrypt
+// per entry, not one per call. The stub counts its own invocations.
+func TestAccount_Password_Piggy_DecryptsOncePerProcess(t *testing.T) {
+	t.Cleanup(forgetPiggyPasswords)
+	dir := t.TempDir()
+	count := dir + "/calls"
+	script := "#!/bin/sh\necho call >> " + shellQuote(count) + "\nprintf 'memo-secret\\n'\n"
+	if err := os.WriteFile(dir+"/piggy", []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
+
+	a := Account{PasswordSource: "piggy", PasswordKey: "cutting-garden/memo"}
+	for i := 0; i < 3; i++ {
+		got, err := a.Password()
+		if err != nil || got != "memo-secret" {
+			t.Fatalf("Password() #%d = %q, %v; want memo-secret", i+1, got, err)
+		}
+	}
+	calls, err := os.ReadFile(count)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := strings.Count(string(calls), "call"); n != 1 {
+		t.Errorf("piggy pass show ran %d times for three Password() calls, want 1", n)
+	}
+}
+
+// A burst of concurrent first calls for one entry decrypts once: the key's
+// lock is held across its decrypt.
+func TestAccount_Password_Piggy_ConcurrentFirstCallsDecryptOnce(t *testing.T) {
+	t.Cleanup(forgetPiggyPasswords)
+	dir := t.TempDir()
+	count := dir + "/calls"
+	script := "#!/bin/sh\necho call >> " + shellQuote(count) + "\nsleep 0.2\nprintf 'burst-secret\\n'\n"
+	if err := os.WriteFile(dir+"/piggy", []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
+
+	a := Account{PasswordSource: "piggy", PasswordKey: "cutting-garden/burst"}
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if got, err := a.Password(); err != nil || got != "burst-secret" {
+				t.Errorf("Password() = %q, %v", got, err)
+			}
+		}()
+	}
+	wg.Wait()
+	calls, _ := os.ReadFile(count)
+	if n := strings.Count(string(calls), "call"); n != 1 {
+		t.Errorf("piggy pass show ran %d times for 8 concurrent first calls, want 1", n)
+	}
+}
+
+// The remembered secret lives only in process memory: formatting the account
+// does not show it, and another entry's failure does not mention it.
+func TestAccount_Password_Piggy_MemoNeverPrinted(t *testing.T) {
+	t.Cleanup(forgetPiggyPasswords)
+	writeStubPiggy(t, 0, "memo-secret\n", "")
+	a := Account{PasswordSource: "piggy", PasswordKey: "cutting-garden/memo"}
+	if _, err := a.Password(); err != nil {
+		t.Fatal(err)
+	}
+	for _, verb := range []string{"%v", "%+v", "%#v", "%s"} {
+		if out := fmt.Sprintf(verb, a); strings.Contains(out, "memo-secret") {
+			t.Errorf("Sprintf(%s, account) = %q, contains the secret", verb, out)
+		}
+	}
+
+	writeStubPiggy(t, 1, "", "decrypt failed\n")
+	_, err := Account{PasswordSource: "piggy", PasswordKey: "other/entry"}.Password()
+	if err == nil {
+		t.Fatal("want an error for the failing entry")
+	}
+	if strings.Contains(err.Error(), "memo-secret") {
+		t.Errorf("error %q contains another entry's remembered secret", err)
+	}
+}
+
+// A failed decrypt is not remembered: the next call tries again.
+func TestAccount_Password_Piggy_FailureIsNotRemembered(t *testing.T) {
+	t.Cleanup(forgetPiggyPasswords)
+	writeStubPiggy(t, 1, "", "card not present\n")
+	a := Account{PasswordSource: "piggy", PasswordKey: "cutting-garden/retry"}
+	if _, err := a.Password(); err == nil {
+		t.Fatal("want an error from the failing stub")
+	}
+	writeStubPiggy(t, 0, "now-it-works\n", "")
+	if got, err := a.Password(); err != nil || got != "now-it-works" {
+		t.Errorf("Password() after a failure = %q, %v; want a fresh decrypt", got, err)
+	}
+}
+
+// forgetPiggyPasswords drops every remembered piggy password, so each test
+// starts with none.
+func forgetPiggyPasswords() {
+	piggyPasswordsMu.Lock()
+	defer piggyPasswordsMu.Unlock()
+	clear(piggyPasswords)
 }
 
 func shellQuote(s string) string {

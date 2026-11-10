@@ -1,7 +1,7 @@
 # Trellis query cost over caldav (cutting-garden#398)
 
-Status: steps 1 and 3 implemented; step 2 waits on an operator decision;
-step 4 proposed.
+Status: steps 1, 2 and 3 implemented (step 2 by operator decision,
+2026-11-10); step 4 proposed.
 
 The report: `list_nodes` with the query `->> [summary~="..."]` over one real
 task calendar ran for more than two minutes and returned nothing; a second
@@ -70,12 +70,24 @@ One caveat: the `examples/nixstore` skeleton declares its narinfo type
 contradicts the `Container` contract. A trellis walk will not descend it,
 and the facet fold already does not.
 
-### Step 2 (proposed): resolve a credential once per process
+### Step 2 (done): resolve a credential once per process
 
-Memoize `Account.Password` per (source, key) for the life of the process,
-so a long-lived `cg mcp` decrypts once per session instead of once per
-call. This is a security trade-off for the operator to decide: the secret
-stays in memory for the life of the process instead of for one request.
+The operator chose this trade-off (2026-11-10): the secret stays in the
+plugin process's memory for the life of the process instead of for one
+request, and is never written to disk or logs. `Account.Password` now
+remembers a `piggy` entry's decrypted password per entry name, so a
+long-lived `cg mcp` decrypts once per entry instead of once per call
+(observed against a stub `piggy` that counts its runs: 3 calls, 1 run; 8
+concurrent first calls, 1 run). The `env` and `password_env` sources stay
+live reads: they cost nothing, and a changed variable still applies. A
+failed decrypt is not remembered. Each entry has its own lock across its
+decrypt, so concurrent first calls decrypt once and one entry's slow decrypt
+does not block another's.
+
+config_common is a dagnabit copy (`pkgs/config_common`), so each copy has
+its own memo. Every caller of `Password` is a plugin, and plugins import the
+`pkgs/` copy, so a binary runs one memo (read). A wire plugin is its own
+process with its own memo.
 
 ### Step 3 (done): one discovery per host call
 
