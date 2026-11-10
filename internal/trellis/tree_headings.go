@@ -59,9 +59,7 @@ func ParseTreeHeadings(src string) ([]TreeNode, error) {
 			if err != nil {
 				return nil, err
 			}
-			for len(stack) > 0 && stack[len(stack)-1].depth >= depth {
-				stack = stack[:len(stack)-1]
-			}
+			stack = PopHeadings(stack, func(o open) int { return o.depth }, depth)
 			stack = append(stack, open{depth: depth, node: attach(node)})
 		case '-':
 			p.pos++
@@ -80,6 +78,17 @@ func ParseTreeHeadings(src string) ([]TreeNode, error) {
 			return nil, p.treeError("a line that is neither a heading nor a `- […]` leaf: `%s`", p.restOfLine())
 		}
 	}
+}
+
+// PopHeadings pops every open heading at depth or deeper off open (shallowest
+// first), returning the shortened stack: the one laddering rule a heading
+// rendering follows, so a heading nests under the nearest open heading that
+// is shallower. ParseTreeHeadings and organize's section walkers share it.
+func PopHeadings[T any](open []T, depthOf func(T) int, depth int) []T {
+	for len(open) > 0 && depthOf(open[len(open)-1]) >= depth {
+		open = open[:len(open)-1]
+	}
+	return open
 }
 
 // parseHeadingContent reads what follows a heading's `#`s: a boxed literal,

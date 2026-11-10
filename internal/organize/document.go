@@ -860,13 +860,10 @@ func rootHeadingDepth(lines []string) int {
 
 // popTo pops every open section (open holds indices into secs, shallowest first)
 // whose depth is depth or deeper, returning the shortened stack — the one
-// ladder-walking rule the parser (parseBody) and the value walker
-// (walkSectionValues) share.
+// ladder-walking rule (trellis.PopHeadings) the parser (parseBody), the value
+// walker (walkSectionValues) and trellis's heading reader share.
 func popTo(open []int, secs []section, depth int) []int {
-	for len(open) > 0 && secs[open[len(open)-1]].Depth >= depth {
-		open = open[:len(open)-1]
-	}
-	return open
+	return trellis.PopHeadings(open, func(i int) int { return secs[i].Depth }, depth)
 }
 
 // parseObjectLine parses one espalier box literal `[<id> !<type> …] <desc>`:
