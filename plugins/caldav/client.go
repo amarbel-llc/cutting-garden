@@ -3,6 +3,7 @@ package caldav
 import (
 	"context"
 	"encoding/xml"
+	stderrors "errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -267,8 +268,38 @@ func (c *client) discoverCalendarsThisCall(
 			return cached.selfIsCalendar, slices.Clone(cached.calendars), nil
 		}
 	}
+	if !cutting_garden_plugins.InCallScope(ctx) {
+		return c.discoverCalendars(ctx)
+	}
+	// Concurrent listings of one home share one discovery (cutting-garden#313):
+	// the first becomes the flight and the rest wait for its answer, which was
+	// fetched after their calls began, so they confirm it for their own call.
+	f, leader := joinDiscovery(key)
+	if !leader {
+		select {
+		case <-f.done:
+		case <-ctx.Done():
+			return false, nil, ctx.Err()
+		}
+		if f.err != nil && ctx.Err() == nil && isCancellation(f.err) {
+			return c.discoverAndKeep(ctx, key) // the leader's caller gave up; this one has not
+		}
+		if f.err != nil {
+			return false, nil, f.err
+		}
+		cutting_garden_plugins.ConfirmForThisCall(ctx, key)
+		return f.result.selfIsCalendar, slices.Clone(f.result.calendars), nil
+	}
+	selfIsCalendar, calendars, err := c.discoverAndKeep(ctx, key)
+	f.result, f.err = discoveryResult{selfIsCalendar, slices.Clone(calendars)}, err
+	landDiscovery(key, f)
+	return selfIsCalendar, calendars, err
+}
+
+// discoverAndKeep discovers and keeps the answer for the rest of this call.
+func (c *client) discoverAndKeep(ctx context.Context, key string) (bool, []calendar, error) {
 	selfIsCalendar, calendars, err := c.discoverCalendars(ctx)
-	if err != nil || !cutting_garden_plugins.InCallScope(ctx) {
+	if err != nil {
 		return selfIsCalendar, calendars, err
 	}
 	discoveryMu.Lock()
@@ -276,6 +307,41 @@ func (c *client) discoverCalendarsThisCall(
 	discoveryMu.Unlock()
 	cutting_garden_plugins.ConfirmForThisCall(ctx, key)
 	return selfIsCalendar, calendars, nil
+}
+
+// A discoveryFlight is one in-progress discovery that concurrent listings of
+// the same home wait on instead of each sending a PROPFIND.
+type discoveryFlight struct {
+	done   chan struct{}
+	result discoveryResult
+	err    error
+}
+
+// discoveryFlights is guarded by discoveryMu.
+var discoveryFlights = map[string]*discoveryFlight{}
+
+func joinDiscovery(key string) (f *discoveryFlight, leader bool) {
+	discoveryMu.Lock()
+	defer discoveryMu.Unlock()
+	if f, ok := discoveryFlights[key]; ok {
+		return f, false
+	}
+	f = &discoveryFlight{done: make(chan struct{})}
+	discoveryFlights[key] = f
+	return f, true
+}
+
+func landDiscovery(key string, f *discoveryFlight) {
+	discoveryMu.Lock()
+	if discoveryFlights[key] == f {
+		delete(discoveryFlights, key)
+	}
+	discoveryMu.Unlock()
+	close(f.done)
+}
+
+func isCancellation(err error) bool {
+	return stderrors.Is(err, context.Canceled) || stderrors.Is(err, context.DeadlineExceeded)
 }
 
 // calendarQuery is the REPORT body template that fetches every resource
