@@ -136,7 +136,7 @@ func TestLiteral_NotGround(t *testing.T) {
 		{`x.ics todo:`, "todo:"},
 		{`x.ics !a !b`, "!b"},
 		{`x.ics !a:`, "!a:"},
-		{`x.ics [-> y]`, "[…]"},
+		{`x.ics [-> y]`, "[-> y]"}, // quoted as written (#249), no longer elided
 		{`x.ics k=@blake2b256-9ft3x`, "k=@blake2b256-9ft3x"},
 		// A non-id first term.
 		{`!type x.ics`, "!type"},
@@ -167,6 +167,22 @@ func TestLiteral_NotGround(t *testing.T) {
 		_, err := ParseLiteral(interior)
 		if err == nil || !errors.Is400BadRequest(err) {
 			t.Fatalf("ParseLiteral(%q) = %v; want a bad request", interior, err)
+		}
+	}
+}
+
+// TestLiteral_DiagnosticsQuoteTheSource pins that a refusal names the term
+// as the user wrote it (cutting-garden#249), never a re-spelling: the value
+// list keeps its missing space, the field operator its surrounding spaces.
+func TestLiteral_DiagnosticsQuoteTheSource(t *testing.T) {
+	for interior, want := range map[string]string{
+		`x.ics k=[a,b]`:       "term `k=[a,b]` is not ground",
+		`x.ics due *= "2026"`: "term `due *= \"2026\"`",
+		`x.ics k=[a,b] y`:     "`k=[a,b]`",
+	} {
+		_, err := ParseLiteral(interior)
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("ParseLiteral(%q) = %v; want it to quote %s", interior, err, want)
 		}
 	}
 }
@@ -344,11 +360,12 @@ func TestParseTerm(t *testing.T) {
 		src  string
 		want Term
 	}{
-		{`@blake2b256-9ft3x`, Term{Basic: DigestBasicTerm{Digest: DigestTerm{Digest: "blake2b256-9ft3x"}}}},
-		{`!caldav-object-vtodo-v1`, Term{Basic: TypeBasicTerm{Type: TypeTerm{Name: "caldav-object-vtodo-v1"}}}},
-		{`=COMPLETED`, Term{Exact: true, Basic: IdentBasicTerm{Ident: Ident{Name: "COMPLETED"}}}},
-		{`"_ inbox"`, Term{Basic: QuotedRefBasicTerm{Ref: QuotedRef{Value: "_ inbox"}}}},
-		{`  -client  `, Term{Basic: IdentBasicTerm{Ident: Ident{Name: "-client"}}}},
+		{`@blake2b256-9ft3x`, Term{Basic: DigestBasicTerm{Digest: DigestTerm{Digest: "blake2b256-9ft3x"}}, Span: Span{0, 17}}},
+		{`!caldav-object-vtodo-v1`, Term{Basic: TypeBasicTerm{Type: TypeTerm{Name: "caldav-object-vtodo-v1"}}, Span: Span{0, 23}}},
+		{`=COMPLETED`, Term{Exact: true, Basic: IdentBasicTerm{Ident: Ident{Name: "COMPLETED"}}, Span: Span{0, 10}}},
+		{`"_ inbox"`, Term{Basic: QuotedRefBasicTerm{Ref: QuotedRef{Value: "_ inbox"}}, Span: Span{0, 9}}},
+		// The span is the term's own bytes, the surrounding spaces excluded.
+		{`  -client  `, Term{Basic: IdentBasicTerm{Ident: Ident{Name: "-client"}}, Span: Span{2, 9}}},
 	}
 	for _, tc := range cases {
 		got, err := ParseTerm(tc.src)

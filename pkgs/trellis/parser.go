@@ -819,7 +819,7 @@ func (p *parser) parseTerm() (Term, bool) {
 		p.pos = save
 		return Term{}, false
 	}
-	return Term{Negate: negate, Exact: exact, Basic: basic}, true
+	return Term{Negate: negate, Exact: exact, Basic: basic, Span: Span{Start: save, End: p.pos}}, true
 }
 
 // parseBasicTerm tries BasicTerm's nine alternatives in the grammar's own

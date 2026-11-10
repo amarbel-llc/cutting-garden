@@ -87,8 +87,7 @@ func ParseLiteralPrefix(src string) (Literal, string, error) {
 	if !ok {
 		return Literal{}, "", p.boxSyntaxError(start, "expected a `[…]` group")
 	}
-	interior := string(p.src[start+1 : p.pos-1])
-	lit, err := projectLiteral(group, interior)
+	lit, err := projectLiteral(box{src: p.src, interior: string(p.src[start+1 : p.pos-1])}, group)
 	if err != nil {
 		return Literal{}, "", err
 	}
@@ -149,8 +148,7 @@ func (p *parser) parseTempIDBox(start int) (lit Literal, matched bool, err error
 		)
 	}
 
-	interior := string(p.src[start+1 : p.pos-1])
-	lit, err = projectAttrs(lit, terms, interior)
+	lit, err = projectAttrs(box{src: p.src, interior: string(p.src[start+1 : p.pos-1])}, lit, terms)
 	return lit, true, err
 }
 
@@ -168,70 +166,77 @@ func (p *parser) parseTempIDHandle() (string, bool) {
 	return "", true
 }
 
-// projectLiteral applies the groundness bar to a parsed Group; interior is
-// the group's source text, quoted in diagnostics.
-func projectLiteral(group Group, interior string) (Literal, error) {
+// A box is the source a literal was parsed from (the terms' spans index into
+// src) and its interior, the text between its brackets; both are quoted in
+// diagnostics.
+type box struct {
+	src      []rune
+	interior string
+}
+
+// projectLiteral applies the groundness bar to a parsed Group.
+func projectLiteral(b box, group Group) (Literal, error) {
 	alts, ok := group.Body.(Alternatives)
 	if !ok {
 		return Literal{}, errors.BadRequestf(
 			"box literal %q: %s is not ground (a box holds an id, a type, tags, "+
 				"and name=value atoms; not a subpath or version subpath)",
-			interior, groupBodyString(group.Body),
+			b.interior, groupBodyString(group.Body),
 		)
 	}
 	if len(alts.Alts) != 1 {
 		return Literal{}, errors.BadRequestf(
-			"box literal %q: OR-alternatives (`,`) are not ground", interior,
+			"box literal %q: OR-alternatives (`,`) are not ground", b.interior,
 		)
 	}
 
 	terms := alts.Alts[0].Terms
 	first := terms[0]
 	if first.Negate || first.Exact {
-		return Literal{}, notGround(interior, first, "a `^`/`=` prefix is a query decoration")
+		return Literal{}, b.notGround(first, "a `^`/`=` prefix is a query decoration")
 	}
 	switch kind, sigiled := literalTermKind(first.Basic); {
 	case kind == termLocked:
-		return Literal{}, notGround(interior, first,
+		return Literal{}, b.notGround(first,
 			"a locked id `name@digest` is a stencil node (FDR 0028), not espalier")
 	case kind != termTag || sigiled:
-		return Literal{}, notGround(interior, first, "the first term must be the object id")
+		return Literal{}, b.notGround(first, "the first term must be the object id")
 	}
 	if ident, bare := first.Basic.(IdentBasicTerm); bare && ident.Ident.Name == "_" {
-		return projectAttrs(Literal{Kind: IDNull}, terms[1:], interior)
+		return projectAttrs(b, Literal{Kind: IDNull}, terms[1:])
 	}
 	id, _ := plainIdent(first.Basic)
-	return projectAttrs(Literal{ID: id}, terms[1:], interior)
+	return projectAttrs(b, Literal{ID: id}, terms[1:])
 }
 
 // projectAttrs applies the groundness bar to the terms AFTER a box's id slot
 // (an ordinary id or a temp id), filling lit's type, tags and atoms.
-func projectAttrs(lit Literal, terms []Term, interior string) (Literal, error) {
+func projectAttrs(b box, lit Literal, terms []Term) (Literal, error) {
 	for _, term := range terms {
 		if term.Negate || term.Exact {
-			return Literal{}, notGround(interior, term, "a `^`/`=` prefix is a query decoration")
+			return Literal{}, b.notGround(term, "a `^`/`=` prefix is a query decoration")
 		}
 		// The same classification as the tree reader's (literalTermKind);
 		// the ground bar admits a type, `=` atoms and plain tags only.
 		switch kind, sigiled := literalTermKind(term.Basic); {
 		case kind == termType && sigiled:
-			return Literal{}, notGround(interior, term, "a sigil is a version-set scope")
+			return Literal{}, b.notGround(term, "a sigil is a version-set scope")
 		case kind == termType:
 			if lit.Type != "" {
-				return Literal{}, notGround(interior, term, "a box carries at most one `!type`")
+				return Literal{}, b.notGround(term, "a box carries at most one `!type`")
 			}
 			lit.Type = term.Basic.(TypeBasicTerm).Type.Name
 		case kind == termAtom:
 			atom, why := groundAtom(term.Basic.(FieldPredBasicTerm).FieldPred)
 			if why != "" {
-				return Literal{}, notGround(interior, term, why)
+				return Literal{}, b.notGround(term, why)
 			}
 			lit.Atoms = append(lit.Atoms, atom)
 		case kind == termTag && !sigiled:
 			tag, _ := plainIdent(term.Basic)
 			lit.Tags = append(lit.Tags, tag)
 		default:
-			return Literal{}, notGround(interior, term, "not an id, `!type`, tag, or name=value atom")
+			return Literal{}, b.notGround(term, "not an id, `!type`, tag, or name=value atom")
 		}
 	}
 	return lit, nil
@@ -272,9 +277,10 @@ func groundAtom(fp FieldPred) (Atom, string) {
 	}
 }
 
-func notGround(interior string, term Term, why string) error {
+// notGround refuses term, quoting it as written (its span of the source).
+func (b box) notGround(term Term, why string) error {
 	return errors.BadRequestf(
-		"box literal %q: term `%s` is not ground: %s", interior, termString(term), why,
+		"box literal %q: term `%s` is not ground: %s", b.interior, term.Span.Text(b.src), why,
 	)
 }
 
@@ -454,43 +460,10 @@ func ParseTerm(src string) (Term, error) {
 	return q.Path.Steps[0].Terms[0], nil
 }
 
-// ---- diagnostics: spelling a term back for an error message ---------------
-
-// termString re-spells a parsed Term in its grammar form, for diagnostics
-// (ParseLiteral names the offending term). DIAGNOSTIC-ONLY: this is not a
-// canonical printer and is not a Query.String() — nested groups are elided
-// to `[…]` (the message points at the term, not at its interior) and no
-// spelling here is promised to re-parse.
-func termString(t Term) string {
-	var b strings.Builder
-	if t.Negate {
-		b.WriteByte('^')
-	}
-	if t.Exact {
-		b.WriteByte('=')
-	}
-	switch bt := t.Basic.(type) {
-	case GroupBasicTerm:
-		b.WriteString("[…]")
-	case QualifierBasicTerm:
-		b.WriteString(bt.String())
-	case FieldPredBasicTerm:
-		b.WriteString(fieldPredString(bt.FieldPred))
-	case TypeBasicTerm:
-		b.WriteString("!" + bt.Type.Name + sigilString(bt.Sigil))
-	case DigestBasicTerm:
-		b.WriteString("@" + bt.Digest.Digest + sigilString(bt.Sigil))
-	case MarklBasicTerm:
-		b.WriteString(marklString(bt.Markl) + sigilString(bt.Sigil))
-	case QuotedRefBasicTerm:
-		b.WriteString(quoteString(bt.Ref.Value) + sigilString(bt.Sigil))
-	case IdentBasicTerm:
-		b.WriteString(bt.Ident.Name + sigilString(bt.Sigil))
-	case SigilBasicTerm:
-		b.WriteString(bt.Sigil.Runes)
-	}
-	return b.String()
-}
+// ---- spelling a field predicate (the tree writer's atoms) ------------------
+//
+// Diagnostics never re-spell a term: they quote its Span of the source
+// (cutting-garden#249).
 
 // fieldPredString spells a field predicate: the name (quoted when it was
 // parsed quoted), the operator, then the value or `[a, b]` list, each value
@@ -554,11 +527,4 @@ func marklString(m MarklTerm) string {
 		return quoteString(m.Purpose) + "@" + m.Digest
 	}
 	return m.Purpose + "@" + m.Digest
-}
-
-func sigilString(s *Sigil) string {
-	if s == nil {
-		return ""
-	}
-	return s.Runes
 }

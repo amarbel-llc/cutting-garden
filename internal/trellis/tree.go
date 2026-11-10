@@ -113,11 +113,12 @@ func (p *parser) parseTreeBody() (TreeNode, error) {
 			break
 		}
 		lookahead := p.pos
-		if comb, ok := p.parseCombinator(); ok {
+		if _, ok := p.parseCombinator(); ok {
+			written := string(p.src[lookahead:p.pos])
 			p.pos = lookahead
 			return TreeNode{}, p.treeError(
 				"`%s` after a literal's terms: a literal is one step, and a child is written `[-> …]`",
-				combinatorString(comb),
+				written,
 			)
 		}
 		p.pos = lookahead
@@ -194,7 +195,8 @@ func (p *parser) parseTreeAttr(node *TreeNode) error {
 		combStart := p.pos
 		if comb, ok := p.parseCombinator(); ok {
 			if comb.Kind != CombinatorFwd {
-				return p.treeErrorAt(combStart, "a child combinator other than `->`: `%s`", combinatorString(comb))
+				written := string(p.src[combStart:p.pos])
+				return p.treeErrorAt(combStart, "a child combinator other than `->`: `%s`", written)
 			}
 			if !p.skipSP() || p.atEOF() || p.src[p.pos] == ']' {
 				return p.treeErrorAt(start, "an empty child `[->]` (a child is `[-> id …]`, with a space after the arrow)")
@@ -215,7 +217,7 @@ func (p *parser) parseTreeAttr(node *TreeNode) error {
 		return p.treeErrorNamingAt(start, "unexpected `%s` in a literal")
 	}
 	refuse := func(why string) error {
-		return p.treeErrorAt(start, "term `%s` %s", termString(term), why)
+		return p.treeErrorAt(start, "term `%s` %s", term.Span.Text(p.src), why)
 	}
 	kind, sigiled := literalTermKind(term.Basic)
 	if term.Negate && kind != termAtom {
@@ -367,39 +369,6 @@ func (p *parser) treeErrorNamingAt(at int, format string) error {
 func (p *parser) treeError(format string, args ...any) error {
 	args = append([]any{p.pos}, args...)
 	return errors.BadRequestf("trellis literal at offset %d: "+format, args...)
-}
-
-func combinatorString(c Combinator) string {
-	pred := ""
-	if c.Pred != nil {
-		pred = termsString(c.Pred.Terms)
-	}
-	switch c.Kind {
-	case CombinatorFwd:
-		return "->"
-	case CombinatorBack:
-		return "<-"
-	case CombinatorFwdClosure:
-		return "->>"
-	case CombinatorBackClosure:
-		return "<<-"
-	case CombinatorTypedFwd:
-		return "-[" + pred + "]->"
-	case CombinatorTypedBack:
-		return "<-[" + pred + "]-"
-	case CombinatorTypedClosure:
-		return "-[" + pred + "]->>"
-	default:
-		return "?"
-	}
-}
-
-func termsString(terms []Term) string {
-	parts := make([]string, len(terms))
-	for i, t := range terms {
-		parts[i] = termString(t)
-	}
-	return strings.Join(parts, " ")
 }
 
 // ---- writer -----------------------------------------------------------------

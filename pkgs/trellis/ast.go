@@ -73,7 +73,18 @@ type Term struct {
 	Negate bool // leading '^'
 	Exact  bool // leading '='
 	Basic  BasicTerm
+	// Span is where the term sits in the source the parser read (prefixes
+	// included), so a diagnostic quotes the user's own bytes instead of a
+	// re-spelling (cutting-garden#249).
+	Span Span
 }
+
+// A Span is a half-open range [Start, End) of rune offsets into the source a
+// parser read.
+type Span struct{ Start, End int }
+
+// Text is the span's slice of src, the source the span was recorded against.
+func (s Span) Text(src []rune) string { return string(src[s.Start:s.End]) }
 
 // BasicTerm is the sum type of BasicTerm's nine grammar alternatives:
 //

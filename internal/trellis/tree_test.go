@@ -155,6 +155,9 @@ func TestParseTree_Refusals(t *testing.T) {
 		{`[a !t:]`, "!t:"},
 		{`[a !t !u]`, "!u"},
 		{`[a [b, c]]`, "OR-alternatives"},
+		// A refusal quotes the source (cutting-garden#249), not a re-spelling.
+		{`[a [b,c]]`, "`[b,c]`"},
+		{`[a [-[e  f]-> b]]`, "`-[e  f]->`"},
 		{`[a [: x]]`, "version subpath"},
 		{`[a (tags)]`, "(tags)"},
 		{`[a ^tag]`, "^tag"},
