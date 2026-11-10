@@ -190,17 +190,17 @@ func projectLiteral(group Group, interior string) (Literal, error) {
 	if first.Negate || first.Exact {
 		return Literal{}, notGround(interior, first, "a `^`/`=` prefix is a query decoration")
 	}
-	if ident, ok := first.Basic.(IdentBasicTerm); ok && ident.Sigil == nil && ident.Ident.Name == "_" {
-		return projectAttrs(Literal{Kind: IDNull}, terms[1:], interior)
-	}
-	if _, locked := first.Basic.(MarklBasicTerm); locked {
+	switch kind, sigiled := literalTermKind(first.Basic); {
+	case kind == termLocked:
 		return Literal{}, notGround(interior, first,
 			"a locked id `name@digest` is a stencil node (FDR 0028), not espalier")
-	}
-	id, ok := plainIdent(first.Basic)
-	if !ok {
+	case kind != termTag || sigiled:
 		return Literal{}, notGround(interior, first, "the first term must be the object id")
 	}
+	if ident, bare := first.Basic.(IdentBasicTerm); bare && ident.Ident.Name == "_" {
+		return projectAttrs(Literal{Kind: IDNull}, terms[1:], interior)
+	}
+	id, _ := plainIdent(first.Basic)
 	return projectAttrs(Literal{ID: id}, terms[1:], interior)
 }
 
@@ -211,27 +211,27 @@ func projectAttrs(lit Literal, terms []Term, interior string) (Literal, error) {
 		if term.Negate || term.Exact {
 			return Literal{}, notGround(interior, term, "a `^`/`=` prefix is a query decoration")
 		}
-		switch b := term.Basic.(type) {
-		case TypeBasicTerm:
-			if b.Sigil != nil {
-				return Literal{}, notGround(interior, term, "a sigil is a version-set scope")
-			}
+		// The same classification as the tree reader's (literalTermKind);
+		// the ground bar admits a type, `=` atoms and plain tags only.
+		switch kind, sigiled := literalTermKind(term.Basic); {
+		case kind == termType && sigiled:
+			return Literal{}, notGround(interior, term, "a sigil is a version-set scope")
+		case kind == termType:
 			if lit.Type != "" {
 				return Literal{}, notGround(interior, term, "a box carries at most one `!type`")
 			}
-			lit.Type = b.Type.Name
-		case FieldPredBasicTerm:
-			atom, why := groundAtom(b.FieldPred)
+			lit.Type = term.Basic.(TypeBasicTerm).Type.Name
+		case kind == termAtom:
+			atom, why := groundAtom(term.Basic.(FieldPredBasicTerm).FieldPred)
 			if why != "" {
 				return Literal{}, notGround(interior, term, why)
 			}
 			lit.Atoms = append(lit.Atoms, atom)
-		default:
-			tag, ok := plainIdent(term.Basic)
-			if !ok {
-				return Literal{}, notGround(interior, term, "not an id, `!type`, tag, or name=value atom")
-			}
+		case kind == termTag && !sigiled:
+			tag, _ := plainIdent(term.Basic)
 			lit.Tags = append(lit.Tags, tag)
+		default:
+			return Literal{}, notGround(interior, term, "not an id, `!type`, tag, or name=value atom")
 		}
 	}
 	return lit, nil

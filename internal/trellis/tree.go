@@ -217,46 +217,88 @@ func (p *parser) parseTreeAttr(node *TreeNode) error {
 	refuse := func(why string) error {
 		return p.treeErrorAt(start, "term `%s` %s", termString(term), why)
 	}
-	if term.Negate {
-		if _, isAtom := term.Basic.(FieldPredBasicTerm); !isAtom {
-			return refuse("is not a literal term: `^` negates only a field atom")
-		}
+	kind, sigiled := literalTermKind(term.Basic)
+	if term.Negate && kind != termAtom {
+		return refuse("is not a literal term: `^` negates only a field atom")
 	}
-	if basicSigil(term.Basic) != nil {
+	if sigiled {
 		return refuse("carries a sigil (a version-set scope, not a literal term)")
 	}
 	// A leading `=` (exact) is inert in a literal: ids already match
 	// exactly (FDR 0028 "Matching"), so the canonical form drops it.
-	switch b := term.Basic.(type) {
-	case FieldPredBasicTerm:
-		node.Atoms = append(node.Atoms, TreeAtom{Negate: term.Negate, Pred: b.FieldPred})
-	case TypeBasicTerm:
+	switch kind {
+	case termAtom:
+		pred := term.Basic.(FieldPredBasicTerm).FieldPred
+		node.Atoms = append(node.Atoms, TreeAtom{Negate: term.Negate, Pred: pred})
+	case termType:
 		if node.Type != "" {
 			return refuse("is a second `!type` (a literal carries at most one)")
 		}
-		node.Type = b.Type.Name
-	case DigestBasicTerm:
+		node.Type = term.Basic.(TypeBasicTerm).Type.Name
+	case termDigest:
 		if node.Digest != "" {
 			return refuse("is a second `@digest` (a literal carries at most one)")
 		}
-		node.Digest = b.Digest.Digest
-	case IdentBasicTerm, QuotedRefBasicTerm:
+		node.Digest = term.Basic.(DigestBasicTerm).Digest.Digest
+	case termTag:
 		tag, _ := plainIdent(term.Basic)
 		node.Tags = append(node.Tags, tag)
-	case GroupBasicTerm:
-		if _, isVersionSub := b.Group.Body.(VersionSub); isVersionSub {
-			return refuse("is a version subpath, not a literal term")
-		}
-		if alts, ok := b.Group.Body.(Alternatives); ok && len(alts.Alts) > 1 {
-			return refuse("is a group of OR-alternatives, not a literal term")
-		}
+	case termVersionSub:
+		return refuse("is a version subpath, not a literal term")
+	case termOrGroup:
+		return refuse("is a group of OR-alternatives, not a literal term")
+	case termGroup:
 		return refuse("is a bracketed group, not a literal term (a child is `[-> …]`)")
-	case MarklBasicTerm:
+	case termLocked:
 		return refuse("is a locked id outside the id slot")
 	default:
 		return refuse("is not a literal term (a qualifier or a bare sigil)")
 	}
 	return nil
+}
+
+// termKind classifies one term of a literal. ParseLiteral's ground projection
+// and the tree reader share this one classification and differ only in which
+// kinds they admit and how they word a refusal.
+type termKind int
+
+const (
+	termAtom termKind = iota
+	termType
+	termTag
+	termDigest
+	termLocked     // a MarklTerm, `name@digest`
+	termVersionSub // `[: …]`
+	termOrGroup    // `[a, b]`
+	termGroup      // any other bracketed group
+	termOther      // a qualifier or a bare sigil
+)
+
+// literalTermKind classifies b, and reports whether it carries a trailing
+// sigil (basicSigil).
+func literalTermKind(b BasicTerm) (kind termKind, sigiled bool) {
+	sigiled = basicSigil(b) != nil
+	switch b := b.(type) {
+	case FieldPredBasicTerm:
+		return termAtom, false
+	case TypeBasicTerm:
+		return termType, sigiled
+	case IdentBasicTerm, QuotedRefBasicTerm:
+		return termTag, sigiled
+	case DigestBasicTerm:
+		return termDigest, sigiled
+	case MarklBasicTerm:
+		return termLocked, sigiled
+	case GroupBasicTerm:
+		if _, isVersionSub := b.Group.Body.(VersionSub); isVersionSub {
+			return termVersionSub, false
+		}
+		if alts, ok := b.Group.Body.(Alternatives); ok && len(alts.Alts) > 1 {
+			return termOrGroup, false
+		}
+		return termGroup, false
+	}
+	return termOther, false
 }
 
 // basicSigil is the trailing sigil a basic term carries, nil when none.
