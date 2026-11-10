@@ -253,15 +253,22 @@ func (lc *listingCache) maintain(
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			// One tick is one host call (cutting-garden#341), as in
-			// facetCache.maintain.
-			tick := cutting_garden_plugins.WithCallScope(ctx)
-			for _, uri := range lc.uris() {
-				lc.refreshOne(tick, resolve, uri)
-				if ctx.Err() != nil {
-					return
-				}
+			lc.refreshTick(ctx, resolve)
+			if ctx.Err() != nil {
+				return
 			}
+		}
+	}
+}
+
+// refreshTick is one tick of maintain, as facetCache.refreshTick: every
+// cached entry refreshed inside one call scope (cutting-garden#341).
+func (lc *listingCache) refreshTick(ctx context.Context, resolve resolveFunc) {
+	tick := cutting_garden_plugins.WithCallScope(ctx)
+	for _, uri := range lc.uris() {
+		lc.refreshOne(tick, resolve, uri)
+		if ctx.Err() != nil {
+			return
 		}
 	}
 }
