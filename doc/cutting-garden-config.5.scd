@@ -316,11 +316,14 @@ stanza accepts it today.
 
 The *mcp* server memoizes each container's enriched listing and facet
 summary. By default it warms every configured root at startup and then,
-on a timer, re-checks every cached container: one plugin call per entry
-per tick even when no client is asking, multiplied by one server per
-session. For a plugin whose backend is metered (smith over the GitHub API)
-that can spend a shared quota with no tool call (cutting-garden#393). A
-top-level *[mcp]* table tunes this:
+on a timer, re-checks its cached containers even when no client is asking:
+one plugin call per entry, at most 32 entries per tick (a cursor carries
+the rest to the next ticks), multiplied by one server per session. Each
+cache holds at most 512 entries; past that the entry served longest ago is
+evicted, the configured roots never. A failed refresh backs off before the
+entry is retried. For a plugin whose backend is metered (smith over the
+GitHub API) the refresher can still spend a shared quota with no tool call
+(cutting-garden#393). A top-level *[mcp]* table tunes this:
 
 *no_background_refresh*
 	Array of strings. OPTIONAL. URI schemes (*"smith"*, or *"\*"* for every

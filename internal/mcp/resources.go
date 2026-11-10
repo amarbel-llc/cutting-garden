@@ -101,13 +101,20 @@ var (
 // the real plugin registry. writer is the optional blob sink for raw leaf
 // bytes (nil when no store is configured).
 func newResources(roots []*url.URL, writer capture_plugin.Writer) *Resources {
-	return &Resources{
+	r := &Resources{
 		roots:    roots,
 		resolve:  command_components.ResolveRootListerPlugin,
 		writer:   writer,
 		facets:   newFacetCache(),
 		listings: newListingCache(),
 	}
+	rootURIs := make([]string, 0, len(roots))
+	for _, root := range roots {
+		rootURIs = append(rootURIs, root.String())
+	}
+	r.facets.pinned = pinnedURIs(rootURIs)
+	r.listings.pinned = r.facets.pinned
+	return r
 }
 
 // startFacetMaintenance warms the facet AND listing caches with the

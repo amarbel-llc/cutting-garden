@@ -34,6 +34,8 @@ const (
 
 // facetCacheEntry is one node's memoized summary plus its provenance.
 type facetCacheEntry struct {
+	// lastServed is the cache's served count when this entry was last served.
+	lastServed uint64
 	result     cutting_garden_plugins.FacetResult
 	token      string
 	hasToken   bool
@@ -53,6 +55,8 @@ type facetCacheEntry struct {
 	// no longer proves freshness for a (data, now) summary.
 	revalidateAfter time.Duration
 }
+
+func (e *facetCacheEntry) servedSeq() uint64 { return e.lastServed }
 
 // windowExpired reports whether the entry's volatile window has lapsed
 // at now. Always false for pure entries (revalidateAfter == 0).
@@ -91,6 +95,11 @@ type facetCache struct {
 	// lazy marks the URIs kept off the background refresher
 	// (backgroundRefreshOff); nil means none.
 	lazy func(uri string) bool
+	// pinned, served and cursor bound the cache as listingCache's do
+	// (maxCachedEntries, maxRefreshesPerTick).
+	pinned func(uri string) bool
+	served uint64
+	cursor refreshCursor
 }
 
 func newFacetCache() *facetCache {
@@ -119,6 +128,8 @@ func (fc *facetCache) serve(
 	fc.mu.Lock()
 	entry := fc.entries[uri]
 	if entry != nil && !staleForLazyRead(fc.lazy, uri, entry.computedAt, fc.now()) {
+		fc.served++
+		entry.lastServed = fc.served
 		view := fc.viewLocked(entry)
 		fc.mu.Unlock()
 		return view, nil
@@ -161,6 +172,11 @@ func (fc *facetCache) computeAndStore(
 		revalidateAfter: volatileWindowFor(lister, result.Summary),
 	}
 	fc.mu.Lock()
+	if fc.entries[uri] == nil {
+		evictLeastRecentlyServed(fc.entries, fc.pinned)
+	}
+	fc.served++
+	entry.lastServed = fc.served
 	fc.entries[uri] = entry
 	view := fc.viewLocked(entry)
 	fc.mu.Unlock()
@@ -283,38 +299,36 @@ func (fc *facetCache) maintain(
 	}
 }
 
-// refreshTick is one tick of maintain: it refreshes every cached entry,
-// stopping early when ctx is done. One tick is one host call
-// (cutting-garden#341): its entries share per-call confirmations (an org
-// file's ETag, a caldav calendar-home's discovery), and the next tick confirms
-// afresh.
+// refreshTick is one tick of maintain: it refreshes the next stretch of
+// cached entries, at most maxRefreshesPerTick of them, stopping early when ctx
+// is done. One tick is one host call (cutting-garden#341): its entries share
+// per-call confirmations (an org file's ETag, a caldav calendar-home's
+// discovery), and the next tick confirms afresh.
 func (fc *facetCache) refreshTick(ctx context.Context, resolve resolveFunc) {
 	tick := cutting_garden_plugins.WithCallScope(ctx)
-	for _, uri := range fc.uris() {
-		fc.refreshOne(tick, resolve, uri)
-		if ctx.Err() != nil {
-			return
-		}
-	}
+	fc.cursor.tick(ctx, fc.uris(), func(uri string) bool {
+		return fc.refreshOne(tick, resolve, uri)
+	})
 }
 
 // refreshOne re-validates a single cached entry: token unchanged → mark
 // verified; token moved or TTL lapsed → recompute; any failure → keep the
 // last good summary and mark the entry stale with the error recorded
-// (RFC 0012 §9's implicit-surface degrade).
+// (RFC 0012 §9's implicit-surface degrade). It reports whether it called the
+// plugin.
 func (fc *facetCache) refreshOne(
 	ctx context.Context,
 	resolve resolveFunc,
 	uri string,
-) {
+) bool {
 	if fc.lazy != nil && fc.lazy(uri) {
-		return
+		return false
 	}
 	fc.mu.Lock()
 	entry := fc.entries[uri]
 	if entry == nil || fc.now().Before(entry.retryAfter) {
 		fc.mu.Unlock()
-		return
+		return false
 	}
 	prevToken, hadToken := entry.token, entry.hasToken
 	computedAt := entry.computedAt
@@ -324,11 +338,11 @@ func (fc *facetCache) refreshOne(
 	u, lister, err := resolve(uri)
 	if err != nil {
 		fc.markError(uri, err)
-		return
+		return false
 	}
 	if !cutting_garden_plugins.CanSummarizeFacets(lister) {
 		fc.drop(uri)
-		return
+		return false
 	}
 
 	// A lapsed volatile window (RFC 0012 §11.3) forces recomputation
@@ -343,15 +357,15 @@ func (fc *facetCache) refreshOne(
 				token, tokenOK, verr := versioner.FacetVersion(ctx, u)
 				if verr != nil {
 					fc.markError(uri, verr)
-					return
+					return true
 				}
 				if tokenOK && token == prevToken {
 					fc.markVerified(uri)
-					return
+					return true
 				}
 			}
 		} else if fc.now().Sub(computedAt) < facetTTL {
-			return
+			return false
 		}
 	}
 
@@ -361,23 +375,29 @@ func (fc *facetCache) refreshOne(
 	result, ok, err := cutting_garden_plugins.ResolveFacetCounts(ctx, lister, u, nil)
 	if err != nil {
 		fc.markError(uri, err)
-		return
+		return true
 	}
 	if !ok {
 		fc.drop(uri)
-		return
+		return true
 	}
 	now := fc.now()
 	fc.mu.Lock()
-	fc.entries[uri] = &facetCacheEntry{
-		result:          result.Normalized(),
-		token:           token,
-		hasToken:        hasToken,
-		computedAt:      now,
-		verifiedAt:      now,
-		revalidateAfter: volatileWindowFor(lister, result.Summary),
+	defer fc.mu.Unlock()
+	// As in listingCache.refreshOne: an entry evicted or dropped meanwhile
+	// stays gone.
+	if old := fc.entries[uri]; old != nil {
+		fc.entries[uri] = &facetCacheEntry{
+			lastServed:      old.lastServed,
+			result:          result.Normalized(),
+			token:           token,
+			hasToken:        hasToken,
+			computedAt:      now,
+			verifiedAt:      now,
+			revalidateAfter: volatileWindowFor(lister, result.Summary),
+		}
 	}
-	fc.mu.Unlock()
+	return true
 }
 
 func (fc *facetCache) markVerified(uri string) {

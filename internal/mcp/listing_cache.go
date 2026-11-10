@@ -36,11 +36,21 @@ type listingCache struct {
 	// lazy marks the URIs kept off the background refresher
 	// (backgroundRefreshOff); nil means none.
 	lazy func(uri string) bool
+	// pinned marks the URIs never evicted past maxCachedEntries (the
+	// configured roots); nil means none.
+	pinned func(uri string) bool
+	// served counts serves; each entry records the count at its last serve,
+	// for least-recently-served eviction.
+	served uint64
+	// cursor is where the next refresher tick resumes (maxRefreshesPerTick).
+	cursor refreshCursor
 }
 
 // listingCacheEntry is one node's memoized enriched-unfiltered listing plus
 // its provenance. Structurally mirrors facetCacheEntry.
 type listingCacheEntry struct {
+	// lastServed is the cache's served count when this entry was last served.
+	lastServed uint64
 	nodes      []cutting_garden_plugins.Node
 	token      string
 	hasToken   bool
@@ -62,6 +72,8 @@ type listingCacheEntry struct {
 	// reused here via a presence-only pseudo-summary (facetKeyPresenceOf).
 	revalidateAfter time.Duration
 }
+
+func (e *listingCacheEntry) servedSeq() uint64 { return e.lastServed }
 
 func (e *listingCacheEntry) windowExpired(now time.Time) bool {
 	return e.revalidateAfter > 0 &&
@@ -162,6 +174,8 @@ func (lc *listingCache) serve(
 	entry := lc.entries[uri]
 	if entry != nil && !entry.windowExpired(lc.now()) &&
 		!staleForLazyRead(lc.lazy, uri, entry.computedAt, lc.now()) {
+		lc.served++
+		entry.lastServed = lc.served
 		nodes := entry.nodes
 		prov := entry.provenance(lc.now())
 		lc.mu.Unlock()
@@ -201,6 +215,11 @@ func (lc *listingCache) computeAndStore(
 		revalidateAfter: volatileWindowFor(lister, facetKeyPresenceOf(nodes)),
 	}
 	lc.mu.Lock()
+	if lc.entries[uri] == nil {
+		evictLeastRecentlyServed(lc.entries, lc.pinned)
+	}
+	lc.served++
+	entry.lastServed = lc.served
 	lc.entries[uri] = entry
 	lc.mu.Unlock()
 	return nodes, entry.provenance(now), nil
@@ -261,16 +280,14 @@ func (lc *listingCache) maintain(
 	}
 }
 
-// refreshTick is one tick of maintain, as facetCache.refreshTick: every
-// cached entry refreshed inside one call scope (cutting-garden#341).
+// refreshTick is one tick of maintain, as facetCache.refreshTick: the next
+// stretch of cached entries refreshed inside one call scope
+// (cutting-garden#341), at most maxRefreshesPerTick of them.
 func (lc *listingCache) refreshTick(ctx context.Context, resolve resolveFunc) {
 	tick := cutting_garden_plugins.WithCallScope(ctx)
-	for _, uri := range lc.uris() {
-		lc.refreshOne(tick, resolve, uri)
-		if ctx.Err() != nil {
-			return
-		}
-	}
+	lc.cursor.tick(ctx, lc.uris(), func(uri string) bool {
+		return lc.refreshOne(tick, resolve, uri)
+	})
 }
 
 // refreshOne re-validates a single cached entry: token unchanged (and
@@ -279,20 +296,20 @@ func (lc *listingCache) refreshTick(ctx context.Context, resolve resolveFunc) {
 // listing and mark the entry stale with the error recorded, exactly
 // mirroring facetCache.refreshOne's degrade path (the CACHE degrades on
 // refresh failure; a cold-miss compute failure still propagates from
-// serve/computeAndStore).
+// serve/computeAndStore). It reports whether it called the plugin.
 func (lc *listingCache) refreshOne(
 	ctx context.Context,
 	resolve resolveFunc,
 	uri string,
-) {
+) bool {
 	if lc.lazy != nil && lc.lazy(uri) {
-		return
+		return false
 	}
 	lc.mu.Lock()
 	entry := lc.entries[uri]
 	if entry == nil || lc.now().Before(entry.retryAfter) {
 		lc.mu.Unlock()
-		return
+		return false
 	}
 	prevToken, hadToken := entry.token, entry.hasToken
 	computedAt := entry.computedAt
@@ -302,7 +319,7 @@ func (lc *listingCache) refreshOne(
 	u, lister, err := resolve(uri)
 	if err != nil {
 		lc.markError(uri, err)
-		return
+		return false
 	}
 
 	if !windowExpired {
@@ -311,15 +328,15 @@ func (lc *listingCache) refreshOne(
 				token, tokenOK, verr := versioner.FacetVersion(ctx, u)
 				if verr != nil {
 					lc.markError(uri, verr)
-					return
+					return true
 				}
 				if tokenOK && token == prevToken {
 					lc.markVerified(uri)
-					return
+					return true
 				}
 			}
 		} else if lc.now().Sub(computedAt) < facetTTL {
-			return
+			return false
 		}
 	}
 
@@ -327,19 +344,25 @@ func (lc *listingCache) refreshOne(
 	nodes, _, err := enrichedListing(ctx, lister, u, nil)
 	if err != nil {
 		lc.markError(uri, err)
-		return
+		return true
 	}
 	now := lc.now()
 	lc.mu.Lock()
-	lc.entries[uri] = &listingCacheEntry{
-		nodes:           nodes,
-		token:           token,
-		hasToken:        hasToken,
-		computedAt:      now,
-		verifiedAt:      now,
-		revalidateAfter: volatileWindowFor(lister, facetKeyPresenceOf(nodes)),
+	defer lc.mu.Unlock()
+	// An entry evicted or dropped (a write through this server) while the
+	// refresh ran stays gone: re-adding it would undo the drop.
+	if old := lc.entries[uri]; old != nil {
+		lc.entries[uri] = &listingCacheEntry{
+			lastServed:      old.lastServed,
+			nodes:           nodes,
+			token:           token,
+			hasToken:        hasToken,
+			computedAt:      now,
+			verifiedAt:      now,
+			revalidateAfter: volatileWindowFor(lister, facetKeyPresenceOf(nodes)),
+		}
 	}
-	lc.mu.Unlock()
+	return true
 }
 
 // dropSource forgets every listing memoized from written's source (its
