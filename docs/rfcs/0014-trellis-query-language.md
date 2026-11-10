@@ -368,8 +368,11 @@ Inside a literal the fragment admits:
   `_` (a pattern over existing objects); the temp id `+`, `+id`, `+"id"` (a
   creation allowance); a locked id `name@digest` (hyphence RFC 0003);
 - at most one `!type`;
-- tags, bare or quoted; `deny` and `subtree` are reserved to the evaluator
-  and every other tag is carried inert;
+- tags, bare or quoted; `deny` and `subtree` are reserved to the evaluator,
+  `open` is required on every atom-less typed `_` node of a stencil
+  (interior and deny-chain nodes included; an act body, which may only
+  deny, is exempt) and its absence there is a parse error naming the node
+  (ruled 2026-11-10), and every other tag is carried inert;
 - atoms with any `FieldOp`, a scalar or a value list, and `^` negation of an
   atom;
 - children `[-> …]`, each one literal of the fragment, nesting to any depth.
