@@ -256,7 +256,9 @@ var (
 func (c *client) discoverCalendarsThisCall(
 	ctx context.Context,
 ) (bool, []calendar, error) {
-	key := "caldav-discovery:" + c.base
+	// Keyed by user as well as base: what a calendar-home holds can differ by
+	// account. The password is not part of the key; a user's is fixed.
+	key := "caldav-discovery:" + c.username + "\x00" + c.base
 	if cutting_garden_plugins.ConfirmedThisCall(ctx, key) {
 		discoveryMu.Lock()
 		cached, ok := discoveryCache[key]

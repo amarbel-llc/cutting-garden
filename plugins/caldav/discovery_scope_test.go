@@ -38,6 +38,24 @@ func listHome(t *testing.T, ctx context.Context, home string) {
 	}
 }
 
+// Two clients on one base URL with different users do not share a discovery
+// inside one call: what a calendar-home holds can differ by account.
+func TestDiscovery_NotSharedAcrossUsers(t *testing.T) {
+	f := newFakeCalDAV()
+	f.seed("/dav/cal/t1.ics", "VTODO", vtodoFull("t1", "Task", "NEEDS-ACTION", "20260101"))
+	srv, propfinds := countingPropfinds(t, f)
+	ctx := cutting_garden_plugins.WithCallScope(context.Background())
+
+	for _, user := range []string{"alice", "bob"} {
+		if _, _, err := newClient(srv.URL+"/dav/", user, "pw").discoverCalendarsThisCall(ctx); err != nil {
+			t.Fatalf("discover as %s: %v", user, err)
+		}
+	}
+	if got := propfinds.Load(); got != 2 {
+		t.Errorf("%d PROPFINDs for two users on one base in one call, want 2", got)
+	}
+}
+
 // TestDiscovery_OncePerCall pins cutting-garden#398 step 3: inside one host
 // call, the declined ListEnriched and the ListRoots fallback share one
 // discovery PROPFIND; a new call discovers again, and outside a call scope
