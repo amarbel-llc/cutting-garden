@@ -164,7 +164,8 @@ func TestParseTree_Refusals(t *testing.T) {
 		{`[a [<- b]]`, "<-"},
 		{`[a [-[e]-> b]]`, "-[e]->"},
 		{`[a [->]]`, "[->]"},
-		{`[a [-> b -> c]]`, "more than one step"},
+		{`[a [-> b -> c]]`, "a literal is one step"},
+		{`[a -> b]`, "a literal is one step"},
 		{`[file:/**/x !fs-path-v1]`, "file:/**/x"},
 		{`[file:/wt** !fs-path-v1]`, "file:/wt**"},
 		{`[a @blake2b256-s3 @blake2b256-c3]`, "@blake2b256-c3"},
@@ -172,7 +173,8 @@ func TestParseTree_Refusals(t *testing.T) {
 		{`x`, "x"},
 		{"# [a]\nnot a line", "not a line"},
 		{"- [a] trailer", "trailer"},
-		{"# a] b", "b"},
+		{"# a] b", "unexpected `]`"},
+		{"\n\n# work ^tag", "offset 9"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.src, func(t *testing.T) {

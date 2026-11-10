@@ -387,7 +387,7 @@ var parseVectors = []parseVector{
 	{id: "fragment", name: "OR-alternatives", src: `[x [a, b]]`, wantErr: "OR-alternatives"},
 	{id: "fragment", name: "a sigil", src: `[x tag:]`, wantErr: "tag:"},
 	{id: "fragment", name: "a closure child", src: `[x [->> y]]`, wantErr: "->>"},
-	{id: "fragment", name: "a two-step child", src: `[x [-> y -> z]]`, wantErr: "more than one step"},
+	{id: "fragment", name: "a two-step child", src: `[x [-> y -> z]]`, wantErr: "a literal is one step"},
 	{id: "fragment", name: "negation of a tag", src: `[x ^t]`, wantErr: "^t"},
 	{id: "fragment", name: "negation of an atom", src: `[x !t ^value=master]`},
 	{id: "fragment", name: "two types", src: `[x !t !u]`, wantErr: "!u"},
@@ -457,6 +457,27 @@ func assertValue(t *testing.T, atom trellis.FieldPred, want trellis.Value) {
 	t.Helper()
 	if len(atom.Values) != 1 || !reflect.DeepEqual(atom.Values[0], want) {
 		t.Fatalf("atom %+v; want the one value %#v", atom, want)
+	}
+}
+
+// TestWrite_CodeBuiltNode pins that Write follows a Node's bools, not stale
+// tags, and tolerates a Negated shorter than Atoms (false).
+func TestWrite_CodeBuiltNode(t *testing.T) {
+	parsed, err := ParseStencil(`[x subtree deny]`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := parsed.Roots[0]
+	n.Deny = false
+	n.Atoms = []trellis.FieldPred{{
+		Field: trellis.FieldName{Name: "k"}, Op: trellis.FieldOpEq,
+		Values: []trellis.Value{trellis.Bareword{Name: "v"}},
+	}}
+	var b strings.Builder
+	Stencil{Roots: []Node{n, {ID: "y", HasID: true, Deny: true}}}.Write(&b)
+	want := "[x subtree k=v]\n\n[y deny]\n"
+	if b.String() != want {
+		t.Fatalf("Write = %q, want %q", b.String(), want)
 	}
 }
 

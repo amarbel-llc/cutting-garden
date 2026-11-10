@@ -250,15 +250,21 @@ func writeNodes(b *strings.Builder, roots []Node) {
 }
 
 func toTree(n Node) trellis.TreeNode {
-	// Deny and Subtree are written as their tags even on a Node built in
-	// code with only the bool set.
-	tags := n.Tags
+	// The Deny and Subtree bools decide the two reserved tags, so a Node
+	// edited or built in code writes what its bools say.
+	var tags []string
+	for _, tag := range n.Tags {
+		if (tag == TagDeny && !n.Deny) || (tag == TagSubtree && !n.Subtree) {
+			continue
+		}
+		tags = append(tags, tag)
+	}
 	for _, reserved := range []struct {
 		set bool
 		tag string
 	}{{n.Subtree, TagSubtree}, {n.Deny, TagDeny}} {
 		if reserved.set && !slices.Contains(tags, reserved.tag) {
-			tags = append(slices.Clone(tags), reserved.tag)
+			tags = append(tags, reserved.tag)
 		}
 	}
 	tree := trellis.TreeNode{
@@ -271,7 +277,8 @@ func toTree(n Node) trellis.TreeNode {
 		tree.Kind = trellis.IDNull
 	}
 	for i, pred := range n.Atoms {
-		tree.Atoms = append(tree.Atoms, trellis.TreeAtom{Negate: n.Negated[i], Pred: pred})
+		negate := i < len(n.Negated) && n.Negated[i]
+		tree.Atoms = append(tree.Atoms, trellis.TreeAtom{Negate: negate, Pred: pred})
 	}
 	for _, c := range n.Children {
 		tree.Children = append(tree.Children, toTree(c))

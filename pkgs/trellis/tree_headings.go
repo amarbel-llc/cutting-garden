@@ -94,17 +94,17 @@ func (p *parser) parseHeadingContent() (TreeNode, error) {
 		}
 		return node, p.expectLineEnd()
 	}
-	line := p.restOfLine()
-	p.pos += len([]rune(line))
-	bucket := &parser{src: []rune("[_ " + line + "]")}
-	node, err := bucket.parseTreeLiteral()
-	if err != nil {
-		return TreeNode{}, err
+	// Read the term run in place, so a refusal's offset is the document's.
+	node := TreeNode{Kind: IDNull}
+	for {
+		if err := p.parseTreeAttr(&node); err != nil {
+			return TreeNode{}, err
+		}
+		p.skipLineSpace()
+		if p.atLineEnd() {
+			return node, nil
+		}
 	}
-	if !bucket.atEOF() {
-		return TreeNode{}, p.treeError("unexpected `%s` in a heading", string(bucket.src[bucket.pos:len(bucket.src)-1]))
-	}
-	return node, nil
 }
 
 func (p *parser) skipLineSpace() {

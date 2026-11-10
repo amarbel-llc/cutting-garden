@@ -126,16 +126,11 @@ func (p *parser) parseTempIDBox(start int) (lit Literal, matched bool, err error
 	p.pos++
 
 	lit.New = true
-	switch {
-	case !p.atEOF() && (p.src[p.pos] == '"' || p.src[p.pos] == '\''):
-		id, ok := p.parseString()
-		if !ok {
-			return Literal{}, true, p.boxSyntaxError(start, "unterminated temp id")
-		}
-		lit.ID = id
-	case IsIdentRuneAt(p.src, p.pos):
-		lit.ID, _ = p.scanIdentText()
+	id, ok := p.parseTempIDHandle()
+	if !ok {
+		return Literal{}, true, p.boxSyntaxError(start, "unterminated temp id")
 	}
+	lit.ID = id
 
 	var terms []Term
 	afterID := p.pos
@@ -156,6 +151,20 @@ func (p *parser) parseTempIDBox(start int) (lit Literal, matched bool, err error
 	interior := string(p.src[start+1 : p.pos-1])
 	lit, err = projectAttrs(lit, terms, interior)
 	return lit, true, err
+}
+
+// parseTempIDHandle reads the PEG's TempID handle after its `+`:
+// (String / Ident)?, empty for a bare `+`. ok is false only for an
+// unterminated String.
+func (p *parser) parseTempIDHandle() (string, bool) {
+	switch {
+	case !p.atEOF() && (p.src[p.pos] == '"' || p.src[p.pos] == '\''):
+		return p.parseString()
+	case IsIdentRuneAt(p.src, p.pos):
+		id, _ := p.scanIdentText()
+		return id, true
+	}
+	return "", true
 }
 
 // projectLiteral applies the groundness bar to a parsed Group; interior is
@@ -272,7 +281,8 @@ func notGround(interior string, term Term, why string) error {
 // (the caller writes those, alongside whatever trails the box): the id, then
 // `!type`, then each tag, then each `name=value` atom, single-space
 // separated — the doddish leading-tags order (`_tag-atoms = leading`,
-// RFC 0015). Every slot is spelled through QuoteIfNeeded, so the output
+// RFC 0015). Every slot is spelled through QuoteIfNeeded (the id slot
+// through SpellTreeID, which also quotes a `_` or `+…` id), so the output
 // re-parses (ParseLiteral) to the same Literal.
 func WriteLiteral(b *strings.Builder, lit Literal) {
 	writeLiteral(b, lit, false)
@@ -292,7 +302,9 @@ func writeLiteral(b *strings.Builder, lit Literal, trailingTags bool) {
 }
 
 // A SpelledLiteral is a Literal whose slots are already spelled as the text
-// that lands in the box: the id and each tag through QuoteIfNeeded, each atom
+// that lands in the box: the id through SpellTreeID (never QuoteIfNeeded
+// directly: a bare `_` or `+x` would re-read as the null or temp id), each
+// tag through QuoteIfNeeded, each atom
 // as `name=value` (SpellAtom). Splitting spelling from layout lets a caller
 // re-spell individual slots — organize's apply preview paints a changed tag
 // `[-tag-]` / `{+tag+}` — while the slot ORDER and separators stay

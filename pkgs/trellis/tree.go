@@ -113,7 +113,8 @@ func (p *parser) parseTreeBody() (TreeNode, error) {
 		if comb, ok := p.parseCombinator(); ok {
 			p.pos = lookahead
 			return TreeNode{}, p.treeError(
-				"a child whose path has more than one step (`%s` after the id)", combinatorString(comb),
+				"`%s` after a literal's terms: a literal is one step, and a child is written `[-> …]`",
+				combinatorString(comb),
 			)
 		}
 		p.pos = lookahead
@@ -145,16 +146,11 @@ func (p *parser) parseTreeIDSlot() (TreeNode, error) {
 	case r == '+':
 		p.pos++
 		node.Kind = IDTemp
-		switch {
-		case !p.atEOF() && (p.src[p.pos] == '"' || p.src[p.pos] == '\''):
-			id, ok := p.parseString()
-			if !ok {
-				return TreeNode{}, p.treeError("an unterminated temp id `%s`", string(p.src[start:]))
-			}
-			node.ID = id
-		case IsIdentRuneAt(p.src, p.pos):
-			node.ID, _ = p.scanIdentText()
+		id, ok := p.parseTempIDHandle()
+		if !ok {
+			return TreeNode{}, p.treeError("an unterminated temp id `%s`", string(p.src[start:]))
 		}
+		node.ID = id
 	case r == '_' && !IsIdentRuneAt(p.src, p.pos+1):
 		p.pos++
 		node.Kind = IDNull
@@ -198,7 +194,7 @@ func (p *parser) parseTreeAttr(node *TreeNode) error {
 				return p.treeErrorAt(combStart, "a child combinator other than `->`: `%s`", combinatorString(comb))
 			}
 			if !p.skipSP() || p.atEOF() || p.src[p.pos] == ']' {
-				return p.treeErrorAt(start, "an empty child `[->]`")
+				return p.treeErrorAt(start, "an empty child `[->]` (a child is `[-> id …]`, with a space after the arrow)")
 			}
 			// TODO(#397): a child's interior is read through IDSlot like a
 			// root literal's, a superset of the PEG, which reads it as a
@@ -246,13 +242,11 @@ func (p *parser) parseTreeAttr(node *TreeNode) error {
 		tag, _ := plainIdent(term.Basic)
 		node.Tags = append(node.Tags, tag)
 	case GroupBasicTerm:
-		switch body := b.Group.Body.(type) {
-		case VersionSub:
+		if _, isVersionSub := b.Group.Body.(VersionSub); isVersionSub {
 			return refuse("is a version subpath, not a literal term")
-		case Alternatives:
-			if len(body.Alts) > 1 {
-				return refuse("is a group of OR-alternatives, not a literal term")
-			}
+		}
+		if alts, ok := b.Group.Body.(Alternatives); ok && len(alts.Alts) > 1 {
+			return refuse("is a group of OR-alternatives, not a literal term")
 		}
 		return refuse("is a bracketed group, not a literal term (a child is `[-> …]`)")
 	case MarklBasicTerm:
@@ -371,7 +365,8 @@ func termsString(terms []Term) string {
 // space between terms; each child on its own line indented two spaces per
 // depth; roots separated by a blank line; a trailing newline. Two equal trees
 // write equal bytes, and the output re-parses (ParseTreeNested) to the same
-// tree. The `/**` input spelling is never written.
+// tree with Globstar cleared: the `/**` input spelling is never written, so
+// a consumer that gives it meaning (ajour: `subtree`) folds it in first.
 func WriteTree(b *strings.Builder, roots []TreeNode) {
 	for i, root := range roots {
 		if i > 0 {
