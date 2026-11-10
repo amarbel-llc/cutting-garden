@@ -42,7 +42,7 @@ type facetCacheEntry struct {
 	dirty      bool
 	lastErr    string
 	// failures counts consecutive failed background refreshes; retryAfter
-	// is when the refresher may try again (refreshBackoff).
+	// is when the refresher may try again (refreshBackoffFor).
 	failures   int
 	retryAfter time.Time
 
@@ -399,7 +399,7 @@ func (fc *facetCache) markError(uri string, err error) {
 		e.dirty = true
 		e.lastErr = err.Error()
 		e.failures++
-		e.retryAfter = fc.now().Add(refreshBackoff(e.failures))
+		e.retryAfter = fc.now().Add(refreshBackoffFor(uri, e.failures))
 	}
 }
 

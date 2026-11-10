@@ -39,6 +39,33 @@ func TestRefreshBackoff_DoublesToACap(t *testing.T) {
 	}
 }
 
+// Entries that failed together do not retry on the same tick
+// (cutting-garden#393): each URI's backoff is spread by a deterministic amount,
+// up to +25%, so a quota exhaustion does not line up every retry on one tick.
+func TestRefreshBackoffFor_SpreadsByURI(t *testing.T) {
+	uris := []string{"faketest://h/a", "faketest://h/b", "faketest://h/c", "faketest://h/d"}
+	for _, failures := range []int{1, 3, 9} {
+		base := refreshBackoff(failures)
+		seen := map[time.Duration]bool{}
+		for _, uri := range uris {
+			got := refreshBackoffFor(uri, failures)
+			if got < base || got > base+base/4 {
+				t.Errorf("refreshBackoffFor(%q, %d) = %v, want within [%v, %v]",
+					uri, failures, got, base, base+base/4)
+			}
+			if again := refreshBackoffFor(uri, failures); again != got {
+				t.Errorf("refreshBackoffFor(%q, %d) is not deterministic: %v then %v",
+					uri, failures, got, again)
+			}
+			seen[got] = true
+		}
+		if len(seen) < 2 {
+			t.Errorf("failures=%d: all %d URIs got the same backoff %v",
+				failures, len(uris), base)
+		}
+	}
+}
+
 // A refresh that fails is not retried on every tick (cutting-garden#393):
 // the entry waits out a growing backoff, and a success clears it.
 func TestListingCache_FailedRefreshBacksOff(t *testing.T) {
@@ -53,32 +80,41 @@ func TestListingCache_FailedRefreshBacksOff(t *testing.T) {
 	if _, _, err := lc.serve(ctx, store, u.String(), u); err != nil {
 		t.Fatal(err)
 	}
-	start := lc.entries[u.String()].computedAt
-	tick := func(after time.Duration) {
-		lc.now = func() time.Time { return start.Add(after) }
+	entry := lc.entries[u.String()]
+	at := entry.computedAt
+	tick := func(to time.Time) {
+		at = to
+		lc.now = func() time.Time { return at }
 		lc.refreshOne(ctx, resolve, u.String())
 	}
 
 	store.failing, store.calls = true, 0
-	tick(facetTTL + time.Minute) // TTL lapsed: refresh, which fails
+	tick(at.Add(facetTTL + time.Minute)) // TTL lapsed: refresh, which fails
 	if store.calls != 1 {
 		t.Fatalf("first refresh calls = %d, want 1", store.calls)
 	}
-	tick(facetTTL + time.Minute + facetRefreshInterval/2) // inside the backoff
+	failedAt := at
+	if got, want := entry.retryAfter.Sub(failedAt), refreshBackoffFor(u.String(), 1); got != want {
+		t.Errorf("first backoff = %v, want %v", got, want)
+	}
+	tick(entry.retryAfter.Add(-time.Second)) // inside the backoff
 	if store.calls != 1 {
 		t.Errorf("a refresh inside the backoff called the plugin: calls = %d", store.calls)
 	}
-	tick(facetTTL + time.Minute + facetRefreshInterval) // backoff over: retry, fails
+	tick(entry.retryAfter) // backoff over: retry, fails
 	if store.calls != 2 {
 		t.Errorf("after the backoff calls = %d, want 2", store.calls)
 	}
-	tick(facetTTL + time.Minute + 2*facetRefreshInterval) // second backoff is twice as long
+	if got, want := entry.retryAfter.Sub(at), refreshBackoffFor(u.String(), 2); got != want {
+		t.Errorf("second backoff = %v, want %v (doubled)", got, want)
+	}
+	tick(entry.retryAfter.Add(-time.Second)) // inside the second backoff
 	if store.calls != 2 {
-		t.Errorf("the second backoff did not double: calls = %d", store.calls)
+		t.Errorf("a refresh inside the second backoff called the plugin: calls = %d", store.calls)
 	}
 
 	store.failing = false
-	tick(facetTTL + time.Minute + 3*facetRefreshInterval) // succeeds
+	tick(entry.retryAfter) // succeeds
 	if e := lc.entries[u.String()]; e.failures != 0 || e.lastErr != "" {
 		t.Errorf("a successful refresh kept the failure: %+v", e)
 	}
