@@ -49,7 +49,7 @@ predicate machinery — no root/URI syntax in the language:
 Requires: root nodes in the traversal surface (SDK change), and an
 optional `tags = [...]` key on RFC 0007 account stanzas (filed as a
 config-subsystem amendment). URIs remain host-layer sugar — compressed
-ground containment paths (RFC 0014 "Isometry").
+ground containment paths (RFC 0014 "Isomorphism").
 
 ### Origin resolution (implemented — cutting-garden#37)
 
@@ -133,7 +133,7 @@ Confirmed against the six demo scenarios (walkthrough in progress):
    wants to be a trellis expression.
 4. **Presentation** — no output-format directives. The pipeline framing
    (walkthrough #5): trellis selects; the result serializes as an
-   **espalier stream** (RFC 0014 "Isometry" — the ground fragment of the
+   **espalier stream** (RFC 0014 "Isomorphism" — the ground fragment of the
    language, parseable by the same grammar); a **formatter** is a program
    from espalier to anything (plantuml gantt, alfred, html). dodder's
    type-formatter machinery (`format-object`, formatter scripts as
@@ -167,20 +167,20 @@ language over a mandatory typed schema; trellis is a set-selection +
 graph-traversal language that deliberately decouples selection from
 projection** (boundary #4). trellis's traversal (reverse edges, typed
 transitive closures) is graph-query territory GraphQL has no operators for;
-its query/result **isometry** (a query is a data shape with holes, the
+its query/result **isomorphism** (a query is a data shape with holes, the
 result is the ground-filled espalier, and espalier parses as trellis) has no
 GraphQL analog; and trellis carries a first-class version/history dimension
 (sigils) GraphQL models only as schema fields. What GraphQL has that trellis
 deliberately punts — client-specified projection and a validated typed
 schema — maps onto exactly two future directions, each the trellis-shaped
-answer (gradual, isometric) rather than the GraphQL-shaped one:
+answer (gradual, isomorphic) rather than the GraphQL-shaped one:
 
 - **Gradually-typed trellis** ([cutting-garden#156]) — plan-time
   type-checking (field existence, operator/value typing, edge-target typing)
   via a plugin-declared schema probed like facets, *optional* so FDR 0018's
   opaque-identifier flexibility survives. Edge typing is nearly free once
   edges are reference-valued fields (hyphence RFC 0002).
-- **Mutation through trellis** ([cutting-garden#157]) — extend the isometry
+- **Mutation through trellis** ([cutting-garden#157]) — extend the isomorphism
   from read=match to write=construct: an espalier form is both a query
   result and a write instruction. organize (RFC 0015) is the existing
   document-UX prototype; the open design problem is the `=`
@@ -219,9 +219,9 @@ Findings, which stand independent of whether the prototype is adopted:
   suite: `a->b` had to be swapped for `!task->!done`, the only form with
   no legal FieldPred reading.)
 - **Token granularity is the decisive axis.** Reserving the *character*
-  `-` breaks isometry — every hyphenated tag becomes quote-soup
+  `-` breaks the isomorphism — every hyphenated tag becomes quote-soup
   (`"caldav-object-v1"`). Reserving the *token* does not.
-- **Isometry survives** token-granular limiting: ground/espalier literals
+- **The isomorphism survives** token-granular limiting: ground/espalier literals
   already use self-delimiting term shapes, so the serializer round-trips
   unchanged.
 - **Validated** under langlang: every RFC 0014 conformance vector parses

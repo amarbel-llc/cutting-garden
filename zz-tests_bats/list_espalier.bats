@@ -6,8 +6,8 @@
 # projection organize's document builder uses (trellis.WriteLiteral, the
 # node_view espalier-view helpers), anchor-relative against the
 # listed URI and sorted by box id, so the listing IS the organize document's
-# object lines for the same set (RFC 0014's isometry). The G8 vector below
-# pins that isometry by DERIVATION: it greps the object lines out of a live
+# object lines for the same set (RFC 0014's isomorphism). The G8 vector below
+# pins that isomorphism by DERIVATION: it greps the object lines out of a live
 # `organize` render and asserts `list -format espalier` equals them byte for
 # byte. `-format text` moved onto dewey mesa (purse-first FDR 0015 /
 # RFC 0003): TAB-separated on a pipe, with a TAGS column exactly when the
@@ -47,7 +47,7 @@ teardown() {
 
 # bats file_tags=organize
 
-# The G8 isometry pin, by construction AND by derivation: render the organize
+# The G8 isomorphism pin, by construction AND by derivation: render the organize
 # document for the same node set (a field grouping none of the fixtures carry
 # a value for, so every object line sits ungrouped, placement strips nothing,
 # and no atom is heading-elided — the lines are the pure espalier projection),

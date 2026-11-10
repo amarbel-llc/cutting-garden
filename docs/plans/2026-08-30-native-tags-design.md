@@ -18,7 +18,7 @@ inside a box is silently dropped by organize's ad-hoc box parser; `--group-by`
 resolves bare names by a token-shape heuristic (field if a field exists, else
 tag); the granularity/namespace spellings (`date_due:month=`,
 `categories/project`) are organize-private encodings; and `list` shows tags
-nowhere. RFC 0014's isometry ("an organize document is a materialized query
+nowhere. RFC 0014's isomorphism ("an organize document is a materialized query
 result in the query's own syntax") is not enforced by construction: organize,
 `_group-by`, `_base`/`_type`, and heading quoting each re-implement a slice of
 the term grammar.
@@ -122,14 +122,14 @@ id, description trailer, box-atom presenter) moved to
 `internal/node_view/espalier_view.go` (it landed in
 `internal/command_components` and moved with the 2026-09-22
 invalidation-cone split) — organize delegates, `list`
-consumes the same helpers plus `trellis.WriteLiteral`, so the isometry holds
+consumes the same helpers plus `trellis.WriteLiteral`, so the isomorphism holds
 by construction and is pinned by derivation in `zz-tests_bats/
 list_espalier.bats` (port 24112). Ids are anchor-relative against the listed
 URI, lines sort by box id, and `!type` inlines only for a multi-type set
 (organize's spelling rule). The text table renders via mesa (TAB-separated on
 a pipe, styled on a TTY) with a TAGS column exactly when the plugin declares
 a tag dimension; `--facets` output is untouched (its replacement is #251).
-The list↔organize isometry holds at the DEFAULT `_tag-atoms`/`_tag-strip`
+The list↔organize isomorphism holds at the DEFAULT `_tag-atoms`/`_tag-strip`
 levers: `list` has no document to carry a lever, so an organize document
 generated with non-default levers diverges from the listing by design.
 

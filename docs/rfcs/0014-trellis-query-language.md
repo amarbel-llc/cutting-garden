@@ -65,7 +65,7 @@ supplies its own subject.
 A bare step and a one-alternative group are equivalent: `!task due<=X` and
 `[!task due<=X]` mean the same thing, so both the bracketed (data-flavored)
 and unbracketed (query-flavored) spellings are valid everywhere a step is
-(isometry, below).
+(isomorphism, below).
 
 ### Terms (per-step predicate layer, doddish-inherited)
 
@@ -97,7 +97,7 @@ and unbracketed (query-flavored) spellings are valid everywhere a step is
   alternative a space-separated **conjunction run** (`[a b, c]` =
   (a AND b) OR c). Nesting supported; sigils illegal inside (enforced in
   dodder today, retained). This extends doddish's single-atom
-  alternatives; it is load-bearing for isometry — every box-format
+  alternatives; it is load-bearing for the isomorphism — every box-format
   interior parses as a one-alternative group.
 - sigil suffixes `:` latest (default) / `+` history / `.` external /
   `?` hidden — combinable. A sigil may suffix any term or stand bare as
@@ -125,7 +125,7 @@ identifier here — its replacement is `"one/uno.zettel"` (quoted, opaque)
 or `one/uno.` (bare external sigil). That filesystem fixed point was
 always problematic to enforce; under trellis the checkout filename
 becomes a host-layer compressed spelling, the same family as URIs
-(see Isometry).
+(see Isomorphism).
 
 ### Reserved fields
 
@@ -286,7 +286,7 @@ unchanged, negatable:
 doddish dependent-tag syntax, and field paths would be a second traversal
 mechanism alongside arrows.
 
-## Isometry: trellis and espalier
+## Isomorphism: trellis and espalier
 
 Design aim inherited from dodder (doddish ↔ box format), made literal here:
 **the query language and the data language are the same shape.**
@@ -319,7 +319,7 @@ is the flat ancestor: a box line is a flat trellis literal; espalier = box
   creates (RFC 0015 §Creation) — and the **null id** `_` — a node that
   equals no id, not even itself: a bucket heading's box, or a stencil's
   pattern node matched by its type and atoms alone (FDR 0028; the
-  one-isometry ruling of 2026-11-09). An object literally named `_` is
+  one-isomorphism ruling of 2026-11-09). An object literally named `_` is
   written `"_"`. Neither is a query term: in query position `[+ …]` is the
   version subpath and a bare `_` an ordinary identifier, so a query never
   creates and never matches "no object".
@@ -335,7 +335,7 @@ The matching query, values generalized:
       [-> _body*=["zettelkasten", "localfirst", "git", "obsidian", "roam research"]]]
 
 One deliberate asymmetry: data carries the blob *digest* (`@…`); `body`
-predicates match the *dereferenced* content. The isometry is exact up to
+predicates match the *dereferenced* content. The isomorphism is exact up to
 dereferencing.
 
 Consequences: organize-text object lines (`- [one/uno !md] first`) are

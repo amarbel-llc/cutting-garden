@@ -273,7 +273,7 @@ func (VersionSub) isGroupBody() {}
 //
 // Comma-separated OR-alternatives, each a conjunction run. Extends
 // doddish's single-atom alternatives; load-bearing for the trellis/espalier
-// isometry (every box-format interior parses as a one-alternative group).
+// isomorphism (every box-format interior parses as a one-alternative group).
 type Alternatives struct {
 	Alts []ConjRun // len(Alts) >= 1
 }

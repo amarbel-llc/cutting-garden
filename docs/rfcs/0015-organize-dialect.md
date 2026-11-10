@@ -723,7 +723,7 @@ fields, and a field shadowing a harness-reserved name is a type error.
 ### Object lines
 
 `- ` followed by an espalier literal (box interior) and description
-trailer, per RFC 0014's isometry. The `%` object-line prefix (virtual /
+trailer, per RFC 0014's isomorphism. The `%` object-line prefix (virtual /
 inferred type, from dodder) is reserved but unimplemented: a body line
 starting `% ` is a comment (§`%` / `%:` lines), never an object line, and
 the organize grammar admits no `%`-prefixed object line. `%`-marked atoms inside the box

@@ -4,7 +4,7 @@ import "testing"
 
 // TestEspalierTimeAndDateFieldValues proves the organize box-interior date/time
 // field-pred values (#47) parse as a SINGLE Bareword value token each — the
-// RFC 0014 isometry requirement that a rendered espalier box stays valid
+// RFC 0014 isomorphism requirement that a rendered espalier box stays valid
 // trellis. The clock separator is the load-bearing case:
 //
 //   - HH-mm (hyphen) is unconditional identifier content ('-' is always an
@@ -68,7 +68,7 @@ func TestEspalierTimeAndDateFieldValues(t *testing.T) {
 // TestEspalierBoxWithTimeFieldsParses proves a full organize box literal — the
 // espalier ground fragment #47's presenter would render for an event grouped by
 // month — parses as a single trellis group term, so the rendered document stays
-// valid trellis end to end (RFC 0014 isometry).
+// valid trellis end to end (RFC 0014 isomorphism).
 func TestEspalierBoxWithTimeFieldsParses(t *testing.T) {
 	src := `[dentist.ics !caldav-object-vevent-v1 date_start=2026-08-15 time_start=09-30 date_end=2026-08-15 time_end=10-00 location=HQ]`
 	q := mustParse(t, src)

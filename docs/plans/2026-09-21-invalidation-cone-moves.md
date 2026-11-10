@@ -49,7 +49,7 @@ Commits inside the unit, in this order (each must build and pass `just debug-tes
 
 **B-1.** Create `internal/node_view`; move `tag_view.go`, `espalier_view.go`, `enriched_listing.go`, `tag_interpreter.go` and their tests (`dagnabit move` if it handles the rename; else a mechanical move + import rewrite). Update importers in `internal/list`, `internal/mcp`, `internal/organize`. `command_components` must compile without `node_view`; add a sdklayering-style assertion (or a one-line test in `command_components`) that it does not import `node_view`. Any shared helper both halves need (e.g. `CollapseToSingleLine` if `receipt.go` uses it) stays in `command_components` and `node_view` imports it — NEVER the reverse. Whole-document bats vectors (organize_*, list_espalier, fmt_organize) are the behavior pin; nothing in their output may change. Commit: `refactor(node_view): move organize/list presentation helpers out of command_components (invalidation-cone B2)`.
 
-**Acceptance:** `just test-go` for the moved package and its three importers; the espalier↔organize isometry vector still passes; `internal/capture`, `restore`, `diff`, `serve`, `failures`, `blob_writer` no longer transitively import trellis via `command_components` (report the import list of `command_components` before/after).
+**Acceptance:** `just test-go` for the moved package and its three importers; the espalier↔organize isomorphism vector still passes; `internal/capture`, `restore`, `diff`, `serve`, `failures`, `blob_writer` no longer transitively import trellis via `command_components` (report the import list of `command_components` before/after).
 
 ---
 

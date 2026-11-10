@@ -471,7 +471,7 @@ helpers (`RelativeID`, `NodeDescription`, `BoxAtomPresenter`,
 `internal/node_view/espalier_view.go` (organize delegates), and the
 interior is spelled by `trellis.WriteLiteral` — so `list --query project
 -format espalier` shows exactly the boxes organize would (RFC 0014's
-isometry, pinned by derivation in `zz-tests_bats/list_espalier.bats`, port
+isomorphism, pinned by derivation in `zz-tests_bats/list_espalier.bats`, port
 24112). Ids are anchor-relative against the listed URI, tag atoms lead in
 SortKey order, lines sort by box id, `!type` inlines only for a multi-type
 set, and a plugin without the tag/atom capabilities renders `- [<id>]
@@ -481,7 +481,7 @@ FDR 0015 / RFC 0003): styled on a TTY, TAB-separated on a pipe, columns
 URI (Flex) / NAME / TYPE plus a TAGS column (space-joined presented set)
 exactly when the plugin declares a tag dimension — omitted otherwise — and
 a zero-row listing renders nothing. `--facets` rendering is untouched (its
-`--query`-based replacement is #251). The isometry holds at the DEFAULT
+`--query`-based replacement is #251). The isomorphism holds at the DEFAULT
 `_tag-atoms`/`_tag-strip` levers — `list` carries no document to hold a
 lever, so a non-default organize document diverges from the listing by
 design.

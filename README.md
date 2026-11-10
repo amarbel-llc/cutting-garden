@@ -81,7 +81,7 @@ URI enumerate them.
 
 - **trellis** ([RFC 0014](docs/rfcs/0014-trellis-query-language.md)) — a
   query language over plugin trees: predicate matching + typed-arrow
-  traversal + field/body predicates, with an isometric ground data form
+  traversal + field/body predicates, with an isomorphic ground data form
   (espalier). The normative grammar (`docs/rfcs/0014-trellis.peg`) and a
   recursive-descent parser have landed; wiring into `list`/`mcp` is next.
 - **organize** ([RFC 0015](docs/rfcs/0015-organize-dialect.md)) —

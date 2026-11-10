@@ -14,7 +14,7 @@
 // terms and is REQUIRED around combinators — so when feeding this grammar
 // to langlang, disable builtin spacing (cf. grammars/sku_record.peg).
 //
-// The espalier data format (RFC 0014 "Isometry") is the ground fragment of
+// The espalier data format (RFC 0014 "Isomorphism") is the ground fragment of
 // this same grammar: trellis literals with `=`-semantics only (no other
 // operators, no value lists, no sigils beyond the default, only ground
 // subpaths), object ids present, @digests for blob identity, and
@@ -127,7 +127,7 @@ Sigil        <- SigilRune+            // SigilRune imported from hyphence-conten
 // Subpaths are existential and leave the subject unchanged; each subpath
 // is independently quantified. OR-alternatives are comma-separated
 // CONJUNCTION RUNS (extends doddish's single-atom alternatives) — load-
-// bearing for isometry: every box-format interior is a one-alternative
+// bearing for the isomorphism: every box-format interior is a one-alternative
 // group, so a bare step and its bracketed spelling are equivalent.
 Group        <- '[' SP? GroupBody SP? ']'
 GroupBody    <- SubPath / VersionSub / Alternatives
@@ -162,7 +162,7 @@ FieldOp      <- '*=' / '^=' / '$=' / '!=' / '<=' / '>=' / '~=' / '=' / '<' / '>'
 // Value lists distribute the operator as OR:
 //   k*=[v1, v2]  ==  [k*=v1, k*=v2]
 // DigestTerm is admitted as a value (amended 2026-07-18, surfaced by
-// hyphence RFC 0002's isometry check): digest-valued field predicates
+// hyphence RFC 0002's isomorphism claim): digest-valued field predicates
 // are the query-side spelling of reference-valued fields / typed edges
 // (`_mother=@blake2b256-…`, `_base=@…`) and of edge-target matching.
 // Qualifier is admitted as a value (2026-08-30, native tags G10): `k=(x)`
@@ -202,7 +202,7 @@ TypedBack    <- '<-[' SP? ConjRun SP? ']-'
 //       which is never ground, so a box never meant one and the slot is free.
 //       TempID is tried before Ident because a leading sigil rune followed by
 //       an identifier rune lexes as one Ident (`+foo`) in hyphence's grammar.
-//   _   the NULL ID (one-isometry ruling 2026-11-09; FDR 0028): a node that
+//   _   the NULL ID (one-isomorphism ruling 2026-11-09; FDR 0028): a node that
 //       equals no id, not even itself — a bucket heading's box or a stencil's
 //       pattern node, matched by its type and atoms alone, never addressable
 //       by a write. An object literally named `_` is written `"_"`

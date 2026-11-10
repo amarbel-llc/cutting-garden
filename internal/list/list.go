@@ -372,7 +372,7 @@ func writeText(
 // (node_view.NodeDescription). Lines sort by box id, mirroring
 // organize's in-section ordering, so `list -format espalier <uri>` prints
 // exactly the object lines `organize` would emit for the same node set —
-// RFC 0014's isometry, pinned end to end by the list_espalier bats lane.
+// RFC 0014's isomorphism, pinned end to end by the list_espalier bats lane.
 // A `!type` term is inlined only when the set spans several node types,
 // organize's spelling-1/spelling-2 rule (there is no envelope here to
 // distribute a single type, and a single-type listing must match

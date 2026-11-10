@@ -16,7 +16,7 @@ import (
 // lines are built from. `list -format espalier` renders through these SAME
 // helpers (plus trellis.WriteLiteral, the one shared writer), so the two
 // surfaces produce byte-identical lines for the same node — RFC 0014's
-// isometry ("an organize document is a materialized query result in the
+// isomorphism ("an organize document is a materialized query result in the
 // query's own syntax") holds by construction, not by parallel maintenance.
 // Moved here from internal/organize (which now delegates) exactly as the
 // tag-view helpers were in native tags slice 2 T4.
