@@ -184,60 +184,44 @@ func snippet(b []byte) string {
 
 func (c *client) budgets(ctx context.Context) ([]Budget, error) {
 	key := cacheKey{scope: c.scope, kind: cacheBudgets}
-	if v, ok := cacheGet(key); ok {
-		return v.([]Budget), nil
-	}
-	gen := cacheGeneration(key.scope, key.budget)
-	var r budgetsResponse
-	if err := c.get(ctx, budgetsPath, nil, &r); err != nil {
-		return nil, err
-	}
-	cachePut(key, r.Data.Budgets, gen)
-	return r.Data.Budgets, nil
+	return cachedFetch(ctx, key, func(ctx context.Context) ([]Budget, error) {
+		var r budgetsResponse
+		if err := c.get(ctx, budgetsPath, nil, &r); err != nil {
+			return nil, err
+		}
+		return r.Data.Budgets, nil
+	})
 }
 
 func (c *client) accounts(ctx context.Context, budgetID string) ([]Account, error) {
 	key := cacheKey{scope: c.scope, kind: cacheAccounts, budget: budgetID}
-	if v, ok := cacheGet(key); ok {
-		return v.([]Account), nil
-	}
-	gen := cacheGeneration(key.scope, key.budget)
-	var r accountsResponse
-	if err := c.get(ctx, budgetPath(budgetID)+"/accounts", nil, &r); err != nil {
-		return nil, err
-	}
-	cachePut(key, r.Data.Accounts, gen)
-	return r.Data.Accounts, nil
+	return cachedFetch(ctx, key, func(ctx context.Context) ([]Account, error) {
+		var r accountsResponse
+		if err := c.get(ctx, budgetPath(budgetID)+"/accounts", nil, &r); err != nil {
+			return nil, err
+		}
+		return r.Data.Accounts, nil
+	})
 }
 
 func (c *client) categoryGroups(ctx context.Context, budgetID string) ([]CategoryGroup, error) {
 	key := cacheKey{scope: c.scope, kind: cacheCategories, budget: budgetID}
-	if v, ok := cacheGet(key); ok {
-		return v.([]CategoryGroup), nil
-	}
-	gen := cacheGeneration(key.scope, key.budget)
-	var r categoriesResponse
-	if err := c.get(ctx, budgetPath(budgetID)+"/categories", nil, &r); err != nil {
-		return nil, err
-	}
-	cachePut(key, r.Data.CategoryGroups, gen)
-	return r.Data.CategoryGroups, nil
+	return cachedFetch(ctx, key, func(ctx context.Context) ([]CategoryGroup, error) {
+		var r categoriesResponse
+		if err := c.get(ctx, budgetPath(budgetID)+"/categories", nil, &r); err != nil {
+			return nil, err
+		}
+		return r.Data.CategoryGroups, nil
+	})
 }
 
 // payees lists a budget's payees (deleted ones included: the full list is what
 // the API returns without a delta request, and callers filter with livePayees).
 func (c *client) payees(ctx context.Context, budgetID string) ([]Payee, error) {
 	key := cacheKey{scope: c.scope, kind: cachePayees, budget: budgetID}
-	if v, ok := cacheGet(key); ok {
-		return v.([]Payee), nil
-	}
-	gen := cacheGeneration(key.scope, key.budget)
-	payees, err := c.freshPayees(ctx, budgetID)
-	if err != nil {
-		return nil, err
-	}
-	cachePut(key, payees, gen)
-	return payees, nil
+	return cachedFetch(ctx, key, func(ctx context.Context) ([]Payee, error) {
+		return c.freshPayees(ctx, budgetID)
+	})
 }
 
 // freshPayees lists a budget's payees from the server, bypassing the freshness
@@ -304,23 +288,20 @@ func (c *client) transactions(
 		scope: c.scope, kind: cacheTransactions, budget: budgetID,
 		detail: scope + "|" + since + "|" + until,
 	}
-	if v, ok := cacheGet(key); ok {
-		return v.([]Transaction), nil
-	}
-	gen := cacheGeneration(key.scope, key.budget)
-	q := url.Values{}
-	if since != "" {
-		q.Set("since_date", since)
-	}
-	if until != "" {
-		q.Set("until_date", until)
-	}
-	var r transactionsResponse
-	if err := c.get(ctx, path, q, &r); err != nil {
-		return nil, err
-	}
-	cachePut(key, r.Data.Transactions, gen)
-	return r.Data.Transactions, nil
+	return cachedFetch(ctx, key, func(ctx context.Context) ([]Transaction, error) {
+		q := url.Values{}
+		if since != "" {
+			q.Set("since_date", since)
+		}
+		if until != "" {
+			q.Set("until_date", until)
+		}
+		var r transactionsResponse
+		if err := c.get(ctx, path, q, &r); err != nil {
+			return nil, err
+		}
+		return r.Data.Transactions, nil
+	})
 }
 
 // transaction reads one transaction. A transaction already in a fresh cached
@@ -330,13 +311,14 @@ func (c *client) transaction(ctx context.Context, budgetID, id string) (Transact
 	if t, ok := cacheFindTransaction(c.scope, budgetID, id); ok {
 		return t, nil
 	}
-	gen := cacheGeneration(c.scope, budgetID)
-	var r transactionResponse
-	if err := c.get(ctx, budgetPath(budgetID)+"/transactions/"+url.PathEscape(id), nil, &r); err != nil {
-		return Transaction{}, err
-	}
-	cachePut(cacheKey{scope: c.scope, kind: cacheTransaction, budget: budgetID, detail: id}, r.Data.Transaction, gen)
-	return r.Data.Transaction, nil
+	key := cacheKey{scope: c.scope, kind: cacheTransaction, budget: budgetID, detail: id}
+	return cachedFetch(ctx, key, func(ctx context.Context) (Transaction, error) {
+		var r transactionResponse
+		if err := c.get(ctx, budgetPath(budgetID)+"/transactions/"+url.PathEscape(id), nil, &r); err != nil {
+			return Transaction{}, err
+		}
+		return r.Data.Transaction, nil
+	})
 }
 
 // freshTransaction reads one transaction from the server, bypassing the

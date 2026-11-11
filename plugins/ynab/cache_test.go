@@ -137,6 +137,69 @@ func TestCache_InFlightGetDoesNotRecachePreWriteRowsAfterInvalidation(t *testing
 	}
 }
 
+// holdTransport holds every request until released and reports each arrival.
+type holdTransport struct {
+	inner    http.RoundTripper
+	release  chan struct{}
+	arriveCh chan struct{}
+}
+
+func (h *holdTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	h.arriveCh <- struct{}{}
+	<-h.release
+	return h.inner.RoundTrip(req)
+}
+
+// Concurrent misses of one key share one request (#420): N readers must spend
+// one of the 200-per-hour budget, not N.
+func TestCache_ConcurrentMissesShareOneRequest(t *testing.T) {
+	const readers = 8
+	srv := newFixture(t)
+	c := newClient(srv.BaseURL(), testToken, "flight-test")
+	hold := &holdTransport{
+		inner: http.DefaultTransport, release: make(chan struct{}),
+		arriveCh: make(chan struct{}, readers),
+	}
+	c.http.Transport = hold
+	before := srv.Requests()
+
+	var wg sync.WaitGroup
+	counts := make([]int, readers)
+	for i := 0; i < readers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			accts, err := c.accounts(context.Background(), "b1")
+			if err != nil {
+				t.Error(err)
+			}
+			counts[i] = len(accts)
+		}()
+	}
+	// Release once every reader has reached the transport (the unfixed
+	// behavior) or, when they coalesce, once the single request is held and
+	// the others have had time to join it.
+	for arrived := 0; arrived < readers; {
+		select {
+		case <-hold.arriveCh:
+			arrived++
+		case <-time.After(300 * time.Millisecond):
+			arrived = readers
+		}
+	}
+	close(hold.release)
+	wg.Wait()
+
+	if n := srv.Requests() - before; n != 1 {
+		t.Errorf("%d concurrent misses sent %d requests, want 1", readers, n)
+	}
+	for i, n := range counts {
+		if n == 0 || n != counts[0] {
+			t.Errorf("reader %d saw %d accounts, reader 0 saw %d", i, n, counts[0])
+		}
+	}
+}
+
 // Fresh data after a change on the server is visible once the window passes.
 func TestCache_ServesStaleWithinTheWindowAndFreshAfter(t *testing.T) {
 	srv := newFixture(t)

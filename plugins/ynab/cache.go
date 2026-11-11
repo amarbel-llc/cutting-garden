@@ -1,6 +1,9 @@
 package ynab
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"sync"
 	"time"
 )
@@ -68,6 +71,92 @@ func cacheGet(key cacheKey) (any, bool) {
 	return e.value, true
 }
 
+// flightKey identifies one in-flight fetch: a key at an invalidation
+// generation, so a caller arriving after a write's invalidation never joins a
+// request that began before it.
+type flightKey struct {
+	key cacheKey
+	gen uint64
+}
+
+// flight is one request in progress; its waiters read value and err after done
+// closes.
+type flight struct {
+	done  chan struct{}
+	value any
+	err   error
+}
+
+// cacheFlights holds the in-flight fetches, guarded by cacheMu.
+var cacheFlights = map[flightKey]*flight{}
+
+// cachedFetch returns key's fresh cached value, else runs fetch and caches its
+// result. Concurrent misses of one key share a single fetch (singleflight), so
+// N overlapping readers spend one request, not N, of YNAB's 200-per-hour
+// budget. A waiter whose own context ends stops waiting; if the fetching
+// caller's context ended instead, the waiter fetches for itself rather than
+// inherit another caller's cancellation. Any other error is shared.
+func cachedFetch[T any](
+	ctx context.Context, key cacheKey, fetch func(context.Context) (T, error),
+) (T, error) {
+	var zero T
+	for {
+		cacheMu.Lock()
+		if e, ok := cacheEntries[key]; ok && now().Sub(e.at) < freshnessWindow {
+			cacheMu.Unlock()
+			return e.value.(T), nil
+		}
+		gen := cacheGens[genKey{key.scope, key.budget}]
+		fk := flightKey{key, gen}
+		if f, ok := cacheFlights[fk]; ok {
+			cacheMu.Unlock()
+			select {
+			case <-f.done:
+			case <-ctx.Done():
+				return zero, ctx.Err()
+			}
+			if f.err == nil {
+				return f.value.(T), nil
+			}
+			if ctx.Err() == nil && (errors.Is(f.err, context.Canceled) ||
+				errors.Is(f.err, context.DeadlineExceeded)) {
+				continue
+			}
+			return zero, f.err
+		}
+		f := &flight{done: make(chan struct{})}
+		cacheFlights[fk] = f
+		cacheMu.Unlock()
+
+		return runFlight(ctx, fk, f, fetch)
+	}
+}
+
+// runFlight runs the fetch for the flight fk registered, publishes its result
+// to the waiters and, on success, caches it. The deferred publication also
+// runs if fetch panics, so waiters are never left blocked.
+func runFlight[T any](
+	ctx context.Context, fk flightKey, f *flight, fetch func(context.Context) (T, error),
+) (value T, err error) {
+	defer func() {
+		r := recover()
+		cacheMu.Lock()
+		delete(cacheFlights, fk)
+		if r == nil && err == nil {
+			cachePutLocked(fk.key, value, fk.gen)
+		}
+		cacheMu.Unlock()
+		if r != nil {
+			f.err = fmt.Errorf("ynab plugin: fetch panicked: %v", r)
+			close(f.done)
+			panic(r)
+		}
+		f.value, f.err = value, err
+		close(f.done)
+	}()
+	return fetch(ctx)
+}
+
 // genKey addresses the invalidation generation of one (scope, budget).
 type genKey struct {
 	scope, budget string
@@ -99,6 +188,11 @@ func cacheGeneration(scope, budget string) uint64 {
 func cachePut(key cacheKey, value any, gen uint64) {
 	cacheMu.Lock()
 	defer cacheMu.Unlock()
+	cachePutLocked(key, value, gen)
+}
+
+// cachePutLocked is cachePut for a caller holding cacheMu.
+func cachePutLocked(key cacheKey, value any, gen uint64) {
 	if cacheGens[genKey{key.scope, key.budget}] != gen {
 		return
 	}
