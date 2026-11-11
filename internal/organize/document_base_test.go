@@ -50,7 +50,9 @@ func TestRenderCanonical_SameBaseSameLedgerKey(t *testing.T) {
 	if renderCanonical(a) != renderCanonical(b) {
 		t.Fatalf("precondition: same data must share a base")
 	}
-	if creationIdempotencyKey("blake2b256-same", "+x") != creationIdempotencyKey("blake2b256-same", "+x") {
+	first := creationIdempotencyKey("blake2b256-same", "+x")
+	second := creationIdempotencyKey("blake2b256-same", "+x")
+	if first != second {
 		t.Errorf("a creation key must be a pure function of (base, temp id)")
 	}
 	if creationIdempotencyKey("blake2b256-one", "+x") == creationIdempotencyKey("blake2b256-two", "+x") {
