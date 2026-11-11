@@ -187,11 +187,12 @@ func (c *client) budgets(ctx context.Context) ([]Budget, error) {
 	if v, ok := cacheGet(key); ok {
 		return v.([]Budget), nil
 	}
+	gen := cacheGeneration(key.scope, key.budget)
 	var r budgetsResponse
 	if err := c.get(ctx, budgetsPath, nil, &r); err != nil {
 		return nil, err
 	}
-	cachePut(key, r.Data.Budgets)
+	cachePut(key, r.Data.Budgets, gen)
 	return r.Data.Budgets, nil
 }
 
@@ -200,11 +201,12 @@ func (c *client) accounts(ctx context.Context, budgetID string) ([]Account, erro
 	if v, ok := cacheGet(key); ok {
 		return v.([]Account), nil
 	}
+	gen := cacheGeneration(key.scope, key.budget)
 	var r accountsResponse
 	if err := c.get(ctx, budgetPath(budgetID)+"/accounts", nil, &r); err != nil {
 		return nil, err
 	}
-	cachePut(key, r.Data.Accounts)
+	cachePut(key, r.Data.Accounts, gen)
 	return r.Data.Accounts, nil
 }
 
@@ -213,11 +215,12 @@ func (c *client) categoryGroups(ctx context.Context, budgetID string) ([]Categor
 	if v, ok := cacheGet(key); ok {
 		return v.([]CategoryGroup), nil
 	}
+	gen := cacheGeneration(key.scope, key.budget)
 	var r categoriesResponse
 	if err := c.get(ctx, budgetPath(budgetID)+"/categories", nil, &r); err != nil {
 		return nil, err
 	}
-	cachePut(key, r.Data.CategoryGroups)
+	cachePut(key, r.Data.CategoryGroups, gen)
 	return r.Data.CategoryGroups, nil
 }
 
@@ -228,11 +231,12 @@ func (c *client) payees(ctx context.Context, budgetID string) ([]Payee, error) {
 	if v, ok := cacheGet(key); ok {
 		return v.([]Payee), nil
 	}
+	gen := cacheGeneration(key.scope, key.budget)
 	payees, err := c.freshPayees(ctx, budgetID)
 	if err != nil {
 		return nil, err
 	}
-	cachePut(key, payees)
+	cachePut(key, payees, gen)
 	return payees, nil
 }
 
@@ -303,6 +307,7 @@ func (c *client) transactions(
 	if v, ok := cacheGet(key); ok {
 		return v.([]Transaction), nil
 	}
+	gen := cacheGeneration(key.scope, key.budget)
 	q := url.Values{}
 	if since != "" {
 		q.Set("since_date", since)
@@ -314,7 +319,7 @@ func (c *client) transactions(
 	if err := c.get(ctx, path, q, &r); err != nil {
 		return nil, err
 	}
-	cachePut(key, r.Data.Transactions)
+	cachePut(key, r.Data.Transactions, gen)
 	return r.Data.Transactions, nil
 }
 
@@ -325,11 +330,12 @@ func (c *client) transaction(ctx context.Context, budgetID, id string) (Transact
 	if t, ok := cacheFindTransaction(c.scope, budgetID, id); ok {
 		return t, nil
 	}
+	gen := cacheGeneration(c.scope, budgetID)
 	var r transactionResponse
 	if err := c.get(ctx, budgetPath(budgetID)+"/transactions/"+url.PathEscape(id), nil, &r); err != nil {
 		return Transaction{}, err
 	}
-	cachePut(cacheKey{scope: c.scope, kind: cacheTransaction, budget: budgetID, detail: id}, r.Data.Transaction)
+	cachePut(cacheKey{scope: c.scope, kind: cacheTransaction, budget: budgetID, detail: id}, r.Data.Transaction, gen)
 	return r.Data.Transaction, nil
 }
 

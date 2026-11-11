@@ -68,13 +68,40 @@ func cacheGet(key cacheKey) (any, bool) {
 	return e.value, true
 }
 
-// cachePut stores a value and evicts everything that has expired, so a
-// long-lived process (cg mcp, serve) holds only what is still fresh: the
-// default window's key changes every day, and month and year drill-downs add
-// more, each retaining a whole transaction slice.
-func cachePut(key cacheKey, value any) {
+// genKey addresses the invalidation generation of one (scope, budget).
+type genKey struct {
+	scope, budget string
+}
+
+// cacheGens counts the invalidations of each (scope, budget). A fetch reads
+// the generation before its request (cacheGeneration) and hands it to
+// cachePut, which refuses a result a write has invalidated since: otherwise a
+// GET that began before a write's invalidation would re-cache its pre-write
+// rows after it, serving them as fresh for the whole window. Never reset: a
+// reset could let an old fetch's generation match a new one.
+var cacheGens = map[genKey]uint64{}
+
+// cacheGeneration returns the current invalidation generation of one budget's
+// entries; take it before issuing the request whose result will be cached.
+func cacheGeneration(scope, budget string) uint64 {
 	cacheMu.Lock()
 	defer cacheMu.Unlock()
+	return cacheGens[genKey{scope, budget}]
+}
+
+// cachePut stores a value fetched under generation gen (cacheGeneration, read
+// before the fetch) and evicts everything that has expired, so a
+// long-lived process (cg mcp, serve) holds only what is still fresh: the
+// default window's key changes every day, and month and year drill-downs add
+// more, each retaining a whole transaction slice. A value fetched before an
+// invalidation of its budget is not stored; the caller still returns it, as
+// the answer to a read that began before the write.
+func cachePut(key cacheKey, value any, gen uint64) {
+	cacheMu.Lock()
+	defer cacheMu.Unlock()
+	if cacheGens[genKey{key.scope, key.budget}] != gen {
+		return
+	}
 	t := now()
 	evictExpiredLocked(t)
 	cacheEntries[key] = cacheEntry{at: t, value: value}
@@ -130,6 +157,7 @@ func cacheFindTransaction(scope, budget, id string) (Transaction, bool) {
 func cacheInvalidateTransactions(scope, budget string) {
 	cacheMu.Lock()
 	defer cacheMu.Unlock()
+	cacheGens[genKey{scope, budget}]++
 	for k := range cacheEntries {
 		if k.scope == scope && k.budget == budget &&
 			(k.kind == cacheTransactions || k.kind == cacheTransaction) {

@@ -2,6 +2,8 @@ package ynab
 
 import (
 	"context"
+	"net/http"
+	"sync"
 	"testing"
 	"time"
 
@@ -75,6 +77,63 @@ func TestCache_EntriesExpireAfterTheFreshnessWindow(t *testing.T) {
 	list(t, "ynab://personal/")
 	if n := srv.Requests() - before; n != 1 {
 		t.Errorf("a listing at the window's end cost %d requests, want 1 (refetch)", n)
+	}
+}
+
+// gatedTransport delivers its first response only once released, so a test can
+// act while a GET is in flight whose server-side answer is already fixed.
+type gatedTransport struct {
+	inner    http.RoundTripper
+	fetched  chan struct{}
+	release  chan struct{}
+	gateOnce sync.Once
+}
+
+func (g *gatedTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := g.inner.RoundTrip(req)
+	g.gateOnce.Do(func() {
+		close(g.fetched)
+		<-g.release
+	})
+	return resp, err
+}
+
+// A GET that began before a write's invalidation must not re-cache its
+// pre-write rows after it (#419): the next read has to see the write.
+func TestCache_InFlightGetDoesNotRecachePreWriteRowsAfterInvalidation(t *testing.T) {
+	srv := newFixture(t)
+	c := newClient(srv.BaseURL(), testToken, "gen-test")
+	gate := &gatedTransport{
+		inner: http.DefaultTransport, fetched: make(chan struct{}), release: make(chan struct{}),
+	}
+	c.http.Transport = gate
+
+	type result struct {
+		txs []Transaction
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		txs, err := c.transactions(context.Background(), "b1", "", "2026-01-01", "")
+		done <- result{txs, err}
+	}()
+	<-gate.fetched // the pre-write answer is fixed; its caller has not cached it
+
+	srv.SetCleared("b1", "t1", "uncleared")
+	cacheInvalidateTransactions(c.scope, "b1") // what a write's deferred invalidation does
+	close(gate.release)
+	if r := <-done; r.err != nil {
+		t.Fatal(r.err)
+	}
+
+	txs, err := c.transactions(context.Background(), "b1", "", "2026-01-01", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tx := range txs {
+		if tx.ID == "t1" && tx.Cleared != "uncleared" {
+			t.Errorf("t1 cleared = %q after the write, want uncleared: a stale in-flight GET was re-cached", tx.Cleared)
+		}
 	}
 }
 

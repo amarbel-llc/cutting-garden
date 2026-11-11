@@ -459,11 +459,12 @@ type payeeLister func(ctx context.Context) ([]Payee, error)
 // (which is at least as fresh as anything already there).
 func freshPayeeLister(c *client, budgetID string) payeeLister {
 	return func(ctx context.Context) ([]Payee, error) {
+		gen := cacheGeneration(c.scope, budgetID)
 		payees, err := c.freshPayees(ctx, budgetID)
 		if err != nil {
 			return nil, err
 		}
-		cachePut(cacheKey{scope: c.scope, kind: cachePayees, budget: budgetID}, payees)
+		cachePut(cacheKey{scope: c.scope, kind: cachePayees, budget: budgetID}, payees, gen)
 		return payees, nil
 	}
 }
