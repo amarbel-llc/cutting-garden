@@ -670,19 +670,38 @@
           cc = pkgs.stdenv.cc;
         };
 
-        cuttingGardenGodynTests = pkgs.buildGodynModule (
-          godynModuleArgs
-          // {
-            tests = true;
-            # internal/trellis's conformance test reads the normative grammar
-            # from outside its package (../../docs/rfcs/0014-trellis.peg);
-            # testFiles places it at that module-relative path in the test tree.
-            testFiles."internal/trellis" = [ "docs/rfcs/0014-trellis.peg" ];
-            # the git plugin's integration tests build real-git fixture repos
-            # with the `git` CLI (and skip without it).
-            nativeCheckInputs = [ pkgs.git ];
-          }
-        );
+        godynTestArgs = godynModuleArgs // {
+          tests = true;
+          # internal/trellis's conformance test reads the normative grammar
+          # from outside its package (../../docs/rfcs/0014-trellis.peg);
+          # testFiles places it at that module-relative path in the test tree.
+          testFiles."internal/trellis" = [ "docs/rfcs/0014-trellis.peg" ];
+          # the git plugin's integration tests build real-git fixture repos
+          # with the `git` CLI (and skip without it).
+          nativeCheckInputs = [ pkgs.git ];
+        };
+
+        cuttingGardenGodynTests = pkgs.buildGodynModule godynTestArgs;
+
+        # The same test lane compiled and linked with -race (godyn(7) `race`:
+        # a race-instrumented stdlib, every package and test binary built with
+        # -race; a detected race fails the run). Exposed for
+        # `just debug-test-pkg-race` (godyn-test -A) and, for the packages
+        # whose point is concurrent safety, gated by
+        # checks.cutting-garden-godyn-tests-race (cutting-garden#415).
+        cuttingGardenGodynRaceTests = pkgs.buildGodynModule (godynTestArgs // { race = true; });
+
+        # The packages that run concurrently by design: the trellis evaluator
+        # (its forEach fan-out, #313), the SDK's ConcurrentReader seam, and
+        # each plugin implementing ConcurrentReader. Add a plugin here when it
+        # opts in, so its overlapping calls are checked under -race.
+        raceTestedPackages = [
+          "internal/trellis_eval"
+          "internal/cutting_garden_plugins"
+          "plugins/caldav"
+          "plugins/org"
+          "plugins/ynab"
+        ];
 
         # The dewey analyzers (formerly go.mod `tool` deps run as `go vet
         # -vettool`), each as godyn's per-package vet lane with that analyzer as
@@ -1034,6 +1053,10 @@
           # passthru.testWith: `just debug-test-pkg` (godyn-test -A).
           cutting-garden-godyn-tests = cuttingGardenGodynTests;
 
+          # The same tests instance built with -race: `just debug-test-pkg-race`
+          # (godyn-test -A), cutting-garden#415.
+          cutting-garden-godyn-tests-race = cuttingGardenGodynRaceTests;
+
           # Producer outputs for out-of-tree Go consumers (RFC 0001 producer,
           # RFC 0009 §2): a plugin in its own repo bridges
           # code.linenisgreat.com/cutting-garden onto go-pkgs via its gomod.nix.
@@ -1266,6 +1289,21 @@
             cuttingGardenGodynTests.passthru.checkAll
           else
             pkgs.runCommand "cutting-garden-godyn-tests-skipped" { } "touch \"$out\"";
+
+        # The -race variant of the per-package test lane, restricted to
+        # raceTestedPackages (a full race rebuild of every package's tests would
+        # double the gate for packages with no concurrency). A farm of those
+        # packages' run derivations: building it runs them, and a detected race
+        # fails the build (cutting-garden#415). Skip stub like the other godyn
+        # lanes. `just test-go-race` builds it.
+        checks.cutting-garden-godyn-tests-race = godynCheck "godyn-tests-race" (
+          pkgs.linkFarm "cutting-garden-godyn-tests-race" (
+            map (p: {
+              name = p;
+              path = cuttingGardenGodynRaceTests.passthru.tests."code.linenisgreat.com/cutting-garden/${p}";
+            }) raceTestedPackages
+          )
+        );
 
         # godyn's per-package analysis lanes and the codegen drift checks, from
         # go.nix (igloo FDR 0008). Skip stubs off x86_64-linux, like the tests.

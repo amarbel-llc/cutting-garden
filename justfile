@@ -61,6 +61,18 @@ test: validate-generate validate-generate-dagnabit validate-grammar test-grammar
 test-go-godyn *NIX_ARGS:
     nix build ".#checks.$(nix eval --impure --raw --expr builtins.currentSystem).cutting-garden-godyn-tests" --no-link --show-trace {{ NIX_ARGS }}
 
+# The -race variant of the godyn test lane, for the packages that run
+# concurrently by design (raceTestedPackages in flake.nix: trellis_eval, the
+# SDK, caldav, org, ynab): checks.cutting-garden-godyn-tests-race, a skip stub
+# off x86_64-linux. Gated by `nix flake check`; deliberately NOT in the `test`
+# aggregate yet (it adds a race-instrumented stdlib and recompiles those
+# packages' cones to every merge) — see cutting-garden#415.
+#
+# build the race-detector test lane for the concurrent packages (x86_64-linux)
+[group('post-build')]
+test-go-race *NIX_ARGS:
+    nix build ".#checks.$(nix eval --impure --raw --expr builtins.currentSystem).cutting-garden-godyn-tests-race" --no-link --show-trace {{ NIX_ARGS }}
+
 # The internal/sdklayering import guards (RFC 0009 §4 no-inversion; the
 # invalidation-cone clauses: internal/ imports no plugins/ in production or
 # tests, and command_components does not reach node_view). They shell out to
@@ -1517,6 +1529,18 @@ debug-conformance-traversal:
 [group('debug')]
 debug-test-pkg PKG='internal/serve' RUN='' *FLAGS='':
     nix run --inputs-from . igloo#godyn-test -- -A "packages.$(nix eval --impure --raw --expr builtins.currentSystem).cutting-garden-godyn-tests" {{ PKG }} -- {{ if RUN == '' { '' } else { quote('-test.run=' + RUN) } }} {{ FLAGS }}
+
+# debug-test-pkg under the race detector: the same one-package inner loop
+# against the -race tests instance (godyn(7) `race`; a race-instrumented stdlib
+# and every package compiled and linked with -race, so the first run is slow,
+# later ones rebuild only the edited cone). A detected race fails the run.
+# Serves the concurrent code (trellis_eval forEach, ConcurrentReader plugins);
+# cutting-garden#415. x86_64-linux only.
+#
+# run one package's go tests under the race detector
+[group('debug')]
+debug-test-pkg-race PKG='internal/trellis_eval' RUN='' *FLAGS='':
+    nix run --inputs-from . igloo#godyn-test -- -A "packages.$(nix eval --impure --raw --expr builtins.currentSystem).cutting-garden-godyn-tests-race" {{ PKG }} -- {{ if RUN == '' { '' } else { quote('-test.run=' + RUN) } }} {{ FLAGS }}
 
 # Print the RFC 0001 producer outPaths (go-pkgs / go-pkgs-test) for FLAKEREF —
 # e.g. `git+file://$PWD?rev=<sha>` — to confirm a builder migration or an igloo
