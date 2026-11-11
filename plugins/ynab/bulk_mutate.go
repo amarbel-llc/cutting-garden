@@ -96,16 +96,35 @@ type bulkKey struct{ account, budget string }
 // holds the later ops on the same transaction that mergeMembers folded into it;
 // they share its result.
 type bulkMember struct {
+	idx    int // the op's position in the request
 	op     cutting_garden_plugins.BulkOp
 	txnID  string
 	patch  transactionPatch
 	merged []bulkMember
 }
 
-// recordOutcome adds one per-op outcome for op (cutting-garden#376: ynab's
-// batch reports outcomes, so a patch's ignored keys reach the caller).
-func recordOutcome(
-	result *cutting_garden_plugins.BulkResult, op cutting_garden_plugins.BulkOp,
+// bulkRecorder collects a batch's results. The four lists are appended in the
+// order ops finish, but Outcomes must come one per op in REQUEST order (the
+// BulkOutcome contract), and the batched transaction patches finish after the
+// single-node ones; so each op's outcomes go in a slot by request index and
+// flush lays the slots out in order (cutting-garden#409).
+type bulkRecorder struct {
+	result *cutting_garden_plugins.BulkResult
+	slots  [][]cutting_garden_plugins.BulkOutcome
+}
+
+func newBulkRecorder(ops int) *bulkRecorder {
+	return &bulkRecorder{
+		result: &cutting_garden_plugins.BulkResult{},
+		slots:  make([][]cutting_garden_plugins.BulkOutcome, ops),
+	}
+}
+
+// outcome files one per-op outcome for op, the idx-th of the request
+// (cutting-garden#376: ynab's batch reports outcomes, so a patch's ignored keys
+// reach the caller).
+func (r *bulkRecorder) outcome(
+	idx int, op cutting_garden_plugins.BulkOp,
 	status cutting_garden_plugins.BulkOutcomeStatus, fields, ignored []string, err error,
 ) {
 	outcome := cutting_garden_plugins.BulkOutcome{
@@ -114,27 +133,45 @@ func recordOutcome(
 	if err != nil {
 		outcome.Err = err.Error()
 	}
-	result.Outcomes = append(result.Outcomes, outcome)
+	r.slots[idx] = append(r.slots[idx], outcome)
 }
 
-// recordMemberOutcome records the result of m and of every op merged into it,
-// each with its own ignored keys: one entry per op in the list status names
-// (AppliedNodes, PatchedNothing or Failed) and one per op in Outcomes, so the
-// lists and Outcomes count the same ops (RFC 0017's invariant).
-func recordMemberOutcome(
-	result *cutting_garden_plugins.BulkResult, m bulkMember,
-	status cutting_garden_plugins.BulkOutcomeStatus, fields []string, err error,
+// single runs op through the single-node path and files whatever outcomes it
+// recorded under idx.
+func (r *bulkRecorder) single(
+	ctx context.Context, p Plugin, idx int, op cutting_garden_plugins.BulkOp,
+) {
+	before := len(r.result.Outcomes)
+	cutting_garden_plugins.ApplyBulkOp(ctx, p, op, r.result)
+	r.slots[idx] = append(r.slots[idx], r.result.Outcomes[before:]...)
+	r.result.Outcomes = r.result.Outcomes[:before]
+}
+
+// flush fills Outcomes from the slots, in request order, and returns the result.
+func (r *bulkRecorder) flush() cutting_garden_plugins.BulkResult {
+	for _, slot := range r.slots {
+		r.result.Outcomes = append(r.result.Outcomes, slot...)
+	}
+	return *r.result
+}
+
+// member records the result of m and of every op merged into it, each with its
+// own ignored keys: one entry per op in the list status names (AppliedNodes,
+// PatchedNothing or Failed) and one per op in Outcomes, so the lists and
+// Outcomes count the same ops (RFC 0017's invariant).
+func (r *bulkRecorder) member(
+	m bulkMember, status cutting_garden_plugins.BulkOutcomeStatus, fields []string, err error,
 ) {
 	for _, op := range append([]bulkMember{m}, m.merged...) {
 		switch status {
 		case cutting_garden_plugins.OutcomeApplied:
-			result.AppliedNodes = append(result.AppliedNodes, op.op.URI)
+			r.result.AppliedNodes = append(r.result.AppliedNodes, op.op.URI)
 		case cutting_garden_plugins.OutcomePatchedNothing:
-			result.PatchedNothing = append(result.PatchedNothing, op.op.URI)
+			r.result.PatchedNothing = append(r.result.PatchedNothing, op.op.URI)
 		case cutting_garden_plugins.OutcomeFailed:
-			result.Failed = append(result.Failed, bulkFailure(op.op, err))
+			r.result.Failed = append(r.result.Failed, bulkFailure(op.op, err))
 		}
-		recordOutcome(result, op.op, status, fields, op.patch.ignored, err)
+		r.outcome(op.idx, op.op, status, fields, op.patch.ignored, err)
 	}
 }
 
@@ -153,38 +190,39 @@ func bulkFailure(op cutting_garden_plugins.BulkOp, err error) cutting_garden_plu
 func (p Plugin) bulkOps(
 	ctx context.Context, ops []cutting_garden_plugins.BulkOp,
 ) cutting_garden_plugins.BulkResult {
-	var result cutting_garden_plugins.BulkResult
+	rec := newBulkRecorder(len(ops))
+	result := rec.result
 	groups := map[bulkKey]*bulkGroup{}
 	var order []bulkKey
 
-	for _, op := range ops {
+	for i, op := range ops {
 		// Anything that is not a patch of a transaction node (a payee rename, a
 		// temp-id create, a verb ynab refuses) takes the single-node path, which
 		// reports its own refusal.
 		if op.Kind != cutting_garden_plugins.BulkPatch || op.URI == nil {
-			cutting_garden_plugins.ApplyBulkOp(ctx, p, op, &result)
+			rec.single(ctx, p, i, op)
 			continue
 		}
 		ref, err := classifyURI(op.URI)
 		if err != nil {
 			result.Failed = append(result.Failed, bulkFailure(op, err))
-			recordOutcome(&result, op, cutting_garden_plugins.OutcomeFailed, nil, nil, err)
+			rec.outcome(i, op, cutting_garden_plugins.OutcomeFailed, nil, nil, err)
 			continue
 		}
 		if ref.kind != kindTransaction {
-			cutting_garden_plugins.ApplyBulkOp(ctx, p, op, &result)
+			rec.single(ctx, p, i, op)
 			continue
 		}
 		patch, err := parseTransactionPatch(bytes.NewReader(op.Body))
 		if err != nil {
 			result.Failed = append(result.Failed, bulkFailure(op, err))
-			recordOutcome(&result, op, cutting_garden_plugins.OutcomeFailed, nil, nil, err)
+			rec.outcome(i, op, cutting_garden_plugins.OutcomeFailed, nil, nil, err)
 			continue
 		}
 		if len(patch.recognized) == 0 {
 			// Nothing recognized: no read, no write, an honest empty (#182).
 			result.PatchedNothing = append(result.PatchedNothing, op.URI)
-			recordOutcome(&result, op, cutting_garden_plugins.OutcomePatchedNothing,
+			rec.outcome(i, op, cutting_garden_plugins.OutcomePatchedNothing,
 				[]string{}, patch.ignored, nil)
 			continue
 		}
@@ -195,7 +233,7 @@ func (p Plugin) bulkOps(
 			groups[key] = group
 			order = append(order, key)
 		}
-		group.members = append(group.members, bulkMember{op: op, txnID: ref.txnID, patch: patch})
+		group.members = append(group.members, bulkMember{idx: i, op: op, txnID: ref.txnID, patch: patch})
 	}
 
 	// claimed records every transaction a group has taken, by the RESOLVED
@@ -203,20 +241,19 @@ func (p Plugin) bulkOps(
 	// two requests.
 	claimed := map[string]bool{}
 	for _, key := range order {
-		applyBulkGroup(ctx, groups[key], claimed, &result)
+		applyBulkGroup(ctx, groups[key], claimed, rec)
 	}
-	return result
+	return rec.flush()
 }
 
 // applyBulkGroup plans every member of one budget's batch against fresh
 // transactions, sends ONE bulk update for those that change something, and
 // checks each saved transaction against what its op asked for.
 func applyBulkGroup(
-	ctx context.Context, group *bulkGroup, claimed map[string]bool,
-	result *cutting_garden_plugins.BulkResult,
+	ctx context.Context, group *bulkGroup, claimed map[string]bool, rec *bulkRecorder,
 ) {
 	failOne := func(m bulkMember, err error) {
-		recordMemberOutcome(result, m, cutting_garden_plugins.OutcomeFailed, nil, err)
+		rec.member(m, cutting_garden_plugins.OutcomeFailed, nil, err)
 	}
 	failAll := func(err error) {
 		for _, m := range group.members {
@@ -281,7 +318,7 @@ func applyBulkGroup(
 		}
 		if len(plan.changed) == 0 {
 			// already as requested
-			recordMemberOutcome(result, m, cutting_garden_plugins.OutcomePatchedNothing, []string{}, nil)
+			rec.member(m, cutting_garden_plugins.OutcomePatchedNothing, []string{}, nil)
 			continue
 		}
 		batch = append(batch, planned{m, plan})
@@ -303,7 +340,7 @@ func applyBulkGroup(
 			failOne(b.member, err)
 			continue
 		}
-		recordMemberOutcome(result, b.member, cutting_garden_plugins.OutcomeApplied, b.plan.changed, nil)
+		rec.member(b.member, cutting_garden_plugins.OutcomeApplied, b.plan.changed, nil)
 	}
 }
 

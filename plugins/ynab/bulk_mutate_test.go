@@ -230,10 +230,11 @@ func TestBulkMutate_OutcomesNameIgnoredFields(t *testing.T) {
 	for _, o := range result.Outcomes {
 		got = append(got, view{path.Base(o.URI.Path), o.Status, o.Ignored})
 	}
+	// In request order (cutting-garden#409), though t2 finishes first.
 	want := []view{
-		{"t2", cutting_garden_plugins.OutcomePatchedNothing, []string{"emoji"}},
 		{"t1", cutting_garden_plugins.OutcomeApplied, []string{"color"}},
 		{"t1", cutting_garden_plugins.OutcomeApplied, []string{"flag"}},
+		{"t2", cutting_garden_plugins.OutcomePatchedNothing, []string{"emoji"}},
 	}
 	if !slices.EqualFunc(got, want, func(a, b view) bool {
 		return a.node == b.node && a.status == b.status && slices.Equal(a.ignored, b.ignored)
@@ -366,6 +367,25 @@ func TestBulkMutate_APayeeRenameTakesTheSinglePath(t *testing.T) {
 	}
 	if saved, _ := srv.PayeeByID("b1", "p1"); saved.Name != "Corner Café" {
 		t.Errorf("payee name = %q", saved.Name)
+	}
+}
+
+// Outcomes come one per op in REQUEST order even though the single-node ops
+// finish before the batched transaction patches (cutting-garden#409): a
+// transaction patch sent before a payee rename is outcome 0.
+func TestBulkMutate_OutcomesAreInRequestOrder(t *testing.T) {
+	newFixture(t)
+	result := bulk(t,
+		patchOp(t, txnPrefix+"t1", `{"memo":"first"}`),
+		patchOp(t, payeePrefix+"p1", `{"name":"Corner Café"}`),
+		patchOp(t, txnPrefix+"t2", `{"memo":"third"}`),
+	)
+	var got []string
+	for _, o := range result.Outcomes {
+		got = append(got, path.Base(o.URI.Path))
+	}
+	if want := []string{"t1", "p1", "t2"}; !slices.Equal(got, want) {
+		t.Errorf("outcome order = %v, want request order %v", got, want)
 	}
 }
 
