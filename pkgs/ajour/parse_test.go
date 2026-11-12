@@ -363,6 +363,25 @@ var parseVectors = []parseVector{
 	},
 	{id: "A-33", name: "with open", src: `[read [-> _ !tool-input-v1 open]]`},
 	{id: "A-33", name: "a patch is exempt", src: `[read [-> _ !tool-input-v1 deny]]`, as: asPatch},
+	{id: "A-54", name: "a lone newline is a patch with zero leaves", src: "\n", as: asPatch, check: assertNoLeaves},
+	{id: "A-54", name: "whitespace is a patch with zero leaves", src: " \t\r\n", as: asPatch, check: assertNoLeaves},
+	{id: "A-54", name: "a lone newline is a stencil with zero leaves", src: "\n", check: assertNoLeaves},
+	{
+		id: "A-54", name: "# x is a bare heading (a _ bucket tagged x), not a comment", src: "# x\n",
+		check: func(t *testing.T, roots []Node) {
+			if len(roots) != 1 {
+				t.Fatalf("%d roots; want the one heading node", len(roots))
+			}
+			assertID(t, roots[0], "", false)
+			if !reflect.DeepEqual(roots[0].Tags, []string{"x"}) || roots[0].Type != "" {
+				t.Fatalf("node = %+v; want an untyped _ node tagged x", roots[0])
+			}
+		},
+	},
+	{
+		id: "A-54", name: "# x is a heading, so a leaf with no deny in a patch", src: "# x\n", as: asPatch,
+		wantErr: "carries no deny",
+	},
 	{
 		id: "fragment", name: "a heading rendering canonicalizes to nested espalier", src: sampleAHeadings,
 		check: func(t *testing.T, roots []Node) {
@@ -443,6 +462,13 @@ func assertRoundTrip(t *testing.T, k layerKind, roots []Node) {
 	}
 	if !reflect.DeepEqual(again, roots) {
 		t.Fatalf("A-15: re-parse of %q =\n%+v\nwant\n%+v", b.String(), again, roots)
+	}
+}
+
+func assertNoLeaves(t *testing.T, roots []Node) {
+	t.Helper()
+	if len(roots) != 0 {
+		t.Fatalf("%d roots; want a layer with zero leaves", len(roots))
 	}
 }
 

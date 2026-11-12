@@ -812,7 +812,11 @@ the repo, since the format has no template hole (Limitations).
   `#`-depth headings, `- […]` leaves, a bare heading being a `_` bucket;
   `trellis.ParseTreeHeadings`) and canonicalized to the same tree; `Write`
   emits nested espalier, two spaces per child depth, a blank line between
-  roots.
+  roots. Whitespace-only text (a lone newline) is a layer with zero leaves,
+  and a patch with zero leaves is valid: it admits nothing and denies
+  nothing, which is how a non-empty act body clears an earlier act's denies
+  (piggy RFC 0013 §4.9). A `#` line is a heading, never a comment (vector
+  A-54).
 
 ### Vectors
 
@@ -883,6 +887,7 @@ Reused rows keep their ids; the `A-` rows are this record's.
 | A-51 | `[-> file:/wt/** !fs-path-v1]` and `[-> file:/wt !fs-path-v1 subtree]` | one digest |
 | A-52 | the complete document with one atom changed | a different digest |
 | A-53 | `Digest` of `[read [-> file:/wt !fs-path-v1 subtree]]` | equals toolbox(1)'s `digest -a blake2b256` over its `Write` bytes, an independent check |
+| A-54 | `"\n"` and `" \t\r\n"` as a patch; `"\n"` as a stencil; `"# x\n"` as a stencil; as a patch | zero leaves each; one untyped `_` node tagged `x` (a bare heading, never a comment); `ParsePatch` errors (the leaf carries no deny) |
 piggy's RFC 0013 conformance vectors point at A-17, A-18 and A-19 by name
 (the ask from piggy/green-larch, 2026-11-09) instead of restating them.
 
