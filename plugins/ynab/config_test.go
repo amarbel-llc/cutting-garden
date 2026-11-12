@@ -123,6 +123,39 @@ url = "ynab://y/"
 	}
 }
 
+// Through the real registry: a later load whose [ynab] section is skipped
+// leaves the plugin with no configured accounts, not the earlier load's
+// (cutting-garden#412).
+func TestConfigSection_SkippedLoadDropsAnEarlierLoadsAccounts(t *testing.T) {
+	setAccounts(t)
+	good := sectionModel(t, `
+[ynab]
+[[ynab.accounts]]
+name = "personal"
+url = "ynab://personal/"
+`)
+	if failures := cutting_garden_plugins.DecodeRegisteredConfigSectionsEach(good); len(failures) != 0 {
+		t.Fatalf("valid section failed: %v", failures)
+	}
+	if len(configuredAccounts) != 1 {
+		t.Fatalf("after a valid load: %d accounts, want 1", len(configuredAccounts))
+	}
+
+	bad := sectionModel(t, `
+[ynab]
+[[ynab.accounts]]
+name = "x"
+url = "ynab://y/"
+`)
+	failures := cutting_garden_plugins.DecodeRegisteredConfigSectionsEach(bad)
+	if len(failures) != 1 || failures[0].Section != schemeYNAB {
+		t.Fatalf("invalid section failures = %v, want the ynab section skipped", failures)
+	}
+	if len(configuredAccounts) != 0 {
+		t.Errorf("a skipped section left the earlier load's accounts: %+v", configuredAccounts)
+	}
+}
+
 func TestAPIBaseFor(t *testing.T) {
 	if got := apiBaseFor(plainAccount("p", "ynab://p/")); got != defaultAPIBase {
 		t.Errorf("apiBaseFor default = %q, want %q", got, defaultAPIBase)

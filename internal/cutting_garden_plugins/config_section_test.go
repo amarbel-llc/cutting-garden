@@ -106,6 +106,47 @@ key = "v"
 	}
 }
 
+// A section whose decoder fails is skipped, and its plugin then has NO
+// configured accounts, even in a process that loaded a valid section earlier
+// (cutting-garden#412): decoding injects, so the skip must reset what an
+// earlier load injected.
+func TestConfigSectionRegistry_SkippedSectionResetsInjectedState(t *testing.T) {
+	r := newConfigSectionRegistry()
+	injected := "unset"
+	err := r.register("plug", func(sub *cst.Value) error {
+		if bad, ok := sub.Get("bad"); ok {
+			bad.MarkConsumed()
+			return errors.New("accounts[0]: invalid")
+		}
+		injected = ""
+		if v, ok := sub.Get("value"); ok && v.Kind == cst.VLeaf {
+			if s, sok := cst.ExtractString(v.Leaf); sok {
+				v.MarkConsumed()
+				injected = s
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if failures := r.decodeEach(decomposeTOML(t, "[plug]\nvalue = \"first\"\n")); len(failures) != 0 {
+		t.Fatalf("first load failed: %v", failures)
+	}
+	if injected != "first" {
+		t.Fatalf("first load injected %q, want first", injected)
+	}
+
+	failures := r.decodeEach(decomposeTOML(t, "[plug]\nbad = true\n"))
+	if len(failures) != 1 || failures[0].Section != "plug" {
+		t.Fatalf("second load failures = %v, want [plug]", failures)
+	}
+	if injected != "" {
+		t.Errorf("after a skipped section the plugin still holds %q, want no injected state", injected)
+	}
+}
+
 func TestConfigSectionRegistry_DecodeErrorNamesSection(t *testing.T) {
 	r := newConfigSectionRegistry()
 	boom := errors.New("accounts[0]: empty name")

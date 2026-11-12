@@ -94,9 +94,26 @@ func (r *configSectionRegistry) decodeEach(model *cst.Value) []ConfigSectionFail
 		sub.MarkSeen()
 		if err := d(sub); err != nil {
 			failures = append(failures, ConfigSectionFailure{Section: name, Err: err})
+			resetSection(name, d)
 		}
 	}
 	return failures
+}
+
+// resetSection runs d over an empty table, so a skipped section leaves its
+// plugin with no configured accounts rather than the ones an earlier load in
+// this process injected (cutting-garden#412; RFC 0007 item 5). Decoding is
+// what injects, so decoding nothing injects nothing. An error from the empty
+// decode is ignored: a decoder that rejects an empty section has nothing to
+// reset.
+func resetSection(name string, d ConfigSectionDecoder) {
+	empty, err := cst.DecomposeBytes([]byte("[\"" + name + "\"]\n"))
+	if err != nil {
+		return
+	}
+	if sub, ok := empty.Get(name); ok && sub.Kind == cst.VTable {
+		_ = d(sub)
+	}
 }
 
 // ConfigSectionFailure is one plugin config section whose decoder failed.
