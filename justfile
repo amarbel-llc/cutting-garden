@@ -48,7 +48,7 @@ build-nix-check:
     nix flake check --show-trace
 
 [group('post-build')]
-test: validate-generate validate-generate-dagnabit validate-grammar test-grammar-corpus test-nvim-elide test-go-godyn test-go-layering lint-go lint-fmt lint-worktree lint-go-analyzers test-bats
+test: validate-generate validate-generate-dagnabit validate-grammar test-grammar-corpus test-nvim-elide test-go-godyn test-go-race test-go-layering lint-go lint-fmt lint-worktree lint-go-analyzers test-bats
 
 # godyn's per-package go test lane (checks.cutting-garden-godyn-tests; a skip
 # stub off x86_64-linux, where godyn is not validated). A `test` aggregate
@@ -64,9 +64,8 @@ test-go-godyn *NIX_ARGS:
 # The -race variant of the godyn test lane, for the packages that run
 # concurrently by design (raceTestedPackages in flake.nix: trellis_eval, the
 # SDK, caldav, org, ynab): checks.cutting-garden-godyn-tests-race, a skip stub
-# off x86_64-linux. Gated by `nix flake check`; deliberately NOT in the `test`
-# aggregate yet (it adds a race-instrumented stdlib and recompiles those
-# packages' cones to every merge) — see cutting-garden#415.
+# off x86_64-linux. A `test` aggregate leaf (operator ruling, cutting-garden#415)
+# and also built by `nix flake check`.
 #
 # build the race-detector test lane for the concurrent packages (x86_64-linux)
 [group('post-build')]
