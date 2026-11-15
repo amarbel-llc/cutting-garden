@@ -53,6 +53,42 @@ func init() {
 		})
 }
 
+// testPartialSection is a fake section that loads partially: it injects its
+// `good` entry and rejects a `bad` one by name (cutting-garden#406).
+const (
+	testPartialSection = "cctest_partial"
+	testPartialReason  = "bad entries are refused"
+)
+
+var testPartialLoaded string
+
+func init() {
+	cutting_garden_plugins.MustRegisterConfigSection(testPartialSection,
+		func(sub *cst.Value) error {
+			var rejected []cutting_garden_plugins.RejectedAccount
+			for _, key := range []string{"good", "bad"} {
+				v, ok := sub.Get(key)
+				if !ok || v.Kind != cst.VLeaf {
+					continue
+				}
+				v.MarkConsumed()
+				if key == "bad" {
+					rejected = append(rejected, cutting_garden_plugins.RejectedAccount{
+						Name: "bad", Reason: testPartialReason,
+					})
+					continue
+				}
+				if s, sok := cst.ExtractString(v.Leaf); sok {
+					testPartialLoaded = s
+				}
+			}
+			if len(rejected) > 0 {
+				return &cutting_garden_plugins.PartialConfigError{Rejected: rejected}
+			}
+			return nil
+		})
+}
+
 func init() {
 	cutting_garden_plugins.MustRegisterConfigSection(testSectionName,
 		func(sub *cst.Value) error {
@@ -210,6 +246,46 @@ value = "loaded"
 	if len(skipped) != 1 || skipped[0].Section != testSectionName ||
 		!strings.Contains(skipped[0].Error, testSectionReject) {
 		t.Errorf("SkippedConfigSections = %+v, want the one rejected section", skipped)
+	}
+}
+
+// A section that loads PARTIALLY (cutting-garden#406) is not skipped: its
+// valid part is injected, each rejected account is reported by name (warning
+// and SkippedConfigSections), and the section's leftover keys are still
+// accounted for as unknown. Under CG_STRICT_CONFIG=1 the same rejection is
+// EX_USAGE naming file, section, account and reason.
+func TestLoadConfig_PartialSectionReportsEachRejectedAccount(t *testing.T) {
+	testPartialLoaded = ""
+	path := writeTempConfig(t, `
+[cctest_partial]
+good = "kept"
+bad = "dropped"
+`)
+	var warn bytes.Buffer
+	if _, err := LoadConfig(path, &warn); err != nil {
+		t.Fatalf("a partial section must not fail the load: %v", err)
+	}
+	if testPartialLoaded != "kept" {
+		t.Errorf("the valid part was not injected: %q", testPartialLoaded)
+	}
+	want := "warning: " + path + `: skipping account "bad" of [` + testPartialSection + "]: " + testPartialReason
+	if !strings.Contains(warn.String(), want) {
+		t.Errorf("warning = %q, want it to contain %q", warn.String(), want)
+	}
+	skipped := SkippedConfigSections()
+	if len(skipped) != 1 || skipped[0].Section != testPartialSection ||
+		skipped[0].Account != "bad" || skipped[0].Error != testPartialReason {
+		t.Errorf("SkippedConfigSections = %+v, want the one rejected account", skipped)
+	}
+
+	t.Setenv("CG_STRICT_CONFIG", "1")
+	_, err := LoadConfig(path, nil)
+	if err == nil || !errors.Is400BadRequest(err) {
+		t.Fatalf("strict mode: want EX_USAGE, got %v", err)
+	}
+	wantStrict := path + ": " + testPartialSection + `: account "bad": ` + testPartialReason
+	if !strings.Contains(err.Error(), wantStrict) {
+		t.Errorf("strict error = %q, want it to contain %q", err, wantStrict)
 	}
 }
 

@@ -2,7 +2,9 @@ package ynab
 
 import (
 	"context"
+	stderrors "errors"
 	"slices"
+	"strings"
 	"testing"
 
 	"code.linenisgreat.com/cutting-garden/pkgs/config_common"
@@ -105,21 +107,91 @@ password_env = "YNAB_API_TOKEN"
 	}
 }
 
+// rejectedBy decodes body as a [ynab] section and returns the accounts the
+// decoder rejected, failing the test if the error is not a PartialConfigError.
+func rejectedBy(t *testing.T, body string) []cutting_garden_plugins.RejectedAccount {
+	t.Helper()
+	err := decodeConfigSection(sectionModel(t, body))
+	if err == nil {
+		return nil
+	}
+	var partial *cutting_garden_plugins.PartialConfigError
+	if !stderrors.As(err, &partial) {
+		t.Fatalf("want a PartialConfigError, got %T: %v", err, err)
+	}
+	return partial.Rejected
+}
+
 func TestConfigSection_ValidateFailureSurfaces(t *testing.T) {
 	setAccounts(t)
-	err := decodeConfigSection(sectionModel(t, `
+	rejected := rejectedBy(t, `
 [[accounts]]
 name = "x"
 url = "ynab://y/"
-`))
-	if err == nil {
-		t.Fatal("want error for url host != account name")
-	}
-	if !errors.Is400BadRequest(err) {
-		t.Errorf("want EX_USAGE (400 bad request), got %v", err)
+`)
+	if len(rejected) != 1 || rejected[0].Name != "x" ||
+		!strings.Contains(rejected[0].Reason, "url host") {
+		t.Fatalf("rejected = %+v, want account x refused for its url host", rejected)
 	}
 	if len(configuredAccounts) != 0 {
-		t.Errorf("a rejected section must inject nothing, got %+v", configuredAccounts)
+		t.Errorf("a rejected account must not be injected, got %+v", configuredAccounts)
+	}
+}
+
+// One bad account must not drop the good ones (cutting-garden#406): the good
+// account is injected and its root listed, the bad one is named.
+func TestConfigSection_OneBadAccountDoesNotDropTheGoodOne(t *testing.T) {
+	setAccounts(t)
+	rejected := rejectedBy(t, `
+[[accounts]]
+name = "personal"
+url = "ynab://personal/"
+
+[[accounts]]
+name = "x"
+url = "ynab://y/"
+`)
+	if len(rejected) != 1 || rejected[0].Name != "x" {
+		t.Fatalf("rejected = %+v, want only x", rejected)
+	}
+	if len(configuredAccounts) != 1 || configuredAccounts[0].Name != "personal" {
+		t.Fatalf("configured = %+v, want only personal", configuredAccounts)
+	}
+	roots, err := (Plugin{}).Roots(context.Background())
+	if err != nil || len(roots) != 1 || roots[0].String() != "ynab://personal/" {
+		t.Errorf("roots = %v, %v; want the good account's root", roots, err)
+	}
+}
+
+// A duplicate name rejects every account sharing it (neither is safe to pick),
+// and an account with no name is reported by its position.
+func TestConfigSection_DuplicateAndNamelessAccountsAreRejectedByName(t *testing.T) {
+	setAccounts(t)
+	rejected := rejectedBy(t, `
+[[accounts]]
+name = "dup"
+url = "ynab://dup/"
+
+[[accounts]]
+name = "ok"
+url = "ynab://ok/"
+
+[[accounts]]
+name = "dup"
+url = "ynab://dup/"
+
+[[accounts]]
+url = "ynab://nameless/"
+`)
+	var got []string
+	for _, r := range rejected {
+		got = append(got, r.Name)
+	}
+	if want := []string{"dup", "dup", "accounts[3]"}; !slices.Equal(got, want) {
+		t.Errorf("rejected names = %v, want %v", got, want)
+	}
+	if len(configuredAccounts) != 1 || configuredAccounts[0].Name != "ok" {
+		t.Errorf("configured = %+v, want only ok", configuredAccounts)
 	}
 }
 

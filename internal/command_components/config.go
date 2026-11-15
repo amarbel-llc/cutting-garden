@@ -106,18 +106,37 @@ func loadConfigWithRaw(
 	// section and the entry, and prefixing the path yields
 	// "<path>: <section>: <entry>", EX_USAGE naming all three (RFC 0007
 	// § Loading and Validation).
+	//
+	// A section may also load PARTIALLY (cutting-garden#406): its decoder
+	// injected the accounts that validated and named the rest, so one bad
+	// account no longer drops the plugin's other accounts. Each rejected
+	// account is a failure with Account set; only a whole-section failure
+	// claims the section's leftover keys below.
 	failures := cutting_garden_plugins.DecodeRegisteredConfigSectionsEach(model)
 	if len(failures) > 0 && strictConfig() {
-		return nil, nil, errors.BadRequestf(
-			"%s: %s: %s", path, failures[0].Section, failures[0].Err)
+		f := failures[0]
+		if f.Account != "" {
+			return nil, nil, errors.BadRequestf(
+				"%s: %s: account %q: %s", path, f.Section, f.Account, f.Err)
+		}
+		return nil, nil, errors.BadRequestf("%s: %s: %s", path, f.Section, f.Err)
 	}
 	skipped := make([]SkippedConfigSection, 0, len(failures))
 	skippedNames := make([]traversal_serve.PluginStanza, 0, len(failures))
 	for _, f := range failures {
-		skipped = append(skipped, SkippedConfigSection{Section: f.Section, Error: f.Err.Error()})
-		skippedNames = append(skippedNames, traversal_serve.PluginStanza{ConfigSection: f.Section})
+		skipped = append(skipped, SkippedConfigSection{
+			Section: f.Section, Account: f.Account, Error: f.Err.Error(),
+		})
+		if f.Account == "" {
+			skippedNames = append(skippedNames, traversal_serve.PluginStanza{ConfigSection: f.Section})
+		}
 		if warnw != nil {
-			fmt.Fprintf(warnw, "warning: %s: skipping [%s]: %s\n", path, f.Section, f.Err)
+			if f.Account != "" {
+				fmt.Fprintf(warnw, "warning: %s: skipping account %q of [%s]: %s\n",
+					path, f.Account, f.Section, f.Err)
+			} else {
+				fmt.Fprintf(warnw, "warning: %s: skipping [%s]: %s\n", path, f.Section, f.Err)
+			}
 		}
 	}
 	setSkippedConfigSections(skipped)
@@ -148,10 +167,15 @@ func strictConfig() bool {
 }
 
 // SkippedConfigSection is a plugin config section the last load skipped
-// because its decoder failed; Error is the decoder's message, which names
-// the entry.
+// because its decoder failed, or, with Account set, one account of a section
+// that loaded without it; Error is the decoder's message, which names the
+// entry (the reason, for an account).
 type SkippedConfigSection struct {
 	Section string `json:"section"`
+	// Account names the one account of the section that was rejected while
+	// the section's other accounts loaded (cutting-garden#406); empty when the
+	// whole section was skipped.
+	Account string `json:"account,omitempty"`
 	Error   string `json:"error"`
 }
 

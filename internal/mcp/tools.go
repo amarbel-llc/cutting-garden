@@ -980,6 +980,16 @@ type schemeSchema struct {
 	// (cutting-garden#325), so a client seeing a scheme with no roots also
 	// sees the reason. Omitted when the section loaded.
 	SkippedConfig string `json:"skipped_config,omitempty"`
+	// SkippedAccounts names each account of this scheme's config section that
+	// the load rejected while loading the section's others
+	// (cutting-garden#406). Omitted when none were.
+	SkippedAccounts []skippedAccount `json:"skipped_accounts,omitempty"`
+}
+
+// skippedAccount is one rejected config account and the reason.
+type skippedAccount struct {
+	Account string `json:"account"`
+	Error   string `json:"error"`
 }
 
 // typeSchema describes one node type: its tag, whether it is a container or a
@@ -1226,20 +1236,35 @@ func collectSchema(
 		}
 		out = append(out, schemeSchema{
 			Scheme: firstScheme(p), Types: types, SkippedConfig: skippedConfigFor(p),
+			SkippedAccounts: skippedAccountsFor(p),
 		})
 	}
 	return out
 }
 
 // skippedConfigFor is the load error of p's config section when the load
-// skipped it. A plugin's section is registered under one of its schemes.
+// skipped the whole section. A plugin's section is registered under one of its
+// schemes. An account rejected from a section that otherwise loaded is not
+// this (skippedAccountsFor).
 func skippedConfigFor(p cutting_garden_plugins.Plugin) string {
 	for _, s := range command_components.SkippedConfigSections() {
-		if slices.Contains(p.Schemes(), s.Section) {
+		if s.Account == "" && slices.Contains(p.Schemes(), s.Section) {
 			return s.Error
 		}
 	}
 	return ""
+}
+
+// skippedAccountsFor lists the accounts of p's config section that the load
+// rejected while the section's other accounts loaded (cutting-garden#406).
+func skippedAccountsFor(p cutting_garden_plugins.Plugin) []skippedAccount {
+	var out []skippedAccount
+	for _, s := range command_components.SkippedConfigSections() {
+		if s.Account != "" && slices.Contains(p.Schemes(), s.Section) {
+			out = append(out, skippedAccount{Account: s.Account, Error: s.Error})
+		}
+	}
+	return out
 }
 
 // filterSchema narrows the describe_node_types catalogue to one scheme and/or

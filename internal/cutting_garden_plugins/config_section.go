@@ -1,7 +1,10 @@
 package cutting_garden_plugins
 
 import (
+	stderrors "errors"
+	"fmt"
 	"sort"
+	"strings"
 	"sync"
 
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
@@ -73,6 +76,9 @@ func (r *configSectionRegistry) names() []string {
 // naming file, section, and entry.
 func (r *configSectionRegistry) decode(model *cst.Value) error {
 	if failures := r.decodeEach(model); len(failures) > 0 {
+		if f := failures[0]; f.Account != "" {
+			return errors.Errorf("%s: account %q: %w", f.Section, f.Account, f.Err)
+		}
 		return errors.Errorf("%s: %w", failures[0].Section, failures[0].Err)
 	}
 	return nil
@@ -93,11 +99,51 @@ func (r *configSectionRegistry) decodeEach(model *cst.Value) []ConfigSectionFail
 		r.mu.RUnlock()
 		sub.MarkSeen()
 		if err := d(sub); err != nil {
+			var partial *PartialConfigError
+			if stderrors.As(err, &partial) {
+				// The decoder injected the accounts it accepted: the section
+				// loaded, minus the named rejects (cutting-garden#406). No reset.
+				for _, r := range partial.Rejected {
+					failures = append(failures, ConfigSectionFailure{
+						Section: name, Account: r.Name, Err: stderrors.New(r.Reason),
+					})
+				}
+				continue
+			}
 			failures = append(failures, ConfigSectionFailure{Section: name, Err: err})
 			resetSection(name, d)
 		}
 	}
 	return failures
+}
+
+// RejectedAccount is one account of a plugin config section that its decoder
+// refused while loading the section's other accounts. Name is the account's
+// name, or, for an account with none, its position ("accounts[2]"); Reason says
+// why.
+type RejectedAccount struct {
+	Name   string
+	Reason string
+}
+
+// PartialConfigError is what a ConfigSectionDecoder returns when it injected
+// the valid accounts of its section and rejected the rest
+// (cutting-garden#406; RFC 0007 § Loading and Validation). The loader treats
+// the section as loaded, records each rejected account by name through the
+// skipped-config surface, and under CG_STRICT_CONFIG=1 still fails the load.
+// A decoder rejecting every account returns it too, having injected none. An
+// error that is not about one account (a type error in the table) is an
+// ordinary error, which skips the whole section.
+type PartialConfigError struct {
+	Rejected []RejectedAccount
+}
+
+func (e *PartialConfigError) Error() string {
+	parts := make([]string, 0, len(e.Rejected))
+	for _, r := range e.Rejected {
+		parts = append(parts, fmt.Sprintf("account %q: %s", r.Name, r.Reason))
+	}
+	return strings.Join(parts, "; ")
 }
 
 // resetSection runs d over an empty table, so a skipped section leaves its
@@ -116,9 +162,12 @@ func resetSection(name string, d ConfigSectionDecoder) {
 	}
 }
 
-// ConfigSectionFailure is one plugin config section whose decoder failed.
+// ConfigSectionFailure is one plugin config section whose decoder failed, or,
+// when Account is set, one account of a section that otherwise loaded
+// (PartialConfigError) and Err is the reason that account was rejected.
 type ConfigSectionFailure struct {
 	Section string
+	Account string
 	Err     error
 }
 

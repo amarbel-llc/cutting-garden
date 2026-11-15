@@ -147,6 +147,39 @@ func TestConfigSectionRegistry_SkippedSectionResetsInjectedState(t *testing.T) {
 	}
 }
 
+// A decoder that loaded some accounts and refused others returns a
+// PartialConfigError (cutting-garden#406): the section is NOT skipped (its
+// injected accounts stay), each reject is a failure naming its account, and
+// decode (the strict path) still reports it.
+func TestConfigSectionRegistry_PartialErrorNamesTheRejectedAccounts(t *testing.T) {
+	r := newConfigSectionRegistry()
+	injected := ""
+	err := r.register("plug", func(*cst.Value) error {
+		injected = "good"
+		return &PartialConfigError{Rejected: []RejectedAccount{
+			{Name: "bad", Reason: "empty url"}, {Name: "worse", Reason: "unparseable url"},
+		}}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	failures := r.decodeEach(decomposeTOML(t, "[plug]\n"))
+	if len(failures) != 2 ||
+		failures[0].Section != "plug" || failures[0].Account != "bad" || failures[0].Err.Error() != "empty url" ||
+		failures[1].Account != "worse" || failures[1].Err.Error() != "unparseable url" {
+		t.Fatalf("failures = %+v, want the two rejected accounts of plug, by name", failures)
+	}
+	if injected != "good" {
+		t.Errorf("injected = %q: a partial section must keep the accounts it loaded (no reset)", injected)
+	}
+
+	strictErr := r.decode(decomposeTOML(t, "[plug]\n"))
+	if strictErr == nil || !strings.Contains(strictErr.Error(), `plug: account "bad": empty url`) {
+		t.Errorf("decode error = %v, want it to name section, account and reason", strictErr)
+	}
+}
+
 func TestConfigSectionRegistry_DecodeErrorNamesSection(t *testing.T) {
 	r := newConfigSectionRegistry()
 	boom := errors.New("accounts[0]: empty name")

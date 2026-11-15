@@ -122,6 +122,39 @@ function invalid_plugin_section_is_skipped_with_a_warning { # @test
   [[ $output != *cg93.example* ]] || fail "a skipped account surfaced as a root: $output"
 }
 
+# § Loading and Validation (amended, cutting-garden#406): one bad account of a
+# plugin section is skipped BY NAME while the section's good accounts load, so
+# the good account's root is still listed and `health` names the rejected one.
+function a_bad_account_is_skipped_by_name_and_the_good_one_stays_a_root { # @test
+  write_config <<-'EOF'
+	[[ynab.accounts]]
+	name = "cg406-good"
+	url = "ynab://cg406-good/"
+
+	[[ynab.accounts]]
+	name = "cg406-bad"
+	url = "ynab://elsewhere/"
+	EOF
+  run_cg_stdout list -format json
+  assert_success
+  echo "$stderr" | grep -q 'skipping account "cg406-bad" of \[ynab\]' ||
+    fail "stderr does not name the skipped account: $stderr"
+  echo "$output" | jq -e 'select(.uri == "ynab://cg406-good/")' >/dev/null ||
+    fail "the good account's root is not listed: $output"
+  [[ $output != *cg406-bad* ]] || fail "a rejected account surfaced as a root: $output"
+
+  run_cg health
+  assert_success
+  assert_output --partial 'skipped config sections:'
+  assert_output --partial 'ynab account "cg406-bad"'
+  assert_output --partial 'ynab://cg406-good/'
+
+  run_cg_stdout health -format json
+  assert_success
+  run jq -rs 'map(select(has("skipped_config"))) | .[0].skipped_config | map(.section + "/" + .account) | join(",")' <<<"$output"
+  assert_output ynab/cg406-bad
+}
+
 # The mcp server names the skipped section's error on its scheme in
 # describe_node_types, so a client seeing a scheme with no roots also sees
 # why (cutting-garden#325); a scheme whose section loaded carries no member.

@@ -523,6 +523,22 @@ preferred-root plugins (sources 1, 2) that need no credentials are unaffected.
    NOT resolve a credential to do so. The other sections load as normal.
    With `CG_STRICT_CONFIG=1` in the environment, such an error instead
    aborts with EX_USAGE as in item 4, for CI.
+6. (Amendment, cutting-garden#406.) A plugin's section decoder SHOULD
+   validate its accounts independently: it injects the valid ones and
+   rejects each invalid one BY NAME rather than skipping the whole section.
+   An account with no name is named by its position (`accounts[2]`). An
+   account that conflicts with another (a duplicate `name`, or, for caldav, a
+   shared host and path) is rejected together with every account in the
+   conflict, since neither is safe to pick. Each rejected account is a
+   separate entry, warned once (naming the file, the section, the account and
+   the reason) and reported through the same surface as a skipped section
+   (`health`, and describe_node_types), with the account's name in an
+   `account` member; a whole skipped section carries no `account`. Strict
+   mode is unchanged: any rejection aborts with EX_USAGE, the message naming
+   the account. When every account is rejected the plugin has no configured
+   accounts and each is still named; a decoder error that is not about one
+   account (a type error, an unreadable table) is a whole-section error
+   (item 5).
 
 ### Package Layering
 
@@ -597,7 +613,7 @@ Tests use binary injection via `bats-emo`:
 | § Root-Labeler, per-root override with fallback and fault isolation | Go unit tests (`plugins/caldav/rootlabels_test.go`, `internal/mcp/aggregate_roots_isolation_test.go`, `internal/mcp/tools_test.go`) | a calendar-scoped caldav account's root label is its DAV displayname; a calendar-home account's root keeps the default derivation; an unreachable account and a `RootLabels`-erroring plugin both degrade non-fatally without dropping another plugin's labels |
 | § Root Sources, intrinsic | `config.bats` | the file plugin surfaces its working directory as a root with no config |
 | § Credential Resolution, precedence | Go unit tests (`plugins/caldav`) | a node matching an account uses that account's `password_env`; a non-matching host falls back to `CALDAV_USERNAME`/`CALDAV_PASSWORD`. Not in `config.bats`: the caldav testserver does not record the credentials a client presents, so the binary cannot be observed choosing between them (cutting-garden#93) |
-| § Loading and Validation | `config.bats`, `health.bats` | an unknown key warns but does not abort; a duplicate `name`/empty `url` skips that section with a warning naming the entry, and aborts with EX_USAGE under `CG_STRICT_CONFIG=1`; `health` lists a skipped section |
+| § Loading and Validation | `config.bats`, `health.bats` | an unknown key warns but does not abort; a duplicate `name`/empty `url` skips that section with a warning naming the entry, and aborts with EX_USAGE under `CG_STRICT_CONFIG=1`; `health` lists a skipped section; one bad account of a plugin that validates independently (ynab) is skipped by name while its good account stays a root (cutting-garden#406) |
 
 Struct-level rules (`Validate` rejections, `Roots` projection,
 credential-precedence unit behavior, section registration and dispatch) are

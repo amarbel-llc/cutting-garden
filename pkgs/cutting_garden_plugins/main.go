@@ -182,7 +182,9 @@ type ConcurrentReader = internal.ConcurrentReader
 // plugin's package state (SetConfiguredAccounts or the like).
 type ConfigSectionDecoder = internal.ConfigSectionDecoder
 
-// ConfigSectionFailure is one plugin config section whose decoder failed.
+// ConfigSectionFailure is one plugin config section whose decoder failed, or,
+// when Account is set, one account of a section that otherwise loaded
+// (PartialConfigError) and Err is the reason that account was rejected.
 type ConfigSectionFailure = internal.ConfigSectionFailure
 
 // ContainerCreator is the OPTIONAL capability for sources that assign a
@@ -648,6 +650,16 @@ type NodeTypeUnifiedFields = internal.NodeTypeUnifiedFields
 // NopReporter is the no-op Stream.
 type NopReporter = internal.NopReporter
 
+// PartialConfigError is what a ConfigSectionDecoder returns when it injected
+// the valid accounts of its section and rejected the rest
+// (cutting-garden#406; RFC 0007 § Loading and Validation). The loader treats
+// the section as loaded, records each rejected account by name through the
+// skipped-config surface, and under CG_STRICT_CONFIG=1 still fails the load.
+// A decoder rejecting every account returns it too, having injected none. An
+// error that is not about one account (a type error in the table) is an
+// ordinary error, which skips the whole section.
+type PartialConfigError = internal.PartialConfigError
+
 // PartialListing records that a container's listing returned a bounded
 // subset of its children, and why — e.g. caldav lists a calendar's events
 // only within a date window (cutting-garden#176/#177). A listing carries no
@@ -714,10 +726,16 @@ type ProtocolRestorePlugin = internal.ProtocolRestorePlugin
 // receipt (and its referenced blobs), the receipt's markl id, and the
 // parsed destination. Routing is by receipt *kind*, not dest scheme —
 // the receipt knows how it was captured.
+type ProtocolRestoreRequest = internal.ProtocolRestoreRequest
+
+// RejectedAccount is one account of a plugin config section that its decoder
+// refused while loading the section's other accounts. Name is the account's
+// name, or, for an account with none, its position ("accounts[2]"); Reason says
+// why.
 type (
-	ProtocolRestoreRequest = internal.ProtocolRestoreRequest
-	ReportPlan             = internal.ReportPlan
-	ReportProgress         = internal.ReportProgress
+	RejectedAccount = internal.RejectedAccount
+	ReportPlan      = internal.ReportPlan
+	ReportProgress  = internal.ReportProgress
 )
 
 // Reporter is the unified capture-events stream. The historical name is

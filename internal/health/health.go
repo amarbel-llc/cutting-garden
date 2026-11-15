@@ -380,6 +380,10 @@ func writeSkippedConfig(buf *strings.Builder, skipped []command_components.Skipp
 	}
 	buf.WriteString("\nskipped config sections:\n")
 	for _, s := range skipped {
+		if s.Account != "" {
+			fmt.Fprintf(buf, "  %s account %q: %s\n", s.Section, s.Account, s.Error)
+			continue
+		}
 		fmt.Fprintf(buf, "  %s: %s\n", s.Section, s.Error)
 	}
 }

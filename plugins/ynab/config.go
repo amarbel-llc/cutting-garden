@@ -2,6 +2,7 @@ package ynab
 
 import (
 	"context"
+	"fmt"
 	"net/url"
 
 	"code.linenisgreat.com/cutting-garden/pkgs/config_common"
@@ -23,16 +24,21 @@ func init() {
 // decodeConfigSection is the registered ConfigSectionDecoder: the shared
 // tommy-generated config_common.DecodeAccountsSectionInto, this plugin's
 // Validate, then the inject step.
+//
+// Each account is validated independently (cutting-garden#406): the valid ones
+// are injected and each rejected one is reported by name through a
+// PartialConfigError, so one bad account no longer drops the others.
 func decodeConfigSection(sub *cst.Value) error {
 	var section config_common.AccountsSection
 	if err := config_common.DecodeAccountsSectionInto(&section, sub); err != nil {
 		return err
 	}
 	c := AccountsConfig{Accounts: section.Accounts}
-	if err := c.Validate(); err != nil {
-		return err
+	valid, rejected := c.ValidateEach()
+	SetConfiguredAccounts(valid)
+	if len(rejected) > 0 {
+		return &cutting_garden_plugins.PartialConfigError{Rejected: rejected}
 	}
-	SetConfiguredAccounts(c.Accounts)
 	return nil
 }
 
@@ -60,39 +66,85 @@ func (c AccountsConfig) Validate() error {
 		}
 		seenName[acct.Name] = struct{}{}
 
-		if acct.URL == "" {
-			return errors.BadRequestf("ynab.accounts[%q]: empty url", acct.Name)
+		if err := validateAccountBody(acct); err != nil {
+			return err
 		}
-		u, err := url.Parse(acct.URL)
-		if err != nil {
-			return errors.BadRequestf(
-				"ynab.accounts[%q]: unparseable url %q: %s", acct.Name, acct.URL, err,
-			)
-		}
-		if u.Scheme != schemeYNAB {
-			return errors.BadRequestf(
-				"ynab.accounts[%q]: url %q is not a %s:// URL",
-				acct.Name, acct.URL, schemeYNAB,
-			)
-		}
-		if u.Host != acct.Name {
-			return errors.BadRequestf(
-				"ynab.accounts[%q]: url host %q must equal the account name %q "+
-					"(the host slot names the account, not a server)",
-				acct.Name, u.Host, acct.Name,
-			)
-		}
+	}
+	return nil
+}
 
-		// The bearer token goes to session_url on every request, so plaintext
-		// http is allowed only to a loopback host. The rule is config_common's,
-		// shared with the fastmail plugin (cutting-garden#332).
-		if err := acct.ValidateSessionURL(); err != nil {
-			return errors.BadRequestf("ynab.accounts[%q]: %s", acct.Name, err)
+// ValidateEach validates every account on its own and returns the valid ones
+// and the rejected ones, each named (cutting-garden#406). An account whose
+// name another account shares is rejected along with every account sharing it:
+// neither can be picked safely. An account with no name is reported by its
+// position.
+func (c AccountsConfig) ValidateEach() (
+	valid []config_common.Account, rejected []cutting_garden_plugins.RejectedAccount,
+) {
+	count := make(map[string]int, len(c.Accounts))
+	for _, acct := range c.Accounts {
+		count[acct.Name]++
+	}
+	for i, acct := range c.Accounts {
+		switch {
+		case acct.Name == "":
+			rejected = append(rejected, cutting_garden_plugins.RejectedAccount{
+				Name: fmt.Sprintf("accounts[%d]", i), Reason: "empty name",
+			})
+		case count[acct.Name] > 1:
+			rejected = append(rejected, cutting_garden_plugins.RejectedAccount{
+				Name:   acct.Name,
+				Reason: "duplicate name: every account sharing it is skipped",
+			})
+		default:
+			if err := validateAccountBody(acct); err != nil {
+				rejected = append(rejected, cutting_garden_plugins.RejectedAccount{
+					Name: acct.Name, Reason: err.Error(),
+				})
+				continue
+			}
+			valid = append(valid, acct)
 		}
+	}
+	return valid, rejected
+}
 
-		if err := acct.ValidatePassword(); err != nil {
-			return errors.BadRequestf("ynab.accounts[%q]: %s", acct.Name, err)
-		}
+// validateAccountBody checks everything about one named account but its name's
+// uniqueness: the URL and the credential rules. Validate and ValidateEach share
+// it so a whole-section check and an independent one cannot drift.
+func validateAccountBody(acct config_common.Account) error {
+	if acct.URL == "" {
+		return errors.BadRequestf("ynab.accounts[%q]: empty url", acct.Name)
+	}
+	u, err := url.Parse(acct.URL)
+	if err != nil {
+		return errors.BadRequestf(
+			"ynab.accounts[%q]: unparseable url %q: %s", acct.Name, acct.URL, err,
+		)
+	}
+	if u.Scheme != schemeYNAB {
+		return errors.BadRequestf(
+			"ynab.accounts[%q]: url %q is not a %s:// URL",
+			acct.Name, acct.URL, schemeYNAB,
+		)
+	}
+	if u.Host != acct.Name {
+		return errors.BadRequestf(
+			"ynab.accounts[%q]: url host %q must equal the account name %q "+
+				"(the host slot names the account, not a server)",
+			acct.Name, u.Host, acct.Name,
+		)
+	}
+
+	// The bearer token goes to session_url on every request, so plaintext
+	// http is allowed only to a loopback host. The rule is config_common's,
+	// shared with the fastmail plugin (cutting-garden#332).
+	if err := acct.ValidateSessionURL(); err != nil {
+		return errors.BadRequestf("ynab.accounts[%q]: %s", acct.Name, err)
+	}
+
+	if err := acct.ValidatePassword(); err != nil {
+		return errors.BadRequestf("ynab.accounts[%q]: %s", acct.Name, err)
 	}
 	return nil
 }
