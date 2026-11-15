@@ -19,7 +19,7 @@ setup() {
   start_caldav_server
   local http="${CALDAV_SOURCE#caldav:}"
   OBJ_URL="${http%/dav/}${CALDAV_CAL_PATH}"
-  put_task done COMPLETED
+  put_task "done" COMPLETED
   put_task open NEEDS-ACTION
 }
 
