@@ -2,6 +2,7 @@ package jira
 
 import (
 	"context"
+	"fmt"
 	"net/url"
 	"strings"
 
@@ -24,16 +25,21 @@ func init() {
 // inject step. The generated decoder is consumed from config_common rather
 // than from this package because tommy blanks a package's own generated
 // output while type-checking it (see config_common.AccountsSection).
+//
+// Each account is validated independently (cutting-garden#406): the valid ones
+// are injected and each rejected one is reported by name through a
+// PartialConfigError, so one bad account no longer drops the others.
 func decodeConfigSection(sub *cst.Value) error {
 	var section config_common.AccountsSection
 	if err := config_common.DecodeAccountsSectionInto(&section, sub); err != nil {
 		return err
 	}
 	c := AccountsConfig{Accounts: section.Accounts}
-	if err := c.Validate(); err != nil {
-		return err
+	valid, rejected := c.ValidateEach()
+	SetConfiguredAccounts(valid)
+	if len(rejected) > 0 {
+		return &cutting_garden_plugins.PartialConfigError{Rejected: rejected}
 	}
-	SetConfiguredAccounts(c.Accounts)
 	return nil
 }
 
@@ -72,29 +78,9 @@ func (c AccountsConfig) Validate() error {
 		}
 		seenName[acct.Name] = struct{}{}
 
-		if acct.URL == "" {
-			return errors.BadRequestf(
-				"jira.accounts[%q]: empty url", acct.Name,
-			)
-		}
-		u, err := url.Parse(acct.URL)
+		host, path, err := validateAccountURL(acct)
 		if err != nil {
-			return errors.BadRequestf(
-				"jira.accounts[%q]: unparseable url %q: %s",
-				acct.Name, acct.URL, err,
-			)
-		}
-		if u.Scheme != schemeJira {
-			return errors.BadRequestf(
-				"jira.accounts[%q]: url %q is not a %s:// URL",
-				acct.Name, acct.URL, schemeJira,
-			)
-		}
-		host, path, err := accountHostPath(u)
-		if err != nil {
-			return errors.BadRequestf(
-				"jira.accounts[%q]: %s", acct.Name, err,
-			)
+			return err
 		}
 		key := host + "\x00" + path
 		if _, dup := seenHostPath[key]; dup {
@@ -105,11 +91,104 @@ func (c AccountsConfig) Validate() error {
 		}
 		seenHostPath[key] = struct{}{}
 
-		if err := acct.ValidatePassword(); err != nil {
-			return errors.BadRequestf(
-				"jira.accounts[%q]: %s", acct.Name, err,
-			)
+		if err := validateAccountPassword(acct); err != nil {
+			return err
 		}
+	}
+	return nil
+}
+
+// ValidateEach validates every account on its own and returns the valid ones
+// and the rejected ones, each named (cutting-garden#406). An account whose
+// name another account shares, or whose (host, project-path) another account
+// covers, is rejected along with every account in the conflict: neither can be
+// picked safely. An account with no name is reported by its position.
+func (c AccountsConfig) ValidateEach() (
+	valid []config_common.Account, rejected []cutting_garden_plugins.RejectedAccount,
+) {
+	names := make(map[string]int, len(c.Accounts))
+	for _, acct := range c.Accounts {
+		names[acct.Name]++
+	}
+	type candidate struct {
+		acct config_common.Account
+		key  string
+		host string
+		path string
+	}
+	var candidates []candidate
+	keys := make(map[string]int, len(c.Accounts))
+	reject := func(name, reason string) {
+		rejected = append(rejected, cutting_garden_plugins.RejectedAccount{Name: name, Reason: reason})
+	}
+	for i, acct := range c.Accounts {
+		switch {
+		case acct.Name == "":
+			reject(fmt.Sprintf("accounts[%d]", i), "empty name")
+		case names[acct.Name] > 1:
+			reject(acct.Name, "duplicate name: every account sharing it is skipped")
+		default:
+			host, path, err := validateAccountURL(acct)
+			if err == nil {
+				err = validateAccountPassword(acct)
+			}
+			if err != nil {
+				reject(acct.Name, err.Error())
+				continue
+			}
+			key := host + "\x00" + path
+			keys[key]++
+			candidates = append(candidates, candidate{acct, key, host, path})
+		}
+	}
+	for _, cand := range candidates {
+		if keys[cand.key] > 1 {
+			reject(cand.acct.Name, fmt.Sprintf(
+				"another account covers host %q path %q: every account sharing it is skipped",
+				cand.host, cand.path))
+			continue
+		}
+		valid = append(valid, cand.acct)
+	}
+	return valid, rejected
+}
+
+// validateAccountURL checks a named account's URL and returns the (host,
+// project-path) pair credential resolution matches a node against.
+func validateAccountURL(acct config_common.Account) (host, path string, err error) {
+	if acct.URL == "" {
+		return "", "", errors.BadRequestf(
+			"jira.accounts[%q]: empty url", acct.Name,
+		)
+	}
+	u, err := url.Parse(acct.URL)
+	if err != nil {
+		return "", "", errors.BadRequestf(
+			"jira.accounts[%q]: unparseable url %q: %s",
+			acct.Name, acct.URL, err,
+		)
+	}
+	if u.Scheme != schemeJira {
+		return "", "", errors.BadRequestf(
+			"jira.accounts[%q]: url %q is not a %s:// URL",
+			acct.Name, acct.URL, schemeJira,
+		)
+	}
+	host, path, err = accountHostPath(u)
+	if err != nil {
+		return "", "", errors.BadRequestf(
+			"jira.accounts[%q]: %s", acct.Name, err,
+		)
+	}
+	return host, path, nil
+}
+
+// validateAccountPassword checks a named account's credential fields.
+func validateAccountPassword(acct config_common.Account) error {
+	if err := acct.ValidatePassword(); err != nil {
+		return errors.BadRequestf(
+			"jira.accounts[%q]: %s", acct.Name, err,
+		)
 	}
 	return nil
 }

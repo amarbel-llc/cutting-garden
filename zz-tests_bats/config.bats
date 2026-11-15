@@ -100,10 +100,11 @@ function unknown_key_warns_but_does_not_abort { # @test
     fail "the run did not continue to list roots: $output"
 }
 
-# § Loading and Validation (amended, cutting-garden#325): a plugin section
-# that fails validation, here a duplicate account name, is skipped with a
-# warning naming the entry, and the command runs on with the other roots.
-function invalid_plugin_section_is_skipped_with_a_warning { # @test
+# § Loading and Validation (amended, cutting-garden#325, #406): plugin
+# accounts that fail validation, here a duplicate account name (both are
+# rejected: neither is safe to pick), are each skipped with a warning naming
+# the account, and the command runs on with the other roots.
+function duplicate_plugin_accounts_are_each_skipped_by_name_with_a_warning { # @test
   write_config <<-'EOF'
 	[[caldav.accounts]]
 	name = "cg93-dup"
@@ -115,8 +116,8 @@ function invalid_plugin_section_is_skipped_with_a_warning { # @test
 	EOF
   run_cg_stdout list -format json
   assert_success
-  echo "$stderr" | grep -q 'skipping \[caldav\]: .*cg93-dup' ||
-    fail "stderr does not name the skipped section and entry: $stderr"
+  echo "$stderr" | grep -q 'skipping account "cg93-dup" of \[caldav\]: duplicate name' ||
+    fail "stderr does not name the skipped account and section: $stderr"
   echo "$output" | jq -e 'select(.uri | startswith("file://"))' >/dev/null ||
     fail "the run did not continue to list roots: $output"
   [[ $output != *cg93.example* ]] || fail "a skipped account surfaced as a root: $output"
@@ -155,10 +156,11 @@ function a_bad_account_is_skipped_by_name_and_the_good_one_stays_a_root { # @tes
   assert_output ynab/cg406-bad
 }
 
-# The mcp server names the skipped section's error on its scheme in
-# describe_node_types, so a client seeing a scheme with no roots also sees
-# why (cutting-garden#325); a scheme whose section loaded carries no member.
-function skipped_plugin_section_is_named_in_describe_node_types { # @test
+# The mcp server names each skipped account on its scheme in
+# describe_node_types, so a client seeing a scheme with missing roots also sees
+# why (cutting-garden#325, #406); a scheme with no rejected account carries
+# no member.
+function skipped_plugin_accounts_are_named_in_describe_node_types { # @test
   write_config <<-'EOF'
 	[[caldav.accounts]]
 	name = "cg93-dup"
@@ -177,10 +179,12 @@ function skipped_plugin_section_is_named_in_describe_node_types { # @test
   run --separate-stderr timeout --preserve-status 10s "${CG_BIN:-cutting-garden}" mcp <"$reqfile"
   local text
   text="$(echo "$output" | jq -r 'select(.id==2) | .result.content[0].text')"
-  echo "$text" | jq -e '.[] | select(.scheme == "caldav") | .skipped_config | test("cg93-dup")' >/dev/null ||
-    fail "caldav's describe entry does not carry the skip error: $text"
-  echo "$text" | jq -e '[.[] | select(.scheme != "caldav") | has("skipped_config")] | any | not' >/dev/null ||
-    fail "a scheme whose section loaded carries skipped_config: $text"
+  echo "$text" | jq -e '.[] | select(.scheme == "caldav") | .skipped_accounts | any(.account == "cg93-dup" and (.error | test("duplicate name")))' >/dev/null ||
+    fail "caldav's describe entry does not name the skipped account: $text"
+  echo "$text" | jq -e '[.[] | select(.scheme == "caldav") | has("skipped_config")] | any | not' >/dev/null ||
+    fail "caldav's section loaded (only accounts were rejected) but carries skipped_config: $text"
+  echo "$text" | jq -e '[.[] | select(.scheme != "caldav") | (has("skipped_config") or has("skipped_accounts"))] | any | not' >/dev/null ||
+    fail "a scheme with no rejected account carries a skipped member: $text"
 }
 
 # Under CG_STRICT_CONFIG=1, a duplicate account name aborts with EX_USAGE

@@ -2,6 +2,7 @@ package org
 
 import (
 	"context"
+	"fmt"
 	"net/url"
 	"strings"
 	"time"
@@ -37,11 +38,14 @@ func decodeConfigSection(sub *cst.Value) error {
 	if err := config_common.DecodeAccountsSectionInto(&section, sub); err != nil {
 		return err
 	}
-	accounts, err := validateAccounts(section.Accounts)
-	if err != nil {
-		return err
+	// Each account is validated independently (cutting-garden#406): the valid
+	// ones are injected and each rejected one is reported by name, so one bad
+	// account no longer drops the others.
+	valid, rejected := validateEach(section.Accounts)
+	setConfiguredAccounts(valid)
+	if len(rejected) > 0 {
+		return &cutting_garden_plugins.PartialConfigError{Rejected: rejected}
 	}
-	setConfiguredAccounts(accounts)
 	return nil
 }
 
@@ -104,39 +108,88 @@ func validateAccounts(raw []config_common.Account) ([]account, error) {
 		}
 		seen[a.Name] = true
 
-		base, err := url.Parse(a.URL)
-		if err != nil || (base.Scheme != "http" && base.Scheme != "https") || base.Host == "" {
-			return nil, errors.BadRequestf(
-				"org.accounts[%q]: url %q is not an absolute http(s) WebDAV folder URL", a.Name, a.URL)
-		}
-		if base.Path == "" || base.Path[len(base.Path)-1] != '/' {
-			base.Path += "/"
-		}
-
-		keywords := orgtext.DefaultKeywords
-		if a.TodoKeywords != "" {
-			if keywords, err = orgtext.ParseKeywords(a.TodoKeywords); err != nil {
-				return nil, errors.BadRequestf("org.accounts[%q]: todo_keywords: %s", a.Name, err)
-			}
-		}
-
-		loc := time.Local
-		if a.Timezone != "" {
-			if loc, err = time.LoadLocation(a.Timezone); err != nil {
-				return nil, errors.BadRequestf("org.accounts[%q]: timezone %q: %s", a.Name, a.Timezone, err)
-			}
-		}
-
-		if err := a.ValidatePassword(); err != nil {
-			return nil, errors.BadRequestf("org.accounts[%q]: %s", a.Name, err)
-		}
-		tagFiles, err := validateTagFiles(a.TagFiles)
+		acct, err := validateAccount(a)
 		if err != nil {
-			return nil, errors.BadRequestf("org.accounts[%q]: %s", a.Name, err)
+			return nil, err
 		}
-		out = append(out, account{Account: a, base: base, keywords: keywords, loc: loc, tagFiles: tagFiles})
+		out = append(out, acct)
 	}
 	return out, nil
+}
+
+// validateEach validates every account on its own and returns the valid ones
+// and the rejected ones, each named (cutting-garden#406). An account whose
+// name another account shares is rejected along with every account sharing it:
+// neither can be picked safely. An account with no name is reported by its
+// position.
+func validateEach(raw []config_common.Account) (
+	valid []account, rejected []cutting_garden_plugins.RejectedAccount,
+) {
+	count := make(map[string]int, len(raw))
+	for _, a := range raw {
+		count[a.Name]++
+	}
+	for i, a := range raw {
+		switch {
+		case a.Name == "":
+			rejected = append(rejected, cutting_garden_plugins.RejectedAccount{
+				Name: fmt.Sprintf("accounts[%d]", i), Reason: "empty name",
+			})
+		case count[a.Name] > 1:
+			rejected = append(rejected, cutting_garden_plugins.RejectedAccount{
+				Name:   a.Name,
+				Reason: "duplicate name: every account sharing it is skipped",
+			})
+		default:
+			acct, err := validateAccount(a)
+			if err != nil {
+				rejected = append(rejected, cutting_garden_plugins.RejectedAccount{
+					Name: a.Name, Reason: err.Error(),
+				})
+				continue
+			}
+			valid = append(valid, acct)
+		}
+	}
+	return valid, rejected
+}
+
+// validateAccount checks one named account and builds its validated form:
+// everything about it but its name's uniqueness. validateAccounts and
+// validateEach share it so a whole-section check and an independent one cannot
+// drift.
+func validateAccount(a config_common.Account) (account, error) {
+	base, err := url.Parse(a.URL)
+	if err != nil || (base.Scheme != "http" && base.Scheme != "https") || base.Host == "" {
+		return account{}, errors.BadRequestf(
+			"org.accounts[%q]: url %q is not an absolute http(s) WebDAV folder URL", a.Name, a.URL)
+	}
+	if base.Path == "" || base.Path[len(base.Path)-1] != '/' {
+		base.Path += "/"
+	}
+
+	keywords := orgtext.DefaultKeywords
+	if a.TodoKeywords != "" {
+		if keywords, err = orgtext.ParseKeywords(a.TodoKeywords); err != nil {
+			return account{}, errors.BadRequestf("org.accounts[%q]: todo_keywords: %s", a.Name, err)
+		}
+	}
+
+	loc := time.Local
+	if a.Timezone != "" {
+		if loc, err = time.LoadLocation(a.Timezone); err != nil {
+			return account{}, errors.BadRequestf("org.accounts[%q]: timezone %q: %s", a.Name, a.Timezone, err)
+		}
+	}
+
+	if err := a.ValidatePassword(); err != nil {
+		return account{}, errors.BadRequestf("org.accounts[%q]: %s", a.Name, err)
+	}
+	tagFiles, err := validateTagFiles(a.TagFiles)
+	if err != nil {
+		return account{}, errors.BadRequestf("org.accounts[%q]: %s", a.Name, err)
+	}
+	return account{Account: a, base: base, keywords: keywords, loc: loc, tagFiles: tagFiles}, nil
 }
 
 // configuredAccounts is injected once at startup by the section decoder.

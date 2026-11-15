@@ -120,7 +120,9 @@ the same model. Consequences: a table no registered decoder claims is an ordinar
 unknown-key **warning**, not an error (a `[caldav]` table in a binary that
 never linked caldav is inert); a failing section decoder skips that section
 with a warning naming file, section and entry (`health` lists it;
-`CG_STRICT_CONFIG=1` makes it EX_USAGE, RFC 0007 item 5); and **decoding a
+`CG_STRICT_CONFIG=1` makes it EX_USAGE, RFC 0007 item 5), while a decoder that
+returns a `PartialConfigError` (every in-tree plugin) loads its valid accounts
+and names each rejected one (`account` member, RFC 0007 item 6); and **decoding a
 section injects it**, so a command
 must load the config once and thread the value rather than re-calling
 `LoadConfig`. Every plugin's section decoder shares ONE tommy schema,

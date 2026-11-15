@@ -124,11 +124,11 @@ function health_reports_configured_roots_per_plugin { # @test
   assert_line --regexp '^org +org://test/$'
 }
 
-# A plugin section that fails to load is skipped, not fatal (cutting-garden
-# #325): health still runs, names the section and its error, and the json
-# carries a trailing skipped_config line. CG_STRICT_CONFIG=1 keeps the old
-# fail-fast EX_USAGE for CI.
-function health_reports_a_skipped_config_section { # @test
+# A plugin account that fails validation is skipped, not fatal (cutting-garden
+# #325, #406): health still runs, names the section, the account and its
+# error, and the json carries a trailing skipped_config line with the account.
+# CG_STRICT_CONFIG=1 keeps the old fail-fast EX_USAGE for CI.
+function health_reports_a_skipped_config_account { # @test
   export XDG_CONFIG_HOME="$HOME/.config"
   mkdir -p "$XDG_CONFIG_HOME/cutting-garden"
   cat >"$XDG_CONFIG_HOME/cutting-garden/config.toml" <<-'EOF'
@@ -142,16 +142,16 @@ function health_reports_a_skipped_config_section { # @test
   run_cg health
   assert_success
   assert_output --partial 'skipped config sections:'
-  assert_output --partial 'caldav: '
+  assert_output --partial 'caldav account "broken"'
   assert_output --partial 'bogus'
 
   # stdout only: the skip warning goes to stderr.
   run_cg_stdout health -format json
   assert_success
-  echo "$stderr" | grep -q 'skipping \[caldav\]' ||
-    fail "stderr does not warn about the skipped section: $stderr"
-  run jq -rs 'map(select(has("skipped_config"))) | .[0].skipped_config | map(.section) | join(",")' <<<"$output"
-  assert_output caldav
+  echo "$stderr" | grep -q 'skipping account "broken" of \[caldav\]' ||
+    fail "stderr does not warn about the skipped account: $stderr"
+  run jq -rs 'map(select(has("skipped_config"))) | .[0].skipped_config | map(.section + "/" + .account) | join(",")' <<<"$output"
+  assert_output caldav/broken
 
   CG_STRICT_CONFIG=1 run_cg health
   assert_failure 64

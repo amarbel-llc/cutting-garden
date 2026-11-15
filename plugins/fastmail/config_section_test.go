@@ -1,11 +1,12 @@
 package fastmail
 
 import (
+	stderrors "errors"
 	"slices"
+	"strings"
 	"testing"
 
 	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
-	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 	"code.linenisgreat.com/tommy/pkg/cst"
 )
 
@@ -80,38 +81,95 @@ func TestSessionURLFor_DefaultsToFastmail(t *testing.T) {
 	}
 }
 
+// rejectedBy decodes body as a [fastmail] section and returns the accounts the
+// decoder rejected, failing the test if the error is not a PartialConfigError.
+func rejectedBy(t *testing.T, body string) []cutting_garden_plugins.RejectedAccount {
+	t.Helper()
+	err := decodeConfigSection(sectionModel(t, body))
+	if err == nil {
+		return nil
+	}
+	var partial *cutting_garden_plugins.PartialConfigError
+	if !stderrors.As(err, &partial) {
+		t.Fatalf("want a PartialConfigError, got %T: %v", err, err)
+	}
+	return partial.Rejected
+}
+
+func rejectedNames(rejected []cutting_garden_plugins.RejectedAccount) []string {
+	var names []string
+	for _, r := range rejected {
+		names = append(names, r.Name)
+	}
+	return names
+}
+
+func configuredNames() []string {
+	var names []string
+	for _, a := range configuredAccounts {
+		names = append(names, a.Name)
+	}
+	return names
+}
+
 func TestConfigSection_RejectsConflictingPasswordFields(t *testing.T) {
 	setAccounts(t)
-	err := decodeConfigSection(sectionModel(t, `
+	rejected := rejectedBy(t, `
 [[accounts]]
 name = "x"
 url = "fastmail://x/"
 password_env = "FOO"
 password_source = "env"
 password_key = "FOO"
-`))
-	if err == nil {
-		t.Fatal("want error: password_env conflicts with password_source/password_key")
-	}
-	if !errors.Is400BadRequest(err) {
-		t.Errorf("want EX_USAGE (400 bad request), got %v", err)
+`)
+	if len(rejected) != 1 || rejected[0].Name != "x" {
+		t.Fatalf("rejected = %+v, want x refused: password_env conflicts with password_source/password_key", rejected)
 	}
 }
 
 func TestConfigSection_ValidateFailureSurfaces(t *testing.T) {
 	setAccounts(t)
-	err := decodeConfigSection(sectionModel(t, `
+	rejected := rejectedBy(t, `
 [[accounts]]
 name = "x"
 url = "fastmail://y/"
-`))
-	if err == nil {
-		t.Fatal("want error for url host != account name")
-	}
-	if !errors.Is400BadRequest(err) {
-		t.Errorf("want EX_USAGE (400 bad request), got %v", err)
+`)
+	if len(rejected) != 1 || rejected[0].Name != "x" || !strings.Contains(rejected[0].Reason, "url host") {
+		t.Fatalf("rejected = %+v, want account x refused for its url host", rejected)
 	}
 	if len(configuredAccounts) != 0 {
-		t.Errorf("a rejected section must inject nothing, got %+v", configuredAccounts)
+		t.Errorf("a rejected account must not be injected, got %+v", configuredAccounts)
+	}
+}
+
+// One bad account must not drop the good one, and a duplicate name rejects
+// every account sharing it (cutting-garden#406).
+func TestConfigSection_OneBadAccountDoesNotDropTheGoodOne(t *testing.T) {
+	setAccounts(t)
+	rejected := rejectedBy(t, `
+[[accounts]]
+name = "good"
+url = "fastmail://good/"
+
+[[accounts]]
+name = "bad"
+url = "fastmail://elsewhere/"
+
+[[accounts]]
+name = "dup"
+url = "fastmail://dup/"
+
+[[accounts]]
+name = "dup"
+url = "fastmail://dup/"
+
+[[accounts]]
+url = "fastmail://nameless/"
+`)
+	if got := rejectedNames(rejected); !slices.Equal(got, []string{"bad", "dup", "dup", "accounts[4]"}) {
+		t.Errorf("rejected = %v, want bad, both dups and the nameless account by position", got)
+	}
+	if got := configuredNames(); !slices.Equal(got, []string{"good"}) {
+		t.Errorf("configured = %v, want only good", got)
 	}
 }
