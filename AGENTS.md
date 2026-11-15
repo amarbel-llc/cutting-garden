@@ -284,8 +284,8 @@ divergences from dodder are intentional carry-forwards.
   The race detector has its own lane: `checks.cutting-garden-godyn-tests-race`
   (`just test-go-race`, a `test` aggregate leaf; inner loop `just
   debug-test-pkg-race PKG [RUN]`) runs the packages that are concurrent by
-  design (`raceTestedPackages` in flake.nix: trellis_eval, the SDK, caldav, org,
-  ynab; add a plugin when it opts into `ConcurrentReader`). Measured on an idle
+  design (`raceTestedPackages` in flake.nix: config_common, trellis_eval, the SDK,
+  caldav, org, ynab; add a plugin when it opts into `ConcurrentReader`). Measured on an idle
   8-CPU host (2026-11-15): fully cached ~6 s (mostly nix eval); one package's
   tests edited ~13 s; a source edit in `internal/cutting_garden_plugins`, which
   every gated package imports, ~15 s. A cold run (empty store: race-instrumented

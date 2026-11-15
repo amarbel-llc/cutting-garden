@@ -693,9 +693,11 @@
 
         # The packages that run concurrently by design: the trellis evaluator
         # (its forEach fan-out, #313), the SDK's ConcurrentReader seam, and
-        # each plugin implementing ConcurrentReader. Add a plugin here when it
-        # opts in, so its overlapping calls are checked under -race.
+        # each plugin implementing ConcurrentReader, plus config_common, whose
+        # piggy decrypt is shared by concurrent waiters (#421). Add a plugin
+        # here when it opts in, so its overlapping calls are checked under -race.
         raceTestedPackages = [
+          "internal/config_common"
           "internal/trellis_eval"
           "internal/cutting_garden_plugins"
           "plugins/caldav"
