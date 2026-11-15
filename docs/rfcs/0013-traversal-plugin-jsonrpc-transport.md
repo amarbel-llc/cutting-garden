@@ -316,7 +316,8 @@ identically to absent).
 **FacetDimension**: `{ "key": string, "label": string?, "kind":
 "categorical"|"numeric-bucket"|"labelled", "multi": bool?, "values":
 [FacetValue]?, "revalidate_after_seconds": int?, "terminal_values":
-[string]?, "known_empty_values": bool? }` — `values` present ≙
+[string]?, "known_empty_values": bool?, "no_value_alias": string?,
+"alias_implies": [string]? }` — `values` present ≙
 a CLOSED domain (RFC 0012 §2). A closed domain MUST declare at least
 one value; a plugin MUST NOT emit an empty `values` array (on the wire
 it is indistinguishable from an open domain, so a zero-value closed
@@ -350,6 +351,21 @@ values — organize pre-renders them as empty target buckets. A plugin
 that emits such zeros for targeting MUST set it; a host MAY ignore
 zeros on an unflagged dimension (organize does not even fetch counts
 for one). Go peers advertise it automatically from `DescribeFacets`.
+`no_value_alias` (absent ≙ none) carries `FacetDimension.NoValueAlias`
+and `alias_implies` (absent ≙ none) carries `FacetDimension.AliasImplies`
+(RFC 0012 §2, No-value aliases): the value a valueless node of the type
+carries in its `facets`, and the values such a node also matches. A
+non-empty `alias_implies` requires a `no_value_alias`; when the dimension
+declares `values`, the alias and every implied value MUST be among them;
+each implied value MUST be a non-empty string listed once and differ from
+the alias. The host validates them at bring-up like `terminal_values`
+(a violation fails `initialize`, isolated to the plugin, naming plugin,
+type, dimension and value) and then honors them exactly as for a linked
+plugin: organize renders a node holding only the alias in the no-value
+section, and the host's filter and trellis matchers apply the implication.
+A peer whose own `facets.counts` evaluates a filter MUST apply the
+implication too. Go peers advertise both automatically from
+`DescribeFacets`.
 
 ```json
 { "key": "state", "label": "State", "kind": "categorical",
@@ -360,7 +376,10 @@ for one). Go peers advertise it automatically from `DescribeFacets`.
 **FacetSummary**: `{ "<dimension>": { "<value-key>": <int64 count> } }`.
 
 **FacetFilter**: `[ { "dimension": string, "value": string } ]`,
-AND-composed; the empty array matches everything.
+AND-composed; the empty array matches everything. It carries only the
+pushdown of a caller's one-step filter (RFC 0012 §6): positive equality,
+each dimension once. The rest of the step is matched by the host over the
+nodes a peer returns, so a peer is never sent alternatives or negation.
 
 ### Traversal — `nodes.list`, `roots.list`
 
@@ -1497,6 +1516,12 @@ driver emits every point, SKIPped or not, in a fixed order.
   means false (organize never fetches counts for the dimension's
   grouping); a host predating it ignores the member and shows no
   zero-count target buckets.
+- **`no_value_alias` / `alias_implies` (2026-11-15, cutting-garden#413)**
+  are additive likewise: absent means no alias (the prior behavior). A
+  host predating them sees the alias as an ordinary value (organize would
+  show a bucket named for it, and `status=needs-action` would not find a
+  node holding it); a peer that declares them owes the implication in its
+  own filtered `facets.counts`, if it filters there at all.
 
 ## References
 

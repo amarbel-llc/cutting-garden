@@ -191,6 +191,15 @@ type FacetDimension struct {
     // this dimension with count 0 meaning "exists, no child holds it"
     // — the opt-in for known-empty values (§3).
     KnownEmptyValues bool
+    // NoValueAlias, when non-empty, names the value a node of this type
+    // carries in Node.Facets when it has NO value for the dimension
+    // (caldav VTODO status "none", org's "none"). See "No-value aliases"
+    // below.
+    NoValueAlias string
+    // AliasImplies lists the values a node holding NoValueAlias also
+    // holds FOR MATCHING ONLY (caldav VTODO status: ["needs-action"],
+    // RFC 5545's default). MUST be empty when NoValueAlias is.
+    AliasImplies []string
 }
 
 // NodeTypeFacets binds dimensions to one node type.
@@ -226,6 +235,37 @@ MUST omit the values list for it rather than inventing one. This is the
 discoverability half of §6's filter-value validation — the two exist
 together so a rejected filter's error message and the schema a consumer
 would have consulted beforehand agree exactly (cutting-garden#161).
+
+**No-value aliases (cutting-garden#413).** A dimension MAY declare a
+`NoValueAlias`: the value a node carries when it has no value for the
+dimension. The alias is a real `FacetValue` — a plugin that declares one
+SHOULD put it in `Node.Facets` for every valueless node of the type, so
+counts (§3), filters (§6) and trellis queries (RFC 0014) all see the same
+membership and agree. Its meaning is fixed: a node holding the alias is in
+the dimension's **no-value** state, the same state RFC 0020 gives the
+no-value section. A consumer that partitions nodes by value (organize,
+RFC 0015) MUST therefore treat a node whose only value is the alias as
+valueless — it renders in the no-value section, never as a bucket named by
+the alias, and reading its live value for a write yields "no value" — so
+declaring an alias changes no document. Moving such a node into a bucket
+writes the field; moving a node into the no-value section is a clear,
+allowed only for a clearable write (RFC 0013 §Facet writes, `clearable`),
+exactly as without an alias. A
+closed dimension that declares an alias MUST list it in `Values`.
+
+A dimension with an alias MAY declare `AliasImplies`: values a node holding
+the alias is treated as also holding when a predicate is **matched** —
+never when counted (a summary counts the alias once, under its own key).
+The implication is per node type (it lives on the type's
+`NodeTypeFacets`), because its source is type-specific: RFC 5545 makes a
+VTODO's missing STATUS mean NEEDS-ACTION, and a VEVENT's missing STATUS
+means nothing. Every matcher MUST honor it identically — the host's
+`FacetFilter` match (§6), trellis's facet predicates, and a plugin's own
+pushdown when it evaluates a filter itself — so `status=needs-action` finds
+a statusless VTODO on every surface, and `status!=needs-action` /
+`^status=needs-action` exclude it. Each implied value MUST be a value of the
+dimension's domain (one of `Values` when closed). There is no default
+implication: a plugin declares one or has none.
 
 ### 3. The aggregate and its merge semantics
 
@@ -445,7 +485,70 @@ with `declined` and `reason`. **Compatibility.** Additive per § Compatibility:
 the zero value (nil) reproduces prior behavior, and a consumer that does not
 know it simply never sees the key.
 
-### 6. Filtering — a conjunction of equality predicates
+### 6. Filtering — one trellis step, split into a pushdown and a residual
+
+A filter, as a caller writes it (`filter=` on the mcp `read_facets` and
+`list_nodes` tools and the `mutate_nodes` sweep; `list --facets --filter`),
+is **one trellis step** (RFC 0014 §Step): space-separated terms, all of
+which must match. So it has `[a, b]` alternatives, `^` negation, the field
+operators (`=`, `!=`, `*=`, `~=`, …) and `!type`, but no combinator — a
+filter naming `->`, `<-` or a closure is a usage error, never a silently
+unfiltered result (cutting-garden#388). "The field is missing" needs no
+syntax of its own: `^status~=.` (no value matches anything) on a dimension
+without an alias, and `status=<alias>` on one with a no-value alias (§2),
+where a valueless node holds the alias.
+
+The host **splits** the step in two, and never drops a term:
+
+- the **pushdown** is the conjunction of the step's positive, single-value
+  `=` terms on declared facet dimensions, each dimension at most once
+  (a later term on an already-lowered dimension stays in the residual). It
+  is a `FacetFilter` (below) and goes to the plugin exactly as a filter
+  always has: to `FacetCounts`, to `ListEnriched`, or to the host's own
+  `Matches` over `Node.Facets`;
+- the **residual** is every other term. The host evaluates it with trellis
+  over each node the pushdown returned, through the same matcher a trellis
+  query uses, facet predicates included (so a no-value alias's implications,
+  §2, hold on both halves).
+
+A step with no residual behaves exactly as a filter did before, on every
+surface. With a residual:
+
+- a **listing** (`list_nodes`, §12.3) resolves the pushdown as always and
+  then keeps the nodes the residual matches;
+- a **summary** cannot be a plugin's one-shot count. The host computes it
+  as a fold (§4.2) whose per-node predicate is the whole step, reading each
+  container through its enriched listing under the pushdown (so the nodes
+  carry their facets), bounded and marked partial exactly as a fold is. Its
+  completeness is the listing's: where a plugin's listing covers less than
+  its count does (caldav's VEVENT listing is a date window, its count is
+  every event), the residual summary reports partial rather than claiming
+  the count's coverage;
+- a **sweep** (`mutate_nodes`) writes only nodes that matched the residual
+  as well as the pushdown, and the host re-checks both on the listed nodes
+  before writing, so a plugin's pushdown is never trusted to have applied a
+  term it was not sent.
+
+The extra listing is the cost of a residual, and it is paid per container:
+where a count was one plugin call, a residual summary reads every
+container's listing it folds over. A plugin that can answer richer
+predicates itself is the reserved extension below.
+
+**Pushdown extension point (reserved).** The split point is a property of
+the plugin, not of the grammar: today every plugin is lowered only
+positive single-value equality. A later revision MAY add an OPTIONAL
+capability by which a plugin declares further predicate shapes it can
+evaluate itself (value alternatives, negation, missing), and the host then
+lowers those too, shrinking the residual without changing any filter's
+meaning. `FacetFilter` stays the positive-equality pushdown; such a
+capability adds a new pushdown form rather than widening this one, so an
+existing plugin is never handed a predicate it does not understand.
+
+**Legacy form.** The comma-separated `dim=value,dim=value` spelling is
+accepted for one release as the same AND of equalities, with a
+deprecation notice on surfaces that can show one (the CLI's stderr); it is
+recognized as any filter containing a top-level comma, which no one-step
+trellis term has outside a `[…]` list.
 
 ```go
 // FacetPredicate is one equality constraint: a node matches when its
@@ -470,11 +573,19 @@ A read MAY carry a `FacetFilter`. Under it the framework MUST:
 A conjunction is REQUIRED (not a single predicate) because a plugin's facet
 axes may be independent rather than hierarchical: a flat corpus is filtered by
 `year=2026` AND `tag=rust` AND `status=unread` at once, which tree descent
-cannot express. Filtering is value **equality** only; ranges, disjunction, and
-negation are out of scope (compose successive reads). Repeating a dimension is
-RESERVED (a future within-axis "or"); until specified, a consumer MUST reject a
-filter that names the same dimension twice. A predicate naming an undeclared
-dimension MUST be rejected as a usage error.
+cannot express. The pushdown is value **equality** only; disjunction and
+negation reach a plugin only through the residual (above). A pushdown names
+each dimension at most once. A predicate naming an undeclared dimension MUST
+be rejected as a usage error; a residual term naming a field that is not a
+facet dimension is matched by trellis against the node's listing fields, as
+in a query.
+
+**No-value aliases in matching.** `Matches` honors a dimension's
+`AliasImplies` (§2) per node type: a node of type T holding T's alias for a
+dimension matches a predicate on that dimension as if it also held T's
+implied values. A matcher with no node type (`Matches(facets)` alone)
+treats the alias as a plain value; the type-aware match is the one a
+listing and a fold use.
 
 **Case folding.** A predicate against a dimension declaring `FoldCase` (§2)
 MUST compare case-insensitively — both sides folded — so `status=COMPLETED`
@@ -912,10 +1023,10 @@ derivation, for the identical reason plain level-scoping requires it.
 
 #### 12.3 Filter precedence for listings
 
-A listing consumer (the `mcp` `list_nodes` tool) accepts the SAME
-`FacetFilter` grammar §6 defines (`dimension=value[,dimension=value]…`,
-AND-composed) and resolves it in this order, mirroring §4–§5's
-capability-probe-with-honest-fallback pattern:
+A listing consumer (the `mcp` `list_nodes` tool) accepts the SAME filter
+§6 defines (one trellis step), resolves its pushdown in this order,
+mirroring §4–§5's capability-probe-with-honest-fallback pattern, and then
+matches the residual host-side over the result:
 
 1. **Plugin.** `lister.(EnrichedLister)`, when implemented: the plugin
    filters efficiently in its own fetch (a data-bearing REPORT, a backend
@@ -931,7 +1042,10 @@ capability-probe-with-honest-fallback pattern:
    fail-fast principle applied to listings, since (unlike a facet summary,
    which can degrade to a stale-but-labeled block) a listing has no
    equivalent "last known good filtered set" to degrade to — the honest
-   move is to say so, not to guess.
+   move is to say so, not to guess. The same holds for a residual: where
+   branch 3 applies, the nodes carry no facets to match a residual facet
+   term against (a negation would match every node), so the residual is
+   not applied either, and the whole filter is reported unapplied.
 
 A nil/empty filter always requests the full enriched listing (branch 1 when
 available; branches 2/3 are meaningless without a predicate to apply).
@@ -1311,7 +1425,9 @@ is the reference implementer).
 | §4.1, one-shot is authoritative | `mcp.bats` | a `FacetCounter` node returns counts without the framework enumerating children |
 | §5, partial marked | `list.bats` | a capped/bounded summary reports `Complete == false` and is shown partial |
 | §5.1, per-dimension gaps | unit tests (`plugins/ynab`, `plugins/fastmail`, `internal/cutting_garden_plugins`, `internal/traversal_serve`, `internal/mcp`, `internal/list`) | a capped dimension in an otherwise exact summary is named under `incomplete`, `complete` stays false, and the unnamed dimensions are exact; a summary partial for a reason that is not one dimension's names none; the gap survives the wire, `read_facets` (both paths) and `list --facets`; a claimed `complete` beside a gap, and a `declined` gap whose dimension is present, are read conservatively. No bats lane yet: the in-memory fixtures have too few payees or senders to hit a cap |
-| §6, conjunctive filter | `list.bats` | two `--filter` predicates narrow the listing and summary to their AND; a repeated/unknown dimension errors |
+| §6, conjunctive filter | `list.bats` | two `--filter` predicates narrow the listing and summary to their AND; an unknown dimension errors |
+| §6, one trellis step | `facet_filter_trellis.bats`; `internal/trellis_eval` unit tests | value alternatives, negation and missing (`status=none` on an aliased dimension) narrow `list_nodes`, `read_facets` and the sweep; a residual-bearing count equals the listing's size; the legacy comma form still ANDs and the CLI says it is deprecated; a multi-step filter is a usage error; the split lowers only positive single-value equality on declared dimensions |
+| §2, no-value alias and implication | `mcp.bats`; `organize.bats`; unit tests (`internal/cutting_garden_plugins`, `internal/trellis_eval`) | a statusless VTODO holds `status=none` and matches `status=needs-action` in `read_facets`, `list_nodes` and a trellis query alike, and `^status=needs-action` excludes it; counts count `none` once; organize still renders it in the no-value section; a VEVENT holding the alias implies nothing |
 | §3/§8, closed-domain zeros & suppression | `list.bats` | a closed dimension shows a `0` value and is not suppressed; an open constant dimension is suppressed |
 | §7/§9, label failure non-fatal | `mcp.bats` | a labelled dimension with a failing resolver renders keys and the read still succeeds |
 
@@ -1373,6 +1489,18 @@ and nil-filter-cached paths).
   `ByContainerTruncated` are new fields whose zero values (nil, false)
   reproduce every prior `FacetResult` byte-for-byte; `FacetContainerBreakdown`
   is a wholly new type. No existing method signature changes.
+- **§6's one-step filter is a superset, with one deprecation.** Every
+  filter that was valid before is a valid one-step filter with the same
+  meaning, except the comma-joined form, which stays accepted (and ANDed)
+  for one release with a deprecation notice. `FacetFilter` and every
+  plugin-facing signature are unchanged: a plugin is still handed only
+  positive equality, so no plugin changes. The repeated-dimension rejection
+  is gone: a second term on one dimension now goes to the residual.
+- **§2's `NoValueAlias` / `AliasImplies` are additive.** Zero values (empty)
+  reproduce prior behavior. A plugin that adopts an alias changes what its
+  nodes carry in `Node.Facets` (the alias appears where nothing did), so a
+  consumer that does not know the declaration sees an ordinary value; the
+  in-tree consumers honor it (organize's no-value section, the matchers).
 
 ## References
 
