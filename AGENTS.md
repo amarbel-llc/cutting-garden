@@ -279,6 +279,16 @@ divergences from dodder are intentional carry-forwards.
   and rewrites go.nix. One package's tests: `just debug-test-pkg
   internal/command TestUtility_Run_DispatchesToRegisteredCmd` (godyn-test; a
   NEW file needs `git add -N` first). gopls and dlv are unsupported.
+  The race detector has its own lane: `checks.cutting-garden-godyn-tests-race`
+  (`just test-go-race`, a `test` aggregate leaf; inner loop `just
+  debug-test-pkg-race PKG [RUN]`) runs the packages that are concurrent by
+  design (`raceTestedPackages` in flake.nix: trellis_eval, the SDK, caldav, org,
+  ynab; add a plugin when it opts into `ConcurrentReader`). Measured on an idle
+  8-CPU host (2026-11-15): fully cached ~6 s (mostly nix eval); one package's
+  tests edited ~13 s; a source edit in `internal/cutting_garden_plugins`, which
+  every gated package imports, ~15 s. A cold run (empty store: race-instrumented
+  stdlib and every dependency compiled with `-race`) is NOT measured: it needs
+  the race derivations evicted from the store, which this host does not do.
 - `just codemod-fmt` formats the tree via `conformist` (goimports→gofumpt,
   nixfmt, shfmt) + lints (shellcheck) + the eng-convention linters. conformist
   is consumed as a **nix module** (`conformist.lib.evalModule`): the config is
