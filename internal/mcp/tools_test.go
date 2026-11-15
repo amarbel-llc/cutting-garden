@@ -600,7 +600,40 @@ type describingCreator struct{ *fakeCreator }
 func (describingCreator) DescribeBodies() []cutting_garden_plugins.NodeTypeBody {
 	return []cutting_garden_plugins.NodeTypeBody{
 		{Tag: "named-v1"},
-		{Tag: "assigned-v1", ServerAssignedIdentity: true},
+		{
+			Tag: "assigned-v1", ServerAssignedIdentity: true,
+			CreateIn: "a widget node, faketest://h/<WIDGET>",
+		},
+		{Tag: "assigned-nohint-v1", ServerAssignedIdentity: true},
+	}
+}
+
+// The refusal of a caller-chosen id for a server-assigned type says which
+// container the create goes under (cutting-garden#181): the plugin's own hint
+// when it declares one, a generic pointer when it does not.
+func TestMutateNodes_ServerAssignedRefusalNamesTheContainer(t *testing.T) {
+	for name, testCase := range map[string]struct{ typeTag, want string }{
+		"with a hint":    {"assigned-v1", "a widget node, faketest://h/<WIDGET>"},
+		"without a hint": {"assigned-nohint-v1", "never the new node's own URI"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := describingCreator{&fakeCreator{}}
+			tools := newFakeTools(t, &c.fakeMutator, "faketest://h/")
+			tools.resolve = fakeMutatorResolve(c)
+			tools.resolveLister = fakeListerResolve(c)
+
+			res := callMutate(t, tools,
+				`"ops":[{"kind":"create","id":"x.ics","type":"`+testCase.typeTag+`","body":"b"}]`)
+			if !res.IsError {
+				t.Fatalf("a caller-chosen id for %s must be refused", testCase.typeTag)
+			}
+			text := res.Content[0].Text
+			for _, want := range []string{"temp id (+name)", "the group's anchor, or the op's in", testCase.want} {
+				if !strings.Contains(text, want) {
+					t.Errorf("refusal %q does not contain %q", text, want)
+				}
+			}
+		})
 	}
 }
 
@@ -684,7 +717,44 @@ func (fakeSchemaPlugin) DescribeBodies() []cutting_garden_plugins.NodeTypeBody {
 		Tag:     "test-object-v1",
 		Accepts: []string{"text/calendar (raw)", "application/json (object)"},
 		Example: map[string]any{"summary": "example"},
+		// A server-assigned type with a container hint rides the schema as
+		// createIn (cutting-garden#181).
+		ServerAssignedIdentity: true,
+		CreateIn:               "a calendar node, faketest://h/<CAL>",
 	}}
+}
+
+// describe_node_types carries a server-assigned type's createIn, and omits it
+// for a type that declares none (cutting-garden#181).
+func TestCollectSchema_CarriesCreateIn(t *testing.T) {
+	schemas := collectSchema([]cutting_garden_plugins.Plugin{fakeSchemaPlugin{}}, "")
+	var body *bodySchema
+	for _, ts := range schemas[0].Types {
+		if ts.Tag == "test-object-v1" {
+			body = ts.Body
+		}
+	}
+	if body == nil || !body.ServerAssignedIdentity || body.CreateIn != "a calendar node, faketest://h/<CAL>" {
+		t.Fatalf("object body = %+v, want serverAssignedIdentity with its createIn", body)
+	}
+	encoded, err := json.Marshal(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded["createIn"] != "a calendar node, faketest://h/<CAL>" {
+		t.Errorf("body JSON createIn = %v, want the plugin's hint: %s", decoded["createIn"], encoded)
+	}
+	encoded, err = json.Marshal(bodySchema{Accepts: []string{"x"}, ServerAssignedIdentity: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "createIn") {
+		t.Errorf("a type with no hint carries createIn: %s", encoded)
+	}
 }
 
 func TestCollectSchema_TypesAndWritability(t *testing.T) {

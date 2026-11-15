@@ -190,6 +190,8 @@ func (Plugin) DescribeBodies() []cutting_garden_plugins.NodeTypeBody {
 		},
 		Example:                map[string]any{fieldPatchState: "DONE", fieldPatchScheduled: "2026-10-20"},
 		ServerAssignedIdentity: true,
+		CreateIn: "an .org file node (a level-1 headline, added at its end) or a headline node" +
+			" (its last child), as the op's in or the group's anchor",
 	}}
 }
 

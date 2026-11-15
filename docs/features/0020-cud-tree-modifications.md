@@ -285,7 +285,14 @@ A plugin declares which types are created this way via
 dispatches on that declaration (the `uri` argument is then the
 CONTAINER) and reports the created URI in its result. The container
 param is fully generic — under the roots-as-nodes direction (FDR 0022)
-a root itself is a valid container. On the RFC 0013 wire this is
+a root itself is a valid container. A plugin SHOULD also say, in words, which
+container such a type goes under (`NodeTypeBody.CreateIn`, e.g. jira's "a
+project node, jira://<host>/<PROJECT>"; cutting-garden#181): describe_node_types
+carries it as `body.createIn`, and the refusal of a caller-chosen id for the
+type repeats it (mutate_nodes: the container is the group's anchor or an op's
+`in`). An out-of-process plugin cannot declare it yet (the RFC 0013
+`node_types` body has no member for it), so its refusal falls back to generic
+wording. On the RFC 0013 wire this is
 `node.create_child`, gated on the `container-create` token.
 
 **Shared convention:** identity-affecting operations report the node's

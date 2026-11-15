@@ -39,6 +39,8 @@ func (Plugin) DescribeBodies() []cutting_garden_plugins.NodeTypeBody {
 					" status is applied via the workflow transition API",
 			},
 			ServerAssignedIdentity: true,
+			CreateIn: "a Jira project node, jira://<host>/<PROJECT> (set it as the group's anchor" +
+				" or the op's in); not the bare host root, and not an issue",
 			Example: map[string]any{
 				"issuetype":   "Task",
 				"summary":     "Investigate flaky test",

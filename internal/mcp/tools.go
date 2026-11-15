@@ -186,7 +186,8 @@ func readToolDefs() []protocol.ToolV1 {
 				"interpreter ordering them), " +
 				"and, for writable types, the body payload mutate_nodes' create and " +
 				"put ops accept, with a concrete example (serverAssignedIdentity " +
-				"marks a type the source names: create it with a +temp id). " +
+				"marks a type the source names: create it with a +temp id, in the " +
+				"container its createIn names, as the group anchor or an op's in). " +
 				"The full reply is large: pass scheme and/or type to get just one " +
 				"scheme's or one node type's entry. " +
 				"Read-only; call it first to learn a type tag, body shape, and " +
@@ -1033,6 +1034,10 @@ type bodySchema struct {
 	Accepts                []string `json:"accepts"`
 	Example                any      `json:"example,omitempty"`
 	ServerAssignedIdentity bool     `json:"serverAssignedIdentity,omitempty"`
+	// CreateIn, for a server-assigned type, says which container the create
+	// goes under (the group's anchor or an op's in), when the plugin says
+	// (cutting-garden#181).
+	CreateIn string `json:"createIn,omitempty"`
 }
 
 // facetDimSchema describes one declared facet dimension of a node type, for
@@ -1221,6 +1226,7 @@ func collectSchema(
 					Accepts:                b.Accepts,
 					Example:                b.Example,
 					ServerAssignedIdentity: b.ServerAssignedIdentity,
+					CreateIn:               b.CreateIn,
 				}
 			}
 			if dims, ok := facets[nt.Tag]; ok {

@@ -35,7 +35,7 @@ const mutateNodesSchema = `{"type":"object","required":["groups"],"properties":{
 	`"id":{"type":"string","description":"the node, as the id organize and list -format espalier print for it under the anchor (e.g. task1.ics, T1, _inbox.org?id=… under the org:// folder anchor; under a file anchor id=… or the same _inbox.org?id=…), or a full URI under the anchor. On a create, a temp id (+name, +\"name\", or bare +) asks the source to name the node; later ops in the group address it as +name"},` +
 	`"in":{"type":"string","description":"temp-id creates only: the container to create in, as an id under the anchor or an earlier +name; default the anchor itself"},` +
 	`"body":{"type":"string","description":"the create/put/patch body as a STRING (omit for delete, unless describe_node_types says the type's delete takes options, e.g. org's {\"subtree\": true}; a source whose delete takes none refuses a body): JSON-encode a JSON body into it, or pass raw text for a raw-format type (caldav iCalendar). describe_node_types lists what each type accepts"},` +
-	`"type":{"type":"string","description":"creates only: the node type tag, e.g. caldav-object-vtodo-v1; checked against describe_node_types (a type the source names, like a jira issue, needs a temp id)"}}}},` +
+	`"type":{"type":"string","description":"creates only: the node type tag, e.g. caldav-object-vtodo-v1; checked against describe_node_types (a type the source names, like a jira issue, needs a temp id and the container it belongs under, given as the group anchor or in; describe_node_types' createIn says which)"}}}},` +
 	`"sweep":{"type":"object","required":["op"],"description":"apply one op to every node under the anchor that matches filter. Exactly ONE of ops or sweep.","properties":{` +
 	`"filter":{"type":"string","description":"one trellis step, as for list_nodes' filter (e.g. \"read=unread\", \"^status=completed\"); empty matches every node under the anchor. A term beyond plain dimension=value is matched by the host, which then writes the matched nodes as an explicit changeset"},` +
 	`"op":{"type":"object","required":["kind"],"properties":{` +
@@ -391,7 +391,9 @@ func (g *mutateGroup) checkCreateType(i int, typeTag string, isTemp bool) error 
 		if body.ServerAssignedIdentity && !isTemp {
 			return errors.BadRequestf(
 				"mutate_nodes: ops[%d]: the source names %s nodes; create it"+
-					" with a temp id (+name) instead of an id", i, typeTag,
+					" with a temp id (+name) instead of an id, in the container it"+
+					" belongs under (the group's anchor, or the op's in): %s",
+				i, typeTag, createInHint(body),
 			)
 		}
 		return nil
@@ -401,6 +403,17 @@ func (g *mutateGroup) checkCreateType(i int, typeTag string, isTemp bool) error 
 		"mutate_nodes: ops[%d]: type %q is not creatable here (writable"+
 			" types: %s)", i, typeTag, strings.Join(writable, ", "),
 	)
+}
+
+// createInHint names the container a server-assigned type is created under:
+// the plugin's own hint when it declares one, else a pointer to
+// describe_node_types, which carries it as createIn when there is one.
+func createInHint(body cutting_garden_plugins.NodeTypeBody) string {
+	if body.CreateIn != "" {
+		return body.CreateIn
+	}
+	return "a container of the source, never the new node's own URI (describe_node_types lists" +
+		" the writable types; this source does not say which container)"
 }
 
 // setContainer fills a temp-id create's container: the anchor by default,

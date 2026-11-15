@@ -23,6 +23,13 @@ type NodeTypeBody struct {
 	// rather than CreateNode's caller-names-the-URI form. The mcp
 	// mutate_nodes tool creates such a type with a temp id (BulkOp.TempID).
 	ServerAssignedIdentity bool
+	// CreateIn says, for a ServerAssignedIdentity type, which container the
+	// create goes under, human-readable and naming the URI shape (e.g. "a
+	// project node, jira://<host>/<PROJECT>"): a caller that creates the type
+	// without a temp id, or does not know where to put it, is told this
+	// (cutting-garden#181). The container is the mutate_nodes group's anchor,
+	// or an op's `in`. Empty when the plugin offers no hint.
+	CreateIn string
 }
 
 // BodyDescriber is the OPTIONAL capability a write-capable plugin implements
