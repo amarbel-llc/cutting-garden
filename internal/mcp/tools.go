@@ -275,7 +275,11 @@ func readToolDefs() []protocol.ToolV1 {
 				"describe_node_types FIRST to see each type's declared dimensions " +
 				"and, for closed ones, their complete valid values — an undeclared " +
 				"dimension or an out-of-domain value is a rejected, actionable " +
-				"error, not a silent empty result. Errors when the URI's scheme " +
+				"error, not a silent empty result. For a dimension whose values " +
+				"are opaque keys (e.g. a feed id), the result also carries " +
+				"facetsLabelled: {dimension: [{key, label, count}]}, ordered by " +
+				"count, with the label omitted for a key that has none; facets " +
+				"and labels stay as they are. Errors when the URI's scheme " +
 				"declares no facets.",
 			InputSchema: json.RawMessage(readFacetsSchema),
 			Annotations: annotationFor(mcp_tool_perms.ToolReadFacets),

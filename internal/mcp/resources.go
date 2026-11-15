@@ -605,6 +605,21 @@ type facetView struct {
 	// consumer falls back to the key). Presentation-only and non-fatal —
 	// resolution failure omits labels, never fails the read (§7, §9).
 	Labels map[string]map[string]string `json:"labels,omitempty"`
+	// FacetsLabelled is the same labelled dimensions as Labels, joined with
+	// their counts so a consumer reads {key, label, count} rows without a
+	// second lookup (RFC 0012 §7, cutting-garden#174): {dimension: rows},
+	// each dimension's rows ordered by count descending then key. It is
+	// additive: Facets and Labels are unchanged, and a key with no resolved
+	// label keeps its row with the label omitted. Present exactly when
+	// Labels is.
+	FacetsLabelled map[string][]facetLabelledRow `json:"facetsLabelled,omitempty"`
+}
+
+// facetLabelledRow is one value of a labelled dimension in FacetsLabelled.
+type facetLabelledRow struct {
+	Key   string `json:"key"`
+	Label string `json:"label,omitempty"`
+	Count int64  `json:"count"`
 }
 
 // facetContent serves a container's hoisted facet summary as a facet

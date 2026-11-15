@@ -40,6 +40,7 @@ func attachLabels(
 
 	labelled := labelledDimensionKeys(describer)
 	var labels map[string]map[string]string
+	var joined map[string][]facetLabelledRow
 	for dim, hist := range view.Facets {
 		if !labelled[dim] {
 			continue
@@ -67,8 +68,32 @@ func attachLabels(
 			labels = map[string]map[string]string{}
 		}
 		labels[dim] = dimLabels
+		if joined == nil {
+			joined = map[string][]facetLabelledRow{}
+		}
+		joined[dim] = labelledRows(hist, dimLabels)
 	}
 	view.Labels = labels
+	view.FacetsLabelled = joined
+}
+
+// labelledRows joins a dimension's histogram with its resolved labels into
+// {key, label, count} rows ordered by count descending, then key.
+func labelledRows(
+	hist cutting_garden_plugins.FacetHistogram,
+	labels map[string]string,
+) []facetLabelledRow {
+	rows := make([]facetLabelledRow, 0, len(hist))
+	for k, n := range hist {
+		rows = append(rows, facetLabelledRow{Key: k, Label: labels[k], Count: n})
+	}
+	sort.Slice(rows, func(i, j int) bool {
+		if rows[i].Count != rows[j].Count {
+			return rows[i].Count > rows[j].Count
+		}
+		return rows[i].Key < rows[j].Key
+	})
+	return rows
 }
 
 // labelledDimensionKeys collects the dimension keys a plugin declares

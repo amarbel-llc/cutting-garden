@@ -664,6 +664,17 @@ NOT abort the read (§9). This separation keeps merge associative and prevents
 the failure mode where a label is taken from the wrong record — e.g. labelling
 a feed bucket with the newest story's title instead of the feed's name.
 
+**Served shape (MCP host).** The host serves the resolved labels twice, both
+additive and presentation-only: `labels: {dimension: {key: label}}` (a side
+map beside `facets`) and `facetsLabelled: {dimension: [{key, label, count}]}`
+(cutting-garden#174), the labelled dimension's histogram joined with its
+labels so a consumer reads one row per value. Rows are ordered by `count`
+descending, then `key`; a key with no label keeps its row with `label`
+omitted. Both appear only for a `FacetLabelled` dimension whose labels
+resolved, and `facets` itself is never altered. Folding the label and count
+into `facets` itself (`{key: {count, label}}`) is a deliberate later
+schema/protocol bump, not part of this shape.
+
 ### 8. Bounds, suppression, truncation
 
 - **Fold bound.** The framework MUST bound a framework fold (§4.2) by a
