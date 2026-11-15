@@ -215,9 +215,13 @@ func (a Account) Password() (string, error) {
 // long-lived `cg mcp` would otherwise run one card decrypt per call, hundreds
 // for one trellis query. The secret is held in this process's memory only:
 // never written to disk, never logged, gone when the process exits. A failed
-// decrypt is not remembered, so the next call tries again. Each key has its
-// own lock, held across its decrypt, so concurrent first calls for one key
-// decrypt once, and a slow decrypt of one key never blocks another.
+// decrypt is not remembered, so the next call tries again. Concurrent first
+// calls for one key share ONE decrypt, whichever way it ends
+// (cutting-garden#421): every caller that was waiting on it gets its password
+// or its failure, so a decrypt that fails (a card the user must touch, a
+// locked agent) is not repeated once per waiter, each making the user fail
+// again in turn. Only a call that starts after the decrypt has ended retries.
+// A slow decrypt of one key never blocks another.
 //
 // Only the pkgs/config_common copy of this package runs in a binary (every
 // caller of Password is a plugin, and plugins import pkgs/), so a process has
@@ -225,37 +229,56 @@ func (a Account) Password() (string, error) {
 var (
 	piggyPasswordsMu sync.Mutex
 	piggyPasswords   = map[string]string{}
-	piggyKeyLocks    = map[string]*sync.Mutex{}
+	piggyCalls       = map[string]*piggyCall{}
 )
 
+// piggyCall is one decrypt in progress; its waiters read password and err
+// after done closes.
+type piggyCall struct {
+	done     chan struct{}
+	password string
+	err      error
+}
+
 // rememberedPiggyPassword is piggyPassShow, decrypting each key once per
-// process.
+// process and sharing an in-flight decrypt's result with its waiters.
 func rememberedPiggyPassword(key string) (string, error) {
 	piggyPasswordsMu.Lock()
-	keyLock, ok := piggyKeyLocks[key]
-	if !ok {
-		keyLock = &sync.Mutex{}
-		piggyKeyLocks[key] = keyLock
-	}
-	piggyPasswordsMu.Unlock()
-
-	keyLock.Lock()
-	defer keyLock.Unlock()
-
-	piggyPasswordsMu.Lock()
-	password, ok := piggyPasswords[key]
-	piggyPasswordsMu.Unlock()
-	if ok {
+	if password, ok := piggyPasswords[key]; ok {
+		piggyPasswordsMu.Unlock()
 		return password, nil
 	}
-	password, err := piggyPassShow(key)
-	if err != nil {
-		return "", err
+	if call, ok := piggyCalls[key]; ok {
+		piggyPasswordsMu.Unlock()
+		<-call.done
+		return call.password, call.err
 	}
-	piggyPasswordsMu.Lock()
-	piggyPasswords[key] = password
+	call := &piggyCall{done: make(chan struct{})}
+	piggyCalls[key] = call
 	piggyPasswordsMu.Unlock()
-	return password, nil
+
+	call.password, call.err = piggyPassShowGuarded(key)
+
+	piggyPasswordsMu.Lock()
+	if call.err == nil {
+		piggyPasswords[key] = call.password
+	}
+	delete(piggyCalls, key)
+	piggyPasswordsMu.Unlock()
+	close(call.done)
+	return call.password, call.err
+}
+
+// piggyPassShowGuarded is piggyPassShow that turns a panic into an error, so a
+// panicking decrypt cannot leave its waiters blocked forever on a call that
+// never ends.
+func piggyPassShowGuarded(key string) (password string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			password, err = "", fmt.Errorf("config_common: piggy pass show %q panicked: %v", key, r)
+		}
+	}()
+	return piggyPassShow(key)
 }
 
 // piggyStderrTailBytes caps how much of `piggy pass show`'s stderr is

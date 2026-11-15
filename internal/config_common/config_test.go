@@ -331,6 +331,54 @@ func TestAccount_Password_Piggy_FailureIsNotRemembered(t *testing.T) {
 	}
 }
 
+// A burst of concurrent first calls for one entry whose decrypt FAILS runs one
+// decrypt, and every caller that waited on it gets that failure
+// (cutting-garden#421): a decrypt waits on a card the user may have to touch,
+// so N waiters must not each make the user fail N more times in a row.
+func TestAccount_Password_Piggy_ConcurrentFailureIsSharedWithWaiters(t *testing.T) {
+	t.Cleanup(forgetPiggyPasswords)
+	dir := t.TempDir()
+	count := dir + "/calls"
+	script := "#!/bin/sh\necho call >> " + shellQuote(count) + "\nsleep 0.3\nprintf 'card not present\\n' >&2\nexit 1\n"
+	if err := os.WriteFile(dir+"/piggy", []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
+
+	a := Account{PasswordSource: "piggy", PasswordKey: "cutting-garden/shared-failure"}
+	const callers = 8
+	errs := make([]error, callers)
+	var wg sync.WaitGroup
+	for i := 0; i < callers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, errs[i] = a.Password()
+		}()
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		if err == nil || !strings.Contains(err.Error(), "card not present") {
+			t.Errorf("caller %d: error = %v, want the shared decrypt failure", i, err)
+		}
+	}
+	calls, _ := os.ReadFile(count)
+	if n := strings.Count(string(calls), "call"); n != 1 {
+		t.Errorf("piggy pass show ran %d times for %d concurrent callers of a failing entry, want 1", n, callers)
+	}
+
+	// The failure is shared only with those who waited; a later call decrypts
+	// afresh (FailureIsNotRemembered).
+	if _, err := a.Password(); err == nil {
+		t.Error("a later call must retry, and the stub still fails")
+	}
+	calls, _ = os.ReadFile(count)
+	if n := strings.Count(string(calls), "call"); n != 2 {
+		t.Errorf("piggy pass show ran %d times after a later call, want 2 (the later call retries)", n)
+	}
+}
+
 // forgetPiggyPasswords drops every remembered piggy password, so each test
 // starts with none.
 func forgetPiggyPasswords() {
