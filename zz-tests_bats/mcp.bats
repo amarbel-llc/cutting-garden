@@ -74,11 +74,11 @@ function mcp_read_facets { # @test
     fail "filtered read_facets not reported fresh: $text"
 }
 
-# A VTODO with no STATUS (RFC 5545's default is NEEDS-ACTION) counts as status
-# `none`, and caldav's own filter matches it for status=none and for
-# status=needs-action, so open work is not undercounted (cutting-garden#382
-# item 1, option D-a). The seeded Personal tasks carry no STATUS. The node's
-# facets stay without a status, so organize is unchanged.
+# A VTODO with no STATUS (RFC 5545's default is NEEDS-ACTION) carries caldav's
+# no-value alias `none`, counted once, and matches status=none and
+# status=needs-action on every surface: read_facets, list_nodes filter= and a
+# trellis query alike (cutting-garden#413, D-b). The seeded Personal tasks
+# carry no STATUS; describe_node_types names the alias.
 function mcp_status_filter_counts_a_task_with_no_status { # @test
   mcp_drive "$CALDAV_SOURCE" "$(tools_call 3 read_facets \
     "$(jq -nc --arg u "$(caldav_cal_uri)" '{uri:$u,filter:"component=VTODO"}')")"
@@ -92,12 +92,22 @@ function mcp_status_filter_counts_a_task_with_no_status { # @test
       '["task1.ics","task2.ics"]'
   done
 
-  # The pinned gap: trellis matches predicates against the node's own facets,
-  # which carry no status, so a trellis status predicate does not see these
-  # tasks yet (cutting-garden#413).
+  local query
+  for query in 'status=needs-action' 'status=none'; do
+    mcp_drive "$CALDAV_SOURCE" "$(tools_call 3 list_nodes \
+      "$(jq -nc --arg u "$(caldav_cal_uri)" --arg q "!caldav-object-vtodo-v1 $query" '{uri:$u,query:$q}')")"
+    assert_equal "$(mcp_result_text "$output" 3 | jq -c '[.nodes[].uri | split("/") | last] | sort')" \
+      '["task1.ics","task2.ics"]'
+  done
   mcp_drive "$CALDAV_SOURCE" "$(tools_call 3 list_nodes \
-    "$(jq -nc --arg u "$(caldav_cal_uri)" '{uri:$u,query:"!caldav-object-vtodo-v1 status=needs-action"}')")"
+    "$(jq -nc --arg u "$(caldav_cal_uri)" '{uri:$u,query:"!caldav-object-vtodo-v1 ^status=needs-action"}')")"
   assert_equal "$(mcp_result_text "$output" 3 | jq -c '[.nodes[].uri]')" '[]'
+
+  mcp_drive "$CALDAV_SOURCE" "$(tools_call 3 describe_node_types '{"scheme":"caldav","type":"caldav-object-vtodo-v1"}')"
+  mcp_result_text "$output" 3 | jq -e '
+    [.. | objects | select(.key? == "status" and .noValueAlias? == "none"
+      and .aliasImplies? == ["needs-action"])] | length >= 1' >/dev/null ||
+    fail "describe_node_types does not name the VTODO status alias: $(mcp_result_text "$output" 3)"
 }
 
 # describe_node_types reports caldav's node types and which are writable, with

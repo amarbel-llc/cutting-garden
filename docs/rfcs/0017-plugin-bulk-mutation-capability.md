@@ -298,6 +298,13 @@ the same atomicity and result-reporting machinery:
   apply node-by-node cannot, which is exactly why `bulk-atomic` is a
   separately advertised, OPTIONAL token (§Atomicity semantics) rather
   than an automatic consequence of implementing `BulkMutator`.
+  The one exception is a caller's filter with a host-side residual (RFC
+  0012 §6, cutting-garden#388): a plugin is sent only the pushdown and
+  cannot evaluate the rest, so the host resolves such a sweep itself —
+  listing under the pushdown through `ListEnriched`, re-checking both
+  halves, refusing on a decline — and sends the plugin the explicit
+  changeset of the nodes it matched. Atomicity is then the changeset's,
+  not the sweep's.
   `BulkSweep.Filter`'s validation (conjunctive AND, reject a repeated or
   undeclared dimension) is RFC 0012 §6 reused verbatim — this RFC
   defines no new filter grammar. A sweep matching zero nodes is NOT an

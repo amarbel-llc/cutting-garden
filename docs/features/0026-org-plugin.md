@@ -382,7 +382,10 @@ server.
    cookies, and a new planning line is written unindented. 3b (landed):
    organize writes for the same fields, declared once in the unified
    codecs. State, priority and the dates are headings (a move writes them;
-   `none`, or the no-value section for a date, clears); priority and the
+   the no-value section clears). A missing keyword, priority or date band
+   is the no-value alias `none` (RFC 0012 §2, cutting-garden#413): counted
+   and filterable as `none`, shown in the no-value section, never as a
+   `=none` bucket, so state and priority writes are clearable; priority and the
    dates are also box atoms, the title is the writable trailer, and the
    tag atoms write the own tags: organize hands over the new effective
    set, and dropping an inherited tag is refused, naming it. A month or

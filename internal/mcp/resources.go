@@ -13,6 +13,7 @@ import (
 	"code.linenisgreat.com/cutting-garden/internal/command_components"
 	"code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
 	"code.linenisgreat.com/cutting-garden/internal/node_view"
+	"code.linenisgreat.com/cutting-garden/internal/trellis_eval"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 	"code.linenisgreat.com/purse-first/libs/go-mcp/protocol"
 	"code.linenisgreat.com/purse-first/libs/go-mcp/server"
@@ -713,6 +714,51 @@ func (r *Resources) ReadFacets(
 		ByContainerTruncated: result.ByContainerTruncated,
 		ComputedAt:           time.Now().UTC().Format(time.RFC3339),
 		Freshness:            freshnessFresh,
+	}
+	attachLabels(ctx, lister, view)
+	return view, nil
+}
+
+// ReadFacetsFiltered is ReadFacets for a caller's one-step filter (the
+// read_facets tool, RFC 0012 §6, cutting-garden#388). A filter that is all
+// pushdown (or empty) is exactly ReadFacets. One with a residual cannot be
+// the plugin's one-shot count: it is a fold over the container listings
+// under the pushdown, lifting the nodes both halves match, as complete as
+// those listings are — so its count equals list_nodes' matching set for the
+// same filter.
+func (r *Resources) ReadFacetsFiltered(
+	ctx context.Context, uri, rawFilter, tagsOverride string,
+) (*facetView, error) {
+	u, lister, err := r.resolve(uri)
+	if err != nil {
+		return nil, errors.Wrapf(err, "read facets %s", uri)
+	}
+	pushdown, residual, err := splitFilterFor(rawFilter, lister)
+	if err != nil {
+		return nil, errors.Wrapf(err, "read_facets %s", uri)
+	}
+	if residual.Empty() {
+		return r.ReadFacets(ctx, uri, pushdown)
+	}
+	if !cutting_garden_plugins.CanSummarizeFacets(lister) {
+		return nil, errors.ErrorWithStackf(
+			"read_facets %s: facets are not available for scheme %q", uri, u.Scheme)
+	}
+	result, ok, err := trellis_eval.FacetCounts(ctx, lister, u, pushdown, residual,
+		trellis_eval.WithTagsInterpreter(tagsOverride))
+	if err != nil {
+		return nil, errors.Wrapf(err, "read facets %s (filtered)", uri)
+	}
+	if !ok {
+		return nil, errors.ErrorWithStackf("read_facets %s: no facet summary available at this node", uri)
+	}
+	result = result.Normalized()
+	view := &facetView{
+		Facets:     result.Summary,
+		Complete:   result.Complete,
+		Incomplete: result.Incomplete,
+		ComputedAt: time.Now().UTC().Format(time.RFC3339),
+		Freshness:  freshnessFresh,
 	}
 	attachLabels(ctx, lister, view)
 	return view, nil

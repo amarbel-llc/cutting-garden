@@ -124,6 +124,11 @@ type UnifiedField struct {
 	// known-empty values (mirrors FacetDimension.KnownEmptyValues, which it
 	// derives; RFC 0012 §3, forge organize F3).
 	KnownEmptyValues bool
+	// NoValueAlias and AliasImplies mirror the FacetDimension members they
+	// derive (RFC 0012 §2 No-value aliases, cutting-garden#413): the value a
+	// valueless node carries, and the values it also matches.
+	NoValueAlias string
+	AliasImplies []string
 	// WriteValues, when non-empty, is the ordered write-side convenience list for a
 	// groupable+writable field: the target buckets organize pre-renders as headings
 	// (mirrors FacetWrite.Values, which it derives). Independent of Values — a field

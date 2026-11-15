@@ -95,7 +95,8 @@ const instructions = "Resources are the capturable trees of cutting-garden " +
 	"is also exposed as tools (for clients that render only tools): " +
 	"list_nodes browses children (omit the uri for the entry points; " +
 	"optional limit/offset page a large listing; pass filter to narrow " +
-	"the returned nodes to those matching a dimension=value predicate — " +
+	"the returned nodes to those matching a one-step predicate such as " +
+	"status=needs-action or ^status=completed — " +
 	"the direct way to RETRIEVE a matching set, not just count it; pass " +
 	"bare=true to opt out of enrichment back to the cheap " +
 	"{uri,name,type,container,mimeType} shape), read_node reads one " +

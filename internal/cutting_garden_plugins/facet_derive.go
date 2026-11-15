@@ -78,6 +78,8 @@ func DeriveFacetDimensions(codecs []Codec) []FacetDimension {
 				TerminalValues:   f.TerminalValues,
 				KnownEmptyValues: f.KnownEmptyValues,
 				RevalidateAfter:  f.RevalidateAfter,
+				NoValueAlias:     f.NoValueAlias,
+				AliasImplies:     f.AliasImplies,
 			})
 		}
 	}

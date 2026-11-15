@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
+	"code.linenisgreat.com/cutting-garden/internal/trellis_eval"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 )
 
@@ -372,12 +373,16 @@ func TestCallTool_ListNodesFilterHonestlyUnfiltered(t *testing.T) {
 
 // A listing whose filter applied carries no hint.
 func TestCallTool_ListNodesFilterAppliedHasNoHint(t *testing.T) {
-	if hint := unappliedFilterHint("faketest://h/", nil); hint != "" {
+	if hint := unappliedFilterHint("faketest://h/", nil, trellis_eval.Residual{}); hint != "" {
 		t.Errorf("hint for an empty filter = %q, want none", hint)
 	}
 	filter, _ := cutting_garden_plugins.ParseFacetFilter("summary=a b,status=x")
-	if hint := unappliedFilterHint("faketest://h/", filter); !strings.Contains(hint, `->> summary="a b" status=x`) {
+	if hint := unappliedFilterHint("faketest://h/", filter, trellis_eval.Residual{}); !strings.Contains(hint, `->> summary="a b" status=x`) {
 		t.Errorf("hint %q does not quote a value with a space", hint)
+	}
+	_, residual, _, _ := trellis_eval.SplitFilter("status=x ^done=yes", nil)
+	if hint := unappliedFilterHint("faketest://h/", filter[1:], residual); !strings.Contains(hint, "->> status=x ^done=yes") {
+		t.Errorf("hint %q does not carry the residual", hint)
 	}
 }
 

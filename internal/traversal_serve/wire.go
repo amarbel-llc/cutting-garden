@@ -1070,6 +1070,11 @@ type FacetDimensionView struct {
 	RevalidateAfterSeconds int64            `json:"revalidate_after_seconds,omitempty"`
 	TerminalValues         []string         `json:"terminal_values,omitempty"`
 	KnownEmptyValues       bool             `json:"known_empty_values,omitempty"`
+	// NoValueAlias / AliasImplies carry the dimension's no-value alias and
+	// its implied values (RFC 0012 §2, cutting-garden#413), validated at
+	// bring-up by ValidateNoValueAliasDeclaration.
+	NoValueAlias string   `json:"no_value_alias,omitempty"`
+	AliasImplies []string `json:"alias_implies,omitempty"`
 }
 
 // FacetDimensionViewFrom projects a declared dimension onto the wire.
@@ -1086,6 +1091,8 @@ func FacetDimensionViewFrom(
 		RevalidateAfterSeconds: int64(dimension.RevalidateAfter / time.Second),
 		TerminalValues:         nilIfEmpty(slices.Clone(dimension.TerminalValues)),
 		KnownEmptyValues:       dimension.KnownEmptyValues,
+		NoValueAlias:           dimension.NoValueAlias,
+		AliasImplies:           nilIfEmpty(slices.Clone(dimension.AliasImplies)),
 	}
 }
 
@@ -1102,7 +1109,20 @@ func (v FacetDimensionView) ToFacetDimension() cutting_garden_plugins.FacetDimen
 		RevalidateAfter:  time.Duration(v.RevalidateAfterSeconds) * time.Second,
 		TerminalValues:   nilIfEmpty(slices.Clone(v.TerminalValues)),
 		KnownEmptyValues: v.KnownEmptyValues,
+		NoValueAlias:     v.NoValueAlias,
+		AliasImplies:     nilIfEmpty(slices.Clone(v.AliasImplies)),
 	}
+}
+
+// ValidateNoValueAliasDeclaration is the host's bring-up check of the facet
+// dimensions' no_value_alias / alias_implies (RFC 0013 §Wire encodings),
+// the same rules a linked plugin's declaration obeys.
+func ValidateNoValueAliasDeclaration(init InitializeResult) error {
+	types := make([]cutting_garden_plugins.NodeTypeFacets, len(init.Facets))
+	for i, facets := range init.Facets {
+		types[i] = facets.ToNodeTypeFacets()
+	}
+	return cutting_garden_plugins.ValidateNoValueAliases(types)
 }
 
 // ValidateTerminalValuesDeclaration is the host's bring-up check of every

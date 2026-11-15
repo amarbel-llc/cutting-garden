@@ -429,6 +429,12 @@ type FieldValue = internal.FieldValue
 // writable-but-applier-less plugin loudly rather than guessing the patch shape.
 type FieldWriteApplier = internal.FieldWriteApplier
 
+// FoldListing lists one container's children for FoldFacetsMatching.
+// complete is false when the listing is known to cover less than the
+// container holds (a date-windowed listing, a capped one); the summary is
+// then marked partial.
+type FoldListing = internal.FoldListing
+
 // IdempotentCreator is the OPTIONAL keyed sibling of ContainerCreator: create
 // a child under container from body, carrying the creation's idempotency key.
 // A repeated call with the same key MUST NOT create a duplicate: the plugin
@@ -493,6 +499,13 @@ type ListingFieldsDescriber = internal.ListingFieldsDescriber
 // FacetWriteApplier. A plugin returns the finished patch body, so the organize
 // apply engine stays free of the substrate's patch shape (RFC 0009 no-inversion).
 type MembershipWriteApplier = internal.MembershipWriteApplier
+
+// NoValueAliases indexes a plugin's declared no-value aliases (RFC 0012 §2,
+// cutting-garden#413) by node type and dimension key: the one place every
+// matcher (FacetFilter.MatchesNode, a plugin's own pushdown, trellis) and every
+// value-partitioning consumer (organize) reads them, so they agree. The zero
+// value declares nothing and changes nothing.
+type NoValueAliases = internal.NoValueAliases
 
 // Node is one addressable point in a RootLister plugin's capturable
 // tree, as returned by ListRoots.
@@ -1032,6 +1045,14 @@ var FindFacetDimension = internal.FindFacetDimension
 // and no walk is made.
 var FoldFacets = internal.FoldFacets
 
+// FoldFacetsMatching is the framework fold with the caller's listing and
+// per-node match: the summary of a filter whose host-side residual a plugin's
+// one-shot count cannot answer (RFC 0012 §6). It walks, bounds and lifts
+// exactly as FoldFacets does; a node that does not match is not lifted, and
+// containers are descended whether or not they match. ok is false when the
+// lister declares no facet dimension.
+var FoldFacetsMatching = internal.FoldFacetsMatching
+
 // IgnoredPatchFields returns the keys of fields outside supported, sorted:
 // the fields a patch tolerates but does not apply, which a plugin reports as
 // PatchDetail.Ignored (cutting-garden#376). nil when there are none.
@@ -1094,6 +1115,14 @@ var MustRegisterRestore = internal.MustRegisterRestore
 // here; MustRegisterScheme is the discovery path for a plugin that
 // implements none of those directions (RFC 0005, RFC 0009 §3).
 var MustRegisterScheme = internal.MustRegisterScheme
+
+// NoValueAliasesFor probes lister's FacetDescriber; a plugin without one
+// declares no aliases.
+var NoValueAliasesFor = internal.NoValueAliasesFor
+
+// NoValueAliasesOf indexes the dimensions of types that declare a no-value
+// alias.
+var NoValueAliasesOf = internal.NoValueAliasesOf
 
 // NodeTypeFor resolves a Node.Type tag against the plugin's declared
 // Types() — the one lookup every traversal consumer performs. ok is
@@ -1351,6 +1380,13 @@ var ValidateFilterFor = internal.ValidateFilterFor
 // ValidateListingFieldSets checks a listing declaration's per-type invariants:
 // at most one Name field per node type, naming both keys when it declares two.
 var ValidateListingFieldSets = internal.ValidateListingFieldSets
+
+// ValidateNoValueAliases checks the no-value alias declarations of types: an
+// implication needs an alias; on a CLOSED dimension the alias and every
+// implied value are declared values; an implied value is non-empty, listed
+// once, and not the alias itself. Linked plugins are checked by a unit test
+// against their DescribeFacets; a wire plugin at bring-up.
+var ValidateNoValueAliases = internal.ValidateNoValueAliases
 
 // ValidateUnifiedFieldSets checks a unified declaration's cross-codec
 // invariants that no single codec can see: at most one FieldTag field per node

@@ -30,8 +30,9 @@ const (
 	fieldName          = "name"
 	fieldBody          = "body"
 
-	// valueNone is the known-empty value for a headline without a keyword,
-	// priority, or date (RFC 0012 §3).
+	// valueNone is the no-value alias of a headline without a keyword,
+	// priority, or date (RFC 0012 §2, cutting-garden#413): counted and
+	// filterable as `none`, shown by organize in the no-value section.
 	valueNone = "none"
 )
 

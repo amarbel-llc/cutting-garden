@@ -29,6 +29,7 @@ func unifiedFieldSets() []cutting_garden_plugins.NodeTypeUnifiedFields {
 			Groupable:       true,
 			Values:          values,
 			RevalidateAfter: bandRevalidate,
+			NoValueAlias:    valueNone,
 		}}
 	}
 	date := func(key, label string) cutting_garden_plugins.Codec {
@@ -48,16 +49,18 @@ func unifiedFieldSets() []cutting_garden_plugins.NodeTypeUnifiedFields {
 				Writable:       true,
 				TerminalValues: allDoneKeywords(),
 				WriteValues:    allKeywords(),
-				CompletionHint: "entering or leaving a done keyword adds or removes CLOSED; none clears",
+				CompletionHint: "entering or leaving a done keyword adds or removes CLOSED; the no-value section clears",
+				NoValueAlias:   valueNone,
 			}},
 			tagsCodec{},
 			headlineFieldCodec{field: cutting_garden_plugins.UnifiedField{
 				Key: fieldPriority, Label: "Priority",
-				Kind:        cutting_garden_plugins.FieldCategorical,
-				Groupable:   true,
-				Inline:      true,
-				Writable:    true,
-				WriteValues: []string{"A", "B", "C"},
+				Kind:         cutting_garden_plugins.FieldCategorical,
+				Groupable:    true,
+				Inline:       true,
+				Writable:     true,
+				WriteValues:  []string{"A", "B", "C"},
+				NoValueAlias: valueNone,
 			}},
 			date(fieldScheduled, "Scheduled"),
 			date(fieldDeadline, "Deadline"),
@@ -94,15 +97,17 @@ func (Plugin) DescribeFacets() []cutting_garden_plugins.NodeTypeFacets {
 	return cutting_garden_plugins.DeriveNodeTypeFacets(unifiedFieldSets())
 }
 
-// DescribeFacetWrites derives the organize write mappings. A date a
-// headline lacks has no bucket, so moving a headline into the no-value
-// section clears that date: the date writes are clearable. State and
-// priority carry an explicit "none" bucket instead.
+// DescribeFacetWrites derives the organize write mappings. Moving a headline
+// into the no-value section clears the field, so every write that can be
+// absent is clearable: a date a headline lacks has no bucket, and a missing
+// keyword or priority is the no-value alias "none" (cutting-garden#413),
+// which organize shows in the no-value section rather than as a bucket.
 func (Plugin) DescribeFacetWrites() []cutting_garden_plugins.NodeTypeFacetWrites {
 	writes := cutting_garden_plugins.DeriveNodeTypeFacetWrites(unifiedFieldSets())
 	for i := range writes {
 		for j, w := range writes[i].Writes {
-			if w.DimensionKey == fieldScheduled || w.DimensionKey == fieldDeadline {
+			switch w.DimensionKey {
+			case fieldScheduled, fieldDeadline, fieldState, fieldPriority:
 				writes[i].Writes[j].Clearable = true
 			}
 		}

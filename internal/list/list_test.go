@@ -221,14 +221,14 @@ func TestRunFacets_FilterValidateGate(t *testing.T) {
 
 	bad := newWithOutput(io.Discard)
 	bad.Filter = "date_x=bogus"
-	err := bad.runFacets(ctx, "facettest://h/dav/")
+	err := bad.runFacets(ctx, "", "facettest://h/dav/")
 	if err == nil || !strings.Contains(err.Error(), "not a date bucket") {
 		t.Fatalf("malformed date filter: want a date-bucket rejection, got %v", err)
 	}
 
 	good := newWithOutput(io.Discard)
 	good.Filter = "date_x=2026"
-	if err := good.runFacets(ctx, "facettest://h/dav/"); err != nil {
+	if err := good.runFacets(ctx, "", "facettest://h/dav/"); err != nil {
 		t.Fatalf("valid date filter: want nil, got %v", err)
 	}
 }

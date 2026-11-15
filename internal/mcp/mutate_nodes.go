@@ -12,6 +12,7 @@ import (
 	"code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
 	"code.linenisgreat.com/cutting-garden/internal/mcp_tool_perms"
 	"code.linenisgreat.com/cutting-garden/internal/node_view"
+	"code.linenisgreat.com/cutting-garden/internal/trellis_eval"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 	"code.linenisgreat.com/purse-first/libs/go-mcp/protocol"
 )
@@ -36,7 +37,7 @@ const mutateNodesSchema = `{"type":"object","required":["groups"],"properties":{
 	`"body":{"type":"string","description":"the create/put/patch body as a STRING (omit for delete, unless describe_node_types says the type's delete takes options, e.g. org's {\"subtree\": true}; a source whose delete takes none refuses a body): JSON-encode a JSON body into it, or pass raw text for a raw-format type (caldav iCalendar). describe_node_types lists what each type accepts"},` +
 	`"type":{"type":"string","description":"creates only: the node type tag, e.g. caldav-object-vtodo-v1; checked against describe_node_types (a type the source names, like a jira issue, needs a temp id)"}}}},` +
 	`"sweep":{"type":"object","required":["op"],"description":"apply one op to every node under the anchor that matches filter. Exactly ONE of ops or sweep.","properties":{` +
-	`"filter":{"type":"string","description":"comma-separated dimension=value predicates (AND-composed), as for list_nodes; empty matches every node under the anchor"},` +
+	`"filter":{"type":"string","description":"one trellis step, as for list_nodes' filter (e.g. \"read=unread\", \"^status=completed\"); empty matches every node under the anchor. A term beyond plain dimension=value is matched by the host, which then writes the matched nodes as an explicit changeset"},` +
 	`"op":{"type":"object","required":["kind"],"properties":{` +
 	`"kind":{"type":"string","enum":["put","patch","delete"]},` +
 	`"body":{"type":"string"}}}}}}}}}}`
@@ -145,6 +146,9 @@ type mutateGroup struct {
 	req      cutting_garden_plugins.BulkRequest
 	idOf     map[string]string // node URI → the id the caller sent
 	spelling map[string]string // temp key → the caller's spelling
+	// residual is the sweep filter's host-side remainder (RFC 0012 §6); when
+	// non-empty the host resolves the sweep itself (resolveResidualSweep).
+	residual trellis_eval.Residual
 }
 
 func (t *Tools) callMutateNodes(
@@ -272,13 +276,11 @@ func (t *Tools) buildMutateGroup(in mutateGroupInput) (*mutateGroup, error) {
 				"mutate_nodes: a group takes exactly one of ops or sweep",
 			)
 		}
-		filter, err := cutting_garden_plugins.ParseFacetFilter(in.Sweep.Filter)
+		filter, residual, err := splitFilterFor(in.Sweep.Filter, lister)
 		if err != nil {
-			return nil, err
-		}
-		if err := cutting_garden_plugins.ValidateFilterFor(filter, lister); err != nil {
 			return nil, errors.BadRequestf("mutate_nodes: sweep filter: %s", err)
 		}
+		group.residual = residual
 		group.req.Sweep = &cutting_garden_plugins.BulkSweep{
 			Root:   anchorURL,
 			Filter: filter,
@@ -474,6 +476,15 @@ func (t *Tools) dispatchMutateGroup(
 	var result cutting_garden_plugins.BulkResult
 	var err error
 
+	if g.req.Sweep != nil && !g.residual.Empty() {
+		if err := t.resolveResidualSweep(ctx, g); err != nil {
+			return result, err
+		}
+		if len(g.req.Ops) == 0 {
+			return result, nil
+		}
+	}
+
 	if bulk := t.bulkMutatorFor(g.anchor); bulk != nil {
 		result, err = bulk.BulkMutate(ctx, g.req)
 	} else {
@@ -502,6 +513,53 @@ func (t *Tools) dispatchMutateGroup(
 		)
 	}
 	return result, err
+}
+
+// resolveResidualSweep turns a sweep whose filter has a residual into the
+// explicit changeset of the nodes it matches (RFC 0012 §6). A plugin is sent
+// only the pushdown, so it cannot be trusted to enumerate the match set: the
+// host lists under the pushdown, re-checks both halves on every listed node,
+// and writes only those. As for any sweep, a plugin without an enriched
+// listing, or one that declines at this level, is refused rather than widened
+// to every child. This is the one case RFC 0017 §Selection's "the plugin owns
+// the enumeration" does not cover: the plugin cannot evaluate the residual.
+func (t *Tools) resolveResidualSweep(ctx context.Context, g *mutateGroup) error {
+	sweep := g.req.Sweep
+	enriched, ok := g.lister.(cutting_garden_plugins.EnrichedLister)
+	if !ok {
+		return errors.BadRequestf(
+			"mutate_nodes: the plugin for %q cannot sweep (it has no filtered listing); send ops instead",
+			g.anchor)
+	}
+	listed, handled, err := enriched.ListEnriched(ctx, sweep.Root, sweep.Filter)
+	if err != nil {
+		return err
+	}
+	if !handled {
+		return errors.BadRequestf(
+			"mutate_nodes: cannot sweep %q: the enriched listing declined at this level"+
+				" (its children are containers) — sweep each child container instead", sweep.Root)
+	}
+	aliases := cutting_garden_plugins.NoValueAliasesFor(g.lister)
+	match := g.residual.Matcher(g.lister, sweep.Root, trellis_eval.WithTagsInterpreter(t.tagsOverride))
+	var ops []cutting_garden_plugins.BulkOp
+	for _, n := range listed {
+		if n.URI == nil || !sweep.Filter.MatchesNode(aliases, n.Type, n.Facets) {
+			continue
+		}
+		matched, err := match(ctx, n)
+		if err != nil {
+			return err
+		}
+		if matched {
+			op := sweep.Op
+			op.URI = n.URI
+			ops = append(ops, op)
+		}
+	}
+	g.req.Sweep = nil
+	g.req.Ops = ops
+	return nil
 }
 
 // sourceForgetter is the read surface's memo, dropped after a write so the

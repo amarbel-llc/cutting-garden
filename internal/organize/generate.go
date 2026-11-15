@@ -615,10 +615,16 @@ func namespaceSections(buckets []bucket, baseDepth int) []section {
 // writableBuckets returns the plugin's declared target buckets for the grouped
 // dimension on node type tag (FacetWrite.Values) — the values organize
 // pre-renders as empty buckets. nil for a plugin without the write capability or
-// one declaring no values for the dimension.
+// one declaring no values for the dimension. The type's no-value alias for dim
+// is never a bucket (RFC 0012 §2): a node holding it renders in the no-value
+// section, so its value is not pre-rendered as a heading.
 func writableBuckets(lister cgp.RootLister, tag, dim string) []string {
 	w, _ := facetWriteFor(lister, tag, dim)
-	return w.Values
+	alias := cgp.NoValueAliasesFor(lister)[tag][dim].NoValueAlias
+	if alias == "" {
+		return w.Values
+	}
+	return slices.DeleteFunc(slices.Clone(w.Values), func(v string) bool { return v == alias })
 }
 
 // facetWriteFor returns node type tag's declared write for dimension dim, ok

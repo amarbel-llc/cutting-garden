@@ -2,7 +2,6 @@ package caldav
 
 import (
 	"context"
-	"maps"
 	"math"
 	"net/url"
 	"sort"
@@ -277,66 +276,37 @@ func (c *client) foldCalendarFacets(
 		}
 		for _, res := range resources {
 			facets := objectFacets(res.data)
-			if facets == nil || !filter.Matches(filterFacets(facets)) {
+			if !matchesObject(filter, component, facets) {
 				continue
 			}
-			liftFacets(summary, countedFacets(facets))
+			liftFacets(summary, facets)
 			matched++
 		}
 	}
 	return matched, nil
 }
 
-// statusNone is the status value a VTODO with no STATUS counts under
-// (cutting-garden#382 item 1, option D-a). RFC 5545 makes such a task
-// NEEDS-ACTION, so caldav's filter also matches it for status=needs-action.
-// Neither value enters the node's own facets: organize groups by those, and
-// keeps a statusless task in the dimension's no-value section (RFC 0020). The
-// framework-wide form of this rule, which trellis would also see, is
-// cutting-garden#413.
+// statusNone is the no-value alias of a VTODO's status (RFC 0012 §2,
+// cutting-garden#413): a task with no STATUS carries it in its own facets, so
+// the status buckets sum to the VTODO count, and it implies needs-action (RFC
+// 5545's default) for matching. organize still shows such a task in the
+// status no-value section, never under `=none`.
 const statusNone = "none"
 
-// statuslessTask reports a VTODO whose facets carry no status.
-func statuslessTask(facets map[string][]cutting_garden_plugins.FacetValue) bool {
-	component := facets[facetComponent]
-	return len(component) == 1 && component[0].Key == "VTODO" && len(facets[facetStatus]) == 0
-}
+// statusAliases is caldav's declared no-value aliases, for its own filter
+// pushdown (FacetFilter.MatchesNode), so it matches exactly as the host does.
+var statusAliases = sync.OnceValue(func() cutting_garden_plugins.NoValueAliases {
+	return cutting_garden_plugins.NoValueAliasesOf(Plugin{}.DescribeFacets())
+})
 
-// withStatus returns facets with the status dimension set to keys, leaving
-// facets itself untouched.
-func withStatus(
-	facets map[string][]cutting_garden_plugins.FacetValue, keys ...string,
-) map[string][]cutting_garden_plugins.FacetValue {
-	out := maps.Clone(facets)
-	values := make([]cutting_garden_plugins.FacetValue, len(keys))
-	for i, key := range keys {
-		values[i] = cutting_garden_plugins.FacetValue{Key: key}
-	}
-	out[facetStatus] = values
-	return out
-}
-
-// countedFacets is an object's facets as FacetCounts lifts them: a statusless
-// VTODO counts as status `none`, so the status buckets sum to the VTODO count.
-func countedFacets(
+// matchesObject is caldav's pushdown of filter onto the facets of one object
+// of component.
+func matchesObject(
+	filter cutting_garden_plugins.FacetFilter,
+	component string,
 	facets map[string][]cutting_garden_plugins.FacetValue,
-) map[string][]cutting_garden_plugins.FacetValue {
-	if !statuslessTask(facets) {
-		return facets
-	}
-	return withStatus(facets, statusNone)
-}
-
-// filterFacets is an object's facets as caldav's own filter matches them: a
-// statusless VTODO holds both `none` and needs-action, so status=none and
-// status=needs-action each find it and open work is not undercounted.
-func filterFacets(
-	facets map[string][]cutting_garden_plugins.FacetValue,
-) map[string][]cutting_garden_plugins.FacetValue {
-	if !statuslessTask(facets) {
-		return facets
-	}
-	return withStatus(facets, statusNone, "needs-action")
+) bool {
+	return facets != nil && filter.MatchesNode(statusAliases(), objectType(component), facets)
 }
 
 // objectFacets parses one iCalendar object and projects its facet values.
@@ -388,6 +358,11 @@ func facetsFromView(view objectView) map[string][]cutting_garden_plugins.FacetVa
 	// filters, and queries all see the same spelling the box atoms present.
 	// The stored value stays canonical uppercase; only this projection folds.
 	status = strings.ToLower(status)
+	if status == "" && view.Task != nil {
+		// A statusless task carries its no-value alias (unified.go), so counts,
+		// filters and trellis queries all see it (cutting-garden#413).
+		status = statusNone
+	}
 	if status != "" {
 		facets[facetStatus] = []cutting_garden_plugins.FacetValue{{Key: status}}
 	}

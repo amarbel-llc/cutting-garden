@@ -225,6 +225,7 @@ func (w *WirePlugin) liveSession() (*Session, error) {
 		ValidateFacetWriteDeclaration,
 		ValidatePresentationDeclaration,
 		ValidateTerminalValuesDeclaration,
+		ValidateNoValueAliasDeclaration,
 		ValidateCreationDeclaration,
 	} {
 		if err := validate(sess.Init); err != nil {

@@ -503,6 +503,31 @@ func TestValidateTerminalValuesDeclaration(t *testing.T) {
 	}
 }
 
+// no_value_alias / alias_implies round-trip the wire and are validated at
+// bring-up like terminal_values (cutting-garden#413).
+func TestNoValueAliasWire(t *testing.T) {
+	dim := cutting_garden_plugins.FacetDimension{
+		Key: "status", Kind: cutting_garden_plugins.FacetCategorical,
+		NoValueAlias: "none", AliasImplies: []string{"needs-action"},
+	}
+	if got := FacetDimensionViewFrom(dim).ToFacetDimension(); !reflect.DeepEqual(got, dim) {
+		t.Errorf("round trip = %+v, want %+v", got, dim)
+	}
+
+	bad := InitializeResult{Facets: []NodeTypeFacetsView{{
+		Tag: "fj-issue-v1",
+		Dimensions: []FacetDimensionView{{
+			Key: "state", Kind: "categorical",
+			Values:       []FacetValueView{{Key: "open"}},
+			NoValueAlias: "none",
+		}},
+	}}}
+	err := ValidateNoValueAliasDeclaration(bad)
+	if want := `no-value alias: type "fj-issue-v1" dimension "state" alias "none" is not one of the dimension's declared values`; err == nil || err.Error() != want {
+		t.Errorf("error = %v, want %q", err, want)
+	}
+}
+
 func TestNodeTypeFacetsViewRoundTrip(t *testing.T) {
 	declared := cutting_garden_plugins.NodeTypeFacets{
 		Tag: "fj-issue-v1",

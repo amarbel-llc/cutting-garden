@@ -26,6 +26,20 @@ func selectNodes(
 	query string,
 	tagsOverride string,
 ) ([]cgp.Node, error) {
+	nodes, err := selectMatching(ctx, lister, anchor, query, tagsOverride)
+	if err != nil {
+		return nil, err
+	}
+	return withoutNoValueAliases(lister, nodes), nil
+}
+
+func selectMatching(
+	ctx context.Context,
+	lister cgp.RootLister,
+	anchor *url.URL,
+	query string,
+	tagsOverride string,
+) ([]cgp.Node, error) {
 	if query != "" {
 		q, perr := trellis.Parse(query)
 		if perr != nil {
@@ -44,4 +58,21 @@ func selectNodes(
 	// listEnriched mirrors it so the no-query path enriches identically to
 	// the query path.
 	return node_view.ListEnrichedChildren(ctx, lister, anchor)
+}
+
+// withoutNoValueAliases drops, from each selected node's facets, a dimension
+// whose only value is its type's no-value alias (RFC 0012 §2): selection has
+// already matched on the alias, and from here on organize partitions by value,
+// so such a node belongs to the dimension's no-value section — never a bucket
+// named for the alias — and reads as valueless when apply diffs it. That keeps
+// a plugin's adoption of an alias from changing any document.
+func withoutNoValueAliases(lister cgp.RootLister, nodes []cgp.Node) []cgp.Node {
+	aliases := cgp.NoValueAliasesFor(lister)
+	if len(aliases) == 0 {
+		return nodes
+	}
+	for i := range nodes {
+		nodes[i].Facets = aliases.WithoutAliases(nodes[i].Type, nodes[i].Facets)
+	}
+	return nodes
 }

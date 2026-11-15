@@ -563,6 +563,11 @@ var ValidateCreationDeclaration = internal.ValidateCreationDeclaration
 // requires the mutate capability (node.patch is how it lands).
 var ValidateFacetWriteDeclaration = internal.ValidateFacetWriteDeclaration
 
+// ValidateNoValueAliasDeclaration is the host's bring-up check of the facet
+// dimensions' no_value_alias / alias_implies (RFC 0013 §Wire encodings),
+// the same rules a linked plugin's declaration obeys.
+var ValidateNoValueAliasDeclaration = internal.ValidateNoValueAliasDeclaration
+
 // ValidatePresentationDeclaration is the host's bring-up check of the
 // presentation members of an initialize result's node_types entries
 // (exported for the conformance driver and a Go peer's own tests). A tag_set

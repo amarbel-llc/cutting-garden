@@ -59,8 +59,8 @@ type List struct {
 	// Facets, when set, prints the node's hoisted facet summary (via the
 	// plugin's FacetCounter) instead of its child listing (RFC 0012, FDR 0021).
 	Facets bool
-	// Filter is an optional comma-separated set of dimension=value predicates,
-	// AND-composed, that narrows a --facets summary.
+	// Filter is an optional one-step trellis filter (RFC 0012 §6) narrowing a
+	// --facets summary.
 	Filter string
 	// Query, when set, is a trellis query (RFC 0014) evaluated against the
 	// <uri>'s subtree: the listing becomes the query's matched nodes rather
@@ -120,7 +120,8 @@ func (cmd *List) SetFlagDefinitions(flagSet interfaces.CLIFlagDefinitions) {
 		&cmd.Filter,
 		"filter",
 		"",
-		"comma-separated dimension=value predicates (AND-composed) narrowing --facets",
+		"one trellis step narrowing --facets: space-separated terms, all must match "+
+			"(e.g. 'status=[needs-action, in-process] ^priority=3_unspecified')",
 	)
 	flagSet.StringVar(
 		&cmd.Query,
@@ -194,12 +195,11 @@ func (cmd *List) Run(req command.Request) {
 			"too many positional arguments; list takes at most one (<uri>), "+
 				"trailing: %v", args[1:])
 	default:
-		// Only the listing path consults config (for the `[tags]` override);
-		// a facet summary is computed purely from the plugin's declared
-		// schema, so runFacets takes no cfg.
+		// A facet summary consults config only for the `[tags]` override a
+		// filter's residual bare-tag term resolves through.
 		var err error
 		if cmd.Facets {
-			err = cmd.runFacets(ctx, args[0])
+			err = cmd.runFacets(ctx, cfg.Tags.Interpreter, args[0])
 		} else {
 			err = cmd.runList(ctx, cfg, args[0])
 		}
@@ -464,7 +464,7 @@ func writeJSON(
 // hoisted facet summary (narrowed by --filter), and renders it. The tracer
 // consumes only the one-shot FacetCounter path (RFC 0012 §4.1); a plugin
 // that does not implement it reports that facets are unavailable.
-func (cmd *List) runFacets(ctx errors.Context, uriStr string) error {
+func (cmd *List) runFacets(ctx errors.Context, tagsOverride, uriStr string) error {
 	if cmd.Format == formatEspalier {
 		// A facet summary has no object lines to render; espalier is a
 		// node-listing format only (#251 owns the --facets successor story).
@@ -484,25 +484,43 @@ func (cmd *List) runFacets(ctx errors.Context, uriStr string) error {
 		)
 	}
 
-	filter, err := cutting_garden_plugins.ParseFacetFilter(cmd.Filter)
+	// The filter is one trellis step (RFC 0012 §6, cutting-garden#388): its
+	// pushdown goes to the plugin, the residual is matched host-side.
+	var schema []cutting_garden_plugins.NodeTypeFacets
+	if fd, ok := lister.(cutting_garden_plugins.FacetDescriber); ok {
+		schema = fd.DescribeFacets()
+	}
+	if len(schema) == 0 {
+		schema = nil
+	}
+	filter, residual, legacy, err := trellis_eval.SplitFilter(cmd.Filter, schema)
 	if err != nil {
-		return errors.Wrap(err)
+		return err
+	}
+	if legacy {
+		fmt.Fprintf(os.Stderr,
+			"cutting-garden: warning: the comma-joined --filter %q is deprecated; "+
+				"join the terms with spaces (one trellis step)\n", cmd.Filter)
 	}
 
-	// Validate an explicit filter against the plugin's declared schema
-	// BEFORE computing anything (cutting-garden#161, the same rule the mcp
+	// Validate the pushdown against the plugin's declared schema BEFORE
+	// computing anything (cutting-garden#161, the same rule the mcp
 	// read_facets surface applies): an undeclared dimension or an
 	// out-of-domain closed-dimension value is rejected with an actionable
 	// error, and a date-kind predicate is annotated for prefix matching
 	// (cutting-garden#230) — without this, `list --filter date_x=2026`
 	// would silently degrade to exact matching.
-	if verr := cutting_garden_plugins.ValidateFilterFor(filter, lister); verr != nil {
+	if verr := filter.Validate(schema); verr != nil {
+		return errors.Wrapf(verr, "list --facets %s (filtered)", uriStr)
+	}
+	if verr := residual.ValidateFields(lister); verr != nil {
 		return errors.Wrapf(verr, "list --facets %s (filtered)", uriStr)
 	}
 
 	// One cg invocation is one call scope (cutting-garden#311).
-	result, ok, err := cutting_garden_plugins.ResolveFacetCounts(
-		command_components.CallScope(ctx), lister, u, filter,
+	result, ok, err := trellis_eval.FacetCounts(
+		command_components.CallScope(ctx), lister, u, filter, residual,
+		trellis_eval.WithTagsInterpreter(tagsOverride),
 	)
 	if err != nil {
 		return errors.Wrapf(err, "list --facets %s", uriStr)

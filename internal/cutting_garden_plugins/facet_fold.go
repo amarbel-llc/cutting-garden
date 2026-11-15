@@ -99,9 +99,62 @@ func FoldFacets(
 		return FacetResult{}, false, nil
 	}
 
+	aliases := NoValueAliasesOf(describer.DescribeFacets())
+	return foldFacets(ctx, lister, node, declared,
+		func(ctx context.Context, u *url.URL) ([]Node, bool, error) {
+			children, err := lister.ListRoots(ctx, u)
+			return children, true, err
+		},
+		func(_ context.Context, n Node) (bool, error) {
+			return filter.MatchesNode(aliases, n.Type, n.Facets), nil
+		})
+}
+
+// FoldListing lists one container's children for FoldFacetsMatching.
+// complete is false when the listing is known to cover less than the
+// container holds (a date-windowed listing, a capped one); the summary is
+// then marked partial.
+type FoldListing func(ctx context.Context, u *url.URL) (children []Node, complete bool, err error)
+
+// FoldFacetsMatching is the framework fold with the caller's listing and
+// per-node match: the summary of a filter whose host-side residual a plugin's
+// one-shot count cannot answer (RFC 0012 §6). It walks, bounds and lifts
+// exactly as FoldFacets does; a node that does not match is not lifted, and
+// containers are descended whether or not they match. ok is false when the
+// lister declares no facet dimension.
+func FoldFacetsMatching(
+	ctx context.Context,
+	lister RootLister,
+	node *url.URL,
+	list FoldListing,
+	match func(context.Context, Node) (bool, error),
+) (FacetResult, bool, error) {
+	describer, ok := lister.(FacetDescriber)
+	if !ok {
+		return FacetResult{}, false, nil
+	}
+	declared := map[string]bool{}
+	for _, key := range declaredDimensionKeys(describer.DescribeFacets()) {
+		declared[key] = true
+	}
+	if len(declared) == 0 {
+		return FacetResult{}, false, nil
+	}
+	return foldFacets(ctx, lister, node, declared, list, match)
+}
+
+func foldFacets(
+	ctx context.Context,
+	lister RootLister,
+	node *url.URL,
+	declared map[string]bool,
+	list FoldListing,
+	match func(context.Context, Node) (bool, error),
+) (FacetResult, bool, error) {
 	fold := facetFold{
 		lister:   lister,
-		filter:   filter,
+		list:     list,
+		match:    match,
 		declared: declared,
 		summary:  FacetSummary{},
 		walked:   map[string]bool{},
@@ -109,18 +162,20 @@ func FoldFacets(
 	if err := fold.walk(ctx, node); err != nil {
 		return FacetResult{}, false, err
 	}
-	return FacetResult{Summary: fold.summary, Complete: !fold.truncated}, true, nil
+	return FacetResult{Summary: fold.summary, Complete: !fold.truncated && !fold.partial}, true, nil
 }
 
 type facetFold struct {
 	lister    RootLister
-	filter    FacetFilter
+	list      FoldListing
+	match     func(context.Context, Node) (bool, error)
 	declared  map[string]bool
 	summary   FacetSummary
 	walked    map[string]bool
 	visited   int
 	listed    int
 	truncated bool
+	partial   bool // some listing covered less than its container
 }
 
 func (f *facetFold) walk(ctx context.Context, node *url.URL) error {
@@ -136,9 +191,12 @@ func (f *facetFold) walk(ctx context.Context, node *url.URL) error {
 		return nil
 	}
 	f.listed++
-	children, err := f.lister.ListRoots(ctx, node)
+	children, complete, err := f.list(ctx, node)
 	if err != nil {
 		return fmt.Errorf("facet fold: list %s: %w", node, err)
+	}
+	if !complete {
+		f.partial = true
 	}
 	for _, child := range children {
 		if err := ctx.Err(); err != nil {
@@ -149,7 +207,11 @@ func (f *facetFold) walk(ctx context.Context, node *url.URL) error {
 			return nil
 		}
 		f.visited++
-		if f.filter.Matches(child.Facets) {
+		matched, err := f.match(ctx, child)
+		if err != nil {
+			return err
+		}
+		if matched {
 			f.lift(child)
 		}
 		nodeType, known := NodeTypeFor(f.lister, child.Type)

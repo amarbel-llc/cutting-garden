@@ -262,8 +262,10 @@ VTODO's missing STATUS mean NEEDS-ACTION, and a VEVENT's missing STATUS
 means nothing. Every matcher MUST honor it identically — the host's
 `FacetFilter` match (§6), trellis's facet predicates, and a plugin's own
 pushdown when it evaluates a filter itself — so `status=needs-action` finds
-a statusless VTODO on every surface, and `status!=needs-action` /
-`^status=needs-action` exclude it. Each implied value MUST be a value of the
+a statusless VTODO on every surface, and `^status=needs-action` excludes it.
+(`status!=needs-action` does not: trellis's `!=` is existential, "some value
+differs", and such a node holds `none` as well as the implied value; `^` is
+the negation that says "holds no such value".) Each implied value MUST be a value of the
 dimension's domain (one of `Values` when closed). There is no default
 implication: a plugin declares one or has none.
 
@@ -494,7 +496,8 @@ which must match. So it has `[a, b]` alternatives, `^` negation, the field
 operators (`=`, `!=`, `*=`, `~=`, …) and `!type`, but no combinator — a
 filter naming `->`, `<-` or a closure is a usage error, never a silently
 unfiltered result (cutting-garden#388). "The field is missing" needs no
-syntax of its own: `^status~=.` (no value matches anything) on a dimension
+syntax of its own: `^status~="."` (no value matches anything; a regex value
+is quoted) on a dimension
 without an alias, and `status=<alias>` on one with a no-value alias (§2),
 where a valueless node holds the alias.
 
@@ -578,7 +581,9 @@ negation reach a plugin only through the residual (above). A pushdown names
 each dimension at most once. A predicate naming an undeclared dimension MUST
 be rejected as a usage error; a residual term naming a field that is not a
 facet dimension is matched by trellis against the node's listing fields, as
-in a query.
+in a query, and one naming a field the plugin declares nowhere (neither a
+facet dimension nor a listing field of any type) is rejected the same way,
+naming the valid fields.
 
 **No-value aliases in matching.** `Matches` honors a dimension's
 `AliasImplies` (§2) per node type: a node of type T holding T's alias for a

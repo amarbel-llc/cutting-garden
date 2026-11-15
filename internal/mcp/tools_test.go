@@ -1112,11 +1112,11 @@ type fakeFacetReader struct {
 	view      *facetView
 	err       error
 	gotURI    string
-	gotFilter cutting_garden_plugins.FacetFilter
+	gotFilter string
 }
 
-func (f *fakeFacetReader) ReadFacets(
-	_ context.Context, uri string, filter cutting_garden_plugins.FacetFilter,
+func (f *fakeFacetReader) ReadFacetsFiltered(
+	_ context.Context, uri, filter, _ string,
 ) (*facetView, error) {
 	f.gotURI = uri
 	f.gotFilter = filter
@@ -1146,55 +1146,43 @@ func TestCallTool_ReadFacetsDispatches(t *testing.T) {
 	if fr.gotURI != "faketest://h/work" {
 		t.Errorf("ReadFacets called with uri=%q", fr.gotURI)
 	}
-	if len(fr.gotFilter) != 0 {
-		t.Errorf("no-filter call passed a non-empty filter: %v", fr.gotFilter)
+	if fr.gotFilter != "" {
+		t.Errorf("no-filter call passed a non-empty filter: %q", fr.gotFilter)
 	}
 	if !strings.Contains(res.Content[0].Text, `"CONFIRMED": 2`) {
 		t.Errorf("read_facets output missing the summary: %q", res.Content[0].Text)
 	}
 }
 
-// TestCallTool_ReadFacetsParsesFilter pins that the tool's filter string
-// parses through the SAME grammar `list --filter` uses (dimension=value,
-// comma-separated, AND-composed) via cutting_garden_plugins.ParseFacetFilter.
-func TestCallTool_ReadFacetsParsesFilter(t *testing.T) {
+// TestCallTool_ReadFacetsPassesFilter pins that the tool hands the caller's
+// filter string, unparsed, to the read surface, which splits it as one
+// trellis step (RFC 0012 §6) the way `list --filter` does.
+func TestCallTool_ReadFacetsPassesFilter(t *testing.T) {
 	tools := newFakeTools(t, &fakeMutator{}, "faketest://h/")
 	fr := &fakeFacetReader{view: &facetView{Complete: true}}
 	tools.facets = fr
 
 	res, err := tools.CallTool(context.Background(), "read_facets",
-		json.RawMessage(`{"uri":"faketest://h/work","filter":"read=false,status=CONFIRMED"}`))
+		json.RawMessage(`{"uri":"faketest://h/work","filter":"read=false ^status=CONFIRMED"}`))
 	if err != nil {
 		t.Fatalf("transport error: %v", err)
 	}
 	if res.IsError {
 		t.Fatalf("read_facets errored: %+v", res.Content)
 	}
-	want := cutting_garden_plugins.FacetFilter{
-		{Dimension: "read", Value: "false"},
-		{Dimension: "status", Value: "CONFIRMED"},
-	}
-	if len(fr.gotFilter) != len(want) {
-		t.Fatalf("filter = %+v, want %+v", fr.gotFilter, want)
-	}
-	for i := range want {
-		if fr.gotFilter[i] != want[i] {
-			t.Errorf("filter[%d] = %+v, want %+v", i, fr.gotFilter[i], want[i])
-		}
+	if fr.gotFilter != "read=false ^status=CONFIRMED" {
+		t.Errorf("filter = %q", fr.gotFilter)
 	}
 }
 
-func TestCallTool_ReadFacetsInvalidFilterIsToolError(t *testing.T) {
-	tools := newFakeTools(t, &fakeMutator{}, "faketest://h/")
-	tools.facets = &fakeFacetReader{}
-
-	res, err := tools.CallTool(context.Background(), "read_facets",
-		json.RawMessage(`{"uri":"faketest://h/work","filter":"bogus"}`))
-	if err != nil {
-		t.Fatalf("transport error: %v", err)
-	}
-	if !res.IsError {
-		t.Error("an invalid filter predicate must be an IsError tool result")
+// A filter that does not parse as one trellis step, or that is a path, or
+// that names an undeclared field, is refused by the read surface.
+func TestResourcesReadFacetsFiltered_InvalidFilterIsRefused(t *testing.T) {
+	r := newFakeFacetResources(t, "faketest://h/")
+	for _, filter := range []string{"status=", "status=x -> !t", "bogus~=x"} {
+		if _, err := r.ReadFacetsFiltered(context.Background(), "faketest://h/work", filter, ""); err == nil {
+			t.Errorf("filter %q: want an error, got none", filter)
+		}
 	}
 }
 

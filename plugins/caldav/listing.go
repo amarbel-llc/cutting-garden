@@ -202,7 +202,7 @@ func (c *client) enrichedCalendarNodes(
 			for _, item := range items {
 				view := objectView{Component: "VEVENT", Event: item.event}
 				facets := facetsFromView(view)
-				if facets == nil || !filter.Matches(facets) {
+				if !matchesObject(filter, component, facets) {
 					continue
 				}
 				nodes = append(nodes, cutting_garden_plugins.Node{
@@ -222,9 +222,7 @@ func (c *client) enrichedCalendarNodes(
 		}
 		for _, res := range resources {
 			facets := objectFacets(res.data)
-			// A statusless VTODO matches status=none and status=needs-action
-			// (filterFacets), while its node keeps its own facets.
-			if facets == nil || !filter.Matches(filterFacets(facets)) {
+			if !matchesObject(filter, component, facets) {
 				continue
 			}
 			view, ok := parseObjectView(res.data)

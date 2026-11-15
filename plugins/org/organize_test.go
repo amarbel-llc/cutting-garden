@@ -41,7 +41,7 @@ func TestOrganize_DescribeFacetWritesIsConsistent(t *testing.T) {
 		modes[w.DimensionKey] = mode
 	}
 	want := map[string]string{
-		fieldState: "one", fieldTags: "many", fieldPriority: "one",
+		fieldState: "one+clear", fieldTags: "many", fieldPriority: "one+clear",
 		fieldScheduled: "one+clear", fieldDeadline: "one+clear", fieldClosed: "none",
 		fieldScheduledBand: "none", fieldDeadlineBand: "none", fieldFile: "none",
 	}

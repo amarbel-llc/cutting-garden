@@ -113,6 +113,16 @@ type FacetDimension struct {
 	// instant, so independently-memoized summaries agree within a step
 	// (§11.3 evaluation-instant quantization).
 	RevalidateAfter time.Duration
+	// NoValueAlias, when non-empty, is the value a node of this type carries in
+	// Node.Facets when it has no value for the dimension (caldav VTODO status
+	// "none"; RFC 0012 §2 No-value aliases, cutting-garden#413). A node holding
+	// only the alias is VALUELESS to a consumer that partitions by value:
+	// organize renders it in the no-value section (NoValueAliases.WithoutAliases).
+	NoValueAlias string
+	// AliasImplies are the values a node holding NoValueAlias also holds FOR
+	// MATCHING ONLY, never for counting (caldav VTODO status: needs-action, RFC
+	// 5545's default). Empty when NoValueAlias is.
+	AliasImplies []string
 }
 
 // NodeTypeFacets binds a set of facet dimensions to one node type. See

@@ -108,7 +108,10 @@ var unifiedFieldSets = sync.OnceValue(func() []cutting_garden_plugins.NodeTypeUn
 		},
 		RevalidateAfter: dueBandRevalidateAfter,
 	}}}
-	status := func(writeEnum []string) caseFoldCodec {
+	// alias is the no-value alias a statusless object of the component carries
+	// (RFC 0012 §2, cutting-garden#413), "" for none; implies are the statuses
+	// it also matches.
+	status := func(writeEnum []string, alias string, implies ...string) caseFoldCodec {
 		return caseFoldCodec{Field: cutting_garden_plugins.UnifiedField{
 			Key: listingFieldStatus, Label: "Status",
 			Kind:   cutting_garden_plugins.FieldCategorical,
@@ -129,6 +132,8 @@ var unifiedFieldSets = sync.OnceValue(func() []cutting_garden_plugins.NodeTypeUn
 			// path emits, so the framework's exact comparisons line up.
 			TerminalValues: []string{"completed", "cancelled"},
 			WriteValues:    writeEnum,
+			NoValueAlias:   alias,
+			AliasImplies:   implies,
 		}}
 	}
 	location := cutting_garden_plugins.IdentityCodec{Field: cutting_garden_plugins.UnifiedField{
@@ -150,7 +155,8 @@ var unifiedFieldSets = sync.OnceValue(func() []cutting_garden_plugins.NodeTypeUn
 	return []cutting_garden_plugins.NodeTypeUnifiedFields{
 		{Tag: typeVTODO, Codecs: []cutting_garden_plugins.Codec{
 			component, dateStart, dateEnd, dateDue, location,
-			status(taskStatuses),
+			// RFC 5545 §3.8.1.11: a VTODO with no STATUS is NEEDS-ACTION.
+			status(taskStatuses, statusNone, "needs-action"),
 			categories,
 			dueBand, timezone,
 			caldavPriorityCodec{},
@@ -158,14 +164,14 @@ var unifiedFieldSets = sync.OnceValue(func() []cutting_garden_plugins.NodeTypeUn
 		}},
 		{Tag: typeVEVENT, Codecs: []cutting_garden_plugins.Codec{
 			component, dateStart, dateEnd, location,
-			status(eventStatuses),
+			status(eventStatuses, ""),
 			categories,
 			timezone,
 			summary,
 		}},
 		{Tag: typeVJOURNAL, Codecs: []cutting_garden_plugins.Codec{
 			component, dateStart,
-			status(journalStatuses),
+			status(journalStatuses, ""),
 			categories,
 			summary,
 		}},

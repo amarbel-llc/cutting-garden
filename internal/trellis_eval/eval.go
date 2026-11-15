@@ -151,6 +151,9 @@ type evaluator struct {
 	// of the facet surface has (cutting-garden#230); FoldCase so a case-folded
 	// dimension's predicates compare both sides folded (FDR 0025 case-fold).
 	facets map[string]map[string]facetDimTraits
+	// aliases are the declared no-value aliases: a node holding one matches its
+	// type's implied values too (RFC 0012 §2, cutting-garden#413).
+	aliases cgp.NoValueAliases
 
 	// unified is the plugin's once-probed UnifiedDescriber, letting a bare-tag
 	// term enumerate a node type's FieldTag dimensions (#231 slice 3). nil when
@@ -219,8 +222,10 @@ func newEvaluator(
 		ev.unified = ud
 	}
 	if fd, ok := lister.(cgp.FacetDescriber); ok {
+		declared := fd.DescribeFacets()
+		ev.aliases = cgp.NoValueAliasesOf(declared)
 		ev.facets = make(map[string]map[string]facetDimTraits)
-		for _, ntf := range fd.DescribeFacets() {
+		for _, ntf := range declared {
 			traits := make(map[string]facetDimTraits, len(ntf.Dimensions))
 			for _, dim := range ntf.Dimensions {
 				traits[dim.Key] = facetDimTraits{kind: dim.Kind, foldCase: dim.FoldCase}
@@ -877,7 +882,7 @@ func (ev *evaluator) matchFieldPred(
 		return ev.matchWords(ctx, n, fp)
 	}
 	if traits, ok := ev.facetTraits(n.Type, field); ok {
-		return ev.matchFacet(n.Facets[field], fp, traits), nil
+		return ev.matchFacet(ev.aliases.ForMatching(n.Type, n.Facets)[field], fp, traits), nil
 	}
 	return ev.matchLeafField(ctx, n, field, fp)
 }

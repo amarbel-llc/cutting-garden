@@ -53,12 +53,14 @@ generate_inbox_by_state() {
   assert_vector - <<-'EOM'
 	---
 	% generated: `cg organize 'org://test/_inbox.org -> _terminal=no' state=`
-	- _base = @blake2b256-ncuwcxty64sdmrdwvza3usvs900gh4jzf8mlqyxumw7mzafah08s2t6pkr
+	- _base = @blake2b256-2h4yqh4r4x0en3v5dxj0y6wdu8tqc9ttjj2cwtyd00pz67xcyy7qtwret9
 	- _anchor = org://test/_inbox.org
 	- _query = _terminal=no
 	- _type = !cutting_garden-org-headline-v1
 	! organize-base-v1
 	---
+
+	- ["h=Idea%3A+expose+CLOSED+dates" zz-inbox] Idea: expose CLOSED dates
 
 	# state=
 
@@ -73,10 +75,6 @@ generate_inbox_by_state() {
 	## =DONE
 
 	## =CANCELLED
-
-	## =none
-
-	- ["h=Idea%3A+expose+CLOSED+dates" zz-inbox] Idea: expose CLOSED dates
 	EOM
 }
 
@@ -100,12 +98,14 @@ function organize_org_apply_state_atoms_tags_title { # @test
   cat >"$edited" <<-'EOM'
 	---
 	% generated: `cg organize 'org://test/_inbox.org -> _terminal=no' state=`
-	- _base = @blake2b256-ncuwcxty64sdmrdwvza3usvs900gh4jzf8mlqyxumw7mzafah08s2t6pkr
+	- _base = @blake2b256-2h4yqh4r4x0en3v5dxj0y6wdu8tqc9ttjj2cwtyd00pz67xcyy7qtwret9
 	- _anchor = org://test/_inbox.org
 	- _query = _terminal=no
 	- _type = !cutting_garden-org-headline-v1
 	! organize-base-v1
 	---
+
+	- ["h=Idea%3A+expose+CLOSED+dates" zz-inbox someday] Idea: expose CLOSED dates in org
 
 	# state=
 
@@ -120,10 +120,6 @@ function organize_org_apply_state_atoms_tags_title { # @test
 	- ["h=Call+the+plumber+about+the+leak" project-house zz-inbox deadline=2026-10-10] Call the plumber about the leak
 
 	## =CANCELLED
-
-	## =none
-
-	- ["h=Idea%3A+expose+CLOSED+dates" zz-inbox someday] Idea: expose CLOSED dates in org
 	EOM
 
   run_cg organize -apply "$edited" -commit
@@ -214,12 +210,14 @@ function organize_org_inherited_tag_removal_is_refused { # @test
   cat >"$edited" <<-'EOM'
 	---
 	% generated: `cg organize 'org://test/_inbox.org -> _terminal=no' state=`
-	- _base = @blake2b256-ncuwcxty64sdmrdwvza3usvs900gh4jzf8mlqyxumw7mzafah08s2t6pkr
+	- _base = @blake2b256-2h4yqh4r4x0en3v5dxj0y6wdu8tqc9ttjj2cwtyd00pz67xcyy7qtwret9
 	- _anchor = org://test/_inbox.org
 	- _query = _terminal=no
 	- _type = !cutting_garden-org-headline-v1
 	! organize-base-v1
 	---
+
+	- ["h=Idea%3A+expose+CLOSED+dates" zz-inbox] Idea: expose CLOSED dates
 
 	# state=
 
@@ -234,10 +232,6 @@ function organize_org_inherited_tag_removal_is_refused { # @test
 	## =DONE
 
 	## =CANCELLED
-
-	## =none
-
-	- ["h=Idea%3A+expose+CLOSED+dates" zz-inbox] Idea: expose CLOSED dates
 	EOM
 
   local before

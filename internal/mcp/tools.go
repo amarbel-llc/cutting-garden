@@ -49,13 +49,12 @@ type resourceReader interface {
 	) (*protocol.ResourceReadResult, error)
 }
 
-// facetReader is the read_facets tool's read surface — Resources.ReadFacets,
-// the facet-view counterpart to resourceReader's ReadNode
-// (cutting-garden#151, RFC 0012 §7/§9). *Resources satisfies it.
+// facetReader is the read_facets tool's read surface —
+// Resources.ReadFacetsFiltered, the facet-view counterpart to
+// resourceReader's ReadNode (cutting-garden#151, RFC 0012 §6/§7/§9): it takes
+// the caller's one-step filter as written. *Resources satisfies it.
 type facetReader interface {
-	ReadFacets(
-		ctx context.Context, uri string, filter cutting_garden_plugins.FacetFilter,
-	) (*facetView, error)
+	ReadFacetsFiltered(ctx context.Context, uri, rawFilter, tagsOverride string) (*facetView, error)
 }
 
 // readSurface is the combined read tree the discovery tools wrap; *Resources
@@ -147,14 +146,14 @@ const (
 		`"uri":{"type":"string","description":"the container/prefix to list children of; omit to list the configured roots (the entry points)"},` +
 		`"limit":{"type":"integer","minimum":0,"description":"max number of child nodes to return (optional). A response SHORTER than limit means you have reached the end of the listing; a full-length response may or may not be the end — pass a larger offset to check."},` +
 		`"offset":{"type":"integer","minimum":0,"description":"number of child nodes to skip before applying limit (optional, default 0). An offset past the end yields an empty array, not an error."},` +
-		`"filter":{"type":"string","description":"optional comma-separated dimension=value predicates (AND-composed), e.g. \"due_band=overdue\" or \"status=CONFIRMED,year=2026\" — the SAME grammar and dimension keys as read_facets. Call describe_node_types first to see a type's declared facets: each dimension's key and, when closed=true, its complete valid values array (values); an open dimension (closed=false) accepts any value, discovered at enumeration. An undeclared dimension or an out-of-domain closed-dimension value is a REJECTED, actionable error naming what was wrong — never a silent empty/unfiltered result. When present the result is wrapped as {nodes, filterApplied, filterMode} instead of a bare array — filterApplied is false (filterMode \"none\") when the filter could not narrow this level — typically the children are containers (an account's calendars) and the matches lie below them — and then filterHint names the calls that reach them: read_facets with the same filter (its byContainer says which child holds the matches) and a trellis query (->> dim=value) that retrieves them across the subtree."},` +
+		`"filter":{"type":"string","description":"optional ONE trellis step (the query grammar below, without combinators): space-separated terms that must all match, e.g. \"due_band=overdue\", \"status=needs-action year=2026\", \"status=[needs-action, in-process]\" (OR over values), \"^status=completed\" (negation), \"status=none\" (a dimension's no-value alias: describe_node_types' noValueAlias) or ^location~=\".\" (field missing; a regex value is quoted). Plain dimension=value terms on declared facets go to the plugin; the rest is matched by the host over the listing. The old comma-joined form still works for one release. The SAME grammar and dimension keys as read_facets. Call describe_node_types first to see a type's declared facets: each dimension's key and, when closed=true, its complete valid values array (values); an open dimension (closed=false) accepts any value, discovered at enumeration. An undeclared dimension or an out-of-domain closed-dimension value is a REJECTED, actionable error naming what was wrong — never a silent empty/unfiltered result. When present the result is wrapped as {nodes, filterApplied, filterMode} instead of a bare array — filterApplied is false (filterMode \"none\") when the filter could not narrow this level — typically the children are containers (an account's calendars) and the matches lie below them — and then filterHint names the calls that reach them: read_facets with the same filter (its byContainer says which child holds the matches) and a trellis query (->> dim=value) that retrieves them across the subtree."},` +
 		`"query":{"type":"string","description":"optional trellis query (RFC 0014) evaluated with the uri as its anchor — the richer alternative to filter, for multi-LEVEL walks and richer predicates. Returns {query, nodes}: the nodes matched by the query's LAST step, each ENRICHED (facets + plugin fields inline) like the default listing. Mutually exclusive with filter; requires a uri. GRAMMAR — a path of STEPS joined by COMBINATORS. Combinators (between steps): \"->\" descend one level, \"<-\" reverse one level, \"->>\"/\"<<-\" transitive closure (one-or-more levels). A step is space-separated TERMS that must ALL match (AND); prefix a term with ^ to negate. Terms: (1) !type — the node's exact type tag, e.g. !caldav-object-vevent-v1 (a tag the plugin does not declare is rejected, naming the declared ones); (2) field OP value — OP is one of = (equals) != (not) *= (contains) ^= (prefix) $= (suffix) < <= > >= (lexicographic; fixed-width dates like 20260131 sort correctly) ~= (RE2 regex); field is a declared facet dimension (matched cheaply) or any other field name (matched against the node's inline fields, else a leaf-body fetch); the pseudo-field _body matches the raw body text (exact case; accelerated when the plugin can search); _words=word (or =[a, b]) matches whole words case-insensitively by the plugin's own word index, and is refused for a plugin without one; (3) [a, b] — OR-alternatives, matches if it satisfies alternative a OR b; (4) [-> pred] — existential, true if some immediate child matches pred. QUOTING: a value or regex containing a reserved rune (space, ^, [, comma) must be quoted, e.g. summary~=\"query builder\". EXAMPLE: !caldav-calendar-v1 -> !caldav-object-vtodo-v1 [summary~=bows, summary~=cake] walks calendars to their objects and keeps VTODOs whose summary matches either regex. DISCOVERY: call describe_node_types for each scheme's types, declared facet dimensions (and their closed value sets), and listing fields — the vocabulary for !type and field predicates. NOT YET SUPPORTED (rejected with a clear, actionable error, cutting-garden#211): typed edges -[pred]->, non-\":\" version sigils (+ . ?), object-identity terms (@digest), and the anchorless roots-as-nodes origin (a leading combinator other than ->>). A LEADING \"->>\" is supported: \"->> !type\" ranges over every descendant of the uri at any depth, in containment order, instead of its children."},` +
 		`"bare":{"type":"boolean","description":"opt out of the default enrichment: true returns the cheap pre-enrichment shape {uri,name,type,container,mimeType} with no facets/fields, skipping any extra data-bearing fetch a plugin would otherwise perform (e.g. caldav skips its per-object body fetch, staying hrefs-only). Combining bare with filter still fetches whatever the filter requires; only the OUTPUT is stripped down, and a filtered bare listing still carries version/freshness (one extra FacetVersion call per call: for caldav one PROPFIND). The unfiltered bare listing is a plain array with no version. Default false: every entry carries its facets, any plugin-declared human-readable fields (e.g. summary/due/status), and — for a type declaring a tag set (see describe_node_types' tag_set) — its tags array, inline."},` +
 		`"fields":{"type":"array","items":{"type":"string"},"minItems":1,"description":"optional projection of the enriched output: keep only these keys of each node. uri, name and type are always kept; container and mimeType are dropped unless named. Each other name is a declared listing field (e.g. summary, due, categories), a facet dimension (e.g. status, priority) or \"tags\" — describe_node_types lists them per type. A heavy listing field the plugin marks opt-in (an org headline's body) is left out of the default listing and returned only when named here. A requested name is emitted once: under fields when the node's type declares it as a listing field, otherwise under facets (categories is both in caldav: you get fields.categories only); \"tags\" is its own top-level key. The projection slims the OUTPUT only; the plugin does the same work to build the nodes. A name valid for any returned node type is accepted: a listing field the node's type declares but this node lacks is null (\"no due date\", not \"not asked for\"); a field the node's type does not declare, and a facet the node lacks, stay absent. The default listing (no fields) omits absent fields, as before. A name valid for none is a REJECTED error listing the valid ones; an empty array is rejected, not \"all\". Works with uri alone, with filter and with query (it changes the output, never which nodes match); not with bare. Example: {\"uri\":\"caldav://work/Tasks/\",\"filter\":\"status=NEEDS-ACTION\",\"fields\":[\"summary\",\"priority\",\"categories\"]}."}}}`
 	readFacetsSchema = `{"type":"object","required":["uri"],` +
 		`"properties":{` +
 		`"uri":{"type":"string","description":"the container node URI to summarize"},` +
-		`"filter":{"type":"string","description":"optional comma-separated dimension=value predicates (AND-composed), e.g. \"due_band=overdue\" or \"status=CONFIRMED,year=2026\" — same grammar as list_nodes/list --filter. Call describe_node_types first to see this scheme's declared facet dimensions: each dimension's key and, when closed=true, its complete valid values array (values), e.g. due_band's values are [\"overdue\",\"today\",\"this-week\",\"later\"]; an open dimension (closed=false, e.g. status) accepts any value, discovered at enumeration rather than declared up front. An undeclared dimension, or a value outside a closed dimension's declared set, is a REJECTED, actionable error naming what was wrong and the valid options — never a silent {facets:{}} indistinguishable from a genuine zero-match filter."}}}`
+		`"filter":{"type":"string","description":"optional ONE trellis step, the same grammar as list_nodes' filter and list --filter: space-separated terms that must all match, e.g. \"due_band=overdue\", \"status=[needs-action, in-process]\", \"^status=completed\", \"status=none\" (a no-value alias). Plain dimension=value terms on declared facets are counted by the plugin in one call; any other term makes the host count over the listing instead (dearer: one listing per container, and only as complete as that listing). The old comma-joined form still works for one release. Call describe_node_types first to see this scheme's declared facet dimensions: each dimension's key and, when closed=true, its complete valid values array (values), e.g. due_band's values are [\"overdue\",\"today\",\"this-week\",\"later\"]; an open dimension (closed=false, e.g. status) accepts any value, discovered at enumeration rather than declared up front. An undeclared dimension, or a value outside a closed dimension's declared set, is a REJECTED, actionable error naming what was wrong and the valid options — never a silent {facets:{}} indistinguishable from a genuine zero-match filter."}}}`
 )
 
 // toolDefs is the V1 tool catalogue this server advertises: the read-only
@@ -213,8 +212,8 @@ func readToolDefs() []protocol.ToolV1 {
 				"bare=true to opt out to a plain array of the cheap " +
 				"{uri,name,type,container,mimeType} shape (no version when unfiltered; " +
 				"a filtered bare listing keeps version/freshness); the no-uri " +
-				"roots listing is likewise a plain array. An optional filter (the same " +
-				"dimension=value grammar as read_facets) narrows the returned nodes to " +
+				"roots listing is likewise a plain array. An optional filter (one " +
+				"trellis step, the same grammar as read_facets) narrows the returned nodes to " +
 				"those matching and adds filterApplied/filterMode to the object, so " +
 				"you always know whether the nodes were actually narrowed — this is " +
 				"the direct way to retrieve the matching set read_facets can only " +
@@ -257,9 +256,10 @@ func readToolDefs() []protocol.ToolV1 {
 				"its children: it orients you on size and shape (how many, of what " +
 				"kind) cheaply, and a filter lets you narrow the counts to a slice " +
 				"you care about before deciding whether/how to browse further. With " +
-				"no filter, serves the memoized summary; filter is a comma-separated " +
-				"dimension=value grammar, AND-composed (e.g. \"due_band=overdue\"), " +
-				"and computes a fresh narrowed summary directly. When the resolved " +
+				"no filter, serves the memoized summary; filter is one trellis step " +
+				"(space-separated terms, all of which must match, e.g. " +
+				"\"due_band=overdue\" or \"^status=completed\"), and computes a fresh " +
+				"narrowed summary directly. When the resolved " +
 				"container has its own child containers below it (e.g. a caldav " +
 				"account with several calendars beneath it), the result MAY carry a " +
 				"byContainer breakdown: which immediate child container each " +
@@ -474,10 +474,6 @@ func (t *Tools) call(
 			}
 			return t.listNodesQuery(ctx, in.URI, in.Query, in.Bare, fields, in.Offset, in.Limit)
 		}
-		filter, err := cutting_garden_plugins.ParseFacetFilter(in.Filter)
-		if err != nil {
-			return "", err
-		}
 		// No uri: the configured roots themselves are the browse entry points
 		// (a root is a container you descend into), mirroring the `list`
 		// command's no-arg listing. This deliberately differs from
@@ -491,7 +487,7 @@ func (t *Tools) call(
 		// is accepted (a no-op — this shape was always bare) but filter is
 		// rejected, since there is nothing meaningful to filter.
 		if in.URI == "" {
-			if len(filter) > 0 {
+			if strings.TrimSpace(in.Filter) != "" {
 				return "", errors.ErrorWithStackf(
 					"list_nodes: filter requires a uri; the aggregated roots " +
 						"listing has no facets to filter",
@@ -512,7 +508,7 @@ func (t *Tools) call(
 			}
 			return string(body), nil
 		}
-		return t.listNodesURI(ctx, in.URI, filter, in.Bare, fields, in.Offset, in.Limit)
+		return t.listNodesURI(ctx, in.URI, strings.TrimSpace(in.Filter), in.Bare, fields, in.Offset, in.Limit)
 
 	case mcp_tool_perms.ToolReadFacets:
 		var in struct {
@@ -522,11 +518,7 @@ func (t *Tools) call(
 		if err := json.Unmarshal(args, &in); err != nil {
 			return "", errors.Wrap(err)
 		}
-		filter, err := cutting_garden_plugins.ParseFacetFilter(in.Filter)
-		if err != nil {
-			return "", err
-		}
-		view, err := t.facets.ReadFacets(ctx, in.URI, filter)
+		view, err := t.facets.ReadFacetsFiltered(ctx, in.URI, in.Filter, t.tagsOverride)
 		if err != nil {
 			return "", err
 		}
@@ -578,17 +570,22 @@ type filteredListingView struct {
 // children — typically because they are containers (an account's calendars)
 // and the matches lie below them — and names the two calls that answer it:
 // read_facets for where the matches are, a trellis query to retrieve them.
-func unappliedFilterHint(uri string, filter cutting_garden_plugins.FacetFilter) string {
-	if len(filter) == 0 {
+func unappliedFilterHint(
+	uri string, filter cutting_garden_plugins.FacetFilter, residual trellis_eval.Residual,
+) string {
+	if len(filter) == 0 && residual.Empty() {
 		return ""
 	}
-	terms := make([]string, 0, len(filter))
+	terms := make([]string, 0, len(filter)+1)
 	for _, p := range filter {
 		value := p.Value
 		if strings.ContainsAny(value, " ^[,\"") {
 			value = strconv.Quote(value)
 		}
 		terms = append(terms, p.Dimension+"="+value)
+	}
+	if !residual.Empty() {
+		terms = append(terms, residual.String())
 	}
 	return fmt.Sprintf(
 		"the filter did not apply at this level: these are the UNFILTERED "+
@@ -632,12 +629,12 @@ type queriedListingView struct {
 func (t *Tools) listNodesURI(
 	ctx context.Context,
 	uri string,
-	filter cutting_garden_plugins.FacetFilter,
+	rawFilter string,
 	bare bool,
 	fields []string,
 	offset, limit int,
 ) (string, error) {
-	if len(filter) == 0 && !bare && fields == nil {
+	if rawFilter == "" && !bare && fields == nil {
 		// list_nodes is pure child enumeration: it never fetches a node's
 		// own body (RFC 0018 §7.3), so it reads children-only — which is
 		// byte-for-byte the pre-RFC-0018 default (cutting-garden#86).
@@ -659,7 +656,7 @@ func (t *Tools) listNodesURI(
 		return text, nil
 	}
 
-	if len(filter) == 0 && bare {
+	if rawFilter == "" && bare {
 		// bare, no filter: the cheap path — plain ListRoots only, no
 		// EnrichedLister fetch. A childless result may be a leaf (or an
 		// empty container); that rare case falls back to the full
@@ -699,11 +696,14 @@ func (t *Tools) listNodesURI(
 		return "", err
 	}
 
-	// Validate against the plugin's declared facet schema BEFORE listing
-	// (cutting-garden#161, same rule read_facets applies): an undeclared
-	// dimension or an out-of-domain closed-dimension value is rejected
-	// with an actionable error rather than silently narrowing to nothing.
-	if verr := cutting_garden_plugins.ValidateFilterFor(filter, lister); verr != nil {
+	// Split and validate against the plugin's declared facet schema BEFORE
+	// listing (cutting-garden#161, same rule read_facets applies): an
+	// undeclared dimension or an out-of-domain closed-dimension value in the
+	// pushdown is rejected with an actionable error rather than silently
+	// narrowing to nothing. The residual is matched host-side after
+	// (RFC 0012 §6, cutting-garden#388).
+	filter, residual, verr := splitFilterFor(rawFilter, lister)
+	if verr != nil {
 		return "", errors.Wrapf(verr, "list_nodes %s (filtered)", uri)
 	}
 
@@ -726,7 +726,8 @@ func (t *Tools) listNodesURI(
 	}
 
 	ctx, partial := cutting_garden_plugins.WithPartialListings(ctx)
-	nodes, mode, err := enrichedListing(ctx, lister, u, filter)
+	nodes, mode, err := filteredListing(ctx, lister, u, filter, residual,
+		trellis_eval.WithTagsInterpreter(t.tagsOverride))
 	if err != nil {
 		return "", errors.Wrapf(err, "list %s (filtered)", uri)
 	}
@@ -746,12 +747,12 @@ func (t *Tools) listNodesURI(
 		Nodes:             views,
 		listingTruncation: trailer,
 		listingVersion:    prov.view(),
-		Filter:            filterString(filter),
+		Filter:            rawFilter,
 		FilterApplied:     mode != filterModeNone,
 		FilterMode:        mode,
 	}
 	if mode == filterModeNone {
-		view.FilterHint = unappliedFilterHint(uri, filter)
+		view.FilterHint = unappliedFilterHint(uri, filter, residual)
 	}
 	body, err := json.Marshal(view)
 	if err != nil {
@@ -818,16 +819,6 @@ func (t *Tools) listNodesQuery(
 		return "", errors.Wrap(err)
 	}
 	return string(body), nil
-}
-
-// filterString renders a FacetFilter back to its "dim=val,dim2=val2" wire
-// form, for echoing in filteredListingView.
-func filterString(filter cutting_garden_plugins.FacetFilter) string {
-	parts := make([]string, 0, len(filter))
-	for _, p := range filter {
-		parts = append(parts, p.Dimension+"="+p.Value)
-	}
-	return strings.Join(parts, ",")
 }
 
 // paginate slices items to [offset:offset+limit] (cutting-garden#86 phase A):
@@ -1057,6 +1048,12 @@ type facetDimSchema struct {
 	// memoized summary containing it expires after this many seconds even
 	// with an unmoved change token. Zero (the default, omitted) means pure.
 	RevalidateAfterSeconds int64 `json:"revalidateAfterSeconds,omitempty"`
+	// NoValueAlias, when present, is the value a node with no value for the
+	// dimension carries (RFC 0012 §2, cutting-garden#413): filter on it to find
+	// the valueless nodes (`status=none`). AliasImplies are the values such a
+	// node also matches.
+	NoValueAlias string   `json:"noValueAlias,omitempty"`
+	AliasImplies []string `json:"aliasImplies,omitempty"`
 	// WriteMode, when present, is how EDITING this dimension maps to a write
 	// (RFC 0012 §Write mapping, FDR 0023's organize mapping capability):
 	// "none" (declared read-only), "one" (a write replaces the membership), or
@@ -1114,6 +1111,8 @@ func facetDimSchemas(
 			Closed:                 d.Values != nil,
 			Values:                 values,
 			RevalidateAfterSeconds: int64(d.RevalidateAfter.Seconds()),
+			NoValueAlias:           d.NoValueAlias,
+			AliasImplies:           d.AliasImplies,
 		}
 		if w, ok := writes[d.Key]; ok {
 			s.WriteMode = string(w.Mode)

@@ -115,31 +115,22 @@ directory). Same rationale as FDR 0003 (yt-dlp) and FDR 0006 (git).
 ## A VTODO with no STATUS
 
 RFC 5545 §3.8.1.11 makes a VTODO with no STATUS property NEEDS-ACTION.
-caldav's own counting and filtering treat it that way (cutting-garden#382
-item 1, option D-a):
+caldav declares that as the VTODO status dimension's no-value alias `none`
+with the implication `needs-action` (RFC 0012 §2, cutting-garden#413,
+option D-b, superseding #382's caldav-only D-a):
 
-- `read_facets` (caldav's FacetCounts) counts it under the status value
-  `none`, so the status buckets sum to the VTODO count. `none` is an
-  observed value of the OPEN status domain, never a write target (it is not
-  in the status WriteValues).
-- caldav's filter, used by `read_facets` and the `list_nodes` `filter=`
-  pushdown (ListEnriched), matches it for `status=none` and for
-  `status=needs-action`, so a query for open work does not undercount.
-  VEVENT and VJOURNAL have no default and are unchanged.
-- The node's own facets carry no status, and the `status` listing field
-  stays absent, as stored. organize groups by the node's facets, so a
-  statusless task stays in the dimension's no-value section (RFC 0020's one
-  meaning for that section), and moving it into a bucket writes STATUS.
-
-Known gap: trellis matches facet predicates against the node's own facets,
-so a trellis `status=needs-action` or `status=none` does not see these tasks
-yet, and `read_facets`/`list_nodes filter=` disagree with a trellis query on
-the same predicate. cutting-garden#413 tracks the framework form (a no-value
-alias organize renders as the no-value section, plus a per-type predicate
-implication trellis and FacetFilter both honour), which removes the gap and
-moves this caldav special case into a declaration. `mcp.bats`
-`mcp_status_filter_counts_a_task_with_no_status` pins both the rule and the
-gap.
+- The node's own facets carry `status=none`, so `read_facets` counts it
+  under `none` once and the status buckets sum to the VTODO count. `none`
+  is never a write target (it is not in the status WriteValues).
+- Every matcher sees the implication: caldav's own pushdown, the host's
+  filter and trellis alike match it for `status=none` and for
+  `status=needs-action`, and `^status=needs-action` excludes it. VEVENT and
+  VJOURNAL declare no alias and are unchanged.
+- The `status` listing field stays absent, as stored. organize renders a
+  node holding only the alias in the dimension's no-value section (RFC
+  0020's one meaning for that section), and moving it into a bucket writes
+  STATUS. `mcp.bats` `mcp_status_filter_counts_a_task_with_no_status` pins
+  the rule on every surface.
 
 ## Non-Goals
 
