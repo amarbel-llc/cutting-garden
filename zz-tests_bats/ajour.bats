@@ -112,7 +112,7 @@ function ajour_a_malformed_layer_is_bad_input { # @test
   printf '[moxy [-> folio [-> read [-> file:/wt !fs-path-v1 subtree]]]]\n' >"$BATS_TEST_TMPDIR/allow.espalier"
   run_ajour --patch "$BATS_TEST_TMPDIR/allow.espalier" --call "$FIX/call-read-src.json"
   assert_failure 64
-  assert_output --partial 'carries no deny'
+  assert_output --partial 'carries neither'
 }
 
 function ajour_a_call_with_an_unknown_field_is_bad_input { # @test

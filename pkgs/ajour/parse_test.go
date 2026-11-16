@@ -259,7 +259,7 @@ var parseVectors = []parseVector{
 	{
 		id: "A-18", name: "an allowance leaf as a patch", as: asPatch,
 		src:     `[moxy [-> folio [-> read [-> file:/wt !fs-path-v1 subtree]]]]`,
-		wantErr: "carries no deny",
+		wantErr: "carries neither",
 	},
 	{
 		id: "A-19", name: "a value-list node is in the fragment and not espalier",
@@ -380,7 +380,7 @@ var parseVectors = []parseVector{
 	},
 	{
 		id: "A-54", name: "# x is a heading, so a leaf with no deny in a patch", src: "# x\n", as: asPatch,
-		wantErr: "carries no deny",
+		wantErr: "carries neither",
 	},
 	{
 		id: "fragment", name: "a heading rendering canonicalizes to nested espalier", src: sampleAHeadings,
