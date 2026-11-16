@@ -403,8 +403,8 @@ than inventing its own result shape.
   anything is written for it: in best-effort that op fails alone, in an atomic
   request the call fails before any write. Strict refuses patch sweeps for now
   (their matches' types are unknown before the write). Value-level checks
-  (ynab refusing a category on a split) stay the plugin's. jira and fastmail
-  (thread only) declare so far; a plugin that has not declared gets tolerant behaviour exactly as before.
+  (ynab refusing a category on a split) stay the plugin's. jira, fastmail
+  (thread only) and ynab (transaction, payee) declare so far; a plugin that has not declared gets tolerant behaviour exactly as before.
   Not yet built: the wire `node_types` declaration (RFC 0013), RFC 0017's strict
   member, and listing the keys in `describe_node_types`.
 - **Create vs. upsert → strict.** `create_node` errors if the node exists

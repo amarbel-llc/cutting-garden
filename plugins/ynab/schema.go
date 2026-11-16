@@ -1,8 +1,45 @@
 package ynab
 
-import "code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
+import (
+	"net/url"
 
-var _ cutting_garden_plugins.BodyDescriber = (*Plugin)(nil)
+	"code.linenisgreat.com/cutting-garden/pkgs/cutting_garden_plugins"
+)
+
+var (
+	_ cutting_garden_plugins.BodyDescriber      = (*Plugin)(nil)
+	_ cutting_garden_plugins.PatchKeysDescriber = (*Plugin)(nil)
+)
+
+// DescribePatchKeys declares the patch keys of the two patchable node types
+// for the host's validation (cutting-garden#404): the host drops any other key
+// before PatchNode sees it and, for a strict call, refuses the op. Value-level
+// rules (a category on a split, a cleared state on a reconciled transaction)
+// stay PatchNode's.
+func (Plugin) DescribePatchKeys() []cutting_garden_plugins.NodeTypePatchKeys {
+	return []cutting_garden_plugins.NodeTypePatchKeys{
+		{Tag: typeTransaction, Keys: transactionPatchFields},
+		{Tag: typePayee, Keys: payeePatchFields},
+	}
+}
+
+// PatchTarget says which patchable node type a patch to uri targets: a
+// transaction or a payee. Every other ynab node is not patchable. It
+// classifies the URI alone, with no network call.
+func (Plugin) PatchTarget(uri *url.URL) (string, bool) {
+	ref, err := classifyURI(uri)
+	if err != nil {
+		return "", false
+	}
+	switch ref.kind {
+	case kindTransaction:
+		return typeTransaction, true
+	case kindPayee:
+		return typePayee, true
+	default:
+		return "", false
+	}
+}
 
 // DescribeBodies describes the patch body of the two node types PatchNode
 // writes (write.go, payee_write.go), so describe_node_types reports them
