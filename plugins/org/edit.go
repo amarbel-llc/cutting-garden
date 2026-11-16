@@ -66,6 +66,39 @@ var patchKeys = []string{
 	fieldPatchAfter,
 }
 
+var _ cutting_garden_plugins.PatchKeysDescriber = Plugin{}
+
+// DescribePatchKeys declares the patch keys of the two patchable node types
+// for the host's validation (cutting-garden#404): the host drops any other key
+// before PatchNode sees it and, for a strict call, refuses the op. A file node
+// declares the headline key set too, on purpose: a file accepts only body, and
+// PatchNode refuses another key there with an explanation, so the host leaves
+// that refusal to the plugin instead of turning it into a silent patched_nothing.
+func (Plugin) DescribePatchKeys() []cutting_garden_plugins.NodeTypePatchKeys {
+	return []cutting_garden_plugins.NodeTypePatchKeys{
+		{Tag: typeHeadline, Keys: patchKeys},
+		{Tag: typeFile, Keys: patchKeys},
+	}
+}
+
+// PatchTarget says which patchable node type a patch to uri targets: a
+// headline (a .org URI with ?id= or ?h=) or a file. A folder is not
+// patchable. It classifies the URI alone, with no network call.
+func (Plugin) PatchTarget(uri *url.URL) (string, bool) {
+	ref, err := classifyURI(uri)
+	if err != nil {
+		return "", false
+	}
+	switch ref.kind {
+	case kindHeadline:
+		return typeHeadline, true
+	case kindFile:
+		return typeFile, true
+	default:
+		return "", false
+	}
+}
+
 func (e headlineEdit) empty() bool {
 	return e.title == nil && e.state == nil && e.priority == nil && e.ownTags == nil &&
 		e.scheduled == nil && e.deadline == nil && e.body == nil && e.bodyOp == nil &&
