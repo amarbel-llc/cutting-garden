@@ -51,8 +51,8 @@ func TestDescribePatchKeys_MatchesTheRecognizedSets(t *testing.T) {
 	}
 
 	u, _ := url.Parse("ynab://acct/Budget/transactions/abc")
-	tag, keys, ok := cutting_garden_plugins.ResolvePatchKeys(Plugin{}, u)
-	if !ok || tag != typeTransaction || !reflect.DeepEqual(keys, transactionPatchFields) {
-		t.Errorf("ResolvePatchKeys = %q %v %v", tag, keys, ok)
+	got, ok := cutting_garden_plugins.ResolvePatchKeys(Plugin{}, u)
+	if !ok || got.Tag != typeTransaction || !reflect.DeepEqual(got.Keys, transactionPatchFields) {
+		t.Errorf("ResolvePatchKeys = %+v %v", got, ok)
 	}
 }

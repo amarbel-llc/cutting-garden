@@ -54,8 +54,8 @@ func TestDescribePatchKeys_AreTheKeysParseEditReads(t *testing.T) {
 	}
 
 	u, _ := url.Parse("org://acct/inbox.org?id=ABC")
-	tag, keys, ok := cutting_garden_plugins.ResolvePatchKeys(Plugin{}, u)
-	if !ok || tag != typeHeadline || !reflect.DeepEqual(keys, patchKeys) {
-		t.Errorf("ResolvePatchKeys = %q %v %v", tag, keys, ok)
+	got, ok := cutting_garden_plugins.ResolvePatchKeys(Plugin{}, u)
+	if !ok || got.Tag != typeHeadline || !reflect.DeepEqual(got.Keys, patchKeys) {
+		t.Errorf("ResolvePatchKeys = %+v %v", got, ok)
 	}
 }

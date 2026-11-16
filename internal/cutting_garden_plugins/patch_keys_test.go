@@ -60,9 +60,9 @@ func TestResolvePatchKeys_ViaPatchTarget(t *testing.T) {
 		types:    []NodeType{{Tag: "item-v1"}},
 		declared: []NodeTypePatchKeys{{Tag: "item-v1", Keys: []string{"a", "b"}}},
 	}
-	tag, keys, ok := ResolvePatchKeys(p, parse(t, "x://h/item/1"))
-	if !ok || tag != "item-v1" || !reflect.DeepEqual(keys, []string{"a", "b"}) {
-		t.Errorf("got %q %v %v", tag, keys, ok)
+	got, ok := ResolvePatchKeys(p, parse(t, "x://h/item/1"))
+	if !ok || got.Tag != "item-v1" || !reflect.DeepEqual(got.Keys, []string{"a", "b"}) {
+		t.Errorf("got %+v %v", got, ok)
 	}
 }
 
@@ -75,9 +75,9 @@ func TestResolvePatchKeys_URITemplateFirst(t *testing.T) {
 			{Tag: "item-v1", Keys: []string{"i"}},
 		},
 	}
-	tag, keys, ok := ResolvePatchKeys(p, parse(t, "x://h/item/1"))
-	if !ok || tag != "templated-v1" || !reflect.DeepEqual(keys, []string{"t"}) {
-		t.Errorf("got %q %v %v, want the template's type", tag, keys, ok)
+	got, ok := ResolvePatchKeys(p, parse(t, "x://h/item/1"))
+	if !ok || got.Tag != "templated-v1" || !reflect.DeepEqual(got.Keys, []string{"t"}) {
+		t.Errorf("got %+v %v, want the template's type", got, ok)
 	}
 }
 
@@ -87,15 +87,15 @@ func TestResolvePatchKeys_NotOkWhenUnknownOrUndeclared(t *testing.T) {
 		declared: []NodeTypePatchKeys{{Tag: "other-v1", Keys: []string{"a"}}},
 	}
 	// Type resolves, but declares no keys.
-	if _, _, ok := ResolvePatchKeys(p, parse(t, "x://h/item/1")); ok {
+	if _, ok := ResolvePatchKeys(p, parse(t, "x://h/item/1")); ok {
 		t.Error("ok for a type with no declared keys")
 	}
 	// Type cannot be told.
-	if _, _, ok := ResolvePatchKeys(p, parse(t, "x://h/elsewhere")); ok {
+	if _, ok := ResolvePatchKeys(p, parse(t, "x://h/elsewhere")); ok {
 		t.Error("ok for a URI no type resolves")
 	}
 	// Not a describer at all.
-	if _, _, ok := ResolvePatchKeys(plainLister{}, parse(t, "x://h/item/1")); ok {
+	if _, ok := ResolvePatchKeys(plainLister{}, parse(t, "x://h/item/1")); ok {
 		t.Error("ok for a lister without PatchKeysDescriber")
 	}
 }
@@ -105,8 +105,8 @@ func TestResolvePatchKeys_ReturnsACopy(t *testing.T) {
 		types:    []NodeType{{Tag: "item-v1"}},
 		declared: []NodeTypePatchKeys{{Tag: "item-v1", Keys: []string{"a"}}},
 	}
-	_, keys, _ := ResolvePatchKeys(p, parse(t, "x://h/item/1"))
-	keys[0] = "mutated"
+	got, _ := ResolvePatchKeys(p, parse(t, "x://h/item/1"))
+	got.Keys[0] = "mutated"
 	if p.declared[0].Keys[0] != "a" {
 		t.Error("the declaration was mutated through the returned slice")
 	}

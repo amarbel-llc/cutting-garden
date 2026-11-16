@@ -698,6 +698,11 @@ type PatchDetail = internal.PatchDetail
 // call refuses them as unverifiable.
 type PatchKeysDescriber = internal.PatchKeysDescriber
 
+// PatchSection is one choice of a wrapped patch body: the discriminator Value
+// that selects it, the Section key holding the fields, and the Keys they may
+// carry.
+type PatchSection = internal.PatchSection
+
 // Plugin is the cross-cutting identity every capture or restore
 // backend must declare. Schemes returns the URI schemes a plugin
 // handles; the empty string registers the plugin as the schemeless
@@ -1340,10 +1345,11 @@ var ResolveFacetCounts = internal.ResolveFacetCounts
 // (RFC 0018 §5) and are deliberately not resolved through this path.
 var ResolveNodeTypeByURI = internal.ResolveNodeTypeByURI
 
-// ResolvePatchKeys answers, for a patch to uri, the node type's tag and its
-// declared patch keys: the type comes from the declared URITemplates when one
+// ResolvePatchKeys answers, for a patch to uri, the declaration of the node
+// type it targets: the type comes from the declared URITemplates when one
 // matches, else from PatchTarget. ok is false when lister does not implement
-// PatchKeysDescriber, the type cannot be told, or it declares no patch keys.
+// PatchKeysDescriber, the type cannot be told, or it declares nothing. The
+// returned declaration is a copy.
 var ResolvePatchKeys = internal.ResolvePatchKeys
 
 // ResolveProtocolDiff is the diff-direction analogue of

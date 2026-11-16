@@ -10,9 +10,14 @@ import (
 	"code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
 )
 
+// flat is a declaration of top-level keys.
+func flat(keys ...string) cutting_garden_plugins.NodeTypePatchKeys {
+	return cutting_garden_plugins.NodeTypePatchKeys{Tag: "test-v1", Keys: keys}
+}
+
 func TestValidatePatchBody_AllDeclaredKeepsTheOriginalBytes(t *testing.T) {
 	body := []byte(`{ "summary": "x",  "priority": 1 }`)
-	got := validatePatchBody(body, []string{"summary", "priority"})
+	got := validatePatchBody(body, flat("summary", "priority"))
 	if string(got.Body) != string(body) || got.Ignored != nil || got.Empty {
 		t.Errorf("verdict = %+v, want the original bytes, no ignored, not empty", got)
 	}
@@ -20,7 +25,7 @@ func TestValidatePatchBody_AllDeclaredKeepsTheOriginalBytes(t *testing.T) {
 
 func TestValidatePatchBody_StripsUndeclaredKeysAndSortsThem(t *testing.T) {
 	got := validatePatchBody(
-		[]byte(`{"zeta":1,"summary":"x","alpha":2}`), []string{"summary"},
+		[]byte(`{"zeta":1,"summary":"x","alpha":2}`), flat("summary"),
 	)
 	if !reflect.DeepEqual(got.Ignored, []string{"alpha", "zeta"}) {
 		t.Errorf("ignored = %v, want [alpha zeta]", got.Ignored)
@@ -38,7 +43,7 @@ func TestValidatePatchBody_StripsUndeclaredKeysAndSortsThem(t *testing.T) {
 }
 
 func TestValidatePatchBody_NothingDeclaredIsEmpty(t *testing.T) {
-	got := validatePatchBody([]byte(`{"a":1,"b":2}`), []string{"summary"})
+	got := validatePatchBody([]byte(`{"a":1,"b":2}`), flat("summary"))
 	if !got.Empty || !reflect.DeepEqual(got.Ignored, []string{"a", "b"}) {
 		t.Errorf("verdict = %+v, want empty with ignored [a b]", got)
 	}
@@ -47,19 +52,98 @@ func TestValidatePatchBody_NothingDeclaredIsEmpty(t *testing.T) {
 // A body the host cannot read as an object is the plugin's to refuse.
 func TestValidatePatchBody_NonObjectBodiesPassThrough(t *testing.T) {
 	for _, body := range []string{``, `not json`, `[1,2]`, `{}`, `null`} {
-		got := validatePatchBody([]byte(body), []string{"summary"})
+		got := validatePatchBody([]byte(body), flat("summary"))
 		if string(got.Body) != body || got.Ignored != nil || got.Empty {
 			t.Errorf("body %q: verdict = %+v, want pass-through", body, got)
 		}
 	}
 }
 
+// sectioned declares a wrapped body: {"component":"VTODO","task":{...}}.
+func sectioned() cutting_garden_plugins.NodeTypePatchKeys {
+	return cutting_garden_plugins.NodeTypePatchKeys{
+		Tag:           "obj-v1",
+		Discriminator: "component",
+		Sections: []cutting_garden_plugins.PatchSection{
+			{Value: "VTODO", Section: "task", Keys: []string{"priority", "summary"}},
+			{Value: "VEVENT", Section: "event", Keys: []string{"location", "summary"}},
+		},
+	}
+}
+
+func TestValidatePatchBody_WrappedCatchesATypoOneLevelDown(t *testing.T) {
+	got := validatePatchBody(
+		[]byte(`{"component":"VTODO","task":{"summry":"x","summary":"y"}}`), sectioned(),
+	)
+	if !reflect.DeepEqual(got.Ignored, []string{"summry"}) || got.Empty || got.Unverifiable {
+		t.Fatalf("verdict = %+v", got)
+	}
+	if strings.Contains(string(got.Body), "summry") || !strings.Contains(string(got.Body), `"summary":"y"`) {
+		t.Errorf("stripped body = %s", got.Body)
+	}
+}
+
+// A key valid for another component's section is not valid for this one.
+func TestValidatePatchBody_WrappedUsesTheChosenSectionsKeys(t *testing.T) {
+	got := validatePatchBody(
+		[]byte(`{"component":"VTODO","task":{"location":"x","summary":"y"}}`), sectioned(),
+	)
+	if !reflect.DeepEqual(got.Ignored, []string{"location"}) {
+		t.Errorf("ignored = %v, want [location]", got.Ignored)
+	}
+}
+
+func TestValidatePatchBody_WrappedNamesTopLevelStrays(t *testing.T) {
+	got := validatePatchBody(
+		[]byte(`{"component":"VTODO","task":{"summary":"y"},"event":{"summary":"z"},"oops":1}`),
+		sectioned(),
+	)
+	if !reflect.DeepEqual(got.Ignored, []string{"event", "oops"}) {
+		t.Errorf("ignored = %v, want [event oops]", got.Ignored)
+	}
+	if strings.Contains(string(got.Body), "event") || strings.Contains(string(got.Body), "oops") {
+		t.Errorf("stripped body = %s", got.Body)
+	}
+}
+
+func TestValidatePatchBody_WrappedNothingDeclaredIsEmpty(t *testing.T) {
+	got := validatePatchBody([]byte(`{"component":"VTODO","task":{"nope":1}}`), sectioned())
+	if !got.Empty || !reflect.DeepEqual(got.Ignored, []string{"nope"}) {
+		t.Errorf("verdict = %+v, want empty with ignored [nope]", got)
+	}
+}
+
+// A bare body's keys depend on the stored node: the host cannot check it.
+func TestValidatePatchBody_BareBodyUnderASectionedDeclarationIsUnverifiable(t *testing.T) {
+	body := `{"summary":"x"}`
+	got := validatePatchBody([]byte(body), sectioned())
+	if !got.Unverifiable || string(got.Body) != body || got.Ignored != nil {
+		t.Errorf("verdict = %+v", got)
+	}
+}
+
+// A component no section names is the plugin's to refuse, before any write.
+func TestValidatePatchBody_UnknownDiscriminatorValuePassesThrough(t *testing.T) {
+	body := `{"component":"VFREEBUSY","task":{"x":1}}`
+	got := validatePatchBody([]byte(body), sectioned())
+	if string(got.Body) != body || got.Ignored != nil || got.Unverifiable || got.Empty {
+		t.Errorf("verdict = %+v", got)
+	}
+}
+
 // keyedLister is a lister that declares writable keys per URI path.
 type keyedLister struct{ keys map[string][]string }
 
-func (k keyedLister) PatchKeys(uri *url.URL) (string, []string, bool) {
+func (k keyedLister) PatchKeys(uri *url.URL) (cutting_garden_plugins.NodeTypePatchKeys, bool) {
 	keys, ok := k.keys[uri.Path]
-	return "test-v1", keys, ok
+	return flat(keys...), ok
+}
+
+// sectionedLister declares the wrapped form for every URI.
+type sectionedLister struct{}
+
+func (sectionedLister) PatchKeys(*url.URL) (cutting_garden_plugins.NodeTypePatchKeys, bool) {
+	return sectioned(), true
 }
 
 func patchOp(t *testing.T, uri, body string) cutting_garden_plugins.BulkOp {
@@ -179,6 +263,40 @@ func TestScreenPatches_StrictAtomicFailsTheCallWithNothingDispatched(t *testing.
 	if _, err := screenPatches(ops, lister, true, true); err == nil ||
 		!strings.Contains(err.Error(), "nothing was written") {
 		t.Errorf("err = %v, want a refusal before any write", err)
+	}
+}
+
+// Strict, wrapped-form declaration: a typo nested one level down is refused
+// before the write, and a bare body is refused with a message that says to use
+// the wrapped form. Tolerant dispatches the bare body unchanged.
+func TestScreenPatches_StrictWrappedForm(t *testing.T) {
+	ops := []cutting_garden_plugins.BulkOp{
+		patchOp(t, "faketest://h/o1", `{"component":"VTODO","task":{"summry":"x"}}`),
+		patchOp(t, "faketest://h/o2", `{"summary":"x"}`),
+		patchOp(t, "faketest://h/o3", `{"component":"VTODO","task":{"summary":"x"}}`),
+	}
+	screen, err := screenPatches(ops, sectionedLister{}, true, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(screen.dispatched, []int{2}) {
+		t.Errorf("dispatched = %v, want only the clean wrapped op", screen.dispatched)
+	}
+	if got := screen.resolved[0].err; !strings.Contains(got, "summry") {
+		t.Errorf("nested typo refusal = %q", got)
+	}
+	if got := screen.resolved[1].err; !strings.Contains(got, "wrapped form") ||
+		!strings.Contains(got, `"component"`) {
+		t.Errorf("bare-form refusal = %q", got)
+	}
+
+	tolerant := []cutting_garden_plugins.BulkOp{patchOp(t, "faketest://h/o2", `{"summary":"x"}`)}
+	screen, err = screenPatches(tolerant, sectionedLister{}, false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(screen.dispatched, []int{0}) || string(tolerant[0].Body) != `{"summary":"x"}` {
+		t.Errorf("tolerant bare body: %+v / %s", screen, tolerant[0].Body)
 	}
 }
 

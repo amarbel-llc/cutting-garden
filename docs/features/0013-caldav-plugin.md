@@ -102,6 +102,23 @@ resources but does **not** MKCALENDAR — the destination's calendar
 collections must already exist. Restore aborts on the first failure so a
 partial restore surfaces loudly.
 
+### Patching under strict (cutting-garden#404)
+
+A patch to an object (`mutate_nodes`, or the node's `PatchNode`) takes the
+wrapped body `{"component":"VTODO","task":{...}}` or the bare field object
+`{"summary":"..."}`. The bare form's accepted keys come from the STORED
+object's component, which the URI does not say (VTODO, VEVENT and VJOURNAL
+share one URI shape), so the host cannot check it before the write. The plugin
+therefore declares its patch keys for the wrapped form only
+(`DescribePatchKeys`: the `component` discriminator and, per component, its
+section and field keys). Under a tolerant call the host drops an undeclared key,
+inside `task` as well as beside it, and reports it as ignored; the bare form is
+sent unchanged and the plugin reports what it ignored. Under a strict call
+(`strict: true`) a wrapped body with an undeclared key is refused before the
+write, and a BARE body is refused with a message that says to use the wrapped
+form. This is a documented limitation of strict for caldav, chosen because
+resolving the component would cost a read of the object per patch.
+
 ## TypeTag
 
 `TypeTag()` returns `capture_receipt.TypeTagV1`

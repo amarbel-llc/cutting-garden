@@ -40,8 +40,8 @@ func TestDescribePatchKeys_MatchesTheRecognizedSet(t *testing.T) {
 	}
 
 	u, _ := url.Parse("jira://example.atlassian.net/PROJ/PROJ-1")
-	tag, keys, ok := cutting_garden_plugins.ResolvePatchKeys(Plugin{}, u)
-	if !ok || tag != typeIssue || !reflect.DeepEqual(keys, issuePatchFields) {
-		t.Errorf("ResolvePatchKeys = %q %v %v", tag, keys, ok)
+	got, ok := cutting_garden_plugins.ResolvePatchKeys(Plugin{}, u)
+	if !ok || got.Tag != typeIssue || !reflect.DeepEqual(got.Keys, issuePatchFields) {
+		t.Errorf("ResolvePatchKeys = %+v %v", got, ok)
 	}
 }

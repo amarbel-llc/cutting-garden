@@ -169,8 +169,16 @@ silently ignored today (inferred from the key lists, not tested).
   (`bulk_dispatch.go`); the five plugins' own `IgnoredPatchFields` calls
   become redundant and are removed, their literal lists becoming the
   declarations.
-- Implementation question, not ruled: how the host knows the target node's
-  type before dispatch for the caldav bare form (resolve the type first, or
-  require the wrapped form under strict). Decide at implementation.
+- Decided at implementation (2026-11-16, not overruled by the operator):
+  caldav's bare form cannot be resolved from the URI (three component types
+  share one URI shape; the key set follows the stored object), so strict for
+  caldav accepts the WRAPPED form only. The declaration carries a
+  `Discriminator` and per-component `Sections`, validated one level down; the
+  bare form is refused under strict with a message that says to use the wrapped
+  form, and sent unchanged when tolerant. A documented limitation (FDR 0013,
+  "Patching under strict"), chosen over a read of the object per patch.
+- Built so far: jira, fastmail, ynab, org, caldav declare. The org `tags` /
+  `own_tags` drift is now caught by the host (a direct `tags` patch is dropped
+  and reported as ignored); the listing still calls the field `tags`.
 - Verify and fix the org `tags` / `own_tags` listing drift.
 - `cutting-garden-mcp(1)` omits ynab from its mutate_nodes plugin list.

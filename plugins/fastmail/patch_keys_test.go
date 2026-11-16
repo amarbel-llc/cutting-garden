@@ -42,8 +42,8 @@ func TestDescribePatchKeys_MatchesTheRecognizedSet(t *testing.T) {
 	}
 
 	u, _ := url.Parse("fastmail://personal/Inbox/?thread=T1")
-	tag, keys, ok := cutting_garden_plugins.ResolvePatchKeys(Plugin{}, u)
-	if !ok || tag != typeThread || !reflect.DeepEqual(keys, threadPatchFields) {
-		t.Errorf("ResolvePatchKeys = %q %v %v", tag, keys, ok)
+	got, ok := cutting_garden_plugins.ResolvePatchKeys(Plugin{}, u)
+	if !ok || got.Tag != typeThread || !reflect.DeepEqual(got.Keys, threadPatchFields) {
+		t.Errorf("ResolvePatchKeys = %+v %v", got, ok)
 	}
 }

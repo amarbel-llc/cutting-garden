@@ -404,8 +404,11 @@ than inventing its own result shape.
   request the call fails before any write. Strict refuses patch sweeps for now
   (their matches' types are unknown before the write). Value-level checks
   (ynab refusing a category on a split) stay the plugin's. jira, fastmail
-  (thread only), ynab (transaction, payee) and org (headline, file) declare so
-  far; a plugin that has not declared gets tolerant behaviour exactly as before.
+  (thread only), ynab (transaction, payee), org (headline, file) and caldav
+  declare. caldav declares the WRAPPED body only (`NodeTypePatchKeys` carries a
+  `Discriminator` and per-choice `Sections`, checked one level down); its bare
+  form depends on the stored object, so a tolerant call sends it unchanged and
+  a strict call refuses it (FDR 0013, "Patching under strict"); a plugin that has not declared gets tolerant behaviour exactly as before.
   Not yet built: the wire `node_types` declaration (RFC 0013), RFC 0017's strict
   member, and listing the keys in `describe_node_types`.
 - **Create vs. upsert → strict.** `create_node` errors if the node exists

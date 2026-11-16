@@ -23,7 +23,7 @@ import (
 // through untouched, strict refuses. Production uses the plugin's
 // PatchKeysDescriber (patchKeysFor); tests may plug in anything.
 type patchKeyResolver interface {
-	PatchKeys(uri *url.URL) (tag string, keys []string, ok bool)
+	PatchKeys(uri *url.URL) (cutting_garden_plugins.NodeTypePatchKeys, bool)
 }
 
 // describedPatchKeys resolves through a lister's PatchKeysDescriber.
@@ -31,7 +31,9 @@ type describedPatchKeys struct {
 	lister cutting_garden_plugins.RootLister
 }
 
-func (d describedPatchKeys) PatchKeys(uri *url.URL) (string, []string, bool) {
+func (d describedPatchKeys) PatchKeys(
+	uri *url.URL,
+) (cutting_garden_plugins.NodeTypePatchKeys, bool) {
 	return cutting_garden_plugins.ResolvePatchKeys(d.lister, uri)
 }
 
@@ -54,12 +56,105 @@ type patchVerdict struct {
 	// Empty is true when the body named keys but none was declared, so
 	// stripping leaves nothing to dispatch.
 	Empty bool
+	// Unverifiable is true for a body the declaration cannot check (a bare
+	// body where only a wrapped one is declared): tolerant dispatches it
+	// unchanged, strict refuses it.
+	Unverifiable bool
 }
 
-// validatePatchBody checks body against the declared keys. A body that is not
-// a JSON object is passed through: its rejection belongs to the plugin, which
+// validatePatchBody checks body against the declaration. A body that is not a
+// JSON object is passed through: its rejection belongs to the plugin, which
 // owns the body's grammar.
-func validatePatchBody(body []byte, declared []string) patchVerdict {
+func validatePatchBody(
+	body []byte, decl cutting_garden_plugins.NodeTypePatchKeys,
+) patchVerdict {
+	if len(decl.Sections) > 0 {
+		return validateSectionedBody(body, decl)
+	}
+
+	return validateFlatBody(body, decl.Keys)
+}
+
+// validateSectionedBody checks a wrapped body: the top level against the
+// discriminator and the chosen section, the section object against that
+// choice's keys.
+func validateSectionedBody(
+	body []byte, decl cutting_garden_plugins.NodeTypePatchKeys,
+) patchVerdict {
+	var top map[string]json.RawMessage
+	if err := json.Unmarshal(body, &top); err != nil || len(top) == 0 {
+		return patchVerdict{Body: body}
+	}
+
+	rawValue, wrapped := top[decl.Discriminator]
+	if !wrapped {
+		return patchVerdict{Body: body, Unverifiable: true}
+	}
+
+	var value string
+	if err := json.Unmarshal(rawValue, &value); err != nil {
+		return patchVerdict{Body: body}
+	}
+
+	choice, found := sectionFor(decl.Sections, value)
+	if !found {
+		return patchVerdict{Body: body}
+	}
+
+	var fields map[string]json.RawMessage
+	if raw, present := top[choice.Section]; present {
+		if err := json.Unmarshal(raw, &fields); err != nil {
+			return patchVerdict{Body: body}
+		}
+	}
+
+	extras := cutting_garden_plugins.IgnoredPatchFields(
+		top, []string{decl.Discriminator, choice.Section},
+	)
+	nested := cutting_garden_plugins.IgnoredPatchFields(fields, choice.Keys)
+	ignored := unionSorted(extras, nested)
+	if len(ignored) == 0 {
+		return patchVerdict{Body: body}
+	}
+
+	if len(fields) == len(nested) {
+		return patchVerdict{Body: body, Ignored: ignored, Empty: true}
+	}
+
+	for _, key := range extras {
+		delete(top, key)
+	}
+	for _, key := range nested {
+		delete(fields, key)
+	}
+
+	keptFields, err := json.Marshal(fields)
+	if err != nil {
+		return patchVerdict{Body: body, Ignored: ignored}
+	}
+	top[choice.Section] = keptFields
+
+	kept, err := json.Marshal(top)
+	if err != nil {
+		return patchVerdict{Body: body, Ignored: ignored}
+	}
+
+	return patchVerdict{Body: kept, Ignored: ignored}
+}
+
+func sectionFor(
+	sections []cutting_garden_plugins.PatchSection, value string,
+) (cutting_garden_plugins.PatchSection, bool) {
+	for _, section := range sections {
+		if section.Value == value {
+			return section, true
+		}
+	}
+
+	return cutting_garden_plugins.PatchSection{}, false
+}
+
+func validateFlatBody(body []byte, declared []string) patchVerdict {
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(body, &fields); err != nil || len(fields) == 0 {
 		return patchVerdict{Body: body}
@@ -130,10 +225,10 @@ func screenPatches(
 			continue
 		}
 
-		var keys []string
+		var decl cutting_garden_plugins.NodeTypePatchKeys
 		var declared bool
 		if resolver != nil && op.URI != nil {
-			_, keys, declared = resolver.PatchKeys(op.URI)
+			decl, declared = resolver.PatchKeys(op.URI)
 		}
 
 		if !declared {
@@ -150,9 +245,16 @@ func screenPatches(
 			continue
 		}
 
-		verdict := validatePatchBody(op.Body, keys)
+		verdict := validatePatchBody(op.Body, decl)
 		switch {
-		case len(verdict.Ignored) == 0:
+		case verdict.Unverifiable && strict:
+			msg := strictUnverifiableMessage(i, op, decl.Discriminator)
+			refusals = append(refusals, msg)
+			screen.resolved[i] = hostResolvedOp{
+				status: cutting_garden_plugins.OutcomeFailed, err: msg,
+			}
+
+		case verdict.Unverifiable, len(verdict.Ignored) == 0:
 			screen.dispatched = append(screen.dispatched, i)
 
 		case strict:
@@ -203,6 +305,15 @@ func strictIgnoredMessage(
 ) string {
 	return "strict: " + opLabel(i, op) + " names keys the node type does not" +
 		" accept (" + strings.Join(ignored, ", ") + "); nothing was written for it"
+}
+
+func strictUnverifiableMessage(
+	i int, op *cutting_garden_plugins.BulkOp, discriminator string,
+) string {
+	return "strict: " + opLabel(i, op) + " cannot be checked: its keys depend on" +
+		" the stored node unless the body names a " + strconv.Quote(discriminator) +
+		" and nests its fields in that component's section (the wrapped form); nothing" +
+		" was written for it"
 }
 
 func strictUndeclaredMessage(i int, op *cutting_garden_plugins.BulkOp) string {
