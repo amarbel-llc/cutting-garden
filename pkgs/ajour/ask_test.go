@@ -36,6 +36,7 @@ const (
     [-> read !mcp-tool-v1 perm=allow
       [-> file:circus/.worktrees/swift-plum !fs-path-v1 subtree]
       [-> file:circus/.worktrees/swift-plum/infra !fs-path-v1 subtree perm=ask]]]]`
+	askReadPatch = `[moxy [-> folio [-> read perm=ask]]]`
 	denyReadTool = `[moxy !clown-plugin-v1 [-> folio !mcp-server-v1 [-> read !mcp-tool-v1 deny]]]`
 )
 
@@ -52,6 +53,8 @@ var askVectors = []askVector{
 	{id: "A-38", name: "perm=dynamic", layers: []layerSrc{stencil(dynamicTool)}, call: moxyCall("folio", "read", manifestAsk, fsPath(wt+"/a.go")), outcome: OutcomeAdmitted, perm: PermDefault},
 	{id: "A-39", name: "a child restating without perm puts the tier back", layers: []layerSrc{stencil(stencilA), stencil(stencilM)}, call: moxyCall("folio", "read", manifestAsk, fsPath(wt+"/a.go")), outcome: OutcomeAdmitted, perm: PermDefault},
 	{id: "A-40", name: "a child cannot loosen ask", layers: []layerSrc{stencil(askTool), stencil(stencilA)}, call: moxyCall("folio", "read", readTool, fsPath(wt+"/a.go")), outcome: OutcomeAsk, asks: []string{"0@2"}},
+	{id: "A-41", name: "a patch leaf asking tightens a stencil's allow", layers: []layerSrc{stencil(stencilA), patch(askReadPatch)}, call: moxyCall("folio", "read", readTool, fsPath(wt+"/a.go")), outcome: OutcomeAsk, asks: []string{"1@2"}},
+	{id: "A-41", name: "a patch ask and a stencil ask are both listed", layers: []layerSrc{stencil(askTool), patch(askReadPatch)}, call: moxyCall("folio", "read", readTool, fsPath(wt+"/a.go")), outcome: OutcomeAsk, asks: []string{"0@2", "1@2"}},
 	{id: "A-42", name: "deny outranks ask; the ask is still listed", layers: []layerSrc{stencil(askTool), patch(denyReadTool)}, call: moxyCall("folio", "read", readTool, fsPath(wt+"/a.go")), outcome: OutcomeRefused, asks: []string{"0@2"}, refusals: []string{"1:deny@2"}},
 	{id: "A-43", name: "ask on a path node, under it", layers: []layerSrc{stencil(askInfra)}, call: moxyCall("folio", "read", readTool, fsPath(wt+"/infra/x")), outcome: OutcomeAsk, asks: []string{"0@3"}},
 	{id: "A-43", name: "ask on a path node, beside it", layers: []layerSrc{stencil(askInfra)}, call: moxyCall("folio", "read", readTool, fsPath(wt+"/src/x")), outcome: OutcomeAdmitted, perm: PermAllow},
@@ -120,7 +123,8 @@ func TestPermParse(t *testing.T) {
 		mention  string
 	}{
 		{"A-46", "a patch cannot loosen", patch(`[moxy [-> folio [-> read perm=allow deny]]]`), "perm=allow"},
-		{"A-46", "a patch leaf asking (ask-in-patches pending a ruling)", patch(`[moxy [-> folio [-> read perm=ask]]]`), "perm=ask"},
+		{"A-46", "a patch cannot say dynamic", patch(`[moxy [-> folio [-> read perm=dynamic]]]`), "perm=dynamic"},
+		{"A-46", "a patch ask cannot also deny", patch(`[moxy [-> folio [-> read perm=ask deny]]]`), "deny"},
 		{"A-47", "an unknown value", stencil(`[moxy [-> folio [-> read perm=bogus]]]`), "perm=bogus"},
 		{"A-47", "a list", stencil(`[moxy [-> folio [-> read perm=[allow, ask]]]]`), "perm=[allow, ask]"},
 		{"A-47", "negated", stencil(`[moxy [-> folio [-> read ^perm=ask]]]`), "^perm=ask"},

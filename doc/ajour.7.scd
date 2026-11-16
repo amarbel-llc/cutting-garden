@@ -161,8 +161,9 @@ over every node the call matched that carries a *perm* (a document none of
 whose matched nodes does leaves the call to the tier), then over the
 documents, so a later stencil
 can turn an allow into an ask but never the reverse, and the tier is skipped
-only when every stencil says *allow*. A patch carries no *perm*: it only
-denies. A deny or a missing allowance anywhere still refuses the call,
+only when every stencil says *allow*. A patch may carry *perm=ask*
+and no other *perm*: it tightens, so it can turn an allow into an ask but
+never loosen. A deny or a missing allowance anywhere still refuses the call,
 whatever any node asked.
 
 So the answer has three outcomes: refused, *ask*, or admitted. ajour does not

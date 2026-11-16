@@ -39,8 +39,8 @@ type Layer interface{ ajourLayer() }
 // node carries `deny`.
 type Stencil struct{ Roots []Node }
 
-// A Patch is an act's own body: it only denies, so every leaf carries
-// `deny`.
+// A Patch is an act's own body: it only tightens, so every leaf carries
+// `deny` or `perm=ask` (operator ruling a1, 2026-11-16).
 type Patch struct{ Roots []Node }
 
 func (Stencil) ajourLayer() {}
@@ -191,9 +191,9 @@ func projectNode(tree trellis.TreeNode, kind layerKind) (Node, error) {
 			)
 		}
 	case layerPatch:
-		if len(tree.Children) == 0 && !node.Deny {
+		if len(tree.Children) == 0 && !node.Deny && node.Perm() != PermAsk {
 			return Node{}, errors.BadRequestf(
-				"a patch may only deny; leaf %s carries no deny", spellHead(tree),
+				"a patch may only deny or ask; leaf %s carries neither", spellHead(tree),
 			)
 		}
 	}

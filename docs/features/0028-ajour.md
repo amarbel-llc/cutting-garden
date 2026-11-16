@@ -103,9 +103,9 @@ from that mark:
 - a **stencil**: the body of a capability profile document the chain pins
   by digest (the `profile` edge). A stencil's nodes are **allowances**
   (holes) unless they carry `deny`.
-- a **patch**: an act's own body (RFC 0013 §1, §4.9). A patch only denies:
+- a **patch**: an act's own body (RFC 0013 §1, §4.9). A patch only tightens:
   it is transparent where it says nothing, and every leaf of it MUST carry
-  `deny`. A patch that tightens a condition spells the tightening as a deny
+  `deny` or `perm=ask` (ruling a1, 2026-11-16). A patch that tightens a condition spells the tightening as a deny
   with a condition (`[-> _ !recipe-arg-v1 position=1 value!=status deny]`);
   a `+` node appears in a patch only with `deny` (`[-> + !t deny]`: no
   creation of that type here). A body with a leaf lacking `deny` is
@@ -321,7 +321,9 @@ Consequences the rules give for free, so they are not special cases:
   matched nodes that carry a `perm` (none leaves that layer at default),
   then over the stencils, so the tier is skipped only when every stencil
   says `allow`, and a later stencil can tighten but never loosen. A patch
-  carries no `perm` (it only denies; asking from a patch awaits a ruling).
+  may carry `perm=ask` and nothing else (operator ruling a1, 2026-11-16):
+  it tightens an allow into an ask and never loosens, so `perm=allow` and
+  `perm=dynamic` stay stencil-only; its asks join `Asks` like a stencil's.
   One `perm` per node, `=` only, one value of `allow|ask|dynamic`, never
   negated and never beside `deny`; since it matches nothing, a typed `_`
   node whose only atom is `perm` is still a wildcard and needs `open`
@@ -640,7 +642,7 @@ A patch that tightens, and a patch that is malformed:
     ParsePatch("[just-us [-> just-us [-> run_recipe [-> explore-cli [-> _ !recipe-arg-v1 position=1 value!=status deny]]]]]")
       => ok; `update` is now denied at position 1, `status` still needs a stencil to admit it
     ParsePatch("[moxy [-> folio [-> read [-> file:/wt !fs-path-v1 subtree]]]]")
-      => error: a patch may only deny; leaf [file:/wt !fs-path-v1 subtree] carries no deny
+      => error: a patch may only deny or ask; leaf [file:/wt !fs-path-v1 subtree] carries neither
 
 ### A complete document
 
@@ -874,12 +876,12 @@ Reused rows keep their ids; the `A-` rows are this record's.
 | A-38 | no `perm` atom; `perm=dynamic`; the manifest says `ask` | Admitted, Perm Default (the tier decides); the same |
 | A-39 | a parent stencil with `perm=allow`, a child stencil restating the tool without `perm` | Admitted, Perm Default (the tier is skipped only when every stencil says allow) |
 | A-40 | a parent stencil with `perm=ask`, a child with `perm=allow` | Ask (a child cannot loosen) |
-| A-41 | a stencil with `perm=allow`, a patch leaf `perm=ask` on the same tool | Ask; held until the operator rules on asking from a patch (today A-46 refuses the patch) |
+| A-41 | a stencil with `perm=allow`, a patch leaf `perm=ask` on the same tool; a stencil ask plus the same patch | Ask, the patch's node listed at its layer (ruling a1: a patch may ask); both asks listed |
 | A-42 | a stencil with `perm=ask`, a patch denying the tool | refused by the patch's deny, the stencil's ask still listed |
 | A-43 | the tool `perm=allow`, `[-> file:wt !fs-path-v1 subtree]` and `[-> file:wt/infra !fs-path-v1 subtree perm=ask]`; read `wt/infra/x`; read `wt/src/x` | Ask at the path step; Admitted, Perm Allow |
 | A-44 | `[-> ynab:main !cg-root-v1 subtree op=[read] perm=ask]`; read a transaction three steps below | Ask, one entry, at `ynab:main`'s step |
 | A-45 | stencil 1 asks, stencil 2 has no allowance for the call | refused (no allowance outranks ask; the refusing layer's ask is dropped) |
-| A-46 | `ParsePatch` of a node with `perm=allow deny`; of a leaf `perm=ask` | each errors naming the atom (a patch carries no `perm`) |
+| A-46 | `ParsePatch` of a node with `perm=allow deny`; of `perm=dynamic`; of `perm=ask deny` | each errors naming the atom (a patch may carry `perm=ask` only, never beside `deny`) |
 | A-47 | `perm=bogus`; `perm=[allow, ask]`; `^perm=ask`; `perm^=a`; `perm=ask deny`; two `perm` atoms; `[-> _ !mcp-tool-v1 perm=ask]` without `open`; `"perm"=x` | each a parse error naming the atom or the rule; the last parses (a quoted name is opaque) |
 | A-48 | `Write` of a stencil with `perm=` on tool and non-tool nodes | spelled exactly as read; re-parses to a fixed point |
 | A-49 | `Resolve` of Admitted; of Refused; of Ask attended (with or without a channel), unattended with a channel, unattended without; of the zero Verdict | Run; Refuse; Prompt; Escalate; Refuse; Refuse |
@@ -910,7 +912,7 @@ piggy's RFC 0013 conformance vectors point at A-17, A-18 and A-19 by name
   evaluates what each layer says. This contradicts one sentence of spinclass
   FDR 0034 "Verification" ("a predicate on a present node that a child
   profile does not mention is inherited unchanged"); see the asks.
-- **A patch only denies.** A self-narrow that wants a tighter allowance
+- **A patch only tightens (deny or ask).** A self-narrow that wants a tighter allowance
   pins a narrower profile (RFC 0013 §2 allows `profile` on `narrow`), or
   denies the complement. This keeps "a layer can only remove" visible in the
   spelling, and a body never needs a catalog check.

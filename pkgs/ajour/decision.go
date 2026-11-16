@@ -117,9 +117,9 @@ func isPermAtom(fp trellis.FieldPred) bool {
 }
 
 // checkPerm refuses a `perm` atom the fragment excludes: anything but one
-// `perm=allow|ask|dynamic` per node, not negated, never beside `deny`, and
-// none in a patch (a patch only refuses; asking from a patch awaits a
-// ruling).
+// `perm=allow|ask|dynamic` per node, not negated, never beside `deny`, and in
+// a patch only `perm=ask` (a patch tightens: it may deny or ask, operator
+// ruling a1, 2026-11-16).
 func checkPerm(tree trellis.TreeNode, deny bool, kind layerKind) error {
 	seen := false
 	for _, atom := range tree.Atoms {
@@ -131,8 +131,6 @@ func checkPerm(tree trellis.TreeNode, deny bool, kind layerKind) error {
 			return errors.BadRequestf("atom `%s`: %s", spelled, why)
 		}
 		switch {
-		case kind == layerPatch:
-			return refuse("a patch may only deny; `perm` decides, so it belongs in a stencil")
 		case seen:
 			return refuse("a node carries one `perm` atom")
 		case atom.Negate:
@@ -142,8 +140,12 @@ func checkPerm(tree trellis.TreeNode, deny bool, kind layerKind) error {
 		case len(atom.Pred.Values) != 1:
 			return refuse("`perm` takes one value")
 		}
-		switch trellis.ValueText(atom.Pred.Values[0]) {
-		case permAllow, permAsk, permDynamic:
+		value := trellis.ValueText(atom.Pred.Values[0])
+		switch {
+		case kind == layerPatch && value != permAsk:
+			// A patch only tightens: it may deny or ask, never loosen.
+			return refuse("a patch may only deny or ask; `perm=allow` and `perm=dynamic` loosen, so they belong in a stencil")
+		case value == permAllow, value == permAsk, value == permDynamic:
 		default:
 			return refuse("`perm` is allow, ask or dynamic")
 		}
