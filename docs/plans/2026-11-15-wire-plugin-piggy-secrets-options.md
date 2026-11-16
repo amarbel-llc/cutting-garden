@@ -2,7 +2,7 @@
 
 Date: 2026-11-15
 Issue: cutting-garden#285 (milestone "traversal wire and conformance")
-Status: options note for an operator ruling. Nothing here is implemented.
+Status: ruled 2026-11-16 (see Ruling). Nothing here is implemented.
 
 ## Problem
 
@@ -99,3 +99,37 @@ Is a host allowed to log `initialize` params at all? Under (a) this does not
 matter (only a key name is present); under (b) it decides whether the
 handshake can carry a secret safely. I have not checked the host's logging;
 that is a verification step before (b) is considered.
+
+Under the ruling below this question is moot: no credential or key name
+reaches a plugin, so nothing in `initialize` is sensitive.
+
+## Ruling (2026-11-16)
+
+**(d) piggy as a local auth decoration proxy.** None of (a), (b) or (c).
+piggy (the operator also named it piggy/fibby) decorates a plugin's outbound
+requests with the credential, so a traversal plugin, in-process or wire, in
+any language, holds no credential and resolves no indirection. Its config
+names the proxy, not a password.
+
+Reason: (a) unblocks nothing immediately (the real unblock is smith-side
+work either way), and the tent work already needs the same proxy, so the
+marginal cost here is a route entry, not a subsystem. It also keeps RFC
+0013's no-credentials-on-the-wire rule trivially, and gives the one
+batched PIN session (b) was for.
+
+Deliberately not specified here: how the proxy is addressed, how routes map
+to entries, TLS handling. That is piggy's design, captured in piggy's own
+docs when it is built; cutting-garden cross-references it and does not
+restate it.
+
+### Follow-ups implied
+
+- piggy repo: the decoration-proxy feature itself. Tracked there, not here.
+- cutting-garden, once piggy documents the mechanism: RFC 0013 Security
+  Considerations and cutting-garden-config(5) cross-reference it as the way a
+  wire plugin's account authenticates; `password_source = "piggy"` stays as
+  the in-process path until the proxy supersedes it.
+- smith (`serve-cutting_garden`): stays blocked on #285 until the proxy
+  exists; the smith side is tracked on the smith repo.
+- The conformance case with a stub `piggy` on PATH from option (a) is not
+  needed.

@@ -2,7 +2,7 @@
 
 Date: 2026-11-15
 Issue: cutting-garden#404 (follow-up to #376; contract from #182)
-Status: options note for an operator ruling. Nothing here is implemented.
+Status: ruled 2026-11-16 (see Ruling). Nothing here is implemented.
 
 ## Where things stand
 
@@ -98,3 +98,77 @@ prevent the recognized keys from applying", is a small host-only change.
 2. Per call (recommended), per group, or per op?
 3. Should the wire member be part of this change, or a follow-up RFC 0017
    revision?
+
+Answered by the ruling below: no-write is required; per call; the wire
+member ships with the change, but as a per-type declaration in
+`node_types`, not as a strict flag on `node.patch`.
+
+## Ruling (2026-11-16)
+
+The operator asked for a synthetic upfront design against every known use
+case (compat for a newer caller, visible reporting, a pre-write refusal for
+a typo'd key, sweep ergonomics, linked/wire indistinguishability, atomicity
+untouched, uneven plugin adoption) and ruled the decisions as that design,
+rather than as the incremental options above.
+
+**Decision 1: (1a) per call.** One top-level mutate_nodes argument and one
+`node.bulk_mutate` request member. Reason: smallest surface, mirrors the
+existing call-level `atomicity`; a caller needing mixed behaviour splits the
+call.
+
+**Decision 2: host-side validation against a declared per-type writable key
+set** ((2c) made primary, with host-side stripping as the tolerant path).
+Each plugin declares, per node type, the static set of patch keys it
+accepts; for a wire plugin that is a new additive member of the
+`initialize` result's `node_types` entry (the pattern `creatable` already
+set). The host validates every patch body against it before dispatch:
+tolerant strips the undeclared keys, dispatches the rest and reports them as
+`ignored`; strict refuses the op pre-write, naming them. Plugins never see
+an unknown key and never see the strict flag. Reason: the no-write
+guarantee is the point of strict, and this gives it to linked and wire
+plugins alike from one enforcement point, with no capability token and no
+flag on `node.patch`; drift inverts from "declared list vs applied keys" to
+an ordinary plugin bug, since the plugin cannot apply an undeclared key.
+The first step is the full host-side validation, not the declaration
+alone: a declaration with no consumer would sit unexercised, repeating the
+tolerance-then-reporting-then-enforcement chain that produced this issue.
+
+**Decision 3: refuse under strict** for a plugin or node type with no
+declaration; tolerant pass-through otherwise. Reason: it falls out of
+decision 2, and "undeclared" is a visible capability state rather than a
+silence indistinguishable from compliance.
+
+### De-risking inventory (2026-11-16, read-only, unverified by test)
+
+Five in-tree plugins patch: caldav, jira, fastmail, org, ynab. Every
+writable key set is static per (plugin, node type), held as a Go literal or
+derived from a Go map, and every one already runs `IgnoredPatchFields`
+against it. The one key-level dependence is caldav's bare-form patch,
+whose accepted set follows the stored object's component; since VTODO,
+VEVENT and VJOURNAL are distinct node types, that is type-dependence the
+host can resolve, not state-dependence. Everything else is value-level
+(ynab refuses `category` on splits and `cleared` on reconciled
+transactions, fastmail refuses non-thread nodes, org checks move targets)
+and stays plugin-side. Today's declarations are prose: the wire
+`node_types` entry carries `tag_set`, `inline_fields`, `trailer_field`,
+`creatable` and a free-text per-body `accepts`; no machine-readable
+writable-keys member exists anywhere, so the declaration is new. A likely
+live drift the design would catch: org's listing marks `tags` writable
+while its patch key is `own_tags`, so a direct `{"tags": …}` patch is
+silently ignored today (inferred from the key lists, not tested).
+
+### Follow-ups implied
+
+- Add the per-type writable-keys declaration to the SDK describer surface
+  and, for wire plugins, as an additive `node_types` member in RFC 0013
+  (RFC 0017 gains the per-call strict member and the host-computed
+  `ignored` semantics).
+- Move `ignored` computation into the host dispatch path
+  (`bulk_dispatch.go`); the five plugins' own `IgnoredPatchFields` calls
+  become redundant and are removed, their literal lists becoming the
+  declarations.
+- Implementation question, not ruled: how the host knows the target node's
+  type before dispatch for the caldav bare form (resolve the type first, or
+  require the wrapped form under strict). Decide at implementation.
+- Verify and fix the org `tags` / `own_tags` listing drift.
+- `cutting-garden-mcp(1)` omits ynab from its mutate_nodes plugin list.
