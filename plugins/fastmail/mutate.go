@@ -18,6 +18,8 @@ import (
 var (
 	_ cutting_garden_plugins.NodeMutator   = (*Plugin)(nil)
 	_ cutting_garden_plugins.BodyDescriber = (*Plugin)(nil)
+
+	_ cutting_garden_plugins.PatchKeysDescriber = (*Plugin)(nil)
 )
 
 // patchFieldMailbox is the thread's move field (cutting-garden#401): the
@@ -52,6 +54,27 @@ func (Plugin) DescribeBodies() []cutting_garden_plugins.NodeTypeBody {
 		},
 		Example: map[string]any{patchFieldMailbox: "Archive"},
 	}}
+}
+
+// DescribePatchKeys declares the thread's patch keys for the host's validation
+// (cutting-garden#404): the host drops any other key before PatchNode sees it
+// and, for a strict call, refuses the op. Whether a body naming both keys, or
+// a tag, is acceptable stays PatchNode's to decide.
+func (Plugin) DescribePatchKeys() []cutting_garden_plugins.NodeTypePatchKeys {
+	return []cutting_garden_plugins.NodeTypePatchKeys{
+		{Tag: typeThread, Keys: threadPatchFields},
+	}
+}
+
+// PatchTarget says a patch to a thread URI targets a thread; every other
+// fastmail node is not patchable. It classifies the URI alone, with no
+// network call.
+func (Plugin) PatchTarget(uri *url.URL) (string, bool) {
+	ref, err := classifyURI(uri)
+	if err != nil || ref.kind != kindThread {
+		return "", false
+	}
+	return typeThread, true
 }
 
 // PatchNode is PatchNodeDetail without the new URI.
