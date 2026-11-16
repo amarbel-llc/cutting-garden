@@ -389,6 +389,24 @@ than inventing its own result shape.
   Under this amendment nebulous can relax back to tolerant and report
   `applied` instead.
 
+- **A patch is checked against the keys its type accepts (2026-11-16,
+  cutting-garden#404).** A plugin MAY implement `PatchKeysDescriber`:
+  `DescribePatchKeys()` (the static patch-key set per node type) and
+  `PatchTarget(uri)` (which type a URI targets, asked only when no type's
+  `URITemplate` matches). `internal/mcp` then validates each patch op of
+  `mutate_nodes` against it BEFORE dispatch, so the plugin never sees an
+  undeclared key. Tolerant (the default) drops the keys and reports them in the
+  outcome's `ignored`; a body left with no declared key is settled by the host
+  as `patched_nothing` and is not dispatched (inside an atomic request it is
+  sent unchanged, the plugin deciding). The call-level `strict: true` instead
+  refuses such an op, and a patch to a type with no declaration, before
+  anything is written for it: in best-effort that op fails alone, in an atomic
+  request the call fails before any write. Strict refuses patch sweeps for now
+  (their matches' types are unknown before the write). Value-level checks
+  (ynab refusing a category on a split) stay the plugin's. jira declares first;
+  a plugin that has not declared gets tolerant behaviour exactly as before.
+  Not yet built: the wire `node_types` declaration (RFC 0013), RFC 0017's strict
+  member, and listing the keys in `describe_node_types`.
 - **Create vs. upsert → strict.** `create_node` errors if the node exists
   (caldav PUT `If-None-Match: *`); `put_node` is the explicit overwrite
   and errors if the node is absent (`If-Match: *`). Atomic preconditions, no

@@ -639,6 +639,11 @@ type NodeTypeFacets = internal.NodeTypeFacets
 // cutting-garden#160.
 type NodeTypeListingFields = internal.NodeTypeListingFields
 
+// NodeTypePatchKeys is the static set of patch body keys one node type
+// accepts: the keys a patch to a node of that type can apply. A key outside it
+// is one the plugin ignores.
+type NodeTypePatchKeys = internal.NodeTypePatchKeys
+
 // NodeTypeUnifiedFields binds a node type to the codecs producing its unified
 // fields (FDR 0025) — the unified counterpart of NodeTypeFacets /
 // NodeTypeListingFields. Every presentation field a node type carries comes from
@@ -676,6 +681,22 @@ type PartialListings = internal.PartialListings
 // body keys it tolerated but did not apply (cutting-garden#376; nil when none
 // or not reported), and the node's URI afterwards when it changed.
 type PatchDetail = internal.PatchDetail
+
+// PatchKeysDescriber is the OPTIONAL capability a write-capable plugin
+// implements to declare, per node type, the patch keys it accepts
+// (cutting-garden#404). The host validates every patch body against the
+// declaration before dispatch: by default it strips an undeclared key and
+// reports it as ignored; for a strict call it refuses the op before anything
+// is written. The plugin never sees an undeclared key, nor the strict flag.
+//
+// The declaration is static per node type. A key whose acceptance depends on
+// the node's state or the value sent (ynab refusing a category on a split
+// transaction) stays the plugin's to check at write time.
+//
+// It is probed by type assertion, like BodyDescriber. A plugin that omits it
+// gets no host validation: its patches are dispatched as sent, and a strict
+// call refuses them as unverifiable.
+type PatchKeysDescriber = internal.PatchKeysDescriber
 
 // Plugin is the cross-cutting identity every capture or restore
 // backend must declare. Schemes returns the URI schemes a plugin
@@ -1318,6 +1339,12 @@ var ResolveFacetCounts = internal.ResolveFacetCounts
 // optimization, never a precondition. Roots are outside this scheme
 // (RFC 0018 §5) and are deliberately not resolved through this path.
 var ResolveNodeTypeByURI = internal.ResolveNodeTypeByURI
+
+// ResolvePatchKeys answers, for a patch to uri, the node type's tag and its
+// declared patch keys: the type comes from the declared URITemplates when one
+// matches, else from PatchTarget. ok is false when lister does not implement
+// PatchKeysDescriber, the type cannot be told, or it declares no patch keys.
+var ResolvePatchKeys = internal.ResolvePatchKeys
 
 // ResolveProtocolDiff is the diff-direction analogue of
 // ResolveProtocolRestore.

@@ -16,6 +16,8 @@ var (
 	_ cutting_garden_plugins.NodeMutator      = (*Plugin)(nil)
 	_ cutting_garden_plugins.ContainerCreator = (*Plugin)(nil)
 	_ cutting_garden_plugins.BodyDescriber    = (*Plugin)(nil)
+
+	_ cutting_garden_plugins.PatchKeysDescriber = (*Plugin)(nil)
 )
 
 // DescribeBodies is the schema-discovery half of jira's write capability
@@ -144,6 +146,30 @@ func (Plugin) PutNode(_ context.Context, _ *url.URL, _ io.Reader) error {
 // PUT; see PatchNode).
 var issuePatchFields = []string{
 	"assignee", "description", "labels", "priority", "status", "summary",
+}
+
+// DescribePatchKeys declares the issue's patch keys for the host's validation
+// (cutting-garden#404): the host drops any other key before PatchNode sees it
+// and, for a strict call, refuses the op.
+func (Plugin) DescribePatchKeys() []cutting_garden_plugins.NodeTypePatchKeys {
+	return []cutting_garden_plugins.NodeTypePatchKeys{
+		{Tag: typeIssue, Keys: issuePatchFields},
+	}
+}
+
+// PatchTarget says a patch to jira://host/PROJECT/KEY targets an issue; a
+// project or the host root is not patchable. It reads the URI only, never the
+// credentials.
+func (Plugin) PatchTarget(uri *url.URL) (string, bool) {
+	base, err := baseURLFromArg(uri)
+	if err != nil {
+		return "", false
+	}
+	_, _, issue, err := nodeFromBase(base)
+	if err != nil || issue == "" {
+		return "", false
+	}
+	return typeIssue, true
 }
 
 // PatchNodeDetail is PatchNode that also names the body keys outside

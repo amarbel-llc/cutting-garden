@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -27,6 +28,7 @@ import (
 // later ops in the group address.
 
 const mutateNodesSchema = `{"type":"object","required":["groups"],"properties":{` +
+	`"strict":{"type":"boolean","description":"optional, default false (tolerant): when true, a patch op naming a key its node type does not accept is refused before anything is written for it, naming the keys; a patch whose node type declares no accepted keys is refused too, and so is a patch sweep. When false, undeclared keys are dropped and reported as ignored. Applies to the whole call"},` +
 	`"groups":{"type":"array","minItems":1,"description":"the batch: one group per anchor, applied in order. Groups are independent: each has its own temp ids and atomicity, and one group's refusal does not stop the next (it reports its error); a malformed group refuses the whole call before anything is written","items":{"type":"object","required":["anchor"],"properties":{` +
 	`"anchor":{"type":"string","description":"the node URI every op in the group is addressed relative to (e.g. a calendar, mailbox, or org file URI); it fixes the group's plugin"},` +
 	`"atomicity":{"type":"string","enum":["best-effort","atomic"],"description":"optional, default best-effort: each op applies independently and is reported on its own; atomic is all-or-nothing and is refused unless the plugin supports it"},` +
@@ -65,7 +67,11 @@ func mutateNodesToolDef() protocol.ToolV1 {
 			"headline edited by ?h= is then addressed by ?id=) and name (a " +
 			"deleted node's name). Bodies are STRINGS — JSON-encode a JSON body. A " +
 			"patch body holds only the fields to change; describe_node_types " +
-			"lists the fields each type accepts. Example: " +
+			"lists the fields each type accepts. A patch naming a key its type " +
+			"does not accept (for a source that declares them) drops that key " +
+			"and reports it in ignored; pass strict: true to refuse such an op, " +
+			"or a patch to a source that declares none, before anything is " +
+			"written for it. Example: " +
 			`{"groups":[{"anchor":"caldav://host/cal/","ops":[{"kind":"create","id":"+t","type":"caldav-object-vtodo-v1","body":"{\"summary\":\"call\"}"},{"kind":"patch","id":"+t","body":"{\"priority\":1}"},{"kind":"delete","id":"old.ics"}]}]}` +
 			". Sweep example (mark every unread story read): " +
 			`{"groups":[{"anchor":"newsblur://stories","sweep":{"filter":"read=unread","op":{"kind":"patch","body":"{\"read\":true}"}}}]}`,
@@ -141,9 +147,11 @@ type mutateGroupView struct {
 // mutateGroup is one group resolved against its plugin: the domain request
 // plus what rendering needs to report results in the caller's own ids.
 type mutateGroup struct {
-	anchor   string
-	lister   cutting_garden_plugins.RootLister
-	req      cutting_garden_plugins.BulkRequest
+	anchor string
+	lister cutting_garden_plugins.RootLister
+	req    cutting_garden_plugins.BulkRequest
+	// strict is the call's strict flag (cutting-garden#404): see screenPatches.
+	strict   bool
 	idOf     map[string]string // node URI → the id the caller sent
 	spelling map[string]string // temp key → the caller's spelling
 	// residual is the sweep filter's host-side remainder (RFC 0012 §6); when
@@ -157,6 +165,7 @@ func (t *Tools) callMutateNodes(
 	countMutateCall(args)
 
 	var in struct {
+		Strict bool               `json:"strict"`
 		Groups []mutateGroupInput `json:"groups"`
 	}
 	if err := json.Unmarshal(args, &in); err != nil {
@@ -171,7 +180,7 @@ func (t *Tools) callMutateNodes(
 	// refuses the whole call with nothing written (cutting-garden#323).
 	groups := make([]*mutateGroup, 0, len(in.Groups))
 	for i, groupIn := range in.Groups {
-		group, err := t.buildMutateGroup(groupIn)
+		group, err := t.buildMutateGroup(groupIn, in.Strict)
 		if err != nil {
 			if len(in.Groups) > 1 {
 				return "", errors.BadRequestf("groups[%d]: %s", i, err)
@@ -248,9 +257,16 @@ func anyRefused(views []mutateGroupView) bool {
 	return false
 }
 
-func (t *Tools) buildMutateGroup(in mutateGroupInput) (*mutateGroup, error) {
+func (t *Tools) buildMutateGroup(in mutateGroupInput, strict bool) (*mutateGroup, error) {
 	if in.Anchor == "" {
 		return nil, errors.BadRequestf("mutate_nodes: group has no anchor")
+	}
+	if strict && in.Sweep != nil &&
+		cutting_garden_plugins.BulkOpKind(in.Sweep.Op.Kind) == cutting_garden_plugins.BulkPatch {
+		return nil, errors.BadRequestf(
+			"mutate_nodes: strict does not apply to a patch sweep yet (its" +
+				" matches' node types are not known before the write): send the" +
+				" patches as ops, or drop strict")
 	}
 	anchorURL, lister, err := t.resolveLister(in.Anchor)
 	if err != nil {
@@ -260,6 +276,7 @@ func (t *Tools) buildMutateGroup(in mutateGroupInput) (*mutateGroup, error) {
 	group := &mutateGroup{
 		anchor:   in.Anchor,
 		lister:   lister,
+		strict:   strict,
 		idOf:     make(map[string]string),
 		spelling: make(map[string]string),
 		req: cutting_garden_plugins.BulkRequest{
@@ -498,8 +515,35 @@ func (t *Tools) dispatchMutateGroup(
 		}
 	}
 
+	req := g.req
+	var (
+		fullOps []cutting_garden_plugins.BulkOp
+		screen  patchScreen
+	)
+	if len(req.Ops) > 0 {
+		fullOps = slices.Clone(req.Ops)
+		screen, err = screenPatches(
+			fullOps, patchKeysFor(g.lister), g.strict,
+			req.Atomicity == cutting_garden_plugins.BulkAtomic,
+		)
+		if err != nil {
+			return result, err
+		}
+
+		req.Ops = make([]cutting_garden_plugins.BulkOp, 0, len(screen.dispatched))
+		for _, i := range screen.dispatched {
+			req.Ops = append(req.Ops, fullOps[i])
+		}
+
+		// Every op was settled by the host: there is nothing to dispatch.
+		if len(req.Ops) == 0 {
+			mergeScreen(&result, fullOps, screen)
+			return result, nil
+		}
+	}
+
 	if bulk := t.bulkMutatorFor(g.anchor); bulk != nil {
-		result, err = bulk.BulkMutate(ctx, g.req)
+		result, err = bulk.BulkMutate(ctx, req)
 	} else {
 		_, nm, rerr := t.resolve(g.anchor)
 		if rerr != nil {
@@ -515,7 +559,7 @@ func (t *Tools) dispatchMutateGroup(
 			)
 		}
 		result, err = cutting_garden_plugins.BestEffortBulkMutate(
-			ctx, nm, enriched, g.req,
+			ctx, nm, enriched, req,
 		)
 	}
 
@@ -524,6 +568,9 @@ func (t *Tools) dispatchMutateGroup(
 			"mutate_nodes: the plugin for %q cannot apply a batch atomically;"+
 				" omit atomicity for best-effort", g.anchor,
 		)
+	}
+	if err == nil && fullOps != nil {
+		mergeScreen(&result, fullOps, screen)
 	}
 	return result, err
 }

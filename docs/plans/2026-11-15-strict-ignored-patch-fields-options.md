@@ -2,7 +2,9 @@
 
 Date: 2026-11-15
 Issue: cutting-garden#404 (follow-up to #376; contract from #182)
-Status: ruled 2026-11-16 (see Ruling). Nothing here is implemented.
+Status: ruled 2026-11-16 (see Ruling). Step 1 (host validation, the
+`PatchKeysDescriber` capability, jira) is built and described in FDR 0020; the
+rest of the follow-ups below are not.
 
 ## Where things stand
 
