@@ -236,8 +236,20 @@ func (cmd *MCP) Run(req command.Request) {
 	// one here; an absent or refused socket falls through to the in-process
 	// server so a session never loses its tools to a stopped daemon.
 	if cmd.Connect != "" && len(args) == 0 {
-		if relayed := bridge.Run(ctx, cmd.Connect, os.Stdin, os.Stdout, os.Stderr); relayed {
+		switch bridge.Run(
+			ctx, cmd.Connect, bridge.HelloLine(bridge.Principal()),
+			os.Stdin, os.Stdout, os.Stderr,
+		) {
+		case bridge.Done:
 			return
+		case bridge.DaemonLost:
+			// The session lived in the daemon; it cannot be resumed here.
+			errors.ContextCancelWithError(
+				ctx, errors.ErrorWithStackf("serve-mcp daemon hung up mid-session"),
+			)
+			return
+		case bridge.NoDaemon:
+			// fall through to the in-process server
 		}
 	}
 

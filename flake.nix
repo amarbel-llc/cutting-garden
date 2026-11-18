@@ -737,10 +737,13 @@
         # stdioServers.command, so the binary path is baked in at build
         # time via Nix substitution: the source-controlled clown.json.in
         # uses an @cutting-garden@ placeholder rewritten to the real
-        # binary here. Unlike madder — whose MCP server is a separate
-        # madder-mcp binary — cutting-garden's MCP is a SUBCOMMAND of the
-        # main binary, so command = the main binary and args = ["mcp"].
-        # Pinning the binary into clown.json (rather than relying on PATH)
+        # binary here. The server a session starts is cutting-garden-bridge
+        # (clown.json.in's @cutting-garden-bridge@): it relays to the host's
+        # shared `serve-mcp` daemon and, with no daemon, execs the sibling
+        # `cutting-garden mcp` itself, so the session never loses its tools
+        # (step A of docs/plans/2026-11-06-centralized-cutting-garden.md).
+        # The hook handler below still execs cutting-garden itself.
+        # Pinning the binaries into clown.json (rather than relying on PATH)
         # keeps the plugin closure self-contained.
         #
         # plugin.json.in similarly bakes in cgVersion (@version@) so the
@@ -761,7 +764,7 @@
           substitute \
             ${./plugins/cutting-garden/clown.json.in} \
             $pluginRoot/clown.json \
-            --replace-fail '@cutting-garden@' '${cuttingGarden}/bin/cutting-garden'
+            --replace-fail '@cutting-garden-bridge@' '${cuttingGarden}/bin/cutting-garden-bridge'
           mkdir -p $pluginRoot/hooks
           ${pkgs.jq}/bin/jq -e . ${./plugins/cutting-garden/hooks/hooks.json} > /dev/null
           install -m 0644 ${./plugins/cutting-garden/hooks/hooks.json} $pluginRoot/hooks/hooks.json

@@ -33,8 +33,19 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
 	defer stop()
 
-	if bridge.Run(ctx, *socket, os.Stdin, os.Stdout, os.Stderr) {
+	switch bridge.Run(
+		ctx, *socket, bridge.HelloLine(bridge.Principal()),
+		os.Stdin, os.Stdout, os.Stderr,
+	) {
+	case bridge.Done:
 		return
+	case bridge.DaemonLost:
+		// The session lived in the daemon and cannot be resumed; exit non-zero
+		// so the host (moxy) sees the child die and restarts it.
+		stop()
+		os.Exit(3)
+	case bridge.NoDaemon:
+		// fall through to the in-process fallback
 	}
 	stop()
 	if err := execInProcess(flag.Args()); err != nil {

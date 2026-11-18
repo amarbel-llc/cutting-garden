@@ -3,8 +3,11 @@ package mcp
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
+	"net"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -58,7 +61,8 @@ func TestServeListener_ConcurrentBridgesShareOneServer(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	served := make(chan error, 1)
-	go func() { served <- serveListener(ctx, ln, serve) }()
+	var log syncLog
+	go func() { served <- serveListener(ctx, ln, serve, log.logf) }()
 
 	var wg sync.WaitGroup
 	for i := 0; i < 4; i++ {
@@ -66,12 +70,21 @@ func TestServeListener_ConcurrentBridgesShareOneServer(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			var out, diag bytes.Buffer
-			if !bridge.Run(ctx, socket, strings.NewReader(listRequest), &out, &diag) {
-				t.Errorf("bridge did not relay: %s", diag.String())
+			// Half the sessions announce themselves, half behave as an older
+			// bridge that sends no hello: both must be served.
+			hello := ""
+			if i%2 == 0 {
+				hello = bridge.HelloLine(fmt.Sprintf("sess-%d", i))
+			}
+			if got := bridge.Run(ctx, socket, hello, strings.NewReader(listRequest), &out, &diag); got != bridge.Done {
+				t.Errorf("bridge outcome = %v, want Done: %s", got, diag.String())
 				return
 			}
 			if !strings.Contains(out.String(), "faketest://h/") {
 				t.Errorf("response lacks the root: %q", out.String())
+			}
+			if strings.Contains(out.String(), "cutting-garden/hello") {
+				t.Errorf("hello reached the MCP server: %q", out.String())
 			}
 		}()
 	}
@@ -81,6 +94,78 @@ func TestServeListener_ConcurrentBridgesShareOneServer(t *testing.T) {
 	if err := <-served; err != context.Canceled {
 		t.Fatalf("serveListener = %v, want context.Canceled", err)
 	}
+	for _, want := range []string{`principal="sess-0"`, `principal="sess-2"`, `principal=""`} {
+		if !strings.Contains(log.String(), want) {
+			t.Errorf("log lacks %s:\n%s", want, log.String())
+		}
+	}
+}
+
+// syncLog collects serve-mcp's log lines from concurrent sessions.
+type syncLog struct {
+	mu sync.Mutex
+	b  strings.Builder
+}
+
+func (l *syncLog) logf(format string, args ...any) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	fmt.Fprintf(&l.b, format+"\n", args...)
+}
+
+func (l *syncLog) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.String()
+}
+
+// TestConsumeHello_ShortFirstLineIsNotHeldBack is the stall regression: a
+// first message shorter than the hello prefix (a ping) must reach the server
+// whole and at once, not wait for more bytes.
+func TestConsumeHello_ShortFirstLineIsNotHeldBack(t *testing.T) {
+	const ping = `{"jsonrpc":"2.0","id":1,"method":"ping"}` + "\n"
+	principal, rest := consumeHello(strings.NewReader(ping))
+	if principal != "" {
+		t.Errorf("principal = %q, want none", principal)
+	}
+	got, _ := io.ReadAll(rest)
+	if string(got) != ping {
+		t.Errorf("first line altered: %q", got)
+	}
+}
+
+// TestRunBridge_DaemonLostMidSession: the daemon hangs up while the client is
+// still connected; the bridge must say so at once, not wait for the next
+// client message.
+func TestRunBridge_DaemonLostMidSession(t *testing.T) {
+	socket := filepath.Join(t.TempDir(), "mcp.sock")
+	ln, err := listenOwnerOnly(socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ln.Close() }()
+	go func() {
+		c, err := ln.Accept()
+		if err == nil {
+			_ = c.Close() // the daemon "dies"
+		}
+	}()
+
+	pr, pw := io.Pipe() // a client that stays connected and silent
+	defer func() { _ = pw.Close() }()
+	done := make(chan bridge.Outcome, 1)
+	go func() {
+		var out, diag bytes.Buffer
+		done <- bridge.Run(context.Background(), socket, "", pr, &out, &diag)
+	}()
+	select {
+	case got := <-done:
+		if got != bridge.DaemonLost {
+			t.Fatalf("outcome = %v, want DaemonLost", got)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("bridge did not notice the daemon hanging up")
+	}
 }
 
 // TestRunBridge_NoDaemonFallsBack reports false without touching the streams,
@@ -88,8 +173,8 @@ func TestServeListener_ConcurrentBridgesShareOneServer(t *testing.T) {
 func TestRunBridge_NoDaemonFallsBack(t *testing.T) {
 	var out, diag bytes.Buffer
 	in := strings.NewReader(listRequest)
-	if bridge.Run(context.Background(), filepath.Join(t.TempDir(), "absent.sock"), in, &out, &diag) {
-		t.Fatal("bridge claimed to relay with no daemon")
+	if got := bridge.Run(context.Background(), filepath.Join(t.TempDir(), "absent.sock"), "", in, &out, &diag); got != bridge.NoDaemon {
+		t.Fatalf("outcome = %v, want NoDaemon", got)
 	}
 	if out.Len() != 0 {
 		t.Errorf("stdout written on fallback: %q", out.String())
@@ -97,6 +182,62 @@ func TestRunBridge_NoDaemonFallsBack(t *testing.T) {
 	rest, _ := io.ReadAll(in)
 	if string(rest) != listRequest {
 		t.Errorf("stdin consumed on fallback: %q left", rest)
+	}
+}
+
+// TestServeListener_ShutdownDoesNotWaitForASilentClient is the unit-stop
+// regression: a connected client that never sends or closes must not keep the
+// daemon alive once its context ends.
+func TestServeListener_ShutdownDoesNotWaitForASilentClient(t *testing.T) {
+	serve, _ := sharedServe(t)
+	socket := filepath.Join(t.TempDir(), "mcp.sock")
+	ln, err := listenOwnerOnly(socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	var log syncLog
+	served := make(chan error, 1)
+	go func() { served <- serveListener(ctx, ln, serve, log.logf) }()
+
+	conn, err := net.Dial("unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+	// Let the daemon accept it and block reading the first line.
+	time.Sleep(200 * time.Millisecond)
+
+	cancel()
+	select {
+	case err := <-served:
+		if err != context.Canceled {
+			t.Errorf("serveListener = %v, want context.Canceled", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("daemon kept running with a silent client connected")
+	}
+}
+
+func TestApplyAgentSocket(t *testing.T) {
+	t.Setenv("PIGGY_AUTH_SOCK", "unchanged")
+	if err := applyAgentSocket(""); err != nil || os.Getenv("PIGGY_AUTH_SOCK") != "unchanged" {
+		t.Fatalf("empty path touched the environment: err=%v env=%q", err, os.Getenv("PIGGY_AUTH_SOCK"))
+	}
+	if err := applyAgentSocket("relative/agent.sock"); err == nil {
+		t.Error("a relative path was accepted")
+	}
+	if os.Getenv("PIGGY_AUTH_SOCK") != "unchanged" {
+		t.Error("a rejected path still changed the environment")
+	}
+	// A socket that does not exist (yet) is fine: the unit may start before
+	// the operator connects.
+	absent := filepath.Join(t.TempDir(), "absent.sock")
+	if err := applyAgentSocket(absent); err != nil {
+		t.Fatalf("absent socket refused: %v", err)
+	}
+	if got := os.Getenv("PIGGY_AUTH_SOCK"); got != absent {
+		t.Errorf("PIGGY_AUTH_SOCK = %q, want %q", got, absent)
 	}
 }
 

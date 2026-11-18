@@ -127,7 +127,11 @@ The repo ships a clown plugin under `plugins/cutting-garden/`
 (`.claude-plugin/plugin.json` + `clown.json.in`). The flake's
 `cutting-garden-clown-plugin` output substitutes the real binary path into
 `clown.json` and stages `share/purse-first/cutting-garden/`, which eng's
-`mkCircus` mounts to register the server as `cutting-garden mcp` (no args).
+`mkCircus` mounts to register the server as `cutting-garden-bridge` (no args):
+it relays to the host's shared `serve-mcp` daemon (a systemd user unit,
+`-agent-socket` naming the piggy agent) and, with no daemon, execs
+`cutting-garden mcp` itself, so the tools never depend on the daemon being up
+(docs/plans/2026-11-06-centralized-cutting-garden.md).
 A client loading the plugin gets the configured CalDAV accounts and the
 working-directory tree as MCP resources out of the box.
 

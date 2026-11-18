@@ -331,6 +331,40 @@ func TestAccount_Password_Piggy_FailureIsNotRemembered(t *testing.T) {
 	}
 }
 
+// The shared daemon is pointed at an agent socket by PIGGY_AUTH_SOCK
+// (serve-mcp -agent-socket) that may not exist yet: the first fetch fails
+// without crashing anything, a later fetch succeeds once the socket appears,
+// and once fetched the password survives the socket going away again. The stub
+// piggy stands in for the real one by succeeding only while the socket exists.
+func TestAccount_Password_Piggy_AgentSocketAbsentThenPresentThenGone(t *testing.T) {
+	t.Cleanup(forgetPiggyPasswords)
+	dir := t.TempDir()
+	script := "#!/bin/sh\n[ -e \"$PIGGY_AUTH_SOCK\" ] || { echo 'no agent socket' >&2; exit 1; }\nprintf 'agent-secret\\n'\n"
+	if err := os.WriteFile(dir+"/piggy", []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir+":"+os.Getenv("PATH"))
+	sock := dir + "/agent.sock"
+	t.Setenv("PIGGY_AUTH_SOCK", sock)
+
+	a := Account{PasswordSource: "piggy", PasswordKey: "cutting-garden/agent"}
+	if _, err := a.Password(); err == nil {
+		t.Fatal("want an error while the agent socket is absent")
+	}
+	if err := os.WriteFile(sock, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := a.Password(); err != nil || got != "agent-secret" {
+		t.Fatalf("Password() once the socket exists = %q, %v; want agent-secret", got, err)
+	}
+	if err := os.Remove(sock); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := a.Password(); err != nil || got != "agent-secret" {
+		t.Errorf("Password() after the socket went away = %q, %v; want the remembered secret", got, err)
+	}
+}
+
 // A burst of concurrent first calls for one entry whose decrypt FAILS runs one
 // decrypt, and every caller that waited on it gets that failure
 // (cutting-garden#421): a decrypt waits on a card the user may have to touch,

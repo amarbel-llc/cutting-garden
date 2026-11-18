@@ -162,6 +162,23 @@ the disconnect as a tool error and retries on the next call.
   needs the agent/env in ITS environment. Caches are keyed by URI, not caller,
   so a daemon must be per uid. Pick under discussion: one daemon per owner,
   started by a session that has the agent, idle timeout, no systemd unit.
+- Operator ruling 2026-11-18: the daemon runs as a **systemd user unit** (not
+  a session-started daemon; `-start-if-absent` dropped). Their reasons and the
+  evidence (a fixed agent socket path, `PIGGY_AUTH_SOCK` read first) are in
+  the coordinator's relay; the flags: `serve-mcp -socket %t/cutting-garden/mcp.sock
+  -agent-socket <abs path> [-config F]`. `-agent-socket` is exported to the
+  daemon as `PIGGY_AUTH_SOCK`; the socket may be absent at start (a fetch then
+  fails and is retried by the next request; a fetched password is kept). The
+  unit file belongs to circus.
+- Bridge details: it announces `CLOWN_SESSION_ID` (else `SPINCLASS_SESSION_ID`)
+  in a first `cutting-garden/hello` notification that the daemon consumes and
+  logs (`session open principal=...`); nothing else is forwarded. A daemon
+  that dies mid-session makes the bridge exit 3 (the session lived in the
+  daemon and cannot be resumed; its host restarts it). Daemon shutdown closes
+  live connections, so a stop never waits for a silent client. The clown
+  plugin's server is now `cutting-garden-bridge`.
+- Tested end to end by `zz-tests_bats/bridge.bats` (daemon down -> exec
+  fallback; session through a daemon; anonymous session; daemon death).
 - Not built: the hello with principal and cwd (no per-caller state exists in
   the daemon while `file` is excluded; the write log does not yet name the
   caller), the systemd user unit (circus), confinement (spinclass), and the

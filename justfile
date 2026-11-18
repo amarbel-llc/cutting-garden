@@ -1685,18 +1685,26 @@ debug-measure-lazy ROOTS='12': debug-build-go debug-build-caldav-testserver
 
 # Compare N in-process `mcp` servers against one `serve-mcp` daemon plus N
 # `mcp -connect` bridges, by PSS (kB, /proc/PID/smaps_rollup) of the processes
-# this recipe started. Uses an EMPTY config, so no plugin is configured: no
-# live service is contacted, and the daemon's caches are cold, so the daemon
-# figure is a LOWER bound. Dev-loop for step A of the per-host plan (moxy#508).
+# this recipe started. With no CONFIG it uses an EMPTY config, so no plugin is
+# configured, no live service is contacted, and the daemon's caches are cold:
+# the daemon figure is a LOWER bound. CONFIG names a config.toml used for BOTH
+# the in-process servers and the daemon (the same file two ways); a real one
+# contacts its live accounts, so run that only where the operator allows.
+# SETTLE is the seconds each phase runs before PSS is read (warm-up of a real
+# config takes tens of seconds; 90 matches circus's flic sampling). Prints the
+# totals and the saving. Dev-loop for step A of the per-host plan (moxy#508).
 #
-# measure N in-process mcp vs one serve-mcp + N bridges
+# measure N in-process mcp vs one serve-mcp + N bridges, same config
 [group('debug')]
-debug-measure-step-a N='14': debug-build-go
+debug-measure-step-a N='14' CONFIG='' SETTLE='3': debug-build-go
     #!/usr/bin/env bash
     set -uo pipefail
     bin=$PWD/.tmp/cutting-garden
     dir=$(mktemp -d "$PWD/.tmp/stepa.XXXXXX")
     : > "$dir/empty.toml"
+    cfg="{{ CONFIG }}"
+    [[ -n "$cfg" ]] || cfg="$dir/empty.toml"
+    [[ -f "$cfg" ]] || { echo "CONFIG $cfg does not exist" >&2; exit 2; }
     sock=$dir/s.sock
     pids=()
     cleanup() { kill "${pids[@]}" 2>/dev/null; wait 2>/dev/null; rm -rf "$dir"; }
@@ -1707,19 +1715,20 @@ debug-measure-step-a N='14': debug-build-go
     echo "--- {{ N }} in-process mcp ---"
     inproc=()
     for i in $(seq {{ N }}); do
-      sleep 300 | "$bin" mcp -config "$dir/empty.toml" >/dev/null 2>&1 &
+      sleep 600 | "$bin" mcp -config "$cfg" >/dev/null 2>&1 &
       inproc+=($!)
     done
-    sleep 3
+    sleep {{ SETTLE }}
     # $! of a pipeline is its last command: the cutting-garden process itself
     pids+=("${inproc[@]}")
-    echo "servers=${#inproc[@]} total_pss_kB=$(sum "${inproc[@]}")"
+    inproc_kb=$(sum "${inproc[@]}")
+    echo "servers=${#inproc[@]} total_pss_kB=$inproc_kb"
     kill "${inproc[@]}" 2>/dev/null; sleep 1
 
     echo "--- one serve-mcp + {{ N }} bridges ---"
-    "$bin" serve-mcp -socket "$sock" -config "$dir/empty.toml" >/dev/null 2>&1 &
+    "$bin" serve-mcp -socket "$sock" -config "$cfg" >/dev/null 2>&1 &
     d=$!; pids+=("$d")
-    sleep 3
+    sleep {{ SETTLE }}
     br=()
     for i in $(seq {{ N }}); do
       sleep 300 | "$bin" mcp -connect "$sock" >/dev/null 2>&1 &
@@ -1737,7 +1746,13 @@ debug-measure-step-a N='14': debug-build-go
       mb+=($!); pids+=($!)
     done
     sleep 2
-    echo "minimal_bridges=${#mb[@]} total_pss_kB=$(sum "${mb[@]}")"
+    mini_kb=$(sum "${mb[@]}")
+    echo "minimal_bridges=${#mb[@]} total_pss_kB=$mini_kb"
+
+    d_kb=$(pss "$d")
+    shared_kb=$((d_kb + mini_kb))
+    echo "--- summary (N={{ N }}) ---"
+    echo "in_process_kB=$inproc_kb daemon_plus_minimal_bridges_kB=$shared_kb saved_kB=$((inproc_kb - shared_kb)) saved_pct=$(( (inproc_kb - shared_kb) * 100 / inproc_kb ))"
 
 # Strace yt-dlp's writes to its output dir to see whether the merged
 # media file is written sequentially or with backward seeks (evidence
