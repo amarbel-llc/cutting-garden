@@ -140,6 +140,27 @@ isolated per plugin (#165). A panic in the server takes every session's
 cutting-garden tools down until systemd restarts it; the bridge reports
 the disconnect as a tool error and retries on the next call.
 
+### Built so far (2026-11-18, operator go on step A)
+
+- `cutting-garden serve-mcp [-socket PATH] [-config F] [-exclude-scheme S]`
+  (`internal/mcp/serve.go`): the `mcp` server over a unix socket (0600, dir
+  0700; default `$XDG_RUNTIME_DIR/cutting-garden/mcp.sock`), one session per
+  connection over one shared provider and one maintenance loop. `file` is
+  always excluded (open question 1, default taken). A second daemon refuses
+  to displace a live listener; a stale socket file is replaced.
+- `cutting-garden mcp -connect PATH` (`internal/mcp/bridge.go`): relays stdio
+  to the daemon; if the socket cannot be dialed it serves in-process (open
+  question 2, default taken). Client EOF half-closes so the daemon drains.
+- Not built: the hello with principal and cwd (no per-caller state exists in
+  the daemon while `file` is excluded; the write log does not yet name the
+  caller), the systemd user unit (circus), confinement (spinclass), and the
+  moxyfile selection (moxy has no profile concept; a per-session moxyfile
+  redefining the `cutting-garden` command, or two entries plus
+  `disable-servers`).
+- Tested: four concurrent bridge sessions against one listener, the
+  no-daemon fallback leaving stdin and stdout untouched, and the live-listener
+  refusal (`internal/mcp/serve_test.go`). Not yet measured: PSS/RSS.
+
 ## "Resources as args which carry permissions"
 
 Nothing in moxy, spinclass, clown or circus designs this yet (searched;

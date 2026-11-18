@@ -146,6 +146,11 @@ type MCP struct {
 	// $XDG_CONFIG_HOME/cutting-garden/config.toml (cutting-garden#108); a
 	// NixOS-rendered /etc config needs no XDG_CONFIG_HOME=/etc indirection.
 	ConfigPath string
+
+	// Connect, the -connect flag, relays stdio to a running `serve-mcp`
+	// daemon's unix socket (one shared server per host) instead of serving
+	// in-process; if the socket cannot be dialed the in-process server runs.
+	Connect string
 }
 
 var (
@@ -192,6 +197,13 @@ func (cmd *MCP) SetFlagDefinitions(flagSet interfaces.CLIFlagDefinitions) {
 		"config file to load instead of $XDG_CONFIG_HOME/cutting-garden/config.toml "+
 			"(it must exist)",
 	)
+	flagSet.StringVar(
+		&cmd.Connect,
+		"connect",
+		"",
+		"unix socket of a running serve-mcp to relay to; falls back to an "+
+			"in-process server when it cannot be dialed",
+	)
 }
 
 func (*MCP) GetDescription() command.Description {
@@ -217,14 +229,49 @@ func (*MCP) GetDescription() command.Description {
 
 func (cmd *MCP) Run(req command.Request) {
 	ctx := req.Context.(errors.Context)
+	args := req.PopArgs()
 
-	roots, rootLabels, cfg, err := mcpRoots(ctx, req.PopArgs(), cmd.ExcludeSchemes, cmd.ConfigPath)
+	// -connect: relay stdio to the host's shared server instead of running
+	// one here; an absent or refused socket falls through to the in-process
+	// server so a session never loses its tools to a stopped daemon.
+	if cmd.Connect != "" && len(args) == 0 {
+		if relayed := runBridge(ctx, cmd.Connect, os.Stdin, os.Stdout, os.Stderr); relayed {
+			return
+		}
+	}
+
+	serve, err := prepareServer(ctx, args, cmd.ExcludeSchemes, cmd.ConfigPath)
 	if err != nil {
 		// A bad endpoint or malformed config is a usage error: the client
 		// misconfigured the server. Fail fast (EX_USAGE) before the
 		// transport opens.
 		errors.ContextCancelWithError(ctx, err)
 		return
+	}
+
+	// errors.Context satisfies context.Context, so SIGINT/SIGTERM/SIGHUP
+	// cancellation threads straight into Run and unwinds the message loop.
+	// A clean shutdown (context cancelled or client EOF) is exit 0.
+	if runErr := serve(ctx, transport.NewStdio(os.Stdin, os.Stdout)); runErr != nil &&
+		!errors.Is(runErr, context.Canceled) {
+		errors.ContextCancelWithError(ctx, runErr)
+	}
+}
+
+// serveFunc runs one MCP session over t until the peer disconnects or ctx
+// ends. Every call shares the provider's caches and the one background
+// facet-maintenance loop prepareServer started.
+type serveFunc func(ctx context.Context, t transport.Transport) error
+
+// prepareServer resolves roots, builds the provider and tools, and starts the
+// single maintenance loop. The returned serveFunc may be called once (stdio)
+// or concurrently per connection (serve-mcp), all over the same caches.
+func prepareServer(
+	ctx errors.Context, args, excludeSchemes []string, configPath string,
+) (serveFunc, error) {
+	roots, rootLabels, cfg, err := mcpRoots(ctx, args, excludeSchemes, configPath)
+	if err != nil {
+		return nil, err
 	}
 
 	provider := newResources(roots, mcpBlobWriter(ctx))
@@ -252,37 +299,34 @@ func (cmd *MCP) Run(req command.Request) {
 
 	// The MCP protocol owns stdout (JSON-RPC frames), so diagnostics must
 	// never leak there; the server itself writes only protocol frames.
-	srv, err := server.New(
-		transport.NewStdio(os.Stdin, os.Stdout),
-		server.Options{
-			ServerName: serverName,
-			// ServerVersion is REQUIRED: the MCP initialize response's
-			// serverInfo.version is a non-optional string in the client's
-			// schema. Omitting it makes clients reject the handshake
-			// ("expected string, received undefined"). It carries the full
-			// build identity, "<version>+<commit>" as the `version`
-			// subcommand prints it ("-dirty" on a dirty build, "dev+unknown"
-			// on an unstamped one), so a client that sees only this string
-			// can tell which commit is running (cutting-garden#343).
-			ServerVersion:     buildinfo.String(),
-			Instructions:      instructions,
-			Resources:         provider,
-			Tools:             tools,
-			PreferV1Providers: true,
-		},
-	)
-	if err != nil {
-		errors.ContextCancelWithError(ctx, errors.Wrap(err))
-		return
-	}
-
-	// errors.Context satisfies context.Context, so SIGINT/SIGTERM/SIGHUP
-	// cancellation threads straight into Run and unwinds the message loop.
-	// A clean shutdown (context cancelled or client EOF) is exit 0.
-	if runErr := srv.Run(ctx); runErr != nil &&
-		!errors.Is(runErr, context.Canceled) {
-		errors.ContextCancelWithError(ctx, errors.Wrap(runErr))
-	}
+	return func(sessionCtx context.Context, t transport.Transport) error {
+		srv, err := server.New(
+			t,
+			server.Options{
+				ServerName: serverName,
+				// ServerVersion is REQUIRED: the MCP initialize response's
+				// serverInfo.version is a non-optional string in the client's
+				// schema. Omitting it makes clients reject the handshake
+				// ("expected string, received undefined"). It carries the full
+				// build identity, "<version>+<commit>" as the `version`
+				// subcommand prints it ("-dirty" on a dirty build, "dev+unknown"
+				// on an unstamped one), so a client that sees only this string
+				// can tell which commit is running (cutting-garden#343).
+				ServerVersion:     buildinfo.String(),
+				Instructions:      instructions,
+				Resources:         provider,
+				Tools:             tools,
+				PreferV1Providers: true,
+			},
+		)
+		if err != nil {
+			return errors.Wrap(err)
+		}
+		if runErr := srv.Run(sessionCtx); runErr != nil {
+			return errors.Wrap(runErr)
+		}
+		return nil
+	}, nil
 }
 
 // mcpRoots resolves the endpoints the server exposes. With explicit

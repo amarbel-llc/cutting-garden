@@ -58,6 +58,7 @@ func Build() command.Utility {
 	utility.AddCmd("health", health.New())
 	utility.AddCmd("list", list.New())
 	utility.AddCmd("mcp", mcp.New())
+	utility.AddCmd("serve-mcp", mcp.NewServe())
 	utility.AddCmd("organize", organize.New())
 	utility.AddCmd("fmt-organize", organize.NewFmt())
 	utility.AddCmd("version", version.New())
