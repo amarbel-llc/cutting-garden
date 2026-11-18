@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"code.linenisgreat.com/cutting-garden/internal/bridge"
 	"code.linenisgreat.com/purse-first/libs/go-mcp/server"
 	"code.linenisgreat.com/purse-first/libs/go-mcp/transport"
 )
@@ -65,7 +66,7 @@ func TestServeListener_ConcurrentBridgesShareOneServer(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			var out, diag bytes.Buffer
-			if !runBridge(ctx, socket, strings.NewReader(listRequest), &out, &diag) {
+			if !bridge.Run(ctx, socket, strings.NewReader(listRequest), &out, &diag) {
 				t.Errorf("bridge did not relay: %s", diag.String())
 				return
 			}
@@ -87,7 +88,7 @@ func TestServeListener_ConcurrentBridgesShareOneServer(t *testing.T) {
 func TestRunBridge_NoDaemonFallsBack(t *testing.T) {
 	var out, diag bytes.Buffer
 	in := strings.NewReader(listRequest)
-	if runBridge(context.Background(), filepath.Join(t.TempDir(), "absent.sock"), in, &out, &diag) {
+	if bridge.Run(context.Background(), filepath.Join(t.TempDir(), "absent.sock"), in, &out, &diag) {
 		t.Fatal("bridge claimed to relay with no daemon")
 	}
 	if out.Len() != 0 {
@@ -107,7 +108,7 @@ func TestListenOwnerOnly_RefusesLiveListener(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 	go func() {
 		for {
 			c, err := ln.Accept()

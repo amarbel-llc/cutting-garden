@@ -484,6 +484,10 @@
             "cmd/cutting-garden"
             "cmd/cg"
             "cmd/cutting-garden-gen"
+            # The per-session end of the shared MCP daemon (step A of
+            # docs/plans/2026-11-06-centralized-cutting-garden.md): stdlib
+            # only, so it skips the plugin registry `mcp -connect` pays for.
+            "cmd/cutting-garden-bridge"
             # The ajour explain verb (FDR 0028 open item 4,
             # cutting-garden#403): its own binary, since a cg subcommand
             # cannot import pkgs/ajour (cutting-garden#405). Its page is the

@@ -61,6 +61,7 @@ import (
 	"os"
 	"strings"
 
+	"code.linenisgreat.com/cutting-garden/internal/bridge"
 	"code.linenisgreat.com/cutting-garden/internal/buildinfo"
 	"code.linenisgreat.com/cutting-garden/internal/capture_plugin"
 	"code.linenisgreat.com/cutting-garden/internal/cgconfig"
@@ -235,7 +236,7 @@ func (cmd *MCP) Run(req command.Request) {
 	// one here; an absent or refused socket falls through to the in-process
 	// server so a session never loses its tools to a stopped daemon.
 	if cmd.Connect != "" && len(args) == 0 {
-		if relayed := runBridge(ctx, cmd.Connect, os.Stdin, os.Stdout, os.Stderr); relayed {
+		if relayed := bridge.Run(ctx, cmd.Connect, os.Stdin, os.Stdout, os.Stderr); relayed {
 			return
 		}
 	}

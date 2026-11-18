@@ -1729,6 +1729,16 @@ debug-measure-step-a N='14': debug-build-go
     echo "daemon_pss_kB=$(pss "$d")"
     echo "bridges=${#br[@]} total_pss_kB=$(sum "${br[@]}")"
 
+    echo "--- same daemon + {{ N }} minimal bridges (cutting-garden-bridge) ---"
+    mini="$(dirname "$(readlink -f "$bin")")/cutting-garden-bridge"
+    mb=()
+    for i in $(seq {{ N }}); do
+      sleep 300 | "$mini" -socket "$sock" >/dev/null 2>&1 &
+      mb+=($!); pids+=($!)
+    done
+    sleep 2
+    echo "minimal_bridges=${#mb[@]} total_pss_kB=$(sum "${mb[@]}")"
+
 # Strace yt-dlp's writes to its output dir to see whether the merged
 # media file is written sequentially or with backward seeks (evidence
 # for the streaming-tempdir feasibility analysis; see ytdlp overlap-

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"code.linenisgreat.com/cutting-garden/internal/bridge"
 	"code.linenisgreat.com/cutting-garden/internal/command"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/interfaces"
@@ -37,16 +38,6 @@ var (
 
 // NewServe constructs a serve-mcp command.
 func NewServe() *ServeMCP { return &ServeMCP{} }
-
-// DefaultSocket is $XDG_RUNTIME_DIR/cutting-garden/mcp.sock, falling back to
-// the temp dir only when XDG_RUNTIME_DIR is unset.
-func DefaultSocket() string {
-	dir := os.Getenv("XDG_RUNTIME_DIR")
-	if dir == "" {
-		dir = os.TempDir()
-	}
-	return filepath.Join(dir, "cutting-garden", "mcp.sock")
-}
 
 func (cmd *ServeMCP) SetFlagDefinitions(flagSet interfaces.CLIFlagDefinitions) {
 	flagSet.StringVar(
@@ -89,7 +80,7 @@ func (cmd *ServeMCP) Run(req command.Request) {
 
 	socket := cmd.Socket
 	if socket == "" {
-		socket = DefaultSocket()
+		socket = bridge.DefaultSocket()
 	}
 
 	exclude := append([]string{"file"}, cmd.ExcludeSchemes...)
@@ -152,7 +143,7 @@ func serveListener(ctx context.Context, ln net.Listener, serve serveFunc) error 
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			defer conn.Close()
+			defer func() { _ = conn.Close() }()
 			// A session's error ends only that session.
 			_ = serve(ctx, transport.NewStdio(conn, conn))
 		}()
