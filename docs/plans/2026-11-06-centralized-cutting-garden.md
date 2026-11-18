@@ -151,6 +151,17 @@ the disconnect as a tool error and retries on the next call.
 - `cutting-garden mcp -connect PATH` (`internal/mcp/bridge.go`): relays stdio
   to the daemon; if the socket cannot be dialed it serves in-process (open
   question 2, default taken). Client EOF half-closes so the daemon drains.
+- `cmd/cutting-garden-bridge [-socket PATH] [-- mcp args]`: the same relay as
+  a stdlib-only binary (`internal/bridge`), which `exec`s `cutting-garden mcp`
+  when no daemon answers. Measured on nikulin, empty config, 14 sessions
+  (`just debug-measure-step-a 14`): 14 in-process servers 105.4 MB PSS;
+  daemon 5.4 MB + 14 `mcp -connect` bridges 53.2 MB; daemon + 14 minimal
+  bridges 20.8 MB (1.5 MB each).
+- Credentials: Account.Password() runs lazily per account on first use and is
+  memoised in memory for the life of the process (a failure retries); a daemon
+  needs the agent/env in ITS environment. Caches are keyed by URI, not caller,
+  so a daemon must be per uid. Pick under discussion: one daemon per owner,
+  started by a session that has the agent, idle timeout, no systemd unit.
 - Not built: the hello with principal and cwd (no per-caller state exists in
   the daemon while `file` is excluded; the write log does not yet name the
   caller), the systemd user unit (circus), confinement (spinclass), and the

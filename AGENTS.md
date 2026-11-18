@@ -9,7 +9,8 @@ A filesystem-tree capture/restore CLI atop
 dodder's command-dispatch framework. Twelve user-facing subcommands —
 `capture`, `restore`, `diff`, `serve`, `failures`, `health`, `list`,
 `mcp` (`-connect <socket>` relays stdio to a `serve-mcp` daemon, in-process
-fallback), `serve-mcp` (the `mcp` server over one 0600 unix socket for many
+fallback; the lighter `cmd/cutting-garden-bridge` does the same without
+linking any plugin), `serve-mcp` (the `mcp` server over one 0600 unix socket for many
 sessions, shared caches and one refresh loop, `file` excluded; step A of
 `docs/plans/2026-11-06-centralized-cutting-garden.md`), `organize`, `fmt-organize` (regenerate an organize document in
 place from its envelope; refuses on unapplied edits — native tags design
