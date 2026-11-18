@@ -1645,6 +1645,90 @@ debug-measure-cg-memory:
     done
     echo "processes=$n total_pss_kB=$pss total_rss_kB=$rss"
 
+# PSS (kB) of one `mcp` process under three configs: empty; ROOTS caldav
+# accounts all pointing at the in-memory caldav testserver (every root warmed
+# at startup); the same ROOTS with `[mcp] no_background_refresh = ["caldav"]`
+# (no warm, what lazy init would do). Synthetic: roots are tiny and identical,
+# so this bounds the per-root STRUCTURAL cost, not real data size. No live
+# service is contacted. Dev-loop for the lazy-init-vs-daemon question (step A).
+#
+# measure mcp PSS: empty config vs eager caldav roots vs no-warm caldav roots
+[group('debug')]
+debug-measure-lazy ROOTS='12': debug-build-go debug-build-caldav-testserver
+    #!/usr/bin/env bash
+    set -uo pipefail
+    cd "{{ justfile_directory() }}"
+    bin=$PWD/.tmp/cutting-garden
+    dir=$(mktemp -d "$PWD/.tmp/lazy.XXXXXX")
+    coproc SRV { .tmp/cutting-garden-caldav-testserver; }
+    read -r -u "${SRV[0]}" source_url _calpath
+    cal="${source_url%/dav/}/dav/cal/"
+    pids=()
+    cleanup() { kill "${pids[@]}" 2>/dev/null; exec {SRV[1]}>&- 2>/dev/null; wait 2>/dev/null; rm -rf "$dir"; }
+    trap cleanup EXIT
+    accounts() { for i in $(seq {{ ROOTS }}); do printf '[[caldav.accounts]]\nname = "a%s"\nurl = "%s"\n\n' "$i" "$cal"; done; }
+    mkdir -p "$dir/empty/cutting-garden" "$dir/eager/cutting-garden" "$dir/nowarm/cutting-garden"
+    : > "$dir/empty/cutting-garden/config.toml"
+    accounts > "$dir/eager/cutting-garden/config.toml"
+    { printf '[mcp]\nno_background_refresh = ["caldav"]\n\n'; accounts; } > "$dir/nowarm/cutting-garden/config.toml"
+    for v in empty eager nowarm; do
+      for rep in 1 2 3; do
+        sleep 30 | XDG_CONFIG_HOME="$dir/$v" "$bin" mcp >/dev/null 2>"$dir/$v.err" &
+        p=$!; pids+=("$p")
+        sleep 6
+        echo "$v run$rep pss_kB=$(awk '/^Pss:/{s+=$2} END{print s+0}' /proc/$p/smaps_rollup)"
+        kill "$p" 2>/dev/null
+      done
+    done
+    echo "--- roots seen by the eager config (list) ---"
+    XDG_CONFIG_HOME="$dir/eager" "$bin" list -format json 2>&1 | grep -c caldav
+
+# Compare N in-process `mcp` servers against one `serve-mcp` daemon plus N
+# `mcp -connect` bridges, by PSS (kB, /proc/PID/smaps_rollup) of the processes
+# this recipe started. Uses an EMPTY config, so no plugin is configured: no
+# live service is contacted, and the daemon's caches are cold, so the daemon
+# figure is a LOWER bound. Dev-loop for step A of the per-host plan (moxy#508).
+#
+# measure N in-process mcp vs one serve-mcp + N bridges
+[group('debug')]
+debug-measure-step-a N='14': debug-build-go
+    #!/usr/bin/env bash
+    set -uo pipefail
+    bin=$PWD/.tmp/cutting-garden
+    dir=$(mktemp -d "$PWD/.tmp/stepa.XXXXXX")
+    : > "$dir/empty.toml"
+    sock=$dir/s.sock
+    pids=()
+    cleanup() { kill "${pids[@]}" 2>/dev/null; wait 2>/dev/null; rm -rf "$dir"; }
+    trap cleanup EXIT
+    pss() { awk '/^Pss:/{s+=$2} END{print s+0}' "/proc/$1/smaps_rollup"; }
+    sum() { local t=0 p; for p in "$@"; do t=$((t+$(pss "$p"))); done; echo "$t"; }
+
+    echo "--- {{ N }} in-process mcp ---"
+    inproc=()
+    for i in $(seq {{ N }}); do
+      sleep 300 | "$bin" mcp -config "$dir/empty.toml" >/dev/null 2>&1 &
+      inproc+=($!)
+    done
+    sleep 3
+    # $! of a pipeline is its last command: the cutting-garden process itself
+    pids+=("${inproc[@]}")
+    echo "servers=${#inproc[@]} total_pss_kB=$(sum "${inproc[@]}")"
+    kill "${inproc[@]}" 2>/dev/null; sleep 1
+
+    echo "--- one serve-mcp + {{ N }} bridges ---"
+    "$bin" serve-mcp -socket "$sock" -config "$dir/empty.toml" >/dev/null 2>&1 &
+    d=$!; pids+=("$d")
+    sleep 3
+    br=()
+    for i in $(seq {{ N }}); do
+      sleep 300 | "$bin" mcp -connect "$sock" >/dev/null 2>&1 &
+      br+=($!); pids+=($!)
+    done
+    sleep 2
+    echo "daemon_pss_kB=$(pss "$d")"
+    echo "bridges=${#br[@]} total_pss_kB=$(sum "${br[@]}")"
+
 # Strace yt-dlp's writes to its output dir to see whether the merged
 # media file is written sequentially or with backward seeks (evidence
 # for the streaming-tempdir feasibility analysis; see ytdlp overlap-
