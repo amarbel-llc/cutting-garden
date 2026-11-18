@@ -6,9 +6,12 @@ This file (symlinked as `CLAUDE.md`) provides guidance to coding agents when wor
 
 A filesystem-tree capture/restore CLI atop
 [madder](https://code.linenisgreat.com/madder), grown from a port of
-dodder's command-dispatch framework. Eleven user-facing subcommands —
+dodder's command-dispatch framework. Twelve user-facing subcommands —
 `capture`, `restore`, `diff`, `serve`, `failures`, `health`, `list`,
-`mcp`, `organize`, `fmt-organize` (regenerate an organize document in
+`mcp` (`-connect <socket>` relays stdio to a `serve-mcp` daemon, in-process
+fallback), `serve-mcp` (the `mcp` server over one 0600 unix socket for many
+sessions, shared caches and one refresh loop, `file` excluded; step A of
+`docs/plans/2026-11-06-centralized-cutting-garden.md`), `organize`, `fmt-organize` (regenerate an organize document in
 place from its envelope; refuses on unapplied edits — native tags design
 G4 v1, edit-preserving v2 is #252), `version` — plus three hidden ones
 (`complete` for shell completion,
