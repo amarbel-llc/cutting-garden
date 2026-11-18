@@ -1622,6 +1622,29 @@ debug-localsend-probe PORT='53398': debug-build-go
     echo "presented:  $presented"
     [[ "$advertised" == "$presented" ]] && echo MATCH || echo MISMATCH
 
+# Sum PSS and RSS (kB, from /proc/PID/smaps_rollup) over every running
+# cutting-garden process, listing each by its subcommand. Run before and after
+# moving sessions to `serve-mcp` + `mcp -connect` to measure step A
+# (moxy#508) of the per-host plan. Read-only; same-uid processes only.
+#
+# measure PSS/RSS of all running cutting-garden processes
+[group('debug')]
+debug-measure-cg-memory:
+    #!/usr/bin/env bash
+    set -uo pipefail
+    n=0; pss=0; rss=0
+    for p in /proc/[0-9]*; do
+      exe=$(readlink "$p/exe" 2>/dev/null) || continue
+      case "${exe##*/}" in cutting-garden|cg) ;; *) continue ;; esac
+      read -r -d '' -a argv < "$p/cmdline" || true
+      p_pss=$(awk '/^Pss:/{print $2}' "$p/smaps_rollup" 2>/dev/null) || continue
+      p_rss=$(awk '/^Rss:/{print $2}' "$p/smaps_rollup" 2>/dev/null) || continue
+      [[ -n "$p_pss" ]] || continue
+      echo "${p#/proc/} pss_kB=$p_pss rss_kB=$p_rss ${argv[*]:1:3}"
+      n=$((n+1)); pss=$((pss+p_pss)); rss=$((rss+p_rss))
+    done
+    echo "processes=$n total_pss_kB=$pss total_rss_kB=$rss"
+
 # Strace yt-dlp's writes to its output dir to see whether the merged
 # media file is written sequentially or with backward seeks (evidence
 # for the streaming-tempdir feasibility analysis; see ytdlp overlap-
