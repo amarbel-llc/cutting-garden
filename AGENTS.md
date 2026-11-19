@@ -392,7 +392,7 @@ shell stubs invoke. `Utility.GenerateCompletions(outDir)` and
 so release artifacts don't ship it (pinned by
 `zz-tests_bats/install_artifacts.bats`). For eyeballing a page after
 editing command metadata, use `just debug-manpage <page>`.
-`packages.<system>.manpages` (circus#436) is the pages-only output with no godyn
+`packages.<system>.manpages` is the pages-only output with no godyn
 graph in its eval: scdoc pages plus the COMMITTED section 1 pages in
 `manpages-generated/`. After changing a command's flags or description run
 `just codemod-generate-manpages`; `checks.manpages-codegen` fails on drift and

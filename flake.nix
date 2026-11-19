@@ -836,8 +836,8 @@
           ${cuttingGardenGen}/bin/cutting-garden-gen $out
         '';
 
-        # THE PAGES-ONLY OUTPUT (`packages.<system>.manpages`, eng-manpages(7);
-        # circus#436): every page the default package installs, with NO godyn
+        # THE PAGES-ONLY OUTPUT (`packages.<system>.manpages`, eng-manpages(7)):
+        # every page the default package installs, with NO godyn
         # build in its closure or its eval. The hand-written pages are scdoc
         # from doc/; the Utility's generated section 1 pages are the COMMITTED
         # copy in manpages-generated/, which checks.manpages-codegen proves
@@ -1094,8 +1094,8 @@
           default = cuttingGardenWithDoc;
 
           # Pages only, no godyn graph in its eval or closure: the output
-          # eng-manpages(7) and circus's first-party manpath root look for
-          # (circus#436). `nix build .#manpages`.
+          # eng-manpages(7) and a first-party manpath root look for.
+          # `nix build .#manpages`.
           manpages = cuttingGardenManpages;
 
           # What cutting-garden-gen writes, for `just codemod-generate-manpages`

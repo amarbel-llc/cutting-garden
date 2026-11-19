@@ -1,7 +1,6 @@
 # One cutting-garden per host instead of one per session
 
-Date: 2026-11-06. Session: cutting-garden/rapid-pine. Status: proposal for
-the operator; nothing is implemented. Facts below were read from the moxy,
+Date: 2026-11-06. Status: proposal; step A is built (see "Built so far"). Facts below were read from the moxy,
 spinclass, clown and circus checkouts (read-only) and are cited by path;
 anything not checked in code is marked *unverified*.
 
@@ -50,8 +49,8 @@ behind `clown-stdio-bridge` (clown FDR 0020 :347).
                        (one process)      └ …
 ```
 
-Krone's mcp-origin already runs this shape for a remote connector
-(`circus/infra/hosts/krone/mcp-origin.nix:557`).
+A remote-connector deployment already runs this shape: one shared
+instance serving many clients.
 
 ## What each shape needs, today versus then
 
@@ -80,12 +79,11 @@ shape (below); its design belongs to moxy, with spinclass ruling on how it
 fits confinement. This note sequences it but does not design inside those
 repos.
 
-## Operator ruling (2026-11-06)
+## Decision (2026-11-06)
 
 (A) is acceptable for now; (B), one shared moxy per host, is the
-long-term shape. Implementing (A) waits for the operator's go after
-review. The path below sequences (B); its tracking epic is
-linenisgreat/moxy#508.
+long-term shape. The path below sequences (B); its tracking epic lives in
+the moxy repository.
 
 ## Path from A to B
 
@@ -124,8 +122,8 @@ is down.
 - The file plugin's root is the caller's cwd, accepted only inside that
   principal's worktree roots (the same roots spinclass's broker derives,
   `spinclass/internal/bravo/folioeval/roots.go`). Simpler alternative:
-  exclude `file` from the shared server (`-exclude-scheme=file`, as krone
-  does) and keep file traversal per session.
+  exclude `file` from the shared server (`-exclude-scheme=file`, as the
+  remote-connector deployment does) and keep file traversal per session.
 - Caches are keyed by URI and shared across callers, which is safe
   because they hold read results of shared backends (calendars, forges),
   not per-caller data. A write invalidates for everyone (#302's drop).
@@ -140,7 +138,7 @@ isolated per plugin (#165). A panic in the server takes every session's
 cutting-garden tools down until systemd restarts it; the bridge reports
 the disconnect as a tool error and retries on the next call.
 
-### Built so far (2026-11-18, operator go on step A)
+### Built so far (2026-11-18, step A)
 
 - `cutting-garden serve-mcp [-socket PATH] [-config F] [-exclude-scheme S]`
   (`internal/mcp/serve.go`): the `mcp` server over a unix socket (0600, dir
@@ -153,28 +151,32 @@ the disconnect as a tool error and retries on the next call.
   question 2, default taken). Client EOF half-closes so the daemon drains.
 - `cmd/cutting-garden-bridge [-socket PATH] [-- mcp args]`: the same relay as
   a stdlib-only binary (`internal/bridge`), which `exec`s `cutting-garden mcp`
-  when no daemon answers. Measured on nikulin, empty config, 14 sessions
-  (`just debug-measure-step-a 14`): 14 in-process servers 105.4 MB PSS;
-  daemon 5.4 MB + 14 `mcp -connect` bridges 53.2 MB; daemon + 14 minimal
-  bridges 20.8 MB (1.5 MB each).
+  when no daemon answers. Measured with an empty config and 14 sessions
+  (`just debug-measure-step-a 14`): 14 in-process servers about 105 MB PSS;
+  one daemon plus 14 `mcp -connect` bridges about 59 MB; one daemon plus 14
+  minimal bridges about 21 MB (about 1.5 MB per bridge). Numbers depend on
+  the config and the host; re-measure before relying on them.
 - Credentials: Account.Password() runs lazily per account on first use and is
   memoised in memory for the life of the process (a failure retries); a daemon
   needs the agent/env in ITS environment. Caches are keyed by URI, not caller,
   so a daemon must be per uid. Pick under discussion: one daemon per owner,
   started by a session that has the agent, idle timeout, no systemd unit.
-- Operator ruling 2026-11-18: the daemon runs as a **systemd user unit** (not
-  a session-started daemon; `-start-if-absent` dropped). Their reasons and the
-  evidence (a fixed agent socket path, `PIGGY_AUTH_SOCK` read first) are in
-  the coordinator's relay; the flags: `serve-mcp -socket %t/cutting-garden/mcp.sock
+- Decision (2026-11-18): the daemon runs as a **systemd user unit**, not a
+  session-started daemon (`-start-if-absent` dropped), with a fixed agent
+  socket path. Flags: `serve-mcp -socket %t/cutting-garden/mcp.sock
   -agent-socket <abs path> [-config F]`. `-agent-socket` is exported to the
-  daemon as `PIGGY_AUTH_SOCK`; the socket may be absent at start (a fetch then
-  fails and is retried by the next request; a fetched password is kept). The
-  unit file belongs to circus.
+  daemon as the agent-socket environment variable the credential helper reads
+  first; the socket may be absent at start (a fetch then fails and is retried
+  by the next request; a fetched password is kept). The unit file belongs to
+  whoever deploys the daemon, not to this repo.
 - Bridge details: it announces `CLOWN_SESSION_ID` (else `SPINCLASS_SESSION_ID`)
   in a first `cutting-garden/hello` notification that the daemon consumes and
   logs (`session open principal=...`); nothing else is forwarded. A daemon
-  that dies mid-session makes the bridge exit 3 (the session lived in the
-  daemon and cannot be resumed; its host restarts it). Daemon shutdown closes
+  that dies mid-session makes the bridge reconnect for up to `-reconnect-for`
+  (default 10 s), replay the client's `initialize` handshake to the new daemon,
+  and answer a request that was in flight with a JSON-RPC error; only if the
+  daemon stays away does it exit 3 (a clown plugin server that exits is not
+  restarted by clown). Daemon shutdown closes
   live connections, so a stop never waits for a silent client. The clown
   plugin's server is now `cutting-garden-bridge`.
 - Write attribution: a `mutate_nodes` line made through the daemon ends with
@@ -194,7 +196,8 @@ the disconnect as a tool error and retries on the next call.
   goroutine (it would still end the process), and a hung call still occupies
   its own session until the client gives up.
 - Tested end to end by `zz-tests_bats/bridge.bats` (daemon down -> exec
-  fallback; session through a daemon; anonymous session; daemon death).
+  fallback; session through a daemon; anonymous session; daemon death; a
+  daemon restart the client survives).
 - Not built: the hello with principal and cwd (no per-caller state exists in
   the daemon while `file` is excluded; the write log does not yet name the
   caller), the systemd user unit (circus), confinement (spinclass), and the
@@ -228,8 +231,9 @@ itself. Defining that resource check is moxy and spinclass work.
   (clown already injects `CLOWN_SESSION_ID`, `clown/cmd/clown/main.go:428-432`).
 - **spinclass:** bind the cutting-garden socket inode into confined units
   (FDR 0035's named-socket mechanism); include its peer in the cgroup check.
-- **circus:** a home-manager or NixOS user unit for the server on flic; on
-  krone, nothing changes (it already runs one instance).
+- **deployment:** a home-manager or NixOS user unit for the server on each
+  host that runs many sessions; a host that already runs one instance needs
+  nothing.
 - **moxy:** nothing for (A).
 
 ## Open questions for the operator

@@ -1441,7 +1441,7 @@ debug-lexgrog-manpages:
 #
 # e2e SIGINT-cancellation probe for the capture walk
 [group('debug')]
-debug-sigint-capture TREE='/home/sasha/Downloads' DELAY='0.7': debug-build-go
+debug-sigint-capture TREE='.' DELAY='0.7': debug-build-go
     #!/usr/bin/env bash
     set -uo pipefail
     root="{{ justfile_directory() }}"
