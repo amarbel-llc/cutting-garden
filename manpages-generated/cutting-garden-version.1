@@ -1,0 +1,5 @@
+.TH CUTTING-GARDEN-VERSION 1
+.SH NAME
+cutting-garden-version - print the build version and commit
+.SH DESCRIPTION
+Prints the version and commit SHA burnt in via -ldflags at build time, as a single self-identification line "cutting-garden <version>+<commit>". Dev builds show "dev+unknown"; release builds show the version.env value and the flake rev. After a blank line follows a table of the plugins the binary links: each one's schemes and capabilities (capture, restore, diff, traversal, facets, write, create). The first line alone is the identity, for scripts. Takes no positional arguments.

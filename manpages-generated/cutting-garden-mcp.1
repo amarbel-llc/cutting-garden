@@ -1,0 +1,40 @@
+.TH CUTTING-GARDEN-MCP 1
+.SH NAME
+cutting-garden-mcp - serve traversable plugin endpoints over the Model Context Protocol
+.SH DESCRIPTION
+Runs a Model Context Protocol server (newline-delimited JSON-RPC over stdin/stdout) that exposes the capturable tree of each endpoint URI as MCP resources. resources/list returns the configured roots themselves, paginated by cursor and never their children (a root can have tens of thousands); reading a container resource returns that node's children, so a client descends lazily one level per read \(em the same RootLister traversal `list` and capture share. Reading a leaf object returns its parsed fields as JSON, plus a content-addressed madder blob link to its verbatim bytes when a store is configured. It also exposes the mutate_nodes write tool (FDR 0020) for plugins that support mutation (caldav, jira, fastmail, org); it is annotated destructive and gated by the clown PreToolUse hook. Launched by an MCP client, not run interactively; runs until the client disconnects or it is interrupted.
+.SH ARGUMENTS
+.TP
+.B uri
+optional traversable plugin endpoint URIs to expose as MCP resources (e.g. `caldav://host/dav/me/`), overriding the config. With no URI, every plugin's configured and intrinsic roots are surfaced \(em the configured CalDAV accounts and the file plugin's working directory (cutting-garden config.toml, RFC 0007).
+.SH ENVIRONMENT
+.TP
+.B XDG_CONFIG_HOME
+Root of the config file read when no URI is given (see FILES).
+Default: $HOME/.config
+.TP
+.B STATSD_HOST
+When set, mutate_nodes sends best-effort statsd counters (calls, and mis-encoded op bodies by kind) over UDP to this host. Unset, nothing is sent.
+.TP
+.B STATSD_PORT
+The statsd UDP port used with STATSD_HOST.
+Default: 8125
+.TP
+.B (an account's password_env)
+The variable an account's password_env names in config.toml holds that account's credential (cutting-garden-config(5)).
+.SH FILES
+.TP
+.I $XDG_CONFIG_HOME/cutting-garden/config.toml
+Plugin accounts, wire-plugin stanzas and the [mcp] background-refresh settings (RFC 0007, cutting-garden-config(5)). A missing file is an empty config.
+.SH EXAMPLES
+.TP
+Serve every configured and intrinsic root (the common case; reads $XDG_CONFIG_HOME/cutting-garden/config.toml).
+.B cutting-garden mcp
+.TP
+Override the config: serve one explicit endpoint.
+.B cutting-garden mcp caldav://dav.host/dav/me/
+.TP
+Suppress the file plugin's PWD root and scheme exposure entirely (e.g. a krone deployment that only wants caldav/jira surfaced).
+.B cutting-garden mcp -exclude-scheme=file
+.SH SEE ALSO
+cutting-garden(1), cutting-garden-list(1), cutting-garden-capture(1)

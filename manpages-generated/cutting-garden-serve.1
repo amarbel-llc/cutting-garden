@@ -1,0 +1,36 @@
+.TH CUTTING-GARDEN-SERVE 1
+.SH NAME
+cutting-garden-serve - receive files over the LocalSend protocol as captures
+.SH DESCRIPTION
+Runs a long-lived LocalSend receiver bound to the host's Tailscale address. Every incoming transfer \(em a single file, several files, or a whole directory tree \(em is written into a blob store and folded into one capture receipt, the same wire format `capture` produces, so `restore` and `diff` work against serve-produced receipts unchanged.
+.PP
+Discovery by LAN multicast is out of scope (Tailscale has no multicast); senders reach the receiver by its tailnet address via LocalSend's manual-IP / favorites path. The server speaks HTTPS by default with a persisted self-signed certificate whose SHA-256 is the advertised device fingerprint, matching the LocalSend app's default encryption mode. The server runs until interrupted (SIGINT/SIGTERM/SIGHUP), draining any in-flight transfer before exiting.
+.SH ENVIRONMENT
+.TP
+.B XDG_STATE_HOME
+Base directory under whose cutting-garden/ subdir captures.log is appended; one NDJSON line per finalized receipt (shared with the capture command). The persisted TLS certificate (localsend-tls.pem) lives there too.
+.SH FILES
+.TP
+.I $XDG_STATE_HOME/cutting-garden/captures.log
+NDJSON audit trail; one line per finalized receipt.
+.TP
+.I $XDG_STATE_HOME/cutting-garden/localsend-tls.pem
+self-signed TLS certificate and private key, minted on first run; its SHA-256 is the device fingerprint senders pin.
+.TP
+.I $XDG_DATA_HOME/madder/<store>/
+destination blob store received files are written into.
+.SH EXAMPLES
+.TP
+Receive into the default store on the Tailscale address.
+.B cutting-garden serve
+.TP
+Receive into a named store.
+.B cutting-garden serve -store .work
+.TP
+Bind an explicit host/port instead of auto-detecting Tailscale.
+.B cutting-garden serve -bind 0.0.0.0 -port 53317
+.TP
+Restore the most recent received transfer (receipt id from captures.log).
+.B rid=$(tail -n1 "${XDG_STATE_HOME:-$HOME/.local/state}/cutting-garden/captures.log" | jq -r .receipt_id) && cutting-garden restore "$rid" out
+.SH SEE ALSO
+cutting-garden(1), cutting-garden-capture(1), cutting-garden-restore(1), cutting-garden-diff(1)

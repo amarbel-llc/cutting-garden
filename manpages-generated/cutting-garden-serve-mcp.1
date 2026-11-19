@@ -1,0 +1,5 @@
+.TH CUTTING-GARDEN-SERVE-MCP 1
+.SH NAME
+cutting-garden-serve-mcp - serve the MCP server to many sessions over one unix socket
+.SH DESCRIPTION
+Runs the `mcp` server once per host: it listens on a unix socket (mode 0600) and serves each connection as its own MCP session over shared listing and facet caches and a single background refresh loop, so N sessions cost one process and one upstream refresh rather than N. Sessions connect with `mcp -connect <socket>`. The file plugin is excluded: its root is the process working directory, which belongs to no caller of a shared server. Each session's writes (mutate_nodes) are logged to stderr with the session's principal and its peer's pid and uid. The principal is announced by the bridge and SELF-ASSERTED: it is an audit aid, not authentication. Access is the socket's 0600 mode and a same-user check. -agent-socket names the piggy agent the daemon's `piggy pass show` calls use. Runs until interrupted.

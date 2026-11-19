@@ -1,0 +1,23 @@
+.TH CUTTING-GARDEN-RESTORE 1
+.SH NAME
+cutting-garden-restore - restore a captured tree from a receipt blob
+.SH ARGUMENTS
+.TP
+.B receipt-id
+markl-id of the capture receipt blob to materialize.
+.TP
+.B dest
+destination directory. MUST NOT exist; restore creates it. Restored entries land under <dest>/<root>/ per the receipt's root keys (see FDR 0001 §Behavior).
+.SH FILES
+.TP
+.I $XDG_DATA_HOME/madder/<store>/
+default blob-store-id resolution root. Receipt and entry blobs are fetched from here unless -store overrides.
+.SH EXAMPLES
+.TP
+Capture a tree and restore it into a fresh directory.
+.B rid=$(cutting-garden capture -format json src | jq -r '.id') && cutting-garden restore "$rid" out
+.TP
+Override the receipt's store-hint when the local store has been re-configured since capture.
+.B cutting-garden restore -store .work <receipt-id> out
+.SH SEE ALSO
+cutting-garden(1), cutting-garden-capture(1), cutting-garden-diff(1)

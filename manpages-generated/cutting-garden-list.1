@@ -1,0 +1,39 @@
+.TH CUTTING-GARDEN-LIST 1
+.SH NAME
+cutting-garden-list - list the child nodes of a traversable plugin URI
+.SH DESCRIPTION
+Resolves the plugin for URI and prints the immediate child nodes its RootLister traversal exposes \(em for a CalDAV endpoint the calendar collections, for a calendar its VTODO/VEVENT objects. One level per invocation: descend a container by running list again on its URI. Read-only; no blob store is touched.
+.SH ARGUMENTS
+.TP
+.B uri
+scheme-addressed URI whose immediate child nodes to list (e.g. `caldav://host/dav/me/`). Its plugin must support traversal. With no URI, the configured and intrinsic roots are listed instead \(em the entry points to descend (cutting-garden config.toml, RFC 0007).
+.SH ENVIRONMENT
+.TP
+.B XDG_CONFIG_HOME
+Root of the config file read when no URI is given (see FILES).
+Default: $HOME/.config
+.TP
+.B (an account's password_env)
+The variable an account's password_env names in config.toml holds that account's credential (cutting-garden-config(5)).
+.SH FILES
+.TP
+.I $XDG_CONFIG_HOME/cutting-garden/config.toml
+Plugin accounts and wire-plugin stanzas whose roots a URI-less list enumerates (RFC 0007, cutting-garden-config(5)). A missing file is an empty config.
+.SH EXAMPLES
+.TP
+List every configured and intrinsic root (the entry points to descend).
+.B cutting-garden list
+.TP
+List the calendars under a CalDAV endpoint.
+.B cutting-garden list caldav://dav.host/dav/me/
+.TP
+List one calendar's objects.
+.B cutting-garden list caldav://dav.host/dav/me/personal/
+.TP
+Machine-readable listing, one object per node.
+.B cutting-garden list -format json caldav://dav.host/dav/me/ | jq .
+.TP
+Organize-style object lines \(em one espalier box per node, tags leading, exactly what `organize` would emit for the same set.
+.B cutting-garden list -format espalier caldav://dav.host/dav/me/personal/
+.SH SEE ALSO
+cutting-garden(1), cutting-garden-capture(1), cutting-garden-health(1), cutting-garden-organize(1)

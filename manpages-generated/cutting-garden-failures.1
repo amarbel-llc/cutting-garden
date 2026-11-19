@@ -1,0 +1,21 @@
+.TH CUTTING-GARDEN-FAILURES 1
+.SH NAME
+cutting-garden-failures - inspect a capture failure receipt
+.SH DESCRIPTION
+Reads a cutting_garden-capture_failures-v1 blob \(em the durable record `capture` writes alongside its success receipt whenever entries failed or the run was aborted by a signal \(em and pretty-prints it for triage: the outcome (failures or aborted), the paired success-receipt id, the capture's root arguments, the captured/failed counts, then one line per failed entry (operation, root, path, error).
+.SH ARGUMENTS
+.TP
+.B failure-receipt-id
+markl-id of the failure receipt blob to inspect (printed by capture as `failures store=... id=...` and journaled in captures.log as failure_receipt_id).
+.SH EXAMPLES
+.TP
+Inspect the failure receipt a capture just printed.
+.B cutting-garden failures <failure-receipt-id>
+.TP
+List only the failed paths, machine-readably.
+.B cutting-garden failures -format json <failure-receipt-id> | jq -r .path
+.TP
+Read the most recent failure receipt out of captures.log.
+.B fid=$(jq -rs 'map(select(.failure_receipt_id)) | last | .failure_receipt_id' "${XDG_STATE_HOME:-$HOME/.local/state}/cutting-garden/captures.log") && cutting-garden failures "$fid"
+.SH SEE ALSO
+cutting-garden(1), cutting-garden-capture(1), cutting-garden-restore(1)

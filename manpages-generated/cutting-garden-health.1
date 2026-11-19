@@ -1,0 +1,21 @@
+.TH CUTTING-GARDEN-HEALTH 1
+.SH NAME
+cutting-garden-health - report registered plugins and their capabilities
+.SH DESCRIPTION
+Enumerates every URI-scheme plugin registered in the binary and reports, for each, the schemes it claims, its receipt type-tag, and which capabilities it implements: capture, restore (direct or via the capture protocol), diff, the RFC 0002 capture protocol (with its kind), RootLister traversal (with its node types), and facets (RFC 0012: the declared dimensions, and whether the plugin counts them itself or the framework folds them). It also lists each RootProvider plugin's roots (RFC 0007): the accounts the config declares and the intrinsic ones, the entry points `list` and `mcp` start from, and the plugin config sections the load skipped because they failed. Takes no positional arguments.
+.SH ENVIRONMENT
+.TP
+.B CG_STRICT_CONFIG
+When 1, a plugin config section that fails to load is an error (EX_USAGE) instead of being skipped with a warning and listed under "skipped config sections" (json: a trailing skipped_config line). For CI.
+.SH EXAMPLES
+.TP
+Show every registered plugin and what it supports.
+.B cutting-garden health
+.TP
+Machine-readable capability report, one object per plugin.
+.B cutting-garden health -format json | jq .
+.TP
+List each plugin's configured roots.
+.B cutting-garden health -format json | jq -r 'select(.roots) | .plugin + " " + (.roots | join(" "))'
+.SH SEE ALSO
+cutting-garden(1), cutting-garden-capture(1), cutting-garden-serve(1)

@@ -1,0 +1,7 @@
+.TH CUTTING-GARDEN-ORGANIZE 1
+.SH NAME
+cutting-garden-organize - reorganize a plugin's nodes by editing a faceted document
+.SH DESCRIPTION
+Generates an editable document that groups a plugin's nodes by a field (`status=`, `date_due=(month)`), its whole tag set (`(tags)`), a tag namespace (`project`), or, for a plugin that names its nodes (an org tag-vocabulary file), the nodes' own hyphen names as nested headings (`(tree)`, read-only, with a `_nest` lever), pinning the pre-edit state as a content-addressed base; you move object lines between headings and apply the result, which three-way-merges the edits against the base and the re-queried live state and writes each move through the plugin. At a terminal apply writes by default after confirming; piped it is dry-run until \-commit. See RFC 0015, FDR 0023.
+.SH SEE ALSO
+cutting-garden(1), cutting-garden-fmt-organize(1), snob_case(7)

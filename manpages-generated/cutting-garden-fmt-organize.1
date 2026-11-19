@@ -1,0 +1,15 @@
+.TH CUTTING-GARDEN-FMT-ORGANIZE 1
+.SH NAME
+cutting-garden-fmt-organize - regenerate an organize document in place from its envelope
+.SH DESCRIPTION
+Re-runs an organize document's own generate spec — its `- _anchor`, `- _query`, grouping (`- _group-by` or the dimension heading), and `_tag-atoms`/`_tag-strip` levers — against the live data, then rewrites the file in place (atomically) with a fresh `- _base` pin, printing a one-line rewritten/unchanged summary. The document is authoritative: config defaults are not re-consulted. If the body no longer matches its pinned base — the document has unapplied edits — fmt-organize refuses (exit 64) rather than regenerate over them; apply or discard the edits first. It also refuses a document holding body `% note` comment lines (exit 64, naming them), since regeneration cannot carry them forward yet. An edit-preserving v2 is tracked at cutting-garden#252. See the native tags design (G4), RFC 0015.
+.SH ARGUMENTS
+.TP
+.B path
+path of the organize document to refresh in place. Must carry a `- _base = @<digest>` pin whose blob is in the local store, and a body that still matches it (no unapplied edits).
+.SH EXAMPLES
+.TP
+Refresh a previously generated document against the live data, rewriting its `- _base` pin.
+.B cutting-garden fmt-organize triage.txt
+.SH SEE ALSO
+cutting-garden(1), cutting-garden-organize(1)

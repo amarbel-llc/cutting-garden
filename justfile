@@ -48,7 +48,7 @@ build-nix-check:
     nix flake check --show-trace
 
 [group('post-build')]
-test: validate-generate validate-generate-dagnabit validate-grammar test-grammar-corpus test-nvim-elide test-go-godyn test-go-race test-go-layering lint-go lint-fmt lint-worktree lint-go-analyzers test-bats
+test: validate-generate validate-generate-dagnabit validate-generate-manpages validate-grammar test-grammar-corpus test-nvim-elide test-go-godyn test-go-race test-go-layering lint-go lint-fmt lint-worktree lint-go-analyzers test-bats
 
 # godyn's per-package go test lane (checks.cutting-garden-godyn-tests; a skip
 # stub off x86_64-linux, where godyn is not validated). A `test` aggregate
@@ -475,6 +475,51 @@ validate-generate:
 [group('codemod')]
 codemod-generate-dagnabit: && codemod-generate
     nix run --inputs-from . igloo#godyn-go -- -- go generate -run dagnabit ./...
+
+# Refresh manpages-generated/ (the committed section 1 pages that
+# packages.manpages ships without a Go build, circus#436) from what
+# cutting-garden-gen writes now. Run after changing a command's flags,
+# description or the registered plugins; `validate-generate-manpages` fails
+# until you do.
+#
+# regenerate the committed section 1 man pages
+[group('codemod')]
+codemod-generate-manpages:
+    nix build '.#cutting-garden-man-generated' --out-link .tmp/man-generated
+    rm -rf manpages-generated
+    mkdir manpages-generated
+    cp -a .tmp/man-generated/share/man/man1/. manpages-generated/
+    chmod -R u+w manpages-generated
+
+# Cold evaluation cost of an output: wall time, peak resident set of nix, and
+# the evaluator's function-call count (NIX_SHOW_STATS), eval cache off. Run
+# one output at a time on an otherwise quiet host: `just
+# debug-measure-eval manpages`, then `... default` (circus#436: godyn's
+# eval-time package graph dominates the default package's eval).
+#
+# measure one flake output's cold eval: wall, peak RSS, function calls
+[group('debug')]
+debug-measure-eval OUTPUT='manpages':
+    #!/usr/bin/env bash
+    set -uo pipefail
+    log=$(mktemp)
+    NIX_SHOW_STATS=1 command time -v nix eval --no-eval-cache --raw ".#{{ OUTPUT }}.drvPath" >/dev/null 2>"$log"
+    echo "output={{ OUTPUT }}"
+    grep -E 'Elapsed \(wall clock\)|Maximum resident set size' "$log"
+    grep -oE '"(nrFunctionCalls|nrThunks|cpuTime)": *[0-9.]+' "$log" | tr '\n' ' '
+    echo
+    rm -f "$log"
+
+# Drift gates for packages.manpages: checks.<system>.manpages-codegen (the
+# committed pages equal cutting-garden-gen's output) and manpages-list (the
+# page list equals the default package's).
+#
+# drift gate: manpages-generated/ is current and packages.manpages lists what default installs
+[group('pre-build')]
+validate-generate-manpages:
+    nix build ".#checks.$(nix eval --impure --raw --expr builtins.currentSystem).manpages-codegen" --no-link --show-trace
+    nix build ".#checks.$(nix eval --impure --raw --expr builtins.currentSystem).manpages-list" --no-link --show-trace
+    gum log --level info "validate-generate-manpages: ok"
 
 # Drift gate: checks.<system>.dagnabit-codegen regenerates the facades in the
 # vendored module tree and fails on any content diff from the committed source

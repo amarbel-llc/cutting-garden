@@ -1,0 +1,33 @@
+.TH CUTTING-GARDEN-DIFF 1
+.SH NAME
+cutting-garden-diff - compare a directory tree against a capture receipt
+.SH ARGUMENTS
+.TP
+.B receipt-id
+markl-id of the capture receipt to compare against.
+.TP
+.B dir
+directory to compare. MUST exist and be a directory; diff refuses missing or non-directory paths up front (FDR 0002 §Destination Preconditions).
+.SH ENVIRONMENT
+.TP
+.B NO_COLOR
+When set (any value), suppresses ANSI SGR coloring of per-line markers under -color=auto. -color=always overrides this.
+.SH FILES
+.TP
+.I $XDG_DATA_HOME/madder/<store>/
+default blob-store-id resolution root. Receipt blob is fetched here unless -store overrides.
+.SH EXAMPLES
+.TP
+Round-trip diff: capture, restore, then diff should be clean (exit 0).
+.B rid=$(cutting-garden capture -format json src | jq -r '.id') && cutting-garden restore "$rid" out && cutting-garden diff "$rid" out
+.TP
+Detect drift after the tree is mutated (exit 1; per-entry M/A/D/T lines on stdout, `diff: N difference(s)` on stderr).
+.B cutting-garden diff "$rid" out
+.TP
+Probe for bitrot / GC'd blobs in the source store (-verify-blobs-exist).
+.B cutting-garden diff -verify-blobs-exist "$rid" out
+.TP
+Override the store-hint when the receipt's home store has rotated.
+.B cutting-garden diff -store .work "$rid" out
+.SH SEE ALSO
+cutting-garden(1), cutting-garden-capture(1), cutting-garden-restore(1), diff(1)

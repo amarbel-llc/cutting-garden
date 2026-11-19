@@ -788,6 +788,27 @@
         # (cutting-garden-gen); this derivation covers man5/man7 plus the
         # section 1 page of a binary outside the Utility
         # (cutting-garden-ajour(1)), merged into the default package below.
+        # The scdoc half of the install, shared by cuttingGardenDoc and the
+        # pages-only cuttingGardenManpages below.
+        scdocInstallPhase = ''
+          mkdir -p $out/share/man/man1 $out/share/man/man5 $out/share/man/man7
+          # Section 1 here is only for binaries outside the Go-codegen'd
+          # Utility (cutting-garden-ajour(1)); cg's own pages come from
+          # cutting-garden-gen.
+          for f in $src/*.1.scd; do
+            [ -e "$f" ] || continue
+            scdoc < "$f" > "$out/share/man/man1/$(basename "$f" .scd)"
+          done
+          for f in $src/*.5.scd; do
+            [ -e "$f" ] || continue
+            scdoc < "$f" > "$out/share/man/man5/$(basename "$f" .scd)"
+          done
+          for f in $src/*.7.scd; do
+            [ -e "$f" ] || continue
+            scdoc < "$f" > "$out/share/man/man7/$(basename "$f" .scd)"
+          done
+        '';
+
         cuttingGardenDoc = pkgs.stdenvNoCC.mkDerivation {
           pname = "cutting-garden-doc";
           version = cgVersion;
@@ -795,23 +816,43 @@
           nativeBuildInputs = [ pkgs.scdoc ];
           dontUnpack = true;
           dontBuild = true;
-          installPhase = ''
-            mkdir -p $out/share/man/man1 $out/share/man/man5 $out/share/man/man7
-            # Section 1 here is only for binaries outside the Go-codegen'd
-            # Utility (cutting-garden-ajour(1)); cg's own pages come from
-            # cutting-garden-gen.
-            for f in $src/*.1.scd; do
-              [ -e "$f" ] || continue
-              scdoc < "$f" > "$out/share/man/man1/$(basename "$f" .scd)"
-            done
-            for f in $src/*.5.scd; do
-              [ -e "$f" ] || continue
-              scdoc < "$f" > "$out/share/man/man5/$(basename "$f" .scd)"
-            done
-            for f in $src/*.7.scd; do
-              [ -e "$f" ] || continue
-              scdoc < "$f" > "$out/share/man/man7/$(basename "$f" .scd)"
-            done
+          installPhase = scdocInstallPhase;
+        };
+
+        # The cutting-garden-gen binary on its own (the shared ldflags list
+        # wants the -X symbols main declares): the generator of the Utility's
+        # section 1 pages, built so cuttingGardenManGenerated can run it
+        # WITHOUT the main binary's postInstall.
+        cuttingGardenGen = buildCuttingGardenGo {
+          pname = "cutting-garden-gen";
+          subPackages = [ "cmd/cutting-garden-gen" ];
+          meta.mainProgram = "cutting-garden-gen";
+        };
+
+        # What cutting-garden-gen writes: the Utility's section 1 pages (and
+        # completions, unused here). The source of manpages-generated/ and
+        # what checks.manpages-codegen compares it against.
+        cuttingGardenManGenerated = pkgs.runCommand "cutting-garden-man-generated-${cgVersion}" { } ''
+          ${cuttingGardenGen}/bin/cutting-garden-gen $out
+        '';
+
+        # THE PAGES-ONLY OUTPUT (`packages.<system>.manpages`, eng-manpages(7);
+        # circus#436): every page the default package installs, with NO godyn
+        # build in its closure or its eval. The hand-written pages are scdoc
+        # from doc/; the Utility's generated section 1 pages are the COMMITTED
+        # copy in manpages-generated/, which checks.manpages-codegen proves
+        # equal to what cutting-garden-gen writes, and checks.manpages-list
+        # proves is the same page list the default package installs. nixpkgs'
+        # compressManPages fixup gzips them like the default's.
+        cuttingGardenManpages = pkgs.stdenvNoCC.mkDerivation {
+          pname = "cutting-garden-manpages";
+          version = cgVersion;
+          src = ./doc;
+          nativeBuildInputs = [ pkgs.scdoc ];
+          dontUnpack = true;
+          dontBuild = true;
+          installPhase = scdocInstallPhase + ''
+            cp -a ${./manpages-generated}/. $out/share/man/man1/
           '';
         };
 
@@ -1051,6 +1092,15 @@
       {
         packages = {
           default = cuttingGardenWithDoc;
+
+          # Pages only, no godyn graph in its eval or closure: the output
+          # eng-manpages(7) and circus's first-party manpath root look for
+          # (circus#436). `nix build .#manpages`.
+          manpages = cuttingGardenManpages;
+
+          # What cutting-garden-gen writes, for `just codemod-generate-manpages`
+          # to copy into manpages-generated/.
+          cutting-garden-man-generated = cuttingGardenManGenerated;
 
           # The buildGoApplication build of the main binary under an explicit
           # name (spinclass's spinclass-build_go_application): the escape hatch
@@ -1343,6 +1393,36 @@
             command = "go generate -run dagnabit ./... && go generate -run tommy ./... && dagnabit export -check";
             nativeBuildInputs = codegenTools;
           }
+        );
+
+        # The committed section 1 pages (manpages-generated/) must equal what
+        # cutting-garden-gen writes now: a command's flags or description
+        # changed without `just codemod-generate-manpages`. `just
+        # validate-generate-manpages`.
+        checks.manpages-codegen = godynCheck "manpages-codegen" (
+          pkgs.runCommand "cutting-garden-manpages-codegen" { nativeBuildInputs = [ pkgs.diffutils ]; } ''
+            if ! diff -r --no-dereference \
+              ${cuttingGardenManGenerated}/share/man/man1 ${./manpages-generated}; then
+              echo "manpages-generated/ is stale: run 'just codemod-generate-manpages'" >&2
+              exit 1
+            fi
+            touch $out
+          ''
+        );
+
+        # packages.manpages installs exactly the pages the default package
+        # does, so a lint over it checks what the homes install.
+        checks.manpages-list = godynCheck "manpages-list" (
+          pkgs.runCommand "cutting-garden-manpages-list" { nativeBuildInputs = [ pkgs.findutils ]; } ''
+            list() { (cd "$1/share/man" && find -L . -type f | sort); }
+            list ${cuttingGardenManpages} > manpages.txt
+            list ${cuttingGardenWithDoc} > default.txt
+            if ! diff manpages.txt default.txt; then
+              echo "packages.manpages and the default package install different pages" >&2
+              exit 1
+            fi
+            touch $out
+          ''
         );
 
         # The organize tree-sitter grammar's corpus (zz-nvim/grammars/organize/

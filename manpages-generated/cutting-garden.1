@@ -1,0 +1,47 @@
+.TH CUTTING-GARDEN 1
+.SH NAME
+cutting-garden, cg - capture, restore, diff, and traverse trees via URI-scheme plugins
+.SH SYNOPSIS
+.B cutting-garden
+[\fIflags\fR]
+\fIsubcommand\fR
+[\fIargs\fR]
+.SH SUBCOMMANDS
+.TP
+.B capture
+capture one or more directory trees into madder's blob stores
+.TP
+.B diff
+compare a directory tree against a capture receipt
+.TP
+.B failures
+inspect a capture failure receipt
+.TP
+.B fmt-organize
+regenerate an organize document in place from its envelope
+.TP
+.B health
+report registered plugins and their capabilities
+.TP
+.B list
+list the child nodes of a traversable plugin URI
+.TP
+.B mcp
+serve traversable plugin endpoints over the Model Context Protocol
+.TP
+.B organize
+reorganize a plugin's nodes by editing a faceted document
+.TP
+.B restore
+restore a captured tree from a receipt blob
+.TP
+.B serve
+receive files over the LocalSend protocol as captures
+.TP
+.B serve-mcp
+serve the MCP server to many sessions over one unix socket
+.TP
+.B version
+print the build version and commit
+.SH SEE ALSO
+cutting-garden-capture(1), cutting-garden-diff(1), cutting-garden-failures(1), cutting-garden-fmt-organize(1), cutting-garden-health(1), cutting-garden-list(1), cutting-garden-mcp(1), cutting-garden-organize(1), cutting-garden-restore(1), cutting-garden-serve(1), cutting-garden-serve-mcp(1), cutting-garden-version(1)
