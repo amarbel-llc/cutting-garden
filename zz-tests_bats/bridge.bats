@@ -33,9 +33,12 @@ teardown() {
 
 # bats file_tags=mcp,bridge
 
+# Background processes must not inherit fd 8 (the held-open client pipe: a
+# daemon holding its write end would keep the bridge from ever seeing EOF) or
+# fd 3 (bats' own: it would keep bats waiting for the process).
 start_daemon() {
   "$CG_BIN" serve-mcp -socket "$SOCK" -config "$BATS_TEST_TMPDIR/empty.toml" \
-    2>"$BATS_TEST_TMPDIR/daemon.err" &
+    2>"$BATS_TEST_TMPDIR/daemon.err" 3>&- 8>&- &
   DAEMON_PID=$!
   local _
   for _ in $(seq 100); do
@@ -95,14 +98,14 @@ function bridge_without_a_session_id_is_served_anonymously { # @test
     fail "anonymous session not logged: $(cat "$BATS_TEST_TMPDIR/daemon.err")"
 }
 
-# The daemon dies while the client stays connected and silent: the bridge must
-# exit at once with status 3 (the session cannot be resumed), not wait for the
-# client's next message. Its host (moxy) then sees the child die.
+# The daemon dies and does not come back while the client stays connected and
+# silent: once the reconnect window has passed the bridge exits with status 3,
+# without waiting for the client's next message, so its host sees the child die.
 function bridge_exits_3_when_the_daemon_dies_mid_session { # @test
   start_daemon
   mkfifo "$BATS_TEST_TMPDIR/in"
-  "$BRIDGE_BIN" -socket "$SOCK" <"$BATS_TEST_TMPDIR/in" \
-    >"$BATS_TEST_TMPDIR/out" 2>"$BATS_TEST_TMPDIR/bridge.err" &
+  "$BRIDGE_BIN" -socket "$SOCK" -reconnect-for 1s <"$BATS_TEST_TMPDIR/in" \
+    >"$BATS_TEST_TMPDIR/out" 2>"$BATS_TEST_TMPDIR/bridge.err" 3>&- &
   local bridge_pid=$!
   exec 8>"$BATS_TEST_TMPDIR/in"
   echo "$INIT_REQ" >&8
@@ -129,6 +132,49 @@ function bridge_exits_3_when_the_daemon_dies_mid_session { # @test
   local status=0
   wait "$bridge_pid" || status=$?
   assert_equal "$status" 3
-  grep -q 'hung up mid-session' "$BATS_TEST_TMPDIR/bridge.err" ||
-    fail "bridge stderr does not say the daemon hung up: $(cat "$BATS_TEST_TMPDIR/bridge.err")"
+  grep -q 'did not come back' "$BATS_TEST_TMPDIR/bridge.err" ||
+    fail "bridge stderr does not say the daemon did not come back: $(cat "$BATS_TEST_TMPDIR/bridge.err")"
+}
+
+# The daemon is restarted (an upgrade, a crash and a unit restart) while the
+# client stays attached: the bridge reconnects, replays the client's initialize
+# handshake, and the client's next request is answered by the new daemon with
+# no EOF and no second initialize reply. A clown plugin server that exits is not
+# restarted by clown, so this is what keeps the session's tools.
+function bridge_survives_a_daemon_restart { # @test
+  start_daemon
+  mkfifo "$BATS_TEST_TMPDIR/in"
+  "$BRIDGE_BIN" -socket "$SOCK" -reconnect-for 20s <"$BATS_TEST_TMPDIR/in" \
+    >"$BATS_TEST_TMPDIR/out" 2>"$BATS_TEST_TMPDIR/bridge.err" 3>&- &
+  local bridge_pid=$!
+  exec 8>"$BATS_TEST_TMPDIR/in"
+  echo "$INIT_REQ" >&8
+
+  local _
+  for _ in $(seq 100); do
+    grep -q '"id":1' "$BATS_TEST_TMPDIR/out" && break
+    sleep 0.1
+  done
+  grep -q '"id":1' "$BATS_TEST_TMPDIR/out" || fail "no initialize response before the restart"
+  echo '{"jsonrpc":"2.0","method":"notifications/initialized"}' >&8
+
+  kill "$DAEMON_PID"
+  wait "$DAEMON_PID" 2>/dev/null || true
+  DAEMON_PID=""
+  start_daemon
+
+  echo '{"jsonrpc":"2.0","id":2,"method":"resources/list"}' >&8
+  for _ in $(seq 100); do
+    grep -q '"id":2' "$BATS_TEST_TMPDIR/out" && break
+    sleep 0.1
+  done
+  grep -q '"id":2' "$BATS_TEST_TMPDIR/out" ||
+    fail "no reply from the restarted daemon: $(cat "$BATS_TEST_TMPDIR/bridge.err")"
+  kill -0 "$bridge_pid" 2>/dev/null || fail "the bridge ended though the daemon came back"
+  assert_equal "$(grep -c '"id":1' "$BATS_TEST_TMPDIR/out")" 1
+
+  exec 8>&-
+  local status=0
+  wait "$bridge_pid" || status=$?
+  assert_equal "$status" 0
 }

@@ -135,20 +135,23 @@ func TestConsumeHello_ShortFirstLineIsNotHeldBack(t *testing.T) {
 }
 
 // TestRunBridge_DaemonLostMidSession: the daemon hangs up while the client is
-// still connected; the bridge must say so at once, not wait for the next
-// client message.
+// still connected and never comes back; once the reconnect window has passed
+// the bridge must say so, not wait for the next client message.
 func TestRunBridge_DaemonLostMidSession(t *testing.T) {
+	defer func(old time.Duration) { bridge.ReconnectFor = old }(bridge.ReconnectFor)
+	bridge.ReconnectFor = 200 * time.Millisecond
+
 	socket := filepath.Join(t.TempDir(), "mcp.sock")
 	ln, err := listenOwnerOnly(socket)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = ln.Close() }()
 	go func() {
 		c, err := ln.Accept()
 		if err == nil {
 			_ = c.Close() // the daemon "dies"
 		}
+		_ = ln.Close() // and does not come back
 	}()
 
 	pr, pw := io.Pipe() // a client that stays connected and silent

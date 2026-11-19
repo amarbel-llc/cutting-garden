@@ -5,9 +5,14 @@
 // daemon. It imports no plugin, so it stays a few MB lighter than
 // `cutting-garden mcp -connect`.
 //
-//	cutting-garden-bridge [-socket PATH] [-- mcp args...]
+//	cutting-garden-bridge [-socket PATH] [-reconnect-for DURATION] [-- mcp args...]
 //
-// Arguments after `--` are passed to the fallback `cutting-garden mcp`.
+// If the daemon stops while the session is attached (a restart, an upgrade),
+// the bridge reconnects for up to -reconnect-for (default 10s), replays the
+// client's initialize handshake and answers a request that was waiting with an
+// error, so the client keeps its tools; only if the daemon stays away does it
+// exit with status 3. Arguments after `--` are passed to the fallback
+// `cutting-garden mcp`.
 package main
 
 import (
@@ -25,6 +30,8 @@ import (
 
 func main() {
 	socket := flag.String("socket", "", "daemon unix socket (default $XDG_RUNTIME_DIR/cutting-garden/mcp.sock)")
+	flag.DurationVar(&bridge.ReconnectFor, "reconnect-for", bridge.ReconnectFor,
+		"how long to keep trying to reach a daemon that went away mid-session before exiting 3")
 	flag.Parse()
 	if *socket == "" {
 		*socket = bridge.DefaultSocket()
@@ -40,8 +47,8 @@ func main() {
 	case bridge.Done:
 		return
 	case bridge.DaemonLost:
-		// The session lived in the daemon and cannot be resumed; exit non-zero
-		// so the host (moxy) sees the child die and restarts it.
+		// The daemon did not come back within -reconnect-for; exit non-zero so
+		// the host sees the child die.
 		stop()
 		os.Exit(3)
 	case bridge.NoDaemon:

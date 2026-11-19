@@ -477,7 +477,7 @@ codemod-generate-dagnabit: && codemod-generate
     nix run --inputs-from . igloo#godyn-go -- -- go generate -run dagnabit ./...
 
 # Refresh manpages-generated/ (the committed section 1 pages that
-# packages.manpages ships without a Go build, circus#436) from what
+# packages.manpages ships without a Go build) from what
 # cutting-garden-gen writes now. Run after changing a command's flags,
 # description or the registered plugins; `validate-generate-manpages` fails
 # until you do.
@@ -494,8 +494,8 @@ codemod-generate-manpages:
 # Cold evaluation cost of an output: wall time, peak resident set of nix, and
 # the evaluator's function-call count (NIX_SHOW_STATS), eval cache off. Run
 # one output at a time on an otherwise quiet host: `just
-# debug-measure-eval manpages`, then `... default` (circus#436: godyn's
-# eval-time package graph dominates the default package's eval).
+# debug-measure-eval manpages`, then `... default` (godyn's eval-time package
+# graph dominates the default package's eval).
 #
 # measure one flake output's cold eval: wall, peak RSS, function calls
 [group('debug')]
@@ -1667,28 +1667,147 @@ debug-localsend-probe PORT='53398': debug-build-go
     echo "presented:  $presented"
     [[ "$advertised" == "$presented" ]] && echo MATCH || echo MISMATCH
 
-# Sum PSS and RSS (kB, from /proc/PID/smaps_rollup) over every running
-# cutting-garden process, listing each by its subcommand. Run before and after
-# moving sessions to `serve-mcp` + `mcp -connect` to measure step A
-# (moxy#508) of the per-host plan. Read-only; same-uid processes only.
+# PSS (kB, /proc/PID/smaps_rollup) of every running cutting-garden process of
+# this user, grouped by ROLE: `server` (serve-mcp), `bridge` (the minimal
+# cutting-garden-bridge), `bridge-full` (mcp -connect), `inproc` (a session's own
+# mcp), and `child:<name>` (a helper program, e.g. nebulous or smith, whose
+# parent is a server or inproc process). Matches the installed binary names
+# too (`.cutting-garden-wrapped`, `.cg-wrapped`), which a plain
+# `cutting-garden` match misses. Output: one `role<TAB>count<TAB>pss_kB` row
+# per role, then a `total` row; with VERBOSE=1 a row per process first.
+# Read-only; run it to compare the per-session cost of bridge sessions with
+# in-process sessions (they coexist while a deploy rolls out).
 #
-# measure PSS/RSS of all running cutting-garden processes
+# measure PSS of cutting-garden processes, grouped by role
 [group('debug')]
-debug-measure-cg-memory:
+debug-measure-cg-memory VERBOSE='0':
     #!/usr/bin/env bash
     set -uo pipefail
-    n=0; pss=0; rss=0
-    for p in /proc/[0-9]*; do
-      exe=$(readlink "$p/exe" 2>/dev/null) || continue
-      case "${exe##*/}" in cutting-garden|cg) ;; *) continue ;; esac
-      read -r -d '' -a argv < "$p/cmdline" || true
-      p_pss=$(awk '/^Pss:/{print $2}' "$p/smaps_rollup" 2>/dev/null) || continue
-      p_rss=$(awk '/^Rss:/{print $2}' "$p/smaps_rollup" 2>/dev/null) || continue
-      [[ -n "$p_pss" ]] || continue
-      echo "${p#/proc/} pss_kB=$p_pss rss_kB=$p_rss ${argv[*]:1:3}"
-      n=$((n+1)); pss=$((pss+p_pss)); rss=$((rss+p_rss))
+    declare -A role_of count pss_sum
+    pss_of() { awk '/^Pss:/{s+=$2} END{print s+0}' "/proc/$1/smaps_rollup" 2>/dev/null; }
+    ppid_of() { sed 's/.*) //' "/proc/$1/stat" 2>/dev/null | awk '{print $2}'; }
+    exe_base() { local e; e=$(readlink "/proc/$1/exe" 2>/dev/null) || return 1; echo "${e##*/}"; }
+    classify() {
+      local p=$1 base args
+      base=$(exe_base "$p") || return 0
+      case "$base" in
+        cutting-garden-bridge) echo bridge ;;
+        cutting-garden|cg|.cutting-garden-wrapped|.cg-wrapped)
+          args=$(tr '\0' ' ' < "/proc/$p/cmdline" 2>/dev/null)
+          case "$args" in
+            *serve-mcp*) echo server ;;
+            *"mcp -connect"*|*"mcp --connect"*) echo bridge-full ;;
+            *" mcp"*) echo inproc ;;
+          esac ;;
+      esac
+    }
+    for d in /proc/[0-9]*; do
+      p=${d#/proc/}
+      r=$(classify "$p"); [[ -n "$r" ]] && role_of[$p]=$r
     done
-    echo "processes=$n total_pss_kB=$pss total_rss_kB=$rss"
+    for d in /proc/[0-9]*; do
+      p=${d#/proc/}
+      [[ -n "${role_of[$p]:-}" ]] && continue
+      pp=$(ppid_of "$p"); [[ -n "$pp" ]] || continue
+      case "${role_of[$pp]:-}" in
+        server|inproc) base=$(exe_base "$p") && role_of[$p]="child:${base#.}" ;;
+      esac
+    done
+    total_n=0; total_kb=0
+    for p in "${!role_of[@]}"; do
+      kb=$(pss_of "$p"); [[ -n "$kb" ]] || continue
+      r=${role_of[$p]}
+      count[$r]=$(( ${count[$r]:-0} + 1 )); pss_sum[$r]=$(( ${pss_sum[$r]:-0} + kb ))
+      total_n=$((total_n+1)); total_kb=$((total_kb+kb))
+      [[ "{{ VERBOSE }}" == 1 ]] && printf 'pid %s\t%s\t%s kB\n' "$p" "$r" "$kb"
+    done
+    for r in $(printf '%s\n' "${!count[@]}" | sort); do
+      printf '%s\t%s\t%s\n' "$r" "${count[$r]}" "${pss_sum[$r]}"
+    done
+    printf 'total\t%s\t%s\n' "$total_n" "$total_kb"
+
+# Append a debug-measure-cg-memory snapshot to .tmp/cg-memory.tsv every EVERY
+# seconds for MINUTES minutes, each row prefixed by a UTC timestamp. For the
+# day-long measurement after the shared server is deployed: `just
+# debug-sample-cg-memory 1440 300`. Read-only; start it via run_recipe async.
+#
+# sample cutting-garden memory by role into .tmp/cg-memory.tsv
+[group('debug')]
+debug-sample-cg-memory MINUTES='60' EVERY='60':
+    #!/usr/bin/env bash
+    set -uo pipefail
+    cd "{{ justfile_directory() }}"
+    mkdir -p .tmp
+    end=$(( $(date +%s) + {{ MINUTES }} * 60 ))
+    while (( $(date +%s) < end )); do
+      stamp=$(date -u +%FT%TZ)
+      just debug-measure-cg-memory 2>/dev/null | sed "s/^/$stamp\t/" >> .tmp/cg-memory.tsv
+      sleep {{ EVERY }}
+    done
+
+# What happens to attached sessions when the shared server stops: start one
+# serve-mcp and N bridges holding their stdin open, kill the server, and report
+# how many bridges exited, with which status, and how soon, with the reconnect
+# window shortened to 1s so the exits show. A second phase restarts the server
+# and reports how many bridges are still attached once it is back. A host does
+# not restart a plugin server that exited, so an exited bridge is a session
+# whose tools are gone. Empty config, nothing live.
+#
+# measure the effect of a server stop, and of a restart, on N attached bridges
+[group('debug')]
+debug-measure-restart-effect N='14': debug-build-go
+    #!/usr/bin/env bash
+    set -uo pipefail
+    bin=$PWD/.tmp/cutting-garden
+    mini="$(dirname "$(readlink -f "$bin")")/cutting-garden-bridge"
+    dir=$(mktemp -d "$PWD/.tmp/restart.XXXXXX")
+    : > "$dir/empty.toml"
+    sock=$dir/s.sock
+    pids=()
+    cleanup() { kill "${pids[@]}" 2>/dev/null; wait 2>/dev/null; rm -rf "$dir"; }
+    trap cleanup EXIT
+    start_server() {
+      "$bin" serve-mcp -socket "$sock" -config "$dir/empty.toml" >/dev/null 2>"$1" &
+      d=$!; pids+=("$d")
+      for _ in $(seq 100); do [[ -S $sock ]] && break; sleep 0.1; done
+    }
+    start_bridges() { # $1 = -reconnect-for value
+      br=()
+      for i in $(seq {{ N }}); do
+        # process substitution, not a pipeline: $! is the bridge itself, so
+        # `wait` returns its own status the moment it exits
+        "$mini" -socket "$sock" -reconnect-for "$1" < <(sleep 300) >/dev/null 2>&1 &
+        br+=($!); pids+=($!)
+      done
+      sleep 2
+    }
+
+    echo "--- phase 1: the server stops and does not return (window 1s) ---"
+    start_server "$dir/server1.log"
+    start_bridges 1s
+    alive_before=0; for p in "${br[@]}"; do kill -0 "$p" 2>/dev/null && alive_before=$((alive_before+1)); done
+    t0=$(date +%s%N)
+    kill "$d"; wait "$d" 2>/dev/null
+    exited=0; status3=0; other=0; last_ms=0
+    for p in "${br[@]}"; do
+      for _ in $(seq 100); do kill -0 "$p" 2>/dev/null || break; sleep 0.05; done
+      if kill -0 "$p" 2>/dev/null; then continue; fi
+      now=$(date +%s%N); ms=$(( (now - t0) / 1000000 )); (( ms > last_ms )) && last_ms=$ms
+      wait "$p" 2>/dev/null; s=$?
+      exited=$((exited+1)); if [[ $s == 3 ]]; then status3=$((status3+1)); else other=$((other+1)); fi
+    done
+    echo "bridges={{ N }} alive_before=$alive_before exited_after_kill=$exited status3=$status3 other_status=$other all_gone_by_ms=$last_ms"
+
+    echo "--- phase 2: the server restarts (window 20s) ---"
+    start_server "$dir/server2.log"
+    start_bridges 20s
+    alive_before=0; for p in "${br[@]}"; do kill -0 "$p" 2>/dev/null && alive_before=$((alive_before+1)); done
+    kill "$d"; wait "$d" 2>/dev/null
+    start_server "$dir/server3.log"
+    sleep 3
+    alive_after=0; for p in "${br[@]}"; do kill -0 "$p" 2>/dev/null && alive_after=$((alive_after+1)); done
+    reattached=$(grep -c 'session open' "$dir/server3.log")
+    echo "bridges={{ N }} alive_before=$alive_before alive_after_restart=$alive_after reattached_to_new_server=$reattached"
 
 # PSS (kB) of one `mcp` process under three configs: empty; ROOTS caldav
 # accounts all pointing at the in-memory caldav testserver (every root warmed
@@ -1728,6 +1847,53 @@ debug-measure-lazy ROOTS='12': debug-build-go debug-build-caldav-testserver
     echo "--- roots seen by the eager config (list) ---"
     XDG_CONFIG_HOME="$dir/eager" "$bin" list -format json 2>&1 | grep -c caldav
 
+# First-read latency of one root, warm (default) vs lazy (`[mcp]
+# no_background_refresh = ["caldav"]`): REPS runs each, ROOTS caldav accounts
+# against the in-memory test server (nothing live), the time from sending the
+# list_nodes call for the first root to its response, after the server has been
+# up SETTLE seconds. The server is local, so this is the structural compute
+# cost of a cold read, not network latency. Dev-loop for the lazy-warm
+# question (docs/plans/2026-11-19-lazy-warm-per-root.md).
+#
+# measure first-read latency of a root: warm vs lazy
+[group('debug')]
+debug-measure-first-read ROOTS='1' REPS='5' SETTLE='4': debug-build-go debug-build-caldav-testserver
+    #!/usr/bin/env bash
+    set -uo pipefail
+    cd "{{ justfile_directory() }}"
+    bin=$PWD/.tmp/cutting-garden
+    dir=$(mktemp -d "$PWD/.tmp/firstread.XXXXXX")
+    coproc SRV { .tmp/cutting-garden-caldav-testserver; }
+    read -r -u "${SRV[0]}" source_url _calpath
+    cal="${source_url%/dav/}/dav/cal/"
+    cleanup() { exec {SRV[1]}>&- 2>/dev/null; wait 2>/dev/null; rm -rf "$dir"; }
+    trap cleanup EXIT
+    accounts() { for i in $(seq {{ ROOTS }}); do printf '[[caldav.accounts]]\nname = "a%s"\nurl = "%s"\n\n' "$i" "$cal"; done; }
+    mkdir -p "$dir/warm/cutting-garden" "$dir/lazy/cutting-garden"
+    accounts > "$dir/warm/cutting-garden/config.toml"
+    { printf '[mcp]\nno_background_refresh = ["caldav"]\n\n'; accounts; } > "$dir/lazy/cutting-garden/config.toml"
+    init='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"m","version":"0"}}}'
+    for mode in warm lazy; do
+      for rep in $(seq {{ REPS }}); do
+        coproc MCP { XDG_CONFIG_HOME="$dir/$mode" "$bin" mcp 2>/dev/null; }
+        printf '%s\n' "$init" >&"${MCP[1]}"
+        read -r -t 10 -u "${MCP[0]}" _ || { echo "$mode: no initialize response" >&2; break; }
+        printf '%s\n' '{"jsonrpc":"2.0","method":"notifications/initialized"}' >&"${MCP[1]}"
+        sleep {{ SETTLE }}
+        printf '%s\n' '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"list_nodes","arguments":{}}}' >&"${MCP[1]}"
+        read -r -t 10 -u "${MCP[0]}" roots_line
+        uri=$(printf '%s' "$roots_line" | jq -r '.result.content[0].text | fromjson | .[0].uri')
+        req=$(jq -nc --arg u "$uri" '{jsonrpc:"2.0",id:3,method:"tools/call",params:{name:"list_nodes",arguments:{uri:$u}}}')
+        t0=$(date +%s%N)
+        printf '%s\n' "$req" >&"${MCP[1]}"
+        read -r -t 20 -u "${MCP[0]}" _ || echo "$mode: no list_nodes response" >&2
+        t1=$(date +%s%N)
+        echo "$mode rep$rep first_read_ms=$(( (t1 - t0) / 1000000 ))"
+        exec {MCP[1]}>&-
+        wait "$MCP_PID" 2>/dev/null
+      done
+    done
+
 # Compare N in-process `mcp` servers against one `serve-mcp` daemon plus N
 # `mcp -connect` bridges, by PSS (kB, /proc/PID/smaps_rollup) of the processes
 # this recipe started. With no CONFIG it uses an EMPTY config, so no plugin is
@@ -1736,8 +1902,8 @@ debug-measure-lazy ROOTS='12': debug-build-go debug-build-caldav-testserver
 # the in-process servers and the daemon (the same file two ways); a real one
 # contacts its live accounts, so run that only where the operator allows.
 # SETTLE is the seconds each phase runs before PSS is read (warm-up of a real
-# config takes tens of seconds; 90 matches circus's flic sampling). Prints the
-# totals and the saving. Dev-loop for step A of the per-host plan (moxy#508).
+# config takes tens of seconds; 90 is a sensible choice). Prints the totals and
+# the saving. Dev-loop for the shared-server plan.
 #
 # measure N in-process mcp vs one serve-mcp + N bridges, same config
 [group('debug')]
