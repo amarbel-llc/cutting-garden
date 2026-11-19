@@ -183,6 +183,16 @@ the disconnect as a tool error and retries on the next call.
   is an audit aid, NOT authentication). A connection from another uid is
   dropped. A stdio `mcp` session's lines are unchanged. The `cg` CLI client
   mode is cutting-garden#422.
+- Stability (a shared process makes one bad call everyone's problem): go-mcp
+  runs each request on its own goroutine with no recover, so a panic in any
+  plugin call used to end the whole daemon. `callText` and `ReadResource` now
+  turn a panic into an error for that one request (stack to stderr). And a
+  plugin call that never returns used to keep the daemon from stopping (a
+  session waits for its in-flight handlers): after a stop, `serveListener`
+  waits `shutdownGrace` (5 s) for sessions, then returns and lets the process
+  exit end them. Not covered: a panic in the background facet-maintenance
+  goroutine (it would still end the process), and a hung call still occupies
+  its own session until the client gives up.
 - Tested end to end by `zz-tests_bats/bridge.bats` (daemon down -> exec
   fallback; session through a daemon; anonymous session; daemon death).
 - Not built: the hello with principal and cwd (no per-caller state exists in

@@ -288,7 +288,9 @@ const (
 func (r *Resources) ReadResource(
 	ctx context.Context,
 	uri string,
-) (*protocol.ResourceReadResult, error) {
+) (result *protocol.ResourceReadResult, err error) {
+	// A plugin panic ends this read, not the process (see recoverCall).
+	defer recoverCall("resource "+uri, &err)
 	// One resources/read is one call scope (cutting-garden#311); a read_node
 	// tool call is already inside its tool call's scope, which this keeps.
 	return r.ReadNode(cutting_garden_plugins.WithCallScope(ctx), uri, contentBoth)

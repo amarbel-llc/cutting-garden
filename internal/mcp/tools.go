@@ -328,12 +328,16 @@ const emptyResultText = "(empty: the node has no content)"
 // callText runs one tool call and never returns an empty success text.
 func (t *Tools) callText(
 	ctx context.Context, name string, args json.RawMessage,
-) (string, error) {
+) (msg string, err error) {
+	// A plugin panic must end this call, not the process: go-mcp runs every
+	// request on its own goroutine with no recover, and under serve-mcp the
+	// process is every session's.
+	defer recoverCall("tool "+name, &err)
 	// One tool call is one call scope (cutting-garden#311): a plugin that
 	// confirms a cached entry against its source may trust that for the rest of
 	// this call, and must confirm again on the next.
 	ctx = cutting_garden_plugins.WithCallScope(ctx)
-	msg, err := t.call(ctx, name, args)
+	msg, err = t.call(ctx, name, args)
 	if err == nil && msg == "" {
 		msg = emptyResultText
 	}

@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"code.linenisgreat.com/cutting-garden/internal/bridge"
 	"code.linenisgreat.com/cutting-garden/internal/command"
@@ -190,6 +191,12 @@ func listenOwnerOnly(socket string) (net.Listener, error) {
 	return ln, nil
 }
 
+// shutdownGrace bounds how long serveListener waits for sessions to end after
+// ctx is cancelled. A session waits for its in-flight handlers, and a plugin
+// call that never returns would otherwise keep the daemon from ever stopping.
+// A var so a test can shorten it.
+var shutdownGrace = 5 * time.Second
+
 // serveListener accepts connections until ctx ends, serving each on its own
 // goroutine, and waits for them to drain before returning.
 //
@@ -220,7 +227,18 @@ func serveListener(
 	}()
 
 	var wg sync.WaitGroup
-	defer wg.Wait()
+	defer func() {
+		// Sessions end once their connections close, unless a handler is stuck
+		// in a plugin call; give them shutdownGrace, then return regardless
+		// (the process exit ends the stuck goroutine).
+		drained := make(chan struct{})
+		go func() { wg.Wait(); close(drained) }()
+		select {
+		case <-drained:
+		case <-time.After(shutdownGrace):
+			logf("serve-mcp: stopping with sessions still busy after %s", shutdownGrace)
+		}
+	}()
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
