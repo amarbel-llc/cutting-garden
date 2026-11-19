@@ -101,7 +101,13 @@ func (*ServeMCP) GetDescription() command.Description {
 			"upstream refresh rather than N. Sessions connect with `mcp " +
 			"-connect <socket>`. The file plugin is excluded: its root is " +
 			"the process working directory, which belongs to no caller of a " +
-			"shared server. Runs until interrupted.",
+			"shared server. Each session's writes (mutate_nodes) are logged " +
+			"to stderr with the session's principal and its peer's pid and " +
+			"uid. The principal is announced by the bridge and SELF-ASSERTED: " +
+			"it is an audit aid, not authentication. Access is the socket's " +
+			"0600 mode and a same-user check. -agent-socket names the piggy " +
+			"agent the daemon's `piggy pass show` calls use. Runs until " +
+			"interrupted.",
 	}
 }
 
@@ -240,11 +246,22 @@ func serveListener(
 				mu.Unlock()
 				_ = conn.Close()
 			}()
+			caller := Caller{}
+			if pid, uid, ok := peerCred(conn); ok {
+				if int(uid) != os.Getuid() {
+					// The socket is 0600, so this should be unreachable; a
+					// connection from another user is dropped, not served.
+					logf("serve-mcp: refused a connection from uid %d (pid %d)", uid, pid)
+					return
+				}
+				caller.HasPeer, caller.PID, caller.UID = true, pid, int64(uid)
+			}
 			principal, in := consumeHello(conn)
-			logf("serve-mcp: session open principal=%q", principal)
+			caller.Principal = principal
+			logf("serve-mcp: session open%s", caller.logSuffix())
 			// A session's error ends only that session.
-			err := serve(ctx, transport.NewStdio(in, conn))
-			logf("serve-mcp: session closed principal=%q err=%v", principal, err)
+			err := serve(withCaller(ctx, caller), transport.NewStdio(in, conn))
+			logf("serve-mcp: session closed%s err=%v", caller.logSuffix(), err)
 		}()
 	}
 }

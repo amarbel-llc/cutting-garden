@@ -230,7 +230,11 @@ func (t *Tools) callMutateNodes(
 // refusal does not stop the next.
 func (t *Tools) applyMutateGroup(ctx context.Context, group *mutateGroup) (mutateGroupView, error) {
 	ctx, partial := cutting_garden_plugins.WithPartialListings(ctx)
-	ctx = cutting_garden_plugins.WithBulkOutcomeObserver(ctx, group.logOutcome(t.log))
+	via := ""
+	if caller, ok := callerFrom(ctx); ok {
+		via = caller.logSuffix()
+	}
+	ctx = cutting_garden_plugins.WithBulkOutcomeObserver(ctx, group.logOutcome(t.log, via))
 	result, err := t.dispatchMutateGroup(ctx, group)
 	t.forgetWrittenSource(group.anchor)
 	if err != nil {
@@ -734,8 +738,10 @@ func (g *mutateGroup) outcomeView(o cutting_garden_plugins.BulkOutcome) mutateOu
 // logOutcome writes each op's outcome to log as the plugin's best-effort
 // loop records it, so a reply lost with its connection (cutting-garden#392)
 // leaves a record of what applied. A sweep's op count is not known ahead,
-// so it logs "op N".
-func (g *mutateGroup) logOutcome(log io.Writer) cutting_garden_plugins.BulkOutcomeObserver {
+// so it logs "op N". via is the caller suffix of a serve-mcp connection (an
+// audit aid with a self-asserted principal, see Caller), "" for a stdio
+// session.
+func (g *mutateGroup) logOutcome(log io.Writer, via string) cutting_garden_plugins.BulkOutcomeObserver {
 	return func(i int, o cutting_garden_plugins.BulkOutcome) {
 		if log == nil {
 			return
@@ -749,6 +755,7 @@ func (g *mutateGroup) logOutcome(log io.Writer) cutting_garden_plugins.BulkOutco
 		if o.URI != nil {
 			line += " " + o.URI.String()
 		}
+		line += via
 		if v.Error != "" {
 			line += ": " + v.Error
 		}

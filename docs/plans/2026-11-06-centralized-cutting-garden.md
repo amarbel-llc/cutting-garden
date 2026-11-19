@@ -177,6 +177,12 @@ the disconnect as a tool error and retries on the next call.
   daemon and cannot be resumed; its host restarts it). Daemon shutdown closes
   live connections, so a stop never waits for a silent client. The clown
   plugin's server is now `cutting-garden-bridge`.
+- Write attribution: a `mutate_nodes` line made through the daemon ends with
+  `principal="<id>" pid=<n> uid=<n>` (the pid and uid are the kernel's
+  SO_PEERCRED answer; the principal is the bridge's self-asserted id, so this
+  is an audit aid, NOT authentication). A connection from another uid is
+  dropped. A stdio `mcp` session's lines are unchanged. The `cg` CLI client
+  mode is cutting-garden#422.
 - Tested end to end by `zz-tests_bats/bridge.bats` (daemon down -> exec
   fallback; session through a daemon; anonymous session; daemon death).
 - Not built: the hello with principal and cwd (no per-caller state exists in
