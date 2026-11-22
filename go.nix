@@ -351,7 +351,6 @@
     "github.com/google/go-cmp" = {
       go = "1.21";
       hash = "sha256-JbxZFBFGCh/Rj5XZ1vG94V2x7c18L8XKB0N9ZD5F2rM=";
-      indirect = true;
       version = "v0.7.0";
     };
     "github.com/jbenet/go-context" = {
@@ -463,9 +462,9 @@
       version = "v0.0.0-20220910002029-abceb7e1c41e";
     };
     "golang.org/x/crypto" = {
-      go = "1.25.0";
-      hash = "sha256-/R74sc1mcOaOuBeXRQzrXrHAgA5VhNWc6SfQJaxb17U=";
-      version = "v0.51.0";
+      go = "1.26.0";
+      hash = "sha256-33ioL7suoYfgBIEQDAeqy+lwhbCgy885BkcXavowffo=";
+      version = "v0.58.0";
     };
     "golang.org/x/exp" = {
       go = "1.25.0";
@@ -473,47 +472,29 @@
       indirect = true;
       version = "v0.0.0-20260410095643-746e56fc9e2f";
     };
-    "golang.org/x/mod" = {
-      go = "1.25.0";
-      hash = "sha256-ZhyOvy9ptbV+pna/CNyQFr5cKRn5O+B2QzkQAISKgco=";
-      indirect = true;
-      version = "v0.36.0";
-    };
     "golang.org/x/net" = {
-      go = "1.25.0";
-      hash = "sha256-/EoIXzTQzK/yP/lxOyx0Z/bhns4FdPTIF4uyt4gIP80=";
+      go = "1.26.0";
+      hash = "sha256-yCy7Bik5cvIVfX7G08rVYhkVDuro3sPk3iicVz4j/kA=";
       indirect = true;
-      version = "v0.54.0";
-    };
-    "golang.org/x/sync" = {
-      go = "1.25.0";
-      hash = "sha256-ybcjhCfK6lroUM0yswUvWooW8MOQZBXyiSqoxG6Uy0Y=";
-      indirect = true;
-      version = "v0.20.0";
+      version = "v0.61.0";
     };
     "golang.org/x/sys" = {
-      go = "1.25.0";
-      hash = "sha256-JDlj+PKsG6I6kjv5JyOUNreY51u5An0oZ5OZMHZSk+A=";
+      go = "1.26.0";
+      hash = "sha256-/1S3yy3in72ygZT1CKymvOzJZqCMYiGSqZDfvSyB3LI=";
       indirect = true;
-      version = "v0.44.0";
+      version = "v0.49.0";
     };
     "golang.org/x/term" = {
-      go = "1.25.0";
-      hash = "sha256-gFV1oGgs/vpRamvDWmu93voN57iyZMk/hh+oL8L9VrQ=";
+      go = "1.26.0";
+      hash = "sha256-XtEeyv5y3g9nWfzB7vevm5KwNR8hW+LVsBNEectqIhA=";
       indirect = true;
-      version = "v0.43.0";
+      version = "v0.47.0";
     };
     "golang.org/x/text" = {
-      go = "1.25.0";
-      hash = "sha256-8XDOnlPIybcDRy89fkjG5VqtIt5Ku+LmaqYhgKl7i1E=";
+      go = "1.26.0";
+      hash = "sha256-gykmMKFe61Tc4tblLPd3IyMKCqL0MSTQpgb6yE5EnDA=";
       indirect = true;
-      version = "v0.37.0";
-    };
-    "golang.org/x/tools" = {
-      go = "1.25.0";
-      hash = "sha256-fKsYC186cbOCJROZGUqU6UMSxvK2DZ44hlCEytLvp5c=";
-      indirect = true;
-      version = "v0.45.0";
+      version = "v0.43.0";
     };
     "golang.org/x/xerrors" = {
       go = "1.18";
