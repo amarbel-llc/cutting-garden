@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
+	"code.linenisgreat.com/cutting-garden/internal/mutate"
 )
 
 // declaringMutator is a plugin that declares the writable keys of its nodes:
@@ -129,7 +130,7 @@ func TestMutateNodes_StrictRefusalFailsOnlyThatOp(t *testing.T) {
 		t.Fatalf("plugin saw %+v, want only the clean op", bm.gotReq.Ops)
 	}
 	var out struct {
-		Groups []mutateGroupView `json:"groups"`
+		Groups []mutate.GroupView `json:"groups"`
 	}
 	if err := json.Unmarshal([]byte(text), &out); err != nil {
 		t.Fatalf("result is not JSON: %v\n%s", err, text)

@@ -1,4 +1,4 @@
-package mcp
+package mutate
 
 import (
 	"encoding/json"

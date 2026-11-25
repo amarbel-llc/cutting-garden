@@ -124,11 +124,9 @@ func newTools(roots []*url.URL, reader readSurface) *Tools {
 // BulkMutator, or NodeMutator through the best-effort fallback — so
 // mutate_nodes is advertised only where it applies.
 func (t *Tools) hasWriter() bool {
+	engine := t.mutateEngine()
 	for _, r := range t.roots {
-		if t.bulkMutatorFor(r.String()) != nil {
-			return true
-		}
-		if _, _, err := t.resolve(r.String()); err == nil {
+		if engine.CanWrite(r.String()) {
 			return true
 		}
 	}
@@ -711,7 +709,7 @@ func (t *Tools) listNodesURI(
 	// pushdown is rejected with an actionable error rather than silently
 	// narrowing to nothing. The residual is matched host-side after
 	// (RFC 0012 §6, cutting-garden#388).
-	filter, residual, verr := splitFilterFor(rawFilter, lister)
+	filter, residual, verr := trellis_eval.SplitFilterFor(rawFilter, lister)
 	if verr != nil {
 		return "", errors.Wrapf(verr, "list_nodes %s (filtered)", uri)
 	}

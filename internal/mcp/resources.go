@@ -750,7 +750,7 @@ func (r *Resources) ReadFacetsFiltered(
 	if err != nil {
 		return nil, errors.Wrapf(err, "read facets %s", uri)
 	}
-	pushdown, residual, err := splitFilterFor(rawFilter, lister)
+	pushdown, residual, err := trellis_eval.SplitFilterFor(rawFilter, lister)
 	if err != nil {
 		return nil, errors.Wrapf(err, "read_facets %s", uri)
 	}

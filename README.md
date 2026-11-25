@@ -14,7 +14,7 @@ cutting-garden knowing the difference.
 
 ## Commands
 
-The `cutting-garden` binary (aliased `cg`) has eleven user-facing
+The `cutting-garden` binary (aliased `cg`) has twelve user-facing
 subcommands:
 
 - `capture [STORE_ID | URI]...` — snapshot directories or scheme-addressed
@@ -28,6 +28,10 @@ subcommands:
   URI, aggregate every configured plugin root. `--facets` adds
   grouped-count summaries (by status, year, domain, …). Table or
   `-format json`.
+- `mutate [FILE]` — create, replace, patch or delete nodes through a plugin:
+  one JSON document of groups (a file, or stdin), the same one the `mcp`
+  server's `mutate_nodes` tool takes. Exits 0 applied, 1 nothing applied,
+  2 trouble, 64 bad input.
 - `mcp` — serve the same plugin trees over the
   [Model Context Protocol](https://modelcontextprotocol.io) so an agent
   can browse them as resources — with facet summaries and node-type

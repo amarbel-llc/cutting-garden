@@ -1,0 +1,36 @@
+.TH CUTTING-GARDEN-MUTATE 1
+.SH NAME
+cutting-garden-mutate - create, replace, patch, or delete nodes through a plugin
+.SH DESCRIPTION
+Applies one JSON document of groups \(em the same document the mutate_nodes MCP tool takes \(em and prints the result document. Each group is an anchor URI plus either ops (create, put, patch, delete, applied in order) or a sweep (one op applied to every node under the anchor matching a filter). Groups apply in order and independently; a malformed group refuses the whole call before anything is written. Ops address nodes by the id `list -format espalier` and `organize` print under the anchor. Writes live nodes: no blob store is touched and nothing is captured.
+.SH ARGUMENTS
+.TP
+.B file
+JSON document to apply: an object with a `groups` array (and an optional `strict` boolean), exactly the arguments of the mutate_nodes MCP tool. With no file, or `-`, the document is read from standard input.
+.SH ENVIRONMENT
+.TP
+.B XDG_CONFIG_HOME
+Root of the config file read before the document is applied (see FILES).
+Default: $HOME/.config
+.TP
+.B (an account's password_env)
+The variable an account's password_env names in config.toml holds that account's credential (cutting-garden-config(5)).
+.SH FILES
+.TP
+.I $XDG_CONFIG_HOME/cutting-garden/config.toml
+Plugin accounts and wire-plugin stanzas the anchors resolve through (RFC 0007, cutting-garden-config(5)). A missing file is an empty config.
+.SH EXAMPLES
+.TP
+Patch one CalDAV task from standard input; bodies are JSON-encoded strings.
+.B echo '{"groups":[{"anchor":"caldav://host/dav/me/tasks/","ops":[{"kind":"patch","id":"call.ics","body":"{\"priority\":1}"}]}]}' | cutting-garden mutate
+.TP
+Apply a document from a file, refusing any patch key the node type does not accept.
+.B cutting-garden mutate -strict changes.json
+.TP
+Mark every unread story read with one sweep.
+.B echo '{"groups":[{"anchor":"newsblur://stories","sweep":{"filter":"read=unread","op":{"kind":"patch","body":"{\"read\":true}"}}}]}' | cutting-garden mutate
+.TP
+Branch on the exit code: 0 applied, 1 nothing applied (the result is still printed), 2 trouble, 64 a malformed document.
+.B cutting-garden mutate changes.json > result.json || echo "exit $?"
+.SH SEE ALSO
+cutting-garden(1), cutting-garden-list(1), cutting-garden-mcp(1), cutting-garden-organize(1)

@@ -116,31 +116,6 @@ func filteredListing(
 	return nodes, mode, nil
 }
 
-// splitFilterFor splits a caller's one-step filter against lister's declared
-// facet schema and validates the pushdown (cutting-garden#161, #388).
-func splitFilterFor(
-	raw string, lister cutting_garden_plugins.RootLister,
-) (cutting_garden_plugins.FacetFilter, trellis_eval.Residual, error) {
-	var schema []cutting_garden_plugins.NodeTypeFacets
-	if fd, ok := lister.(cutting_garden_plugins.FacetDescriber); ok {
-		schema = fd.DescribeFacets()
-	}
-	if len(schema) == 0 {
-		schema = nil
-	}
-	pushdown, residual, _, err := trellis_eval.SplitFilter(raw, schema)
-	if err != nil {
-		return nil, trellis_eval.Residual{}, err
-	}
-	if err := pushdown.Validate(schema); err != nil {
-		return nil, trellis_eval.Residual{}, err
-	}
-	if err := residual.ValidateFields(lister); err != nil {
-		return nil, trellis_eval.Residual{}, err
-	}
-	return pushdown, residual, nil
-}
-
 // anyNodeHasFacets reports whether any node in the plain (non-enriched)
 // listing carries facet membership — the signal that host-side filtering
 // (branch b) is meaningful for this plugin's ListRoots output. A plugin

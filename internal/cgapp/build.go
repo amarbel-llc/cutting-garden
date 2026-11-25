@@ -15,6 +15,7 @@ import (
 	"code.linenisgreat.com/cutting-garden/internal/hook"
 	"code.linenisgreat.com/cutting-garden/internal/list"
 	"code.linenisgreat.com/cutting-garden/internal/mcp"
+	"code.linenisgreat.com/cutting-garden/internal/mutate"
 	"code.linenisgreat.com/cutting-garden/internal/organize"
 	"code.linenisgreat.com/cutting-garden/internal/restore"
 	"code.linenisgreat.com/cutting-garden/internal/serve"
@@ -37,9 +38,9 @@ import (
 
 // Build returns a fully-configured cutting-garden Utility with the
 // canonical name "cutting-garden", the "cg" alias, the hidden
-// `complete` subcommand registered, and the eleven user-facing
-// subcommands (capture, restore, diff, serve, failures, health, list,
-// mcp, organize, fmt-organize, version) attached.
+// `complete` subcommand registered, and the user-facing subcommands
+// (capture, restore, diff, serve, failures, health, list, mutate, mcp,
+// serve-mcp, organize, fmt-organize, version) attached.
 //
 // Every cutting-garden binary main.go calls this and dispatches
 // utility.Run(os.Args).
@@ -57,6 +58,7 @@ func Build() command.Utility {
 	utility.AddCmd("failures", failures.New())
 	utility.AddCmd("health", health.New())
 	utility.AddCmd("list", list.New())
+	utility.AddCmd("mutate", mutate.New())
 	utility.AddCmd("mcp", mcp.New())
 	utility.AddCmd("serve-mcp", mcp.NewServe())
 	utility.AddCmd("organize", organize.New())

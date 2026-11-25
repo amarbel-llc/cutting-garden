@@ -6,8 +6,12 @@ This file (symlinked as `CLAUDE.md`) provides guidance to coding agents when wor
 
 A filesystem-tree capture/restore CLI atop
 [madder](https://code.linenisgreat.com/madder), grown from a port of
-dodder's command-dispatch framework. Twelve user-facing subcommands —
+dodder's command-dispatch framework. Thirteen user-facing subcommands —
 `capture`, `restore`, `diff`, `serve`, `failures`, `health`, `list`,
+`mutate` (the CLI front over the `mutate_nodes` write engine in
+`internal/mutate`: one `{groups:[…]}` document from a file or stdin; exit 0
+applied, 1 nothing applied, 2 trouble, 64 bad input; single-op flag form is
+#426, gating a Bash-invoked `mutate` for agents is #427),
 `mcp` (`-connect <socket>` relays stdio to a `serve-mcp` daemon, in-process
 fallback; the lighter `cmd/cutting-garden-bridge` does the same without
 linking any plugin), `serve-mcp` (the `mcp` server over one 0600 unix socket for many
@@ -85,7 +89,7 @@ docs live in this repo under `docs/{rfcs,features,plans}/`.
 `list` and `mcp` are the consumers of the plugin **traversal**
 primitive (`RootLister`, FDR 0014): `list` prints a node's child nodes,
 `mcp` serves them over the Model Context Protocol (FDR 0015) and adds the
-one write tool, `mutate_nodes` (FDR 0020). A plugin MAY
+one write tool, `mutate_nodes` (FDR 0020; `mutate` is its CLI twin). A plugin MAY
 also declare **facets** (RFC 0012, FDR 0021) — grouped-count summaries the
 framework computes over a node type's children, surfaced by `list --facets`,
 the `mcp` container read's `facets` block, the `mcp` `read_facets` tool (the
@@ -216,7 +220,7 @@ ride in the URI query); organize and `list -format espalier` resolve every id
 through `node_view.RelativeIDFor`, and a `NodeIDer` plugin whose ids collide
 under one anchor is refused at generate. The tag/espalier/enriched-listing
 presentation helpers live in `internal/node_view`, imported only by `list`,
-`mcp` and `organize` — `command_components` stays the composition layer
+`mcp`, `mutate` and `organize` — `command_components` stays the composition layer
 (config, roots, store resolution, receipts) and MUST NOT import `node_view`,
 so organize/list rendering churn no longer re-derives
 capture/restore/diff/serve/failures/blob_writer. `list -format espalier`

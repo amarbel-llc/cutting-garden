@@ -3,29 +3,21 @@ package mcp
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"io"
 	"net/url"
-	"slices"
-	"strconv"
-	"strings"
 
-	"code.linenisgreat.com/cutting-garden/internal/cutting_garden_plugins"
 	"code.linenisgreat.com/cutting-garden/internal/mcp_tool_perms"
-	"code.linenisgreat.com/cutting-garden/internal/node_view"
-	"code.linenisgreat.com/cutting-garden/internal/trellis_eval"
+	"code.linenisgreat.com/cutting-garden/internal/mutate"
 	"code.linenisgreat.com/purse-first/libs/dewey/pkgs/errors"
 	"code.linenisgreat.com/purse-first/libs/go-mcp/protocol"
 )
 
 // mutate_nodes is the ONE write tool (cutting-garden#315): every create,
 // put, patch and delete goes through it as a batch, a single write being a
-// one-op batch. A call is a list of groups — each an anchor plus its ops
-// (or a sweep) — applied in order and independently, so one call can span
-// several anchors and plugins (cutting-garden#323). Ops address nodes
-// by the id organize prints for them, relative to the group's anchor
-// (node_view.NodeURIFor), and a create may name a temp id (`+name`) that
-// later ops in the group address.
+// one-op batch. The write engine itself — group building, dispatch, result
+// rendering — lives in internal/mutate, shared with the `mutate` command;
+// this file is the MCP front: the tool's schema and description, the
+// argument decode, and the mapping of "nothing was applied" to an error
+// result.
 
 const mutateNodesSchema = `{"type":"object","required":["groups"],"properties":{` +
 	`"strict":{"type":"boolean","description":"optional, default false (tolerant): when true, a patch op naming a key its node type does not accept is refused before anything is written for it, naming the keys; a patch whose node type declares no accepted keys is refused too, and so is a patch sweep. When false, undeclared keys are dropped and reported as ignored. Applies to the whole call"},` +
@@ -80,83 +72,17 @@ func mutateNodesToolDef() protocol.ToolV1 {
 	}
 }
 
-type mutateOpInput struct {
-	Kind string `json:"kind"`
-	ID   string `json:"id"`
-	In   string `json:"in"`
-	Body string `json:"body"`
-	Type string `json:"type"`
-}
-
-type mutateGroupInput struct {
-	Anchor    string          `json:"anchor"`
-	Atomicity string          `json:"atomicity"`
-	Ops       []mutateOpInput `json:"ops"`
-	Sweep     *struct {
-		Filter string        `json:"filter"`
-		Op     mutateOpInput `json:"op"`
-	} `json:"sweep"`
-}
-
-type mutateFailureView struct {
-	ID    string `json:"id"`
-	Error string `json:"error"`
-}
-
-type mutateCreatedView struct {
-	TempID string `json:"temp_id"`
-	ID     string `json:"id"`
-	URI    string `json:"uri"`
-}
-
-// mutateOutcomeView is one op's outcome in the caller's id: status is the
-// canonical reading (applied, patched_nothing, failed, deleted, not_found; a
-// deleted node is also in applied, a not_found one also in failed). fields are
-// the keys a patch applied; uri is the node's address afterwards, present
-// only when it changed; name is a deleted node's name.
-type mutateOutcomeView struct {
-	ID     string   `json:"id"`
-	Status string   `json:"status"`
-	Fields []string `json:"fields,omitempty"`
-	// Ignored names the patch body's keys the plugin tolerated but did not
-	// apply (cutting-garden#376).
-	Ignored []string `json:"ignored,omitempty"`
-	URI     string   `json:"uri,omitempty"`
-	Name    string   `json:"name,omitempty"`
-	Error   string   `json:"error,omitempty"`
-}
-
-type mutateGroupView struct {
-	Anchor         string              `json:"anchor"`
-	Applied        []string            `json:"applied"`
-	PatchedNothing []string            `json:"patched_nothing,omitempty"`
-	Failed         []mutateFailureView `json:"failed,omitempty"`
-	Created        []mutateCreatedView `json:"created,omitempty"`
-	Outcomes       []mutateOutcomeView `json:"outcomes,omitempty"`
-	Atomic         bool                `json:"atomic,omitempty"`
-	// Error is the reason a whole group was refused at dispatch (an atomic
-	// batch the plugin cannot transact, a sweep it cannot resolve), in a
-	// call of several groups; the other groups still ran.
-	Error string `json:"error,omitempty"`
-	// Complete and Partial mark a sweep whose enumeration a plugin reported
-	// bounded — the same signal list_nodes carries (cutting-garden#266).
-	Complete *bool                                   `json:"complete,omitempty"`
-	Partial  []cutting_garden_plugins.PartialListing `json:"partial,omitempty"`
-}
-
-// mutateGroup is one group resolved against its plugin: the domain request
-// plus what rendering needs to report results in the caller's own ids.
-type mutateGroup struct {
-	anchor string
-	lister cutting_garden_plugins.RootLister
-	req    cutting_garden_plugins.BulkRequest
-	// strict is the call's strict flag (cutting-garden#404): see screenPatches.
-	strict   bool
-	idOf     map[string]string // node URI → the id the caller sent
-	spelling map[string]string // temp key → the caller's spelling
-	// residual is the sweep filter's host-side remainder (RFC 0012 §6); when
-	// non-empty the host resolves the sweep itself (resolveResidualSweep).
-	residual trellis_eval.Residual
+// mutateEngine is the write engine wired to this server's resolvers, config
+// override, log and read caches.
+func (t *Tools) mutateEngine() *mutate.Engine {
+	return &mutate.Engine{
+		ResolveLister: t.resolveLister,
+		ResolveNode:   t.resolve,
+		ResolveBulk:   t.resolveBulk,
+		TagsOverride:  t.tagsOverride,
+		Log:           t.log,
+		Forget:        t.forgetWrittenSource,
+	}
 }
 
 func (t *Tools) callMutateNodes(
@@ -164,51 +90,22 @@ func (t *Tools) callMutateNodes(
 ) (string, error) {
 	countMutateCall(args)
 
-	var in struct {
-		Strict bool               `json:"strict"`
-		Groups []mutateGroupInput `json:"groups"`
-	}
+	var in mutate.Input
 	if err := json.Unmarshal(args, &in); err != nil {
 		return "", errors.BadRequestf("mutate_nodes: arguments: %s", err)
 	}
 
-	if len(in.Groups) == 0 {
-		return "", errors.BadRequestf("mutate_nodes: groups is empty")
+	via := ""
+	if caller, ok := callerFrom(ctx); ok {
+		via = caller.logSuffix()
 	}
 
-	// Every group is built before any is dispatched, so a malformed group
-	// refuses the whole call with nothing written (cutting-garden#323).
-	groups := make([]*mutateGroup, 0, len(in.Groups))
-	for i, groupIn := range in.Groups {
-		group, err := t.buildMutateGroup(groupIn, in.Strict)
-		if err != nil {
-			if len(in.Groups) > 1 {
-				return "", errors.BadRequestf("groups[%d]: %s", i, err)
-			}
-			return "", err
-		}
-		groups = append(groups, group)
+	result, err := t.mutateEngine().Apply(ctx, in, via)
+	if err != nil {
+		return "", err
 	}
 
-	views := make([]mutateGroupView, 0, len(groups))
-	var refusal error
-	for _, group := range groups {
-		view, err := t.applyMutateGroup(ctx, group)
-		if err != nil && len(groups) == 1 {
-			return "", err
-		}
-		if err != nil {
-			refusal = err
-			view = mutateGroupView{Anchor: group.anchor, Applied: []string{}, Error: err.Error()}
-		}
-		views = append(views, view)
-	}
-
-	body, err := json.MarshalIndent(
-		struct {
-			Groups []mutateGroupView `json:"groups"`
-		}{views}, "", "  ",
-	)
+	body, err := json.MarshalIndent(result, "", "  ")
 	if err != nil {
 		return "", errors.Wrap(err)
 	}
@@ -216,414 +113,13 @@ func (t *Tools) callMutateNodes(
 	// Nothing landed in any group: an error result, so a caller skimming for
 	// success cannot read a fully refused batch as done (cutting-garden#180).
 	// The per-id detail rides along in the message.
-	if !anyApplied(views) && (refusal != nil || anyRefused(views)) {
+	if result.NothingApplied() {
 		return "", errors.BadRequestf(
 			"mutate_nodes: nothing was applied\n%s", body,
 		)
 	}
 
 	return string(body), nil
-}
-
-// applyMutateGroup dispatches one built group and renders its result. Groups
-// are independent: each has its own temp ids and atomicity, and one group's
-// refusal does not stop the next.
-func (t *Tools) applyMutateGroup(ctx context.Context, group *mutateGroup) (mutateGroupView, error) {
-	ctx, partial := cutting_garden_plugins.WithPartialListings(ctx)
-	via := ""
-	if caller, ok := callerFrom(ctx); ok {
-		via = caller.logSuffix()
-	}
-	ctx = cutting_garden_plugins.WithBulkOutcomeObserver(ctx, group.logOutcome(t.log, via))
-	result, err := t.dispatchMutateGroup(ctx, group)
-	t.forgetWrittenSource(group.anchor)
-	if err != nil {
-		return mutateGroupView{}, err
-	}
-	return group.render(result, partial.All()), nil
-}
-
-func anyApplied(views []mutateGroupView) bool {
-	for _, v := range views {
-		if len(v.Applied) > 0 {
-			return true
-		}
-	}
-	return false
-}
-
-func anyRefused(views []mutateGroupView) bool {
-	for _, v := range views {
-		if len(v.Failed) > 0 || len(v.PatchedNothing) > 0 {
-			return true
-		}
-	}
-	return false
-}
-
-func (t *Tools) buildMutateGroup(in mutateGroupInput, strict bool) (*mutateGroup, error) {
-	if in.Anchor == "" {
-		return nil, errors.BadRequestf("mutate_nodes: group has no anchor")
-	}
-	if strict && in.Sweep != nil &&
-		cutting_garden_plugins.BulkOpKind(in.Sweep.Op.Kind) == cutting_garden_plugins.BulkPatch {
-		return nil, errors.BadRequestf(
-			"mutate_nodes: strict does not apply to a patch sweep yet (its" +
-				" matches' node types are not known before the write): send the" +
-				" patches as ops, or drop strict")
-	}
-	anchorURL, lister, err := t.resolveLister(in.Anchor)
-	if err != nil {
-		return nil, err
-	}
-
-	group := &mutateGroup{
-		anchor:   in.Anchor,
-		lister:   lister,
-		strict:   strict,
-		idOf:     make(map[string]string),
-		spelling: make(map[string]string),
-		req: cutting_garden_plugins.BulkRequest{
-			Atomicity: cutting_garden_plugins.BulkAtomicity(in.Atomicity),
-		},
-	}
-	if in.Atomicity == "" {
-		group.req.Atomicity = cutting_garden_plugins.BulkBestEffort
-	}
-
-	if in.Sweep != nil {
-		if len(in.Ops) > 0 {
-			return nil, errors.BadRequestf(
-				"mutate_nodes: a group takes exactly one of ops or sweep",
-			)
-		}
-		filter, residual, err := splitFilterFor(in.Sweep.Filter, lister)
-		if err != nil {
-			return nil, errors.BadRequestf("mutate_nodes: sweep filter: %s", err)
-		}
-		group.residual = residual
-		group.req.Sweep = &cutting_garden_plugins.BulkSweep{
-			Root:   anchorURL,
-			Filter: filter,
-			Op: cutting_garden_plugins.BulkOp{
-				Kind: cutting_garden_plugins.BulkOpKind(in.Sweep.Op.Kind),
-				Body: []byte(in.Sweep.Op.Body),
-			},
-		}
-	}
-
-	defined := make(map[string]bool)
-	for i, op := range in.Ops {
-		built, err := group.buildOp(i, op, defined)
-		if err != nil {
-			return nil, err
-		}
-		group.req.Ops = append(group.req.Ops, built)
-	}
-
-	if err := group.req.Validate(); err != nil {
-		return nil, err
-	}
-
-	return group, nil
-}
-
-// buildOp turns one caller op into a BulkOp: a temp id becomes a TempID
-// create (when it is new) or a Ref (when an earlier create defined it); any
-// other id resolves to the node URI under the anchor.
-func (g *mutateGroup) buildOp(
-	i int, in mutateOpInput, defined map[string]bool,
-) (cutting_garden_plugins.BulkOp, error) {
-	op := cutting_garden_plugins.BulkOp{
-		Kind: cutting_garden_plugins.BulkOpKind(in.Kind),
-		Type: in.Type,
-	}
-	op.Body = []byte(in.Body)
-
-	key, isTemp, err := tempKey(i, in.ID)
-	if err != nil {
-		return op, errors.BadRequestf("mutate_nodes: ops[%d]: %s", i, err)
-	}
-
-	if op.Kind == cutting_garden_plugins.BulkCreate && op.Type != "" {
-		if err := g.checkCreateType(i, op.Type, isTemp); err != nil {
-			return op, err
-		}
-	}
-
-	switch {
-	case isTemp && !defined[key]:
-		if op.Kind != cutting_garden_plugins.BulkCreate {
-			return op, errors.BadRequestf(
-				"mutate_nodes: ops[%d] %s %s: no earlier create defines it",
-				i, in.Kind, in.ID,
-			)
-		}
-		defined[key] = true
-		g.spelling[key] = in.ID
-		op.TempID = key
-		if err := g.setContainer(i, &op, in.In, defined); err != nil {
-			return op, err
-		}
-
-	case isTemp:
-		if op.Kind == cutting_garden_plugins.BulkCreate {
-			return op, errors.BadRequestf(
-				"mutate_nodes: ops[%d] creates %s again", i, in.ID,
-			)
-		}
-		op.Ref = key
-
-	default:
-		if in.In != "" {
-			return op, errors.BadRequestf(
-				"mutate_nodes: ops[%d]: in applies only to a temp-id create", i,
-			)
-		}
-		uri, err := node_view.NodeURIFor(g.lister, in.ID, g.anchor)
-		if err != nil {
-			return op, errors.BadRequestf("mutate_nodes: ops[%d]: %s", i, err)
-		}
-		op.URI = uri
-		g.idOf[uri.String()] = in.ID
-	}
-
-	return op, nil
-}
-
-// checkCreateType refuses a create the plugin's describe_node_types says
-// cannot work, before anything is sent: a type it does not list as writable,
-// or a caller-chosen id for a type whose source assigns identity (jira's
-// issue keys) — that one needs a temp id. A plugin with no BodyDescriber
-// declares nothing, so its creates go through unchecked.
-func (g *mutateGroup) checkCreateType(i int, typeTag string, isTemp bool) error {
-	describer, ok := g.lister.(cutting_garden_plugins.BodyDescriber)
-	if !ok {
-		return nil
-	}
-
-	bodies := describer.DescribeBodies()
-	writable := make([]string, 0, len(bodies))
-	for _, body := range bodies {
-		if body.Tag != typeTag {
-			writable = append(writable, body.Tag)
-			continue
-		}
-		if body.ServerAssignedIdentity && !isTemp {
-			return errors.BadRequestf(
-				"mutate_nodes: ops[%d]: the source names %s nodes; create it"+
-					" with a temp id (+name) instead of an id, in the container it"+
-					" belongs under (the group's anchor, or the op's in): %s",
-				i, typeTag, createInHint(body),
-			)
-		}
-		return nil
-	}
-
-	return errors.BadRequestf(
-		"mutate_nodes: ops[%d]: type %q is not creatable here (writable"+
-			" types: %s)", i, typeTag, strings.Join(writable, ", "),
-	)
-}
-
-// createInHint names the container a server-assigned type is created under:
-// the plugin's own hint when it declares one, else a pointer to
-// describe_node_types, which carries it as createIn when there is one.
-func createInHint(body cutting_garden_plugins.NodeTypeBody) string {
-	if body.CreateIn != "" {
-		return body.CreateIn
-	}
-	return "a container of the source, never the new node's own URI (describe_node_types lists" +
-		" the writable types; this source does not say which container)"
-}
-
-// setContainer fills a temp-id create's container: the anchor by default,
-// an id under it, or an earlier create's temp id.
-func (g *mutateGroup) setContainer(
-	i int, op *cutting_garden_plugins.BulkOp, in string, defined map[string]bool,
-) error {
-	if in == "" {
-		anchor, err := url.Parse(g.anchor)
-		if err != nil {
-			return errors.BadRequestf("mutate_nodes: anchor %q: %s", g.anchor, err)
-		}
-		op.In = anchor
-		return nil
-	}
-
-	key, isTemp, err := tempKey(-1, in)
-	if err != nil {
-		return errors.BadRequestf("mutate_nodes: ops[%d] in: %s", i, err)
-	}
-	if isTemp {
-		if !defined[key] || key == op.TempID {
-			return errors.BadRequestf(
-				"mutate_nodes: ops[%d] in %s: no earlier create defines it", i, in,
-			)
-		}
-		op.InRef = key
-		return nil
-	}
-
-	container, err := node_view.NodeURIFor(g.lister, in, g.anchor)
-	if err != nil {
-		return errors.BadRequestf("mutate_nodes: ops[%d] in: %s", i, err)
-	}
-	op.In = container
-	return nil
-}
-
-// tempKey recognizes a temp id — `+name`, `+"name"`, or bare `+` (RFC 0015
-// §Creation's spellings) — and returns the key BulkOp carries: `+name` for a
-// named one, and for a bare `+`, which nothing can refer to, a key unique to
-// its op index i (i < 0 when a bare `+` is not allowed).
-func tempKey(i int, id string) (key string, isTemp bool, err error) {
-	rest, ok := strings.CutPrefix(id, "+")
-	if !ok {
-		return "", false, nil
-	}
-
-	switch {
-	case rest == "":
-		if i < 0 {
-			return "", true, fmt.Errorf("a bare + cannot be referred to")
-		}
-		return fmt.Sprintf("+\x00%d", i), true, nil
-	case strings.HasPrefix(rest, `"`):
-		name, err := strconv.Unquote(rest)
-		if err != nil || name == "" {
-			return "", true, fmt.Errorf("malformed temp id %s", id)
-		}
-		return "+" + name, true, nil
-	default:
-		return id, true, nil
-	}
-}
-
-// dispatchMutateGroup sends the request to the plugin's BulkMutator, or —
-// for a plugin with only single-node writes — applies it through the SDK's
-// best-effort loop over its NodeMutator, which reports the same per-op
-// result (an atomic request is refused there).
-func (t *Tools) dispatchMutateGroup(
-	ctx context.Context, g *mutateGroup,
-) (cutting_garden_plugins.BulkResult, error) {
-	var result cutting_garden_plugins.BulkResult
-	var err error
-
-	if g.req.Sweep != nil && !g.residual.Empty() {
-		if err := t.resolveResidualSweep(ctx, g); err != nil {
-			return result, err
-		}
-		if len(g.req.Ops) == 0 {
-			return result, nil
-		}
-	}
-
-	req := g.req
-	var (
-		fullOps []cutting_garden_plugins.BulkOp
-		screen  patchScreen
-	)
-	if len(req.Ops) > 0 {
-		fullOps = slices.Clone(req.Ops)
-		screen, err = screenPatches(
-			fullOps, patchKeysFor(g.lister), g.strict,
-			req.Atomicity == cutting_garden_plugins.BulkAtomic,
-		)
-		if err != nil {
-			return result, err
-		}
-
-		req.Ops = make([]cutting_garden_plugins.BulkOp, 0, len(screen.dispatched))
-		for _, i := range screen.dispatched {
-			req.Ops = append(req.Ops, fullOps[i])
-		}
-
-		// Every op was settled by the host: there is nothing to dispatch.
-		if len(req.Ops) == 0 {
-			mergeScreen(&result, fullOps, screen)
-			return result, nil
-		}
-	}
-
-	if bulk := t.bulkMutatorFor(g.anchor); bulk != nil {
-		result, err = bulk.BulkMutate(ctx, req)
-	} else {
-		_, nm, rerr := t.resolve(g.anchor)
-		if rerr != nil {
-			return result, errors.BadRequestf(
-				"mutate_nodes: the plugin for %q cannot write: %s", g.anchor, rerr,
-			)
-		}
-		enriched, _ := g.lister.(cutting_garden_plugins.EnrichedLister)
-		if g.req.Sweep != nil && enriched == nil {
-			return result, errors.BadRequestf(
-				"mutate_nodes: the plugin for %q cannot sweep (it has no"+
-					" filtered listing); send ops instead", g.anchor,
-			)
-		}
-		result, err = cutting_garden_plugins.BestEffortBulkMutate(
-			ctx, nm, enriched, req,
-		)
-	}
-
-	if errors.Is(err, cutting_garden_plugins.ErrBulkAtomicUnsupported) {
-		return result, errors.BadRequestf(
-			"mutate_nodes: the plugin for %q cannot apply a batch atomically;"+
-				" omit atomicity for best-effort", g.anchor,
-		)
-	}
-	if err == nil && fullOps != nil {
-		mergeScreen(&result, fullOps, screen)
-	}
-	return result, err
-}
-
-// resolveResidualSweep turns a sweep whose filter has a residual into the
-// explicit changeset of the nodes it matches (RFC 0012 §6). A plugin is sent
-// only the pushdown, so it cannot be trusted to enumerate the match set: the
-// host lists under the pushdown, re-checks both halves on every listed node,
-// and writes only those. As for any sweep, a plugin without an enriched
-// listing, or one that declines at this level, is refused rather than widened
-// to every child. This is the one case RFC 0017 §Selection's "the plugin owns
-// the enumeration" does not cover: the plugin cannot evaluate the residual.
-func (t *Tools) resolveResidualSweep(ctx context.Context, g *mutateGroup) error {
-	sweep := g.req.Sweep
-	enriched, ok := g.lister.(cutting_garden_plugins.EnrichedLister)
-	if !ok {
-		return errors.BadRequestf(
-			"mutate_nodes: the plugin for %q cannot sweep (it has no filtered listing); send ops instead",
-			g.anchor)
-	}
-	listed, handled, err := enriched.ListEnriched(ctx, sweep.Root, sweep.Filter)
-	if err != nil {
-		return err
-	}
-	if !handled {
-		return errors.BadRequestf(
-			"mutate_nodes: cannot sweep %q: the enriched listing declined at this level"+
-				" (its children are containers) — sweep each child container instead", sweep.Root)
-	}
-	aliases := cutting_garden_plugins.NoValueAliasesFor(g.lister)
-	match := g.residual.Matcher(g.lister, sweep.Root, trellis_eval.WithTagsInterpreter(t.tagsOverride))
-	var ops []cutting_garden_plugins.BulkOp
-	for _, n := range listed {
-		if n.URI == nil || !sweep.Filter.MatchesNode(aliases, n.Type, n.Facets) {
-			continue
-		}
-		matched, err := match(ctx, n)
-		if err != nil {
-			return err
-		}
-		if matched {
-			op := sweep.Op
-			op.URI = n.URI
-			ops = append(ops, op)
-		}
-	}
-	g.req.Sweep = nil
-	g.req.Ops = ops
-	return nil
 }
 
 // sourceForgetter is the read surface's memo, dropped after a write so the
@@ -642,133 +138,4 @@ func (t *Tools) forgetWrittenSource(anchor string) {
 	if u, err := url.Parse(anchor); err == nil {
 		forgetter.ForgetSource(u)
 	}
-}
-
-func (t *Tools) bulkMutatorFor(anchor string) cutting_garden_plugins.BulkMutator {
-	if t.resolveBulk == nil {
-		return nil
-	}
-	if _, bulk, err := t.resolveBulk(anchor); err == nil {
-		return bulk
-	}
-	return nil
-}
-
-// render reports the result in the caller's own ids: the id an op was sent
-// with, else the id organize would print (sweep matches, created nodes).
-func (g *mutateGroup) render(
-	result cutting_garden_plugins.BulkResult,
-	partial []cutting_garden_plugins.PartialListing,
-) mutateGroupView {
-	completeness := completenessView(partial)
-	view := mutateGroupView{
-		Anchor:   g.anchor,
-		Applied:  make([]string, 0, len(result.AppliedNodes)),
-		Atomic:   result.Atomic,
-		Complete: completeness.Complete,
-		Partial:  completeness.Partial,
-	}
-
-	for _, uri := range result.AppliedNodes {
-		view.Applied = append(view.Applied, g.id(uri))
-	}
-	for _, uri := range result.PatchedNothing {
-		view.PatchedNothing = append(view.PatchedNothing, g.id(uri))
-	}
-	for _, failure := range result.Failed {
-		id := g.spelling[failure.Ref]
-		if id == "" && failure.Ref != "" {
-			id = failure.Ref
-		}
-		if id == "" {
-			id = g.id(failure.URI)
-		}
-		view.Failed = append(view.Failed, mutateFailureView{
-			ID: id, Error: failure.Err,
-		})
-	}
-	for _, created := range result.Created {
-		if created.URI == nil {
-			continue
-		}
-		view.Created = append(view.Created, mutateCreatedView{
-			TempID: g.spelling[created.TempID],
-			ID:     g.id(created.URI),
-			URI:    created.URI.String(),
-		})
-	}
-
-	view.Outcomes = g.outcomes(result)
-
-	return view
-}
-
-// outcomes is the per-op detail the plugin reported, one entry per op in
-// request order; nil — and so no outcomes key — when it reported none, in
-// which case the four lists above are all there is (rebuilding a status-only
-// entry per id from them would only repeat them).
-func (g *mutateGroup) outcomes(result cutting_garden_plugins.BulkResult) []mutateOutcomeView {
-	var out []mutateOutcomeView
-	for _, o := range result.Outcomes {
-		out = append(out, g.outcomeView(o))
-	}
-	return out
-}
-
-func (g *mutateGroup) outcomeView(o cutting_garden_plugins.BulkOutcome) mutateOutcomeView {
-	v := mutateOutcomeView{
-		Status: string(o.Status), Fields: o.Fields, Ignored: o.Ignored,
-		Name: o.Name, Error: o.Err,
-	}
-	if o.NewURI != nil {
-		v.URI = o.NewURI.String()
-	}
-	switch {
-	case o.URI != nil:
-		v.ID = g.id(o.URI)
-	case o.Ref != "":
-		v.ID = g.spelling[o.Ref]
-		if v.ID == "" {
-			v.ID = o.Ref
-		}
-	}
-	return v
-}
-
-// logOutcome writes each op's outcome to log as the plugin's best-effort
-// loop records it, so a reply lost with its connection (cutting-garden#392)
-// leaves a record of what applied. A sweep's op count is not known ahead,
-// so it logs "op N". via is the caller suffix of a serve-mcp connection (an
-// audit aid with a self-asserted principal, see Caller), "" for a stdio
-// session.
-func (g *mutateGroup) logOutcome(log io.Writer, via string) cutting_garden_plugins.BulkOutcomeObserver {
-	return func(i int, o cutting_garden_plugins.BulkOutcome) {
-		if log == nil {
-			return
-		}
-		v := g.outcomeView(o)
-		position := fmt.Sprintf("op %d", i+1)
-		if g.req.Sweep == nil {
-			position = fmt.Sprintf("op %d/%d", i+1, len(g.req.Ops))
-		}
-		line := fmt.Sprintf("mutate_nodes %s %s: %s %s", g.anchor, position, v.Status, v.ID)
-		if o.URI != nil {
-			line += " " + o.URI.String()
-		}
-		line += via
-		if v.Error != "" {
-			line += ": " + v.Error
-		}
-		fmt.Fprintln(log, line)
-	}
-}
-
-func (g *mutateGroup) id(uri *url.URL) string {
-	if uri == nil {
-		return ""
-	}
-	if id, ok := g.idOf[uri.String()]; ok {
-		return id
-	}
-	return node_view.RelativeIDFor(g.lister, uri.String(), g.anchor)
 }
